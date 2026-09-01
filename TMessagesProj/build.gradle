@@ -148,8 +148,11 @@ android {
         externalNativeBuild {
             cmake {
                 version '3.22.1'
-                arguments '-DANDROID_STL=c++_static', '-DANDROID_PLATFORM=android-21' //, '-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON'
-                targets 'tmessages.49'
+                // Purple: c++_shared, not c++_static. libpurplecore.so links Qt Core,
+                // which links libc++_shared.so, and two libc++ copies in one process is
+                // unsupported. AGP packages libc++_shared.so for us.
+                arguments '-DANDROID_STL=c++_shared', '-DANDROID_PLATFORM=android-21', "-DPURPLE_QT_ANDROID=" + purpleQtAndroid() //, '-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON'
+                targets 'tmessages.49', 'purplecore'
             }
         }
     }
@@ -255,6 +258,20 @@ android {
     namespace 'org.telegram.messenger'
 }
 
+
+// Purple: where the Qt 6 Android prefix lives on this machine (a path, not a
+// secret, so it sits in the gitignored local.properties next to the api keys).
+// libpurplecore.so cannot be built without it, so a missing value is fatal
+// rather than a silent skip.
+def purpleQtAndroid() {
+    def path = getProps("PURPLE_QT_ANDROID")
+    if (!path) {
+        throw new GradleException("PURPLE_QT_ANDROID is not set in local.properties. " +
+                "Point it at a Qt 6 Android prefix, e.g. " +
+                "PURPLE_QT_ANDROID=/path/to/qt/6.7.3/android_arm64_v8a")
+    }
+    return path
+}
 
 def getProps(String propName) {
     def propsFile = rootProject.file('local.properties')

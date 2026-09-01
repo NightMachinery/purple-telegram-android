@@ -17,15 +17,23 @@ never be committed:
 sdk.dir=/path/to/Android/sdk
 TELEGRAM_APP_ID=1234567
 TELEGRAM_APP_HASH=0123456789abcdef0123456789abcdef
+PURPLE_QT_ANDROID=/path/to/qt/6.7.3/android_arm64_v8a
 ```
+
+`PURPLE_QT_ANDROID` points at a Qt 6 for Android (arm64) prefix: the Work Mode
+core is the same C++ the desktop fork uses (the `purple-core` submodule under
+`TMessagesProj/jni/purple`) and links Qt Core, which ships inside the APK. The
+official binaries come without an account through
+[aqtinstall](https://github.com/miurahr/aqtinstall):
+`aqt install-qt linux android 6.7.3 android_arm64_v8a -O /path/to/qt`.
 
 Get the `api_id` / `api_hash` pair from https://my.telegram.org/apps. They are
 injected into `BuildConfig` at build time, so no credential is ever hardcoded in
 the source. A standalone build without them fails immediately with a message
 saying so.
 
-The native tree and jlatexmath are git submodules, so after cloning run
-`git submodule update --init --depth 1` (a plain shallow clone leaves them
+The native tree, jlatexmath and purple-core are git submodules, so after
+cloning run `git submodule update --init --depth 1` (a plain shallow clone leaves them
 empty and Gradle fails resolving `:jlatexmath`).
 
 Then build the standalone flavor:
