@@ -30,4 +30,4 @@
 	url = https://chromium.googlesource.com/libyuv/libyuv
 [submodule "TMessagesProj/jni/purple"]
 	path = TMessagesProj/jni/purple
-	url = git@github.com:NightMachinery/purple-core.git
+	url = https://github.com/NightMachinery/purple-core.git
