@@ -11891,6 +11891,23 @@ public class MessageObject {
         return getMedia(messageOwner) instanceof TLRPC.TL_messageMediaWebPage && getMedia(messageOwner).webpage != null && "telegram_theme".equals(getMedia(messageOwner).webpage.type);
     }
 
+    /**
+     * True for a settings.toml document sitting in Saved Messages: the Work Mode config
+     * Purple Telegram desktop posts to itself. Only those get the import affordances.
+     */
+    public boolean isPurpleSettings() {
+        TLRPC.Document document = getDocument();
+        if (document == null || document.size > 64 * 1024) {
+            return false;
+        }
+        String name = getDocumentName();
+        if (name == null || !"settings.toml".equals(name.toLowerCase())) {
+            return false;
+        }
+        long selfId = UserConfig.getInstance(currentAccount).getClientUserId();
+        return selfId != 0 && getDialogId() == selfId;
+    }
+
     public int getMediaExistanceFlags() {
         int flags = 0;
         if (attachPathExists) {

@@ -11221,4 +11221,17 @@
     <string name="UnsupportedMessageTitle">Unsupported Message</string>
     <string name="UnsupportedMessageMessage">Update Telegram to view this message</string>
     <string name="UnsupportedUpdate">Update</string>
+    <!-- Purple: importing a Work Mode settings.toml from Saved Messages -->
+    <string name="ImportPurpleSettings">Import Purple settings</string>
+    <string name="PurpleCoreUnavailable">Purple core is not available in this build</string>
+    <string name="PurpleSettingsInvalid">That settings.toml is not valid TOML, so nothing was changed:\n\n%1$s</string>
+    <string name="PurpleImportQuestion">Import the settings sent %1$s?</string>
+    <string name="PurpleImportSchema">Schema v%1$d.</string>
+    <string name="PurpleImportSchemaNewer">That is newer than this build understands (v1), so keys it has never heard of will be ignored.</string>
+    <string name="PurpleImportNoWarnings">No parser warnings.</string>
+    <string name="PurpleImportOneWarning">1 parser warning.</string>
+    <string name="PurpleImportManyWarnings">%1$d parser warnings.</string>
+    <string name="PurpleImportReplaces">Replaces your current settings; the previous file is kept as settings.toml.bak.</string>
+    <string name="PurpleImportFailed">Could not read that settings.toml, so nothing was changed.</string>
+    <string name="PurpleSettingsImported">Settings imported</string>
 </resources>
