@@ -133,6 +133,18 @@ android {
 
         multiDexEnabled true
 
+        // Purple: only ABI we actually install on. The app modules filter packaging,
+        // but the CMake build lives in this module, so narrow it here as well.
+        ndk {
+            abiFilters "arm64-v8a"
+        }
+
+        // Purple: api_id/api_hash come from the gitignored local.properties so they
+        // never reach git. Absent, they fall back to 0/"" so a plain debug or IDE
+        // sync still configures; see the standalone guard below.
+        buildConfigField "int", "APP_ID", (getProps("TELEGRAM_APP_ID") ?: "0")
+        buildConfigField "String", "APP_HASH", "\"" + (getProps("TELEGRAM_APP_HASH") ?: "") + "\""
+
         externalNativeBuild {
             cmake {
                 version '3.22.1'
@@ -277,3 +289,19 @@ task checkVisibility {
 }
 
 preBuild.dependsOn checkVisibility
+
+// Purple: a standalone build without api credentials compiles fine and then dies at
+// runtime with API_ID_INVALID, so refuse it up front. Other build types stay usable
+// with the 0/"" fallback.
+gradle.taskGraph.whenReady { graph ->
+    def buildsStandaloneApp = graph.allTasks.any {
+        it.path.startsWith(":TMessagesProj_AppStandalone:") && it.name.contains("Standalone")
+    }
+    if (buildsStandaloneApp && !getProps("TELEGRAM_APP_ID")) {
+        throw new GradleException(
+            "TELEGRAM_APP_ID is missing from local.properties. Get an api_id/api_hash pair " +
+            "from https://my.telegram.org/apps and add to local.properties (never commit it):\n" +
+            "    TELEGRAM_APP_ID=1234567\n" +
+            "    TELEGRAM_APP_HASH=0123456789abcdef0123456789abcdef")
+    }
+}
