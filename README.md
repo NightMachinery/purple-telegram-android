@@ -24,6 +24,10 @@ injected into `BuildConfig` at build time, so no credential is ever hardcoded in
 the source. A standalone build without them fails immediately with a message
 saying so.
 
+The native tree and jlatexmath are git submodules, so after cloning run
+`git submodule update --init --depth 1` (a plain shallow clone leaves them
+empty and Gradle fails resolving `:jlatexmath`).
+
 Then build the standalone flavor:
 
 ```bash
