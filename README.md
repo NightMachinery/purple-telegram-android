@@ -1,3 +1,44 @@
+## Purple Telegram
+
+A personal fork of Telegram for Android that adds **Work Mode**. The desktop
+counterpart lives at https://github.com/NightMachinery/tdesktop and the shared
+logic both clients build on lives at https://github.com/NightMachinery/purple-core.
+
+Purple Telegram installs **alongside** official Telegram: it ships under its own
+application id, `org.purple.telegram`, with its own contacts account type and its
+own launcher entry, so both apps can be signed in at the same time.
+
+### Building
+
+Create a `local.properties` at the repository root — it is gitignored and must
+never be committed:
+
+```properties
+sdk.dir=/path/to/Android/sdk
+TELEGRAM_APP_ID=1234567
+TELEGRAM_APP_HASH=0123456789abcdef0123456789abcdef
+```
+
+Get the `api_id` / `api_hash` pair from https://my.telegram.org/apps. They are
+injected into `BuildConfig` at build time, so no credential is ever hardcoded in
+the source. A standalone build without them fails immediately with a message
+saying so.
+
+Then build the standalone flavor:
+
+```bash
+./gradlew :TMessagesProj_AppStandalone:assembleAfatStandalone
+```
+
+The output APK is **unsigned** and arm64-v8a only — sign it yourself with
+`apksigner` before installing.
+
+Push notifications are dead until you drop in your own Firebase project's
+`google-services.json` (with an `org.purple.telegram` android app registered) in
+place of the upstream one. Everything else works without it.
+
+---
+
 ## Telegram messenger for Android
 
 [Telegram](https://telegram.org) is a messaging app with a focus on speed and security. It’s superfast, simple and free.
