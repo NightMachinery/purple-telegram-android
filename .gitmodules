@@ -28,3 +28,6 @@
 [submodule "TMessagesProj/jni/third_party/libyuv"]
 	path = TMessagesProj/jni/third_party/libyuv
 	url = https://chromium.googlesource.com/libyuv/libyuv
+[submodule "TMessagesProj/jni/purple"]
+	path = TMessagesProj/jni/purple
+	url = git@github.com:NightMachinery/purple-core.git

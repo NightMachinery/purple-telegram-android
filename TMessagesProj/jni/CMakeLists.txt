@@ -234,3 +234,52 @@ target_link_libraries(${NATIVE_LIB}
 
 include(AndroidNdkModules)
 android_ndk_import_module_cpufeatures()
+
+#purple - the Work Mode core, shared with the desktop fork.
+#
+# TMessagesProj/jni/purple is the purple-core submodule
+# (https://github.com/NightMachinery/purple-core): plain C++20 over Qt Core and
+# the vendored toml++, with no Android in it. purple_jni/ holds the JNI bridge,
+# outside the submodule so the submodule stays pristine.
+#
+# It is a library of its own rather than more sources in tmessages.49 because
+# it needs C++20 and Qt, and tmessages.49 is a C++14 world that must not gain a
+# Qt dependency.
+if (NOT PURPLE_QT_ANDROID)
+    message(FATAL_ERROR "PURPLE_QT_ANDROID is not set: point it at a Qt 6 Android prefix (see local.properties).")
+endif()
+
+add_library(qt6core SHARED IMPORTED)
+set_target_properties(qt6core PROPERTIES
+        IMPORTED_LOCATION ${PURPLE_QT_ANDROID}/lib/libQt6Core_${ANDROID_ABI}.so
+        INTERFACE_INCLUDE_DIRECTORIES "${PURPLE_QT_ANDROID}/include;${PURPLE_QT_ANDROID}/include/QtCore")
+
+add_library(purplecore SHARED
+        purple_jni/jni_bridge.cpp
+        purple/purple/purple_settings.cpp
+        purple/purple/purple_splice.cpp
+        purple/purple/purple_state.cpp
+        purple/purple/purple_engine.cpp)
+
+# C++20 over the file-wide -std=c++14: a later -std wins with clang, and the
+# core is written against C++20.
+target_compile_options(purplecore PRIVATE -std=c++20 -Oz)
+
+target_include_directories(purplecore PRIVATE
+        purple
+        purple/tomlplusplus)
+
+target_link_options(purplecore PRIVATE "-Wl,-z,max-page-size=16384")
+target_link_options(purplecore PRIVATE "-Wl,-z,common-page-size=16384")
+target_link_options(purplecore PRIVATE "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/purple_jni/exports.map")
+
+target_link_libraries(purplecore
+        qt6core
+        log)
+
+# Qt Core ships as a prebuilt next to the app, so gradle never sees it; drop it
+# beside libpurplecore.so in the CMake output so it is packaged with the rest.
+add_custom_command(TARGET purplecore POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${PURPLE_QT_ANDROID}/lib/libQt6Core_${ANDROID_ABI}.so
+                $<TARGET_FILE_DIR:purplecore>/libQt6Core_${ANDROID_ABI}.so)
