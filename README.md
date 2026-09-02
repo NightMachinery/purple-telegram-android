@@ -45,6 +45,30 @@ Then build the standalone flavor:
 The output APK is **unsigned** and arm64-v8a only — sign it yourself with
 `apksigner` before installing.
 
+### Work Mode
+
+A preset in `settings.toml` decides which chats are in the chat list. Pick one
+from the chat list's overflow menu, which is labelled with the running preset,
+or from Settings; both open the same box, which also shows whatever the file
+got wrong. The rules, the keys and the reasoning are the desktop fork's
+`docs/purple/work_mode.md`, and the same file means the same thing here: both
+apps compile the same core, so a `settings.toml` moved across through Saved
+Messages behaves identically.
+
+Two files live in the app's private storage, at
+`/data/data/org.purple.telegram/files/purple/`. `settings.toml` is yours,
+imported from Saved Messages. `state.toml` is the app's: the active preset,
+and the last resolution that worked, so a `settings.toml` broken halfway
+through an edit leaves the chat list exactly as it was rather than unhiding
+everything.
+
+What is not ported yet: silencing, the unread badge (which still counts
+hidden chats), folder tabs, extra views, the "... until" overrides, peek and
+the schedule. The archive and folder tabs are deliberately unfiltered, and pin
+dragging is refused while a preset runs, because Android sends a reordered pin
+list to the server with the force flag and would drop the hidden chats' pins
+from every device.
+
 ### Push notifications
 
 There is no FCM push in this fork, and no Firebase project of your own will
