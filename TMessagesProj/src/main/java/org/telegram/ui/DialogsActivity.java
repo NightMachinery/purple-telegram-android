@@ -13761,6 +13761,15 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             });
         });
         io.addGap();
+        // The Work Mode switch sits in the main menu rather than in Settings
+        // because a preset is changed several times a day and settings are not.
+        // The label carries the running preset, so the current mode is legible
+        // without opening anything. Only on the main chat list: the archive and
+        // community menus return above this, and neither is a list a preset
+        // filters.
+        if (initialDialogsType == DIALOGS_TYPE_DEFAULT) {
+            io.add(R.drawable.msg_customize, PurpleGate.menuLabel(), () -> PurplePresetPicker.show(this));
+        }
         io.add(R.drawable.outline_groups_24, getString(R.string.NewGroup), () -> {
             Bundle args = new Bundle();
             presentFragment(new GroupCreateActivity(args));

@@ -11236,4 +11236,20 @@
     <string name="PurpleSettingsImported">Settings imported</string>
     <string name="PurpleWorkMode">Work Mode</string>
     <string name="PurpleWorkModeActive">Work Mode: %1$s</string>
+    <string name="PurpleWorkModeInfo">Choose which chats a preset lets through</string>
+    <string name="PurplePresetNormal">Normal</string>
+    <string name="PurplePresetNormalInfo">stock Telegram, nothing is hidden</string>
+    <string name="PurplePresetUnresolved">does not resolve, so it cannot be chosen</string>
+    <string name="PurplePresetLetsNothingThrough">lets nothing through</string>
+    <string name="PurplePresetLetsThrough_one">lets through %1$d list</string>
+    <string name="PurplePresetLetsThrough_other">lets through %1$d lists</string>
+    <string name="PurplePresetSilences_one">silences %1$d list</string>
+    <string name="PurplePresetSilences_other">silences %1$d lists</string>
+    <string name="PurplePresetGated_one">%1$d list only when unread</string>
+    <string name="PurplePresetGated_other">%1$d lists only when unread</string>
+    <string name="PurplePresetActiveMissing">Error: the active preset \'%1$s\' is not in settings.toml. The last resolution that worked is still in effect.</string>
+    <string name="PurplePresetError">Error: %1$s</string>
+    <string name="PurplePresetWarning">Warning: %1$s</string>
+    <string name="PurplePresetFileNote">Presets are written in %1$s.</string>
+    <string name="PurplePresetNotConfigured">Work Mode is not configured. Write presets in %1$s, then they will show up here.</string>
 </resources>
