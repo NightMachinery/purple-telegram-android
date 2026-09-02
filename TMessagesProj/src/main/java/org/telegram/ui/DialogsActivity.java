@@ -130,6 +130,7 @@ import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.XiaomiUtilities;
 import org.telegram.messenger.browser.Browser;
+import org.telegram.messenger.purple.PurpleGate;
 import org.telegram.messenger.utils.FBool;
 import org.telegram.messenger.utils.GradientProtectionDrawable;
 import org.telegram.messenger.utils.SearchTextWatcher;
@@ -2431,6 +2432,16 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                     if (!allowMoving || dialog == null || !isDialogPinned(dialog) || DialogObject.isFolderDialogId(dialogId)) {
                         return 0;
                     }
+                    // Purple: no dragging while a preset is hiding rows. The drop
+                    // is turned back into an order by MessagesController.reorderPinnedDialogs,
+                    // which reads the *model* list and sends it with force = true -
+                    // so reordering a truncated list would push a truncated pin
+                    // order to the server and drop the hidden pins from the account
+                    // and from every other device. The desktop fork hit exactly this
+                    // bug; refusing the drag is the same fix it uses.
+                    if (PurpleGate.filtering()) {
+                        return makeMovementFlags(0, 0);
+                    }
                     movingView = (DialogCell) viewHolder.itemView;
                     movingView.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundWhite));
                     swipeFolderBack = false;
@@ -2832,6 +2843,12 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     @Override
     public boolean onFragmentCreate() {
         super.onFragmentCreate();
+
+        // Purple: resolve the active preset before the first list is built, so the
+        // chat list is never drawn unfiltered and then rebuilt. Doing it here
+        // rather than lazily inside getDialogsArray keeps the native load and the
+        // two file reads off the background thread the adapter diffs on.
+        PurpleGate.ensureLoaded();
 
         if (arguments != null) {
             onlySelect = arguments.getBoolean("onlySelect", false);
@@ -9113,7 +9130,14 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         if (containsFilter) {
             dialogs = getDialogsArray(currentAccount, viewPages[0].dialogsType, folderId, dialogsListFrozen);
         } else {
-            dialogs = getMessagesController().getDialogs(folderId);
+            // Purple: this deliberately bypasses getDialogsArray, so it has to
+            // filter for itself - counting pins in the unfiltered model list
+            // would put the pinned divider several rows past where the drawn
+            // list actually stops being pinned. Same rule as there: the main
+            // list only, never the archive.
+            dialogs = folderId == 0
+                    ? PurpleGate.filter(currentAccount, getMessagesController().getDialogs(folderId))
+                    : getMessagesController().getDialogs(folderId);
         }
         for (int a = 0, N = dialogs.size(); a < N; a++) {
             TLRPC.Dialog dialog = dialogs.get(a);
@@ -10998,7 +11022,13 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         }
         MessagesController messagesController = AccountInstance.getInstance(currentAccount).getMessagesController();
         if (dialogsType == DIALOGS_TYPE_DEFAULT) {
-            return messagesController.getDialogs(folderId);
+            // Purple: the main chat list is the one the preset speaks for. The
+            // archive is folderId 1 and is left whole on purpose - the preset
+            // decides its own view, a folder decides its own tab, and the
+            // archive is where you go to find something you already put away.
+            return folderId == 0
+                    ? PurpleGate.filter(currentAccount, messagesController.getDialogs(folderId))
+                    : messagesController.getDialogs(folderId);
         } else if (dialogsType == DIALOGS_TYPE_WIDGET || dialogsType == DIALOGS_TYPE_IMPORT_HISTORY) {
             return messagesController.dialogsServerOnly;
         } else if (dialogsType == DIALOGS_TYPE_ADD_USERS_TO) {
@@ -11037,8 +11067,15 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             return messagesController.dialogsGroupsOnly;
         } else if (dialogsType == 7 || dialogsType == 8) {
             MessagesController.DialogFilter dialogFilter = messagesController.selectedDialogFilter[dialogsType == 7 ? 0 : 1];
+            // Purple: a folder tab is deliberately unfiltered. Opening a folder
+            // is a deliberate act - you went there by name - and a preset that
+            // then second-guessed you inside it would leave nowhere to look at
+            // the thing you went looking for. Which folders a preset shows at
+            // all is a separate question, and not one this build answers yet.
             if (dialogFilter == null) {
-                return messagesController.getDialogs(folderId);
+                return folderId == 0
+                        ? PurpleGate.filter(currentAccount, messagesController.getDialogs(folderId))
+                        : messagesController.getDialogs(folderId);
             } else {
                 if (initialDialogsType == DIALOGS_TYPE_FORWARD) {
                     return dialogFilter.dialogsForward;
