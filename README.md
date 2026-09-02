@@ -45,9 +45,48 @@ Then build the standalone flavor:
 The output APK is **unsigned** and arm64-v8a only — sign it yourself with
 `apksigner` before installing.
 
-Push notifications are dead until you drop in your own Firebase project's
-`google-services.json` (with an `org.purple.telegram` android app registered) in
-place of the upstream one. Everything else works without it.
+### Push notifications
+
+There is no FCM push in this fork, and no Firebase project of your own will
+bring it back. Telegram's servers deliver pushes through Telegram's own Firebase
+project only, so a token from any other project is unusable to them — and the
+upstream `google-services.json` cannot be borrowed either: its API key is
+locked to the official package names, and Firebase answers this app's
+registration with a 403, "Requests from this Android client application
+org.purple.telegram are blocked" (seen in logcat on first launch). The app
+handles the failure quietly.
+
+What works instead is the same thing that works on phones without Google
+services: Settings → Notifications and Sounds → **Background Connection** (and
+**Keep-Alive Service** if the OS keeps killing the app). Enable it once after
+signing in.
+
+### Testing on an emulator
+
+The APK is arm64-only, but an x86_64 system image with Google APIs (API 30 or
+newer) runs it through Android's ARM translation, so a headless emulator on a
+Linux build box with `/dev/kvm` is enough for a smoke test:
+
+```bash
+sdkmanager "emulator" "system-images;android-35;google_apis;x86_64"
+avdmanager create avd -n purple -k "system-images;android-35;google_apis;x86_64" -d pixel_6
+emulator -avd purple -no-window -no-audio -gpu swiftshader_indirect -no-snapshot &
+adb wait-for-device shell 'while [ "$(getprop sys.boot_completed)" != 1 ]; do sleep 2; done'
+adb install -r PurpleTelegram-signed.apk
+adb shell am start -n org.purple.telegram/org.telegram.ui.LaunchActivity
+adb exec-out screencap -p > screen.png
+```
+
+Boot takes under a minute with KVM. Sign the APK with a throwaway key for this;
+the emulator never needs your release key. The Google APIs image (not the Play
+Store one) allows `adb root`, which is handy for reading the app's files under
+`/data/data/org.purple.telegram/`.
+
+Telegram's test data centres (the "Test Backend" checkbox is compiled out of the
+standalone build; flip `TEST_BACKEND_IN_STORE` in `LoginActivity` for a
+throwaway build) were rejecting their own documented fixed login codes
+(`99966XYYYY` / `XXXXX`) with `PHONE_CODE_INVALID` on every DC when this was
+last tried, so plan on a real account for anything past the login screen.
 
 ---
 
