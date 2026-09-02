@@ -87,6 +87,8 @@ import org.telegram.messenger.SharedPrefsHelper;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.browser.Browser;
+import org.telegram.messenger.purple.PurpleCore;
+import org.telegram.messenger.purple.PurpleGate;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBar;
@@ -694,6 +696,14 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         items.add(SettingCell.Factory.of(5, IconBackgroundColors.RED.top, IconBackgroundColors.RED.bottom, R.drawable.settings_sounds, getString(R.string.SettingsNotifications), getString(R.string.SettingsNotificationsInfo)));
         items.add(SettingCell.Factory.of(6, IconBackgroundColors.BLUE_DEEP.top, IconBackgroundColors.BLUE_DEEP.bottom, R.drawable.settings_data, getString(R.string.SettingsData), getString(R.string.SettingsDataInfo)));
         items.add(SettingCell.Factory.of(7, IconBackgroundColors.BLUE_ALT.top, IconBackgroundColors.BLUE_ALT.bottom, R.drawable.settings_folders, getString(R.string.SettingsFolders), getString(R.string.SettingsFoldersInfo)));
+        // Purple: the second way into the preset picker. The main menu already
+        // carries one, and it is the one anybody switching presets uses - but
+        // Settings is where someone looks for a feature they have heard of and
+        // cannot find. GRAY because it is the only icon colour this block has
+        // not spent; PURPLE, the obvious one for this fork, is the Language row
+        // three lines down. The subtitle names the running preset when there is
+        // one, so the screen answers "is it on" without being opened.
+        items.add(SettingCell.Factory.of(4, IconBackgroundColors.GRAY.top, IconBackgroundColors.GRAY.bottom, R.drawable.msg_customize, getString(R.string.PurpleWorkMode), purpleWorkModeSubtitle()));
         items.add(SettingCell.Factory.of(8, IconBackgroundColors.CYAN.top, IconBackgroundColors.CYAN.bottom, R.drawable.settings_devices, getString(R.string.SettingsDevices), getString(R.string.SettingsDevicesInfo)));
         items.add(SettingCell.Factory.of(9, IconBackgroundColors.ORANGE_DEEP.top, IconBackgroundColors.ORANGE_DEEP.bottom, R.drawable.settings_power, getString(R.string.SettingsPowerSaving), getString(R.string.SettingsPowerSavingInfo)));
         items.add(SettingCell.Factory.of(10, IconBackgroundColors.PURPLE.top, IconBackgroundColors.PURPLE.bottom, R.drawable.settings_language, getString(R.string.SettingsLanguage), LocaleController.getCurrentLanguageName()));
@@ -751,6 +761,21 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         }
 
         items.add(UItem.asCustomShadow(versionView));
+    }
+
+    /**
+     * What the Work Mode row says under its title: the running preset's own
+     * name, or a description of the feature while nothing is running.
+     */
+    private CharSequence purpleWorkModeSubtitle() {
+        // Settings can be the first screen that asks, so make sure the files
+        // have been read rather than reporting Normal because nothing has.
+        PurpleGate.ensureLoaded();
+        final PurpleCore.Loaded state = PurpleGate.state();
+        if (state == null || state.normal) {
+            return getString(R.string.PurpleWorkModeInfo);
+        }
+        return state.title;
     }
 
     private void presentSettingFragment(BaseFragment fragment) {
@@ -826,6 +851,11 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                 break;
             case 7:
                 presentSettingFragment(new FiltersSetupActivity());
+                break;
+            case 4:
+                // A dialog rather than a fragment: choosing a preset is one tap
+                // and the picker is the same one the chat list menu opens.
+                PurplePresetPicker.show(this);
                 break;
             case 8:
                 presentSettingFragment(new SessionsActivity(0));
