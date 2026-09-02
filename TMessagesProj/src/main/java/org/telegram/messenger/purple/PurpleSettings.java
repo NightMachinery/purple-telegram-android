@@ -122,13 +122,34 @@ public final class PurpleSettings {
 
     /** Backs the current file up, then atomically replaces it with {@code bytes}. */
     private static boolean store(byte[] bytes) {
-        File target = settingsFile();
-        File temp = new File(dir(), FILE_NAME + ".tmp");
+        final File target = settingsFile();
         try {
             if (target.exists()) {
                 copy(target, backupFile());
             }
-            OutputStream out = new FileOutputStream(temp);
+        } catch (IOException e) {
+            FileLog.e(e);
+            return false;
+        }
+        return writeAtomic(target, bytes);
+    }
+
+    /**
+     * Writes {@code bytes} to {@code target} through a sibling ".tmp" and a
+     * rename, so an interrupted write leaves the previous file behind rather
+     * than half of a new one.
+     *
+     * Shared with {@link PurpleState} rather than copied into it because both
+     * files are read by the native core, which has no way to tell a truncated
+     * file from a badly written one. Nothing sets a mode here: everything under
+     * the app's files directory is already private to the app.
+     *
+     * @return whether the replacement went through
+     */
+    static boolean writeAtomic(File target, byte[] bytes) {
+        final File temp = new File(target.getParentFile(), target.getName() + ".tmp");
+        try {
+            final OutputStream out = new FileOutputStream(temp);
             try {
                 out.write(bytes);
                 out.flush();
@@ -166,7 +187,8 @@ public final class PurpleSettings {
         }
     }
 
-    private static byte[] readAll(File file) throws IOException {
+    /** The whole file, for the callers that hand it straight to the core. */
+    static byte[] readAll(File file) throws IOException {
         InputStream in = new FileInputStream(file);
         try {
             java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
