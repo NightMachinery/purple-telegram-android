@@ -1,9 +1,10 @@
 {
   global:
     Java_*;        # all JNI functions resolved by name
-    # No JNI_OnLoad/JNI_OnUnload here, unlike jni/exports.map: this library
-    # defines neither, and ld.lld fails a version script that names a symbol
-    # that does not exist. A wildcard that matches nothing is fine.
+    JNI_OnLoad;    # defined in jni_bridge.cpp, and must stay visible: if the
+                   # runtime cannot find it here it keeps searching this
+                   # library's dependencies and reaches Qt's, which refuses to
+                   # load outside a Qt app.
   local:
     *;             # hide everything else (Qt, toml++, purple-core, ...)
 };

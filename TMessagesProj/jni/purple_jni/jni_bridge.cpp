@@ -104,3 +104,14 @@ Java_org_telegram_messenger_purple_PurpleCore_parseSettings(
 		QStringLiteral("settings.toml"));
 	return ToJava(env, ResultJson(result));
 }
+
+// Android calls JNI_OnLoad after loading a library, and it finds the symbol
+// with dlsym on the library handle - a search that reaches this library's
+// dependencies too. Qt Core is one of those, and Qt's JNI_OnLoad expects to be
+// started by a Qt activity with the org.qtproject.qt.android classes present;
+// in an app that only borrows QString it answers JNI_ERR and the load throws.
+// Defining our own here means the search stops at this library, so Qt's is
+// never reached. It does nothing but name the JNI version it was built for.
+extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
+	return JNI_VERSION_1_6;
+}
