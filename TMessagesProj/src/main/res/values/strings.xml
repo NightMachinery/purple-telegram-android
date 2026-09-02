@@ -11234,4 +11234,6 @@
     <string name="PurpleImportReplaces">Replaces your current settings; the previous file is kept as settings.toml.bak.</string>
     <string name="PurpleImportFailed">Could not read that settings.toml, so nothing was changed.</string>
     <string name="PurpleSettingsImported">Settings imported</string>
+    <string name="PurpleWorkMode">Work Mode</string>
+    <string name="PurpleWorkModeActive">Work Mode: %1$s</string>
 </resources>

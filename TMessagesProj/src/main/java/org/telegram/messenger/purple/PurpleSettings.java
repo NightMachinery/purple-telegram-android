@@ -131,7 +131,13 @@ public final class PurpleSettings {
             FileLog.e(e);
             return false;
         }
-        return writeAtomic(target, bytes);
+        if (!writeAtomic(target, bytes)) {
+            return false;
+        }
+        // The file the gate reads has just changed under it, so resolve again
+        // rather than leave the imported settings waiting for the next restart.
+        PurpleGate.reload("import");
+        return true;
     }
 
     /**
