@@ -82,6 +82,19 @@ the emulator never needs your release key. The Google APIs image (not the Play
 Store one) allows `adb root`, which is handy for reading the app's files under
 `/data/data/org.purple.telegram/`.
 
+Two settings save a lot of pain. In the AVD's `config.ini` set
+`hw.gpu.enabled=yes` and `hw.gpu.mode=swiftshader_indirect`; a freshly created
+AVD may have the GPU disabled, and the fallback renderer segfaults the whole
+emulator seconds after the app draws a chat. Then put the app in full
+power-saver mode, which turns off chat blur and animations, by writing
+`<int name="lite_mode" value="0" />` into its `mainconfig.xml` while it is
+stopped. The renderer can still die under heavy drawing; the disk image
+persists, so a crash costs only a restart.
+
+The desktop fork's repository carries the longer version of this, including how
+to keep an emulator session private on a shared build machine, in
+`docs/remote-build-and-test/readme.md`.
+
 Telegram's test data centres (the "Test Backend" checkbox is compiled out of the
 standalone build; flip `TEST_BACKEND_IN_STORE` in `LoginActivity` for a
 throwaway build) were rejecting their own documented fixed login codes
