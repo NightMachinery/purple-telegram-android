@@ -20,17 +20,21 @@ public final class PurpleCore {
     private static boolean loaded;
 
     /**
-     * libpurplecore.so links Qt Core, which links the shared libc++, so both
-     * have to be resolved before the bridge itself. The whole native build is
-     * on c++_shared for exactly this reason: two libc++ copies in one process
-     * is unsupported.
+     * Only the bridge is loaded by name. Qt Core and the shared libc++ are
+     * listed as dependencies inside libpurplecore.so, so the dynamic linker
+     * pulls them in on its own.
+     *
+     * Loading Qt Core through System.loadLibrary instead would break the app:
+     * that path calls the library's JNI_OnLoad, and Qt's expects to be started
+     * by a Qt activity with the org.qtproject.qt.android classes present. In
+     * an app that only borrows QString it answers JNI_ERR, and the load fails
+     * with "JNI_ERR returned from JNI_OnLoad". The linker never calls
+     * JNI_OnLoad, so resolving Qt as a dependency sidesteps all of it.
      */
     public static synchronized void ensureLoaded() {
         if (loaded) {
             return;
         }
-        System.loadLibrary("c++_shared");
-        System.loadLibrary("Qt6Core_arm64-v8a");
         System.loadLibrary("purplecore");
         loaded = true;
     }
