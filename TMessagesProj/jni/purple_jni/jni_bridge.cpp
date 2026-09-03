@@ -200,9 +200,10 @@ struct PresetCounts {
 
 // The folder selection, as the strip needs it: the name to match, whether the
 // entry is the "*ALL" marker, and the two flags that decide whether it puts a
-// tab up. Deliberately not notify_p, badge_p or include - nothing on Android
-// consumes them yet, and a field the bridge hands over is a field somebody will
-// assume works.
+// tab up. Still deliberately not badge_p or include - nothing on Android
+// consumes those yet, and a field the bridge hands over is a field somebody
+// will assume works. notify_p travels separately, as the resolved name list
+// below, because that is the shape its consumer wants.
 void AppendFoldersJson(QString &json, const Purple::Resolved &resolved) {
 	json += QStringLiteral("[");
 	auto first = true;
@@ -220,6 +221,27 @@ void AppendFoldersJson(QString &json, const Purple::Resolved &resolved) {
 		json += QStringLiteral(",\"show\":");
 		AppendJsonBool(json, folder.show.value_or(true));
 		json += QChar('}');
+	}
+	json += QChar(']');
+}
+
+// The folders a preset silenced, by name, already filtered to the enabled ones
+// by Purple::SilencedFolderNames(). Names rather than entries because that is
+// all the answer needs: the Java side matches them against the account's real
+// folder titles and asks each match whether it holds the chat.
+//
+// A "*ALL" entry cannot appear here in practice - the marker is a bare string
+// and a flag-carrying entry is a table - and if one ever did it would match no
+// real folder title, which is the same thing the desktop does with it.
+void AppendNamesJson(QString &json, const std::vector<QString> &names) {
+	json += QChar('[');
+	auto first = true;
+	for (const auto &name : names) {
+		if (!first) {
+			json += QChar(',');
+		}
+		first = false;
+		AppendJsonString(json, name);
 	}
 	json += QChar(']');
 }
@@ -388,6 +410,8 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 	AppendJsonBool(json, FoldersRestricted(gate.resolved));
 	json += QStringLiteral(",\"folders\":");
 	AppendFoldersJson(json, gate.resolved);
+	json += QStringLiteral(",\"silencedFolders\":");
+	AppendNamesJson(json, gate.resolved.silencedFolders);
 	json += QStringLiteral(",\"presets\":[");
 	first = true;
 	for (const auto &preset : gate.settings.presets) {
