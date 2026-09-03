@@ -2208,7 +2208,11 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                                             canReadCount = dialog.unread_count > 0 || dialog.unread_mark ? 1 : 0;
                                             performSelectedDialogsAction(selectedDialogs, read, true, false);
                                         } else if (SharedConfig.getChatSwipeAction(currentAccount) == SwipeGestureSettingsView.SWIPE_GESTURE_MUTE) {
-                                            if (!getMessagesController().isDialogMuted(dialogId, 0)) {
+                                            // Purple: the swipe toggles the user's own mute, so it
+                                            // has to read the user's own mute. A preset silencing a
+                                            // chat must not turn a swipe that mutes into one that
+                                            // unmutes something the user never muted.
+                                            if (!getMessagesController().mutedWithoutPreset(dialogId, 0)) {
                                                 NotificationsController.getInstance(UserConfig.selectedAccount).setDialogNotificationsSettings(dialogId, 0, NotificationsController.SETTING_MUTE_FOREVER);
                                                 if (BulletinFactory.canShowBulletin(DialogsActivity.this)) {
                                                     BulletinFactory.createMuteBulletin(DialogsActivity.this, NotificationsController.SETTING_MUTE_FOREVER).show();
@@ -2216,7 +2220,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                                             } else {
                                                 ArrayList<Long> selectedDialogs = new ArrayList<>();
                                                 selectedDialogs.add(dialogId);
-                                                canMuteCount = MessagesController.getInstance(currentAccount).isDialogMuted(dialogId, 0) ? 0 : 1;
+                                                canMuteCount = MessagesController.getInstance(currentAccount).mutedWithoutPreset(dialogId, 0) ? 0 : 1;
                                                 canUnmuteCount = canMuteCount > 0 ? 0 : 1;
                                                 performSelectedDialogsAction(selectedDialogs, mute, true, false);
                                             }
@@ -3765,7 +3769,9 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                             boolean allAreMuted = true;
                             for (int i = 0; i < dialogs.size(); ++i) {
                                 TLRPC.Dialog dialog = dialogs.get(i);
-                                if (!getMessagesController().isDialogMuted(dialog.id, 0)) {
+                                // Purple: decides whether this folder's item mutes or unmutes,
+                                // so it is about the user's own mutes.
+                                if (!getMessagesController().mutedWithoutPreset(dialog.id, 0)) {
                                     allAreMuted = false;
                                     break;
                                 }
@@ -8792,14 +8798,17 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 
         if (!DialogObject.isUserDialog(dialogId) || !UserObject.isUserSelf(getMessagesController().getUser(dialogId))) {
             ActionBarMenuSubItem muteItem = new ActionBarMenuSubItem(getParentActivity(), false, false);
-            if (!getMessagesController().isDialogMuted(dialogId, 0)) {
+            // Purple: the label and the action below both read the user's own
+            // mute. Offering "Unmute" on a chat only the preset silenced would
+            // be an offer the app cannot keep.
+            if (!getMessagesController().mutedWithoutPreset(dialogId, 0)) {
                 muteItem.setTextAndIcon(LocaleController.getString(R.string.Mute), R.drawable.msg_mute);
             } else {
                 muteItem.setTextAndIcon(LocaleController.getString(R.string.Unmute), R.drawable.msg_unmute);
             }
             muteItem.setMinimumWidth(160);
             muteItem.setOnClickListener(e -> {
-                boolean isMuted = getMessagesController().isDialogMuted(dialogId, 0);
+                boolean isMuted = getMessagesController().mutedWithoutPreset(dialogId, 0);
                 if (!isMuted) {
                     getNotificationsController().setDialogNotificationsSettings(dialogId, 0, NotificationsController.SETTING_MUTE_FOREVER);
                 } else {
@@ -9517,7 +9526,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                     return;
                 } else {
                     if (canUnmuteCount != 0) {
-                        if (!getMessagesController().isDialogMuted(selectedDialog, 0)) {
+                        if (!getMessagesController().mutedWithoutPreset(selectedDialog, 0)) {
                             continue;
                         }
                         getNotificationsController().setDialogNotificationsSettings(selectedDialog, 0, NotificationsController.SETTING_MUTE_UNMUTE);
@@ -9525,7 +9534,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                         showDialog(AlertsCreator.createMuteAlert(this, selectedDialogs, 0, null), dialog12 -> hideActionMode(true));
                         return;
                     } else {
-                        if (getMessagesController().isDialogMuted(selectedDialog, 0)) {
+                        if (getMessagesController().mutedWithoutPreset(selectedDialog, 0)) {
                             continue;
                         }
                         getNotificationsController().setDialogNotificationsSettings(selectedDialog, 0, NotificationsController.SETTING_MUTE_FOREVER);
@@ -9801,7 +9810,9 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             if (getMessagesController().isForum(selectedDialog)) {
                 forumCount++;
             }
-            if (getMessagesController().isDialogMuted(selectedDialog, 0)) {
+            // Purple: this tally picks the action-mode icon, mute or unmute,
+            // so it counts the user's own mutes.
+            if (getMessagesController().mutedWithoutPreset(selectedDialog, 0)) {
                 canUnmuteCount++;
             } else {
                 canMuteCount++;

@@ -26,6 +26,7 @@ import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
+import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
@@ -261,7 +262,43 @@ public final class PurpleGate {
         if (DialogObject.isFolderDialogId(dialog.id)) {
             return true;
         }
-        return shownForMode(currentAccount, dialog, modeOf(currentAccount, dialog));
+        return shownForMode(currentAccount, dialog, packedFor(currentAccount, dialog.id));
+    }
+
+    /**
+     * Whether the running preset silences this chat.
+     *
+     * A preset can only ever <i>add</i> a mute. A chat the user muted by hand
+     * stays muted whichever entry claims it, and switching presets never
+     * un-silences anything - so this answer is combined with the user's own
+     * mute by the callers, never substituted for it. See
+     * docs/purple/work_mode.md and the desktop fork's
+     * {@code NotifySettings::purpleSilenced}.
+     *
+     * Two things this deliberately does not do. It never asks about unread
+     * state: a chat the preset gates on unread is still allowed to notify,
+     * because being out of the list until it has something to say is a
+     * different claim from being silenced - and {@code shownForMode} already
+     * reads the unread count, so asking from here would recurse through the
+     * counters that call this. And it ignores topics: a preset silencing a
+     * chat silences its topics, because the core has never heard of one.
+     *
+     * Called per row draw, per unread-counter pass and per incoming message,
+     * so the not-filtering answer costs one volatile read and no file I/O -
+     * this must never call {@link #ensureLoaded()}.
+     *
+     * @param dialogId a TLRPC.Dialog id, or any peer id in dialog form
+     */
+    public static boolean silenced(int currentAccount, long dialogId) {
+        if (!filtering) {
+            return false;
+        }
+        // The Archive row is not a chat and has no kind, so it is answered
+        // before the core is ever asked about it.
+        if (DialogObject.isFolderDialogId(dialogId)) {
+            return false;
+        }
+        return (packedFor(currentAccount, dialogId) & PurpleCore.NOTIFY_BIT) == 0;
     }
 
     /**
@@ -281,14 +318,18 @@ public final class PurpleGate {
         int hidden = 0;
         int gated = 0;
         int gatedShowing = 0;
+        int silenced = 0;
         for (int a = 0; a < count; ++a) {
             final TLRPC.Dialog dialog = source.get(a);
             final boolean show;
             if (dialog == null || DialogObject.isFolderDialogId(dialog.id)) {
                 show = true;
             } else {
-                final int packed = modeOf(currentAccount, dialog);
+                final int packed = packedFor(currentAccount, dialog.id);
                 show = shownForMode(currentAccount, dialog, packed);
+                if ((packed & PurpleCore.NOTIFY_BIT) == 0) {
+                    ++silenced;
+                }
                 if (watchesUnread(packed & PurpleCore.SHOW_MASK)) {
                     ++gated;
                     if (show) {
@@ -312,10 +353,6 @@ public final class PurpleGate {
                 ++hidden;
             }
         }
-        if (result == null) {
-            return source;
-        }
-
         // A preset that hides nothing looks exactly like one that is working,
         // and the usual cause is a list name spelled slightly wrong - so say
         // what the pass did. Gated chats are counted apart from hidden ones
@@ -325,14 +362,14 @@ public final class PurpleGate {
         if (now - lastCountLog >= 1000L) {
             lastCountLog = now;
             FileLog.d("Purple: " + hidden + " of " + count + " dialogs hidden, "
-                    + gated + " unread-gated (" + gatedShowing + " showing).");
+                    + gated + " unread-gated (" + gatedShowing + " showing), "
+                    + silenced + " silenced.");
         }
-        return result;
+        return result == null ? source : result;
     }
 
     /** The cached half of the answer: what the preset says about this chat. */
-    private static int modeOf(int currentAccount, TLRPC.Dialog dialog) {
-        final long id = dialog.id;
+    private static int packedFor(int currentAccount, long id) {
         synchronized (cacheLock) {
             final Integer cached = modeCache.get(id);
             if (cached != null) {
@@ -344,8 +381,11 @@ public final class PurpleGate {
             packed = PurpleCore.visible(bareIdOf(currentAccount, id), kindOf(currentAccount, id));
         } catch (UnsatisfiedLinkError | RuntimeException e) {
             FileLog.e(e);
-            // Nothing to hide with, so hide nothing rather than guess.
-            return PurpleCore.SHOW_ALWAYS;
+            // Nothing to decide with, so decide nothing: shown, and allowed to
+            // notify. Both halves have to be spelled out - the notify bit being
+            // clear is what silences a chat, so a bare SHOW_ALWAYS here would
+            // mute the whole account the moment the bridge failed.
+            return PurpleCore.SHOW_ALWAYS | PurpleCore.NOTIFY_BIT;
         }
         synchronized (cacheLock) {
             modeCache.put(id, packed);
@@ -410,6 +450,12 @@ public final class PurpleGate {
                     continue;
                 }
                 NotificationCenter.getInstance(a).postNotificationName(NotificationCenter.dialogsNeedReload, true);
+                // A preset also decides what is silenced, and the unread
+                // counters are built from muted/unmuted buckets, so switching
+                // one moves numbers that no chat-list rebuild would touch.
+                // This is the same call the app makes when a global mute
+                // setting changes, for the same reason.
+                MessagesStorage.getInstance(a).updateMutedDialogsFiltersCounters();
             }
         });
     }

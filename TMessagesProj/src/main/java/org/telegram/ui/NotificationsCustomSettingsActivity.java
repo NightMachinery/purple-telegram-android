@@ -583,7 +583,10 @@ public class NotificationsCustomSettingsActivity extends BaseFragment implements
                     @Override
                     public void muteFor(int timeInSeconds) {
                         if (timeInSeconds == 0) {
-                            if (getMessagesController().isDialogMuted(did, topicId)) {
+                            // Purple: this screen is the list of the user's own
+                            // notification exceptions, so every question in it is
+                            // about the user's own mutes.
+                            if (getMessagesController().mutedWithoutPreset(did, topicId)) {
                                 toggleMute();
                             }
                             if (BulletinFactory.canShowBulletin(NotificationsCustomSettingsActivity.this)) {
@@ -619,14 +622,14 @@ public class NotificationsCustomSettingsActivity extends BaseFragment implements
 
                     @Override
                     public void toggleMute() {
-                        boolean muted = getMessagesController().isDialogMuted(did, topicId);
+                        boolean muted = getMessagesController().mutedWithoutPreset(did, topicId);
                         getNotificationsController().muteDialog(did, topicId, !muted);
-                        BulletinFactory.createMuteBulletin(NotificationsCustomSettingsActivity.this, getMessagesController().isDialogMuted(did, topicId), null).show();
+                        BulletinFactory.createMuteBulletin(NotificationsCustomSettingsActivity.this, getMessagesController().mutedWithoutPreset(did, topicId), null).show();
                         update();
                     }
 
                     private void update() {
-                        if (getMessagesController().isDialogMuted(did, topicId) != defaultEnabled) {
+                        if (getMessagesController().mutedWithoutPreset(did, topicId) != defaultEnabled) {
                             setDefault();
                         } else {
                             setNotDefault();

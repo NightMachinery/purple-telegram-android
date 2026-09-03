@@ -56,6 +56,7 @@ import org.telegram.SQLite.SQLiteDatabase;
 import org.telegram.SQLite.SQLiteException;
 import org.telegram.SQLite.SQLitePreparedStatement;
 import org.telegram.messenger.browser.Browser;
+import org.telegram.messenger.purple.PurpleGate;
 import org.telegram.messenger.support.LongSparseIntArray;
 import org.telegram.messenger.support.LongSparseLongArray;
 import org.telegram.messenger.utils.EphemeralMessagesHelper;
@@ -1318,7 +1319,15 @@ public class MessagesController extends BaseController implements NotificationCe
             ContactsController contactsController = accountInstance.getContactsController();
             boolean skip = false;
 
-            if ((flags & DIALOG_FILTER_FLAG_EXCLUDE_MUTED) != 0 && messagesController.isDialogMuted(d.id, 0) && d.unread_mentions_count == 0 ||
+            // Purple: membership is decided as though this preset silenced
+            // nothing. The obvious version eats itself - a folder carrying
+            // "Exclude muted" stops containing a chat the moment the preset
+            // silences it, which takes it out of the folder, which un-silences
+            // it, which puts it back, forever. The input to the decision must
+            // not depend on its output. Same rule as the desktop fork's
+            // ChatFilter::contains(ignorePresetMute); see
+            // docs/purple/work_mode.md, "Breaking the loop".
+            if ((flags & DIALOG_FILTER_FLAG_EXCLUDE_MUTED) != 0 && messagesController.mutedWithoutPreset(d.id, 0) && d.unread_mentions_count == 0 ||
                     (flags & DIALOG_FILTER_FLAG_EXCLUDE_READ) != 0 && messagesController.getDialogUnreadCount(d) == 0 && !d.unread_mark && d.unread_mentions_count == 0) {
                 return false;
             }
@@ -21519,11 +21528,39 @@ public class MessagesController extends BaseController implements NotificationCe
         return isDialogMuted(dialogId, topicId, null);
     }
 
+    /**
+     * Whether the user muted this chat, ignoring the running Work Mode preset.
+     *
+     * Purple: the answer for anything that labels or drives a Mute/Unmute
+     * toggle, or lists the user's own notification exceptions. A menu reading
+     * the effective answer would offer "Unmute" on a chat the preset silences,
+     * and unmuting it would appear to do nothing. See
+     * docs/purple/work_mode.md and the desktop fork's
+     * {@code NotifySettings::purpleMutedWithoutPreset}.
+     */
+    public boolean mutedWithoutPreset(long dialogId, long topicId) {
+        return mutedWithoutPreset(dialogId, topicId, null);
+    }
+
     public boolean isDialogNotificationsSoundEnabled(long dialogId, long topicId) {
         return notificationsPreferences.getBoolean("sound_enabled_" + NotificationsController.getSharedPrefKey(dialogId, topicId), true);
     }
 
     public boolean isDialogMuted(long dialogId, long topicId, TLRPC.Chat chat) {
+        // Purple: a work preset can silence a chat, never unsilence one - a
+        // chat the user muted stays muted whichever list it falls into - so
+        // this is only ever an extra mute and belongs first. Going through the
+        // one accessor the rest of the app already uses is deliberate: the
+        // chat list's bell, the grey unread counter and the muted buckets the
+        // unread counters are built from all read this, so they follow without
+        // a second gate anywhere.
+        if (PurpleGate.silenced(currentAccount, dialogId)) {
+            return true;
+        }
+        return mutedWithoutPreset(dialogId, topicId, chat);
+    }
+
+    public boolean mutedWithoutPreset(long dialogId, long topicId, TLRPC.Chat chat) {
         int mute_type = notificationsPreferences.getInt("notify2_" + NotificationsController.getSharedPrefKey(dialogId, topicId), -1);
         if (mute_type == -1) {
             Boolean forceChannel;
@@ -21533,7 +21570,10 @@ public class MessagesController extends BaseController implements NotificationCe
                 forceChannel = null;
             }
             if (topicId != 0) {
-                return isDialogMuted(dialogId, 0, chat);
+                // The preset was already consulted by the caller above, and its
+                // answer does not depend on the topic, so this falls back to the
+                // chat's own setting rather than starting over.
+                return mutedWithoutPreset(dialogId, 0, chat);
             } else {
                 return !getNotificationsController().isGlobalNotificationsEnabled(dialogId, forceChannel, false, false);
             }

@@ -3806,6 +3806,15 @@ public class MessagesStorage extends BaseController {
                 StringBuilder ids = new StringBuilder();
                 int currentTime = getConnectionsManager().getCurrentTime();
                 while (cursor.next()) {
+                    // Purple: the third mute root, and the one place a work
+                    // preset deliberately does not reach. This runs on the
+                    // storage thread at cold start, before MessagesController
+                    // has necessarily loaded the users and chats PurpleGate
+                    // needs to tell a bot from a person or a channel from a
+                    // group, so asking the preset here could silence the wrong
+                    // chats. The counts it seeds are corrected by the first
+                    // calcUnreadCounters pass, which does go through
+                    // MessagesController.isDialogMuted.
                     long flags = cursor.longValue(2);
                     boolean muted = (flags & 1) != 0;
                     int mutedUntil = (int) (flags >> 32);
