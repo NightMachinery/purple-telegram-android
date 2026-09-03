@@ -112,10 +112,20 @@ touch is the "All chats" counter, because that tab counts what is on screen in
 front of you, which is a different question from whether the icon should light
 up.
 
+A folder can also pull its chats *into* the preset's view with
+`include_in_main_view`, whatever the lists decided - `"all"` for everything in
+it, `"pinned"` for the chats pinned inside that folder. A folder that names no
+`show_mode` leaves them to the default for what each one is: it chose which
+chats come in, and the kind still decides when they show. Two things it does
+not do. A chat pulled in that no list claims arrives visible but silenced,
+because the notify half still comes from the list - `notify_p` on the folder is
+the separate lever. And unlike the desktop it does not override the archive:
+hiding here works by leaving rows out of the list the chat list builds, so an
+archived chat, never a candidate for that list in the first place, stays in the
+archive.
+
 What is not ported yet: extra views, the "... until" overrides, peek and the
-schedule. A folder's `include` is not ported either, though its tab, its
-`notify_p` and its `badge_p` are, so a `settings.toml` that pulls a folder into
-the view does that on the desktop only. The
+schedule. The `folders` key itself is complete. The
 archive and the contents of a folder tab are deliberately unfiltered: a preset
 decides its own view, a folder decides its own tab.
 

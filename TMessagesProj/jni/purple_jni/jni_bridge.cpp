@@ -200,10 +200,9 @@ struct PresetCounts {
 
 // The folder selection, as the strip needs it: the name to match, whether the
 // entry is the "*ALL" marker, and the two flags that decide whether it puts a
-// tab up. Still deliberately not include - nothing on Android consumes it yet,
-// and a field the bridge hands over is a field somebody will assume works.
-// notify_p and badge_p travel separately, as the resolved name lists below,
-// because that is the shape their consumers want.
+// tab up. notify_p, badge_p and include travel separately, as the resolved
+// lists below, because that is the shape their consumers want - the strip cares
+// which folders it draws, and they care which chats a folder holds.
 void AppendFoldersJson(QString &json, const Purple::Resolved &resolved) {
 	json += QStringLiteral("[");
 	auto first = true;
@@ -242,6 +241,61 @@ void AppendNamesJson(QString &json, const std::vector<QString> &names) {
 		}
 		first = false;
 		AppendJsonString(json, name);
+	}
+	json += QChar(']');
+}
+
+// The folders that pull their chats into the preset's view, with everything the
+// decision needs: how much of the folder comes, and what mode its chats take
+// once in. A folder that names no mode leaves them to the default for whatever
+// they are, which is what `defaultModes' below is for - the folder chose WHICH
+// chats come in, not WHEN they show, and forcing "always" here would be the
+// folder answering a question it was not asked.
+void AppendExemptFoldersJson(QString &json, const Purple::Resolved &resolved) {
+	json += QChar('[');
+	auto first = true;
+	for (const auto &folder : resolved.exemptFolders) {
+		if (!first) {
+			json += QChar(',');
+		}
+		first = false;
+		json += QStringLiteral("{\"name\":");
+		AppendJsonString(json, folder.name);
+		json += QStringLiteral(",\"pinned\":");
+		AppendJsonBool(json, folder.include == Purple::FolderInclude::Pinned);
+		json += QStringLiteral(",\"showMode\":");
+		// -1 for "said nothing", which is not the same as any mode: the Java
+		// side substitutes the default for the chat's kind.
+		json += QString::number(folder.showMode
+			? int(*folder.showMode)
+			: -1);
+		json += QChar('}');
+	}
+	json += QChar(']');
+}
+
+// DefaultShowMode() for each ChatKind, by kind index. Handed over rather than
+// exposed as a second native: it is four numbers that only change when the core
+// does, and a chat asking for its own default is on the row-drawing path.
+void AppendDefaultModesJson(QString &json) {
+	static_assert(int(Purple::ChatKind::Private) == 0);
+	static_assert(int(Purple::ChatKind::Group) == 1);
+	static_assert(int(Purple::ChatKind::Channel) == 2);
+	static_assert(int(Purple::ChatKind::Bot) == 3);
+	const auto kinds = {
+		Purple::ChatKind::Private,
+		Purple::ChatKind::Group,
+		Purple::ChatKind::Channel,
+		Purple::ChatKind::Bot,
+	};
+	json += QChar('[');
+	auto first = true;
+	for (const auto kind : kinds) {
+		if (!first) {
+			json += QChar(',');
+		}
+		first = false;
+		json += QString::number(int(Purple::DefaultShowMode(kind)));
 	}
 	json += QChar(']');
 }
@@ -414,6 +468,10 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 	AppendNamesJson(json, gate.resolved.silencedFolders);
 	json += QStringLiteral(",\"quietFolders\":");
 	AppendNamesJson(json, gate.resolved.quietFolders);
+	json += QStringLiteral(",\"exemptFolders\":");
+	AppendExemptFoldersJson(json, gate.resolved);
+	json += QStringLiteral(",\"defaultModes\":");
+	AppendDefaultModesJson(json);
 	json += QStringLiteral(",\"presets\":[");
 	first = true;
 	for (const auto &preset : gate.settings.presets) {
