@@ -1749,6 +1749,20 @@ public class NotificationsController extends BaseController implements Notificat
                                     continue;
                                 }
                             }
+                            // Purple: a chat the running preset hides does not
+                            // light the icon. The other branch of this method
+                            // needs no such line - it sums counters that a
+                            // hidden chat never enters, because getNotifyOverride
+                            // silences it - but this one walks every dialog, so
+                            // it has to be told. Skipping is safe here in a way
+                            // subtracting afterwards would not be: the total is
+                            // built up from what is left, so it cannot go
+                            // negative. Silenced-but-shown chats still count,
+                            // because counting muted chats is exactly what this
+                            // branch was asked to do.
+                            if (dialog != null && !PurpleGate.shown(a, dialog)) {
+                                continue;
+                            }
                             if (dialog != null) {
                                 count += MessagesController.getInstance(a).getDialogUnreadCount(dialog);
                             }
@@ -1769,6 +1783,12 @@ public class NotificationsController extends BaseController implements Notificat
                                 if (ChatObject.isNotInChat(chat) || ChatObject.isCommunity(chat)) {
                                     continue;
                                 }
+                            }
+                            // Purple: same rule as the message-counting branch
+                            // above - a hidden chat is not on screen, so it does
+                            // not get to claim a number on the icon.
+                            if (!PurpleGate.shown(a, dialog)) {
+                                continue;
                             }
                             if (MessagesController.getInstance(a).getDialogUnreadCount(dialog) != 0) {
                                 count++;
@@ -3250,7 +3270,16 @@ public class NotificationsController extends BaseController implements Notificat
     }
 
     private int getNotifyOverride(SharedPreferences preferences, long dialog_id, long topicId) {
-        // Purple: the second mute root. This class never asks
+        // Purple: notifications are the one place that runs with no chat list
+        // ever created - the app sits on the background connection and never
+        // draws anything - and the gate is shut until something has read
+        // settings.toml. Nothing else in this class would have, so a work mode
+        // would have been silent about exactly the case it exists for. After
+        // the first call this is a volatile read; the first one does its file
+        // I/O on the notifications queue, which already talks to preferences
+        // and SQLite.
+        PurpleGate.ensureLoaded();
+        // The second mute root. This class never asks
         // MessagesController.isDialogMuted on the delivery path, so without
         // this hook a preset would show the muted bell and count nothing while
         // the phone still rang. 2 is the "muted forever" value every caller of

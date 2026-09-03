@@ -74,9 +74,15 @@ unread counter show the effective one. A chat no entry claims is hidden *and*
 silenced, because a chat you are not looking at has no business interrupting
 you.
 
-What is not ported yet: the unread badge when the app is set to count muted
-chats, folder tabs, extra views, the "... until" overrides, peek and the
-schedule. The archive and folder tabs are deliberately unfiltered, and pin
+A hidden chat does not notify and does not light the app icon: the preset is
+consulted by the same gate a mute goes through, so the message is never
+collected into a notification at all. One rough edge remains - with
+Notifications - Badge Counter - "Include muted chats" turned on, the in-app
+"All chats" tab counter still includes hidden chats, though the launcher badge
+does not.
+
+What is not ported yet: folder tabs, extra views, the "... until" overrides,
+peek and the schedule. The archive and folder tabs are deliberately unfiltered, and pin
 dragging is refused while a preset runs, because Android sends a reordered pin
 list to the server with the force flag and would drop the hidden chats' pins
 from every device.
