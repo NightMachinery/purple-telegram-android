@@ -30,6 +30,16 @@ public final class PurpleSettings {
     public static final String FILE_NAME = "settings.toml";
     public static final String BACKUP_NAME = "settings.toml.bak";
 
+    /**
+     * The last settings.toml that parsed and resolved.
+     *
+     * Distinct from the backup above, which is whatever stood before the most
+     * recent import and may never have worked. This one is only ever written
+     * after the core has accepted the file, so it is the thing to fall back to
+     * when the real one is missing or broken.
+     */
+    public static final String LAST_GOOD_NAME = "settings.toml.good";
+
     /** Largest settings.toml we are willing to look at. */
     public static final long MAX_SIZE = 64 * 1024;
 
@@ -50,6 +60,10 @@ public final class PurpleSettings {
 
     public static File backupFile() {
         return new File(dir(), BACKUP_NAME);
+    }
+
+    public static File lastGoodFile() {
+        return new File(dir(), LAST_GOOD_NAME);
     }
 
     public static void importFrom(Context context, File source, int messageDate) {
