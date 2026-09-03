@@ -172,7 +172,10 @@ public class ChatNotificationsPopupWrapper {
             });
             return;
         }
-        boolean muted = MessagesController.getInstance(currentAccount).isDialogMuted(dialogId, topicId);
+        // Purple: every mute question in this popup labels or drives the
+        // Mute/Unmute toggle, so all four read the user's own mute rather than
+        // the effective one a work preset contributes to.
+        boolean muted = MessagesController.getInstance(currentAccount).mutedWithoutPreset(dialogId, topicId);
 
         int color;
         if (muted) {
@@ -327,7 +330,7 @@ public class ChatNotificationsPopupWrapper {
         final Utilities.Callback<Integer> muteFor = (timeInSeconds) -> {
             o.dismiss();
             if (timeInSeconds == 0) {
-                if (MessagesController.getInstance(currentAccount).isDialogMuted(dialogId, topicId)) {
+                if (MessagesController.getInstance(currentAccount).mutedWithoutPreset(dialogId, topicId)) {
                     NotificationsController.getInstance(currentAccount).muteDialog(dialogId, topicId, false);
                 }
                 if (BulletinFactory.canShowBulletin(fragment)) {
@@ -384,7 +387,7 @@ public class ChatNotificationsPopupWrapper {
 
         options.add(0, "", () -> {
             o.dismiss();
-            boolean mute = !MessagesController.getInstance(currentAccount).isDialogMuted(dialogId, topicId);
+            boolean mute = !MessagesController.getInstance(currentAccount).mutedWithoutPreset(dialogId, topicId);
             NotificationsController.getInstance(currentAccount).muteDialog(dialogId, topicId, mute);
 
             if (BulletinFactory.canShowBulletin(fragment)) {
@@ -394,7 +397,7 @@ public class ChatNotificationsPopupWrapper {
         final ActionBarMenuSubItem muteUnmuteButton = options.getLast();
 
         Runnable update = () -> {
-            boolean muted = MessagesController.getInstance(currentAccount).isDialogMuted(dialogId, topicId);
+            boolean muted = MessagesController.getInstance(currentAccount).mutedWithoutPreset(dialogId, topicId);
 
             int color;
             if (muted) {

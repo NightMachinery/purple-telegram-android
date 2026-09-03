@@ -47,10 +47,10 @@ The output APK is **unsigned** and arm64-v8a only — sign it yourself with
 
 ### Work Mode
 
-A preset in `settings.toml` decides which chats are in the chat list. Pick one
-from the chat list's overflow menu, which is labelled with the running preset,
-or from Settings; both open the same box, which also shows whatever the file
-got wrong. The rules, the keys and the reasoning are the desktop fork's
+A preset in `settings.toml` decides which chats are in the chat list and which
+may interrupt you. Pick one from the chat list's overflow menu, which is
+labelled with the running preset, or from Settings; both open the same box,
+which also shows whatever the file got wrong. The rules, the keys and the reasoning are the desktop fork's
 `docs/purple/work_mode.md`, and the same file means the same thing here: both
 apps compile the same core, so a `settings.toml` moved across through Saved
 Messages behaves identically.
@@ -62,9 +62,16 @@ and the last resolution that worked, so a `settings.toml` broken halfway
 through an edit leaves the chat list exactly as it was rather than unhiding
 everything.
 
-What is not ported yet: silencing, the unread badge (which still counts
-hidden chats), folder tabs, extra views, the "... until" overrides, peek and
-the schedule. The archive and folder tabs are deliberately unfiltered, and pin
+A preset only ever *adds* a mute: a chat you muted by hand stays muted whichever
+entry claims it, and switching presets never un-silences anything. So every
+Mute/Unmute control still acts on your own mute, while the bell and the grey
+unread counter show the effective one. A chat no entry claims is hidden *and*
+silenced, because a chat you are not looking at has no business interrupting
+you.
+
+What is not ported yet: the unread badge when the app is set to count muted
+chats, folder tabs, extra views, the "... until" overrides, peek and the
+schedule. The archive and folder tabs are deliberately unfiltered, and pin
 dragging is refused while a preset runs, because Android sends a reordered pin
 list to the server with the force flag and would drop the hidden chats' pins
 from every device.

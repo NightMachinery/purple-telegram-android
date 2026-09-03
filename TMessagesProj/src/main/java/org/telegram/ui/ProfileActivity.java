@@ -4341,7 +4341,9 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     presentFragment(new AffiliateProgramFragment(userId));
                 }
             } else if (position == notificationsSimpleRow) {
-                boolean muted = getMessagesController().isDialogMuted(did, topicId);
+                // Purple: a toggle, so the user's own mute. The mute icon beside
+                // the name further down keeps the effective answer.
+                boolean muted = getMessagesController().mutedWithoutPreset(did, topicId);
                 getNotificationsController().muteDialog(did, topicId, !muted);
                 BulletinFactory.createMuteBulletin(ProfileActivity.this, !muted, null).show();
                 updateExceptions();
@@ -6483,7 +6485,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             did = -chatId;
         }
 
-        final boolean isCurrentMuted = getMessagesController().isDialogMuted(did, topicId);
+        final boolean isCurrentMuted = getMessagesController().mutedWithoutPreset(did, topicId);
         if (fromActions && (isTopic || isCurrentMuted)) {
             boolean newMuted = !isCurrentMuted;
             getNotificationsController().muteDialog(did, topicId, newMuted);
@@ -6562,7 +6564,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             @Override
             public void muteFor(int timeInSeconds) {
                 if (timeInSeconds == 0) {
-                    if (getMessagesController().isDialogMuted(did, topicId)) {
+                    if (getMessagesController().mutedWithoutPreset(did, topicId)) {
                         toggleMute();
                     }
                     if (BulletinFactory.canShowBulletin(ProfileActivity.this)) {
@@ -6590,7 +6592,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
 
             @Override
             public void toggleMute() {
-                boolean muted = getMessagesController().isDialogMuted(did, topicId);
+                boolean muted = getMessagesController().mutedWithoutPreset(did, topicId);
                 getNotificationsController().muteDialog(did, topicId, !muted);
                 if (ProfileActivity.this.fragmentView != null) {
                     BulletinFactory.createMuteBulletin(ProfileActivity.this, !muted, null).show();
@@ -14140,7 +14142,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     break;
                 case VIEW_TYPE_NOTIFICATIONS_CHECK_SIMPLE:
                     TextCheckCell textCheckCell = (TextCheckCell) holder.itemView;
-                    textCheckCell.setTextAndCheck(LocaleController.getString(R.string.Notifications), !getMessagesController().isDialogMuted(getDialogId(), topicId), false);
+                    textCheckCell.setTextAndCheck(LocaleController.getString(R.string.Notifications), !getMessagesController().mutedWithoutPreset(getDialogId(), topicId), false);
                     break;
                 case VIEW_TYPE_LOCATION:
                     ((ProfileLocationCell) holder.itemView).set(userInfo != null ? userInfo.business_location : null, notificationsDividerRow < 0 && !myProfile);

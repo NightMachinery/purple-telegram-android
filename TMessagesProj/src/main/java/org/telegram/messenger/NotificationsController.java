@@ -66,6 +66,7 @@ import androidx.core.graphics.drawable.IconCompat;
 
 import com.google.common.collect.Lists;
 
+import org.telegram.messenger.purple.PurpleGate;
 import org.telegram.messenger.support.LongSparseIntArray;
 import org.telegram.messenger.utils.tlutils.TLKeyboardHelper;
 import org.telegram.messenger.utils.tlutils.TlUtils;
@@ -3249,6 +3250,21 @@ public class NotificationsController extends BaseController implements Notificat
     }
 
     private int getNotifyOverride(SharedPreferences preferences, long dialog_id, long topicId) {
+        // Purple: the second mute root. This class never asks
+        // MessagesController.isDialogMuted on the delivery path, so without
+        // this hook a preset would show the muted bell and count nothing while
+        // the phone still rang. 2 is the "muted forever" value every caller of
+        // this method already understands.
+        //
+        // It is also what keeps a hidden chat out of the app badge:
+        // total_unread_count and pushDialogs are only ever fed for dialogs
+        // that pass the check this answer drives, so the incrementally
+        // maintained counters simply never see them - which is the only safe
+        // way to leave a chat out of a counter that is added to and subtracted
+        // from rather than recomputed.
+        if (PurpleGate.silenced(currentAccount, dialog_id)) {
+            return 2;
+        }
         int notifyOverride = dialogsNotificationsFacade.getProperty(NotificationsSettingsFacade.PROPERTY_NOTIFY, dialog_id, topicId, -1);
         if (notifyOverride == 3) {
             int muteUntil = dialogsNotificationsFacade.getProperty(NotificationsSettingsFacade.PROPERTY_NOTIFY_UNTIL, dialog_id, topicId, 0);

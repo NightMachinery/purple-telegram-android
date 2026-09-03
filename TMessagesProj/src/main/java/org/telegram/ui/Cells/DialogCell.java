@@ -417,6 +417,14 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
     private boolean lastUnreadState;
     private int lastSendState;
     private boolean dialogMuted;
+    /**
+     * Purple: the user's own mute, kept apart from {@link #dialogMuted} above,
+     * which a work preset can also set. The bell and the grey counter want the
+     * effective answer - a silenced chat should look silenced - but the swipe
+     * gesture's label offers to mute or unmute, and it can only offer what the
+     * swipe will actually do.
+     */
+    private boolean dialogMutedByUser;
     private boolean topicMuted;
     private boolean drawUnmute;
     private float dialogMutedProgress;
@@ -3487,6 +3495,7 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
 
             if (currentDialogFolderId != 0) {
                 dialogMuted = false;
+                dialogMutedByUser = false;
                 drawUnmute = false;
                 message = findFolderTopMessage();
                 if (message != null) {
@@ -3509,6 +3518,8 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                 } else {
                     dialogMuted = isDialogCell && MessagesController.getInstance(currentAccount).isDialogMuted(currentDialogId, getTopicId());
                 }
+                dialogMutedByUser = isDialogCell
+                        && MessagesController.getInstance(currentAccount).mutedWithoutPreset(currentDialogId, getTopicId());
 
                 dialogId = currentDialogId;
             }
@@ -3840,7 +3851,7 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                         backgroundColor = revealBackgroundColor = Theme.getColor(Theme.key_dialogSwipeRemove, resourcesProvider);
                         translationDrawable = Theme.dialogs_swipeCommunityUngroup;
                     } else if (SharedConfig.getChatSwipeAction(currentAccount) == SwipeGestureSettingsView.SWIPE_GESTURE_MUTE) {
-                        if (dialogMuted) {
+                        if (dialogMutedByUser) {
                             swipeMessage = getString(swipeMessageStringId = R.string.SwipeUnmute);
                             translationDrawable = Theme.dialogs_swipeUnmuteDrawable;
                         } else {

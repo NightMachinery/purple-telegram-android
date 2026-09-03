@@ -1980,7 +1980,9 @@ public class TopicsFragment extends BaseFragment implements NotificationCenter.N
             public void muteFor(int timeInSeconds) {
                 finishPreviewFragment();
                 if (timeInSeconds == 0) {
-                    if (getMessagesController().isDialogMuted(-chatId, topic.id)) {
+                    // Purple: toggles and their labels read the user's own mute;
+                    // the header's mute icon further down keeps the effective one.
+                    if (getMessagesController().mutedWithoutPreset(-chatId, topic.id)) {
                         getNotificationsController().muteDialog(-chatId, topic.id, false);
                     }
                     if (BulletinFactory.canShowBulletin(TopicsFragment.this)) {
@@ -2008,7 +2010,7 @@ public class TopicsFragment extends BaseFragment implements NotificationCenter.N
             @Override
             public void toggleMute() {
                 finishPreviewFragment();
-                boolean mute = !getMessagesController().isDialogMuted(-chatId, topic.id);
+                boolean mute = !getMessagesController().mutedWithoutPreset(-chatId, topic.id);
                 getNotificationsController().muteDialog(-chatId, topic.id, mute);
 
                 if (BulletinFactory.canShowBulletin(TopicsFragment.this)) {
@@ -2040,14 +2042,14 @@ public class TopicsFragment extends BaseFragment implements NotificationCenter.N
         }
 
         ActionBarMenuSubItem muteItem = new ActionBarMenuSubItem(getParentActivity(), false, false);
-        if (getMessagesController().isDialogMuted(-chatId, topic.id)) {
+        if (getMessagesController().mutedWithoutPreset(-chatId, topic.id)) {
             muteItem.setTextAndIcon(getString(R.string.Unmute), R.drawable.msg_mute);
         } else {
             muteItem.setTextAndIcon(getString(R.string.Mute), R.drawable.msg_unmute);
         }
         muteItem.setMinimumWidth(160);
         muteItem.setOnClickListener(e -> {
-            if (getMessagesController().isDialogMuted(-chatId, topic.id)) {
+            if (getMessagesController().mutedWithoutPreset(-chatId, topic.id)) {
                 getNotificationsController().muteDialog(-chatId, topic.id, false);
                 finishPreviewFragment();
                 if (BulletinFactory.canShowBulletin(TopicsFragment.this)) {
@@ -2290,7 +2292,7 @@ public class TopicsFragment extends BaseFragment implements NotificationCenter.N
                             }
                         }
                     }
-                    if (getMessagesController().isDialogMuted(-chatId, topicId)) {
+                    if (getMessagesController().mutedWithoutPreset(-chatId, topicId)) {
                         canUnmuteCount++;
                     } else {
                         canMuteCount++;

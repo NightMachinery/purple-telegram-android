@@ -4344,7 +4344,12 @@ public class ChatActivity extends BaseFragment implements
                     @Override
                     public void muteFor(int timeInSeconds) {
                         if (timeInSeconds == 0) {
-                            if (getMessagesController().isDialogMuted(dialog_id, getTopicId())) {
+                            // Purple: everything in this menu labels or drives the
+                            // Mute/Unmute toggle, so it reads the user's own mute.
+                            // The bell in the title bar, further down, keeps the
+                            // effective answer - that one is about whether the chat
+                            // is quiet, not about what a tap would do.
+                            if (getMessagesController().mutedWithoutPreset(dialog_id, getTopicId())) {
                                 ChatActivity.this.toggleMute(true);
                             }
                             if (BulletinFactory.canShowBulletin(ChatActivity.this)) {
@@ -4376,12 +4381,12 @@ public class ChatActivity extends BaseFragment implements
                     @Override
                     public void toggleMute() {
                         ChatActivity.this.toggleMute(true);
-                        BulletinFactory.createMuteBulletin(ChatActivity.this, getMessagesController().isDialogMuted(dialog_id, getTopicId()), themeDelegate).show();
+                        BulletinFactory.createMuteBulletin(ChatActivity.this, getMessagesController().mutedWithoutPreset(dialog_id, getTopicId()), themeDelegate).show();
                     }
                 }, getResourceProvider());
                 muteItem = headerItem.lazilyAddSwipeBackItem(R.drawable.msg_mute, null, null, chatNotificationsPopupWrapper.windowLayout);
                 muteItem.setOnClickListener(view -> {
-                    boolean muted = MessagesController.getInstance(currentAccount).isDialogMuted(dialog_id, getTopicId());
+                    boolean muted = MessagesController.getInstance(currentAccount).mutedWithoutPreset(dialog_id, getTopicId());
                     if (muted) {
                         updateTitleIcons(true);
                         AndroidUtilities.runOnUIThread(() -> {
@@ -16609,7 +16614,8 @@ public class ChatActivity extends BaseFragment implements
     }
 
     private void toggleMute(boolean instant) {
-        boolean muted = getMessagesController().isDialogMuted(dialog_id, getTopicId());
+        // Purple: which way this toggle goes is decided by the user's own mute.
+        boolean muted = getMessagesController().mutedWithoutPreset(dialog_id, getTopicId());
         if (!muted) {
             if (instant) {
                 getNotificationsController().muteDialog(dialog_id, getTopicId(), true);
@@ -27760,7 +27766,7 @@ public class ChatActivity extends BaseFragment implements
             }
             showBottomOverlayProgress(false, false);
         } else if (currentUser != null && currentUser.id == UserObject.VERIFY) {
-            if (!getMessagesController().isDialogMuted(dialog_id, getTopicId())) {
+            if (!getMessagesController().mutedWithoutPreset(dialog_id, getTopicId())) {
                 bottomOverlayChatText.setText(LocaleController.getString(R.string.ChannelMuteNoCaps), false);
                 bottomOverlayChatText.setEnabled(true);
             } else {
@@ -27801,7 +27807,7 @@ public class ChatActivity extends BaseFragment implements
                     bottomOverlayChatText.setTextInfo(LocaleController.getString(R.string.ForumReplyToMessagesInTopic));
                     bottomOverlayChatText.setEnabled(false);
                 } else if (!isThreadChat()) {
-                    if (!getMessagesController().isDialogMuted(dialog_id, getTopicId())) {
+                    if (!getMessagesController().mutedWithoutPreset(dialog_id, getTopicId())) {
                         bottomOverlayChatText.setText(LocaleController.getString(R.string.ChannelMuteNoCaps), false);
                         bottomOverlayChatText.setEnabled(true);
                     } else {
@@ -27858,7 +27864,7 @@ public class ChatActivity extends BaseFragment implements
                     }
                 }
             } else if (UserObject.isReplyUser(currentUser)) {
-                if (!getMessagesController().isDialogMuted(dialog_id, getTopicId())) {
+                if (!getMessagesController().mutedWithoutPreset(dialog_id, getTopicId())) {
                     bottomOverlayChatText.setText(LocaleController.getString(R.string.ChannelMuteNoCaps), false);
                 } else {
                     bottomOverlayChatText.setText(LocaleController.getString(R.string.ChannelUnmuteNoCaps), true);
