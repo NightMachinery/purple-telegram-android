@@ -1101,7 +1101,7 @@ public class FilterCreateActivity extends BaseFragment {
         fragment.getMessagesStorage().saveDialogFilter(filter, atBegin, true);
         if (atBegin) {
             TLRPC.TL_messages_updateDialogFiltersOrder req = new TLRPC.TL_messages_updateDialogFiltersOrder();
-            ArrayList<MessagesController.DialogFilter> filters = fragment.getMessagesController().getDialogFilters();
+            ArrayList<MessagesController.DialogFilter> filters = fragment.getMessagesController().getDialogFiltersUnrestricted();
             for (int a = 0, N = filters.size(); a < N; a++) {
                 req.order.add(filters.get(a).id);
             }

@@ -565,7 +565,7 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
         items.clear();
 
         ArrayList<TLRPC.TL_dialogFilterSuggested> suggestedFilters = getMessagesController().suggestedFilters;
-        ArrayList<MessagesController.DialogFilter> dialogFilters = getMessagesController().getDialogFilters();
+        ArrayList<MessagesController.DialogFilter> dialogFilters = getMessagesController().getDialogFiltersUnrestricted();
         items.add(ItemInner.asHint());
         if (!suggestedFilters.isEmpty() && dialogFilters.size() < 10) {
             int start = items.size();
@@ -620,7 +620,7 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
             getNotificationCenter().postNotificationName(NotificationCenter.dialogFiltersUpdated);
             getMessagesStorage().saveDialogFiltersOrder();
             TLRPC.TL_messages_updateDialogFiltersOrder req = new TLRPC.TL_messages_updateDialogFiltersOrder();
-            ArrayList<MessagesController.DialogFilter> filters = getMessagesController().getDialogFilters();
+            ArrayList<MessagesController.DialogFilter> filters = getMessagesController().getDialogFiltersUnrestricted();
             for (int a = 0, N = filters.size(); a < N; a++) {
                 MessagesController.DialogFilter filter = filters.get(a);
                 req.order.add(filter.id);
@@ -732,7 +732,7 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
     }
 
     public void createFolder(INavigationLayout navigationLayout) {
-        final int count = getMessagesController().getDialogFilters().size();
+        final int count = getMessagesController().getDialogFiltersUnrestricted().size();
         if (
             count - 1 >= getMessagesController().dialogFiltersLimitDefault && !getUserConfig().isPremium() ||
             count >= getMessagesController().dialogFiltersLimitPremium
@@ -988,7 +988,7 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
                         while (getMessagesController().dialogFiltersById.get(filter.id) != null) {
                             filter.id++;
                         }
-                        filter.order = getMessagesController().getDialogFilters().size();
+                        filter.order = getMessagesController().getDialogFiltersUnrestricted().size();
                         filter.pendingUnreadCount = filter.unreadCount = -1;
                         for (int b = 0; b < 2; b++) {
                             ArrayList<TLRPC.InputPeer> fromArray = b == 0 ? suggested.filter.include_peers : suggested.filter.exclude_peers;
@@ -1178,7 +1178,7 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
             if (UserConfig.getInstance(UserConfig.selectedAccount).isPremium()) {
                 return;
             }
-            ArrayList<MessagesController.DialogFilter> filters = getMessagesController().getDialogFilters();
+            ArrayList<MessagesController.DialogFilter> filters = getMessagesController().getDialogFiltersUnrestricted();
             for (int i = 0; i < filters.size(); ++i) {
                 if (filters.get(i).isDefault() && i != 0) {
                     adapter.moveElementToStart(i);

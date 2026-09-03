@@ -81,11 +81,27 @@ Notifications - Badge Counter - "Include muted chats" turned on, the in-app
 "All chats" tab counter still includes hidden chats, though the launcher badge
 does not.
 
-What is not ported yet: folder tabs, extra views, the "... until" overrides,
-peek and the schedule. The archive and folder tabs are deliberately unfiltered, and pin
-dragging is refused while a preset runs, because Android sends a reordered pin
-list to the server with the force flag and would drop the hidden chats' pins
-from every device.
+A preset also picks which folder tabs are on the strip, in the order it names
+them. `"*ALL"` is every folder it does not name elsewhere, expanded where you
+wrote it, and a preset that says nothing about folders shows no tabs at all -
+`"*ALL"` is how you ask for them back. "All chats" always leads: it is already
+the preset's own view, because the hiding happens in the list itself. A folder
+named slightly wrong is skipped and logged rather than guessed at.
+
+Reordering folders is refused while the strip is restricted - the drag, the
+Reorder menu entry and the order upload all - because Telegram replaces the
+whole server-side folder order with exactly the list it is handed, so dragging
+a restricted strip would drop every hidden folder from the account rather than
+from the view. A preset whose whole selection is `"*ALL"` leaves dragging alone.
+The same reasoning refuses pin dragging inside a filtered chat list.
+
+What is not ported yet: extra views, the "... until" overrides, peek and the
+schedule. A folder's `notify_p`, `badge_p` and `include` are not ported either,
+though its tab is - all three need to ask whether a chat is inside a folder on
+the notification path, which is one piece of work rather than three. So a
+`settings.toml` that silences a folder silences it on the desktop only. The
+archive and the contents of a folder tab are deliberately unfiltered: a preset
+decides its own view, a folder decides its own tab.
 
 ### Push notifications
 

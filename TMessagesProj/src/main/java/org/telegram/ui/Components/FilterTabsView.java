@@ -60,6 +60,7 @@ import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.MessagesStorage;
+import org.telegram.messenger.purple.PurpleGate;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.Utilities;
@@ -1686,7 +1687,7 @@ public class FilterTabsView extends FrameLayout {
         if (!isEditing && orderChanged) {
             MessagesStorage.getInstance(UserConfig.selectedAccount).saveDialogFiltersOrder();
             TLRPC.TL_messages_updateDialogFiltersOrder req = new TLRPC.TL_messages_updateDialogFiltersOrder();
-            ArrayList<MessagesController.DialogFilter> filters = MessagesController.getInstance(UserConfig.selectedAccount).getDialogFilters();
+            ArrayList<MessagesController.DialogFilter> filters = MessagesController.getInstance(UserConfig.selectedAccount).getDialogFiltersUnrestricted();
             for (int a = 0, N = filters.size(); a < N; a++) {
                 MessagesController.DialogFilter filter = filters.get(a);
                 if (filter.isDefault()) {
@@ -1807,13 +1808,20 @@ public class FilterTabsView extends FrameLayout {
         }
 
         public void swapElements(int fromIndex, int toIndex) {
+            if (PurpleGate.foldersRestricted()) {
+                // Unreachable through the drag, which is refused above. Here
+                // too because this rewrites the real filters' order fields in
+                // place, using what are strip indices - the one thing that must
+                // not happen against a restricted strip.
+                return;
+            }
             int idx1 = fromIndex;
             int idx2 = toIndex;
             int count = tabs.size();
             if (idx1 < 0 || idx2 < 0 || idx1 >= count || idx2 >= count) {
                 return;
             }
-            ArrayList<MessagesController.DialogFilter> filters = MessagesController.getInstance(UserConfig.selectedAccount).getDialogFilters();
+            ArrayList<MessagesController.DialogFilter> filters = MessagesController.getInstance(UserConfig.selectedAccount).getDialogFiltersUnrestricted();
             MessagesController.DialogFilter filter1 = filters.get(idx1);
             MessagesController.DialogFilter filter2 = filters.get(idx2);
             int temp = filter1.order;
@@ -1863,11 +1871,14 @@ public class FilterTabsView extends FrameLayout {
         }
 
         public void moveElementToStart(int theIndex) {
+            if (PurpleGate.foldersRestricted()) {
+                return;
+            }
             int count = tabs.size();
             if (theIndex < 0 || theIndex >= count) {
                 return;
             }
-            ArrayList<MessagesController.DialogFilter> filters = MessagesController.getInstance(UserConfig.selectedAccount).getDialogFilters();
+            ArrayList<MessagesController.DialogFilter> filters = MessagesController.getInstance(UserConfig.selectedAccount).getDialogFiltersUnrestricted();
             int temp = positionToStableId.get(theIndex),
                 temp2 = tabs.get(theIndex).id;
             for (int i = theIndex - 1; i >= 0; --i) {
@@ -1912,6 +1923,14 @@ public class FilterTabsView extends FrameLayout {
 
         @Override
         public int getMovementFlags(@NonNull RecyclerView recyclerView, @NonNull RecyclerView.ViewHolder viewHolder) {
+            // Purple: a strip index is not a server-side position while a
+            // preset restricts the folders, and a drop is uploaded as the whole
+            // positional order - so dragging here would drop every folder the
+            // preset is hiding from the account, not just from the view. Same
+            // hazard as the pin drag, guarded the same way.
+            if (PurpleGate.foldersRestricted()) {
+                return makeMovementFlags(0, 0);
+            }
             if (MessagesController.getInstance(UserConfig.selectedAccount).premiumFeaturesBlocked() && (!isEditing || (viewHolder.getAdapterPosition() == 0 && tabs.get(0).isDefault && !UserConfig.getInstance(UserConfig.selectedAccount).isPremium()))) {
                 return makeMovementFlags(0, 0);
             }
