@@ -104,10 +104,18 @@ so a chat you muted by hand stays muted whichever folder it is in, and a folder
 that silences a chat does not take it out of an "exclude muted" folder:
 membership is decided as though the preset silenced nothing.
 
+A folder can also be left out of the counts, with `badge_p = false`: no number
+on its own tab, and its chats left out of the launcher badge. It is a third
+axis, independent of the other two - a folder can be silenced without being
+uncounted and uncounted without being silenced. What it deliberately does not
+touch is the "All chats" counter, because that tab counts what is on screen in
+front of you, which is a different question from whether the icon should light
+up.
+
 What is not ported yet: extra views, the "... until" overrides, peek and the
-schedule. A folder's `badge_p` and `include` are not ported either, though its
-tab and its `notify_p` are, so a `settings.toml` that leaves a folder out of the
-counts or pulls one into the view does that on the desktop only. The
+schedule. A folder's `include` is not ported either, though its tab, its
+`notify_p` and its `badge_p` are, so a `settings.toml` that pulls a folder into
+the view does that on the desktop only. The
 archive and the contents of a folder tab are deliberately unfiltered: a preset
 decides its own view, a folder decides its own tab.
 

@@ -413,11 +413,71 @@ public final class PurpleGate {
      */
     private static boolean silencedByFolder(int currentAccount, long dialogId) {
         final PurpleCore.Loaded current = loaded;
-        if (current == null || current.silencedFolders.isEmpty()) {
-            // The common case, and free: a preset that silenced no folder never
-            // reaches the walk below.
+        // The common case, and free: a preset that silenced no folder never
+        // reaches the walk.
+        return current != null
+                && !current.silencedFolders.isEmpty()
+                && heldByAny(currentAccount, dialogId, current.silencedFolders);
+    }
+
+    /**
+     * Whether this chat may put a number on the app icon.
+     *
+     * A third axis, independent of hiding and silencing: a folder can be
+     * silenced without being uncounted and uncounted without being silenced.
+     * For a folder that is background on purpose, a count is a number you have
+     * already decided not to act on, and the launcher badge claiming attention
+     * on its behalf is exactly the interruption a work mode exists to stop.
+     *
+     * Only the app badge and the folder's own tab. The preset's own view still
+     * counts a chat an uncounted folder holds, because that tab is counting
+     * what is on screen in front of you, which is a different question from
+     * whether the icon should light up.
+     */
+    public static boolean countedForBadge(int currentAccount, long dialogId) {
+        if (!filtering) {
+            return true;
+        }
+        final PurpleCore.Loaded current = loaded;
+        return current == null
+                || current.quietFolders.isEmpty()
+                || !heldByAny(currentAccount, dialogId, current.quietFolders);
+    }
+
+    /** Whether any folder asked to be left out of the counts. */
+    public static boolean hasQuietFolders() {
+        if (!filtering) {
             return false;
         }
+        final PurpleCore.Loaded current = loaded;
+        return current != null && !current.quietFolders.isEmpty();
+    }
+
+    /**
+     * Whether this folder's own tab may show a number.
+     *
+     * The tab half of {@code badge_p}, asked of the folder rather than of a
+     * chat: a folder left out of the counts shows no count of its own either.
+     */
+    public static boolean folderCounted(MessagesController.DialogFilter filter) {
+        if (!filtering || filter == null) {
+            return true;
+        }
+        final PurpleCore.Loaded current = loaded;
+        return current == null
+                || current.quietFolders.isEmpty()
+                || !namedIn(current.quietFolders, filter.name);
+    }
+
+    /**
+     * Whether any of these folders, by name, holds this chat.
+     *
+     * The one question all three folder flags need, and the reason they were
+     * one piece of work rather than three. See {@link #silencedByFolder} for
+     * why it is answered live and what a thrown answer means.
+     */
+    private static boolean heldByAny(
+            int currentAccount, long dialogId, java.util.List<String> names) {
         final MessagesController controller = MessagesController.getInstance(currentAccount);
         try {
             final ArrayList<MessagesController.DialogFilter> filters =
@@ -451,7 +511,7 @@ public final class PurpleGate {
                 if (filter == null || filter.isDefault()) {
                     continue;
                 }
-                if (!namedIn(current.silencedFolders, filter.name)) {
+                if (!namedIn(names, filter.name)) {
                     continue;
                 }
                 if (filter.includesDialog(account, asked, dialog)) {

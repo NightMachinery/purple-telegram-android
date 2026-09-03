@@ -292,6 +292,14 @@ public final class PurpleCore {
          */
         public final List<String> silencedFolders;
 
+        /**
+         * The folders the preset left out of the counts - {@code badge_p =
+         * false} - by name, on the same terms as {@link #silencedFolders}. A
+         * third axis, independent of the other two: a folder can be silenced
+         * without being uncounted and uncounted without being silenced.
+         */
+        public final List<String> quietFolders;
+
         public final List<PresetInfo> presets;
 
         /** The state.toml text to write back, or null when it did not change. */
@@ -301,7 +309,8 @@ public final class PurpleCore {
                 boolean normal, String preset, String title, int lists, boolean usedCache,
                 String cacheReason, boolean activeMissing, List<FolderEntry> folders,
                 boolean foldersRestricted, List<String> silencedFolders,
-                List<PresetInfo> presets, String stateText) {
+                List<String> quietFolders, List<PresetInfo> presets,
+                String stateText) {
             this.ok = ok;
             this.error = error;
             this.warnings = warnings;
@@ -316,14 +325,31 @@ public final class PurpleCore {
             this.folders = folders;
             this.foldersRestricted = foldersRestricted;
             this.silencedFolders = silencedFolders;
+            this.quietFolders = quietFolders;
             this.presets = presets;
             this.stateText = stateText;
+        }
+
+        /** One array of folder names out of the load result, empty if absent. */
+        private static List<String> names(JSONObject object, String key) {
+            final List<String> result = new ArrayList<>();
+            final JSONArray array = object.optJSONArray(key);
+            if (array != null) {
+                for (int i = 0; i < array.length(); ++i) {
+                    final String name = array.optString(i, "");
+                    if (name.length() > 0) {
+                        result.add(name);
+                    }
+                }
+            }
+            return result;
         }
 
         private static Loaded failed(String error) {
             return new Loaded(false, error, Collections.<String>emptyList(), 0, true,
                     "normal", "Normal", 0, false, "", false,
                     Collections.<FolderEntry>emptyList(), false,
+                    Collections.<String>emptyList(),
                     Collections.<String>emptyList(),
                     Collections.<PresetInfo>emptyList(), null);
         }
@@ -356,16 +382,8 @@ public final class PurpleCore {
                                 entry.optBoolean("show", true)));
                     }
                 }
-                final List<String> silencedFolders = new ArrayList<>();
-                final JSONArray silenced = object.optJSONArray("silencedFolders");
-                if (silenced != null) {
-                    for (int i = 0; i < silenced.length(); ++i) {
-                        final String name = silenced.optString(i, "");
-                        if (name.length() > 0) {
-                            silencedFolders.add(name);
-                        }
-                    }
-                }
+                final List<String> silencedFolders = names(object, "silencedFolders");
+                final List<String> quietFolders = names(object, "quietFolders");
                 final List<PresetInfo> presets = new ArrayList<>();
                 final JSONArray array = object.optJSONArray("presets");
                 if (array != null) {
@@ -399,6 +417,7 @@ public final class PurpleCore {
                         folders,
                         object.optBoolean("foldersRestricted", false),
                         silencedFolders,
+                        quietFolders,
                         presets,
                         object.isNull("stateText") ? null : object.optString("stateText", null));
             } catch (JSONException e) {
