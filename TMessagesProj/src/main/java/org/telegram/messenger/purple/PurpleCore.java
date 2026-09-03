@@ -214,6 +214,49 @@ public final class PurpleCore {
      * expansion happens in {@link PurpleGate}, which is the only side that
      * knows what folders exist.
      */
+    /** A {@code showMode} the file did not give, so the kind decides instead. */
+    public static final int MODE_UNSET = -1;
+
+    /**
+     * {@code DefaultShowMode()} by kind, as a fallback for the load that never
+     * happened. Only reached when the bridge answered nothing at all, where
+     * behaving like stock matters more than being right about a mode.
+     */
+    private static final int[] STOCK_DEFAULT_MODES = {
+        SHOW_MESSAGE,   // KIND_PRIVATE
+        SHOW_MENTION,   // KIND_GROUP
+        SHOW_ALWAYS,    // KIND_CHANNEL
+        SHOW_ALWAYS,    // KIND_BOT
+    };
+
+    /**
+     * One folder a preset pulls into its main view.
+     *
+     * The escape hatch: whatever the lists decided, these chats join the view.
+     * What it does not decide is <i>when</i> they show - a folder naming no
+     * mode leaves its chats to the default for what each one is, because the
+     * folder chose which chats come in and the kind still decides when.
+     */
+    public static final class ExemptFolder {
+        public final String name;
+
+        /**
+         * True for {@code include_in_main_view = "pinned"}: only the chats
+         * pinned inside that folder, in the folder's own pinned order. A folder
+         * with nothing pinned in it therefore contributes nothing.
+         */
+        public final boolean pinnedOnly;
+
+        /** A {@code SHOW_} value, or {@link #MODE_UNSET}. */
+        public final int showMode;
+
+        private ExemptFolder(String name, boolean pinnedOnly, int showMode) {
+            this.name = name;
+            this.pinnedOnly = pinnedOnly;
+            this.showMode = showMode;
+        }
+    }
+
     public static final class FolderEntry {
         /** The name as settings.toml wrote it; meaningless when {@link #all}. */
         public final String name;
@@ -300,6 +343,20 @@ public final class PurpleCore {
          */
         public final List<String> quietFolders;
 
+        /**
+         * The folders that pull their chats into the preset's view, whatever
+         * the lists decided. Empty in almost every preset, and checked for
+         * emptiness before anything walks anything.
+         */
+        public final List<ExemptFolder> exemptFolders;
+
+        /**
+         * {@code DefaultShowMode()} for each {@code KIND_} value, by index.
+         * Handed over by the bridge rather than asked per chat: it is four
+         * numbers that only change when the core does.
+         */
+        public final int[] defaultModes;
+
         public final List<PresetInfo> presets;
 
         /** The state.toml text to write back, or null when it did not change. */
@@ -309,7 +366,8 @@ public final class PurpleCore {
                 boolean normal, String preset, String title, int lists, boolean usedCache,
                 String cacheReason, boolean activeMissing, List<FolderEntry> folders,
                 boolean foldersRestricted, List<String> silencedFolders,
-                List<String> quietFolders, List<PresetInfo> presets,
+                List<String> quietFolders, List<ExemptFolder> exemptFolders,
+                int[] defaultModes, List<PresetInfo> presets,
                 String stateText) {
             this.ok = ok;
             this.error = error;
@@ -326,6 +384,8 @@ public final class PurpleCore {
             this.foldersRestricted = foldersRestricted;
             this.silencedFolders = silencedFolders;
             this.quietFolders = quietFolders;
+            this.exemptFolders = exemptFolders;
+            this.defaultModes = defaultModes;
             this.presets = presets;
             this.stateText = stateText;
         }
@@ -351,6 +411,7 @@ public final class PurpleCore {
                     Collections.<FolderEntry>emptyList(), false,
                     Collections.<String>emptyList(),
                     Collections.<String>emptyList(),
+                    Collections.<ExemptFolder>emptyList(), STOCK_DEFAULT_MODES,
                     Collections.<PresetInfo>emptyList(), null);
         }
 
@@ -384,6 +445,28 @@ public final class PurpleCore {
                 }
                 final List<String> silencedFolders = names(object, "silencedFolders");
                 final List<String> quietFolders = names(object, "quietFolders");
+                final List<ExemptFolder> exemptFolders = new ArrayList<>();
+                final JSONArray exempt = object.optJSONArray("exemptFolders");
+                if (exempt != null) {
+                    for (int i = 0; i < exempt.length(); ++i) {
+                        final JSONObject entry = exempt.optJSONObject(i);
+                        if (entry == null) {
+                            continue;
+                        }
+                        exemptFolders.add(new ExemptFolder(
+                                entry.optString("name", ""),
+                                entry.optBoolean("pinned", false),
+                                entry.optInt("showMode", MODE_UNSET)));
+                    }
+                }
+                int[] defaultModes = STOCK_DEFAULT_MODES;
+                final JSONArray modes = object.optJSONArray("defaultModes");
+                if (modes != null && modes.length() == STOCK_DEFAULT_MODES.length) {
+                    defaultModes = new int[modes.length()];
+                    for (int i = 0; i < modes.length(); ++i) {
+                        defaultModes[i] = modes.optInt(i, SHOW_MESSAGE);
+                    }
+                }
                 final List<PresetInfo> presets = new ArrayList<>();
                 final JSONArray array = object.optJSONArray("presets");
                 if (array != null) {
@@ -418,6 +501,8 @@ public final class PurpleCore {
                         object.optBoolean("foldersRestricted", false),
                         silencedFolders,
                         quietFolders,
+                        exemptFolders,
+                        defaultModes,
                         presets,
                         object.isNull("stateText") ? null : object.optString("stateText", null));
             } catch (JSONException e) {

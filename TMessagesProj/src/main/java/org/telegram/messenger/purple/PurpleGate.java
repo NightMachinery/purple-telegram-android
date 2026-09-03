@@ -470,6 +470,112 @@ public final class PurpleGate {
     }
 
     /**
+     * The mode a folder that pulls this chat into the view gives it, or
+     * {@link PurpleCore#MODE_UNSET} when no folder does.
+     *
+     * The escape hatch, and the positive form of "this folder is not subject to
+     * filtering": the chats in a folder named with {@code include_in_main_view}
+     * join the preset's view whatever the lists decided. A folder that asked
+     * for its pinned chats only lets through exactly those - the rest are not
+     * dropped so much as left where they already were, with whatever their own
+     * list decided.
+     *
+     * A chat can sit in two exempt folders and the most permissive wins: a
+     * narrow one saying no must not speak for a wide one that would say yes.
+     * Mirrors {@code History::purpleExemptFolderMode()}.
+     */
+    private static int exemptFolderMode(int currentAccount, long dialogId) {
+        final PurpleCore.Loaded current = loaded;
+        if (current == null || current.exemptFolders.isEmpty()) {
+            // Free for every preset that does not use the escape hatch.
+            return PurpleCore.MODE_UNSET;
+        }
+        final MessagesController controller = MessagesController.getInstance(currentAccount);
+        int result = PurpleCore.MODE_UNSET;
+        try {
+            final ArrayList<MessagesController.DialogFilter> filters =
+                    controller.getDialogFiltersUnrestricted();
+            final TLRPC.Dialog dialog = controller.dialogs_dict.get(dialogId);
+            if (filters == null || filters.isEmpty() || dialog == null) {
+                return PurpleCore.MODE_UNSET;
+            }
+            final long asked = unwrapped(controller, dialogId);
+            final AccountInstance account = AccountInstance.getInstance(currentAccount);
+            for (int a = 0, n = filters.size(); a < n; ++a) {
+                final MessagesController.DialogFilter filter = filters.get(a);
+                if (filter == null || filter.isDefault()) {
+                    continue;
+                }
+                for (int i = 0, count = current.exemptFolders.size(); i < count; ++i) {
+                    final PurpleCore.ExemptFolder folder = current.exemptFolders.get(i);
+                    if (!folder.name.equalsIgnoreCase(filter.name)
+                            || !filter.includesDialog(account, asked, dialog)) {
+                        continue;
+                    }
+                    // "pinned" is the folder's own pinned order, which is what
+                    // Telegram itself puts at the top of that tab - not the main
+                    // chat list's pins.
+                    if (folder.pinnedOnly
+                            && filter.pinnedDialogs.indexOfKey(dialogId) < 0) {
+                        continue;
+                    }
+                    final int mode = folder.showMode == PurpleCore.MODE_UNSET
+                            ? defaultModeFor(current, currentAccount, dialogId)
+                            : folder.showMode;
+                    if (result == PurpleCore.MODE_UNSET || rank(mode) > rank(result)) {
+                        result = mode;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // Same tolerance as heldByAny(): "no folder pulled it in" is the
+            // answer that changes nothing.
+            return PurpleCore.MODE_UNSET;
+        }
+        return result;
+    }
+
+    /** {@code DefaultShowMode()} for whatever this chat turns out to be. */
+    private static int defaultModeFor(
+            PurpleCore.Loaded current, int currentAccount, long dialogId) {
+        final int kind = kindOf(currentAccount, dialogId);
+        return (kind >= 0 && kind < current.defaultModes.length)
+                ? current.defaultModes[kind]
+                : PurpleCore.SHOW_MESSAGE;
+    }
+
+    /**
+     * How permissive a show mode is, for picking between two folders.
+     *
+     * The enum's own order will not do - it runs Always, Message,
+     * MessageOrReaction, Mention, Never - so this is the desktop's
+     * {@code ShowModeRank()}, spelled out.
+     */
+    private static int rank(int mode) {
+        switch (mode) {
+        case PurpleCore.SHOW_NEVER: return 0;
+        case PurpleCore.SHOW_MENTION: return 1;
+        case PurpleCore.SHOW_MESSAGE: return 2;
+        case PurpleCore.SHOW_MESSAGE_OR_REACTION: return 3;
+        case PurpleCore.SHOW_ALWAYS: return 4;
+        default: return 0;
+        }
+    }
+
+    /**
+     * The same unwrap sortDialogs() does before asking a filter: a folder holds
+     * an encrypted chat under the user behind it.
+     */
+    private static long unwrapped(MessagesController controller, long dialogId) {
+        if (!DialogObject.isEncryptedDialog(dialogId)) {
+            return dialogId;
+        }
+        final TLRPC.EncryptedChat encrypted = controller.getEncryptedChat(
+                DialogObject.getEncryptedChatId(dialogId));
+        return encrypted != null ? encrypted.user_id : dialogId;
+    }
+
+    /**
      * Whether any of these folders, by name, holds this chat.
      *
      * The one question all three folder flags need, and the reason they were
@@ -492,16 +598,7 @@ public final class PurpleGate {
                 // guessing here would be worse than saying no.
                 return false;
             }
-            // The same unwrap sortDialogs() does before asking a filter: a
-            // folder holds an encrypted chat under the user behind it.
-            long asked = dialogId;
-            if (DialogObject.isEncryptedDialog(asked)) {
-                final TLRPC.EncryptedChat encrypted = controller.getEncryptedChat(
-                        DialogObject.getEncryptedChatId(asked));
-                if (encrypted != null) {
-                    asked = encrypted.user_id;
-                }
-            }
+            final long asked = unwrapped(controller, dialogId);
             final AccountInstance account = AccountInstance.getInstance(currentAccount);
             for (int a = 0, n = filters.size(); a < n; ++a) {
                 final MessagesController.DialogFilter filter = filters.get(a);
@@ -562,12 +659,13 @@ public final class PurpleGate {
                 show = true;
             } else {
                 final int packed = packedFor(currentAccount, dialog.id);
-                show = shownForMode(currentAccount, dialog, packed);
+                final int mode = effectiveMode(currentAccount, dialog.id, packed);
+                show = shownForShowMode(currentAccount, dialog, mode);
                 if ((packed & PurpleCore.NOTIFY_BIT) == 0
                         || silencedByFolder(currentAccount, dialog.id)) {
                     ++silenced;
                 }
-                if (watchesUnread(packed & PurpleCore.SHOW_MASK)) {
+                if (watchesUnread(mode)) {
                     ++gated;
                     if (show) {
                         ++gatedShowing;
@@ -753,7 +851,30 @@ public final class PurpleGate {
      * is never cached: it moves every time a message arrives or is read.
      */
     private static boolean shownForMode(int currentAccount, TLRPC.Dialog dialog, int packed) {
-        final int mode = packed & PurpleCore.SHOW_MASK;
+        return shownForShowMode(
+                currentAccount,
+                dialog,
+                effectiveMode(currentAccount, dialog.id, packed));
+    }
+
+    /**
+     * The show mode actually in force for this chat.
+     *
+     * A folder the preset pulls in decides first, because it is the more
+     * specific statement: it named this folder, where a list entry named a kind
+     * or a set of ids. What it does not decide is <i>when</i> - a folder saying
+     * nothing about a mode leaves its chats to the default for what they are.
+     * Same order as the desktop fork's {@code History::purpleHiddenByPreset()}.
+     */
+    private static int effectiveMode(int currentAccount, long dialogId, int packed) {
+        final int exempt = exemptFolderMode(currentAccount, dialogId);
+        return exempt == PurpleCore.MODE_UNSET
+                ? (packed & PurpleCore.SHOW_MASK)
+                : exempt;
+    }
+
+    private static boolean shownForShowMode(
+            int currentAccount, TLRPC.Dialog dialog, int mode) {
         if (mode == PurpleCore.SHOW_ALWAYS) {
             return true;
         }
