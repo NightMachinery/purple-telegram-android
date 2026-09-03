@@ -1722,6 +1722,47 @@ public class NotificationsController extends BaseController implements Notificat
         });
     }
 
+    /**
+     * What {@code total_unread_count} and {@code pushDialogs.size()} would be
+     * with the chats an uncounted folder holds left out.
+     *
+     * Both of those are maintained incrementally, in five places each, from the
+     * dialogs the notify gate let through - so honouring badge_p by subtracting
+     * from them would drift the moment a chat's folder membership changed while
+     * it had unread, and a badge that has drifted downwards is a negative
+     * number on the launcher. Rebuilding over pushDialogs cannot: it is the
+     * same source the running totals are accumulated from, so the answer is a
+     * subset by construction rather than by argument, and the forum and
+     * community rules are mirrored from the accumulation itself.
+     *
+     * Only reached when a preset actually named a folder with badge_p = false.
+     *
+     * @param messages count unread messages, as showBadgeMessages asks, rather
+     *                 than unread chats
+     */
+    private int purpleBadgeCount(boolean messages) {
+        int count = 0;
+        for (int a = 0, n = pushDialogs.size(); a < n; a++) {
+            final long dialogId = pushDialogs.keyAt(a);
+            if (!PurpleGate.countedForBadge(currentAccount, dialogId)) {
+                continue;
+            }
+            if (!messages) {
+                count++;
+                continue;
+            }
+            final Integer unread = pushDialogs.valueAt(a);
+            if (unread == null || getMessagesController().isCommunity(dialogId)) {
+                continue;
+            } else if (getMessagesController().isForum(dialogId)) {
+                count += unread > 0 ? 1 : 0;
+            } else {
+                count += unread;
+            }
+        }
+        return count;
+    }
+
     private int getTotalAllUnreadCount() {
         int count = 0;
         for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
@@ -1763,6 +1804,13 @@ public class NotificationsController extends BaseController implements Notificat
                             if (dialog != null && !PurpleGate.shown(a, dialog)) {
                                 continue;
                             }
+                            // Purple: nor does a chat a folder asked to keep out
+                            // of the counts. Skipping, not subtracting - see
+                            // purpleBadgeCount() for why that distinction is the
+                            // whole of this feature.
+                            if (dialog != null && !PurpleGate.countedForBadge(a, dialog.id)) {
+                                continue;
+                            }
                             if (dialog != null) {
                                 count += MessagesController.getInstance(a).getDialogUnreadCount(dialog);
                             }
@@ -1771,7 +1819,16 @@ public class NotificationsController extends BaseController implements Notificat
                         FileLog.e(e);
                     }
                 } else {
-                    count += controller.total_unread_count;
+                    // Purple: the running total was accumulated over every chat
+                    // the notify gate let through, so a folder left out of the
+                    // counts cannot be taken off it without subtracting - and
+                    // the last subtraction in this fork's history drove a badge
+                    // to -334. Rebuild it instead, over the very dialogs it was
+                    // built from. Costs nothing in a preset that named no such
+                    // folder, which is every preset by default.
+                    count += PurpleGate.hasQuietFolders()
+                            ? controller.purpleBadgeCount(true)
+                            : controller.total_unread_count;
                 }
             } else {
                 if (controller.showBadgeMuted) {
@@ -1790,6 +1847,9 @@ public class NotificationsController extends BaseController implements Notificat
                             if (!PurpleGate.shown(a, dialog)) {
                                 continue;
                             }
+                            if (!PurpleGate.countedForBadge(a, dialog.id)) {
+                                continue;
+                            }
                             if (MessagesController.getInstance(a).getDialogUnreadCount(dialog) != 0) {
                                 count++;
                             }
@@ -1799,7 +1859,9 @@ public class NotificationsController extends BaseController implements Notificat
                         FileLog.e(e, false);
                     }
                 } else {
-                    count += controller.pushDialogs.size();
+                    count += PurpleGate.hasQuietFolders()
+                            ? controller.purpleBadgeCount(false)
+                            : controller.pushDialogs.size();
                 }
             }
         }

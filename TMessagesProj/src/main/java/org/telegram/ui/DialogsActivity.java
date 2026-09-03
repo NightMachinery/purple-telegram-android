@@ -3703,7 +3703,15 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                     if (tabId < 0 || tabId >= dialogFilters.size()) {
                         return 0;
                     }
-                    return getMessagesController().getDialogFilters().get(tabId).unreadCount;
+                    MessagesController.DialogFilter filter = dialogFilters.get(tabId);
+                    // Purple: a folder the preset left out of the counts shows
+                    // no number on its own tab either. For a folder that is
+                    // background on purpose a count is a number you have already
+                    // decided not to act on.
+                    if (!PurpleGate.folderCounted(filter)) {
+                        return 0;
+                    }
+                    return filter.unreadCount;
                 }
 
                 @Override

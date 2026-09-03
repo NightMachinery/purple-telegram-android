@@ -200,10 +200,10 @@ struct PresetCounts {
 
 // The folder selection, as the strip needs it: the name to match, whether the
 // entry is the "*ALL" marker, and the two flags that decide whether it puts a
-// tab up. Still deliberately not badge_p or include - nothing on Android
-// consumes those yet, and a field the bridge hands over is a field somebody
-// will assume works. notify_p travels separately, as the resolved name list
-// below, because that is the shape its consumer wants.
+// tab up. Still deliberately not include - nothing on Android consumes it yet,
+// and a field the bridge hands over is a field somebody will assume works.
+// notify_p and badge_p travel separately, as the resolved name lists below,
+// because that is the shape their consumers want.
 void AppendFoldersJson(QString &json, const Purple::Resolved &resolved) {
 	json += QStringLiteral("[");
 	auto first = true;
@@ -412,6 +412,8 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 	AppendFoldersJson(json, gate.resolved);
 	json += QStringLiteral(",\"silencedFolders\":");
 	AppendNamesJson(json, gate.resolved.silencedFolders);
+	json += QStringLiteral(",\"quietFolders\":");
+	AppendNamesJson(json, gate.resolved.quietFolders);
 	json += QStringLiteral(",\"presets\":[");
 	first = true;
 	for (const auto &preset : gate.settings.presets) {
