@@ -20,6 +20,7 @@ import android.text.TextUtils;
 
 import androidx.collection.LongSparseArray;
 
+import org.telegram.messenger.AccountInstance;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.DialogObject;
@@ -356,6 +357,10 @@ public final class PurpleGate {
      * counters that call this. And it ignores topics: a preset silencing a
      * chat silences its topics, because the core has never heard of one.
      *
+     * A folder can silence too, with {@code notify_p = false}, and that half is
+     * asked last - a chat its own list already silenced never reaches the
+     * folder walk. See {@link #silencedByFolder}.
+     *
      * Called per row draw, per unread-counter pass and per incoming message,
      * so the not-filtering answer costs one volatile read and no file I/O -
      * this must never call {@link #ensureLoaded()}.
@@ -371,7 +376,105 @@ public final class PurpleGate {
         if (DialogObject.isFolderDialogId(dialogId)) {
             return false;
         }
-        return (packedFor(currentAccount, dialogId) & PurpleCore.NOTIFY_BIT) == 0;
+        if ((packedFor(currentAccount, dialogId) & PurpleCore.NOTIFY_BIT) == 0) {
+            return true;
+        }
+        return silencedByFolder(currentAccount, dialogId);
+    }
+
+    /**
+     * Whether a folder the preset silenced holds this chat.
+     *
+     * A list can already silence a hand-picked set of chats, and for those the
+     * list is the simpler tool. What a list cannot do is track a folder defined
+     * by a <i>rule</i> - "all groups", "non-contacts", "everything except these
+     * three" - whose membership moves on its own as chats arrive. Only the
+     * folder form follows that.
+     *
+     * Answered live rather than from a snapshot, exactly as the desktop fork's
+     * {@code NotifySettings::purpleSilencedByFolder()} answers it: the walk is
+     * over the folders the preset named, and the emptiness check in front of it
+     * is what keeps every other preset paying nothing. There is no cached
+     * answer to go stale, which is the whole reason not to keep one - folder
+     * membership moves with every message that arrives.
+     *
+     * Membership is decided as though this preset silenced nothing.
+     * {@code includesDialog} reads {@code mutedWithoutPreset} for the "Exclude
+     * muted" flag, which is what stops the obvious version eating itself: a
+     * folder carrying that flag would otherwise stop containing a chat the
+     * moment the preset silenced it, which would un-silence it, which would put
+     * it back. See docs/purple/work_mode.md, "Breaking the loop".
+     *
+     * Called from the storage and notifications threads as well as the UI one,
+     * and {@code includesDialog} walks lists the UI thread owns. A walk that
+     * throws answers "not a member", which is the safe direction: the preset
+     * silences nothing it was not already silencing, and the next query gets it
+     * right.
+     */
+    private static boolean silencedByFolder(int currentAccount, long dialogId) {
+        final PurpleCore.Loaded current = loaded;
+        if (current == null || current.silencedFolders.isEmpty()) {
+            // The common case, and free: a preset that silenced no folder never
+            // reaches the walk below.
+            return false;
+        }
+        final MessagesController controller = MessagesController.getInstance(currentAccount);
+        try {
+            final ArrayList<MessagesController.DialogFilter> filters =
+                    controller.getDialogFiltersUnrestricted();
+            if (filters == null || filters.isEmpty()) {
+                return false;
+            }
+            final TLRPC.Dialog dialog = controller.dialogs_dict.get(dialogId);
+            if (dialog == null) {
+                // Nothing to ask a folder about. Reached on the notification
+                // path before the dialog list has loaded, among other places;
+                // guessing here would be worse than saying no.
+                return false;
+            }
+            // The same unwrap sortDialogs() does before asking a filter: a
+            // folder holds an encrypted chat under the user behind it.
+            long asked = dialogId;
+            if (DialogObject.isEncryptedDialog(asked)) {
+                final TLRPC.EncryptedChat encrypted = controller.getEncryptedChat(
+                        DialogObject.getEncryptedChatId(asked));
+                if (encrypted != null) {
+                    asked = encrypted.user_id;
+                }
+            }
+            final AccountInstance account = AccountInstance.getInstance(currentAccount);
+            for (int a = 0, n = filters.size(); a < n; ++a) {
+                final MessagesController.DialogFilter filter = filters.get(a);
+                // The default folder's name is empty and its label is supplied
+                // at render time, so it is never matched by name - the same
+                // reason findByName() skips it.
+                if (filter == null || filter.isDefault()) {
+                    continue;
+                }
+                if (!namedIn(current.silencedFolders, filter.name)) {
+                    continue;
+                }
+                if (filter.includesDialog(account, asked, dialog)) {
+                    return true;
+                }
+            }
+        } catch (Exception e) {
+            // A list the UI thread was rewriting underneath us. Not an error
+            // worth a stack trace on a path this hot; see the note above about
+            // which direction is safe.
+            return false;
+        }
+        return false;
+    }
+
+    /** Case-insensitive membership, as folder titles are matched everywhere. */
+    private static boolean namedIn(java.util.List<String> names, String title) {
+        for (int i = 0, count = names.size(); i < count; ++i) {
+            if (names.get(i).equalsIgnoreCase(title)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -400,7 +503,8 @@ public final class PurpleGate {
             } else {
                 final int packed = packedFor(currentAccount, dialog.id);
                 show = shownForMode(currentAccount, dialog, packed);
-                if ((packed & PurpleCore.NOTIFY_BIT) == 0) {
+                if ((packed & PurpleCore.NOTIFY_BIT) == 0
+                        || silencedByFolder(currentAccount, dialog.id)) {
                     ++silenced;
                 }
                 if (watchesUnread(packed & PurpleCore.SHOW_MASK)) {

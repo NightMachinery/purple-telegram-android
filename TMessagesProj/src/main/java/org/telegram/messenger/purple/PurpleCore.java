@@ -282,6 +282,16 @@ public final class PurpleCore {
          */
         public final boolean foldersRestricted;
 
+        /**
+         * The folders the preset silenced, by name, already narrowed to the
+         * enabled ones by the core. Names rather than entries because that is
+         * the whole of what the answer needs: they are matched against the
+         * account's real folder titles and each match is asked whether it holds
+         * the chat. Empty in almost every preset, and checked for emptiness
+         * before anything walks anything.
+         */
+        public final List<String> silencedFolders;
+
         public final List<PresetInfo> presets;
 
         /** The state.toml text to write back, or null when it did not change. */
@@ -290,8 +300,8 @@ public final class PurpleCore {
         private Loaded(boolean ok, String error, List<String> warnings, int version,
                 boolean normal, String preset, String title, int lists, boolean usedCache,
                 String cacheReason, boolean activeMissing, List<FolderEntry> folders,
-                boolean foldersRestricted, List<PresetInfo> presets,
-                String stateText) {
+                boolean foldersRestricted, List<String> silencedFolders,
+                List<PresetInfo> presets, String stateText) {
             this.ok = ok;
             this.error = error;
             this.warnings = warnings;
@@ -305,6 +315,7 @@ public final class PurpleCore {
             this.activeMissing = activeMissing;
             this.folders = folders;
             this.foldersRestricted = foldersRestricted;
+            this.silencedFolders = silencedFolders;
             this.presets = presets;
             this.stateText = stateText;
         }
@@ -313,6 +324,7 @@ public final class PurpleCore {
             return new Loaded(false, error, Collections.<String>emptyList(), 0, true,
                     "normal", "Normal", 0, false, "", false,
                     Collections.<FolderEntry>emptyList(), false,
+                    Collections.<String>emptyList(),
                     Collections.<PresetInfo>emptyList(), null);
         }
 
@@ -342,6 +354,16 @@ public final class PurpleCore {
                                 entry.optBoolean("all", false),
                                 entry.optBoolean("enabled", true),
                                 entry.optBoolean("show", true)));
+                    }
+                }
+                final List<String> silencedFolders = new ArrayList<>();
+                final JSONArray silenced = object.optJSONArray("silencedFolders");
+                if (silenced != null) {
+                    for (int i = 0; i < silenced.length(); ++i) {
+                        final String name = silenced.optString(i, "");
+                        if (name.length() > 0) {
+                            silencedFolders.add(name);
+                        }
                     }
                 }
                 final List<PresetInfo> presets = new ArrayList<>();
@@ -376,6 +398,7 @@ public final class PurpleCore {
                         object.optBoolean("activeMissing", false),
                         folders,
                         object.optBoolean("foldersRestricted", false),
+                        silencedFolders,
                         presets,
                         object.isNull("stateText") ? null : object.optString("stateText", null));
             } catch (JSONException e) {

@@ -95,11 +95,19 @@ a restricted strip would drop every hidden folder from the account rather than
 from the view. A preset whose whole selection is `"*ALL"` leaves dragging alone.
 The same reasoning refuses pin dragging inside a filtered chat list.
 
+A folder can silence its chats, with `notify_p = false`. A list can already do
+that for a hand-picked set of ids, and for those the list is the simpler tool;
+what a list cannot do is track a folder defined by a *rule* - "all groups",
+"non-contacts", "everything except these three" - whose membership moves on its
+own as chats arrive. The rule a preset only ever *adds* a mute holds here too,
+so a chat you muted by hand stays muted whichever folder it is in, and a folder
+that silences a chat does not take it out of an "exclude muted" folder:
+membership is decided as though the preset silenced nothing.
+
 What is not ported yet: extra views, the "... until" overrides, peek and the
-schedule. A folder's `notify_p`, `badge_p` and `include` are not ported either,
-though its tab is - all three need to ask whether a chat is inside a folder on
-the notification path, which is one piece of work rather than three. So a
-`settings.toml` that silences a folder silences it on the desktop only. The
+schedule. A folder's `badge_p` and `include` are not ported either, though its
+tab and its `notify_p` are, so a `settings.toml` that leaves a folder out of the
+counts or pulls one into the view does that on the desktop only. The
 archive and the contents of a folder tab are deliberately unfiltered: a preset
 decides its own view, a folder decides its own tab.
 
