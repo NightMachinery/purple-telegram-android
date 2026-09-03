@@ -55,12 +55,17 @@ which also shows whatever the file got wrong. The rules, the keys and the reason
 apps compile the same core, so a `settings.toml` moved across through Saved
 Messages behaves identically.
 
-Two files live in the app's private storage, at
+Three files live in the app's private storage, at
 `/data/data/org.purple.telegram/files/purple/`. `settings.toml` is yours,
 imported from Saved Messages. `state.toml` is the app's: the active preset,
 and the last resolution that worked, so a `settings.toml` broken halfway
 through an edit leaves the chat list exactly as it was rather than unhiding
-everything.
+everything. `settings.toml.good` is a copy of the last `settings.toml` the app
+accepted, used when the real one is missing or unreadable - the resolution in
+`state.toml` remembers the order a preset resolved to but not what its lists
+contained, so without the copy a vanished `settings.toml` would leave every
+chat unclaimed and therefore hidden. The preset picker says when it is running
+from the copy.
 
 A preset only ever *adds* a mute: a chat you muted by hand stays muted whichever
 entry claims it, and switching presets never un-silences anything. So every

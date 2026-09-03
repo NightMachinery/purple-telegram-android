@@ -11251,5 +11251,6 @@
     <string name="PurplePresetError">Error: %1$s</string>
     <string name="PurplePresetWarning">Warning: %1$s</string>
     <string name="PurplePresetFileNote">Presets are written in %1$s.</string>
+    <string name="PurplePresetLastGood">Warning: settings.toml is missing or unreadable, so these presets come from the last copy that worked. Import the file again to replace it.</string>
     <string name="PurplePresetNotConfigured">Work Mode is not configured. Write presets in %1$s, then they will show up here.</string>
 </resources>

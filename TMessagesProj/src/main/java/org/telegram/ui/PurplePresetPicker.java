@@ -160,6 +160,13 @@ public final class PurplePresetPicker {
             layout.addView(note(activity, TextUtils.join("\n", errors),
                     Theme.getColor(Theme.key_text_RedRegular, resourcesProvider)));
         }
+        // A preset list that came out of a copy the user cannot see, because
+        // the file they can see is gone, is exactly the kind of thing that has
+        // to be said rather than quietly worked around.
+        if (PurpleGate.usedLastGood()) {
+            layout.addView(note(activity, getString(R.string.PurplePresetLastGood),
+                    Theme.getColor(Theme.key_text_RedRegular, resourcesProvider)));
+        }
         if (state.warnings != null && !state.warnings.isEmpty()) {
             final List<String> lines = new ArrayList<>();
             for (final String warning : state.warnings) {

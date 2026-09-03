@@ -65,6 +65,13 @@ public final class PurpleGate {
     private static volatile boolean everLoaded;
 
     /**
+     * Whether the running resolution came from settings.toml.good rather than
+     * from settings.toml. Shown in the picker: a preset running off a copy the
+     * user cannot see is the kind of thing that has to be said out loud.
+     */
+    private static volatile boolean usedLastGood;
+
+    /**
      * The show mode of each dialog, as {@link PurpleCore#visible} packed it. The
      * mode half of the answer only moves when the resolution does, so it is
      * cached; the unread half is recomputed on every pass because it moves all
@@ -92,6 +99,11 @@ public final class PurpleGate {
     /** The resolution now in force, or null if nothing has been loaded yet. */
     public static PurpleCore.Loaded state() {
         return loaded;
+    }
+
+    /** Whether the running resolution came from the last good copy. */
+    public static boolean usedLastGood() {
+        return usedLastGood;
     }
 
     /** Loads settings.toml and state.toml once, the first time anyone asks. */
@@ -127,11 +139,8 @@ public final class PurpleGate {
         final byte[] settings = readSettings();
         final byte[] state = PurpleState.read();
 
-        final PurpleCore.Loaded next;
-        try {
-            next = PurpleCore.load(settings, state);
-        } catch (UnsatisfiedLinkError | RuntimeException e) {
-            FileLog.e(e);
+        PurpleCore.Loaded next = load(settings, state);
+        if (next == null) {
             return;
         }
         // A settings.toml that does not parse still comes back resolved - the
@@ -140,6 +149,36 @@ public final class PurpleGate {
         if (!next.ok && (ERROR_NO_RESULT.equals(next.error) || ERROR_BAD_RESULT.equals(next.error))) {
             FileLog.e("Purple: " + next.error + ", keeping the previous resolution.");
             return;
+        }
+
+        // The resolution cache in state.toml remembers the order a preset
+        // resolved to, but not what its lists contained - membership lives in
+        // settings.toml and nowhere else. So a settings.toml that has gone
+        // missing leaves every chat unclaimed, and a preset that names what
+        // gets through hides an account it can no longer describe.
+        //
+        // Falling back to the last copy that worked is the fix, and the file
+        // itself is the right thing to keep: it needs no second schema, it
+        // cannot disagree with the real one about what a list means, and it
+        // covers a file broken halfway through an edit the same way it covers
+        // one that vanished.
+        boolean shadowed = false;
+        if (settings == null || !next.ok) {
+            final byte[] lastGood = readFile(PurpleSettings.lastGoodFile());
+            if (lastGood != null) {
+                final PurpleCore.Loaded alt = load(lastGood, state);
+                if (alt != null && alt.ok) {
+                    FileLog.d("Purple: settings.toml is "
+                            + (settings == null ? "missing" : "unusable")
+                            + ", running from the last good copy.");
+                    next = alt;
+                    shadowed = true;
+                }
+            }
+        }
+        usedLastGood = shadowed;
+        if (!shadowed && next.ok && settings != null) {
+            PurpleSettings.writeAtomic(PurpleSettings.lastGoodFile(), settings);
         }
 
         loaded = next;
@@ -423,8 +462,21 @@ public final class PurpleGate {
                 || mode == PurpleCore.SHOW_MENTION;
     }
 
+    /** One load attempt; null when the bridge could not be called at all. */
+    private static PurpleCore.Loaded load(byte[] settings, byte[] state) {
+        try {
+            return PurpleCore.load(settings, state);
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return null;
+        }
+    }
+
     private static byte[] readSettings() {
-        final File file = PurpleSettings.settingsFile();
+        return readFile(PurpleSettings.settingsFile());
+    }
+
+    private static byte[] readFile(File file) {
         if (!file.exists() || file.length() > PurpleSettings.MAX_SIZE) {
             return null;
         }
