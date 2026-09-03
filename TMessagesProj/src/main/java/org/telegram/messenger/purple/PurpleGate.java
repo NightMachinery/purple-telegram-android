@@ -26,6 +26,7 @@ import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LocaleController;
+import org.telegram.messenger.MediaDataController;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.NotificationCenter;
@@ -38,6 +39,8 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 
 public final class PurpleGate {
 
@@ -95,6 +98,9 @@ public final class PurpleGate {
      * still in range now means a different folder.
      */
     private static volatile int generation;
+
+    /** Telegram's Archive, which is a folder id rather than a chat. */
+    private static final int ARCHIVE_FOLDER_ID = 1;
 
     private PurpleGate() {
     }
@@ -688,6 +694,28 @@ public final class PurpleGate {
                 ++hidden;
             }
         }
+        // Whatever a folder let in comes in even when the chat is archived.
+        // Archiving is how visibility gets controlled in stock Telegram; under
+        // a preset the preset controls it, by name, so a folder that asked for
+        // its chats should get them wherever they happen to be filed -
+        // otherwise you would have to unarchive things to make a preset work,
+        // which is editing the account to change a view. The chats stay
+        // archived; they are simply also here.
+        int pulled = 0;
+        final ArrayList<TLRPC.Dialog> fromArchive = archivePulledIn(currentAccount);
+        if (fromArchive != null) {
+            if (result == null) {
+                result = new ArrayList<>(source);
+            }
+            result.addAll(fromArchive);
+            pulled = fromArchive.size();
+            // The main list arrives sorted, and a pulled-in chat is not pinned
+            // *here* - its pin belongs to the archive - so the merge is a
+            // re-sort with that one difference. Nearly-sorted input, which is
+            // the case TimSort is fastest on.
+            Collections.sort(result, mergedOrder(currentAccount));
+        }
+
         // A preset that hides nothing looks exactly like one that is working,
         // and the usual cause is a list name spelled slightly wrong - so say
         // what the pass did. Gated chats are counted apart from hidden ones
@@ -698,9 +726,90 @@ public final class PurpleGate {
             lastCountLog = now;
             FileLog.d("Purple: " + hidden + " of " + count + " dialogs hidden, "
                     + gated + " unread-gated (" + gatedShowing + " showing), "
-                    + silenced + " silenced.");
+                    + silenced + " silenced"
+                    + (pulled > 0 ? ", " + pulled + " pulled in from the archive." : "."));
         }
         return result == null ? source : result;
+    }
+
+    /**
+     * The archived chats an exempt folder pulls into the main view.
+     *
+     * Only the main list ever reaches this - every call site of {@link #filter}
+     * guards on {@code folderId == 0} - and only a preset that named a folder
+     * with {@code include_in_main_view} reaches the walk at all.
+     *
+     * The rows are the account's own {@code TLRPC.Dialog} objects, borrowed
+     * from the archive's bucket rather than made up, so this is still a view
+     * and not an edit: the chats stay archived, stay in the Archive row's own
+     * list, and stay wherever else they were.
+     *
+     * @return the chats to add, or null when there are none
+     */
+    private static ArrayList<TLRPC.Dialog> archivePulledIn(int currentAccount) {
+        final PurpleCore.Loaded current = loaded;
+        if (current == null || current.exemptFolders.isEmpty()) {
+            return null;
+        }
+        final MessagesController controller = MessagesController.getInstance(currentAccount);
+        final ArrayList<TLRPC.Dialog> archived = controller.getDialogs(ARCHIVE_FOLDER_ID);
+        if (archived == null || archived.isEmpty()) {
+            return null;
+        }
+        ArrayList<TLRPC.Dialog> result = null;
+        for (int a = 0, n = archived.size(); a < n; ++a) {
+            final TLRPC.Dialog dialog = archived.get(a);
+            if (dialog == null || DialogObject.isFolderDialogId(dialog.id)) {
+                continue;
+            }
+            final int mode = exemptFolderMode(currentAccount, dialog.id);
+            if (mode == PurpleCore.MODE_UNSET
+                    || !shownForShowMode(currentAccount, dialog, mode)) {
+                continue;
+            }
+            if (result == null) {
+                result = new ArrayList<>();
+            }
+            result.add(dialog);
+        }
+        return result;
+    }
+
+    /**
+     * The main list's own order, with one difference: a chat pulled in from the
+     * archive is never pinned here.
+     *
+     * Its {@code pinned} flag is real, but it is a pin inside the Archive, and
+     * letting it sort into the main list's pinned run would put it above chats
+     * the user actually pinned and lengthen the pinned divider. Otherwise this
+     * is {@code MessagesController.dialogComparator}, which is what the list
+     * being merged into is already sorted by.
+     */
+    private static Comparator<TLRPC.Dialog> mergedOrder(int currentAccount) {
+        final MediaDataController media = MediaDataController.getInstance(currentAccount);
+        return (one, two) -> {
+            final boolean folderOne = one instanceof TLRPC.TL_dialogFolder;
+            final boolean folderTwo = two instanceof TLRPC.TL_dialogFolder;
+            if (folderOne != folderTwo) {
+                return folderOne ? -1 : 1;
+            }
+            final boolean pinnedOne = one.pinned && one.folder_id == 0;
+            final boolean pinnedTwo = two.pinned && two.folder_id == 0;
+            if (pinnedOne != pinnedTwo) {
+                return pinnedOne ? -1 : 1;
+            }
+            if (pinnedOne) {
+                if (one.pinnedNum != two.pinnedNum) {
+                    return one.pinnedNum > two.pinnedNum ? -1 : 1;
+                }
+                return 0;
+            }
+            final long dateOne = DialogObject.getLastMessageOrDraftDate(
+                    one, media.getDraft(one.id, 0));
+            final long dateTwo = DialogObject.getLastMessageOrDraftDate(
+                    two, media.getDraft(two.id, 0));
+            return dateOne == dateTwo ? 0 : (dateOne > dateTwo ? -1 : 1);
+        };
     }
 
     /**

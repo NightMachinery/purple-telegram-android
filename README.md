@@ -119,10 +119,15 @@ it, `"pinned"` for the chats pinned inside that folder. A folder that names no
 chats come in, and the kind still decides when they show. Two things it does
 not do. A chat pulled in that no list claims arrives visible but silenced,
 because the notify half still comes from the list - `notify_p` on the folder is
-the separate lever. And unlike the desktop it does not override the archive:
-hiding here works by leaving rows out of the list the chat list builds, so an
-archived chat, never a candidate for that list in the first place, stays in the
-archive.
+the separate lever.
+
+Whatever a folder lets in comes in **even when the chat is archived**. Archiving
+is how visibility gets controlled in stock Telegram; under a preset the preset
+controls it, by name, so a folder that asked for its chats gets them wherever
+they are filed - otherwise you would have to unarchive things to make a preset
+work, which is editing the account to change a view. The chats stay archived:
+they are still in the Archive, and a pin they carry there stays a pin there
+rather than jumping them to the top of the main list.
 
 What is not ported yet: extra views, the "... until" overrides, peek and the
 schedule. The `folders` key itself is complete. The

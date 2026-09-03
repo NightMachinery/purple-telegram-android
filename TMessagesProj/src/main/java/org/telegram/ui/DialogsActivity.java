@@ -9180,6 +9180,12 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             if (dialog instanceof TLRPC.TL_dialogFolder) {
                 continue;
             }
+            // Purple: a chat a folder pulled in from the archive carries a
+            // pinned flag that belongs to the Archive, not to this list, and it
+            // sorts below the real pins - so the divider's run ends here.
+            if (dialog.folder_id != 0) {
+                break;
+            }
             if (isDialogPinned(dialog)) {
                 pinnedCount++;
             } else if (!getMessagesController().isPromoDialog(dialog.id, false)) {
