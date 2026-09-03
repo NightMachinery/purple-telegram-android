@@ -84,6 +84,17 @@ public final class PurpleGate {
     /** Throttles the per-pass counting line, which a scrolling list would flood. */
     private static volatile long lastCountLog;
 
+    /** The same, for the folder strip, which is rebuilt on every accessor call. */
+    private static volatile long lastFolderLog;
+
+    /**
+     * Bumped by every reload. The chat list watches it to notice that the strip
+     * it is holding was built for a different preset: the tab the user is on is
+     * an index into a list whose membership just changed, so an index that is
+     * still in range now means a different folder.
+     */
+    private static volatile int generation;
+
     private PurpleGate() {
     }
 
@@ -104,6 +115,28 @@ public final class PurpleGate {
     /** Whether the running resolution came from the last good copy. */
     public static boolean usedLastGood() {
         return usedLastGood;
+    }
+
+    /** Changes whenever the resolution is reloaded. See {@link #generation}. */
+    public static int generation() {
+        return generation;
+    }
+
+    /**
+     * Whether the folder strip is anything other than the account's own
+     * folders, in the account's own order.
+     *
+     * This, and not {@link #filtering()}, is what guards folder reordering:
+     * a preset whose whole selection is {@code "*ALL"} leaves the strip
+     * identical to the account's, so dragging a tab still means what it says.
+     * Mirrors the desktop fork's {@code Purple::FoldersRestricted()}.
+     */
+    public static boolean foldersRestricted() {
+        if (!filtering) {
+            return false;
+        }
+        final PurpleCore.Loaded current = loaded;
+        return current != null && current.foldersRestricted;
     }
 
     /** Loads settings.toml and state.toml once, the first time anyone asks. */
@@ -189,6 +222,7 @@ public final class PurpleGate {
             PurpleState.write(next.stateText.getBytes(UTF_8));
         }
         filtering = !next.normal;
+        ++generation;
 
         if (next.normal) {
             FileLog.d("Purple: normal. (" + reason + ")");
@@ -407,6 +441,124 @@ public final class PurpleGate {
         return result == null ? source : result;
     }
 
+    /**
+     * The folders the running preset puts on the strip, in the order it named
+     * them.
+     *
+     * A display-only view, which is the whole rule: everything that edits,
+     * counts, resolves membership or uploads an order reads
+     * {@code MessagesController.getDialogFiltersUnrestricted()} instead, or the
+     * folder settings page, the add-to-folder menu and the premium limit all
+     * start describing an account the user does not have. Mirrors the desktop
+     * fork's {@code ChatFilters::purpleShownList()}.
+     *
+     * "All chats" always leads. On the desktop it is dropped, because the
+     * preset's own main view stands in its place; here the default tab already
+     * <i>is</i> that view - {@link #filter} runs on the list it draws - so
+     * taking it away would leave nowhere to see the preset at all.
+     *
+     * A fresh list per call rather than a cached one. The accessor is called
+     * from about two dozen event-driven places and none of them draws, so the
+     * cost is a small allocation at UI-event rates, and the alternative is an
+     * invalidation contract with every folder rename, add, remove and reorder
+     * in the app.
+     *
+     * @param raw the account's real folders; returned as-is when nothing is
+     *            restricted, so stock behaviour keeps the live list
+     */
+    public static ArrayList<MessagesController.DialogFilter> shownFilters(
+            ArrayList<MessagesController.DialogFilter> raw) {
+        final PurpleCore.Loaded current = loaded;
+        if (!filtering || current == null || raw == null || raw.isEmpty()) {
+            return raw;
+        }
+        final ArrayList<MessagesController.DialogFilter> result = new ArrayList<>(raw.size());
+        for (int a = 0, n = raw.size(); a < n; ++a) {
+            final MessagesController.DialogFilter filter = raw.get(a);
+            if (filter != null && filter.isDefault()) {
+                result.add(filter);
+                break;
+            }
+        }
+        StringBuilder missing = null;
+        for (int i = 0, count = current.folders.size(); i < count; ++i) {
+            final PurpleCore.FolderEntry wanted = current.folders.get(i);
+            if (wanted.all) {
+                // Every folder the selection does not name elsewhere, in the
+                // account's own order, at this position. The parser cannot
+                // expand it - it has never heard of a Telegram folder - so it
+                // arrives as a marker and is expanded here, which is what keeps
+                // its place in the strip meaningful.
+                for (int a = 0, n = raw.size(); a < n; ++a) {
+                    final MessagesController.DialogFilter filter = raw.get(a);
+                    if (filter == null || filter.isDefault() || result.contains(filter)) {
+                        continue;
+                    }
+                    if (!namedElsewhere(current, filter.name)) {
+                        result.add(filter);
+                    }
+                }
+                continue;
+            }
+            if (!wanted.enabled) {
+                // Switched off. Still in the selection, so the "*ALL" above
+                // skipped it rather than handing it back - which is the whole
+                // reason a disabled entry stays in the resolution.
+                continue;
+            }
+            if (!wanted.show) {
+                // Named, but deliberately off the strip. Worth being able to
+                // say separately from leaving it out.
+                continue;
+            }
+            final MessagesController.DialogFilter found = findByName(raw, wanted.name);
+            if (found == null) {
+                if (missing == null) {
+                    missing = new StringBuilder();
+                } else {
+                    missing.append(", ");
+                }
+                missing.append(wanted.name);
+            } else if (!result.contains(found)) {
+                result.add(found);
+            }
+        }
+        final long now = SystemClock.elapsedRealtime();
+        if (now - lastFolderLog >= 1000L) {
+            lastFolderLog = now;
+            // Same reasoning as the hidden-chat count: a folder named slightly
+            // wrong looks exactly like one the preset meant to leave out.
+            FileLog.d("Purple: folder strip showing " + result.size() + " of " + raw.size()
+                    + (missing == null ? "." : ", naming folders that do not exist: " + missing + "."));
+        }
+        return result;
+    }
+
+    /** Whether some entry other than "*ALL" already claims this folder. */
+    private static boolean namedElsewhere(PurpleCore.Loaded current, String name) {
+        for (int i = 0, count = current.folders.size(); i < count; ++i) {
+            final PurpleCore.FolderEntry entry = current.folders.get(i);
+            if (!entry.all && entry.name.equalsIgnoreCase(name)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static MessagesController.DialogFilter findByName(
+            ArrayList<MessagesController.DialogFilter> raw, String name) {
+        for (int a = 0, n = raw.size(); a < n; ++a) {
+            final MessagesController.DialogFilter filter = raw.get(a);
+            // The default folder's name is empty and its label is supplied at
+            // render time, so it is never matched by name - it is always there
+            // already.
+            if (filter != null && !filter.isDefault() && name.equalsIgnoreCase(filter.name)) {
+                return filter;
+            }
+        }
+        return null;
+    }
+
     /** The cached half of the answer: what the preset says about this chat. */
     private static int packedFor(int currentAccount, long id) {
         synchronized (cacheLock) {
@@ -502,6 +654,10 @@ public final class PurpleGate {
                     continue;
                 }
                 NotificationCenter.getInstance(a).postNotificationName(NotificationCenter.dialogsNeedReload, true);
+                // Which folders are on the strip is part of the preset too, and
+                // the strip is rebuilt from this one signal - the same one a
+                // folder edit sends.
+                NotificationCenter.getInstance(a).postNotificationName(NotificationCenter.dialogFiltersUpdated);
                 // A preset also decides what is silenced, and the unread
                 // counters are built from muted/unmuted buckets, so switching
                 // one moves numbers that no chat-list rebuild would touch.

@@ -137,7 +137,7 @@ public class ArchiveSettingsActivity extends BaseFragment implements Notificatio
         items.add(new ItemInner(VIEW_TYPE_CHECK, 1, LocaleController.getString("ArchiveSettingUnmutedFoldersCheck")));
         items.add(new ItemInner(VIEW_TYPE_SHADOW, 2, LocaleController.getString("ArchiveSettingUnmutedFoldersInfo")));
 
-        final boolean hasFolders = getMessagesController().getDialogFilters().size() > 1;
+        final boolean hasFolders = getMessagesController().getDialogFiltersUnrestricted().size() > 1;
         if (hasFolders) {
             items.add(new ItemInner(VIEW_TYPE_HEADER, 3, LocaleController.getString("ArchiveSettingUnmutedChats")));
             items.add(new ItemInner(VIEW_TYPE_CHECK, 4, LocaleController.getString("ArchiveSettingUnmutedChatsCheck")));

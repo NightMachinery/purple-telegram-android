@@ -413,7 +413,26 @@ public class MessagesController extends BaseController implements NotificationCe
 
     private UserNameResolver userNameResolver;
 
+    /**
+     * The folders the tab strip shows.
+     *
+     * Purple: while a preset restricts folders this is a display-only view of
+     * the real list, in the order the preset named them. Everything that edits
+     * a folder, counts them, resolves membership or uploads an order must call
+     * {@link #getDialogFiltersUnrestricted()} instead - see
+     * {@code PurpleGate.shownFilters}, and the desktop fork's two-accessor
+     * split in {@code ChatFilters::purpleShownList()}.
+     */
     public ArrayList<DialogFilter> getDialogFilters() {
+        return PurpleGate.shownFilters(getDialogFiltersUnrestricted());
+    }
+
+    /**
+     * Every folder the account actually has - what {@link #getDialogFilters()}
+     * was before Work Mode. A preset changes which of them are on the strip and
+     * nothing else about them.
+     */
+    public ArrayList<DialogFilter> getDialogFiltersUnrestricted() {
         if (frozenDialogFilters != null) {
             return frozenDialogFilters;
         }

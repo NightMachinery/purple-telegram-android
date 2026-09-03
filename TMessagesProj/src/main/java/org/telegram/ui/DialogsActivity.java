@@ -3820,7 +3820,10 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                                     return PixelFormat.TRANSPARENT;
                                 }
                             })
-                            .addIf(getMessagesController().getDialogFilters().size() > 1, R.drawable.tabs_reorder, LocaleController.getString(R.string.FilterReorder), () -> {
+                            // Purple: no reordering while a preset picks the folders - the
+                            // drag is refused in FilterTabsView anyway, and an entry that does
+                            // nothing is worse than one that is not there.
+                            .addIf(!PurpleGate.foldersRestricted() && getMessagesController().getDialogFilters().size() > 1, R.drawable.tabs_reorder, LocaleController.getString(R.string.FilterReorder), () -> {
                                 filterTabsView.setIsEditing(true);
                                 showDoneItem(true);
                             })
@@ -6875,10 +6878,21 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         }
     }
 
+    /**
+     * Purple: which preset the strip was last built for. The selected tab is an
+     * index into a list whose membership a preset switch changes, so an index
+     * that is still in range afterwards quietly means a different folder.
+     */
+    private int purpleFilterGeneration = -1;
+
     private void updateFilterTabs(boolean force, boolean animated) {
         if (filterTabsView == null || inPreviewMode || searchIsShowed || (rightSlidingDialogContainer != null && rightSlidingDialogContainer.hasFragment())) {
             return;
         }
+        final int purpleGeneration = PurpleGate.generation();
+        final boolean purplePresetChanged = purpleFilterGeneration >= 0
+                && purpleFilterGeneration != purpleGeneration;
+        purpleFilterGeneration = purpleGeneration;
         if (filterOptions != null) {
             filterOptions.dismiss();
             filterOptions = null;
@@ -6936,6 +6950,11 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                     switchToCurrentSelectedMode(false);
                 }
                 if (filterTabsView.isLocked(filterTabsView.getCurrentTabId())) {
+                    filterTabsView.selectFirstTab();
+                } else if (purplePresetChanged) {
+                    // Land on All chats rather than on whatever folder now
+                    // happens to sit at the old index. The stable-id walk above
+                    // only rescues a tab that left the strip.
                     filterTabsView.selectFirstTab();
                 }
             }

@@ -206,6 +206,40 @@ public final class PurpleCore {
     }
 
     /**
+     * One entry of a preset's {@code folders} selection, in strip order.
+     *
+     * The core never resolves these against the account's real folders - it has
+     * never heard of a Telegram folder - so a name arrives as written and the
+     * {@code "*ALL"} spread arrives as a marker to expand in place. That
+     * expansion happens in {@link PurpleGate}, which is the only side that
+     * knows what folders exist.
+     */
+    public static final class FolderEntry {
+        /** The name as settings.toml wrote it; meaningless when {@link #all}. */
+        public final String name;
+
+        /** True for the {@code "*ALL"} marker rather than a named folder. */
+        public final boolean all;
+
+        /**
+         * False for an entry switched off by hand. It stays in the selection
+         * rather than being dropped from it, so that {@code "*ALL"} skips it
+         * instead of handing it straight back.
+         */
+        public final boolean enabled;
+
+        /** Whether this folder's tab belongs on the strip. */
+        public final boolean show;
+
+        private FolderEntry(String name, boolean all, boolean enabled, boolean show) {
+            this.name = name;
+            this.all = all;
+            this.enabled = enabled;
+            this.show = show;
+        }
+    }
+
+    /**
      * The resolution now in force, and everything the UI needs to say why.
      *
      * A failed settings parse is reported through {@code ok} and {@code error}
@@ -234,6 +268,20 @@ public final class PurpleCore {
         /** True when the active preset is not in settings.toml at all. */
         public final boolean activeMissing;
 
+        /**
+         * The preset's folder selection, in strip order. Empty is meaningful:
+         * a preset that says nothing about folders shows no folder tabs at all,
+         * and {@code "*ALL"} is how you ask for them back.
+         */
+        public final List<FolderEntry> folders;
+
+        /**
+         * True when the strip is anything other than the account's own folders
+         * in the account's own order, so a strip index no longer means a
+         * server-side position and reordering has to be refused.
+         */
+        public final boolean foldersRestricted;
+
         public final List<PresetInfo> presets;
 
         /** The state.toml text to write back, or null when it did not change. */
@@ -241,7 +289,8 @@ public final class PurpleCore {
 
         private Loaded(boolean ok, String error, List<String> warnings, int version,
                 boolean normal, String preset, String title, int lists, boolean usedCache,
-                String cacheReason, boolean activeMissing, List<PresetInfo> presets,
+                String cacheReason, boolean activeMissing, List<FolderEntry> folders,
+                boolean foldersRestricted, List<PresetInfo> presets,
                 String stateText) {
             this.ok = ok;
             this.error = error;
@@ -254,6 +303,8 @@ public final class PurpleCore {
             this.usedCache = usedCache;
             this.cacheReason = cacheReason;
             this.activeMissing = activeMissing;
+            this.folders = folders;
+            this.foldersRestricted = foldersRestricted;
             this.presets = presets;
             this.stateText = stateText;
         }
@@ -261,6 +312,7 @@ public final class PurpleCore {
         private static Loaded failed(String error) {
             return new Loaded(false, error, Collections.<String>emptyList(), 0, true,
                     "normal", "Normal", 0, false, "", false,
+                    Collections.<FolderEntry>emptyList(), false,
                     Collections.<PresetInfo>emptyList(), null);
         }
 
@@ -275,6 +327,21 @@ public final class PurpleCore {
                 if (warned != null) {
                     for (int i = 0; i < warned.length(); ++i) {
                         warnings.add(warned.optString(i, ""));
+                    }
+                }
+                final List<FolderEntry> folders = new ArrayList<>();
+                final JSONArray named = object.optJSONArray("folders");
+                if (named != null) {
+                    for (int i = 0; i < named.length(); ++i) {
+                        final JSONObject entry = named.optJSONObject(i);
+                        if (entry == null) {
+                            continue;
+                        }
+                        folders.add(new FolderEntry(
+                                entry.optString("name", ""),
+                                entry.optBoolean("all", false),
+                                entry.optBoolean("enabled", true),
+                                entry.optBoolean("show", true)));
                     }
                 }
                 final List<PresetInfo> presets = new ArrayList<>();
@@ -307,6 +374,8 @@ public final class PurpleCore {
                         object.optBoolean("usedCache", false),
                         object.optString("cacheReason", ""),
                         object.optBoolean("activeMissing", false),
+                        folders,
+                        object.optBoolean("foldersRestricted", false),
                         presets,
                         object.isNull("stateText") ? null : object.optString("stateText", null));
             } catch (JSONException e) {

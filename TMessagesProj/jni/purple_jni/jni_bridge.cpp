@@ -174,6 +174,56 @@ struct PresetCounts {
 	return result;
 }
 
+// Whether the strip the preset asks for is anything other than the account's
+// own folders in the account's own order. Mirrors the desktop's
+// Purple::FoldersRestricted(): while this is true a strip index no longer means
+// the same thing as a server-side position, so folder reordering has to refuse.
+[[nodiscard]] bool FoldersRestricted(const Purple::Resolved &resolved) {
+	if (resolved.normal) {
+		return false;
+	} else if (!resolved.views.empty()) {
+		// Extra views sit on the strip too, so a strip index is no longer a
+		// folder index. Not ported to Android yet; checked anyway, so the day
+		// they are the guard is already right.
+		return true;
+	}
+	// "*ALL" on its own is every folder in the account's own order, so nothing
+	// is restricted and reordering stays safe. Any other shape - a subset, a
+	// chosen order, a folder carrying flags - means it is not.
+	const auto &folders = resolved.folders;
+	return (folders.size() != 1)
+		|| !Purple::IsAllFolders(folders.front())
+		|| folders.front().show.has_value()
+		|| folders.front().notify.has_value()
+		|| folders.front().include.has_value();
+}
+
+// The folder selection, as the strip needs it: the name to match, whether the
+// entry is the "*ALL" marker, and the two flags that decide whether it puts a
+// tab up. Deliberately not notify_p, badge_p or include - nothing on Android
+// consumes them yet, and a field the bridge hands over is a field somebody will
+// assume works.
+void AppendFoldersJson(QString &json, const Purple::Resolved &resolved) {
+	json += QStringLiteral("[");
+	auto first = true;
+	for (const auto &folder : resolved.folders) {
+		if (!first) {
+			json += QChar(',');
+		}
+		first = false;
+		json += QStringLiteral("{\"name\":");
+		AppendJsonString(json, folder.name);
+		json += QStringLiteral(",\"all\":");
+		AppendJsonBool(json, Purple::IsAllFolders(folder));
+		json += QStringLiteral(",\"enabled\":");
+		AppendJsonBool(json, Purple::FolderEnabled(folder));
+		json += QStringLiteral(",\"show\":");
+		AppendJsonBool(json, folder.show.value_or(true));
+		json += QChar('}');
+	}
+	json += QChar(']');
+}
+
 void AppendPresetJson(
 		QString &json,
 		const Purple::Settings &settings,
@@ -238,6 +288,7 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 			"\"warnings\":[],\"normal\":true,\"preset\":\"normal\","
 			"\"title\":\"Normal\",\"lists\":0,\"usedCache\":false,"
 			"\"cacheReason\":\"\",\"activeMissing\":false,"
+			"\"foldersRestricted\":false,\"folders\":[],"
 			"\"presets\":[],\"stateText\":null}"));
 	}
 
@@ -333,6 +384,10 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 	AppendJsonString(json, cacheReason);
 	json += QStringLiteral(",\"activeMissing\":");
 	AppendJsonBool(json, activeMissing);
+	json += QStringLiteral(",\"foldersRestricted\":");
+	AppendJsonBool(json, FoldersRestricted(gate.resolved));
+	json += QStringLiteral(",\"folders\":");
+	AppendFoldersJson(json, gate.resolved);
 	json += QStringLiteral(",\"presets\":[");
 	first = true;
 	for (const auto &preset : gate.settings.presets) {
