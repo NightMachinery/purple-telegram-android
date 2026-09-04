@@ -105,6 +105,12 @@ public final class PurpleGate {
      */
     private static final Runnable PEEK_OVER = () -> reload("peek over");
 
+    /**
+     * Fired when the earliest "until" decision runs out. A reload is the whole
+     * of it: the bridge prunes what has expired and hands the file back.
+     */
+    private static final Runnable OVERRIDE_OVER = () -> reload("an until expired");
+
     /** Telegram's Archive, which is a folder id rather than a chat. */
     private static final int ARCHIVE_FOLDER_ID = 1;
 
@@ -265,6 +271,7 @@ public final class PurpleGate {
         filtering = !next.normal;
         ++generation;
         refreshPeekTimer(next);
+        refreshOverrideTimer(next);
 
         if (next.normal) {
             FileLog.d("Purple: normal. (" + reason + ")");
@@ -349,6 +356,56 @@ public final class PurpleGate {
         }
         reload(paused ? "schedule paused" : "schedule resumed");
         return true;
+    }
+
+    /**
+     * Arms the expiry of the earliest "until" decision outstanding.
+     *
+     * Same shape and same reason as the peek timer: nothing else would look at
+     * the deadline again, so without this a decision would sit there in force
+     * until the next unrelated change to the files. One timer for all of them,
+     * re-armed on every reload, because a reload is what follows every change
+     * to the set.
+     */
+    private static void refreshOverrideTimer(PurpleCore.Loaded current) {
+        AndroidUtilities.cancelRunOnUIThread(OVERRIDE_OVER);
+        final long deadline = current.clock.nextOverrideDeadline;
+        if (deadline <= 0) {
+            return;
+        }
+        final long left = deadline - System.currentTimeMillis() / 1000L;
+        AndroidUtilities.runOnUIThread(OVERRIDE_OVER, Math.max(left, 0L) * 1000L);
+    }
+
+    /**
+     * Makes, replaces or cancels one "until" decision about a chat.
+     *
+     * A statement about a preset, so it does nothing under Normal - there would
+     * be nothing for it to outrank. One per chat per preset: a second decision
+     * replaces the first rather than queueing behind it, which the core does.
+     *
+     * @param kind one of the {@code PurpleCore.OVERRIDE_} values
+     * @param seconds how long it lasts; zero cancels whatever is running
+     * @return whether the decision reached state.toml
+     */
+    public static boolean setOverride(
+            int currentAccount, long dialogId, int kind, int seconds) {
+        ensureLoaded();
+        final long id = bareIdOf(currentAccount, dialogId);
+        if (id == 0) {
+            return false;
+        }
+        final String text = PurpleCore.setOverride(PurpleState.read(), id, kind, seconds);
+        if (text == null || !PurpleState.write(text.getBytes(UTF_8))) {
+            return false;
+        }
+        reload(seconds > 0 ? "until set" : "until cancelled");
+        return true;
+    }
+
+    /** The "until" decision in force for this chat, for the menu that offers one. */
+    public static int overrideKind(int currentAccount, long dialogId) {
+        return filtering ? overrideFor(currentAccount, dialogId) : PurpleCore.OVERRIDE_NONE;
     }
 
     /**
@@ -447,7 +504,72 @@ public final class PurpleGate {
         if (DialogObject.isFolderDialogId(dialog.id)) {
             return true;
         }
+        // A decision made about this one chat, which outranks the preset for as
+        // long as it lasts.
+        switch (byHand(currentAccount, dialog.id, true)) {
+        case PurpleCore.OVERRIDE_SHOW: return true;
+        case PurpleCore.OVERRIDE_HIDE: return false;
+        default: break;
+        }
         return shownForMode(currentAccount, dialog, packedFor(currentAccount, dialog.id));
+    }
+
+    /**
+     * What an "until" decision says about this chat, with a peek's veto applied.
+     *
+     * A peek reveals, so it outranks a hide - and that is what makes a
+     * hide-until cancellable rather than a trap: the row has to come back for
+     * you to be able to reach the menu that cancels it. It does not outrank the
+     * notify half, because a peek is a look at the chat list and not a request
+     * to be interrupted.
+     *
+     * The peek's effect on the preset's own answer is not here at all: the
+     * engine already forces Always while one is running, so every path that
+     * asks {@code packedFor} gets it for free. This is only about the order
+     * between a peek and an "until".
+     *
+     * @param forView true for the hiding question, false for the silencing one
+     */
+    private static int byHand(int currentAccount, long dialogId, boolean forView) {
+        final int kind = overrideFor(currentAccount, dialogId);
+        if (!forView || kind == PurpleCore.OVERRIDE_NONE) {
+            return kind;
+        }
+        final PurpleCore.Loaded current = loaded;
+        return (current != null && current.clock.peeking) ? PurpleCore.OVERRIDE_NONE : kind;
+    }
+
+    /**
+     * The "until" decision in force for this chat, or {@code OVERRIDE_NONE}.
+     *
+     * Answered from the list the load result handed over rather than from the
+     * file: this runs once per row per rebuild and once per incoming message,
+     * and a JNI call with a state parse behind it is the one thing those paths
+     * cannot carry. The bridge has already dropped what expired and what
+     * belongs to another preset, so the only test left is the clock, which can
+     * move under Java between two reloads.
+     *
+     * The empty case is the common one and costs a size check, the same shape
+     * the folder walks use.
+     */
+    private static int overrideFor(int currentAccount, long dialogId) {
+        final PurpleCore.Loaded current = loaded;
+        if (current == null || current.clock.overrides.isEmpty()) {
+            return PurpleCore.OVERRIDE_NONE;
+        }
+        final long id = bareIdOf(currentAccount, dialogId);
+        if (id == 0) {
+            return PurpleCore.OVERRIDE_NONE;
+        }
+        final long now = System.currentTimeMillis() / 1000L;
+        final java.util.List<PurpleCore.Override> overrides = current.clock.overrides;
+        for (int i = 0, n = overrides.size(); i < n; ++i) {
+            final PurpleCore.Override entry = overrides.get(i);
+            if (entry.peer == id && entry.until > now) {
+                return entry.kind;
+            }
+        }
+        return PurpleCore.OVERRIDE_NONE;
     }
 
     /**
@@ -486,6 +608,16 @@ public final class PurpleGate {
         // before the core is ever asked about it.
         if (DialogObject.isFolderDialogId(dialogId)) {
             return false;
+        }
+        // An "until" decision outranks the preset here too, and no peek test
+        // above it: a peek reveals, it does not un-silence. Notify lifts the
+        // preset's mute and only the preset's - the caller still combines this
+        // with the user's own mute, so a chat muted by hand stays muted, which
+        // is the rule this whole path is built on.
+        switch (byHand(currentAccount, dialogId, false)) {
+        case PurpleCore.OVERRIDE_NOTIFY: return false;
+        case PurpleCore.OVERRIDE_HIDE: return true;
+        default: break;
         }
         if ((packedFor(currentAccount, dialogId) & PurpleCore.NOTIFY_BIT) == 0) {
             return true;
@@ -550,18 +682,39 @@ public final class PurpleGate {
             return true;
         }
         final PurpleCore.Loaded current = loaded;
-        return current == null
-                || current.quietFolders.isEmpty()
+        if (current == null) {
+            return true;
+        }
+        // A chat you put away half an hour ago should not be the reason the
+        // launcher icon is lit. This is the default hide_scope, and the badge is
+        // the part of it that pulls your eye back.
+        if (current.clock.hideScope != PurpleCore.SCOPE_COUNTED
+                && byHand(currentAccount, dialogId, true) == PurpleCore.OVERRIDE_HIDE) {
+            return false;
+        }
+        return current.quietFolders.isEmpty()
                 || !heldByAny(currentAccount, dialogId, current.quietFolders);
     }
 
-    /** Whether any folder asked to be left out of the counts. */
-    public static boolean hasQuietFolders() {
+    /**
+     * Whether the launcher badge has to be rebuilt rather than read off the
+     * running totals.
+     *
+     * Two reasons, and either is enough: a folder asked to be left out of the
+     * counts, or a "hide until" is running under a scope that takes its chat out
+     * of them. Both are rare, and the rebuild only ever runs when one is true.
+     */
+    public static boolean badgeRebuilt() {
         if (!filtering) {
             return false;
         }
         final PurpleCore.Loaded current = loaded;
-        return current != null && !current.quietFolders.isEmpty();
+        if (current == null) {
+            return false;
+        }
+        return !current.quietFolders.isEmpty()
+                || (current.clock.hideScope != PurpleCore.SCOPE_COUNTED
+                        && !current.clock.overrides.isEmpty());
     }
 
     /**
@@ -770,16 +923,37 @@ public final class PurpleGate {
                 show = true;
             } else {
                 final int packed = packedFor(currentAccount, dialog.id);
-                final int mode = effectiveMode(currentAccount, dialog.id, packed);
-                show = shownForShowMode(currentAccount, dialog, mode);
-                if ((packed & PurpleCore.NOTIFY_BIT) == 0
+
+                // This loop decides for itself rather than calling shown() and
+                // silenced(), because it also counts what it saw - so the two
+                // "until" tests have to be repeated here, through the same
+                // helper those two use. Missing them here was a real bug: the
+                // hooks were in place and the chat list, which is the only
+                // caller that matters, went straight past them.
+                final int hand = byHand(currentAccount, dialog.id, false);
+                if (hand == PurpleCore.OVERRIDE_NOTIFY) {
+                    // Notified on purpose, for a while.
+                } else if (hand == PurpleCore.OVERRIDE_HIDE
+                        || (packed & PurpleCore.NOTIFY_BIT) == 0
                         || silencedByFolder(currentAccount, dialog.id)) {
                     ++silenced;
                 }
-                if (watchesUnread(mode)) {
-                    ++gated;
-                    if (show) {
-                        ++gatedShowing;
+
+                final int view = byHand(currentAccount, dialog.id, true);
+                if (view == PurpleCore.OVERRIDE_SHOW) {
+                    show = true;
+                } else if (view == PurpleCore.OVERRIDE_HIDE) {
+                    show = false;
+                } else {
+                    final int mode = effectiveMode(currentAccount, dialog.id, packed);
+                    show = shownForShowMode(currentAccount, dialog, mode);
+                    // Counted only when the mode is what decided, because a
+                    // chat held by an "until" is not waiting on unread.
+                    if (watchesUnread(mode)) {
+                        ++gated;
+                        if (show) {
+                            ++gatedShowing;
+                        }
                     }
                 }
             }

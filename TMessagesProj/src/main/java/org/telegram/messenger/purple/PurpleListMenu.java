@@ -13,7 +13,9 @@
 package org.telegram.messenger.purple;
 
 import org.telegram.messenger.FileLog;
+import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
+import org.telegram.messenger.R;
 import org.telegram.messenger.UserObject;
 import org.telegram.tgnet.TLRPC;
 
@@ -96,6 +98,75 @@ public final class PurpleListMenu {
         // user has just filed should move now.
         PurpleGate.reload("list edit");
         return null;
+    }
+
+    /**
+     * One line saying what is deciding this chat, or null under Normal.
+     *
+     * Two halves. <b>Where</b> is the entry that claimed it - the first list in
+     * the preset's order whose members or kinds match - or the honest "no list
+     * this view names", which is the fall-through: a preset names what gets
+     * through, so saying nothing about a chat is saying no.
+     *
+     * <b>What</b> is what actually happened, which is not the same as what the
+     * entry wanted. A chat a folder pulled back in is shown whatever its list
+     * said, and a line reading "hidden" over a row sitting in the list is worse
+     * than no line at all - so the state comes from the same {@code shown()}
+     * the chat list asked, not from the mode alone. A chat held back by a mode
+     * says what would bring it back, which is the only useful thing to tell
+     * somebody asking why they cannot see it.
+     */
+    public static String verdictLine(int currentAccount, long dialogId) {
+        if (!PurpleGate.filtering()) {
+            return null;
+        }
+        final PurpleCore.Loaded current = PurpleGate.state();
+        if (current == null) {
+            return null;
+        }
+        final long bareId = PurpleGate.bareIdOf(currentAccount, dialogId);
+        final int kind = PurpleGate.kindOf(currentAccount, dialogId);
+        final int packed = PurpleCore.visible(bareId, kind);
+        final int mode = packed & PurpleCore.SHOW_MASK;
+
+        final TLRPC.Dialog dialog =
+                MessagesController.getInstance(currentAccount).dialogs_dict.get(dialogId);
+        final boolean hidden = dialog != null && !PurpleGate.shown(currentAccount, dialog);
+
+        final String state;
+        if (hidden) {
+            switch (mode) {
+            case PurpleCore.SHOW_MESSAGE:
+                state = LocaleController.getString(R.string.PurpleVerdictUntilMessage);
+                break;
+            case PurpleCore.SHOW_MESSAGE_OR_REACTION:
+                state = LocaleController.getString(R.string.PurpleVerdictUntilReaction);
+                break;
+            case PurpleCore.SHOW_MENTION:
+                state = LocaleController.getString(R.string.PurpleVerdictUntilMention);
+                break;
+            default:
+                state = LocaleController.getString(R.string.PurpleVerdictHidden);
+                break;
+            }
+        } else if ((packed & PurpleCore.NOTIFY_BIT) != 0) {
+            state = LocaleController.getString(R.string.PurpleVerdictShown);
+        } else {
+            state = LocaleController.getString(R.string.PurpleVerdictSilenced);
+        }
+
+        // A chat on screen whose own entry said Never is there because a folder
+        // pulled it in, and saying so is the difference between a line that
+        // explains the row and one that contradicts it.
+        final String folder = (!hidden && mode == PurpleCore.SHOW_NEVER)
+                ? LocaleController.getString(R.string.PurpleVerdictByFolder)
+                : "";
+
+        final String list = PurpleCore.decider(bareId, kind);
+        final String where = (list == null || list.length() == 0)
+                ? LocaleController.formatString(R.string.PurpleVerdictNoList, current.title)
+                : LocaleController.formatString(R.string.PurpleVerdictInList, list);
+        return where + ": " + state + folder;
     }
 
     /**

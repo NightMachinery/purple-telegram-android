@@ -100,10 +100,53 @@ public final class PurpleCore {
 
     private static native String scheduleTickNative(byte[] stateUtf8);
 
+    private static native String setOverrideNative(
+            byte[] stateUtf8, long bareId, int kind, int seconds);
+
+    private static native String deciderNative(long bareId, int kind);
+
     private static native String listsForNative(byte[] settingsUtf8, long bareId);
 
     private static native String spliceMemberNative(
             byte[] settingsUtf8, String list, long bareId, boolean add, String titlesJson);
+
+    /**
+     * The three "until" decisions, numbered as the core's {@code OverrideKind}.
+     *
+     * A decision about one chat under one preset, with a deadline: show it
+     * anyway, hide it anyway, or let it interrupt anyway. {@link #OVERRIDE_NONE}
+     * is this side's "there isn't one" and has no counterpart in the core.
+     */
+    public static final int OVERRIDE_SHOW = 0;
+    public static final int OVERRIDE_HIDE = 1;
+    public static final int OVERRIDE_NOTIFY = 2;
+    public static final int OVERRIDE_NONE = -1;
+
+    /**
+     * How far a "hide until" reaches, numbered as the core's {@code HideScope}.
+     *
+     * {@link #SCOPE_EVERYWHERE} is parsed and carried but behaves as the default
+     * here, because the preset-wide {@code hide_everywhere_p} it reuses is not
+     * ported to Android yet.
+     */
+    public static final int SCOPE_EVERYWHERE = 0;
+    public static final int SCOPE_UNCOUNTED = 1;
+    public static final int SCOPE_COUNTED = 2;
+
+    /** One live "until" decision, as the load result hands it over. */
+    public static final class Override {
+        public final long peer;
+        public final int kind;
+
+        /** When it runs out, in local wall-clock seconds. */
+        public final long until;
+
+        Override(long peer, int kind, long until) {
+            this.peer = peer;
+            this.kind = kind;
+            this.until = until;
+        }
+    }
 
     /**
      * The half of the load result that moves on a clock rather than on an edit.
@@ -132,24 +175,61 @@ public final class PurpleCore {
         /** True when settings.toml describes a schedule at all. */
         public final boolean scheduleConfigured;
 
+        /**
+         * The "until" decisions in force under the running preset.
+         *
+         * Already narrowed by the bridge to the live ones under this preset, so
+         * a lookup here needs no filtering - only the deadline check, which the
+         * clock can move under Java between two reloads.
+         */
+        public final List<Override> overrides;
+
+        /** The earliest deadline outstanding, or zero. What the timer is armed for. */
+        public final long nextOverrideDeadline;
+
+        /** One of the {@code SCOPE_} values: how far a "hide until" reaches. */
+        public final int hideScope;
+
         Clock(boolean peeking, long peekDeadline, int peekSeconds,
-                boolean schedulePaused, boolean scheduleConfigured) {
+                boolean schedulePaused, boolean scheduleConfigured,
+                List<Override> overrides, long nextOverrideDeadline, int hideScope) {
             this.peeking = peeking;
             this.peekDeadline = peekDeadline;
             this.peekSeconds = peekSeconds;
             this.schedulePaused = schedulePaused;
             this.scheduleConfigured = scheduleConfigured;
+            this.overrides = overrides;
+            this.nextOverrideDeadline = nextOverrideDeadline;
+            this.hideScope = hideScope;
         }
 
-        static final Clock NONE = new Clock(false, 0, 0, false, false);
+        static final Clock NONE = new Clock(false, 0, 0, false, false,
+                Collections.<Override>emptyList(), 0, SCOPE_UNCOUNTED);
 
         static Clock fromJson(JSONObject object) {
+            final List<Override> overrides = new ArrayList<>();
+            final JSONArray array = object.optJSONArray("overrides");
+            if (array != null) {
+                for (int i = 0; i < array.length(); ++i) {
+                    final JSONObject entry = array.optJSONObject(i);
+                    if (entry == null) {
+                        continue;
+                    }
+                    overrides.add(new Override(
+                            entry.optLong("peer", 0),
+                            entry.optInt("kind", OVERRIDE_SHOW),
+                            entry.optLong("until", 0)));
+                }
+            }
             return new Clock(
                     object.optBoolean("peeking", false),
                     object.optLong("peekDeadline", 0),
                     object.optInt("peekSeconds", 0),
                     object.optBoolean("schedulePaused", false),
-                    object.optBoolean("scheduleConfigured", false));
+                    object.optBoolean("scheduleConfigured", false),
+                    overrides,
+                    object.optLong("nextOverrideDeadline", 0),
+                    object.optInt("hideScope", SCOPE_UNCOUNTED));
         }
     }
 
@@ -231,6 +311,38 @@ public final class PurpleCore {
         } catch (JSONException e) {
             FileLog.e(e);
             return new PeekChange(true, false, 0, null);
+        }
+    }
+
+    /**
+     * Returns the state.toml text carrying one "until" decision.
+     *
+     * @param seconds how long it lasts; zero cancels whatever is running
+     * @return the text to write, or null when nothing is running to decide
+     *         about - under Normal there is no preset for one to belong to
+     */
+    public static String setOverride(byte[] state, long bareId, int kind, int seconds) {
+        try {
+            return setOverrideNative(state, bareId, kind, seconds);
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return null;
+        }
+    }
+
+    /**
+     * The title of the list deciding this chat, or null when none does.
+     *
+     * Null is the fall-through rather than an error: a preset names what gets
+     * through, so a chat no entry claims is hidden and silenced by saying
+     * nothing about it.
+     */
+    public static String decider(long bareId, int kind) {
+        try {
+            return deciderNative(bareId, kind);
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return null;
         }
     }
 

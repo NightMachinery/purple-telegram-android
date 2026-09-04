@@ -408,6 +408,42 @@ Java_org_telegram_messenger_purple_PurpleCore_parseSettings(
 	return ToJava(env, ResultJson(result));
 }
 
+// The "until" decisions in force under this resolution, as
+// [{"peer","kind","until"}]. Expired entries and entries made under another
+// preset are already invisible to OverrideFor(), and the walk below applies the
+// same two tests so the Java side never has to know either rule.
+void AppendOverridesJson(
+		QString &out,
+		const Purple::State &state,
+		const Purple::Resolved &resolved) {
+	out += QChar('[');
+	if (resolved.normal) {
+		// Normal is a bypass, and an override is a statement about a preset.
+		out += QChar(']');
+		return;
+	}
+	const auto now = NowUnix();
+	auto first = true;
+	for (const auto &entry : state.overrides) {
+		if (entry.untilUnix <= now
+			|| entry.preset.compare(resolved.preset, Qt::CaseInsensitive)) {
+			continue;
+		}
+		if (!first) {
+			out += QChar(',');
+		}
+		first = false;
+		out += QStringLiteral("{\"peer\":");
+		out += QString::number(qint64(entry.peer));
+		out += QStringLiteral(",\"kind\":");
+		out += QString::number(int(entry.kind));
+		out += QStringLiteral(",\"until\":");
+		out += QString::number(qint64(entry.untilUnix));
+		out += QChar('}');
+	}
+	out += QChar(']');
+}
+
 // Reloads both files and resolves the active preset, exactly as the desktop's
 // Gate::refresh() does - including its one rule that matters more than the
 // rest: an active preset that no longer resolves falls back to the last
@@ -503,6 +539,12 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 		gate.state.peekDeadlineUnix = 0;
 	}
 
+	// The "until" decisions expire the same way, and are pruned here for the
+	// same reason: this is the one place that already rewrites state.toml, so
+	// an entry that has run out leaves the file at the moment it stops being
+	// true rather than at the next unrelated change.
+	Purple::PruneOverrides(gate.state, NowUnix());
+
 	// Only ever widened, never cleared: a resolution we could not compute is
 	// exactly when the cache has to still be there.
 	if (!gate.resolved.normal) {
@@ -562,6 +604,19 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 	// there only when the file describes a schedule at all.
 	json += QStringLiteral(",\"scheduleConfigured\":");
 	AppendJsonBool(json, !gate.settings.schedule.rules.empty());
+	// Handed over whole rather than asked per chat, exactly as the exempt
+	// folders are: shown() runs once per row per rebuild, and a JNI call with a
+	// state parse behind it is the one thing that path cannot carry. Only the
+	// running preset's live ones, so the Java side is a lookup and a clock
+	// comparison with nothing to filter.
+	json += QStringLiteral(",\"overrides\":");
+	AppendOverridesJson(json, gate.state, gate.resolved);
+	json += QStringLiteral(",\"nextOverrideDeadline\":");
+	json += QString::number(qint64(gate.resolved.normal
+		? 0
+		: Purple::NextOverrideDeadline(gate.state, gate.resolved.preset)));
+	json += QStringLiteral(",\"hideScope\":");
+	json += QString::number(int(gate.settings.overrides.hideScope));
 	// Every list in the file, not the running preset's - the membership menu
 	// offers all of them, and under `normal' the preset's own count is zero.
 	json += QStringLiteral(",\"listCount\":");
@@ -791,6 +846,95 @@ Java_org_telegram_messenger_purple_PurpleCore_scheduleTickNative(
 	AppendJsonString(json, Purple::SerializeState(state));
 	json += QChar('}');
 	return ToJava(env, json);
+}
+
+// Makes, replaces or clears one "until" decision, mirroring the desktop's
+// Purple::SetOverride().
+//
+// Takes the lock because the answer is scoped to the running preset rather than
+// to the file: the same chat can carry a different decision under each one, and
+// which one is being written is a property of what is resolved right now.
+//
+// Zero seconds is the cancel, which is why there is no separate native for it -
+// the desktop spells it the same way, as a SetOverride() that stores nothing.
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_setOverrideNative(
+		JNIEnv *env,
+		jclass,
+		jbyteArray stateUtf8,
+		jlong bareId,
+		jint kind,
+		jint seconds) {
+	auto stateText = QString();
+	if (!ReadUtf8(env, stateUtf8, stateText)) {
+		return nullptr;
+	}
+	const auto id = Purple::PeerIdValue(bareId);
+	auto &gate = TheGate();
+	const auto lock = std::lock_guard(gate.mutex);
+	if (!id || !gate.loaded || gate.resolved.normal) {
+		return nullptr;
+	}
+	const auto preset = gate.resolved.preset;
+	const auto until = NowUnix() + seconds;
+	auto state = Purple::ParseState(stateText, QStringLiteral("state.toml"));
+
+	// One per chat per preset: a second "until" replaces the first rather than
+	// queueing behind it, because the menu offers a decision and not a schedule.
+	auto kept = std::vector<Purple::Override>();
+	kept.reserve(state.overrides.size() + 1);
+	for (auto &entry : state.overrides) {
+		if (entry.peer != id
+			|| entry.preset.compare(preset, Qt::CaseInsensitive)) {
+			kept.push_back(std::move(entry));
+		}
+	}
+	if (seconds > 0) {
+		kept.push_back({
+			id,
+			Purple::OverrideKind(kind),
+			until,
+			until - seconds,
+			preset,
+		});
+	}
+	state.overrides = std::move(kept);
+	return ToJava(env, Purple::SerializeState(state));
+}
+
+// Which of the preset's entries is deciding this chat, by the title its list
+// carries. Null means nothing claimed it, which is the fall-through the caller
+// has to name differently - "in no list this view names" rather than "in none".
+//
+// Answered from the resolution rather than from the file, unlike listsForNative
+// above: this is a question about what is happening now, and a list the preset
+// does not name has no say in it however many members it has.
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_deciderNative(
+		JNIEnv *env,
+		jclass,
+		jlong bareId,
+		jint kind) {
+	auto &gate = TheGate();
+	const auto lock = std::lock_guard(gate.mutex);
+	if (!gate.loaded || gate.resolved.normal) {
+		return nullptr;
+	}
+	const auto effective = Purple::MatchList(
+		gate.settings,
+		gate.resolved,
+		Purple::PeerIdValue(bareId),
+		Purple::ChatKind(kind));
+	if (!effective) {
+		return nullptr;
+	}
+	const auto list = gate.settings.list(effective->list);
+	if (!list) {
+		// The resolution named a list the file no longer has, which is what a
+		// half-finished edit looks like. The key is still the honest answer.
+		return ToJava(env, effective->list);
+	}
+	return ToJava(env, list->title.isEmpty() ? list->name : list->title);
 }
 
 // The lists a chat could be put in, and which of them already hold it.
