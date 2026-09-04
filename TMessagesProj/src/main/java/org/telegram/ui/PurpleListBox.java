@@ -30,6 +30,7 @@ import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.CheckBoxCell;
+import org.telegram.ui.Cells.TextCell;
 
 import java.util.List;
 
@@ -82,6 +83,15 @@ public final class PurpleListBox {
         layout.setOrientation(LinearLayout.VERTICAL);
         builder.setView(layout);
 
+        // What is deciding this chat right now, above the lists that could change
+        // it. Until this line existed, a chat missing from the view and a chat
+        // sitting in it under a mode looked identical from here.
+        final String verdict = PurpleListMenu.verdictLine(currentAccount, dialogId);
+        if (verdict != null) {
+            layout.addView(note(activity, verdict,
+                    Theme.getColor(Theme.key_dialogTextGray2, resourcesProvider)));
+        }
+
         for (int a = 0, n = lists.size(); a < n; ++a) {
             final PurpleCore.ListEntry list = lists.get(a);
             final CheckBoxCell cell = new CheckBoxCell(activity, 1, resourcesProvider);
@@ -108,11 +118,111 @@ public final class PurpleListBox {
             layout.addView(cell);
         }
 
+        // The "until" decisions, set apart from the lists above: a list is a
+        // standing rule, and these are a thing you are doing this afternoon.
+        // Only under a preset, because an override is a statement about one -
+        // there would be nothing for it to outrank under Normal.
+        if (PurpleGate.filtering()) {
+            addUntilRow(fragment, activity, layout, resourcesProvider, builder,
+                    currentAccount, dialogId, PurpleCore.OVERRIDE_SHOW, R.string.PurpleShowUntil);
+            addUntilRow(fragment, activity, layout, resourcesProvider, builder,
+                    currentAccount, dialogId, PurpleCore.OVERRIDE_HIDE, R.string.PurpleHideUntil);
+            addUntilRow(fragment, activity, layout, resourcesProvider, builder,
+                    currentAccount, dialogId, PurpleCore.OVERRIDE_NOTIFY, R.string.PurpleNotifyUntil);
+
+            final int running = PurpleGate.overrideKind(currentAccount, dialogId);
+            if (running != PurpleCore.OVERRIDE_NONE) {
+                // Offered only when there is one, so the box does not carry a
+                // permanently inert row for something most chats never use.
+                final TextCell cancel = new TextCell(activity, resourcesProvider);
+                cancel.setText(formatString(R.string.PurpleCancelUntil, kindName(running)), false);
+                cancel.setOnClickListener(v -> {
+                    builder.getDismissRunnable().run();
+                    PurpleGate.setOverride(currentAccount, dialogId, running, 0);
+                });
+                layout.addView(cancel);
+            }
+        }
+
         layout.addView(note(activity, getString(R.string.PurpleListsInfo),
                 Theme.getColor(Theme.key_dialogTextGray2, resourcesProvider)));
 
         builder.setNegativeButton(getString(R.string.Close), null);
         fragment.showDialog(builder.create());
+    }
+
+    /**
+     * How long an "until" decision lasts, in the spans the desktop offers.
+     *
+     * Four, and no free-form entry: this is a decision about the rest of the
+     * afternoon, and a picker that asked for a time would be asking for more
+     * precision than anybody has about that.
+     */
+    private static final int[] SPANS = { 30 * 60, 2 * 3600, 8 * 3600, 24 * 3600 };
+    private static final int[] SPAN_NAMES = {
+            R.string.PurpleSpan30Minutes,
+            R.string.PurpleSpan2Hours,
+            R.string.PurpleSpan8Hours,
+            R.string.PurpleSpan24Hours,
+    };
+
+    /**
+     * One "Show/Hide/Notify until..." row, which opens the spans.
+     *
+     * Two dialogs rather than the desktop's submenu, because an AlertDialog has
+     * no submenus and fifteen flat rows would be worse than one extra tap.
+     */
+    private static void addUntilRow(BaseFragment fragment, Activity activity,
+            LinearLayout layout, Theme.ResourcesProvider resourcesProvider,
+            AlertDialog.Builder builder, int currentAccount, long dialogId,
+            int kind, int label) {
+        final TextCell cell = new TextCell(activity, resourcesProvider);
+        cell.setText(getString(label), true);
+        cell.setOnClickListener(v -> {
+            // Dismissed first, the way the list rows are: the write behind the
+            // span reloads and rebuilds the chat list underneath.
+            builder.getDismissRunnable().run();
+            showSpans(fragment, activity, resourcesProvider, currentAccount, dialogId, kind, label);
+        });
+        layout.addView(cell);
+    }
+
+    /** The four spans, as a second box titled with the decision being made. */
+    private static void showSpans(BaseFragment fragment, Activity activity,
+            Theme.ResourcesProvider resourcesProvider, int currentAccount, long dialogId,
+            int kind, int label) {
+        final AlertDialog.Builder builder = new AlertDialog.Builder(activity, resourcesProvider);
+        builder.setTitle(getString(label));
+
+        final LinearLayout layout = new LinearLayout(activity);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        builder.setView(layout);
+
+        for (int a = 0; a < SPANS.length; ++a) {
+            final int seconds = SPANS[a];
+            final TextCell cell = new TextCell(activity, resourcesProvider);
+            cell.setText(getString(SPAN_NAMES[a]), a < SPANS.length - 1);
+            cell.setOnClickListener(v -> {
+                builder.getDismissRunnable().run();
+                if (!PurpleGate.setOverride(currentAccount, dialogId, kind, seconds)) {
+                    Toast.makeText(activity,
+                            getString(R.string.PurpleListsFailed),
+                            Toast.LENGTH_SHORT).show();
+                }
+            });
+            layout.addView(cell);
+        }
+        builder.setNegativeButton(getString(R.string.Cancel), null);
+        fragment.showDialog(builder.create());
+    }
+
+    /** What a running decision is called, for the row that cancels it. */
+    private static String kindName(int kind) {
+        switch (kind) {
+        case PurpleCore.OVERRIDE_HIDE: return getString(R.string.PurpleUntilHide);
+        case PurpleCore.OVERRIDE_NOTIFY: return getString(R.string.PurpleUntilNotify);
+        default: return getString(R.string.PurpleUntilShow);
+        }
     }
 
     /**

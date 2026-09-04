@@ -1820,13 +1820,14 @@ public class NotificationsController extends BaseController implements Notificat
                     }
                 } else {
                     // Purple: the running total was accumulated over every chat
-                    // the notify gate let through, so a folder left out of the
-                    // counts cannot be taken off it without subtracting - and
-                    // the last subtraction in this fork's history drove a badge
-                    // to -334. Rebuild it instead, over the very dialogs it was
-                    // built from. Costs nothing in a preset that named no such
-                    // folder, which is every preset by default.
-                    count += PurpleGate.hasQuietFolders()
+                    // the notify gate let through, so a chat left out of the
+                    // counts - by a folder's badge_p, or by a "hide until"
+                    // running under the default scope - cannot be taken off it
+                    // without subtracting, and the last subtraction in this
+                    // fork's history drove a badge to -334. Rebuild it instead,
+                    // over the very dialogs it was built from. Costs nothing
+                    // unless something actually asked, which is the usual case.
+                    count += PurpleGate.badgeRebuilt()
                             ? controller.purpleBadgeCount(true)
                             : controller.total_unread_count;
                 }
@@ -1859,7 +1860,7 @@ public class NotificationsController extends BaseController implements Notificat
                         FileLog.e(e, false);
                     }
                 } else {
-                    count += PurpleGate.hasQuietFolders()
+                    count += PurpleGate.badgeRebuilt()
                             ? controller.purpleBadgeCount(false)
                             : controller.pushDialogs.size();
                 }

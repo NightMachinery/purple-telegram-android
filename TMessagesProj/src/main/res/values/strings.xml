@@ -11263,4 +11263,24 @@
     <string name="PurplePeekStarted">Peeking - everything the preset hides is showing.</string>
     <string name="PurplePeekOver">Peek over.</string>
     <string name="PurpleSchedulePause">Pause the schedule</string>
+    <string name="PurpleShowUntil">Show until\u2026</string>
+    <string name="PurpleHideUntil">Hide until\u2026</string>
+    <string name="PurpleNotifyUntil">Notify until\u2026</string>
+    <string name="PurpleUntilShow">show until</string>
+    <string name="PurpleUntilHide">hide until</string>
+    <string name="PurpleUntilNotify">notify until</string>
+    <string name="PurpleCancelUntil">Cancel \'%1$s\'</string>
+    <string name="PurpleSpan30Minutes">30 minutes</string>
+    <string name="PurpleSpan2Hours">2 hours</string>
+    <string name="PurpleSpan8Hours">8 hours</string>
+    <string name="PurpleSpan24Hours">24 hours</string>
+    <string name="PurpleVerdictInList">In \'%1$s\'</string>
+    <string name="PurpleVerdictNoList">In no list \'%1$s\' names</string>
+    <string name="PurpleVerdictShown">shown</string>
+    <string name="PurpleVerdictSilenced">silenced</string>
+    <string name="PurpleVerdictHidden">hidden</string>
+    <string name="PurpleVerdictUntilMessage">hidden until a message</string>
+    <string name="PurpleVerdictUntilReaction">hidden until a message or reaction</string>
+    <string name="PurpleVerdictUntilMention">hidden until a mention</string>
+    <string name="PurpleVerdictByFolder">, shown by a folder</string>
 </resources>
