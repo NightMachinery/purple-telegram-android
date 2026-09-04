@@ -111,6 +111,27 @@ public final class PurpleGate {
      */
     private static final Runnable OVERRIDE_OVER = () -> reload("an until expired");
 
+    /**
+     * Where an extra view's filter id starts.
+     *
+     * The same reserved base the desktop fork uses, and far above any id the
+     * server hands out. These filters live only in the display accessor, so an
+     * id never reaches a request - but one that could collide with a real
+     * folder's would be a trap for anything that ever looked one up.
+     */
+    private static final int VIEW_ID_BASE = 0x50555250;
+
+    /**
+     * The synthetic filters standing for the preset's extra tabs.
+     *
+     * Rebuilt once per reload and handed out by reference, never rebuilt per
+     * call: {@code sortDialogs()} fills {@code filter.dialogs} for whichever
+     * filter is selected, and a fresh object every time would mean the tab on
+     * screen was never the one anything filled.
+     */
+    private static volatile ArrayList<MessagesController.DialogFilter> viewFilters =
+            new ArrayList<>();
+
     /** Telegram's Archive, which is a folder id rather than a chat. */
     private static final int ARCHIVE_FOLDER_ID = 1;
 
@@ -158,11 +179,15 @@ public final class PurpleGate {
         if (current == null) {
             return false;
         }
+        // Extra views sit on the strip too, so a strip index is no longer the
+        // real list's index shifted by one. Checked before the peek, because a
+        // peek reveals folders and leaves the extra views exactly where they
+        // were - the desktop's order, and the reason this is no longer one line.
+        if (!current.views.isEmpty()) {
+            return true;
+        }
         // A peek puts the whole strip back in the account's own order, so a
         // strip index means a server-side position again and dragging is safe.
-        // The desktop checks its extra views ahead of this, because those sit
-        // on the strip and a peek leaves them exactly where they were; there
-        // are none here yet, which is the only reason this is one line.
         return !current.clock.peeking && current.foldersRestricted;
     }
 
@@ -272,6 +297,7 @@ public final class PurpleGate {
         ++generation;
         refreshPeekTimer(next);
         refreshOverrideTimer(next);
+        rebuildViewFilters(next);
 
         if (next.normal) {
             FileLog.d("Purple: normal. (" + reason + ")");
@@ -1153,22 +1179,161 @@ public final class PurpleGate {
      * @param raw the account's real folders; returned as-is when nothing is
      *            restricted, so stock behaviour keeps the live list
      */
+    /**
+     * Rebuilds the synthetic filters for the preset's extra tabs.
+     *
+     * A view is a selection you asked for by name, so almost none of a real
+     * folder's machinery applies: no flags, no {@code alwaysShow}, no server
+     * order. Membership is answered by {@link #viewHolds} out of the packed
+     * per-chat value, which is the one hook
+     * {@code DialogFilter.includesDialog()} needs.
+     */
+    private static void rebuildViewFilters(PurpleCore.Loaded next) {
+        if (next.views.isEmpty()) {
+            if (!viewFilters.isEmpty()) {
+                viewFilters = new ArrayList<>();
+            }
+            return;
+        }
+        final ArrayList<MessagesController.DialogFilter> result =
+                new ArrayList<>(next.views.size());
+        for (int i = 0, n = Math.min(next.views.size(), PurpleCore.VIEW_LIMIT); i < n; ++i) {
+            final MessagesController.DialogFilter filter = new MessagesController.DialogFilter();
+            filter.id = VIEW_ID_BASE + i;
+            filter.name = next.views.get(i).name;
+            filter.order = i;
+            fillViewPins(filter, next.views.get(i).pinned);
+            result.add(filter);
+        }
+        viewFilters = result;
+        FileLog.d("Purple: " + result.size() + " extra view"
+                + (result.size() == 1 ? "" : "s") + " on the strip.");
+    }
+
+    /**
+     * Puts the view's own pinned order into the filter.
+     *
+     * An extra view <b>owns</b> its order: it is not standing in for All chats,
+     * so there is no main-list order to copy, and nothing on the server has
+     * heard of the tab. A lower number sorts earlier, which is the order the
+     * file lists them in.
+     *
+     * The file writes bare ids, which have had their type stripped, so the sign
+     * has to be recovered before the comparator can match a dialog id. A pin
+     * naming a peer this client has not loaded yet is skipped and picked up by
+     * the next reload - the same cold-start hole the folder walks have, and
+     * harmless for the same reason: there is no row to order either.
+     */
+    private static void fillViewPins(MessagesController.DialogFilter filter, long[] pinned) {
+        if (pinned == null || pinned.length == 0) {
+            return;
+        }
+        try {
+            final MessagesController controller =
+                    MessagesController.getInstance(UserConfig.selectedAccount);
+            for (int a = 0; a < pinned.length; ++a) {
+                final long bare = pinned[a];
+                if (bare == 0) {
+                    continue;
+                }
+                final long dialogId;
+                if (controller.dialogs_dict.get(bare) != null) {
+                    dialogId = bare;
+                } else if (controller.dialogs_dict.get(-bare) != null) {
+                    dialogId = -bare;
+                } else if (controller.getUser(bare) != null) {
+                    dialogId = bare;
+                } else if (controller.getChat(bare) != null) {
+                    dialogId = -bare;
+                } else {
+                    continue;
+                }
+                filter.pinnedDialogs.put(dialogId, a);
+            }
+        } catch (Exception e) {
+            // The dialog list, being rewritten by the UI thread. An unordered
+            // tab is the safe direction, and the next reload fixes it.
+            FileLog.e(e, false);
+        }
+    }
+
+    /** Whether this filter is one of the preset's invented tabs. */
+    public static boolean isExtraView(MessagesController.DialogFilter filter) {
+        return filter != null && filter.id >= VIEW_ID_BASE;
+    }
+
+    /**
+     * Whether one of the preset's extra tabs holds this chat.
+     *
+     * The whole answer is a bit in the value {@link #packedFor} already caches,
+     * so this costs a map lookup and a mask - which it has to, because it is
+     * asked once per chat per sort for every tab that is showing.
+     *
+     * A view selects membership and nothing else: the unread-watching modes are
+     * deliberately not honoured here, and neither are the per-kind defaults. A
+     * "P0" tab that emptied itself whenever its chats went quiet would be the
+     * opposite of the point. The core enforces that in {@code ViewHolds}; this
+     * side only reads the bit it set.
+     */
+    public static boolean viewHolds(
+            int currentAccount, MessagesController.DialogFilter filter, long dialogId) {
+        if (!filtering || !isExtraView(filter)) {
+            return false;
+        }
+        if (DialogObject.isFolderDialogId(dialogId)) {
+            // A view holds no folders. The Archive row belongs to the main view,
+            // as it does to All chats, and there is nothing a list of peers
+            // could say that would put it on a tab you invented.
+            return false;
+        }
+        final int index = filter.id - VIEW_ID_BASE;
+        if (index < 0 || index >= PurpleCore.VIEW_LIMIT) {
+            return false;
+        }
+        final int packed = packedFor(currentAccount, dialogId);
+        return ((packed >>> PurpleCore.VIEW_SHIFT) & (1 << index)) != 0;
+    }
+
+    /**
+     * How many unread chats an extra tab is showing, for its own badge.
+     *
+     * Walked rather than accumulated, for the reason every count in this fork is
+     * walked: the totals Telegram maintains are summed from buckets a synthetic
+     * filter was never counted into, so there is nothing to take from - and the
+     * last subtraction in this fork's history drove a badge to -334. Only ever
+     * runs when a preset actually declared a view.
+     */
+    public static int viewUnread(int currentAccount, MessagesController.DialogFilter filter) {
+        if (!isExtraView(filter)) {
+            return filter == null ? 0 : filter.unreadCount;
+        }
+        final MessagesController controller = MessagesController.getInstance(currentAccount);
+        int count = 0;
+        try {
+            final ArrayList<TLRPC.Dialog> all = controller.getAllDialogs();
+            for (int a = 0, n = all.size(); a < n; ++a) {
+                final TLRPC.Dialog dialog = all.get(a);
+                if (dialog == null || DialogObject.isFolderDialogId(dialog.id)) {
+                    continue;
+                }
+                if (viewHolds(currentAccount, filter, dialog.id)
+                        && controller.getDialogUnreadCount(dialog) != 0) {
+                    ++count;
+                }
+            }
+        } catch (Exception e) {
+            // A list the UI thread was rewriting underneath us; the next refresh
+            // gets it right, and a wrong number for one frame is not worth a
+            // stack trace on a path that draws.
+            return count;
+        }
+        return count;
+    }
+
     public static ArrayList<MessagesController.DialogFilter> shownFilters(
             ArrayList<MessagesController.DialogFilter> raw) {
         final PurpleCore.Loaded current = loaded;
         if (!filtering || current == null || raw == null || raw.isEmpty()) {
-            return raw;
-        }
-        if (current.clock.peeking) {
-            // A hidden folder is hidden, so a peek brings it back with
-            // everything else. The desktop spells this as "*ALL", which expands
-            // to precisely the account's own strip - which is what raw already
-            // is, so expanding it again would be the long way round.
-            //
-            // Logged on the same line as every other answer, and not skipped
-            // along with the work: the count is the only readable evidence that
-            // the strip followed the peek rather than staying where it was.
-            logStrip(raw.size(), raw.size(), null, true);
             return raw;
         }
         final ArrayList<MessagesController.DialogFilter> result = new ArrayList<>(raw.size());
@@ -1178,6 +1343,31 @@ public final class PurpleGate {
                 result.add(filter);
                 break;
             }
+        }
+        // The preset's own tabs belong next to each other, after its main view
+        // and before any folder, rather than scattered through the account's.
+        // Not lifted by a peek: a peek suspends hiding, and a view hides
+        // nothing - it is a selection asked for by name, and filling it with
+        // every chat for two minutes would only take it away.
+        final ArrayList<MessagesController.DialogFilter> views = viewFilters;
+        result.addAll(views);
+
+        if (current.clock.peeking) {
+            // A hidden folder is hidden, so a peek brings it back with
+            // everything else - which the desktop spells "*ALL", and which is
+            // the account's own order, so the folders go on in the order they
+            // arrived.
+            for (int a = 0, n = raw.size(); a < n; ++a) {
+                final MessagesController.DialogFilter filter = raw.get(a);
+                if (filter != null && !filter.isDefault()) {
+                    result.add(filter);
+                }
+            }
+            // Logged on the same line as every other answer, and not skipped
+            // along with the work: the count is the only readable evidence that
+            // the strip followed the peek rather than staying where it was.
+            logStrip(result.size(), raw.size() + views.size(), null, true);
+            return result;
         }
         StringBuilder missing = null;
         for (int i = 0, count = current.folders.size(); i < count; ++i) {
@@ -1222,7 +1412,7 @@ public final class PurpleGate {
                 result.add(found);
             }
         }
-        logStrip(result.size(), raw.size(), missing, false);
+        logStrip(result.size(), raw.size() + views.size(), missing, false);
         return result;
     }
 

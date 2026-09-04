@@ -3714,6 +3714,14 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                     if (!PurpleGate.folderCounted(filter)) {
                         return 0;
                     }
+                    // Purple: an invented tab keeps its own count, because the
+                    // totals Telegram maintains are summed from buckets it was
+                    // never counted into - so unreadCount on one is zero rather
+                    // than wrong, and a badge of zero on a tab full of unread
+                    // chats reads as broken.
+                    if (PurpleGate.isExtraView(filter)) {
+                        return PurpleGate.viewUnread(currentAccount, filter);
+                    }
                     return filter.unreadCount;
                 }
 
