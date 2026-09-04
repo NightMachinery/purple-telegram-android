@@ -162,6 +162,9 @@ public final class PurpleGate {
         // and a refresh that came back round to ensureLoaded() would recurse.
         everLoaded = true;
         reload("first use");
+        // Only now, so the watch is never the thing that triggers the first
+        // load: it exists to notice the file changing afterwards.
+        PurpleWatcher.start();
     }
 
     /**
