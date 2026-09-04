@@ -8716,6 +8716,30 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             previewMenu[0].addView(markAsUnreadItem);
         }
 
+        // Purple: the same box the selection mode's overflow opens, reached the
+        // way the desktop reaches it - from the chat itself rather than from a
+        // selection. One entry point's worth of code, because both call
+        // PurpleListBox.show() and both are hidden by the same
+        // PurpleListMenu.available().
+        //
+        // Not yet verified on a device: the preview menu needs a long-press
+        // preview, which the software-rendered test emulator does not offer.
+        // See docs/purple/todo.md in the desktop repository.
+        if (PurpleListMenu.available()) {
+            ActionBarMenuSubItem workModeItem = new ActionBarMenuSubItem(getParentActivity(), true, false);
+            workModeItem.setTextAndIcon(LocaleController.getString(R.string.PurpleLists), R.drawable.msg_customize);
+            workModeItem.setMinimumWidth(160);
+            workModeItem.setOnClickListener(e -> {
+                finishPreviewFragment();
+                // After the preview is gone, for the same reason the pin action
+                // waits: showing a dialog from inside a fragment that is being
+                // dismissed puts it behind the one leaving.
+                AndroidUtilities.runOnUIThread(() ->
+                        PurpleListBox.show(DialogsActivity.this, currentAccount, dialogId));
+            });
+            previewMenu[0].addView(workModeItem);
+        }
+
         final boolean[] hasPinAction = new boolean[1];
         hasPinAction[0] = true;
         TLRPC.Dialog dialog = getMessagesController().dialogs_dict.get(dialogId);
