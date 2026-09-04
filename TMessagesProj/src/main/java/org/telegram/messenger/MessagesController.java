@@ -895,7 +895,20 @@ public class MessagesController extends BaseController implements NotificationCe
 
     public void lockFiltersInternal() {
         boolean changed = false;
-        if (!getUserConfig().isPremium() && dialogFilters.size() - 1 > dialogFiltersLimitDefault) {
+        // Purple: Local Premium unlocks folders the account already has. The
+        // lock is entirely a client-side refusal to use folders the server has
+        // already sent us - it is not the *count* limit, which the server
+        // enforces on creation and which this does not touch. Clearing rather
+        // than merely skipping, because the flags may already be set from a
+        // run with the unlock off, and nothing else would take them down.
+        if (PurpleGate.localPremium() && !getUserConfig().isPremium()) {
+            for (int i = 0; i < dialogFilters.size(); i++) {
+                if (dialogFilters.get(i).locked) {
+                    dialogFilters.get(i).locked = false;
+                    changed = true;
+                }
+            }
+        } else if (!getUserConfig().isPremium() && dialogFilters.size() - 1 > dialogFiltersLimitDefault) {
             int n = dialogFilters.size() - 1 - dialogFiltersLimitDefault;
             ArrayList<DialogFilter> filtersSortedById = new ArrayList<>(dialogFilters);
             Collections.reverse(filtersSortedById);

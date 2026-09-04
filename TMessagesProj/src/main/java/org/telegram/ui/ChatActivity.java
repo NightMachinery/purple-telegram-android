@@ -183,6 +183,7 @@ import org.telegram.messenger.SvgHelper;
 import org.telegram.messenger.Timer;
 import org.telegram.messenger.TranslateController;
 import org.telegram.messenger.UserConfig;
+import org.telegram.messenger.purple.PurpleGate;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.VideoEditedInfo;
@@ -24915,9 +24916,24 @@ public class ChatActivity extends BaseFragment implements
     private Pattern sponsoredUrlPattern;
     private MessageObject botSponsoredMessage;
     private void addSponsoredMessages(boolean animated) {
-        if (sponsoredMessagesAdded || chatMode != 0 || !ChatObject.isChannel(currentChat) && !UserObject.isBot(currentUser) || !forwardEndReached[0] || getUserConfig().isPremium() && getMessagesController().isSponsoredDisabled() || isReport()) {
+        if (sponsoredMessagesAdded || chatMode != 0 || !ChatObject.isChannel(currentChat) && !UserObject.isBot(currentUser) || !forwardEndReached[0] || isReport()) {
             return;
         }
+        // Purple: with Local Premium on we simply stop asking. The server hands
+        // these to whoever requests them - there is no Premium check on the
+        // request - so the client is the only thing withholding them, which is
+        // the whole criterion in docs/purple/premium.md.
+        //
+        // Split out of the early return above so the decision can be logged
+        // with its reason: whether the request went out is not otherwise
+        // visible from outside, since the network log names no TL constructors.
+        final boolean settingSaysNo = getUserConfig().isPremium() && getMessagesController().isSponsoredDisabled();
+        if (settingSaysNo || PurpleGate.localPremium()) {
+            FileLog.d("Purple: sponsored for " + dialog_id + ": not requested"
+                    + (settingSaysNo ? " (your setting)." : " (local premium)."));
+            return;
+        }
+        FileLog.d("Purple: sponsored for " + dialog_id + ": requested.");
         MessagesController.SponsoredMessagesInfo res = getMessagesController().getSponsoredMessages(dialog_id);
         if (res == null || res.messages == null) {
             return;

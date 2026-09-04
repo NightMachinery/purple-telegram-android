@@ -198,6 +198,27 @@ public final class PurpleGate {
     }
 
     /**
+     * Whether the Premium features this client alone withholds are unlocked -
+     * `[premium] enabled_p` in settings.toml, on unless it says otherwise.
+     *
+     * Answers **true** before anything has been loaded, and after a load that
+     * failed, because that is what the file's own default says and what a
+     * missing file means. Every other gate here defaults to "stock behaviour"
+     * on the way in; this one cannot, or a fresh install would withhold
+     * something the settings it has not read yet would grant.
+     *
+     * ensureLoaded() rather than a bare read, for the same reason
+     * getNotifyOverride does it: these call sites are reached on paths that a
+     * chat list has never necessarily touched. After the first call it is one
+     * volatile read.
+     */
+    public static boolean localPremium() {
+        ensureLoaded();
+        final PurpleCore.Loaded current = loaded;
+        return current == null || current.premium;
+    }
+
+    /**
      * settings.toml as it is on disk right now, or null if it is not there.
      *
      * Read fresh rather than remembered: everything that edits the file splices
