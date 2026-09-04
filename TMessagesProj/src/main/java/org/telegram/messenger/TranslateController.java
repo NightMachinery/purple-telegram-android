@@ -197,29 +197,35 @@ public class TranslateController extends BaseController {
     }
 
     /**
-     * Purple: dialogs whose translate decision has already been logged, so a
-     * predicate consulted on every draw says its piece once per run.
+     * Purple: says whether whole-chat translation is offered for a chat, and
+     * why, for a chat that has just been opened.
+     *
+     * It lives here rather than on {@link #isDialogTranslatable}, where it
+     * started, because that predicate cannot report the withheld case: with
+     * the feature unavailable upstream never runs language detection, so the
+     * dialog never becomes translatable and the line would only ever appear in
+     * one direction - an absence standing in for evidence, which is the trap
+     * docs/remote-build-and-test/readme.md warns about.
      */
+    public void purpleLogAvailability(long dialogId) {
+        if (!purpleLoggedTranslatable.add(dialogId)) {
+            return;
+        }
+        final boolean available = isFeatureAvailable(dialogId);
+        FileLog.d("Purple: translate for " + dialogId + ": "
+                + (available
+                    ? (UserConfig.getInstance(currentAccount).isPremium()
+                        ? "available." : "available (local premium).")
+                    : "withheld.")
+                + " chat translate " + (isChatTranslateEnabled() ? "on" : "off") + ".");
+    }
+
     private final HashSet<Long> purpleLoggedTranslatable = new HashSet<>();
 
     public boolean isDialogTranslatable(long dialogId) {
-        final boolean detected = translatableDialogs.contains(dialogId);
-        final boolean available = isFeatureAvailable(dialogId);
-        // Purple: whether the bar is offered is otherwise only visible as
-        // pixels, and the software renderer on the build box cannot be relied
-        // on to draw them. Logged only for a chat that actually has foreign
-        // content, so the line appears in both directions and its absence
-        // never has to be read as evidence.
-        if (detected && purpleLoggedTranslatable.add(dialogId)) {
-            FileLog.d("Purple: translate for " + dialogId + ": "
-                    + (available
-                        ? (UserConfig.getInstance(currentAccount).isPremium()
-                            ? "available." : "available (local premium).")
-                        : "withheld."));
-        }
         return (
-            detected &&
-            available &&
+            translatableDialogs.contains(dialogId) &&
+            isFeatureAvailable(dialogId) &&
             !DialogObject.isEncryptedDialog(dialogId) &&
             getUserConfig().getClientUserId() != dialogId
             /* DialogObject.isChatDialog(dialogId) &&*/
