@@ -138,10 +138,10 @@ work, which is editing the account to change a view. The chats stay archived:
 they are still in the Archive, and a pin they carry there stays a pin there
 rather than jumping them to the top of the main list.
 
-What is not ported yet: extra views, the "... until" overrides, peek and the
-schedule. The `folders` key itself is complete. The
-archive and the contents of a folder tab are deliberately unfiltered: a preset
-decides its own view, a folder decides its own tab.
+Work Mode is ported apart from the launch-time offer of a settings import,
+which is held back on purpose - `docs/purple/roadmap.md` says why. The archive
+and the contents of a folder tab are deliberately unfiltered: a preset decides
+its own view, a folder decides its own tab.
 
 ### Push notifications
 
