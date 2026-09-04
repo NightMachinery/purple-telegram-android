@@ -99,6 +99,12 @@ public final class PurpleGate {
      */
     private static volatile int generation;
 
+    /**
+     * Fired when a peek's deadline passes. A reload is the whole of it: the
+     * bridge re-asks PeekLive(), finds it over, and clears the flag.
+     */
+    private static final Runnable PEEK_OVER = () -> reload("peek over");
+
     /** Telegram's Archive, which is a folder id rather than a chat. */
     private static final int ARCHIVE_FOLDER_ID = 1;
 
@@ -143,7 +149,21 @@ public final class PurpleGate {
             return false;
         }
         final PurpleCore.Loaded current = loaded;
-        return current != null && current.foldersRestricted;
+        if (current == null) {
+            return false;
+        }
+        // A peek puts the whole strip back in the account's own order, so a
+        // strip index means a server-side position again and dragging is safe.
+        // The desktop checks its extra views ahead of this, because those sit
+        // on the strip and a peek leaves them exactly where they were; there
+        // are none here yet, which is the only reason this is one line.
+        return !current.clock.peeking && current.foldersRestricted;
+    }
+
+    /** Whether a peek is currently revealing what the preset hides. */
+    public static boolean peeking() {
+        final PurpleCore.Loaded current = loaded;
+        return current != null && current.clock.peeking;
     }
 
     /**
@@ -244,11 +264,13 @@ public final class PurpleGate {
         }
         filtering = !next.normal;
         ++generation;
+        refreshPeekTimer(next);
 
         if (next.normal) {
             FileLog.d("Purple: normal. (" + reason + ")");
         } else {
-            FileLog.d("Purple: preset '" + next.preset + "', " + next.lists + " lists. (" + reason + ")");
+            FileLog.d("Purple: preset '" + next.preset + "', " + next.lists + " lists"
+                    + (next.clock.peeking ? " (peeking)" : "") + ". (" + reason + ")");
         }
         if (!next.ok && !TextUtils.isEmpty(next.error)) {
             FileLog.d("Purple: settings.toml: " + next.error);
@@ -258,6 +280,75 @@ public final class PurpleGate {
         }
 
         postRefresh();
+
+        // Either file can change the answer sooner than the next thirty seconds
+        // would: a rule added, a pause lifted, or a preset chosen by hand that
+        // the schedule now has an opinion about.
+        PurpleSchedule.refresh();
+    }
+
+    /**
+     * Ends a running peek when its deadline arrives.
+     *
+     * The timer belongs to the gate for the same reason it does on the desktop:
+     * the gate is what has to re-run when it fires. Nothing else would look at
+     * the deadline again, so without this a peek would sit there until the next
+     * unrelated change to the files.
+     *
+     * There is no clearing half here, unlike the desktop's: a peek that outlived
+     * the app is already gone from state.toml by the time this runs, because the
+     * bridge clears an expired flag while it resolves and hands the rewritten
+     * file back with everything else.
+     */
+    private static void refreshPeekTimer(PurpleCore.Loaded current) {
+        AndroidUtilities.cancelRunOnUIThread(PEEK_OVER);
+        if (!current.clock.peeking || current.clock.peekDeadline <= 0) {
+            // No deadline means auto_off is turned off, and that peek really
+            // does run until it is turned off by hand.
+            return;
+        }
+        final long left = current.clock.peekDeadline - System.currentTimeMillis() / 1000L;
+        AndroidUtilities.runOnUIThread(PEEK_OVER, Math.max(left, 0L) * 1000L);
+    }
+
+    /**
+     * Starts or ends a peek: every chat back in the list, no group waiting for a
+     * mention, every folder on the strip.
+     *
+     * It reveals; it does not un-silence. The two halves of a preset answer
+     * different questions - hiding is about what you can find, silencing is
+     * about what may interrupt you - and a burst of notifications for chats
+     * already on the screen, taken back two minutes later, is not what looking
+     * at the chat list asked for. The engine enforces that, not this method.
+     *
+     * @return what happened, so the caller can say which way it went
+     */
+    public static PurpleCore.PeekChange togglePeek() {
+        ensureLoaded();
+        final PurpleCore.PeekChange change = PurpleCore.togglePeek(PurpleState.read());
+        if (change.text != null && PurpleState.write(change.text.getBytes(UTF_8))) {
+            reload(change.peeking ? "peek" : "peek over");
+        }
+        return change;
+    }
+
+    /**
+     * Holds the schedule off, or lets it catch up.
+     *
+     * Unpausing catches up with wherever the schedule has got to, by the same
+     * boundary rule as everything else: the target moved while it was not
+     * looking, so the reload below re-ticks and it applies once.
+     *
+     * @return whether the choice reached state.toml
+     */
+    public static boolean setSchedulePaused(boolean paused) {
+        ensureLoaded();
+        final String text = PurpleCore.setSchedulePaused(PurpleState.read(), paused);
+        if (text == null || !PurpleState.write(text.getBytes(UTF_8))) {
+            return false;
+        }
+        reload(paused ? "schedule paused" : "schedule resumed");
+        return true;
     }
 
     /**
@@ -857,6 +948,18 @@ public final class PurpleGate {
         if (!filtering || current == null || raw == null || raw.isEmpty()) {
             return raw;
         }
+        if (current.clock.peeking) {
+            // A hidden folder is hidden, so a peek brings it back with
+            // everything else. The desktop spells this as "*ALL", which expands
+            // to precisely the account's own strip - which is what raw already
+            // is, so expanding it again would be the long way round.
+            //
+            // Logged on the same line as every other answer, and not skipped
+            // along with the work: the count is the only readable evidence that
+            // the strip followed the peek rather than staying where it was.
+            logStrip(raw.size(), raw.size(), null, true);
+            return raw;
+        }
         final ArrayList<MessagesController.DialogFilter> result = new ArrayList<>(raw.size());
         for (int a = 0, n = raw.size(); a < n; ++a) {
             final MessagesController.DialogFilter filter = raw.get(a);
@@ -908,15 +1011,27 @@ public final class PurpleGate {
                 result.add(found);
             }
         }
-        final long now = SystemClock.elapsedRealtime();
-        if (now - lastFolderLog >= 1000L) {
-            lastFolderLog = now;
-            // Same reasoning as the hidden-chat count: a folder named slightly
-            // wrong looks exactly like one the preset meant to leave out.
-            FileLog.d("Purple: folder strip showing " + result.size() + " of " + raw.size()
-                    + (missing == null ? "." : ", naming folders that do not exist: " + missing + "."));
-        }
+        logStrip(result.size(), raw.size(), missing, false);
         return result;
+    }
+
+    /**
+     * Says what the strip came out as, at most once a second.
+     *
+     * Same reasoning as the hidden-chat count: a folder named slightly wrong
+     * looks exactly like one the preset meant to leave out, and the count is
+     * often the only readable evidence there is - the tabs themselves are custom
+     * views that no UI dump can see.
+     */
+    private static void logStrip(int shown, int total, StringBuilder missing, boolean peeking) {
+        final long now = SystemClock.elapsedRealtime();
+        if (now - lastFolderLog < 1000L) {
+            return;
+        }
+        lastFolderLog = now;
+        FileLog.d("Purple: folder strip showing " + shown + " of " + total
+                + (peeking ? " (peeking)" : "")
+                + (missing == null ? "." : ", naming folders that do not exist: " + missing + "."));
     }
 
     /** Whether some entry other than "*ALL" already claims this folder. */

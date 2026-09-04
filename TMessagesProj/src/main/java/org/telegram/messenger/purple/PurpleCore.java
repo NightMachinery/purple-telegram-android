@@ -94,10 +94,194 @@ public final class PurpleCore {
      */
     private static native String setPresetNative(byte[] stateUtf8, String preset);
 
+    private static native String togglePeekNative(byte[] stateUtf8);
+
+    private static native String setSchedulePausedNative(byte[] stateUtf8, boolean paused);
+
+    private static native String scheduleTickNative(byte[] stateUtf8);
+
     private static native String listsForNative(byte[] settingsUtf8, long bareId);
 
     private static native String spliceMemberNative(
             byte[] settingsUtf8, String list, long bareId, boolean add, String titlesJson);
+
+    /**
+     * The half of the load result that moves on a clock rather than on an edit.
+     *
+     * Grouped rather than spread across {@link Loaded} because they are read
+     * together, by the one control that shows them, and because a load result
+     * with five more loose booleans on it stops being readable.
+     */
+    public static final class Clock {
+        /** True while a peek is revealing what the preset hides. */
+        public final boolean peeking;
+
+        /**
+         * When the running peek ends, in local wall-clock seconds. Zero means
+         * {@code auto_off} is turned off, so it runs until it is turned off by
+         * hand - which is a different thing from a countdown that never moves,
+         * and the reason this is not simply a number of seconds left.
+         */
+        public final long peekDeadline;
+
+        /** What {@code [peek] auto_off} is set to, in seconds; zero disables it. */
+        public final int peekSeconds;
+
+        public final boolean schedulePaused;
+
+        /** True when settings.toml describes a schedule at all. */
+        public final boolean scheduleConfigured;
+
+        Clock(boolean peeking, long peekDeadline, int peekSeconds,
+                boolean schedulePaused, boolean scheduleConfigured) {
+            this.peeking = peeking;
+            this.peekDeadline = peekDeadline;
+            this.peekSeconds = peekSeconds;
+            this.schedulePaused = schedulePaused;
+            this.scheduleConfigured = scheduleConfigured;
+        }
+
+        static final Clock NONE = new Clock(false, 0, 0, false, false);
+
+        static Clock fromJson(JSONObject object) {
+            return new Clock(
+                    object.optBoolean("peeking", false),
+                    object.optLong("peekDeadline", 0),
+                    object.optInt("peekSeconds", 0),
+                    object.optBoolean("schedulePaused", false),
+                    object.optBoolean("scheduleConfigured", false));
+        }
+    }
+
+    /** What a {@link #togglePeek(byte[])} did, so the caller can say so. */
+    public static final class PeekChange {
+        /**
+         * True when there was nothing to peek at, because nothing is running.
+         * Distinct from "it ended": starting a peek over Normal would leave one
+         * running that no chat list could show the end of.
+         */
+        public final boolean refused;
+
+        public final boolean peeking;
+
+        /** How long this peek will run, or zero for "until you turn it off". */
+        public final int seconds;
+
+        /** The state.toml text to write, or null when nothing should be. */
+        public final String text;
+
+        PeekChange(boolean refused, boolean peeking, int seconds, String text) {
+            this.refused = refused;
+            this.peeking = peeking;
+            this.seconds = seconds;
+            this.text = text;
+        }
+    }
+
+    /** What one schedule tick decided, or null when it decided nothing. */
+    public static final class Tick {
+        /** True when the preset itself moved, not only the recorded target. */
+        public final boolean applied;
+
+        /** The preset the schedule now wants. */
+        public final String target;
+
+        /** The preset left in place instead, when {@code applied} is false. */
+        public final String kept;
+
+        /** What put {@code kept} there, for the log line. */
+        public final String keptSource;
+
+        public final String text;
+
+        Tick(boolean applied, String target, String kept, String keptSource, String text) {
+            this.applied = applied;
+            this.target = target;
+            this.kept = kept;
+            this.keptSource = keptSource;
+            this.text = text;
+        }
+    }
+
+    /**
+     * Starts or ends a peek.
+     *
+     * @param state the current state.toml, or null
+     * @return what happened; never null, and {@code text} is null when there is
+     *         nothing to write
+     */
+    public static PeekChange togglePeek(byte[] state) {
+        final String json;
+        try {
+            json = togglePeekNative(state);
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return new PeekChange(true, false, 0, null);
+        }
+        if (json == null) {
+            return new PeekChange(true, false, 0, null);
+        }
+        try {
+            final JSONObject object = new JSONObject(json);
+            return new PeekChange(
+                    object.optBoolean("refused", false),
+                    object.optBoolean("peeking", false),
+                    object.optInt("seconds", 0),
+                    object.isNull("text") ? null : object.optString("text", null));
+        } catch (JSONException e) {
+            FileLog.e(e);
+            return new PeekChange(true, false, 0, null);
+        }
+    }
+
+    /**
+     * Returns the state.toml text that holds the schedule off, or lets it go.
+     *
+     * @return the text to write, or null when the core could not be reached
+     */
+    public static String setSchedulePaused(byte[] state, boolean paused) {
+        try {
+            return setSchedulePausedNative(state, paused);
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return null;
+        }
+    }
+
+    /**
+     * One tick of the schedule.
+     *
+     * @return what to do, or null when there is nothing to do - which is every
+     *         tick except the ones that land on a boundary
+     */
+    public static Tick scheduleTick(byte[] state) {
+        final String json;
+        try {
+            json = scheduleTickNative(state);
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return null;
+        }
+        if (json == null) {
+            return null;
+        }
+        try {
+            final JSONObject object = new JSONObject(json);
+            final String text = object.isNull("text") ? null : object.optString("text", null);
+            if (text == null) {
+                return null;
+            }
+            return new Tick(
+                    object.optBoolean("applied", false),
+                    object.optString("target", ""),
+                    object.optString("kept", ""),
+                    object.optString("keptSource", ""),
+                    text);
+        } catch (JSONException e) {
+            FileLog.e(e);
+            return null;
+        }
+    }
 
     /**
      * One of settings.toml's lists, as the membership menu needs it.
@@ -493,6 +677,9 @@ public final class PurpleCore {
 
         public final List<PresetInfo> presets;
 
+        /** Peek and schedule, which move on a clock rather than on an edit. */
+        public final Clock clock;
+
         /** The state.toml text to write back, or null when it did not change. */
         public final String stateText;
 
@@ -502,7 +689,7 @@ public final class PurpleCore {
                 boolean foldersRestricted, List<String> silencedFolders,
                 List<String> quietFolders, List<ExemptFolder> exemptFolders,
                 int[] defaultModes, int listCount, List<PresetInfo> presets,
-                String stateText) {
+                Clock clock, String stateText) {
             this.ok = ok;
             this.error = error;
             this.warnings = warnings;
@@ -522,6 +709,7 @@ public final class PurpleCore {
             this.exemptFolders = exemptFolders;
             this.defaultModes = defaultModes;
             this.presets = presets;
+            this.clock = clock;
             this.stateText = stateText;
         }
 
@@ -547,7 +735,7 @@ public final class PurpleCore {
                     Collections.<String>emptyList(),
                     Collections.<String>emptyList(),
                     Collections.<ExemptFolder>emptyList(), STOCK_DEFAULT_MODES, 0,
-                    Collections.<PresetInfo>emptyList(), null);
+                    Collections.<PresetInfo>emptyList(), Clock.NONE, null);
         }
 
         static Loaded fromJson(String json) {
@@ -640,6 +828,7 @@ public final class PurpleCore {
                         defaultModes,
                         object.optInt("listCount", 0),
                         presets,
+                        Clock.fromJson(object),
                         object.isNull("stateText") ? null : object.optString("stateText", null));
             } catch (JSONException e) {
                 return failed("bad result from the core");
