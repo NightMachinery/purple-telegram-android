@@ -11256,4 +11256,11 @@
     <string name="PurplePresetFileNote">Presets are written in %1$s.</string>
     <string name="PurplePresetLastGood">Warning: settings.toml is missing or unreadable, so these presets come from the last copy that worked. Import the file again to replace it.</string>
     <string name="PurplePresetNotConfigured">Work Mode is not configured. Write presets in %1$s, then they will show up here.</string>
+    <string name="PurplePeek">Peek - show what the preset hides</string>
+    <string name="PurplePeekNormal">Peek - nothing is hidden under Normal</string>
+    <string name="PurplePeekingUntilOff">Peeking - until you turn it off</string>
+    <string name="PurplePeekingLeft">Peeking - %1$s left</string>
+    <string name="PurplePeekStarted">Peeking - everything the preset hides is showing.</string>
+    <string name="PurplePeekOver">Peek over.</string>
+    <string name="PurpleSchedulePause">Pause the schedule</string>
 </resources>

@@ -25,6 +25,7 @@ import android.view.Gravity;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.purple.PurpleCore;
@@ -33,6 +34,7 @@ import org.telegram.messenger.purple.PurpleSettings;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Cells.CheckBoxCell;
 import org.telegram.ui.Cells.RadioColorCell;
 
 import java.util.ArrayList;
@@ -142,6 +144,12 @@ public final class PurplePresetPicker {
             layout.addView(cell);
         }
 
+        // Peek and the schedule pause: the two things that move on a clock
+        // rather than on an edit, and the two the file cannot express because
+        // they are decisions about right now. This is where someone would look
+        // for them, next to the preset they act on.
+        addClockRows(activity, layout, resourcesProvider, state);
+
         // The file's problems, under the choices they explain. Until these were
         // shown, a preset that silently did nothing because of a mistyped list
         // name looked exactly like one that was working.
@@ -180,7 +188,127 @@ public final class PurplePresetPicker {
                 Theme.getColor(Theme.key_dialogTextGray2, resourcesProvider)));
 
         builder.setNegativeButton(getString(R.string.Close), null);
-        fragment.showDialog(builder.create());
+        // The countdown below runs only while the box is open, which is the
+        // only time there is anyone to read it. Handed to showDialog rather
+        // than set on the dialog, because showDialog installs a listener of its
+        // own over anything already there.
+        fragment.showDialog(builder.create(), d -> cancelTick());
+    }
+
+    /**
+     * The one running countdown, so a box opened twice does not tick twice.
+     *
+     * A field rather than a capture because the dismiss listener has to cancel
+     * whatever the last box installed, and there is only ever one box.
+     */
+    private static final Runnable[] PEEK_TICK = new Runnable[1];
+
+    /**
+     * Adds the peek checkbox, and the schedule pause when the file describes a
+     * schedule at all - a switch that holds off nothing explains nothing.
+     */
+    private static void addClockRows(Activity activity, LinearLayout layout,
+            Theme.ResourcesProvider resourcesProvider, PurpleCore.Loaded state) {
+        final boolean pausable = state.clock.scheduleConfigured;
+
+        final CheckBoxCell peek = new CheckBoxCell(activity, 1, resourcesProvider);
+        peek.setPadding(dp(4), 0, dp(4), 0);
+
+        // Follows the gate rather than the click, so a peek ended by its own
+        // timer moves the tick here too.
+        final Runnable tick = new Runnable() {
+            @Override
+            public void run() {
+                final PurpleCore.Loaded now = PurpleGate.state();
+                final boolean peeking = now != null && now.clock.peeking;
+                peek.setText(peekText(now), null, peeking, pausable);
+                if (peeking && now.clock.peekDeadline > 0) {
+                    AndroidUtilities.runOnUIThread(this, 1000);
+                }
+            }
+        };
+        cancelTick();
+        PEEK_TICK[0] = tick;
+        tick.run();
+
+        if (state.normal) {
+            // Says why it does nothing rather than sitting there greyed out with
+            // no explanation. Starting a peek here would leave one running that
+            // no chat list could show the end of.
+            peek.setEnabled(false);
+            peek.setAlpha(0.5f);
+        } else {
+            peek.setBackground(Theme.createSelectorDrawable(
+                    Theme.getColor(Theme.key_listSelector, resourcesProvider), Theme.RIPPLE_MASK_ALL));
+            peek.setOnClickListener(v -> {
+                PurpleGate.togglePeek();
+                AndroidUtilities.cancelRunOnUIThread(tick);
+                tick.run();
+            });
+        }
+        layout.addView(peek);
+
+        if (!pausable) {
+            return;
+        }
+        final CheckBoxCell pause = new CheckBoxCell(activity, 1, resourcesProvider);
+        pause.setPadding(dp(4), 0, dp(4), 0);
+        pause.setText(getString(R.string.PurpleSchedulePause), null,
+                state.clock.schedulePaused, false);
+        pause.setBackground(Theme.createSelectorDrawable(
+                Theme.getColor(Theme.key_listSelector, resourcesProvider), Theme.RIPPLE_MASK_ALL));
+        pause.setOnClickListener(v -> {
+            final boolean wanted = !pause.isChecked();
+            if (PurpleGate.setSchedulePaused(wanted)) {
+                pause.setChecked(wanted, true);
+            }
+        });
+        layout.addView(pause);
+    }
+
+    /**
+     * Stops whatever countdown the last box installed.
+     *
+     * The null check is not decoration: {@code removeCallbacks(null)} matches
+     * every pending callback on the handler, so cancelling a countdown that was
+     * never started would cancel the whole app's posted work.
+     */
+    private static void cancelTick() {
+        if (PEEK_TICK[0] != null) {
+            AndroidUtilities.cancelRunOnUIThread(PEEK_TICK[0]);
+            PEEK_TICK[0] = null;
+        }
+    }
+
+    /**
+     * What the peek row says, which is three different sentences.
+     *
+     * A peek ends on a clock and nothing anywhere else says when, so the label
+     * counts it down. "Until you turn it off" is a fourth state rather than a
+     * countdown that never moves: {@code auto_off = "off"} really does run until
+     * it is turned off by hand.
+     */
+    private static String peekText(PurpleCore.Loaded state) {
+        if (state == null || state.normal) {
+            return getString(R.string.PurplePeekNormal);
+        }
+        if (!state.clock.peeking) {
+            return getString(R.string.PurplePeek);
+        }
+        final long deadline = state.clock.peekDeadline;
+        if (deadline <= 0) {
+            return getString(R.string.PurplePeekingUntilOff);
+        }
+        final long left = Math.max(deadline - System.currentTimeMillis() / 1000L, 0L);
+        return formatString(R.string.PurplePeekingLeft, remaining((int) left));
+    }
+
+    /** A count of seconds as a clock reads it: 1:23, or 45s under a minute. */
+    private static String remaining(int seconds) {
+        return (seconds < 60)
+                ? (seconds + "s")
+                : String.format(LocaleController.getInstance().getCurrentLocale(),
+                        "%d:%02d", seconds / 60, seconds % 60);
     }
 
     /** The title a row carries: the preset's own name for its tab, or Normal. */

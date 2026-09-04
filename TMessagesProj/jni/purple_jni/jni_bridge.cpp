@@ -18,6 +18,7 @@ any later version.
 #include "purple/purple_state.h"
 
 #include <QtCore/QChar>
+#include <QtCore/QDateTime>
 #include <QtCore/QString>
 
 #include <map>
@@ -25,6 +26,14 @@ any later version.
 #include <optional>
 
 namespace {
+
+// Local wall-clock seconds, matching what peek_deadline_unix holds and what
+// the schedule compares against. Not the server clock: a two-minute peek has
+// to expire while offline too, and a nine-to-five window is about the wall the
+// user is looking at.
+[[nodiscard]] int64 NowUnix() {
+	return QDateTime::currentSecsSinceEpoch();
+}
 
 // JSON string escaping, by hand. Pulling in a JSON library for four fields
 // would cost more than it saves, and the parser on the Java side is
@@ -474,6 +483,26 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 	gate.resolved = *next;
 	gate.loaded = true;
 
+	// Peek suspends the hiding of whatever resolution is in force; it is not
+	// part of the resolution, which is why it is applied here rather than in
+	// Resolve(). ToCache() below has no field for it, and that is what keeps a
+	// peek out of the fallback: a cached resolution restored with one in it
+	// would come back revealed, with nothing left running to put it back.
+	//
+	// Everything else follows for free. peeking is a field of Resolved, so
+	// Visible() already answers ShowMode::Always for every chat while one is
+	// running, and visibleNative asks it the same question it always did.
+	gate.resolved.peeking = !gate.resolved.normal
+		&& Purple::PeekLive(gate.state, NowUnix());
+	if (!gate.resolved.peeking && gate.state.peekActive) {
+		// A peek that outlived the app, or the preset it was revealing. Cleared
+		// rather than left in the file claiming a peek that is not running,
+		// because that flag is what the next press reads to decide which way to
+		// toggle. The rewrite below carries it to disk.
+		gate.state.peekActive = false;
+		gate.state.peekDeadlineUnix = 0;
+	}
+
 	// Only ever widened, never cleared: a resolution we could not compute is
 	// exactly when the cache has to still be there.
 	if (!gate.resolved.normal) {
@@ -518,6 +547,21 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 	AppendJsonBool(json, activeMissing);
 	json += QStringLiteral(",\"foldersRestricted\":");
 	AppendJsonBool(json, FoldersRestricted(gate.resolved));
+	json += QStringLiteral(",\"peeking\":");
+	AppendJsonBool(json, gate.resolved.peeking);
+	// Zero means auto_off is turned off, so the peek runs until it is turned
+	// off by hand - which is why the countdown and the deadline are separate
+	// questions rather than one number that happens to be missing.
+	json += QStringLiteral(",\"peekDeadline\":");
+	json += QString::number(qint64(gate.state.peekDeadlineUnix));
+	json += QStringLiteral(",\"peekSeconds\":");
+	json += QString::number(gate.settings.peek.autoOffSeconds);
+	json += QStringLiteral(",\"schedulePaused\":");
+	AppendJsonBool(json, gate.state.schedulePaused);
+	// A switch that holds off nothing explains nothing, so the pause row is
+	// there only when the file describes a schedule at all.
+	json += QStringLiteral(",\"scheduleConfigured\":");
+	AppendJsonBool(json, !gate.settings.schedule.rules.empty());
 	// Every list in the file, not the running preset's - the membership menu
 	// offers all of them, and under `normal' the preset's own count is zero.
 	json += QStringLiteral(",\"listCount\":");
@@ -622,6 +666,131 @@ Java_org_telegram_messenger_purple_PurpleCore_setPresetNative(
 		: name;
 	state.activeSource = Purple::PresetSource::Manual;
 	return ToJava(env, Purple::SerializeState(state));
+}
+
+// Starts or ends a peek, mirroring the desktop's Purple::TogglePeek().
+//
+// Unlike setPresetNative this one does take the lock, because the answer
+// depends on the running resolution rather than only on the file: a peek over
+// Normal has nothing to reveal, and starting one anyway would leave a peek
+// running that no chat list could show the end of.
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_togglePeekNative(
+		JNIEnv *env,
+		jclass,
+		jbyteArray stateUtf8) {
+	auto stateText = QString();
+	if (!ReadUtf8(env, stateUtf8, stateText)) {
+		return nullptr;
+	}
+	auto &gate = TheGate();
+	const auto lock = std::lock_guard(gate.mutex);
+	if (!gate.loaded || gate.resolved.normal) {
+		return ToJava(env, QStringLiteral(
+			"{\"refused\":true,\"peeking\":false,\"seconds\":0,\"text\":null}"));
+	}
+	const auto wanted = !gate.resolved.peeking;
+	const auto seconds = wanted ? gate.settings.peek.autoOffSeconds : 0;
+	auto state = Purple::ParseState(stateText, QStringLiteral("state.toml"));
+	state.peekActive = wanted;
+	state.peekDeadlineUnix = (seconds > 0) ? (NowUnix() + seconds) : 0;
+
+	auto json = QStringLiteral("{\"refused\":false,\"peeking\":");
+	AppendJsonBool(json, wanted);
+	json += QStringLiteral(",\"seconds\":");
+	json += QString::number(seconds);
+	json += QStringLiteral(",\"text\":");
+	AppendJsonString(json, Purple::SerializeState(state));
+	json += QChar('}');
+	return ToJava(env, json);
+}
+
+// Holds the schedule off, or lets it catch up again. A decision about today
+// rather than about the configuration, which is why it lives in state.toml and
+// nothing in settings.toml turns it on.
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_setSchedulePausedNative(
+		JNIEnv *env,
+		jclass,
+		jbyteArray stateUtf8,
+		jboolean paused) {
+	auto stateText = QString();
+	if (!ReadUtf8(env, stateUtf8, stateText)) {
+		return nullptr;
+	}
+	auto state = Purple::ParseState(stateText, QStringLiteral("state.toml"));
+	state.schedulePaused = (paused == JNI_TRUE);
+	return ToJava(env, Purple::SerializeState(state));
+}
+
+// One tick of the schedule, mirroring the desktop's Purple::Runner::tick().
+//
+// A pure function of the settings already loaded, the state text handed in and
+// the wall clock, so the caller can run it as often as it likes: null comes
+// back whenever there is nothing to write, which is every tick but the ones at
+// a boundary.
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_scheduleTickNative(
+		JNIEnv *env,
+		jclass,
+		jbyteArray stateUtf8) {
+	auto stateText = QString();
+	if (!ReadUtf8(env, stateUtf8, stateText)) {
+		return nullptr;
+	}
+	auto &gate = TheGate();
+	const auto lock = std::lock_guard(gate.mutex);
+	if (!gate.loaded) {
+		return nullptr;
+	}
+	auto state = Purple::ParseState(stateText, QStringLiteral("state.toml"));
+	if (state.schedulePaused) {
+		return nullptr;
+	}
+	const auto target = Purple::ScheduleTarget(
+		gate.settings.schedule,
+		QDateTime::currentDateTime());
+	if (!target || *target == state.scheduleTarget) {
+		// Acting on the change rather than on the value is the whole design.
+		// It is what lets a preset chosen by hand stand until the next boundary
+		// instead of being overwritten on the next tick, and what makes a
+		// boundary missed while the app was closed still happen, once, at the
+		// next launch.
+		return nullptr;
+	}
+	const auto wanted = *target;
+	const auto source = state.activeSource;
+	const auto active = state.activePreset;
+
+	// Two rules, and the asymmetry between them is deliberate. A window
+	// starting is a positive instruction - "at nine, work mode" - and it
+	// overrides a preset chosen by hand. A window ending only means the reason
+	// for that preset has passed, which is no reason at all to undo something
+	// asked for. Focus is left alone in both directions: it is the more
+	// immediate signal, and a schedule fighting it would make both unreadable.
+	const auto apply = (source != Purple::PresetSource::Focus)
+		&& (wanted != Purple::NormalPreset()
+			|| source == Purple::PresetSource::Schedule);
+	state.scheduleTarget = wanted;
+	if (apply) {
+		state.activePreset = wanted;
+		state.activeSource = Purple::PresetSource::Schedule;
+	}
+
+	auto json = QStringLiteral("{\"applied\":");
+	AppendJsonBool(json, apply);
+	json += QStringLiteral(",\"target\":");
+	AppendJsonString(json, wanted);
+	json += QStringLiteral(",\"kept\":");
+	AppendJsonString(json, apply ? QString() : active);
+	json += QStringLiteral(",\"keptSource\":");
+	AppendJsonString(
+		json,
+		apply ? QString() : Purple::PresetSourceName(source));
+	json += QStringLiteral(",\"text\":");
+	AppendJsonString(json, Purple::SerializeState(state));
+	json += QChar('}');
+	return ToJava(env, json);
 }
 
 // The lists a chat could be put in, and which of them already hold it.
