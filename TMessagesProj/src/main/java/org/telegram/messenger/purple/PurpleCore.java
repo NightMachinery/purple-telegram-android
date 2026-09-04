@@ -8,6 +8,8 @@
 
 package org.telegram.messenger.purple;
 
+import org.telegram.messenger.FileLog;
+
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -91,6 +93,131 @@ public final class PurpleCore {
      * touching the gate. Prefer {@link #setPreset(byte[], String)}.
      */
     private static native String setPresetNative(byte[] stateUtf8, String preset);
+
+    private static native String listsForNative(byte[] settingsUtf8, long bareId);
+
+    private static native String spliceMemberNative(
+            byte[] settingsUtf8, String list, long bareId, boolean add, String titlesJson);
+
+    /**
+     * One of settings.toml's lists, as the membership menu needs it.
+     *
+     * {@code members} is every id the list holds, which the caller needs in
+     * order to name each line the splice might rewrite - converting an inline
+     * array to one line per member rewrites all of them.
+     */
+    public static final class ListEntry {
+        public final String name;
+        public final String title;
+        public final boolean member;
+        public final long[] members;
+
+        private ListEntry(String name, String title, boolean member, long[] members) {
+            this.name = name;
+            this.title = title;
+            this.member = member;
+            this.members = members;
+        }
+    }
+
+    /** What a splice did, or why it did nothing. */
+    public static final class SpliceResult {
+        /** The whole file as it should now be written, or null on failure. */
+        public final String text;
+        public final boolean changed;
+        /** Non-empty means nothing was written. */
+        public final String error;
+
+        private SpliceResult(String text, boolean changed, String error) {
+            this.text = text;
+            this.changed = changed;
+            this.error = error;
+        }
+
+        public boolean ok() {
+            return error == null || error.length() == 0;
+        }
+    }
+
+    /**
+     * Every list in {@code settings}, and whether this chat is in each.
+     *
+     * Answered from the file rather than from the loaded resolution, so the
+     * menu never offers a list that has since been renamed.
+     *
+     * @param bareId the id as settings.toml writes it
+     */
+    public static List<ListEntry> listsFor(byte[] settings, long bareId) {
+        if (settings == null) {
+            return Collections.<ListEntry>emptyList();
+        }
+        final String json;
+        try {
+            json = listsForNative(settings, bareId);
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return Collections.<ListEntry>emptyList();
+        }
+        if (json == null) {
+            return Collections.<ListEntry>emptyList();
+        }
+        final List<ListEntry> result = new ArrayList<>();
+        try {
+            final JSONArray array = new JSONArray(json);
+            for (int i = 0; i < array.length(); ++i) {
+                final JSONObject entry = array.optJSONObject(i);
+                if (entry == null) {
+                    continue;
+                }
+                final JSONArray ids = entry.optJSONArray("members");
+                final long[] members = new long[ids == null ? 0 : ids.length()];
+                for (int a = 0; a < members.length; ++a) {
+                    members[a] = ids.optLong(a, 0);
+                }
+                result.add(new ListEntry(
+                        entry.optString("name", ""),
+                        entry.optString("title", ""),
+                        entry.optBoolean("member", false),
+                        members));
+            }
+        } catch (JSONException e) {
+            FileLog.e(e);
+        }
+        return result;
+    }
+
+    /**
+     * Adds or removes one member, returning the file as it should be written.
+     *
+     * Nothing is written here: the caller decides, so a failed splice leaves
+     * both the file and the running resolution exactly as they were.
+     *
+     * @param titles id to display name, for the comments the splice regenerates
+     */
+    public static SpliceResult spliceMember(
+            byte[] settings, String list, long bareId, boolean add, String titles) {
+        final String json;
+        try {
+            json = spliceMemberNative(settings, list, bareId, add, titles);
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return new SpliceResult(null, false, "the core could not be reached");
+        }
+        if (json == null) {
+            return new SpliceResult(null, false, "no result from the core");
+        }
+        try {
+            final JSONObject object = new JSONObject(json);
+            final String error = object.optString("error", "");
+            return new SpliceResult(
+                    error.length() > 0 ? null : object.optString("text", null),
+                    object.optBoolean("changed", false),
+                    error);
+        } catch (JSONException e) {
+            FileLog.e(e);
+            return new SpliceResult(null, false, "bad result from the core");
+        }
+    }
 
     public static ParseResult parse(byte[] utf8) {
         ensureLoaded();
@@ -344,6 +471,13 @@ public final class PurpleCore {
         public final List<String> quietFolders;
 
         /**
+         * How many lists settings.toml defines, whatever the running preset
+         * names. The membership menu offers all of them, and under
+         * {@code normal} the preset's own count is zero.
+         */
+        public final int listCount;
+
+        /**
          * The folders that pull their chats into the preset's view, whatever
          * the lists decided. Empty in almost every preset, and checked for
          * emptiness before anything walks anything.
@@ -367,7 +501,7 @@ public final class PurpleCore {
                 String cacheReason, boolean activeMissing, List<FolderEntry> folders,
                 boolean foldersRestricted, List<String> silencedFolders,
                 List<String> quietFolders, List<ExemptFolder> exemptFolders,
-                int[] defaultModes, List<PresetInfo> presets,
+                int[] defaultModes, int listCount, List<PresetInfo> presets,
                 String stateText) {
             this.ok = ok;
             this.error = error;
@@ -384,6 +518,7 @@ public final class PurpleCore {
             this.foldersRestricted = foldersRestricted;
             this.silencedFolders = silencedFolders;
             this.quietFolders = quietFolders;
+            this.listCount = listCount;
             this.exemptFolders = exemptFolders;
             this.defaultModes = defaultModes;
             this.presets = presets;
@@ -411,7 +546,7 @@ public final class PurpleCore {
                     Collections.<FolderEntry>emptyList(), false,
                     Collections.<String>emptyList(),
                     Collections.<String>emptyList(),
-                    Collections.<ExemptFolder>emptyList(), STOCK_DEFAULT_MODES,
+                    Collections.<ExemptFolder>emptyList(), STOCK_DEFAULT_MODES, 0,
                     Collections.<PresetInfo>emptyList(), null);
         }
 
@@ -503,6 +638,7 @@ public final class PurpleCore {
                         quietFolders,
                         exemptFolders,
                         defaultModes,
+                        object.optInt("listCount", 0),
                         presets,
                         object.isNull("stateText") ? null : object.optString("stateText", null));
             } catch (JSONException e) {

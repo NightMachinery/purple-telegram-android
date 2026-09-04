@@ -11237,6 +11237,9 @@
     <string name="PurpleWorkMode">Work Mode</string>
     <string name="PurpleWorkModeActive">Work Mode: %1$s</string>
     <string name="PurpleWorkModeInfo">Choose which chats a preset lets through</string>
+    <string name="PurpleLists">Work Mode lists</string>
+    <string name="PurpleListsInfo">A preset decides what each list does. Membership is the same in all of them.</string>
+    <string name="PurpleListsFailed">Could not edit settings.toml, so nothing was changed.</string>
     <string name="PurplePresetNormal">Normal</string>
     <string name="PurplePresetNormalInfo">stock Telegram, nothing is hidden</string>
     <string name="PurplePresetUnresolved">does not resolve, so it cannot be chosen</string>

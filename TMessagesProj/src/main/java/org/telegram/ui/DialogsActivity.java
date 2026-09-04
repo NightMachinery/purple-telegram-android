@@ -131,6 +131,7 @@ import org.telegram.messenger.Utilities;
 import org.telegram.messenger.XiaomiUtilities;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.messenger.purple.PurpleGate;
+import org.telegram.messenger.purple.PurpleListMenu;
 import org.telegram.messenger.utils.FBool;
 import org.telegram.messenger.utils.GradientProtectionDrawable;
 import org.telegram.messenger.utils.SearchTextWatcher;
@@ -583,6 +584,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     private ActionBarMenuSubItem addToFolderItem;
     @Nullable
     private ActionBarMenuSubItem removeFromFolderItem;
+    private ActionBarMenuSubItem workModeItem;
     @Nullable
     private ActionBarMenuSubItem archiveItem;
     @Nullable
@@ -710,6 +712,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     private final static int pin2 = 108;
     private final static int add_to_folder = 109;
     private final static int remove_from_folder = 110;
+    private final static int work_mode = 111;
     private final static int community_ungroup = 111;
 
     private final static int ARCHIVE_ITEM_STATE_PINNED = 0;
@@ -3950,6 +3953,12 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                     fragmentSearchFieldWatcher.toggleSearch(true);
                 } else if (id == 11) {
                     openAccountSelector(switchItem);
+                } else if (id == work_mode) {
+                    if (!selectedDialogs.isEmpty()) {
+                        final long dialogId = selectedDialogs.get(0);
+                        hideActionMode(false);
+                        PurpleListBox.show(DialogsActivity.this, currentAccount, dialogId);
+                    }
                 } else if (id == add_to_folder) {
                     FiltersListBottomSheet sheet = new FiltersListBottomSheet(DialogsActivity.this, selectedDialogs);
                     sheet.setDelegate((filter, checked) -> {
@@ -6784,6 +6793,10 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         pin2Item = otherItem.addSubItem(pin2, R.drawable.msg_pin, LocaleController.getString(R.string.DialogPin));
         addToFolderItem = otherItem.addSubItem(add_to_folder, R.drawable.msg_addfolder, LocaleController.getString(R.string.FilterAddTo));
         removeFromFolderItem = otherItem.addSubItem(remove_from_folder, R.drawable.msg_removefolder, LocaleController.getString(R.string.FilterRemoveFrom));
+        // Purple: filing one chat into a Work Mode list. Next to the folder
+        // entries because it is the same kind of act, and hidden entirely when
+        // no list has been written, so an unconfigured fork's menu is upstream's.
+        workModeItem = otherItem.addSubItem(work_mode, R.drawable.msg_customize, LocaleController.getString(R.string.PurpleLists));
         readItem = otherItem.addSubItem(read, R.drawable.msg_markread, LocaleController.getString(R.string.MarkAsRead));
         clearItem = otherItem.addSubItem(clear, R.drawable.msg_clear, LocaleController.getString(R.string.ClearHistory));
         blockItem = otherItem.addSubItem(block, R.drawable.msg_block, LocaleController.getString(R.string.BlockUser));
@@ -10019,6 +10032,13 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             } else {
                 addToFolderItem.setVisibility(View.GONE);
             }
+        }
+        if (workModeItem != null) {
+            // One chat at a time: membership is a property of a chat, and a
+            // tick that meant "some of these" would have no honest answer.
+            workModeItem.setVisibility(count == 1 && PurpleListMenu.available()
+                    ? View.VISIBLE
+                    : View.GONE);
         }
         if (muteItem != null) {
             if (canUnmuteCount != 0) {
