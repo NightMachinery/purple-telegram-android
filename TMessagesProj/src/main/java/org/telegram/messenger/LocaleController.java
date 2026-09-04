@@ -1430,10 +1430,26 @@ public class LocaleController {
         return getStringInternal(key, null, 0, res);
     }
 
+    /**
+     * Purple: the keys naming the app itself, which the language pack does not
+     * get a vote on. See {@link #purpleOwnName}.
+     */
+    private static boolean purpleOwnName(String key) {
+        return "AppName".equals(key) || "AppNameBeta".equals(key);
+    }
+
     private String getStringInternal(String key, String fallback, int fallbackRes, int res) {
-        String value = BuildVars.USE_CLOUD_STRINGS ? localeValues.get(key) : null;
+        // Purple: what this app is called is the fork's to state, not
+        // Telegram's to send. The downloaded language pack carries
+        // AppName = "Telegram" and localeValues wins over resources, so a fork
+        // that renamed itself in strings.xml - as this one did - still says
+        // Telegram in its own chat list header and its own notifications. The
+        // launcher never showed that, because android:label is resolved from
+        // resources at install time; only the running app disagreed with it.
+        final boolean own = purpleOwnName(key);
+        String value = (BuildVars.USE_CLOUD_STRINGS && !own) ? localeValues.get(key) : null;
         if (value == null) {
-            if (BuildVars.USE_CLOUD_STRINGS && fallback != null) {
+            if (BuildVars.USE_CLOUD_STRINGS && !own && fallback != null) {
                 value = localeValues.get(fallback);
             }
             if (value == null) {
