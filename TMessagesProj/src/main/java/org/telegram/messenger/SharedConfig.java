@@ -28,6 +28,7 @@ import androidx.annotation.RequiresApi;
 import androidx.core.content.pm.ShortcutManagerCompat;
 
 import org.json.JSONObject;
+import org.telegram.messenger.purple.PurpleDefaults;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.SerializedData;
 import org.telegram.tgnet.TLRPC;
@@ -629,7 +630,7 @@ public class SharedConfig {
             noSoundHintShowed = preferences.getBoolean("noSoundHintShowed", false);
             directShareHash = preferences.getString("directShareHash2", null);
             useThreeLinesLayout = preferences.getBoolean("useThreeLinesLayout", false);
-            archiveHidden = preferences.getBoolean("archiveHidden", false);
+            archiveHidden = preferences.getBoolean("archiveHidden", PurpleDefaults.ARCHIVE_HIDDEN);
             distanceSystemType = preferences.getInt("distanceSystemType", 0);
             keepMedia = preferences.getInt("keep_media", CacheByChatsController.KEEP_MEDIA_ONE_MONTH);
             debugWebView = preferences.getBoolean("debugWebView", false);
