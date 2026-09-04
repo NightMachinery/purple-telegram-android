@@ -531,6 +531,13 @@ public final class PurpleGate {
      * @param forView true for the hiding question, false for the silencing one
      */
     private static int byHand(int currentAccount, long dialogId, boolean forView) {
+        // The close buffer comes first, ahead of everything including a hide -
+        // it is not a statement about what the preset lets through but about
+        // what you were doing ten seconds ago. View only: having just read
+        // something is no reason to be interrupted by it.
+        if (forView && PurpleRecent.shown(currentAccount, dialogId)) {
+            return PurpleCore.OVERRIDE_SHOW;
+        }
         final int kind = overrideFor(currentAccount, dialogId);
         if (!forView || kind == PurpleCore.OVERRIDE_NONE) {
             return kind;
@@ -886,6 +893,36 @@ public final class PurpleGate {
             return false;
         }
         return false;
+    }
+
+    /**
+     * Whether this folder holds this chat right now.
+     *
+     * The membership question on its own, for the one caller that has a folder
+     * in hand already. Answered as though the preset silenced nothing, the same
+     * loop breaker every other membership test here uses.
+     */
+    public static boolean folderHolds(
+            int currentAccount, MessagesController.DialogFilter filter, long dialogId) {
+        final MessagesController controller = MessagesController.getInstance(currentAccount);
+        final TLRPC.Dialog dialog = controller.dialogs_dict.get(dialogId);
+        if (dialog == null) {
+            return false;
+        }
+        return filter.includesDialog(
+                AccountInstance.getInstance(currentAccount),
+                unwrapped(controller, dialogId),
+                dialog);
+    }
+
+    /**
+     * Rebuilds every chat list, without rereading anything.
+     *
+     * For the things that change what is on screen without changing what the
+     * files say - a grace period starting or running out.
+     */
+    public static void refreshLists() {
+        postRefresh();
     }
 
     /** Case-insensitive membership, as folder titles are matched everywhere. */

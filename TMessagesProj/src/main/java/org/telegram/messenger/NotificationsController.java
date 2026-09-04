@@ -67,6 +67,7 @@ import androidx.core.graphics.drawable.IconCompat;
 import com.google.common.collect.Lists;
 
 import org.telegram.messenger.purple.PurpleGate;
+import org.telegram.messenger.purple.PurpleRecent;
 import org.telegram.messenger.support.LongSparseIntArray;
 import org.telegram.messenger.utils.tlutils.TLKeyboardHelper;
 import org.telegram.messenger.utils.tlutils.TlUtils;
@@ -439,6 +440,13 @@ public class NotificationsController extends BaseController implements Notificat
     }
 
     public void setOpenedDialogId(long dialog_id, long topicId) {
+        // Purple: this method already means "this chat became, or stopped being,
+        // the one you are looking at" - every caller means exactly that, in both
+        // directions - which is precisely what the [recent] grace period needs,
+        // and the only place in the app that means it. Called before the post
+        // below rather than inside it, so it runs on the caller's thread: the
+        // eligibility test reads the chat list, which the UI thread owns.
+        PurpleRecent.setOpened(currentAccount, dialog_id);
         notificationsQueue.postRunnable(() -> {
             openedDialogId = dialog_id;
             openedTopicId = topicId;

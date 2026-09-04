@@ -617,6 +617,14 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 		: Purple::NextOverrideDeadline(gate.state, gate.resolved.preset)));
 	json += QStringLiteral(",\"hideScope\":");
 	json += QString::number(int(gate.settings.overrides.hideScope));
+	// Read on every row while a chat is in its grace period, so it travels with
+	// the rest rather than being asked for. Zero disables it, and the Java side
+	// re-reads it on every query - which is what makes turning [recent] off take
+	// effect at once rather than at the end of whatever was already running.
+	json += QStringLiteral(",\"recentSeconds\":");
+	json += QString::number(gate.settings.recent.staySecondsAfterClose);
+	json += QStringLiteral(",\"recentScope\":");
+	json += QString::number(int(gate.settings.recent.scope));
 	// Every list in the file, not the running preset's - the membership menu
 	// offers all of them, and under `normal' the preset's own count is zero.
 	json += QStringLiteral(",\"listCount\":");
