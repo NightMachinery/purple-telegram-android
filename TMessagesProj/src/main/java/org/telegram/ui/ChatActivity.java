@@ -24931,9 +24931,11 @@ public class ChatActivity extends BaseFragment implements
         if (settingSaysNo || PurpleGate.localPremium()) {
             FileLog.d("Purple: sponsored for " + dialog_id + ": not requested"
                     + (settingSaysNo ? " (your setting)." : " (local premium)."));
+            getMessagesController().getTranslateController().purpleLogAvailability(dialog_id);
             return;
         }
         FileLog.d("Purple: sponsored for " + dialog_id + ": requested.");
+        getMessagesController().getTranslateController().purpleLogAvailability(dialog_id);
         MessagesController.SponsoredMessagesInfo res = getMessagesController().getSponsoredMessages(dialog_id);
         if (res == null || res.messages == null) {
             return;
