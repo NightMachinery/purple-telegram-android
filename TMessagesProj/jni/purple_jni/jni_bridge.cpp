@@ -14,12 +14,15 @@ any later version.
 
 #include "purple/purple_engine.h"
 #include "purple/purple_settings.h"
+#include "purple/purple_splice.h"
 #include "purple/purple_state.h"
 
 #include <QtCore/QChar>
 #include <QtCore/QString>
 
+#include <map>
 #include <mutex>
+#include <optional>
 
 namespace {
 
@@ -300,6 +303,59 @@ void AppendDefaultModesJson(QString &json) {
 	json += QChar(']');
 }
 
+// {"12345":"Some Chat"} as the splice's naming callback wants it. Hand-rolled
+// rather than pulled through a JSON library: the object is flat, the keys are
+// decimal ids, and the values are the only place quoting matters.
+[[nodiscard]] std::map<Purple::PeerIdValue, QString> ParseTitles(
+		const QString &json) {
+	auto result = std::map<Purple::PeerIdValue, QString>();
+	auto i = 0;
+	const auto size = json.size();
+	const auto readString = [&]() -> std::optional<QString> {
+		while (i < size && json[i] != QChar('"')) {
+			if (json[i] == QChar('}')) {
+				return std::nullopt;
+			}
+			++i;
+		}
+		if (i >= size) {
+			return std::nullopt;
+		}
+		++i;
+		auto out = QString();
+		while (i < size && json[i] != QChar('"')) {
+			if (json[i] == QChar('\\') && i + 1 < size) {
+				++i;
+				const auto c = json[i];
+				out += (c == QChar('n')) ? QChar('\n')
+					: (c == QChar('t')) ? QChar('\t')
+					: c;
+			} else {
+				out += json[i];
+			}
+			++i;
+		}
+		++i;
+		return out;
+	};
+	while (i < size) {
+		const auto key = readString();
+		if (!key) {
+			break;
+		}
+		const auto value = readString();
+		if (!value) {
+			break;
+		}
+		auto ok = false;
+		const auto id = key->toLongLong(&ok);
+		if (ok) {
+			result.emplace(Purple::PeerIdValue(id), *value);
+		}
+	}
+	return result;
+}
+
 void AppendPresetJson(
 		QString &json,
 		const Purple::Settings &settings,
@@ -462,6 +518,10 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 	AppendJsonBool(json, activeMissing);
 	json += QStringLiteral(",\"foldersRestricted\":");
 	AppendJsonBool(json, FoldersRestricted(gate.resolved));
+	// Every list in the file, not the running preset's - the membership menu
+	// offers all of them, and under `normal' the preset's own count is zero.
+	json += QStringLiteral(",\"listCount\":");
+	json += QString::number(int(gate.settings.lists.size()));
 	json += QStringLiteral(",\"folders\":");
 	AppendFoldersJson(json, gate.resolved);
 	json += QStringLiteral(",\"silencedFolders\":");
@@ -562,6 +622,109 @@ Java_org_telegram_messenger_purple_PurpleCore_setPresetNative(
 		: name;
 	state.activeSource = Purple::PresetSource::Manual;
 	return ToJava(env, Purple::SerializeState(state));
+}
+
+// The lists a chat could be put in, and which of them already hold it.
+//
+// Parses the text it is handed rather than reading the loaded gate, the same
+// way setPresetNative does: the menu is about the file on disk, and answering
+// from a resolution that was loaded some time ago would offer to add a chat to
+// a list that has since been renamed.
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_listsForNative(
+		JNIEnv *env,
+		jclass,
+		jbyteArray settingsUtf8,
+		jlong bareId) {
+	auto text = QString();
+	if (!ReadUtf8(env, settingsUtf8, text)) {
+		return nullptr;
+	}
+	const auto parsed = Purple::ParseSettings(
+		text,
+		QStringLiteral("settings.toml"));
+	const auto id = Purple::PeerIdValue(bareId);
+	auto json = QStringLiteral("[");
+	auto first = true;
+	for (const auto &list : parsed.settings.lists) {
+		if (!first) {
+			json += QChar(',');
+		}
+		first = false;
+		json += QStringLiteral("{\"name\":");
+		AppendJsonString(json, list.name);
+		json += QStringLiteral(",\"title\":");
+		AppendJsonString(json, list.title.isEmpty() ? list.name : list.title);
+		json += QStringLiteral(",\"member\":");
+		auto member = false;
+		for (const auto held : list.members) {
+			if (held == id) {
+				member = true;
+				break;
+			}
+		}
+		AppendJsonBool(json, member);
+		// The ids too, so the caller can name every line the splice might
+		// rewrite. Converting an inline array to one line per member rewrites
+		// all of them, and a comment regenerated without a name would silently
+		// drop the one that was there.
+		json += QStringLiteral(",\"members\":[");
+		auto firstId = true;
+		for (const auto held : list.members) {
+			if (!firstId) {
+				json += QChar(',');
+			}
+			firstId = false;
+			json += QString::number(qlonglong(held));
+		}
+		json += QChar(']');
+		json += QChar('}');
+	}
+	json += QChar(']');
+	return ToJava(env, json);
+}
+
+// Adds or removes one member, through the splice rather than by re-serialising:
+// the file is hand-owned and its comments are the point of it being TOML at all.
+//
+// The C++ side takes a callback to name each line it rewrites. Calling back into
+// Java per id from here would mean holding a JNIEnv across the splice, so the
+// caller hands over the names it already knows as a JSON object instead, and a
+// name it does not have falls back to the bare id - which is what the desktop
+// shows for a peer it cannot resolve either.
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_spliceMemberNative(
+		JNIEnv *env,
+		jclass,
+		jbyteArray settingsUtf8,
+		jstring listName,
+		jlong bareId,
+		jboolean add,
+		jstring titlesJson) {
+	auto text = QString();
+	if (!ReadUtf8(env, settingsUtf8, text)) {
+		return nullptr;
+	}
+	const auto titles = ParseTitles(FromJava(env, titlesJson));
+	const auto naming = [&](Purple::PeerIdValue id) {
+		const auto i = titles.find(id);
+		return (i != titles.end()) ? i->second : QString::number(id);
+	};
+	const auto path = QStringLiteral("settings.toml");
+	const auto list = FromJava(env, listName);
+	const auto id = Purple::PeerIdValue(bareId);
+	const auto result = add
+		? Purple::AddListMember(text, path, list, id, naming)
+		: Purple::RemoveListMember(text, path, list, id, naming);
+
+	auto json = QStringLiteral("{\"changed\":");
+	AppendJsonBool(json, result.changed);
+	json += QStringLiteral(",\"error\":");
+	AppendJsonString(json, result.error);
+	json += QStringLiteral(",\"text\":");
+	AppendJsonString(json, result.ok() ? result.text : QString());
+	json += QChar('}');
+	return ToJava(env, json);
 }
 
 // Android calls JNI_OnLoad after loading a library, and it finds the symbol

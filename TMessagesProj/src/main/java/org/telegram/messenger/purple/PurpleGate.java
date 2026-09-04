@@ -146,6 +146,17 @@ public final class PurpleGate {
         return current != null && current.foldersRestricted;
     }
 
+    /**
+     * settings.toml as it is on disk right now, or null if it is not there.
+     *
+     * Read fresh rather than remembered: everything that edits the file splices
+     * the bytes it was handed, so working from a copy taken earlier would write
+     * back a file that had moved on.
+     */
+    public static byte[] settingsBytes() {
+        return readSettings();
+    }
+
     /** Loads settings.toml and state.toml once, the first time anyone asks. */
     public static void ensureLoaded() {
         if (everLoaded) {

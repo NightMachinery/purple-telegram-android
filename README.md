@@ -55,6 +55,15 @@ which also shows whatever the file got wrong. The rules, the keys and the reason
 apps compile the same core, so a `settings.toml` moved across through Saved
 Messages behaves identically.
 
+A chat can be filed into a list from the chat list itself: select it, then
+**Work Mode lists** in the overflow. Every list is offered, ticked where the
+chat is already a member, and a tap adds or removes it. The write goes through
+the same splice the desktop uses, so your comments, ordering and blank lines
+survive, and the line carries the chat's name as a trailing comment. This
+exists because the ids in `members` are not shown anywhere in Telegram's UI, so
+building a list otherwise means reading a number off a profile and typing it in
+by hand.
+
 Three files live in the app's private storage, at
 `/data/data/org.purple.telegram/files/purple/`. `settings.toml` is yours,
 imported from Saved Messages. `state.toml` is the app's: the active preset,
