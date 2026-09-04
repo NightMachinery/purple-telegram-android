@@ -42,6 +42,7 @@ import org.telegram.messenger.PushListenerController;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.StatsController;
 import org.telegram.messenger.UserConfig;
+import org.telegram.messenger.purple.PurpleDefaults;
 import org.telegram.messenger.Utilities;
 import org.telegram.ui.Components.VideoPlayer;
 import org.telegram.ui.LoginActivity;
@@ -284,7 +285,11 @@ public class ConnectionsManager extends BaseController {
         if (preferences.contains("pushConnection")) {
             return preferences.getBoolean("pushConnection", true);
         } else {
-            return MessagesController.getMainSettings(UserConfig.selectedAccount).getBoolean("backgroundConnection", false);
+            // Purple: on by default. There is no push in this fork, so the
+            // background connection is the only way a notification arrives.
+            // Not the "backgroundConnection" preference's default - the server
+            // writes that key from the app config and would overwrite it.
+            return PurpleDefaults.PUSH_CONNECTION;
         }
     }
 
