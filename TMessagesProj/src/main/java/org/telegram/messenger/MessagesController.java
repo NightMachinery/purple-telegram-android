@@ -926,6 +926,22 @@ public class MessagesController extends BaseController implements NotificationCe
                 }
             }
         }
+        // Purple: only when the account has more folders than the limit, which
+        // is the only case where any of this is in play - so the line appears
+        // whichever way the unlock went, rather than leaving an absence to be
+        // read as evidence. The lock is a client-side refusal; the *count*
+        // limit the server enforces on creation is untouched.
+        if (dialogFilters.size() - 1 > dialogFiltersLimitDefault) {
+            int locked = 0;
+            for (int i = 0; i < dialogFilters.size(); i++) {
+                if (dialogFilters.get(i).locked) {
+                    ++locked;
+                }
+            }
+            FileLog.d("Purple: " + (dialogFilters.size() - 1) + " folders against a limit of "
+                    + dialogFiltersLimitDefault + ", " + locked + " locked"
+                    + (PurpleGate.localPremium() ? " (local premium)." : "."));
+        }
         if (changed) {
             getNotificationCenter().postNotificationName(NotificationCenter.dialogFiltersUpdated);
         }
