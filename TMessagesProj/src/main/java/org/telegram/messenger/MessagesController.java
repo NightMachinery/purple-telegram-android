@@ -1325,6 +1325,13 @@ public class MessagesController extends BaseController implements NotificationCe
         }
 
         public boolean includesDialog(AccountInstance accountInstance, long dialogId, TLRPC.Dialog d) {
+            // Purple: one of the preset's invented tabs. Its membership comes
+            // from the file rather than from flags and exception lists, and it
+            // answers before all of them - a view holds what its lists claim
+            // and nothing else, so none of the machinery below applies to it.
+            if (PurpleGate.isExtraView(this)) {
+                return PurpleGate.viewHolds(accountInstance.getCurrentAccount(), this, dialogId);
+            }
             if (neverShow.contains(dialogId)) {
                 return false;
             }

@@ -408,6 +408,36 @@ Java_org_telegram_messenger_purple_PurpleCore_parseSettings(
 	return ToJava(env, ResultJson(result));
 }
 
+// The preset's extra tabs, in strip order, as [{"name","pinned":[ids]}].
+//
+// Membership is not here: it travels one bit per view on the per-chat answer,
+// which is the only shape that path can afford. What a view needs handing over
+// is what the tab is called and what it pins - both of which the file owns,
+// because nothing on the server has heard of a tab you invented.
+void AppendViewsJson(QString &out, const Purple::Resolved &resolved) {
+	out += QChar('[');
+	auto first = true;
+	for (const auto &view : resolved.views) {
+		if (!first) {
+			out += QChar(',');
+		}
+		first = false;
+		out += QStringLiteral("{\"name\":");
+		AppendJsonString(out, view.name);
+		out += QStringLiteral(",\"pinned\":[");
+		auto firstPin = true;
+		for (const auto pinned : view.pinned) {
+			if (!firstPin) {
+				out += QChar(',');
+			}
+			firstPin = false;
+			out += QString::number(qint64(pinned));
+		}
+		out += QStringLiteral("]}");
+	}
+	out += QChar(']');
+}
+
 // The "until" decisions in force under this resolution, as
 // [{"peer","kind","until"}]. Expired entries and entries made under another
 // preset are already invisible to OverrideFor(), and the walk below applies the
@@ -625,6 +655,8 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 	json += QString::number(gate.settings.recent.staySecondsAfterClose);
 	json += QStringLiteral(",\"recentScope\":");
 	json += QString::number(int(gate.settings.recent.scope));
+	json += QStringLiteral(",\"views\":");
+	AppendViewsJson(json, gate.resolved);
 	// Every list in the file, not the running preset's - the membership menu
 	// offers all of them, and under `normal' the preset's own count is zero.
 	json += QStringLiteral(",\"listCount\":");
@@ -684,6 +716,7 @@ Java_org_telegram_messenger_purple_PurpleCore_visibleNative(
 	static_assert(int(Purple::ShowMode::Never) == 4);
 
 	constexpr auto kNotifyBit = jint(0x10);
+	constexpr auto kViewShift = 8;
 	constexpr auto kStock = jint(int(Purple::ShowMode::Always)) | kNotifyBit;
 
 	if (kind < 0 || kind > int(Purple::ChatKind::Bot)) {
@@ -697,13 +730,32 @@ Java_org_telegram_messenger_purple_PurpleCore_visibleNative(
 	if (!gate.loaded || gate.resolved.normal) {
 		return kStock;
 	}
+	const auto id = Purple::PeerIdValue(bareId);
 	const auto visibility = Purple::Visible(
 		gate.settings,
 		gate.resolved,
-		Purple::PeerIdValue(bareId),
+		id,
 		Purple::ChatKind(kind));
+
+	// Which extra views hold this chat, one bit each, riding home on the same
+	// int rather than through a native of their own. The Java side caches this
+	// value per chat and clears the cache on every reload, so a tab's
+	// membership costs a shift and a mask on a path that would otherwise pay a
+	// JNI call per chat per view per sort. Sixteen is the core's own view
+	// limit, so the field cannot overflow.
+	auto views = jint(0);
+	for (auto i = 0, count = int(gate.resolved.views.size()); i != count; ++i) {
+		if (Purple::ViewHolds(
+				gate.settings,
+				gate.resolved.views[i],
+				id,
+				Purple::ChatKind(kind))) {
+			views |= (jint(1) << i);
+		}
+	}
 	return jint(int(visibility.show))
-		| (visibility.notify ? kNotifyBit : jint(0));
+		| (visibility.notify ? kNotifyBit : jint(0))
+		| (views << kViewShift);
 }
 
 // Turns a preset on, as a pure function of the state text: the caller writes

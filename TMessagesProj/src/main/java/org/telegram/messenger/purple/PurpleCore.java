@@ -33,6 +33,20 @@ public final class PurpleCore {
     public static final int SHOW_MASK = 0x0f;
     public static final int NOTIFY_BIT = 0x10;
 
+    /**
+     * Where the extra views' membership sits in the same packed int: one bit
+     * per view, in strip order.
+     *
+     * It rides along rather than taking a native of its own because the caller
+     * is {@code DialogFilter.includesDialog()}, asked once per chat per sort per
+     * showing tab. The gate caches the whole int per chat and clears it on every
+     * reload, so a tab's membership costs a shift and a mask.
+     */
+    public static final int VIEW_SHIFT = 8;
+
+    /** The core's own limit on views, main view included. */
+    public static final int VIEW_LIMIT = 16;
+
     /** What a chat is, as the core's Purple::ChatKind numbers it. */
     public static final int KIND_PRIVATE = 0;
     public static final int KIND_GROUP = 1;
@@ -140,6 +154,23 @@ public final class PurpleCore {
     public static final int RECENT_ALREADY_IN_VIEW = 0;
     public static final int RECENT_ANY_OPEN_CHAT = 1;
     public static final int RECENT_EXCEPT_IN_FOLDER = 2;
+
+    /**
+     * One extra tab a preset invented.
+     *
+     * Membership is not here - it travels in the packed per-chat answer. What
+     * the file owns, and the server has never heard of, is the name and the
+     * pinned order.
+     */
+    public static final class View {
+        public final String name;
+        public final long[] pinned;
+
+        View(String name, long[] pinned) {
+            this.name = name;
+            this.pinned = pinned;
+        }
+    }
 
     /** One live "until" decision, as the load result hands it over. */
     public static final class Override {
@@ -812,6 +843,12 @@ public final class PurpleCore {
 
         public final List<PresetInfo> presets;
 
+        /**
+         * The preset's extra tabs, in strip order. Empty in almost every preset,
+         * and checked for emptiness before anything builds anything.
+         */
+        public final List<View> views;
+
         /** Peek and schedule, which move on a clock rather than on an edit. */
         public final Clock clock;
 
@@ -824,7 +861,7 @@ public final class PurpleCore {
                 boolean foldersRestricted, List<String> silencedFolders,
                 List<String> quietFolders, List<ExemptFolder> exemptFolders,
                 int[] defaultModes, int listCount, List<PresetInfo> presets,
-                Clock clock, String stateText) {
+                List<View> views, Clock clock, String stateText) {
             this.ok = ok;
             this.error = error;
             this.warnings = warnings;
@@ -844,6 +881,7 @@ public final class PurpleCore {
             this.exemptFolders = exemptFolders;
             this.defaultModes = defaultModes;
             this.presets = presets;
+            this.views = views;
             this.clock = clock;
             this.stateText = stateText;
         }
@@ -870,7 +908,8 @@ public final class PurpleCore {
                     Collections.<String>emptyList(),
                     Collections.<String>emptyList(),
                     Collections.<ExemptFolder>emptyList(), STOCK_DEFAULT_MODES, 0,
-                    Collections.<PresetInfo>emptyList(), Clock.NONE, null);
+                    Collections.<PresetInfo>emptyList(), Collections.<View>emptyList(),
+                    Clock.NONE, null);
         }
 
         static Loaded fromJson(String json) {
@@ -926,6 +965,23 @@ public final class PurpleCore {
                     }
                 }
                 final List<PresetInfo> presets = new ArrayList<>();
+                final List<View> views = new ArrayList<>();
+                final JSONArray tabs = object.optJSONArray("views");
+                if (tabs != null) {
+                    for (int i = 0; i < tabs.length(); ++i) {
+                        final JSONObject entry = tabs.optJSONObject(i);
+                        if (entry == null) {
+                            continue;
+                        }
+                        final JSONArray ids = entry.optJSONArray("pinned");
+                        final long[] pinned = new long[ids == null ? 0 : ids.length()];
+                        for (int a = 0; a < pinned.length; ++a) {
+                            pinned[a] = ids.optLong(a, 0);
+                        }
+                        views.add(new View(entry.optString("name", ""), pinned));
+                    }
+                }
+
                 final JSONArray array = object.optJSONArray("presets");
                 if (array != null) {
                     for (int i = 0; i < array.length(); ++i) {
@@ -963,6 +1019,7 @@ public final class PurpleCore {
                         defaultModes,
                         object.optInt("listCount", 0),
                         presets,
+                        views,
                         Clock.fromJson(object),
                         object.isNull("stateText") ? null : object.optString("stateText", null));
             } catch (JSONException e) {
