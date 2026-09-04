@@ -155,9 +155,18 @@ org.purple.telegram are blocked" (seen in logcat on first launch). The app
 handles the failure quietly.
 
 What works instead is the same thing that works on phones without Google
-services: Settings → Notifications and Sounds → **Background Connection** (and
-**Keep-Alive Service** if the OS keeps killing the app). Enable it once after
-signing in.
+services: the background connection. **This fork turns it on by default**,
+because without push it is the only way a notification ever arrives here and an
+install that inherited upstream's "off" is silently unable to notify. The switch
+is still there - Settings → Notifications and Sounds → **Background
+Connection** - and turning it off is remembered.
+
+Turn on **Keep-Alive Service**, next to it, if the OS keeps killing the app;
+that one is left off by default, because it is a permanent notification and
+whether it is worth it depends on the phone.
+
+See `docs/purple/defaults.md` in the desktop repository for this and the other
+defaults this fork changes.
 
 ### Testing on an emulator
 
