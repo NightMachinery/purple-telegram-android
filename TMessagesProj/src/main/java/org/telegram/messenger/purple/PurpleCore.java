@@ -852,6 +852,13 @@ public final class PurpleCore {
         /** Peek and schedule, which move on a clock rather than on an edit. */
         public final Clock clock;
 
+        /**
+         * Whether the Premium features this client alone withholds are
+         * unlocked. On unless the file says otherwise, which is also what a
+         * file with no {@code [premium]} section means.
+         */
+        public final boolean premium;
+
         /** The state.toml text to write back, or null when it did not change. */
         public final String stateText;
 
@@ -861,7 +868,7 @@ public final class PurpleCore {
                 boolean foldersRestricted, List<String> silencedFolders,
                 List<String> quietFolders, List<ExemptFolder> exemptFolders,
                 int[] defaultModes, int listCount, List<PresetInfo> presets,
-                List<View> views, Clock clock, String stateText) {
+                List<View> views, Clock clock, boolean premium, String stateText) {
             this.ok = ok;
             this.error = error;
             this.warnings = warnings;
@@ -883,6 +890,7 @@ public final class PurpleCore {
             this.presets = presets;
             this.views = views;
             this.clock = clock;
+            this.premium = premium;
             this.stateText = stateText;
         }
 
@@ -909,7 +917,7 @@ public final class PurpleCore {
                     Collections.<String>emptyList(),
                     Collections.<ExemptFolder>emptyList(), STOCK_DEFAULT_MODES, 0,
                     Collections.<PresetInfo>emptyList(), Collections.<View>emptyList(),
-                    Clock.NONE, null);
+                    Clock.NONE, true, null);
         }
 
         static Loaded fromJson(String json) {
@@ -1021,6 +1029,7 @@ public final class PurpleCore {
                         presets,
                         views,
                         Clock.fromJson(object),
+                        object.optBoolean("premium", true),
                         object.isNull("stateText") ? null : object.optString("stateText", null));
             } catch (JSONException e) {
                 return failed("bad result from the core");

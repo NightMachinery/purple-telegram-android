@@ -23,6 +23,7 @@ import androidx.annotation.Nullable;
 //import com.google.mlkit.nl.translate.Translator;
 //import com.google.mlkit.nl.translate.TranslatorOptions;
 
+import org.telegram.messenger.purple.PurpleGate;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.InputSerializedData;
 import org.telegram.tgnet.OutputSerializedData;
@@ -91,7 +92,11 @@ public class TranslateController extends BaseController {
     }
 
     public boolean isFeatureAvailable() {
-        return isChatTranslateEnabled() && UserConfig.getInstance(currentAccount).isPremium();
+        // Purple: see docs/purple/premium.md. The master switch above is not
+        // Premium-locked on Android the way it is on the desktop, so this is
+        // the only gate in front of the whole-chat translation UI.
+        return isChatTranslateEnabled()
+                && (UserConfig.getInstance(currentAccount).isPremium() || PurpleGate.localPremium());
     }
 
     public boolean isFeatureAvailable(long dialogId) {
@@ -101,6 +106,7 @@ public class TranslateController extends BaseController {
         final TLRPC.Chat chat = getMessagesController().getChat(-dialogId);
         return (
             UserConfig.getInstance(currentAccount).isPremium() ||
+            PurpleGate.localPremium() ||
             chat != null && chat.autotranslation
         );
     }
@@ -1774,7 +1780,9 @@ public class TranslateController extends BaseController {
     }
 
     private boolean isLanguageRestricted(String lng) {
-        if (getUserConfig().isPremium()) {
+        // Purple: the "Do Not Translate" list is a local preference; without
+        // Premium upstream ignores it and hardcodes your own language.
+        if (getUserConfig().isPremium() || PurpleGate.localPremium()) {
             return RestrictedLanguagesSelectActivity.getRestrictedLanguages().contains(lng);
         }
         try {

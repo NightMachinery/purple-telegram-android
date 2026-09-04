@@ -655,6 +655,13 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 	json += QString::number(gate.settings.recent.staySecondsAfterClose);
 	json += QStringLiteral(",\"recentScope\":");
 	json += QString::number(int(gate.settings.recent.scope));
+	// The Premium gates this client is the only thing enforcing. A file that
+	// never mentions [premium] means on, which is the core's default and the
+	// desktop's, so one settings.toml still means one thing in both clients.
+	json += QStringLiteral(",\"premium\":");
+	json += (gate.settings.premium.enabled
+		? QStringLiteral("true")
+		: QStringLiteral("false"));
 	json += QStringLiteral(",\"views\":");
 	AppendViewsJson(json, gate.resolved);
 	// Every list in the file, not the running preset's - the membership menu
