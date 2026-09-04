@@ -133,6 +133,14 @@ public final class PurpleCore {
     public static final int SCOPE_UNCOUNTED = 1;
     public static final int SCOPE_COUNTED = 2;
 
+    /**
+     * Which chats the {@code [recent]} grace period covers, numbered as the
+     * core's {@code RecentScope}.
+     */
+    public static final int RECENT_ALREADY_IN_VIEW = 0;
+    public static final int RECENT_ANY_OPEN_CHAT = 1;
+    public static final int RECENT_EXCEPT_IN_FOLDER = 2;
+
     /** One live "until" decision, as the load result hands it over. */
     public static final class Override {
         public final long peer;
@@ -190,9 +198,19 @@ public final class PurpleCore {
         /** One of the {@code SCOPE_} values: how far a "hide until" reaches. */
         public final int hideScope;
 
+        /**
+         * How long a chat stays in the view after you stop looking at it. Zero
+         * disables the grace period entirely.
+         */
+        public final int recentSeconds;
+
+        /** One of the {@code RECENT_} values: which chats the grace covers. */
+        public final int recentScope;
+
         Clock(boolean peeking, long peekDeadline, int peekSeconds,
                 boolean schedulePaused, boolean scheduleConfigured,
-                List<Override> overrides, long nextOverrideDeadline, int hideScope) {
+                List<Override> overrides, long nextOverrideDeadline, int hideScope,
+                int recentSeconds, int recentScope) {
             this.peeking = peeking;
             this.peekDeadline = peekDeadline;
             this.peekSeconds = peekSeconds;
@@ -201,10 +219,13 @@ public final class PurpleCore {
             this.overrides = overrides;
             this.nextOverrideDeadline = nextOverrideDeadline;
             this.hideScope = hideScope;
+            this.recentSeconds = recentSeconds;
+            this.recentScope = recentScope;
         }
 
         static final Clock NONE = new Clock(false, 0, 0, false, false,
-                Collections.<Override>emptyList(), 0, SCOPE_UNCOUNTED);
+                Collections.<Override>emptyList(), 0, SCOPE_UNCOUNTED,
+                0, RECENT_ALREADY_IN_VIEW);
 
         static Clock fromJson(JSONObject object) {
             final List<Override> overrides = new ArrayList<>();
@@ -229,7 +250,9 @@ public final class PurpleCore {
                     object.optBoolean("scheduleConfigured", false),
                     overrides,
                     object.optLong("nextOverrideDeadline", 0),
-                    object.optInt("hideScope", SCOPE_UNCOUNTED));
+                    object.optInt("hideScope", SCOPE_UNCOUNTED),
+                    object.optInt("recentSeconds", 0),
+                    object.optInt("recentScope", RECENT_ALREADY_IN_VIEW));
         }
     }
 
