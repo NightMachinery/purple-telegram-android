@@ -189,10 +189,25 @@ the emulator never needs your release key. The Google APIs image (not the Play
 Store one) allows `adb root`, which is handy for reading the app's files under
 `/data/data/org.purple.telegram/`.
 
+On an Apple silicon Mac, use an **arm64** image instead and give it the real
+GPU:
+
+```bash
+sdkmanager "system-images;android-36;google_apis;arm64-v8a"
+avdmanager create avd -n purple -k "system-images;android-36;google_apis;arm64-v8a" -d pixel_6
+emulator -avd purple -gpu host -no-audio -no-snapshot &
+```
+
+Nothing is translated - the APK's architecture is the host's - and the emulator
+renders through MoltenVK on the Mac's own GPU. That is worth the 4.3 GB image:
+the software renderer below is what makes popups and long-press menus
+unreliable, and on this path they simply work. It costs about 6 GB of RAM while
+running, so shut it down with `adb emu kill` afterwards.
+
 Two settings save a lot of pain. In the AVD's `config.ini` set
-`hw.gpu.enabled=yes` and `hw.gpu.mode=swiftshader_indirect`; a freshly created
-AVD may have the GPU disabled, and the fallback renderer segfaults the whole
-emulator seconds after the app draws a chat. Then put the app in full
+`hw.gpu.enabled=yes` and `hw.gpu.mode=swiftshader_indirect` (or `host`, above);
+a freshly created AVD may have the GPU disabled, and the fallback renderer
+segfaults the whole emulator seconds after the app draws a chat. Then put the app in full
 power-saver mode, which turns off chat blur and animations, by writing
 `<int name="lite_mode" value="0" />` into its `mainconfig.xml` while it is
 stopped. The renderer can still die under heavy drawing; the disk image
