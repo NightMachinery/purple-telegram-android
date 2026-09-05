@@ -11221,6 +11221,8 @@
     <string name="UnsupportedMessageTitle">Unsupported Message</string>
     <string name="UnsupportedMessageMessage">Update Telegram to view this message</string>
     <string name="UnsupportedUpdate">Update</string>
+    <!-- Purple: the fork's own launcher icon, offered in the App Icon picker -->
+    <string name="AppIconPurple">Purple</string>
     <!-- Purple: importing a Work Mode settings.toml from Saved Messages -->
     <string name="ImportPurpleSettings">Import Purple settings</string>
     <string name="PurpleCoreUnavailable">Purple core is not available in this build</string>
