@@ -127,6 +127,26 @@
             <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
         </activity-alias>
 
+        <!--
+          Purple: the fork's own icon. Off by default like every other
+          alternative, so a fresh install still looks stock until it is chosen.
+        -->
+        <activity-alias
+            android:enabled="false"
+            android:name="org.telegram.messenger.PurpleIcon"
+            android:targetActivity="org.telegram.ui.LaunchActivity"
+            android:icon="@mipmap/icon_purple_launcher"
+            android:roundIcon="@mipmap/icon_purple_launcher_round"
+            android:exported="true">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.MULTIWINDOW_LAUNCHER" />
+            </intent-filter>
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
+        </activity-alias>
+
         <activity-alias
             android:enabled="false"
             android:name="org.telegram.messenger.VintageIcon"
