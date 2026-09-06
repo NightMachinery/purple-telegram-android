@@ -53,6 +53,7 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
+import org.telegram.messenger.purple.PurpleGate;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBarMenuSubItem;
 import org.telegram.ui.ActionBar.BaseFragment;
@@ -474,9 +475,14 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
             if (!folder.isDefault()) {
                 title = MessageObject.replaceAnimatedEmoji(title, folder.entities, folderItem.getTextView().getPaint().getFontMetricsInt());
             }
-            final int unreadCount = folder.isDefault()
-                    ? MessagesStorage.getInstance(currentAccount).getMainUnreadCount()
-                    : folder.unreadCount;
+            // Purple: the same rule the folder strip's own pills follow - an
+            // uncounted folder shows no number, an invented tab counts itself.
+            // One helper for both, so this list and the strip cannot disagree
+            // about what a folder's badge says.
+            final int unreadCount = PurpleGate.tabCount(currentAccount, folder,
+                    folder.isDefault()
+                            ? MessagesStorage.getInstance(currentAccount).getMainUnreadCount()
+                            : folder.unreadCount);
             if (unreadCount > 0) {
                 final SpannableStringBuilder titleWithCounter = new SpannableStringBuilder(title);
                 final int counterStart = titleWithCounter.length();
@@ -537,6 +543,13 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
                 if (!folder.includesDialog(getAccountInstance(), dialogId, dialog)) {
                     continue;
                 }
+            }
+            // Purple: the colour describes the number beside it, so a chat
+            // that contributes nothing to the count must not colour it either -
+            // a "hide until" is out of every running total, and a pill turned
+            // loud by a chat it did not count would be saying the wrong thing.
+            if (!PurpleGate.countedInTotals(currentAccount, dialog.id)) {
+                continue;
             }
             if ((messagesController.getDialogUnreadCount(dialog) > 0 || dialog.unread_mark)
                     && !messagesController.isDialogMuted(dialog.id, 0)) {
