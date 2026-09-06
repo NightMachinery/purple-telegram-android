@@ -132,6 +132,7 @@ import org.telegram.messenger.XiaomiUtilities;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.messenger.purple.PurpleGate;
 import org.telegram.messenger.purple.PurpleListMenu;
+import org.telegram.messenger.purple.PurpleSyncOffer;
 import org.telegram.messenger.utils.FBool;
 import org.telegram.messenger.utils.GradientProtectionDrawable;
 import org.telegram.messenger.utils.SearchTextWatcher;
@@ -2856,6 +2857,14 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         // rather than lazily inside getDialogsArray keeps the native load and the
         // two file reads off the background thread the adapter diffs on.
         PurpleGate.ensureLoaded();
+
+        // Purple: and once per process per account, ask Saved Messages whether a
+        // newer settings.toml is sitting there. Here rather than in onResume
+        // because this is the first point at which the account is known to be
+        // loaded - the chat list is only ever created for an activated account -
+        // and the offer waits on a network round trip anyway, by which time the
+        // list has a window for the bulletin to land in.
+        PurpleSyncOffer.checkOnLaunch(this, currentAccount);
 
         if (arguments != null) {
             onlySelect = arguments.getBoolean("onlySelect", false);
