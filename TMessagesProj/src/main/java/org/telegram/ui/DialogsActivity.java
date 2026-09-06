@@ -8350,6 +8350,14 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         updateVisibleRows(MessagesController.UPDATE_MASK_SELECT_DIALOG);
     }
 
+    /**
+     * Purple: how long to wait after {@code finishPreviewFragment()} before a
+     * dialog may be shown. The preview's close animation runs about 200ms;
+     * anything posted before it finishes is attached to a window on its way
+     * out and is never seen.
+     */
+    private static final long PURPLE_PREVIEW_DISMISS_MS = 300;
+
     private boolean onItemLongClick(RecyclerListView listView, View view, int position, float x, float y, int dialogsType, RecyclerListView.Adapter adapter) {
         if (getParentActivity() == null || view instanceof DialogsHintCell) {
             return false;
@@ -8739,11 +8747,18 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             workModeItem.setMinimumWidth(160);
             workModeItem.setOnClickListener(e -> {
                 finishPreviewFragment();
-                // After the preview is gone, for the same reason the pin action
-                // waits: showing a dialog from inside a fragment that is being
-                // dismissed puts it behind the one leaving.
+                // Wait for the preview's dismissal *animation*, not merely for
+                // the next loop iteration. The pin action below posts with no
+                // delay and is right to: it only moves data and needs the
+                // fragment alive. A dialog needs a window that is not still
+                // being torn down, and a zero-delay post gave exactly that -
+                // the preview closed and no box ever appeared, silently, with
+                // nothing in the log. There is no completion callback on
+                // finishPreviewFragment() to hang this on, so it is a delay,
+                // chosen above the close animation and confirmed on a device.
                 AndroidUtilities.runOnUIThread(() ->
-                        PurpleListBox.show(DialogsActivity.this, currentAccount, dialogId));
+                        PurpleListBox.show(DialogsActivity.this, currentAccount, dialogId),
+                        PURPLE_PREVIEW_DISMISS_MS);
             });
             previewMenu[0].addView(workModeItem);
         }
