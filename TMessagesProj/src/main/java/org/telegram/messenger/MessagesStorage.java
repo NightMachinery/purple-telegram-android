@@ -34,6 +34,7 @@ import org.telegram.SQLite.SQLiteCursor;
 import org.telegram.SQLite.SQLiteDatabase;
 import org.telegram.SQLite.SQLiteException;
 import org.telegram.SQLite.SQLitePreparedStatement;
+import org.telegram.messenger.purple.PurpleGate;
 import org.telegram.messenger.support.LongSparseIntArray;
 import org.telegram.messenger.utils.EphemeralMessagesHelper;
 import org.telegram.tgnet.NativeByteBuffer;
@@ -1283,6 +1284,21 @@ public class MessagesStorage extends BaseController {
 
     public void updateMutedDialogsFiltersCounters() {
         storageQueue.postRunnable(() -> resetAllUnreadCounters(true));
+    }
+
+    /**
+     * Purple: recount every tab, not only the "exclude muted" ones.
+     *
+     * A gate reload can move two kinds of number. What is silenced changes only
+     * the folders that exclude muted chats, which is all the method above
+     * invalidates. A "hide until" under the default hide_scope takes a chat out
+     * of every running total, so a plain folder tab would keep showing a
+     * number the chat no longer contributes to until some unrelated message
+     * happened to recount it. Reloads are rare - a preset switch, a file edit,
+     * an "until" made or expired - so a full recount is the cheap answer.
+     */
+    public void updateAllFiltersCountersForPurple() {
+        storageQueue.postRunnable(() -> resetAllUnreadCounters(false));
     }
 
     public void setDialogFlags(long did, long flags) {
@@ -2821,6 +2837,13 @@ public class MessagesStorage extends BaseController {
             LongSparseIntArray encryptedChatsByUsersCount = new LongSparseIntArray();
             LongSparseArray<Boolean> mutedDialogs = new LongSparseArray<>();
             LongSparseArray<Boolean> archivedDialogs = new LongSparseArray<>();
+            // The folder-count half of the default hide_scope. A chat under a
+            // "hide until" keeps its row and its own badge but drops out of
+            // every running total, so it is left out of the buckets these tabs
+            // are summed from - and out of the exception walks below, both the
+            // adding and the subtracting ones, or a chat that was never counted
+            // would be taken off a tab twice.
+            int purpleUncounted = 0;
             if (!usersToLoad.isEmpty()) {
                 getUsersInternal(usersToLoad, users, true);
                 for (int a = 0, N = users.size(); a < N; a++) {
@@ -2834,7 +2857,9 @@ public class MessagesStorage extends BaseController {
                     if (idx1 == 1) {
                         archivedDialogs.put(user.id, true);
                     }
-                    if (isUserCollapsedInCommunity(chatsDict, user)) {
+                    if (!PurpleGate.countedInTotals(currentAccount, user.id)) {
+                        purpleUncounted++;
+                    } else if (isUserCollapsedInCommunity(chatsDict, user)) {
                         communities[idx1][idx2]++;
                     } else if (user.bot) {
                         bots[idx1][idx2]++;
@@ -2872,7 +2897,13 @@ public class MessagesStorage extends BaseController {
                         if (idx1 == 1) {
                             archivedDialogs.put(user.id, true);
                         }
-                        if (user.self || user.contact) {
+                        // An encrypted chat is addressed as the user behind it,
+                        // so a hide-until on that user takes this one out of the
+                        // totals as well - which is what keeps the walks below
+                        // symmetric, since they ask about the same user id.
+                        if (!PurpleGate.countedInTotals(currentAccount, did)) {
+                            purpleUncounted++;
+                        } else if (user.self || user.contact) {
                             contacts[idx1][idx2]++;
                         } else {
                             nonContacts[idx1][idx2]++;
@@ -2904,7 +2935,9 @@ public class MessagesStorage extends BaseController {
                         archivedDialogs.put(-chat.id, true);
                     }
 
-                    if (ChatObject.isCommunity(chat)) {
+                    if (!PurpleGate.countedInTotals(currentAccount, -chat.id)) {
+                        purpleUncounted++;
+                    } else if (ChatObject.isCommunity(chat)) {
 
                     } else if (isChatCollapsedInCommunity(chatsDict, chat)) {
                         communities[idx1][idx2]++;
@@ -2925,6 +2958,10 @@ public class MessagesStorage extends BaseController {
                     FileLog.d("bots = " + bots[b][0] + ", " + bots[b][1]);
                 }
             }*/
+            if (purpleUncounted > 0) {
+                FileLog.d("Purple: " + purpleUncounted
+                        + " chats under a hide until left out of the folder counts");
+            }
             for (int a = 0, N = dialogFilters.size(); a < N + 2; a++) {
                 final boolean isFilter = a < N;
                 final boolean isMain = a == N;
@@ -3034,6 +3071,12 @@ public class MessagesStorage extends BaseController {
                 if (filter != null) {
                     for (int b = 0, N2 = filter.alwaysShow.size(); b < N2; b++) {
                         long did = filter.alwaysShow.get(b);
+                        // Never counted into the buckets above, so never added
+                        // back here: an exception that pulls a chat onto a tab
+                        // still does not pull its number onto the tab's badge.
+                        if (!PurpleGate.countedInTotals(currentAccount, did)) {
+                            continue;
+                        }
                         if (DialogObject.isUserDialog(did)) {
                             for (int i = 0; i < 2; i++) {
                                 LongSparseArray<TLRPC.User> dict = i == 0 ? usersDict : encUsersDict;
@@ -3086,6 +3129,12 @@ public class MessagesStorage extends BaseController {
                     }
                     for (int b = 0, N2 = filter.neverShow.size(); b < N2; b++) {
                         long did = filter.neverShow.get(b);
+                        // And never subtracted either, for the same reason -
+                        // taking away a count that was never added is how a
+                        // tab ends up showing a negative number.
+                        if (!PurpleGate.countedInTotals(currentAccount, did)) {
+                            continue;
+                        }
                         if (DialogObject.isUserDialog(did)) {
                             for (int i = 0; i < 2; i++) {
                                 LongSparseArray<TLRPC.User> dict = i == 0 ? usersDict : encUsersDict;
@@ -6139,6 +6188,12 @@ public class MessagesStorage extends BaseController {
         LongSparseArray<Integer> encryptedChatsByUsersCount = new LongSparseArray<>();
         LongSparseArray<Boolean> mutedDialogs = new LongSparseArray<>();
         LongSparseArray<Boolean> archivedDialogs = new LongSparseArray<>();
+        // The same hide_scope guard as the full recount, and here it has to be
+        // applied symmetrically: this pass builds a delta that is added to the
+        // running totals when a chat goes unread and taken off them when it is
+        // read. A chat left out of one direction and not the other would drift
+        // the tab a little further wrong on every message.
+        int purpleUncounted = 0;
         if (!usersToLoad.isEmpty()) {
             getUsersInternal(usersToLoad, users);
             for (int a = 0, N = users.size(); a < N; a++) {
@@ -6153,7 +6208,9 @@ public class MessagesStorage extends BaseController {
                 if (idx1 == 1) {
                     archivedDialogs.put(user.id, true);
                 }
-                if (isUserCollapsedInCommunity(chatsDict, user)) {
+                if (!PurpleGate.countedInTotals(currentAccount, user.id)) {
+                    purpleUncounted++;
+                } else if (isUserCollapsedInCommunity(chatsDict, user)) {
                     communities[idx1][idx2]++;
                 } else if (user.bot) {
                     bots[idx1][idx2]++;
@@ -6192,7 +6249,11 @@ public class MessagesStorage extends BaseController {
                     if (idx1 == 1) {
                         archivedDialogs.put(user.id, true);
                     }
-                    if (user.self || user.contact) {
+                    // Addressed as the user behind it, so the walks below - which
+                    // ask about that same user id - stay symmetric with this.
+                    if (!PurpleGate.countedInTotals(currentAccount, did)) {
+                        purpleUncounted++;
+                    } else if (user.self || user.contact) {
                         contacts[idx1][idx2]++;
                     } else {
                         nonContacts[idx1][idx2]++;
@@ -6226,7 +6287,9 @@ public class MessagesStorage extends BaseController {
                     archivedDialogs.put(-chat.id, true);
                 }
 
-                if (ChatObject.isCommunity(chat)) {
+                if (!PurpleGate.countedInTotals(currentAccount, -chat.id)) {
+                    purpleUncounted++;
+                } else if (ChatObject.isCommunity(chat)) {
 
                 } else if (isChatCollapsedInCommunity(chatsDict, chat)) {
                     communities[idx1][idx2]++;
@@ -6258,6 +6321,10 @@ public class MessagesStorage extends BaseController {
                 FileLog.d("read = " + read + " bots = " + bots[b][0] + ", " + bots[b][1]);
             }
         }*/
+        if (purpleUncounted > 0) {
+            FileLog.d("Purple: " + purpleUncounted
+                    + " chats under a hide until left out of the folder counts");
+        }
 
         for (int a = 0, N = dialogFilters.size(); a < N + 2; a++) {
             final boolean isFilter = a < N;
@@ -6380,6 +6447,12 @@ public class MessagesStorage extends BaseController {
                 if (filter != null) {
                     for (int b = 0, N2 = filter.alwaysShow.size(); b < N2; b++) {
                         long did = filter.alwaysShow.get(b);
+                        // Never counted into the buckets above, so never taken back out
+                        // of the total here - the read pass subtracts what the unread
+                        // pass added, and neither touches a chat under a hide until.
+                        if (!PurpleGate.countedInTotals(currentAccount, did)) {
+                            continue;
+                        }
                         if (DialogObject.isUserDialog(did)) {
                             for (int i = 0; i < 2; i++) {
                                 LongSparseArray<TLRPC.User> dict = i == 0 ? usersDict : encUsersDict;
@@ -6432,6 +6505,11 @@ public class MessagesStorage extends BaseController {
                     }
                     for (int b = 0, N2 = filter.neverShow.size(); b < N2; b++) {
                         long did = filter.neverShow.get(b);
+                        // The mirror of the alwaysShow guard: a chat that was never
+                        // added back must not be taken away either.
+                        if (!PurpleGate.countedInTotals(currentAccount, did)) {
+                            continue;
+                        }
                         if (dialogsToUpdateMentions != null && dialogsToUpdateMentions.indexOfKey(did) >= 0 && mutedDialogs.indexOfKey(did) < 0) {
                             continue;
                         }
@@ -6581,6 +6659,11 @@ public class MessagesStorage extends BaseController {
                         if ((flags & MessagesController.DIALOG_FILTER_FLAG_EXCLUDE_MUTED) != 0 && dialogsToUpdateMentions != null) {
                             for (int b = 0, N2 = dialogsToUpdateMentions.size(); b < N2; b++) {
                                 long did = dialogsToUpdateMentions.keyAt(b);
+                                // Same guard on the mention correction: it undoes an addition
+                                // the buckets above were never asked to make.
+                                if (!PurpleGate.countedInTotals(currentAccount, did)) {
+                                    continue;
+                                }
                                 TLRPC.Chat chat = chatsDict.get(-did);
                                 if (ChatObject.isChannel(chat) && !chat.megagroup) {
                                     if ((flags & MessagesController.DIALOG_FILTER_FLAG_CHANNELS) == 0) {
@@ -6598,6 +6681,11 @@ public class MessagesStorage extends BaseController {
                         }
                         for (int b = 0, N2 = filter.alwaysShow.size(); b < N2; b++) {
                             long did = filter.alwaysShow.get(b);
+                            // An exception can pull a chat onto a tab, but not its number
+                            // onto the tab's badge, for as long as the hide until runs.
+                            if (!PurpleGate.countedInTotals(currentAccount, did)) {
+                                continue;
+                            }
                             if (newUnreadDialogs.indexOfKey(did) < 0) {
                                 continue;
                             }
@@ -6665,6 +6753,12 @@ public class MessagesStorage extends BaseController {
                     }
                     for (int b = 0, N2 = filter.neverShow.size(); b < N2; b++) {
                         long did = filter.neverShow.get(b);
+                        // Never taken off the totals here, because the buckets above
+                        // never put it on them. The subtraction is the dangerous half:
+                        // it is what drives a tab negative.
+                        if (!PurpleGate.countedInTotals(currentAccount, did)) {
+                            continue;
+                        }
                         if (DialogObject.isUserDialog(did)) {
                             TLRPC.User user = usersDict.get(did);
                             if (user != null) {
