@@ -718,6 +718,41 @@ public final class PurpleGate {
     }
 
     /**
+     * Whether this chat's unread belongs in any running total.
+     *
+     * The "every running total" half of the default {@code hide_scope}: a chat
+     * you put away half an hour ago is out of All chats, out of the archive's
+     * number and out of every folder tab's, while its own row and its own badge
+     * stay exactly where they were. {@code keep_in_folder} is a promise about
+     * the row, not about the sum, so the tab keeps showing the chat and stops
+     * adding it up. See docs/purple/work_mode.md, "How far a 'hide until'
+     * reaches".
+     *
+     * This keys on the "hide until" and on nothing else. A chat the preset
+     * itself hides still reaches the totals, as a muted one, through the hooked
+     * {@code isDialogMuted} the counter passes already ask - and that is
+     * deliberate: a preset is a standing arrangement about what you look at,
+     * while an "until" is a decision you just made about one chat, and only the
+     * second is worth rewriting a number over.
+     *
+     * Asked once per unread chat per recount, on the storage thread, so it must
+     * never call {@link #ensureLoaded()} - the same rule the badge half follows,
+     * and the {@code isDialogMuted} calls beside it in those loops already
+     * establish that reaching into the gate from there is fine.
+     */
+    public static boolean countedInTotals(int currentAccount, long dialogId) {
+        if (!filtering) {
+            return true;
+        }
+        final PurpleCore.Loaded current = loaded;
+        if (current == null) {
+            return true;
+        }
+        return current.clock.hideScope == PurpleCore.SCOPE_COUNTED
+                || byHand(currentAccount, dialogId, true) != PurpleCore.OVERRIDE_HIDE;
+    }
+
+    /**
      * Whether this chat may put a number on the app icon.
      *
      * A third axis, independent of hiding and silencing: a folder can be
@@ -730,21 +765,21 @@ public final class PurpleGate {
      * counts a chat an uncounted folder holds, because that tab is counting
      * what is on screen in front of you, which is a different question from
      * whether the icon should light up.
+     *
+     * The hide-until half is not repeated here but taken from
+     * {@link #countedInTotals}: a chat out of every running total is out of the
+     * badge too, and the badge adds the quiet folders on top of it.
      */
     public static boolean countedForBadge(int currentAccount, long dialogId) {
         if (!filtering) {
             return true;
         }
+        if (!countedInTotals(currentAccount, dialogId)) {
+            return false;
+        }
         final PurpleCore.Loaded current = loaded;
         if (current == null) {
             return true;
-        }
-        // A chat you put away half an hour ago should not be the reason the
-        // launcher icon is lit. This is the default hide_scope, and the badge is
-        // the part of it that pulls your eye back.
-        if (current.clock.hideScope != PurpleCore.SCOPE_COUNTED
-                && byHand(currentAccount, dialogId, true) == PurpleCore.OVERRIDE_HIDE) {
-            return false;
         }
         return current.quietFolders.isEmpty()
                 || !heldByAny(currentAccount, dialogId, current.quietFolders);
@@ -1323,6 +1358,12 @@ public final class PurpleGate {
      * filter was never counted into, so there is nothing to take from - and the
      * last subtraction in this fork's history drove a badge to -334. Only ever
      * runs when a preset actually declared a view.
+     *
+     * A view's tab is a running total like any other, so a chat under a "hide
+     * until" is left out of it too: the row stays on the tab and keeps its own
+     * badge, and the tab stops adding it up. Which is why this asks
+     * {@link #countedInTotals} and not {@link #countedForBadge} - an uncounted
+     * folder speaks for the launcher icon, not for the tab in front of you.
      */
     public static int viewUnread(int currentAccount, MessagesController.DialogFilter filter) {
         if (!isExtraView(filter)) {
@@ -1338,6 +1379,7 @@ public final class PurpleGate {
                     continue;
                 }
                 if (viewHolds(currentAccount, filter, dialog.id)
+                        && countedInTotals(currentAccount, dialog.id)
                         && controller.getDialogUnreadCount(dialog) != 0) {
                     ++count;
                 }
@@ -1606,9 +1648,10 @@ public final class PurpleGate {
                 // A preset also decides what is silenced, and the unread
                 // counters are built from muted/unmuted buckets, so switching
                 // one moves numbers that no chat-list rebuild would touch.
-                // This is the same call the app makes when a global mute
-                // setting changes, for the same reason.
-                MessagesStorage.getInstance(a).updateMutedDialogsFiltersCounters();
+                // Every tab and not only the "exclude muted" ones, because a
+                // "hide until" takes its chat out of every running total and
+                // a reload is what starts and ends one.
+                MessagesStorage.getInstance(a).updateAllFiltersCountersForPurple();
             }
         });
     }
