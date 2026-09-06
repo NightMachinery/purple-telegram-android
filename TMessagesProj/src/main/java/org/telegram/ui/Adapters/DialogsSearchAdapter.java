@@ -46,6 +46,7 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.purple.PurpleGate;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
@@ -232,6 +233,30 @@ public class DialogsSearchAdapter extends RecyclerListView.SelectionAdapter {
             notifyDataSetChanged();
         }
 
+        /**
+         * Purple: the frequent chats this strip may show.
+         *
+         * MediaDataController's list is read by position by everything here
+         * and by the click handlers around it, so a globally hidden chat is
+         * taken out of a copy rather than skipped in place. The copy is only
+         * made while a preset asks for global hiding; the rest of the time
+         * this is the list itself, and costs one field read.
+         */
+        public static ArrayList<TLRPC.TL_topPeer> visibleHints(int currentAccount) {
+            final ArrayList<TLRPC.TL_topPeer> all = MediaDataController.getInstance(currentAccount).hints;
+            if (!PurpleGate.hidingEverywhere()) {
+                return all;
+            }
+            final ArrayList<TLRPC.TL_topPeer> out = new ArrayList<>(all.size());
+            for (int a = 0, n = all.size(); a < n; a++) {
+                final TLRPC.TL_topPeer peer = all.get(a);
+                if (!PurpleGate.hiddenEverywhere(currentAccount, DialogObject.getPeerDialogId(peer.peer))) {
+                    out.add(peer);
+                }
+            }
+            return out;
+        }
+
         @Override
         public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
             HintDialogCell cell = new HintDialogCell(mContext, drawChecked, resourcesProvider);
@@ -251,7 +276,7 @@ public class DialogsSearchAdapter extends RecyclerListView.SelectionAdapter {
         public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
             HintDialogCell cell = (HintDialogCell) holder.itemView;
 
-            TLRPC.TL_topPeer peer = MediaDataController.getInstance(currentAccount).hints.get(position);
+            TLRPC.TL_topPeer peer = visibleHints(currentAccount).get(position);
             TLRPC.Dialog dialog = new TLRPC.TL_dialog();
             TLRPC.Chat chat = null;
             TLRPC.User user = null;
@@ -278,11 +303,21 @@ public class DialogsSearchAdapter extends RecyclerListView.SelectionAdapter {
 
         @Override
         public int getItemCount() {
-            return MediaDataController.getInstance(currentAccount).hints.size();
+            return visibleHints(currentAccount).size();
         }
     }
 
     private boolean filter(Object obj) {
+        // Purple: the local results come out of SQLite, which knows nothing
+        // about a preset, so the answer has to be applied to them afterwards.
+        // This one test covers everything the method already guards - the local
+        // results, the recent chats, and the global results the helper merges
+        // in beside them - because under hide_everywhere_p a hidden chat is
+        // gone from the app, and search is part of the app. A peer with no
+        // dialog of its own is not in any list this could take it out of.
+        if (PurpleGate.hiddenEverywhere(currentAccount, searchDialogId(obj))) {
+            return false;
+        }
         if (dialogsType != DialogsActivity.DIALOGS_TYPE_START_ATTACH_BOT) {
             return true;
         }
@@ -303,6 +338,21 @@ public class DialogsSearchAdapter extends RecyclerListView.SelectionAdapter {
             }
         }
         return false;
+    }
+
+    /**
+     * Purple: the dialog id a search result stands for, or zero when it is not
+     * a chat at all - a hashtag, an invite to somewhere you have never been.
+     */
+    private static long searchDialogId(Object obj) {
+        if (obj instanceof TLRPC.User) {
+            return ((TLRPC.User) obj).id;
+        } else if (obj instanceof TLRPC.Chat) {
+            return -((TLRPC.Chat) obj).id;
+        } else if (obj instanceof TLRPC.EncryptedChat) {
+            return DialogObject.makeEncryptedDialogId(((TLRPC.EncryptedChat) obj).id);
+        }
+        return 0;
     }
 
     public DialogsSearchAdapter(Context context, DialogsActivity dialogsActivity, int messagesSearch, int type, DefaultItemAnimator itemAnimator, boolean allowGlobalSearch, Theme.ResourcesProvider resourcesProvider) {
@@ -992,6 +1042,15 @@ public class DialogsSearchAdapter extends RecyclerListView.SelectionAdapter {
             for (int i = 0; i < result.size(); ++i) {
                 if (!filter(result.get(i))) {
                     result.remove(i);
+                    // Purple: names runs alongside result and the adapter reads
+                    // both at the same position, so a row dropped without its
+                    // name would relabel every row after it. The dedup below
+                    // already removes from both; this loop never had to before,
+                    // because filter() only ever said no to the attach-bot
+                    // picker, and now it also says no to a globally hidden chat.
+                    if (i < names.size()) {
+                        names.remove(i);
+                    }
                     i--;
                 }
             }
@@ -1705,7 +1764,7 @@ public class DialogsSearchAdapter extends RecyclerListView.SelectionAdapter {
     }
 
     private boolean hasHints() {
-        return !searchWas && !MediaDataController.getInstance(currentAccount).hints.isEmpty() && (dialogsType != DialogsActivity.DIALOGS_TYPE_START_ATTACH_BOT || dialogsActivity.allowUsers);
+        return !searchWas && !CategoryAdapterRecycler.visibleHints(currentAccount).isEmpty() && (dialogsType != DialogsActivity.DIALOGS_TYPE_START_ATTACH_BOT || dialogsActivity.allowUsers);
     }
 
     private int messagesSectionPosition = -1;

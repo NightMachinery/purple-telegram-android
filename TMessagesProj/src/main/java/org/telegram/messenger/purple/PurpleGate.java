@@ -562,6 +562,86 @@ public final class PurpleGate {
     }
 
     /**
+     * Whether this dialog is out of the app rather than out of the preset's view.
+     *
+     * Mirrors the desktop fork's {@code History::purpleHiddenFromChatList()}.
+     * Only a preset that asked for it - {@code hide_everywhere_p} - takes a chat
+     * out of the app rather than out of its own view; everything else keeps the
+     * chat where it is and leaves it out of the view alone, which is what lets a
+     * hidden chat stay pinned, searchable and reachable from the forward picker.
+     *
+     * And the one-chat version of the same request: a "hide until" made while
+     * {@code hide_scope = "hide_everywhere"}. A preset-wide switch and a
+     * decision about a single chat, doing the same thing for the same reason -
+     * the second one simply expires by itself. {@link #byHand} is what asks it,
+     * so the peek veto and the close buffer already apply: a hide that is not
+     * hiding anything at this moment takes nothing out of anything.
+     *
+     * Asked once per dialog per rebuild of every list derived from
+     * {@code dialogs_dict}, so the two tests at the top - nothing is hiding, and
+     * nothing anywhere asked to hide globally - are what a file that never
+     * mentions either of these costs.
+     */
+    public static boolean hiddenEverywhere(int currentAccount, TLRPC.Dialog dialog) {
+        if (!filtering || dialog == null) {
+            return false;
+        }
+        final PurpleCore.Loaded current = loaded;
+        if (current == null) {
+            return false;
+        }
+        final boolean scope = (current.clock.hideScope == PurpleCore.SCOPE_EVERYWHERE);
+        if (!current.hideEverywhere && !scope) {
+            return false;
+        }
+        // The Archive row is not a chat and has no kind, the same answer
+        // shown() gives it before the core is ever asked.
+        if (DialogObject.isFolderDialogId(dialog.id)) {
+            return false;
+        }
+        if (scope && byHand(currentAccount, dialog.id, true) == PurpleCore.OVERRIDE_HIDE) {
+            return true;
+        }
+        return current.hideEverywhere && !shown(currentAccount, dialog);
+    }
+
+    /**
+     * The same question asked with an id, for the callers that have no dialog.
+     *
+     * The lookup runs only once the cheap tests above have already said the
+     * question is live, so a file that asks for neither switch never reaches
+     * {@code dialogs_dict} at all. A chat with no dialog object is not in any
+     * list this could take it out of, so it is not hidden either.
+     */
+    public static boolean hiddenEverywhere(int currentAccount, long dialogId) {
+        if (!hidingEverywhere()) {
+            return false;
+        }
+        return hiddenEverywhere(
+                currentAccount,
+                MessagesController.getInstance(currentAccount).dialogs_dict.get(dialogId));
+    }
+
+    /**
+     * Whether anything at all can be missing from the lists sortDialogs builds.
+     *
+     * Asked without a chat, by the code that has to know whether the model it
+     * is about to read is the whole account or a subset of it - the pinned
+     * order is the one that matters, because it is uploaded with
+     * {@code force = true} and a truncated one unpins the rest of the account.
+     */
+    public static boolean hidingEverywhere() {
+        if (!filtering) {
+            return false;
+        }
+        final PurpleCore.Loaded current = loaded;
+        return current != null
+                && (current.hideEverywhere
+                        || (current.clock.hideScope == PurpleCore.SCOPE_EVERYWHERE
+                                && !current.clock.overrides.isEmpty()));
+    }
+
+    /**
      * The span a row is in the view only for the moment, on the monotonic clock.
      *
      * Covers both reasons a row can be here on a timer - the close buffer and a
@@ -880,6 +960,13 @@ public final class PurpleGate {
         final PurpleCore.Loaded current = loaded;
         if (current == null) {
             return true;
+        }
+        // A chat the preset has taken out of the app is out of every number it
+        // would otherwise be part of - there is no row left for a total to be
+        // counting. Asked first because it is the wider claim, and it costs one
+        // field read unless a preset actually asked for it.
+        if (hiddenEverywhere(currentAccount, dialogId)) {
+            return false;
         }
         return current.clock.hideScope == PurpleCore.SCOPE_COUNTED
                 || byHand(currentAccount, dialogId, true) != PurpleCore.OVERRIDE_HIDE;
@@ -1803,8 +1890,12 @@ public final class PurpleGate {
      * Tells every chat list to rebuild, the way
      * {@code MessagesController.onFilterUpdate} does.
      *
-     * Deliberately not sortDialogs: this class never changes the model, only
-     * the view of it, so there is nothing to re-sort.
+     * sortDialogs, because {@code hide_everywhere_p} is answered there and
+     * nowhere else: the lists it builds - the forward picker, the folder tabs,
+     * the kind-limited pickers - are the ones a globally hidden chat has to be
+     * missing from, and dialogsNeedReload does not rebuild them, it only redraws
+     * what they already hold. Everything else this class does is a view over the
+     * model and needs no re-sort; this one is a rebuild of derived lists.
      */
     private static void postRefresh() {
         AndroidUtilities.runOnUIThread(() -> {
@@ -1812,6 +1903,9 @@ public final class PurpleGate {
                 if (!UserConfig.getInstance(a).isClientActivated()) {
                     continue;
                 }
+                // A no-op while the interface is paused, which is fine: resuming
+                // sorts the dialogs itself, before anything can be drawn.
+                MessagesController.getInstance(a).sortDialogs(null);
                 NotificationCenter.getInstance(a).postNotificationName(NotificationCenter.dialogsNeedReload, true);
                 // Which folders are on the strip is part of the preset too, and
                 // the strip is rebuilt from this one signal - the same one a

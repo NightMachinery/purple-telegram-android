@@ -88,6 +88,7 @@ import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.purple.PurpleGate;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.NativeByteBuffer;
 import org.telegram.tgnet.TLObject;
@@ -2929,6 +2930,13 @@ public class ShareAlert extends BottomSheet implements NotificationCenter.Notifi
                 if (!(dialog instanceof TLRPC.TL_dialog)) {
                     continue;
                 }
+                // Purple: the share sheet builds its own list straight off
+                // getAllDialogs(), so it never sees the lists sortDialogs()
+                // derives and has to ask for itself. Under hide_everywhere_p a
+                // hidden chat is gone from the app, and this is part of the app.
+                if (PurpleGate.hiddenEverywhere(currentAccount, dialog)) {
+                    continue;
+                }
                 if (dialog.id == selfUserId) {
                     continue;
                 }
@@ -3595,7 +3603,7 @@ public class ShareAlert extends BottomSheet implements NotificationCenter.Notifi
                                 cell.setColors(Theme.key_voipgroup_nameText, Theme.key_voipgroup_inviteMembersBackground);
                             }
 
-                            TLRPC.TL_topPeer peer = MediaDataController.getInstance(currentAccount).hints.get(position);
+                            TLRPC.TL_topPeer peer = DialogsSearchAdapter.CategoryAdapterRecycler.visibleHints(currentAccount).get(position);
                             TLRPC.Chat chat = null;
                             TLRPC.User user = null;
                             long did = 0;
@@ -3623,7 +3631,7 @@ public class ShareAlert extends BottomSheet implements NotificationCenter.Notifi
                     });
                     horizontalListView.setOnItemClickListener((view1, position) -> {
                         HintDialogCell cell = (HintDialogCell) view1;
-                        TLRPC.TL_topPeer peer = MediaDataController.getInstance(currentAccount).hints.get(position);
+                        TLRPC.TL_topPeer peer = DialogsSearchAdapter.CategoryAdapterRecycler.visibleHints(currentAccount).get(position);
                         TLRPC.Dialog dialog = new TLRPC.TL_dialog();
                         TLRPC.Chat chat = null;
                         TLRPC.User user = null;
