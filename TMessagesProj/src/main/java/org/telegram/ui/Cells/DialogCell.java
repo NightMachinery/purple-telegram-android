@@ -33,6 +33,7 @@ import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.text.Layout;
 import android.text.Spannable;
 import android.text.SpannableString;
@@ -84,6 +85,8 @@ import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.purple.PurpleCore;
+import org.telegram.messenger.purple.PurpleGate;
 import org.telegram.messenger.utils.DrawableUtils;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLObject;
@@ -425,6 +428,25 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
      * swipe will actually do.
      */
     private boolean dialogMutedByUser;
+    /**
+     * Purple: the span this row is only in the view for, or null - which is the
+     * answer for every row under every ordinary preset, and the one null check
+     * is all onDraw() pays for the feature.
+     *
+     * Recomputed in {@link #update(int, boolean)} rather than asked for while
+     * drawing: the answer moves only when the preset, an "until" decision or
+     * the close buffer moves, and all three already rebuild the list.
+     */
+    private PurpleGate.Temporary purpleTemporary;
+    private Paint purpleTemporaryPaint;
+    /**
+     * Purple: one pending repaint for the ring, re-armed from the draw that
+     * needs it. Nothing else arms it, so a row that stops drawing a ring - or
+     * scrolls off, or is recycled onto another chat - stops re-arming and the
+     * chain ends after the one tick already in flight. Cancelled on detach so
+     * even that one does not outlive the cell's window.
+     */
+    private Runnable purpleTemporaryTick;
     private boolean topicMuted;
     private boolean drawUnmute;
     private float dialogMutedProgress;
@@ -943,6 +965,12 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
         AnimatedEmojiSpan.release(this, animatedEmojiStackName);
         storyParams.onDetachFromWindow();
         canvasButton = null;
+        // Purple: the ring's tick re-arms itself from the draw, so the worst it
+        // could do is one repaint of a detached cell. Dropped anyway, so
+        // nothing outlives the window.
+        if (purpleTemporaryTick != null) {
+            AndroidUtilities.cancelRunOnUIThread(purpleTemporaryTick);
+        }
     }
 
     @Override
@@ -3230,6 +3258,9 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
             drawCommunityAvatar = false;
             avatarImage.setRoundRadius(dp(26));
             drawUnmute = false;
+            // Purple: a picker's fake row is not a chat the preset gates, and
+            // this cell may have been recycled off one that was.
+            purpleTemporary = null;
         } else {
             int oldUnreadCount = unreadCount;
             boolean oldHasReactionsMentions = reactionMentionCount != 0;
@@ -3523,6 +3554,15 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
 
                 dialogId = currentDialogId;
             }
+
+            // Purple: whether this row is here on a clock, which is what the
+            // chat-list mark reports. Only ever a chat: the Archive row and a
+            // topic are not things the preset gates, and neither is anything
+            // outside the chat list proper.
+            purpleTemporary = (isDialogCell && currentDialogFolderId == 0 && forumTopic == null)
+                    ? PurpleGate.temporary(currentAccount,
+                            MessagesController.getInstance(currentAccount).dialogs_dict.get(currentDialogId))
+                    : null;
 
             if (dialogId != 0) {
                 if (DialogObject.isEncryptedDialog(dialogId)) {
@@ -4017,6 +4057,13 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
             //canvas.drawRect(-xOffset, 0, getMeasuredWidth(), getMeasuredHeight() - translateY, Theme.dialogs_pinnedPaint);
         }
         canvas.restore();
+
+        // Purple: the mark for a row that is only here for the moment. Drawn
+        // right after the row background and inside the swipe translation, so
+        // it belongs to the row rather than to the strip behind it.
+        if (purpleTemporary != null && PurpleGate.recentStyle() == PurpleCore.STYLE_STRIPE) {
+            drawPurpleTemporaryStripe(canvas);
+        }
 
         updateHelper.updateAnimationValues();
 
@@ -4607,6 +4654,15 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                     openButtonText.draw(canvas, openButtonRect.left + dp(13), openButtonRect.centerY(), Theme.getColor(Theme.key_featuredStickers_buttonText, resourcesProvider), 1.0f);
                 }
                 canvas.restore();
+            } else if (purpleTemporary != null && PurpleGate.recentStyle() == PurpleCore.STYLE_TIMER) {
+                // Purple: the badge slot, and only when nothing else wants it -
+                // which is what this whole chain being an else means. A count,
+                // a mention or an error is a fact about the chat; this is a
+                // fact about how long the row has left, and the count is the
+                // more important of the two. The pin does not appear here at
+                // all on Android: it is drawn beside the date, so it takes
+                // nothing from this slot and is not in the reckoning.
+                drawPurpleTemporaryTimer(canvas);
             }
 
             if (thumbsCount > 0 && updateHelper.typingProgres != 1f) {
@@ -4924,6 +4980,80 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
 
     private TextPaint getTimeTextPaint() {
         return drawCount ? (isCounterMuted() ? Theme.dialogs_timePaintBold : Theme.dialogs_timePaintBoldAccent) : Theme.dialogs_timePaint;
+    }
+
+    /**
+     * Purple: the one paint both marks use, coloured on every draw so it
+     * follows the theme.
+     *
+     * The two are told apart by colour, because they are not the same claim.
+     * The close buffer takes the accent the unread badge already uses: it is
+     * the app's own doing, and it is over in a couple of minutes. A "show
+     * until" is green - a decision you made and will want to recognise, hours
+     * from now, as the reason a chat is sitting somewhere it does not belong.
+     */
+    private Paint getPurpleTemporaryPaint() {
+        if (purpleTemporaryPaint == null) {
+            purpleTemporaryPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        }
+        purpleTemporaryPaint.setColor(Theme.getColor(purpleTemporary.held
+            ? Theme.key_windowBackgroundWhiteGreenText
+            : Theme.key_chats_unreadCounter, resourcesProvider));
+        return purpleTemporaryPaint;
+    }
+
+    /** Purple: the bar down the row's leading edge, for {@code style = "stripe"}. */
+    private void drawPurpleTemporaryStripe(Canvas canvas) {
+        if (purpleTemporary.untilMs <= SystemClock.elapsedRealtime()) {
+            // The clock ran out between the last update and this frame. The
+            // rebuild that takes the row away is already on its way.
+            return;
+        }
+        final float width = dpf2(2.5f);
+        final float skip = dp(8);
+        final float left = LocaleController.isRTL ? getMeasuredWidth() - width : 0;
+        rect.set(left, skip, left + width, getMeasuredHeight() - skip);
+        final Paint paint = getPurpleTemporaryPaint();
+        paint.setStyle(Paint.Style.FILL);
+        canvas.drawRoundRect(rect, width / 2f, width / 2f, paint);
+    }
+
+    /** Purple: the ring in the badge slot, for {@code style = "timer"}. */
+    private void drawPurpleTemporaryTimer(Canvas canvas) {
+        final long now = SystemClock.elapsedRealtime();
+        final long total = purpleTemporary.untilMs - purpleTemporary.fromMs;
+        if (total <= 0 || purpleTemporary.untilMs <= now) {
+            return;
+        }
+        final float part = MathUtils.clamp(
+            (purpleTemporary.untilMs - now) / (float) total, 0f, 1f);
+        final float size = dp(BADGE_SIZE);
+        final float stroke = dpf2(1.5f);
+        final float left = LocaleController.isRTL
+            ? dp(BADGE_MARGIN)
+            : getMeasuredWidth() - dp(BADGE_MARGIN) - size;
+        rect.set(left, countTop, left + size, countTop + size);
+        rect.inset(stroke, stroke);
+
+        final Paint paint = getPurpleTemporaryPaint();
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(stroke);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        // Anticlockwise from the top, so it empties the way a clock face would
+        // fill.
+        canvas.drawArc(rect, -90f, -part * 360f, false, paint);
+        paint.setStyle(Paint.Style.FILL);
+
+        // One repaint a second, because nothing else will come back for a ring
+        // that moves on a clock alone. Armed only from here: a row that stops
+        // drawing one - the mark gone, the cell scrolled off or recycled onto
+        // another chat - stops re-arming, and the chain ends with the tick
+        // already in flight.
+        if (purpleTemporaryTick == null) {
+            purpleTemporaryTick = this::invalidate;
+        }
+        AndroidUtilities.cancelRunOnUIThread(purpleTemporaryTick);
+        AndroidUtilities.runOnUIThread(purpleTemporaryTick, 1000);
     }
 
     private boolean isCounterMuted() {

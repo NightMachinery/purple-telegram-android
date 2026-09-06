@@ -156,6 +156,17 @@ public final class PurpleCore {
     public static final int RECENT_EXCEPT_IN_FOLDER = 2;
 
     /**
+     * How the chat list marks a row that is only there on a clock, numbered as
+     * the core's {@code RecentStyle}.
+     *
+     * Covers both reasons a row can be here on a timer - the close buffer and a
+     * "show until" - because one mark is drawn for both.
+     */
+    public static final int STYLE_NONE = 0;
+    public static final int STYLE_STRIPE = 1;
+    public static final int STYLE_TIMER = 2;
+
+    /**
      * One extra tab a preset invented.
      *
      * Membership is not here - it travels in the packed per-chat answer. What
@@ -177,12 +188,22 @@ public final class PurpleCore {
         public final long peer;
         public final int kind;
 
+        /**
+         * When it was made, in local wall-clock seconds.
+         *
+         * Only the chat-list mark reads this: it draws how much of the span is
+         * left, and that needs both ends. Everything else asks whether the
+         * decision is still in force, which is {@link #until} alone.
+         */
+        public final long from;
+
         /** When it runs out, in local wall-clock seconds. */
         public final long until;
 
-        Override(long peer, int kind, long until) {
+        Override(long peer, int kind, long from, long until) {
             this.peer = peer;
             this.kind = kind;
+            this.from = from;
             this.until = until;
         }
     }
@@ -238,10 +259,17 @@ public final class PurpleCore {
         /** One of the {@code RECENT_} values: which chats the grace covers. */
         public final int recentScope;
 
+        /**
+         * One of the {@code STYLE_} values: how the chat list marks a row that
+         * is only there on a clock. {@link #STYLE_NONE} is the default, and
+         * means nothing is drawn.
+         */
+        public final int recentStyle;
+
         Clock(boolean peeking, long peekDeadline, int peekSeconds,
                 boolean schedulePaused, boolean scheduleConfigured,
                 List<Override> overrides, long nextOverrideDeadline, int hideScope,
-                int recentSeconds, int recentScope) {
+                int recentSeconds, int recentScope, int recentStyle) {
             this.peeking = peeking;
             this.peekDeadline = peekDeadline;
             this.peekSeconds = peekSeconds;
@@ -252,11 +280,12 @@ public final class PurpleCore {
             this.hideScope = hideScope;
             this.recentSeconds = recentSeconds;
             this.recentScope = recentScope;
+            this.recentStyle = recentStyle;
         }
 
         static final Clock NONE = new Clock(false, 0, 0, false, false,
                 Collections.<Override>emptyList(), 0, SCOPE_UNCOUNTED,
-                0, RECENT_ALREADY_IN_VIEW);
+                0, RECENT_ALREADY_IN_VIEW, STYLE_NONE);
 
         static Clock fromJson(JSONObject object) {
             final List<Override> overrides = new ArrayList<>();
@@ -270,6 +299,7 @@ public final class PurpleCore {
                     overrides.add(new Override(
                             entry.optLong("peer", 0),
                             entry.optInt("kind", OVERRIDE_SHOW),
+                            entry.optLong("from", 0),
                             entry.optLong("until", 0)));
                 }
             }
@@ -283,7 +313,8 @@ public final class PurpleCore {
                     object.optLong("nextOverrideDeadline", 0),
                     object.optInt("hideScope", SCOPE_UNCOUNTED),
                     object.optInt("recentSeconds", 0),
-                    object.optInt("recentScope", RECENT_ALREADY_IN_VIEW));
+                    object.optInt("recentScope", RECENT_ALREADY_IN_VIEW),
+                    object.optInt("recentStyle", STYLE_NONE));
         }
     }
 

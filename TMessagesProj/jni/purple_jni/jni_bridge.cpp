@@ -439,9 +439,13 @@ void AppendViewsJson(QString &out, const Purple::Resolved &resolved) {
 }
 
 // The "until" decisions in force under this resolution, as
-// [{"peer","kind","until"}]. Expired entries and entries made under another
-// preset are already invisible to OverrideFor(), and the walk below applies the
-// same two tests so the Java side never has to know either rule.
+// [{"peer","kind","from","until"}]. Expired entries and entries made under
+// another preset are already invisible to OverrideFor(), and the walk below
+// applies the same two tests so the Java side never has to know either rule.
+//
+// "from" is the moment the decision was made, and it is here for one reader:
+// the chat-list mark, which draws how much of a span is left and so needs both
+// ends of it. Nothing that only asks "is it still in force" looks at it.
 void AppendOverridesJson(
 		QString &out,
 		const Purple::State &state,
@@ -467,6 +471,8 @@ void AppendOverridesJson(
 		out += QString::number(qint64(entry.peer));
 		out += QStringLiteral(",\"kind\":");
 		out += QString::number(int(entry.kind));
+		out += QStringLiteral(",\"from\":");
+		out += QString::number(qint64(entry.startedUnix));
 		out += QStringLiteral(",\"until\":");
 		out += QString::number(qint64(entry.untilUnix));
 		out += QChar('}');
@@ -655,6 +661,11 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 	json += QString::number(gate.settings.recent.staySecondsAfterClose);
 	json += QStringLiteral(",\"recentScope\":");
 	json += QString::number(int(gate.settings.recent.scope));
+	// How the chat list marks a row that is only there on a clock. Read once
+	// per row per paint, so it travels with the rest for the same reason the
+	// two above do.
+	json += QStringLiteral(",\"recentStyle\":");
+	json += QString::number(int(gate.settings.recent.style));
 	// The Premium gates this client is the only thing enforcing. A file that
 	// never mentions [premium] means on, which is the core's default and the
 	// desktop's, so one settings.toml still means one thing in both clients.

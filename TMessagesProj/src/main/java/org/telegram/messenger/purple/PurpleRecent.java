@@ -155,8 +155,34 @@ public final class PurpleRecent {
         return false;
     }
 
+    /**
+     * When this chat's close buffer runs out, on {@link SystemClock#elapsedRealtime()}.
+     *
+     * Zero when nothing is counting down for it - including while it is the
+     * chat you have open, which is not counting down yet: the clock starts when
+     * you stop looking at it. Only the chat-list mark asks, and it asks for the
+     * far end of a span it is drawing rather than for a yes or no.
+     */
+    public static long graceUntil(int currentAccount, long dialogId) {
+        if (!active) {
+            return 0;
+        }
+        if (dialogId == openedDialogId && currentAccount == openedAccount) {
+            return 0;
+        }
+        synchronized (grace) {
+            for (int i = 0, n = grace.size(); i < n; ++i) {
+                final Grace entry = grace.get(i);
+                if (entry.dialogId == dialogId && entry.account == currentAccount) {
+                    return entry.until;
+                }
+            }
+        }
+        return 0;
+    }
+
     /** What {@code stay_visible_after_close} is set to, in seconds. */
-    private static int staySeconds() {
+    static int staySeconds() {
         final PurpleCore.Loaded current = PurpleGate.state();
         return current == null ? 0 : current.clock.recentSeconds;
     }

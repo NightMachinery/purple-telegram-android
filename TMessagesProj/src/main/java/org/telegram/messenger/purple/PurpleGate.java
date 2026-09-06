@@ -562,6 +562,139 @@ public final class PurpleGate {
     }
 
     /**
+     * The span a row is in the view only for the moment, on the monotonic clock.
+     *
+     * Covers both reasons a row can be here on a timer - the close buffer and a
+     * "show until" - because the chat list draws one mark for both and should
+     * not have to know which it is looking at.
+     */
+    public static final class Temporary {
+        /** Both on {@link SystemClock#elapsedRealtime()}, in millis. */
+        public final long fromMs;
+        public final long untilMs;
+
+        /**
+         * Whether a "show until" is what is holding the row here, rather than
+         * the close buffer. The chat list draws the same mark either way but in
+         * a different colour, because the two mean different things: one is a
+         * decision you made and will remember making, the other is a chat you
+         * happened to look at a minute ago.
+         */
+        public final boolean held;
+
+        Temporary(long fromMs, long untilMs, boolean held) {
+            this.fromMs = fromMs;
+            this.untilMs = untilMs;
+            this.held = held;
+        }
+    }
+
+    /**
+     * The span this row is temporary for, or null when it is not.
+     *
+     * Mirrors the desktop fork's {@code History::purpleTemporary()}. Asked once
+     * per row per update, so the two cheap tests at the top - nothing is
+     * hiding, and nothing is on a clock anywhere - are what every ordinary row
+     * under every ordinary preset actually costs.
+     */
+    public static Temporary temporary(int currentAccount, TLRPC.Dialog dialog) {
+        if (!filtering || dialog == null) {
+            return null;
+        }
+        final PurpleCore.Loaded current = loaded;
+        if (current == null || current.clock.peeking) {
+            // A peek shows everything, so nothing on screen during one is on
+            // screen because of a clock.
+            return null;
+        }
+        // Zero while the chat is the one you have open: it is not counting down
+        // yet, the clock starts when you stop looking at it.
+        final long graceUntil = PurpleRecent.graceUntil(currentAccount, dialog.id);
+        if (current.clock.overrides.isEmpty() && graceUntil == 0) {
+            return null;
+        }
+
+        final long nowUnix = System.currentTimeMillis() / 1000L;
+        final long nowMs = SystemClock.elapsedRealtime();
+
+        // A "show until" and nothing else. The mark means "this row is here on
+        // a clock", and that is only true of a row the override put there: a
+        // chat a "hide until" has put away is still a permanent member of
+        // whatever folder tab is still showing it, and marking it as leaving
+        // would say the opposite of what is happening. A "notify until" does
+        // not touch visibility at all. What is on a clock in those two cases is
+        // the decision, not the row.
+        //
+        // And in both branches, wouldLeaveTheView() - the whole claim the mark
+        // makes is that the row goes when the clock stops, so a chat the preset
+        // lets through anyway must not carry one. Asked last because it is the
+        // expensive test.
+        final long id = bareIdOf(currentAccount, dialog.id);
+        if (id != 0) {
+            final java.util.List<PurpleCore.Override> overrides = current.clock.overrides;
+            for (int i = 0, n = overrides.size(); i < n; ++i) {
+                final PurpleCore.Override entry = overrides.get(i);
+                if (entry.peer != id || entry.until <= nowUnix) {
+                    continue;
+                }
+                if (entry.kind == PurpleCore.OVERRIDE_SHOW
+                        && wouldLeaveTheView(currentAccount, dialog)) {
+                    // Unix seconds, so it is converted here rather than stored
+                    // twice. Only ever against a deadline still in the future,
+                    // which keeps the arithmetic away from a wall clock that
+                    // has been dragged backwards.
+                    return new Temporary(
+                            nowMs - Math.max(nowUnix - entry.from, 0L) * 1000L,
+                            nowMs + (entry.until - nowUnix) * 1000L,
+                            true); // Held open by the override, not lingering.
+                }
+                break;
+            }
+        }
+
+        // The close buffer. Re-reads the setting, so turning [recent] off drops
+        // the mark at once rather than at the end of whatever was running.
+        final int stay = PurpleRecent.staySeconds();
+        if (stay > 0
+                && graceUntil > nowMs
+                && wouldLeaveTheView(currentAccount, dialog)) {
+            return new Temporary(graceUntil - stay * 1000L, graceUntil, false);
+        }
+        return null;
+    }
+
+    /**
+     * How the chat list should mark a row that is only there on a clock.
+     *
+     * One of the {@code PurpleCore.STYLE_} values, and {@code STYLE_NONE} - the
+     * default, meaning nothing is drawn - before anything has been loaded.
+     */
+    public static int recentStyle() {
+        final PurpleCore.Loaded current = loaded;
+        return current == null ? PurpleCore.STYLE_NONE : current.clock.recentStyle;
+    }
+
+    /**
+     * Whether this row would be gone if the clock holding it here ran out.
+     *
+     * Mirrors the desktop fork's {@code History::purpleWouldLeaveTheView()},
+     * and is the test that keeps the mark honest: a chat the preset lets
+     * through anyway is not leaving, whatever else is also true of it.
+     */
+    private static boolean wouldLeaveTheView(int currentAccount, TLRPC.Dialog dialog) {
+        if (!filtering || peeking()) {
+            return false;
+        }
+        // A hide stays in the reckoning - it is a reason the row would be gone,
+        // not a reason it is here. A show is taken out, because it is exactly
+        // the temporary thing being asked about.
+        if (overrideFor(currentAccount, dialog.id) == PurpleCore.OVERRIDE_HIDE) {
+            return true;
+        }
+        return !shownForMode(currentAccount, dialog, packedFor(currentAccount, dialog.id));
+    }
+
+    /**
      * What an "until" decision says about this chat, with a peek's veto applied.
      *
      * A peek reveals, so it outranks a hide - and that is what makes a
