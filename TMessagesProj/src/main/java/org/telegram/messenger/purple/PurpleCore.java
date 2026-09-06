@@ -139,9 +139,10 @@ public final class PurpleCore {
     /**
      * How far a "hide until" reaches, numbered as the core's {@code HideScope}.
      *
-     * {@link #SCOPE_EVERYWHERE} is parsed and carried but behaves as the default
-     * here, because the preset-wide {@code hide_everywhere_p} it reuses is not
-     * ported to Android yet.
+     * {@link #SCOPE_EVERYWHERE} reuses the preset-wide switch below, so one
+     * chat gets for a while what {@link Loaded#hideEverywhere} gives a whole
+     * preset: it leaves the chat list, and with it the forward picker, the
+     * share sheet, search suggestions and recent chats.
      */
     public static final int SCOPE_EVERYWHERE = 0;
     public static final int SCOPE_UNCOUNTED = 1;
@@ -880,6 +881,18 @@ public final class PurpleCore {
          */
         public final List<View> views;
 
+        /**
+         * Whether hiding means "gone from the app" rather than "absent from
+         * this preset's view of the chat list" - {@code hide_everywhere_p}.
+         *
+         * Off by default, because a work mode is about what you are looking at
+         * and not about what you are allowed to reach: a hidden chat normally
+         * stays in the forward picker, in search and in recent chats, and only
+         * the view leaves it out. A preset that sets this may not also declare
+         * extra views, and the core's parser is what refuses that pairing.
+         */
+        public final boolean hideEverywhere;
+
         /** Peek and schedule, which move on a clock rather than on an edit. */
         public final Clock clock;
 
@@ -899,7 +912,8 @@ public final class PurpleCore {
                 boolean foldersRestricted, List<String> silencedFolders,
                 List<String> quietFolders, List<ExemptFolder> exemptFolders,
                 int[] defaultModes, int listCount, List<PresetInfo> presets,
-                List<View> views, Clock clock, boolean premium, String stateText) {
+                List<View> views, boolean hideEverywhere, Clock clock, boolean premium,
+                String stateText) {
             this.ok = ok;
             this.error = error;
             this.warnings = warnings;
@@ -920,6 +934,7 @@ public final class PurpleCore {
             this.defaultModes = defaultModes;
             this.presets = presets;
             this.views = views;
+            this.hideEverywhere = hideEverywhere;
             this.clock = clock;
             this.premium = premium;
             this.stateText = stateText;
@@ -948,7 +963,7 @@ public final class PurpleCore {
                     Collections.<String>emptyList(),
                     Collections.<ExemptFolder>emptyList(), STOCK_DEFAULT_MODES, 0,
                     Collections.<PresetInfo>emptyList(), Collections.<View>emptyList(),
-                    Clock.NONE, true, null);
+                    false, Clock.NONE, true, null);
         }
 
         static Loaded fromJson(String json) {
@@ -1059,6 +1074,7 @@ public final class PurpleCore {
                         object.optInt("listCount", 0),
                         presets,
                         views,
+                        object.optBoolean("hideEverywhere", false),
                         Clock.fromJson(object),
                         object.optBoolean("premium", true),
                         object.isNull("stateText") ? null : object.optString("stateText", null));

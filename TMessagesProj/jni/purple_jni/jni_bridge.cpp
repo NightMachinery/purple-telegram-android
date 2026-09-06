@@ -653,6 +653,12 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 		: Purple::NextOverrideDeadline(gate.state, gate.resolved.preset)));
 	json += QStringLiteral(",\"hideScope\":");
 	json += QString::number(int(gate.settings.overrides.hideScope));
+	// The preset-wide switch the scope above reuses: under it a chat the preset
+	// hides is gone from the app rather than only from the preset's own view of
+	// the chat list. Taken from the resolved preset rather than from the file,
+	// so a resolution restored from the cache carries it too.
+	json += QStringLiteral(",\"hideEverywhere\":");
+	AppendJsonBool(json, gate.resolved.hideEverywhere);
 	// Read on every row while a chat is in its grace period, so it travels with
 	// the rest rather than being asked for. Zero disables it, and the Java side
 	// re-reads it on every query - which is what makes turning [recent] off take

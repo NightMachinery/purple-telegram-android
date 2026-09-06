@@ -17286,6 +17286,17 @@ public class MessagesController extends BaseController implements NotificationCe
 
         long newTaskId;
         if (taskId == 0) {
+            // Purple: under hide_everywhere_p the list below is a subset of the
+            // account, and this request goes out with force = true - so sending
+            // an order built from it would unpin every chat the preset is
+            // hiding, here and on every other device. The pin itself still
+            // reaches the server, through toggleDialogPin in pinDialog; what is
+            // skipped is only the reordering, which cannot be told truthfully
+            // from a truncated list. Same reasoning as the refusal to drag a
+            // pinned row while a preset runs, in DialogsActivity.
+            if (PurpleGate.hidingEverywhere()) {
+                return;
+            }
             ArrayList<TLRPC.Dialog> dialogs = getDialogs(folderId);
             if (dialogs.isEmpty()) {
                 return;
@@ -22463,6 +22474,12 @@ public class MessagesController extends BaseController implements NotificationCe
                 }
                 for (int a = 0, N = allDialogs.size(); a < N; a++) {
                     final TLRPC.Dialog d = allDialogs.get(a);
+                    // Purple: under hide_everywhere_p a chat out of the main
+                    // list cannot be in a folder either, so the tab it belongs
+                    // to loses it as well. See docs/purple/work_mode.md.
+                    if (PurpleGate.hiddenEverywhere(currentAccount, d)) {
+                        continue;
+                    }
                     final boolean isCommunity = d instanceof TLRPC.TL_dialogCommunity;
                     if (d instanceof TLRPC.TL_dialog || isCommunity) {
                         long dialogId = d.id;
@@ -22502,6 +22519,20 @@ public class MessagesController extends BaseController implements NotificationCe
         }
         for (int a = 0, N = allDialogs.size(); a < N; a++) {
             TLRPC.Dialog d = allDialogs.get(a);
+            // Purple: this is the seam hide_everywhere_p is answered at, and the
+            // only one. Every list below is derived here from dialogs_dict, so a
+            // chat skipped now is missing from all of them at once - the chat
+            // list, the folder buckets, the forward picker, the kind-limited
+            // pickers - and from the unread total counted beside them.
+            // dialogs_dict itself is left alone on purpose: the chat still opens
+            // from a notification or a link, and comes back whole when the
+            // preset stops. The promo row is exempt because the block below
+            // removes it from allDialogs itself and adds it back after the loop;
+            // skipping it here would leave two of it.
+            if ((promoDialog == null || d.id != promoDialog.id)
+                    && PurpleGate.hiddenEverywhere(currentAccount, d)) {
+                continue;
+            }
             if (d instanceof TLRPC.TL_dialog) {
                 ArrayList<MessageObject> messageObjects = dialogMessage.get(d.id);
                 if (messageObjects != null) {
