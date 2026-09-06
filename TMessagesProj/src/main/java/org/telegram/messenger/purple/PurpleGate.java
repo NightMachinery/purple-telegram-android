@@ -1526,6 +1526,45 @@ public final class PurpleGate {
         return count;
     }
 
+    /**
+     * The number a folder's pill should show, once the preset has had its say.
+     *
+     * One rule kept in one place, because it is asked in two: the folder strip
+     * along the top of the chat list, and the folders popup in the tabs
+     * activity. Two copies of it had already drifted apart - the popup was
+     * putting a number on a folder the preset had taken out of the counts, and
+     * a zero on an invented tab full of unread chats.
+     *
+     * The default folder passes straight through. All chats is the preset's own
+     * view, and the total behind it has already been rewritten by the hooks in
+     * the counters themselves.
+     *
+     * @param stockCount what Telegram would have drawn: the main unread count
+     *                   for the default folder, {@code filter.unreadCount} for
+     *                   any other
+     * @return the number to draw, or zero for no pill at all
+     */
+    public static int tabCount(
+            int currentAccount, MessagesController.DialogFilter filter, int stockCount) {
+        if (filter == null || filter.isDefault()) {
+            return stockCount;
+        }
+        // A folder the preset left out of the counts shows no number on its own
+        // tab either. For a folder that is background on purpose a count is a
+        // number you have already decided not to act on.
+        if (!folderCounted(filter)) {
+            return 0;
+        }
+        // An invented tab keeps its own count, because the totals Telegram
+        // maintains are summed from buckets it was never counted into - so
+        // unreadCount on one is zero rather than wrong, and a badge of zero on
+        // a tab full of unread chats reads as broken.
+        if (isExtraView(filter)) {
+            return viewUnread(currentAccount, filter);
+        }
+        return stockCount;
+    }
+
     public static ArrayList<MessagesController.DialogFilter> shownFilters(
             ArrayList<MessagesController.DialogFilter> raw) {
         final PurpleCore.Loaded current = loaded;

@@ -9860,6 +9860,15 @@ public class MessagesController extends BaseController implements NotificationCe
         for (int a = 0, N = dialogs.size(); a < N; a++) {
             TLRPC.Dialog dialog = dialogs.get(a);
 
+            // Purple: the same running total the folded row's own badge is, and
+            // the same rule - a chat under a "hide until" adds nothing to the
+            // community's number while keeping its own. Guarded here as well as
+            // in checkCollapsedDialogsInCommunity() because this is the sum the
+            // cell actually draws, recomputed every time it does.
+            if (!PurpleGate.countedInTotals(currentAccount, dialog.id)) {
+                continue;
+            }
+
             if (dialog.id < 0) {
                 final TLRPC.Chat chat = getChat(-dialog.id);
                 if (chat != null && (chat.forum || chat.monoforum && ChatObject.canManageMonoForum(currentAccount, chat))) {
@@ -22321,9 +22330,16 @@ public class MessagesController extends BaseController implements NotificationCe
                 if (ChatObject.isChatCollapsedInCommunity(currentAccount, chat)) {
                     final long communityId = chat.linked_community_id;
                     dialogsCommunityLastMessageDate.put(communityId, Math.max(dialogsCommunityLastMessageDate.get(communityId), d.last_message_date));
-                    dialogsCommunityUnreadCount.put(communityId, dialogsCommunityUnreadCount.get(communityId) + getDialogUnreadCount(d));
-                    if (d.unread_mark) {
-                        dialogsCommunityUnreadMark.put(communityId, 1);
+                    // Purple: a community row's badge is a running total over
+                    // rows, so a chat under a "hide until" is out of it exactly
+                    // as it is out of All chats and out of every folder tab.
+                    // The chat's own row keeps its own number; the fold simply
+                    // stops adding it up.
+                    if (PurpleGate.countedInTotals(currentAccount, d.id)) {
+                        dialogsCommunityUnreadCount.put(communityId, dialogsCommunityUnreadCount.get(communityId) + getDialogUnreadCount(d));
+                        if (d.unread_mark) {
+                            dialogsCommunityUnreadMark.put(communityId, 1);
+                        }
                     }
                 }
             } else if (d.id > 0) {
@@ -22331,9 +22347,16 @@ public class MessagesController extends BaseController implements NotificationCe
                 if (ChatObject.isUserCollapsedInCommunity(currentAccount, user)) {
                     final long communityId = user.linked_community_id;
                     dialogsCommunityLastMessageDate.put(communityId, Math.max(dialogsCommunityLastMessageDate.get(communityId), d.last_message_date));
-                    dialogsCommunityUnreadCount.put(communityId, dialogsCommunityUnreadCount.get(communityId) + getDialogUnreadCount(d));
-                    if (d.unread_mark) {
-                        dialogsCommunityUnreadMark.put(communityId, 1);
+                    // Purple: a community row's badge is a running total over
+                    // rows, so a chat under a "hide until" is out of it exactly
+                    // as it is out of All chats and out of every folder tab.
+                    // The chat's own row keeps its own number; the fold simply
+                    // stops adding it up.
+                    if (PurpleGate.countedInTotals(currentAccount, d.id)) {
+                        dialogsCommunityUnreadCount.put(communityId, dialogsCommunityUnreadCount.get(communityId) + getDialogUnreadCount(d));
+                        if (d.unread_mark) {
+                            dialogsCommunityUnreadMark.put(communityId, 1);
+                        }
                     }
                 }
             }

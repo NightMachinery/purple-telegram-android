@@ -3716,22 +3716,11 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                         return 0;
                     }
                     MessagesController.DialogFilter filter = dialogFilters.get(tabId);
-                    // Purple: a folder the preset left out of the counts shows
-                    // no number on its own tab either. For a folder that is
-                    // background on purpose a count is a number you have already
-                    // decided not to act on.
-                    if (!PurpleGate.folderCounted(filter)) {
-                        return 0;
-                    }
-                    // Purple: an invented tab keeps its own count, because the
-                    // totals Telegram maintains are summed from buckets it was
-                    // never counted into - so unreadCount on one is zero rather
-                    // than wrong, and a badge of zero on a tab full of unread
-                    // chats reads as broken.
-                    if (PurpleGate.isExtraView(filter)) {
-                        return PurpleGate.viewUnread(currentAccount, filter);
-                    }
-                    return filter.unreadCount;
+                    // Purple: an uncounted folder shows no number and an
+                    // invented tab counts itself. The rule lives in the gate
+                    // because the folders popup in the tabs activity draws the
+                    // same pills, and two copies of it drifted apart once.
+                    return PurpleGate.tabCount(currentAccount, filter, filter.unreadCount);
                 }
 
                 @Override
