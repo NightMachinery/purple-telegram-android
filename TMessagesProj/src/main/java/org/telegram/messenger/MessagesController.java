@@ -22429,6 +22429,10 @@ public class MessagesController extends BaseController implements NotificationCe
     
     
     public void sortDialogs(LongSparseArray<TLRPC.Chat> chatsDict) {
+        // An extra view's pinned order is resolved against the dialogs, and on
+        // a cold start the settings are read before there are any. This is the
+        // moment they arrive, and it is ahead of the sort that reads the pins.
+        PurpleGate.refillViewPinsIfNeeded();
         if (chatsDict == null && ApplicationLoader.mainInterfacePaused) {
             return;
         }

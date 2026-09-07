@@ -132,6 +132,16 @@ public final class PurpleGate {
     private static volatile ArrayList<MessagesController.DialogFilter> viewFilters =
             new ArrayList<>();
 
+    /**
+     * Whether some extra view's pinned order is still missing peers.
+     *
+     * Set while a pin names a chat this client has not loaded yet, which on a
+     * cold start is <i>every</i> pin: the gate loads the first time anything
+     * asks it a question, long before the dialog list is in memory. Cleared by
+     * {@link #refillViewPinsIfNeeded()} once they all resolve.
+     */
+    private static volatile boolean viewPinsIncomplete;
+
     /** Telegram's Archive, which is a folder id rather than a chat. */
     private static final int ARCHIVE_FOLDER_ID = 1;
 
@@ -1473,15 +1483,17 @@ public final class PurpleGate {
         }
         final ArrayList<MessagesController.DialogFilter> result =
                 new ArrayList<>(next.views.size());
+        boolean incomplete = false;
         for (int i = 0, n = Math.min(next.views.size(), PurpleCore.VIEW_LIMIT); i < n; ++i) {
             final MessagesController.DialogFilter filter = new MessagesController.DialogFilter();
             filter.id = VIEW_ID_BASE + i;
             filter.name = next.views.get(i).name;
             filter.order = i;
-            fillViewPins(filter, next.views.get(i).pinned);
+            incomplete |= !fillViewPins(filter, next.views.get(i).pinned);
             result.add(filter);
         }
         viewFilters = result;
+        viewPinsIncomplete = incomplete;
         FileLog.d("Purple: " + result.size() + " extra view"
                 + (result.size() == 1 ? "" : "s") + " on the strip.");
     }
@@ -1496,14 +1508,17 @@ public final class PurpleGate {
      *
      * The file writes bare ids, which have had their type stripped, so the sign
      * has to be recovered before the comparator can match a dialog id. A pin
-     * naming a peer this client has not loaded yet is skipped and picked up by
-     * the next reload - the same cold-start hole the folder walks have, and
-     * harmless for the same reason: there is no row to order either.
+     * naming a peer this client has not loaded yet cannot be resolved here;
+     * saying so is what {@link #refillViewPinsIfNeeded()} needs to know it has
+     * work left, because on a cold start that is every pin in the file.
+     *
+     * @return whether every pin resolved, so the order is the one asked for
      */
-    private static void fillViewPins(MessagesController.DialogFilter filter, long[] pinned) {
+    private static boolean fillViewPins(MessagesController.DialogFilter filter, long[] pinned) {
         if (pinned == null || pinned.length == 0) {
-            return;
+            return true;
         }
+        boolean complete = true;
         try {
             final MessagesController controller =
                     MessagesController.getInstance(UserConfig.selectedAccount);
@@ -1522,14 +1537,61 @@ public final class PurpleGate {
                 } else if (controller.getChat(bare) != null) {
                     dialogId = -bare;
                 } else {
+                    complete = false;
                     continue;
                 }
                 filter.pinnedDialogs.put(dialogId, a);
             }
         } catch (Exception e) {
             // The dialog list, being rewritten by the UI thread. An unordered
-            // tab is the safe direction, and the next reload fixes it.
+            // tab is the safe direction, and the next sort fixes it.
             FileLog.e(e, false);
+            complete = false;
+        }
+        return complete;
+    }
+
+    /**
+     * Fills any extra-view pins that could not be resolved when the settings
+     * were read.
+     *
+     * The gate loads the first time anything asks it a question, which on a
+     * cold start is well before the dialog list is in memory, so every pin
+     * naming a peer the client had not loaded yet was dropped - and nothing
+     * put it back, so the tab stood in date order until the next settings
+     * reload. Called from {@code MessagesController.sortDialogs}, which runs
+     * whenever the list changes and therefore exactly when those peers arrive,
+     * and runs it <i>before</i> the sort reads {@code pinnedDialogs}, so the
+     * first list the tab ever draws is already in the right order.
+     *
+     * Re-putting a pin that already resolved writes the same index back, so
+     * there is nothing to clear first and a pin the user added by hand in the
+     * meantime survives.
+     *
+     * Costs one volatile read in the settled case, which is the normal one.
+     * A pin naming a peer that never loads - a chat left long ago, an id typed
+     * wrong - keeps the flag up and so keeps this walking a handful of ids per
+     * sort. That is the right direction: the peer may still arrive, and the
+     * walk is a map lookup per pin on a path that already sorts the list.
+     */
+    public static void refillViewPinsIfNeeded() {
+        if (!viewPinsIncomplete) {
+            return;
+        }
+        final PurpleCore.Loaded current = loaded;
+        final ArrayList<MessagesController.DialogFilter> filters = viewFilters;
+        if (current == null || filters.isEmpty()) {
+            viewPinsIncomplete = false;
+            return;
+        }
+        boolean incomplete = false;
+        final int n = Math.min(filters.size(), current.views.size());
+        for (int i = 0; i < n; ++i) {
+            incomplete |= !fillViewPins(filters.get(i), current.views.get(i).pinned);
+        }
+        viewPinsIncomplete = incomplete;
+        if (!incomplete) {
+            FileLog.d("Purple: extra view pins resolved.");
         }
     }
 
