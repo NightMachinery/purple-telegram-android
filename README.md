@@ -166,6 +166,10 @@ permanent notification; what it buys is the process being asked back after the
 OS kills it, which is the only thing standing in for push once the connection
 is gone. Turning it off is remembered as well.
 
+The launcher icon is the fork's own purple one from the first install. The
+stock icon is still in Settings → Appearance → **App Icon**, as the first tile,
+for whoever wants the app to look like Telegram on the home screen.
+
 See `docs/purple/defaults.md` in the desktop repository for this and the other
 defaults this fork changes.
 
