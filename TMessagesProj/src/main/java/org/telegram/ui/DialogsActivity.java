@@ -8736,9 +8736,10 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         // PurpleListBox.show() and both are hidden by the same
         // PurpleListMenu.available().
         //
-        // Not yet verified on a device: the preview menu needs a long-press
-        // preview, which the software-rendered test emulator does not offer.
-        // See docs/purple/todo.md in the desktop repository.
+        // Driven on the GPU-backed emulator. The preview it hangs off opens
+        // only when the long-press lands inside the avatar - isPointInsideAvatar,
+        // in onItemLongClick - which is why two earlier attempts read as "this
+        // emulator has no preview" rather than "the press missed".
         if (PurpleListMenu.available()) {
             ActionBarMenuSubItem workModeItem = new ActionBarMenuSubItem(getParentActivity(), true, false);
             workModeItem.setTextAndIcon(LocaleController.getString(R.string.PurpleLists), R.drawable.msg_customize);
