@@ -160,9 +160,11 @@ install that inherited upstream's "off" is silently unable to notify. The switch
 is still there - Settings → Notifications and Sounds → **Background
 Connection** - and turning it off is remembered.
 
-Turn on **Keep-Alive Service**, next to it, if the OS keeps killing the app;
-that one is left off by default, because it is a permanent notification and
-whether it is worth it depends on the phone.
+**Keep-Alive Service**, next to it, is on by default too. It is a sticky
+service and a relaunch broadcast, not a foreground service, so it costs no
+permanent notification; what it buys is the process being asked back after the
+OS kills it, which is the only thing standing in for push once the connection
+is gone. Turning it off is remembered as well.
 
 See `docs/purple/defaults.md` in the desktop repository for this and the other
 defaults this fork changes.

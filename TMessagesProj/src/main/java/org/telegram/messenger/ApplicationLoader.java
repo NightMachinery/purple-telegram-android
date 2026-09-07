@@ -36,6 +36,7 @@ import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.GooglePlayServicesUtil;
 
 import org.json.JSONObject;
+import org.telegram.messenger.purple.PurpleDefaults;
 import org.telegram.messenger.voip.VideoCapturerDevice;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
@@ -361,7 +362,9 @@ public class ApplicationLoader extends Application {
         if (preferences.contains("pushService")) {
             enabled = preferences.getBoolean("pushService", true);
         } else {
-            enabled = MessagesController.getMainSettings(UserConfig.selectedAccount).getBoolean("keepAliveService", false);
+            // Purple: on unless the user turned it off - see PurpleDefaults.
+            enabled = PurpleDefaults.KEEP_ALIVE_SERVICE
+                    || MessagesController.getMainSettings(UserConfig.selectedAccount).getBoolean("keepAliveService", false);
         }
         if (enabled) {
             try {

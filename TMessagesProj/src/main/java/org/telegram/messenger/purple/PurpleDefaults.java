@@ -40,6 +40,27 @@ public final class PurpleDefaults {
     public static final boolean PUSH_CONNECTION = true;
 
     /**
+     * The Keep-Alive Service is on until the user says otherwise.
+     *
+     * Same reason as the background connection: with no push, the process
+     * has to be alive for a notification to arrive, and this is the one
+     * switch that asks the OS to bring it back after killing it. It is a
+     * sticky service and a relaunch broadcast, not a foreground service -
+     * NotificationsService never calls startForeground - so it costs no
+     * permanent notification, which is the cost it is usually assumed to
+     * carry.
+     *
+     * Upstream's fallback is `keepAliveService`, a flag the server sets for
+     * the handful of vendors known to kill background processes, and false
+     * for everyone else. It is still honoured, but it can no longer turn the
+     * default off. Three places read the `pushService` key with this as the
+     * fallback: ApplicationLoader.startPushService(), which decides what
+     * happens, and the two sites in NotificationsSettingsActivity that draw
+     * the switch and read it back before toggling it.
+     */
+    public static final boolean KEEP_ALIVE_SERVICE = true;
+
+    /**
      * The Archive row is not at the top of the chat list until the user puts
      * it there.
      *
