@@ -113,8 +113,14 @@
     >
         <!-- usesCleartextTraffic for browser supporting opening http:// links -->
 
+        <!--
+          Purple: the stock icon is one of the alternatives here, and the fork's
+          own is the one that starts enabled. Exactly one alias is enabled at a
+          time - LauncherIconController.setIcon() keeps that true after a choice,
+          and these two attributes keep it true before one.
+        -->
         <activity-alias
-            android:enabled="true"
+            android:enabled="false"
             android:name="org.telegram.messenger.DefaultIcon"
             android:targetActivity="org.telegram.ui.LaunchActivity"
             android:exported="true">
@@ -127,12 +133,8 @@
             <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
         </activity-alias>
 
-        <!--
-          Purple: the fork's own icon. Off by default like every other
-          alternative, so a fresh install still looks stock until it is chosen.
-        -->
         <activity-alias
-            android:enabled="false"
+            android:enabled="true"
             android:name="org.telegram.messenger.PurpleIcon"
             android:targetActivity="org.telegram.ui.LaunchActivity"
             android:icon="@mipmap/icon_purple_launcher"

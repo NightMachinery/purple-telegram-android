@@ -15,13 +15,15 @@ public class LauncherIconController {
             }
         }
 
-        setIcon(LauncherIcon.DEFAULT);
+        setIcon(LauncherIcon.PURPLE);
     }
 
     public static boolean isEnabled(LauncherIcon icon) {
         Context ctx = ApplicationLoader.applicationContext;
         int i = ctx.getPackageManager().getComponentEnabledSetting(icon.getComponentName(ctx));
-        return i == PackageManager.COMPONENT_ENABLED_STATE_ENABLED || i == PackageManager.COMPONENT_ENABLED_STATE_DEFAULT && icon == LauncherIcon.DEFAULT;
+        // Purple: an alias nobody has chosen is in the manifest's state, and
+        // the manifest enables the fork's own icon rather than the stock one.
+        return i == PackageManager.COMPONENT_ENABLED_STATE_ENABLED || i == PackageManager.COMPONENT_ENABLED_STATE_DEFAULT && icon == LauncherIcon.PURPLE;
     }
 
     public static void setIcon(LauncherIcon icon) {
@@ -35,10 +37,12 @@ public class LauncherIconController {
 
     public enum LauncherIcon {
         DEFAULT("DefaultIcon", R.drawable.icon_background_sa, R.mipmap.icon_foreground_sa, R.string.AppIconDefault),
-        // Purple: the fork's own, riding the mechanism that is already here.
-        // Not premium-gated - it is ours to give - and not a setting of its
-        // own, because setIcon() already guarantees exactly one alias is
-        // enabled and isEnabled(PURPLE) is therefore the only state there is.
+        // Purple: the fork's own, riding the mechanism that is already here,
+        // and the one a fresh install shows. Not premium-gated - it is ours to
+        // give - and not a setting of its own, because setIcon() already
+        // guarantees exactly one alias is enabled and isEnabled(PURPLE) is
+        // therefore the only state there is. DEFAULT stays first in the
+        // picker, and is what you pick to look like stock again.
         PURPLE("PurpleIcon", R.drawable.icon_purple_background_sa, R.mipmap.icon_foreground_sa, R.string.AppIconPurple),
         VINTAGE("VintageIcon", R.drawable.icon_6_background_sa, R.mipmap.icon_6_foreground_sa, R.string.AppIconVintage),
         AQUA("AquaIcon", R.drawable.icon_4_background_sa, R.mipmap.icon_foreground_sa, R.string.AppIconAqua),
