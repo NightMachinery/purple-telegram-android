@@ -77,6 +77,24 @@ public final class PurpleWriter {
     }
 
     /**
+     * Creates a list, empty.
+     *
+     * No title: the box asks for one name, and a title that only repeats the
+     * name would be a line in the file saying nothing. Rename it in the file
+     * to give it one.
+     *
+     * @return null on success, or the core's refusal - an empty name, one
+     *         starting with {@code *}, or a name already taken
+     */
+    public static String addList(String name, String reason) {
+        final byte[] settings = PurpleGate.settingsBytes();
+        if (settings == null) {
+            return "settings.toml is missing";
+        }
+        return apply(PurpleCore.addList(settings, name, ""), reason);
+    }
+
+    /**
      * Rewrites one schedule rule, key by key.
      *
      * The three {@code expected} values are what the screen read off the rule

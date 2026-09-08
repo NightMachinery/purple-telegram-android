@@ -64,7 +64,10 @@ exists because the ids in `members` are not shown anywhere in Telegram's UI, so
 building a list otherwise means reading a number off a profile and typing it in
 by hand. The box stays open across a tick, since filing a chat is usually more
 than one decision, and its rows and verdict line are re-read from the file
-after each one. The app's own writes to `settings.toml` do not come back
+after each one. A **New list…** row at the bottom makes one from a name
+and puts the chat straight into it, so the first member of a list no longer has
+to be typed into the file by hand; the core refuses an empty name, one starting
+with `*` and one already taken, and says which. The app's own writes to `settings.toml` do not come back
 through the file watcher as a second reload: the watcher compares the file
 against the bytes the app is already running on, the way the desktop does.
 
