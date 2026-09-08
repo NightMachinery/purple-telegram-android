@@ -27,6 +27,8 @@ public class LauncherIconController {
     }
 
     public static void setIcon(LauncherIcon icon) {
+        // Purple: the notification tint follows the icon; let it ask again.
+        org.telegram.messenger.purple.PurpleAccent.invalidate();
         Context ctx = ApplicationLoader.applicationContext;
         PackageManager pm = ctx.getPackageManager();
         for (LauncherIcon i : LauncherIcon.values()) {
