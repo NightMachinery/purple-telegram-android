@@ -255,7 +255,7 @@ public class PurpleScheduleActivity extends UniversalFragment
 
     /** What to call a ruleset on a row. The implicit one has no name of its own. */
     public static CharSequence rulesetTitle(PurpleCore.ScheduleRuleset ruleset) {
-        return ruleset.implicit()
+        return ruleset.implicit
                 ? getString(R.string.PurpleScheduleRulesHeader)
                 : ruleset.name;
     }
