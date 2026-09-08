@@ -11325,7 +11325,7 @@
     <string name="PurpleVerdictUntilMention">hidden until a mention</string>
     <string name="PurpleVerdictByFolder">, shown by a folder</string>
     <!-- Purple: the Work Mode settings screen -->
-    <string name="PurpleSettingsTitle">Work Mode</string>
+    <string name="PurpleSettingsTitle">Purple</string>
     <string name="PurpleScheduleRow">Schedule</string>
     <string name="PurpleScheduleNoRules">no rules</string>
     <string name="PurpleSchedulePaused2">paused</string>
