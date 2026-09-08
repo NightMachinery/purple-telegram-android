@@ -11236,6 +11236,23 @@
     <string name="PurpleImportReplaces">Replaces your current settings; the previous file is kept as settings.toml.bak.</string>
     <string name="PurpleImportFailed">Could not read that settings.toml, so nothing was changed.</string>
     <string name="PurpleSettingsImported">Settings imported</string>
+    <!-- Purple: the settings.toml editor -->
+    <string name="PurpleEditorTitle">settings.toml</string>
+    <string name="PurpleEditorOk">OK</string>
+    <string name="PurpleEditorWarnings_one">%1$d warning</string>
+    <string name="PurpleEditorWarnings_other">%1$d warnings</string>
+    <string name="PurpleEditorChecking">Checking\u2026</string>
+    <string name="PurpleEditorRevert">Revert</string>
+    <string name="PurpleEditorSaveBroken">Fix the error before saving; nothing was written.</string>
+    <string name="PurpleEditorTooBig">That is over 64 KB, so it was not saved.</string>
+    <string name="PurpleEditorSaveFailed">Could not write settings.toml, so nothing was changed.</string>
+    <string name="PurpleEditorMovedTitle">The file changed</string>
+    <string name="PurpleEditorMoved">settings.toml has been written by something else since you opened it. Reload it, or overwrite it with what is on screen?</string>
+    <string name="PurpleEditorReload">Reload</string>
+    <string name="PurpleEditorOverwrite">Overwrite</string>
+    <string name="PurpleEditorDiscardTitle">Discard changes?</string>
+    <string name="PurpleEditorDiscard">Your edits have not been saved.</string>
+    <string name="PurpleEditorWarningsTitle">Saved, with warnings</string>
     <string name="PurpleSyncOffer">A newer Work Mode settings file is in Saved Messages</string>
     <string name="PurpleWorkMode">Work Mode</string>
     <string name="PurpleWorkModeActive">Work Mode: %1$s</string>
