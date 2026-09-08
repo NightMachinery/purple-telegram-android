@@ -76,6 +76,7 @@ public class PurpleSettingsActivity extends UniversalFragment
     private static final int ROW_AUTOSEND = 14;
     private static final int ROW_LAST_SEEN_REASONS = 15;
     private static final int ROW_LAST_SEEN_TRADE = 16;
+    private static final int ROW_SCREEN_TIME = 17;
 
     /**
      * Where the trade log's rows start numbering.
@@ -141,6 +142,17 @@ public class PurpleSettingsActivity extends UniversalFragment
                         : state.title));
         items.add(UItem.asButton(ROW_SCHEDULE, getString(R.string.PurpleScheduleRow),
                 PurpleScheduleActivity.summary(state)));
+        // The digest rides on the row rather than taking a section of its own:
+        // it is one sentence about last week, and a screen-time feature whose
+        // first act is to take up more of the screen would be a poor joke. The
+        // line is computed in the background and the row redraws when it lands,
+        // because this screen is not going to wait on a log parse to appear.
+        items.add(UItem.asButton(ROW_SCREEN_TIME, getString(R.string.PurpleScreenTimeRow),
+                PurpleScreenTimeActivity.digest(() -> {
+                    if (listView != null) {
+                        listView.adapter.update(true);
+                    }
+                })));
 
         final UItem premium = UItem.asCheck(ROW_PREMIUM, getString(R.string.PurplePremiumLocal));
         // From the file, never from a preference: this client is the only thing
@@ -335,6 +347,9 @@ public class PurpleSettingsActivity extends UniversalFragment
             break;
         case ROW_SCHEDULE:
             presentFragment(new PurpleScheduleActivity());
+            break;
+        case ROW_SCREEN_TIME:
+            presentFragment(new PurpleScreenTimeActivity());
             break;
         case ROW_PREMIUM:
             write(PurpleWriter.setTableBool("premium", "enabled_p", !item.checked, "premium switch"));

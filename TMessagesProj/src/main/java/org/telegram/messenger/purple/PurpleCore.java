@@ -1643,6 +1643,50 @@ public final class PurpleCore {
          */
         public final int lastSeenTradeCooldown;
 
+        /**
+         * Whether anything is written to screentime.log at all -
+         * {@code [screen_time] enabled_p}.
+         *
+         * Off unless the file says so, and the one default in here that is not
+         * a convenience: this is a record of what you looked at and for how
+         * long, and nothing should start keeping one because a version number
+         * moved.
+         */
+        public final boolean screenTimeEnabled;
+
+        /**
+         * How long one send action counts as active for, in seconds -
+         * {@code action_span}. Also the throttle on composer edits: one event
+         * per burst of typing, because a per-keystroke log would be a
+         * keylogger's shape for no extra truth.
+         */
+        public final int screenTimeActionSpan;
+
+        /**
+         * How close two actions have to be for the whole gap between them to
+         * count as active - {@code active_gap}. Read by the screen rather than
+         * the recorder: the core applies it at read time.
+         */
+        public final int screenTimeActiveGap;
+
+        /**
+         * How long without any input pauses the session - {@code idle_after}.
+         * The recorder's watchdog runs on this, but the pause itself is the
+         * core's: the Idle event is stamped back to where the input stopped.
+         */
+        public final int screenTimeIdleAfter;
+
+        /** How many days of log to keep. Zero keeps everything. */
+        public final int screenTimeRetentionDays;
+
+        /**
+         * How many {@code [[screen_time.budgets]]} the file declares. A count
+         * and not the budgets: a budget is only ever needed beside what has
+         * been spent against it, and that is the ledger's answer, not the
+         * resolution's.
+         */
+        public final int screenTimeBudgets;
+
         /** What this install told the core it calls itself. */
         public final String deviceId;
 
@@ -1668,6 +1712,9 @@ public final class PurpleCore {
                 Clock clock, boolean premium, boolean sendAfterSave,
                 boolean lastSeenReasons, boolean lastSeenTrade, int lastSeenTradeHold,
                 int lastSeenTradeRemember, int lastSeenTradeCooldown,
+                boolean screenTimeEnabled, int screenTimeActionSpan,
+                int screenTimeActiveGap, int screenTimeIdleAfter,
+                int screenTimeRetentionDays, int screenTimeBudgets,
                 String deviceId, List<DeviceLabel> devices, String stateText) {
             this.ok = ok;
             this.error = error;
@@ -1711,6 +1758,12 @@ public final class PurpleCore {
             this.lastSeenTradeHold = lastSeenTradeHold;
             this.lastSeenTradeRemember = lastSeenTradeRemember;
             this.lastSeenTradeCooldown = lastSeenTradeCooldown;
+            this.screenTimeEnabled = screenTimeEnabled;
+            this.screenTimeActionSpan = screenTimeActionSpan;
+            this.screenTimeActiveGap = screenTimeActiveGap;
+            this.screenTimeIdleAfter = screenTimeIdleAfter;
+            this.screenTimeRetentionDays = screenTimeRetentionDays;
+            this.screenTimeBudgets = screenTimeBudgets;
             this.deviceId = deviceId;
             this.devices = devices;
             this.stateText = stateText;
@@ -1974,6 +2027,15 @@ public final class PurpleCore {
                         object.optInt("lastSeenTradeHold", 10),
                         object.optInt("lastSeenTradeRemember", 24 * 3600),
                         object.optInt("lastSeenTradeCooldown", 5 * 60),
+                        // Off unless the result says otherwise, which is the
+                        // core's default and the only one here that matters:
+                        // a load short of the key must not start recording.
+                        object.optBoolean("screenTimeEnabled", false),
+                        object.optInt("screenTimeActionSpan", 3),
+                        object.optInt("screenTimeActiveGap", 30),
+                        object.optInt("screenTimeIdleAfter", 60),
+                        object.optInt("screenTimeRetentionDays", 90),
+                        object.optInt("screenTimeBudgets", 0),
                         object.optString("deviceId", ""),
                         devices,
                         object.isNull("stateText") ? null : object.optString("stateText", null));
@@ -2094,6 +2156,398 @@ public final class PurpleCore {
             this.peer = peer;
             this.readAtUnix = readAtUnix;
             this.wasOnlineUnix = wasOnlineUnix;
+        }
+    }
+
+
+    // ---- [screen_time] -------------------------------------------------------
+
+    /**
+     * What a stretch of screen time was spent in, as the core's
+     * {@code Purple::ScreenTimeKind} numbers it.
+     *
+     * The first four are {@link #KIND_PRIVATE} and friends by value, on
+     * purpose: {@code kind:groups} in a budget and {@code kinds = ["groups"]}
+     * in a list mean the same word. {@link #SCREEN_KIND_ELSEWHERE} is the one
+     * that has no counterpart - the chat list, search, settings - and it exists
+     * so the splits add up to foreground time rather than to something smaller
+     * with no name.
+     */
+    public static final int SCREEN_KIND_PRIVATE = 0;
+    public static final int SCREEN_KIND_GROUP = 1;
+    public static final int SCREEN_KIND_CHANNEL = 2;
+    public static final int SCREEN_KIND_BOT = 3;
+    public static final int SCREEN_KIND_ELSEWHERE = 4;
+    public static final int SCREEN_KIND_COUNT = 5;
+
+    /** What a row of bars is a row of - the core's {@code Purple::BucketUnit}. */
+    public static final int BUCKET_HOUR_OF_DAY = 0;
+    public static final int BUCKET_DAY = 1;
+    public static final int BUCKET_WEEK = 2;
+    public static final int BUCKET_MONTH = 3;
+
+    /** What a budget is counting - the core's {@code Purple::BudgetTarget}. */
+    public static final int BUDGET_ALL = 0;
+    public static final int BUDGET_CHAT = 1;
+    public static final int BUDGET_KIND = 2;
+    public static final int BUDGET_PRESET = 3;
+
+    /** What it does when the day's allowance is gone. */
+    public static final int BUDGET_SOFT = 0;
+    public static final int BUDGET_HARD = 1;
+
+    /**
+     * The whole screen-time report for one window.
+     *
+     * One call rather than one per view: parsing the log and deriving its
+     * sessions is the expensive half, and every number on the screen comes out
+     * of the same derivation.
+     *
+     * @param settings settings.toml, for the thresholds the sessions are
+     *                 derived through - the same ones the screen names
+     * @param log      screentime.log, whole
+     * @param zoneId   the zone a day boundary is decided in, as an IANA id
+     */
+    public static Report screenTimeReport(byte[] settings, byte[] log,
+            long fromMs, long toMs, int bucketUnit, String zoneId) {
+        ensureLoaded();
+        return Report.fromJson(
+                screenTimeReportNative(settings, log, fromMs, toMs, bucketUnit, zoneId));
+    }
+
+    /**
+     * What every budget has spent on the day {@code dayStartMs} falls in.
+     *
+     * A moment inside the day rather than a date, because which day a moment
+     * belongs to is a local-time question and the answer has to be the same one
+     * the buckets used.
+     */
+    public static List<Budget> screenTimeLedger(byte[] settings, byte[] log,
+            long dayStartMs, String zoneId) {
+        ensureLoaded();
+        final List<Budget> result = new ArrayList<>();
+        final String json = screenTimeLedgerNative(settings, log, dayStartMs, zoneId);
+        if (json == null) {
+            return result;
+        }
+        try {
+            final JSONArray array = new JSONArray(json);
+            for (int i = 0; i < array.length(); ++i) {
+                final JSONObject entry = array.optJSONObject(i);
+                if (entry != null) {
+                    result.add(new Budget(entry));
+                }
+            }
+        } catch (JSONException e) {
+            FileLog.e("Purple: bad screen time ledger from the core", e);
+        }
+        return Collections.unmodifiableList(result);
+    }
+
+    /**
+     * The log with everything past {@code retention_days} dropped, as the text
+     * to write back, or null when it could not be read - on which the caller
+     * leaves the file alone rather than truncating it.
+     */
+    public static String screenTimePrune(byte[] settings, byte[] log, long nowMs) {
+        ensureLoaded();
+        return screenTimePruneNative(settings, log, nowMs);
+    }
+
+    /** One chat's share of a window. */
+    public static final class ChatSpan {
+
+        /** The bare id, as settings.toml writes it. */
+        public final long dialogId;
+
+        public final int kind;
+        public final long totalMs;
+        public final long activeMs;
+
+        ChatSpan(JSONObject json) {
+            this.dialogId = json.optLong("dialogId", 0);
+            this.kind = json.optInt("kind", SCREEN_KIND_ELSEWHERE);
+            this.totalMs = json.optLong("totalMs", 0);
+            this.activeMs = json.optLong("activeMs", 0);
+        }
+    }
+
+    /**
+     * One bar, split by chat kind so a chart can stack it.
+     *
+     * The split arrives rather than being worked out here because bucketing is
+     * the part that knows about calendars, and a week is the core's idea of a
+     * week wherever the range happens to start.
+     */
+    public static final class Bucket {
+
+        /** The hour for an hour-of-day row, otherwise the count from the first. */
+        public final int index;
+
+        /** The bucket's own window. Zero for hour-of-day, which is not one. */
+        public final long startMs;
+        public final long endMs;
+
+        /** {@code "13"}, {@code "2026-09-08"}, {@code "2026-W37"}, {@code "2026-09"}. */
+        public final String label;
+
+        public final long totalMs;
+        public final long activeMs;
+
+        /** Indexed by {@code SCREEN_KIND_*}; always {@link #SCREEN_KIND_COUNT} long. */
+        public final long[] kindTotalMs;
+        public final long[] kindActiveMs;
+
+        Bucket(JSONObject json) {
+            this.index = json.optInt("index", 0);
+            this.startMs = json.optLong("startMs", 0);
+            this.endMs = json.optLong("endMs", 0);
+            this.label = json.optString("label", "");
+            this.totalMs = json.optLong("totalMs", 0);
+            this.activeMs = json.optLong("activeMs", 0);
+            this.kindTotalMs = new long[SCREEN_KIND_COUNT];
+            this.kindActiveMs = new long[SCREEN_KIND_COUNT];
+            final JSONArray kinds = json.optJSONArray("kinds");
+            for (int i = 0; kinds != null && i < kinds.length() && i < SCREEN_KIND_COUNT; ++i) {
+                final JSONObject kind = kinds.optJSONObject(i);
+                if (kind == null) {
+                    continue;
+                }
+                this.kindTotalMs[i] = kind.optLong("totalMs", 0);
+                this.kindActiveMs[i] = kind.optLong("activeMs", 0);
+            }
+        }
+    }
+
+    /**
+     * Everything a chart, a ranked list and a headline need about one window.
+     *
+     * The report is one of these for the whole range and one more for each
+     * preset that appears in it, which is what makes the preset chip a lookup
+     * in what already came back rather than a second query.
+     */
+    public static class Scope {
+
+        /** Empty for the whole range; a preset name for one of the chips. */
+        public final String preset;
+
+        public final long totalMs;
+        public final long activeMs;
+
+        /** Time in chats the running preset was hiding - part of totalMs. */
+        public final long hiddenMs;
+
+        /** Ranked, longest first. */
+        public final List<ChatSpan> chats;
+
+        /** Indexed by {@code SCREEN_KIND_*}. */
+        public final long[] kindTotalMs;
+        public final long[] kindActiveMs;
+
+        public final List<Bucket> buckets;
+
+        Scope(JSONObject json) {
+            this.preset = json.optString("preset", "");
+            this.totalMs = json.optLong("totalMs", 0);
+            this.activeMs = json.optLong("activeMs", 0);
+            this.hiddenMs = json.optLong("hiddenMs", 0);
+            this.chats = spans(json.optJSONArray("chats"));
+            this.kindTotalMs = new long[SCREEN_KIND_COUNT];
+            this.kindActiveMs = new long[SCREEN_KIND_COUNT];
+            final JSONArray kinds = json.optJSONArray("kinds");
+            for (int i = 0; kinds != null && i < kinds.length(); ++i) {
+                final JSONObject kind = kinds.optJSONObject(i);
+                if (kind == null) {
+                    continue;
+                }
+                final int at = kind.optInt("kind", -1);
+                if (at >= 0 && at < SCREEN_KIND_COUNT) {
+                    this.kindTotalMs[at] = kind.optLong("totalMs", 0);
+                    this.kindActiveMs[at] = kind.optLong("activeMs", 0);
+                }
+            }
+            this.buckets = buckets(json.optJSONArray("buckets"));
+        }
+
+        static List<ChatSpan> spans(JSONArray array) {
+            final List<ChatSpan> result = new ArrayList<>();
+            for (int i = 0; array != null && i < array.length(); ++i) {
+                final JSONObject entry = array.optJSONObject(i);
+                if (entry != null) {
+                    result.add(new ChatSpan(entry));
+                }
+            }
+            return Collections.unmodifiableList(result);
+        }
+
+        static List<Bucket> buckets(JSONArray array) {
+            final List<Bucket> result = new ArrayList<>();
+            for (int i = 0; array != null && i < array.length(); ++i) {
+                final JSONObject entry = array.optJSONObject(i);
+                if (entry != null) {
+                    result.add(new Bucket(entry));
+                }
+            }
+            return Collections.unmodifiableList(result);
+        }
+    }
+
+    /** The whole range, plus the things only the whole range has. */
+    public static final class Report extends Scope {
+
+        /**
+         * Every day in the range folded onto one clock - the "reading load".
+         * Always there, whatever unit the bars are in, because it answers a
+         * different question: not how much, but when in a day.
+         */
+        public final List<Bucket> reading;
+
+        /** Hour by weekday, rows Monday..Sunday. {@code [7][24]}. */
+        public final long[][] heatTotalMs;
+        public final long[][] heatActiveMs;
+
+        /** This range against the one of the same length before it. */
+        public final long deltaMs;
+        public final long previousTotalMs;
+        public final long previousActiveMs;
+
+        /**
+         * Null for a previous range with nothing in it. There is no percentage
+         * change from zero, and a number shown there would be made up.
+         */
+        public final Integer changePercent;
+
+        /** One scope per preset that appears in the range, longest first. */
+        public final List<Scope> presets;
+
+        private Report(JSONObject json) {
+            super(json);
+            this.reading = buckets(json.optJSONArray("reading"));
+            this.heatTotalMs = new long[7][24];
+            this.heatActiveMs = new long[7][24];
+            final JSONObject heat = json.optJSONObject("heat");
+            if (heat != null) {
+                fillHeat(heat.optJSONArray("totalMs"), this.heatTotalMs);
+                fillHeat(heat.optJSONArray("activeMs"), this.heatActiveMs);
+            }
+            final JSONObject compare = json.optJSONObject("compare");
+            this.deltaMs = compare == null ? 0 : compare.optLong("deltaMs", 0);
+            this.previousTotalMs = compare == null ? 0 : compare.optLong("previousTotalMs", 0);
+            this.previousActiveMs = compare == null ? 0 : compare.optLong("previousActiveMs", 0);
+            this.changePercent = (compare == null || compare.isNull("changePercent"))
+                    ? null
+                    : Integer.valueOf(compare.optInt("changePercent", 0));
+            final List<Scope> scopes = new ArrayList<>();
+            final JSONArray array = json.optJSONArray("presets");
+            for (int i = 0; array != null && i < array.length(); ++i) {
+                final JSONObject entry = array.optJSONObject(i);
+                if (entry != null) {
+                    scopes.add(new Scope(entry));
+                }
+            }
+            this.presets = Collections.unmodifiableList(scopes);
+        }
+
+        private static void fillHeat(JSONArray rows, long[][] into) {
+            for (int day = 0; rows != null && day < rows.length() && day < 7; ++day) {
+                final JSONArray hours = rows.optJSONArray(day);
+                for (int hour = 0; hours != null && hour < hours.length() && hour < 24; ++hour) {
+                    into[day][hour] = hours.optLong(hour, 0);
+                }
+            }
+        }
+
+        /**
+         * Null for a report the core could not produce. The screen draws
+         * nothing rather than zeroes: "no screen time" and "the log could not
+         * be read" are two different things to say.
+         */
+        static Report fromJson(String json) {
+            if (json == null) {
+                return null;
+            }
+            try {
+                return new Report(new JSONObject(json));
+            } catch (JSONException e) {
+                FileLog.e("Purple: bad screen time report from the core", e);
+                return null;
+            }
+        }
+    }
+
+    /** One {@code [[screen_time.budgets]]} entry, and what it has spent today. */
+    public static final class Budget {
+
+        /** Its position in the file, so a screen can address it back. */
+        public final int index;
+
+        /** The target as written - {@code "all"}, {@code "kind:groups"}, … */
+        public final String target;
+
+        public final int targetKind;
+
+        /** Filled according to {@link #targetKind}; only one ever means anything. */
+        public final long chat;
+        public final int chatKind;
+        public final String preset;
+
+        public final long spentMs;
+        public final long perDayMs;
+
+        /** Whether the allowance is gone. */
+        public final boolean reached;
+
+        public final int mode;
+        public final int snoozeSeconds;
+        public final int snoozesPerDay;
+
+        /**
+         * Whether this budget offers a snooze at all, with none yet taken - the
+         * core's {@code CoverAllowed(0, budget)}. False for a soft budget,
+         * which never puts a cover up, and for a hard one written
+         * {@code snoozes_per_day = 0}, which is how a cap is made absolute.
+         */
+        public final boolean snoozable;
+
+        Budget(JSONObject json) {
+            this.index = json.optInt("index", 0);
+            this.target = json.optString("target", "all");
+            this.targetKind = json.optInt("targetKind", BUDGET_ALL);
+            this.chat = json.optLong("chat", 0);
+            this.chatKind = json.optInt("chatKind", SCREEN_KIND_ELSEWHERE);
+            this.preset = json.optString("preset", "");
+            this.spentMs = json.optLong("spentMs", 0);
+            this.perDayMs = json.optLong("perDayMs", 0);
+            this.reached = json.optBoolean("reached", false);
+            this.mode = json.optInt("mode", BUDGET_SOFT);
+            this.snoozeSeconds = json.optInt("snoozeSeconds", 5 * 60);
+            this.snoozesPerDay = json.optInt("snoozesPerDay", 2);
+            this.snoozable = json.optBoolean("snoozable", false);
+        }
+
+        /**
+         * Whether this budget is counting the chat in front of you.
+         *
+         * The same four cases as the core's {@code BudgetCovers}, over the
+         * session's three labels rather than over a session - which is what a
+         * cover has in hand: the chat, what it is, and what was running.
+         */
+        public boolean covers(long dialogId, int kind, String runningPreset) {
+            switch (targetKind) {
+            case BUDGET_CHAT:
+                return chat == dialogId;
+            case BUDGET_KIND:
+                return chatKind == kind;
+            case BUDGET_PRESET:
+                return effective(preset).equalsIgnoreCase(effective(runningPreset));
+            default:
+                return true;
+            }
+        }
+
+        /** An empty preset name is Normal, the same fall-through the core takes. */
+        private static String effective(String preset) {
+            return (preset == null || preset.isEmpty()) ? "normal" : preset;
         }
     }
 

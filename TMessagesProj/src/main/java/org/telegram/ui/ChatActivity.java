@@ -30150,6 +30150,85 @@ public class ChatActivity extends BaseFragment implements
         }
     }
 
+
+    // ---- Purple: the hard budget's cover ------------------------------------
+
+    /**
+     * The cover a spent hard budget puts over this chat, made the first time one
+     * is needed and kept afterwards. Null in the overwhelming case of a file
+     * with no budgets in it.
+     */
+    private PurpleScreenTimeCover purpleCover;
+
+    /** Re-asks the ledger while the chat sits open, since a budget can run out
+     *  under you. */
+    private final Runnable purpleBudgetCheck = this::purpleCheckBudget;
+
+    /**
+     * What the day's budgets say about this chat, and what to do about it.
+     *
+     * Asked on every resume and once a minute after that: the allowance is
+     * spent by sitting here, so the moment it runs out is a moment nothing else
+     * would announce. The check itself is off the UI thread - it derives the
+     * ledger from the whole log, like everything else in this feature, which is
+     * what makes a threshold changed this morning apply to this afternoon.
+     */
+    private void purpleCheckBudget() {
+        AndroidUtilities.cancelRunOnUIThread(purpleBudgetCheck);
+        if (chatMode != 0 || contentView == null || !PurpleScreenTime.enabled()) {
+            purpleHideCover();
+            return;
+        }
+        PurpleScreenTimeCover.check(currentAccount, dialog_id, verdict -> {
+            if (contentView == null || isFinishing()) {
+                return;
+            }
+            if (verdict.cover) {
+                purpleShowCover(verdict);
+            } else {
+                purpleHideCover();
+                // The soft half: a bulletin at the limit, once per chat per
+                // day, and nothing else touched. A soft budget is first of all
+                // a thing you wanted to know about.
+                if (verdict.soft()
+                        && PurpleScreenTimeCover.claimSoftWarning(dialog_id)
+                        && BulletinFactory.canShowBulletin(this)) {
+                    BulletinFactory.of(this)
+                            .createSimpleBulletin(R.raw.info, LocaleController.formatString(
+                                    R.string.PurpleScreenTimeSoftReached,
+                                    PurpleScreenTimeCover.label(currentAccount, verdict.budget)))
+                            .show();
+                }
+            }
+            AndroidUtilities.runOnUIThread(
+                    purpleBudgetCheck, PurpleScreenTimeCover.RECHECK_MS);
+        });
+    }
+
+    private void purpleShowCover(PurpleScreenTimeCover.Verdict verdict) {
+        if (purpleCover == null) {
+            purpleCover = new PurpleScreenTimeCover(contentView.getContext());
+            // Added below the action bar in the child order, so the bar draws
+            // over it and keeps its own touches: the way out of a covered chat
+            // has to stay open. Everything else - the message list, the
+            // composer, the pinned bar - is added before the bar and so ends up
+            // underneath this. No top margin: the content view's own onLayout
+            // already drops every child but the action bar by its height.
+            final int index = contentView.indexOfChild(actionBar);
+            contentView.addView(purpleCover, index < 0 ? -1 : index,
+                    LayoutHelper.createFrame(
+                            LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        }
+        purpleCover.set(currentAccount, verdict, this::purpleCheckBudget);
+        purpleCover.setVisibility(View.VISIBLE);
+    }
+
+    private void purpleHideCover() {
+        if (purpleCover != null) {
+            purpleCover.setVisibility(View.GONE);
+        }
+    }
+
     public void setResolvedChatLink(TL_account.resolvedBusinessChatLinks resolvedChatLink) {
         this.resolvedChatLink = resolvedChatLink;
     }
