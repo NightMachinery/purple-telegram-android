@@ -11433,6 +11433,9 @@
     <string name="PurpleTradeRestoreFailed">Could not put your privacy settings back: %1$s. Check Settings \u2192 Privacy and Security \u2192 Last Seen.</string>
     <string name="PurpleTradeTimedOut">Nothing exact arrived in time. Your privacy settings are back as they were.</string>
     <string name="PurpleTradeDone">%1$s. Your privacy settings are back as they were.</string>
+    <!-- Purple: the same trade, offered from a message's seen-by sheet -->
+    <string name="PurpleTradeSheetText">%1$s cannot see your last seen, so the server will not show you theirs.\n\nSharing once lets %1$s - and nobody else - see your last seen for about %2$d seconds while this app asks for theirs, then puts your privacy settings back exactly as they were.</string>
+    <string name="PurpleTradeSheetOff">%1$s cannot see your last seen, so the server will not show you theirs.\n\nThe offer to trade is switched off. Turn it on in Settings \u2192 Purple \u2192 Last seen \u2192 Offer to trade ([last_seen] trade_p), and this button will show %1$s your last seen for a few seconds, read theirs, and put your privacy settings back exactly as they were.\n\nThis app never makes your last seen visible to everybody on one tap. If that is what you want, it is Settings \u2192 Privacy and Security \u2192 Last Seen.</string>
     <string name="PurpleLastSeenHeader">Last seen</string>
     <string name="PurpleLastSeenReasonsRow">Say why a last seen is hidden</string>
     <string name="PurpleLastSeenTradeRow">Offer to trade</string>

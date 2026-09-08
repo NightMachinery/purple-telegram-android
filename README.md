@@ -274,6 +274,14 @@ standing subscription. Every trade is listed under **Trades** on the Purple
 settings screen: who, what was read, how long ago. A trade that came back with
 nothing is listed too, because the seconds of exposure happened either way.
 
+The trade also stands where Telegram's own offer stood. The sheet behind a
+message's *seen by* line used to open with a button that made your last seen
+visible to **everybody**, for good, on one tap; this fork does not carry a
+control like that, so that button is the trade, and with `trade_p = false`
+there is no button at all - only the note that the offer is off, where the
+switch is, and that Telegram's own Privacy settings are still the deliberate
+way to show your last seen to everyone.
+
 **Screen time** is `[screen_time]`, and it is off until `enabled_p = true` says
 otherwise - it is a record of what you looked at and for how long, and nothing
 should start keeping one of those because a version number moved. With it on,

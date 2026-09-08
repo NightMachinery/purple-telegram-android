@@ -31,6 +31,7 @@ import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserObject;
+import org.telegram.messenger.purple.PurpleLastSeen;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_account;
@@ -41,6 +42,7 @@ import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.Premium.PremiumButtonView;
 import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.PremiumPreviewFragment;
+import org.telegram.ui.PurpleLastSeenTrade;
 import org.telegram.ui.Stories.recorder.ButtonWithCounterView;
 
 import java.util.Date;
@@ -193,6 +195,17 @@ public class MessagePrivateSeenView extends FrameLayout {
         sheet.fixNavigationBar(Theme.getColor(Theme.key_dialogBackground, resourcesProvider));
 
         final boolean premiumLocked = MessagesController.getInstance(currentAccount).premiumFeaturesBlocked();
+        // Purple: the first button of the last-seen half of this sheet is the
+        // fork's trade, not the stock request. Stock sends one setPrivacy that
+        // makes your last seen visible to EVERYBODY, for good, and nothing ever
+        // puts it back; PurpleLastSeenTrade shows it to this one person for a
+        // few seconds and restores the rules exactly. With the offer switched
+        // off there is no button at all rather than the stock one: this fork
+        // does not carry a one-tap way to expose yourself to everybody, and
+        // somebody who wants that can still say so in Telegram's own Privacy
+        // settings, which is what the description points at. The read-time half
+        // is untouched - there is no trade for read marks.
+        final boolean purpleTrade = lastSeen && PurpleLastSeen.tradeOffered();
 
         LinearLayout layout = new LinearLayout(context);
         layout.setOrientation(LinearLayout.VERTICAL);
@@ -211,7 +224,9 @@ public class MessagePrivateSeenView extends FrameLayout {
         headerView.setGravity(Gravity.CENTER);
         headerView.setTextColor(Theme.getColor(Theme.key_dialogTextBlack, resourcesProvider));
         headerView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 20);
-        headerView.setText(LocaleController.getString(lastSeen ? R.string.PremiumLastSeenHeader1 : R.string.PremiumReadHeader1));
+        // Purple: "Show Your Last Seen" promised the stock request, so the
+        // trade's own title stands in its place - one name for one operation.
+        headerView.setText(LocaleController.getString(lastSeen ? R.string.PurpleTradeTitle : R.string.PremiumReadHeader1));
         layout.addView(headerView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL, 12, 0, 12, 0));
 
         TextView descriptionView = new TextView(context);
@@ -223,33 +238,60 @@ public class MessagePrivateSeenView extends FrameLayout {
             TLRPC.User user = MessagesController.getInstance(currentAccount).getUser(dialogId);
             username = UserObject.getFirstName(user);
         }
-        descriptionView.setText(AndroidUtilities.replaceTags(LocaleController.formatString(lastSeen ? (premiumLocked ? R.string.PremiumLastSeenText1Locked : R.string.PremiumLastSeenText1) : (premiumLocked ? R.string.PremiumReadText1Locked : R.string.PremiumReadText1), username)));
+        // Purple: the last-seen text says what the trade actually does, in the
+        // words the trade's own confirmation sheet uses, or - with the offer
+        // off - says that it is off and where the two switches live. Neither
+        // depends on premiumLocked any more: the stock pair differed only in
+        // whether they dangled the subscription, and the trade is offered the
+        // same way either way.
+        descriptionView.setText(AndroidUtilities.replaceTags(lastSeen
+                ? (purpleTrade
+                        ? LocaleController.formatString(R.string.PurpleTradeSheetText, username, PurpleLastSeen.holdSeconds())
+                        : LocaleController.formatString(R.string.PurpleTradeSheetOff, username))
+                : LocaleController.formatString(premiumLocked ? R.string.PremiumReadText1Locked : R.string.PremiumReadText1, username)));
         layout.addView(descriptionView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL, 32, 9, 32, 19));
 
-        ButtonWithCounterView button1 = new ButtonWithCounterView(context, resourcesProvider).setRound();
-        button1.setText(LocaleController.getString(lastSeen ? R.string.PremiumLastSeenButton1 : R.string.PremiumReadButton1), false);
-        layout.addView(button1, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48, Gravity.CENTER_HORIZONTAL));
-        button1.setOnClickListener(v -> {
-            button1.setLoading(true);
-            if (lastSeen) {
-                TL_account.setPrivacy req = new TL_account.setPrivacy();
-                req.key = new TLRPC.TL_inputPrivacyKeyStatusTimestamp();
-                req.rules.add(new TLRPC.TL_inputPrivacyValueAllowAll());
-                ConnectionsManager.getInstance(currentAccount).sendRequest(req, (res, err) -> AndroidUtilities.runOnUIThread(() -> {
-                    if (err != null) {
-                        BulletinFactory.global().showForError(err);
+        // Purple: with the offer off the button is left out rather than left
+        // pointing at the stock request. A sheet that only explains is the
+        // honest state here - the Premium half below still stands, and where
+        // Premium is blocked too the sheet is the explanation and nothing else.
+        if (!lastSeen || purpleTrade) {
+            ButtonWithCounterView button1 = new ButtonWithCounterView(context, resourcesProvider).setRound();
+            button1.setText(LocaleController.getString(lastSeen ? R.string.PurpleTradeShare : R.string.PremiumReadButton1), false);
+            layout.addView(button1, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48, Gravity.CENTER_HORIZONTAL));
+            button1.setOnClickListener(v -> {
+                if (lastSeen) {
+                    // The trade needs a fragment: it asks with a dialog and
+                    // reports with bulletins, and this view only ever has a
+                    // Context. getSafeLastFragment is how the rest of the app
+                    // finds one from a sheet, and the safe one rather than the
+                    // getLastFragment the Premium button below uses, because a
+                    // fragment that is already finishing would take the trade's
+                    // confirmation down with it.
+                    final BaseFragment fragment = LaunchActivity.getSafeLastFragment();
+                    if (fragment == null) {
+                        // Nothing to ask with and nothing to report with, so
+                        // the tap does nothing. Falling back to the stock
+                        // request is exactly the one thing that must not
+                        // happen: silence is cheaper than a permanent change
+                        // nobody was shown a sheet about.
                         return;
                     }
-
-                    button1.setLoading(false);
+                    // The sheet goes first so the trade's confirmation lands on
+                    // the fragment underneath rather than on top of a dialog
+                    // that is already leaving. No setLoading either: nothing is
+                    // sent from here, and this button will not be on screen to
+                    // stop spinning. `updated' is left alone for the same
+                    // reason - the trade refreshes the headers itself, out of
+                    // putUsers, once it has something newer to put in them.
                     sheet.dismiss();
-
-                    BulletinFactory.global().createSimpleBulletin(R.raw.chats_infotip, LocaleController.getString(R.string.PremiumLastSeenSet)).show();
-                    if (updated != null) {
-                        updated.run();
+                    if (dismiss != null) {
+                        dismiss.run();
                     }
-                }));
-            } else {
+                    PurpleLastSeenTrade.show(fragment, currentAccount, dialogId);
+                    return;
+                }
+                button1.setLoading(true);
                 TL_account.setGlobalPrivacySettings req = new TL_account.setGlobalPrivacySettings();
                 req.settings = ContactsController.getInstance(currentAccount).getGlobalPrivacySettings();
                 if (req.settings == null) {
@@ -270,8 +312,8 @@ public class MessagePrivateSeenView extends FrameLayout {
                         updated.run();
                     }
                 }));
-            }
-        });
+            });
+        }
 
         if (!premiumLocked) {
             SimpleTextView or = new SimpleTextView(context) {
