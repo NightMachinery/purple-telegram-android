@@ -838,6 +838,87 @@ public final class PurpleCore {
     }
 
     /**
+     * What the schedule is doing right now, decided by the core.
+     *
+     * Which of the eight sentences the status line is, and every part of it, so
+     * the screen picks a string and fills it in rather than working any of it
+     * out. Both apps used to decide this for themselves and their answers had
+     * parted company - one could tell "no rules" from "none of them are this
+     * device's" and the other could not, and each hunted for the next window
+     * its own way. The wording stays here, in strings.xml; only the deciding
+     * moved. See ScheduleStatusNow() in the core.
+     */
+    public static final class ScheduleStatus {
+        /** The file says nothing about a schedule, so there is no line. */
+        public static final String NOT_CONFIGURED = "not_configured";
+        /** Held off by hand, until it is lifted the same way. */
+        public static final String PAUSED = "paused";
+        /** Held off until {@link #pausedUntil}. */
+        public static final String PAUSED_UNTIL = "paused_until";
+        /** Written down and switched off in the file. */
+        public static final String OFF = "off";
+        /** A schedule with no rules in it at all. */
+        public static final String NO_RULES = "no_rules";
+        /** Rules, but none in a ruleset this device runs. */
+        public static final String NONE_HERE = "none_here";
+        /** A rule covers this moment: {@link #preset} until {@link #till}. */
+        public static final String INSIDE = "inside";
+        /** None does, so {@link #outside} is what runs. */
+        public static final String OUTSIDE = "outside";
+
+        public final String kind;
+
+        /** INSIDE only: the running rule's preset, and the minute it ends. */
+        public final String preset;
+        public final int till;
+
+        /**
+         * What runs between the windows - the ACTIVE one, which a ruleset may
+         * have overridden the {@code [schedule] outside} key with. Filled in
+         * whatever the kind, because the line inside a window says it too: it
+         * is what takes over when the window ends.
+         */
+        public final String outside;
+
+        /**
+         * When the next window opens, in wall-clock seconds, and the preset it
+         * brings. Zero and empty when no rule this device runs opens one again.
+         */
+        public final long nextStart;
+        public final String nextPreset;
+
+        /** When a pause runs out; zero for one with no deadline. */
+        public final long pausedUntil;
+
+        private ScheduleStatus(String kind, String preset, int till, String outside,
+                long nextStart, String nextPreset, long pausedUntil) {
+            this.kind = kind;
+            this.preset = preset;
+            this.till = till;
+            this.outside = outside;
+            this.nextStart = nextStart;
+            this.nextPreset = nextPreset;
+            this.pausedUntil = pausedUntil;
+        }
+
+        static ScheduleStatus fromJson(JSONObject object) {
+            // A result short of the key at all reads as "nothing to say", which
+            // is what a screen drawing this before the first load wants.
+            if (object == null) {
+                return new ScheduleStatus(NOT_CONFIGURED, "", -1, "normal", 0, "", 0);
+            }
+            return new ScheduleStatus(
+                    object.optString("kind", NOT_CONFIGURED),
+                    object.optString("preset", ""),
+                    object.optInt("till", -1),
+                    object.optString("outside", "normal"),
+                    object.optLong("nextStart", 0),
+                    object.optString("nextPreset", ""),
+                    object.optLong("pausedUntil", 0));
+        }
+    }
+
+    /**
      * What {@code [devices]} calls one device id.
      *
      * The label lives in settings.toml rather than in a preference so that it
@@ -1635,6 +1716,9 @@ public final class PurpleCore {
          */
         public final ScheduleNow scheduleNow;
 
+        /** What the schedule is doing right now, in parts. */
+        public final ScheduleStatus scheduleStatus;
+
         /**
          * Every ruleset the file describes, the implicit one first. All of
          * them, not only the ones this device runs: editing the laptop's half
@@ -1795,7 +1879,8 @@ public final class PurpleCore {
                 boolean hideArchive,
                 boolean scheduleEnabled, String scheduleTarget, String scheduleOutside,
                 String scheduleOutsideKey,
-                ScheduleNow scheduleNow, List<ScheduleRuleset> scheduleRulesets,
+                ScheduleNow scheduleNow, ScheduleStatus scheduleStatus,
+                List<ScheduleRuleset> scheduleRulesets,
                 List<String> scheduleChosen, List<ScheduleRule> scheduleRules,
                 boolean focusSyncEnabled, String focusSyncEnter, String focusSyncExit,
                 Clock clock, boolean premium, boolean sendAfterSave,
@@ -1834,6 +1919,7 @@ public final class PurpleCore {
             this.scheduleOutside = scheduleOutside;
             this.scheduleOutsideKey = scheduleOutsideKey;
             this.scheduleNow = scheduleNow;
+            this.scheduleStatus = scheduleStatus;
             this.scheduleRulesets = scheduleRulesets;
             this.scheduleChosen = scheduleChosen;
             this.scheduleRules = scheduleRules;
@@ -1912,6 +1998,7 @@ public final class PurpleCore {
                     Collections.<ExemptFolder>emptyList(), STOCK_DEFAULT_MODES, 0,
                     Collections.<PresetInfo>emptyList(), Collections.<View>emptyList(),
                     false, true, false, true, false, null, "normal", "normal", null,
+                    ScheduleStatus.fromJson(null),
                     Collections.<ScheduleRuleset>emptyList(),
                     Collections.<String>emptyList(),
                     Collections.<ScheduleRule>emptyList(), false, "", "previous",
@@ -2098,6 +2185,8 @@ public final class PurpleCore {
                         // explains an override only when it can see one.
                         object.optString("scheduleOutsideKey", "normal"),
                         scheduleNow,
+                        ScheduleStatus.fromJson(
+                                object.optJSONObject("scheduleStatus")),
                         scheduleRulesets,
                         names(object, "scheduleChosen"),
                         scheduleRules,

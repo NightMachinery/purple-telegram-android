@@ -171,53 +171,80 @@ public class PurpleScheduleActivity extends UniversalFragment
     /**
      * What the schedule is doing right now, in one line.
      *
-     * Three shapes, and the difference between them is the whole of what
-     * `outside' added. Inside a window it says what runs and what takes over
-     * when the window ends, because that is no longer always Normal. Outside
-     * one it says what is running now and until when. "Nothing scheduled" is
-     * kept for the one case it is still true of: nothing runs, and nothing is
-     * what the schedule wants between the windows either.
+     * Which sentence it is comes from the core - see PurpleCore.ScheduleStatus
+     * - because this was worked out here and again in the desktop fork, and the
+     * two answers had already parted company. What stays here is the wording,
+     * which lives in strings.xml and goes through the usual translation
+     * pipeline, and which the core has no business owning.
      */
     public static CharSequence statusLine(PurpleCore.Loaded state) {
         if (state == null) {
             return getString(R.string.PurpleScheduleNoRules);
         }
-        if (!state.scheduleEnabled) {
+        final PurpleCore.ScheduleStatus status = state.scheduleStatus;
+        final CharSequence outside = presetLabel(state, status.outside);
+        switch (status.kind) {
+        case PurpleCore.ScheduleStatus.PAUSED:
+            return getString(R.string.PurpleSchedulePausedLine);
+        case PurpleCore.ScheduleStatus.PAUSED_UNTIL:
+            return formatString(R.string.PurpleSchedulePausedUntil,
+                    dateText(status.pausedUntil));
+        case PurpleCore.ScheduleStatus.OFF:
             return getString(R.string.PurpleScheduleOffLine);
-        }
-        if (state.clock.schedulePaused) {
-            return (state.clock.schedulePausedUntil > 0)
-                    ? formatString(R.string.PurpleSchedulePausedUntil,
-                            dateText(state.clock.schedulePausedUntil))
-                    : getString(R.string.PurpleSchedulePausedLine);
-        }
-        if (state.scheduleRules.isEmpty()) {
+        case PurpleCore.ScheduleStatus.NONE_HERE:
             // "No rules" and "none of them are this device's" are different
             // things to be told, and with rulesets the second is the one a
             // phone holding the laptop's schedule will keep seeing.
-            return getString(state.scheduleRulesets.isEmpty()
-                    ? R.string.PurpleScheduleNoRules
-                    : R.string.PurpleScheduleNoneHere);
-        }
-        final CharSequence outside = presetLabel(state, state.scheduleOutside);
-        final PurpleCore.ScheduleRule now = ruleAt(state, state.scheduleNow);
-        if (now != null) {
+            return getString(R.string.PurpleScheduleNoneHere);
+        case PurpleCore.ScheduleStatus.INSIDE:
+            // Inside a window the line says what takes over when it ends,
+            // because that is no longer always Normal.
             return formatString(R.string.PurpleScheduleNowThen,
-                    presetLabel(state, now.preset), timeText(now.till), outside);
+                    presetLabel(state, status.preset), timeText(status.till), outside);
+        case PurpleCore.ScheduleStatus.OUTSIDE:
+            if (isNormal(status.outside)) {
+                // Nothing is running, so the interesting half is what comes
+                // next - and saying "now: Normal" about stock Telegram would be
+                // describing the absence of a preset as one.
+                return (status.nextStart == 0)
+                        ? getString(R.string.PurpleScheduleNothingNow)
+                        : formatString(R.string.PurpleScheduleNext,
+                                presetLabel(state, status.nextPreset),
+                                startText(status.nextStart));
+            }
+            return (status.nextStart == 0)
+                    ? formatString(R.string.PurpleScheduleNowOnly, outside)
+                    : formatString(R.string.PurpleScheduleNow, outside,
+                            startText(status.nextStart));
+        default:
+            // NOT_CONFIGURED, NO_RULES, and any kind a newer core grew that
+            // this build has never heard of. "No rules" is the honest thing to
+            // say about a file with nothing in it, and the safe thing to say
+            // about a kind we cannot render.
+            return getString(R.string.PurpleScheduleNoRules);
         }
-        final PurpleCore.ScheduleRule next = nextRule(state.scheduleRules);
-        if (isNormal(state.scheduleOutside)) {
-            // Nothing is running, so the interesting half is what comes next -
-            // and saying "now: Normal" about stock Telegram would be describing
-            // the absence of a preset as one.
-            return (next == null)
-                    ? getString(R.string.PurpleScheduleNothingNow)
-                    : formatString(R.string.PurpleScheduleNext,
-                            presetLabel(state, next.preset), timeText(next.from));
+    }
+
+    /**
+     * When a window opens, as a time - with the weekday when it is not today.
+     *
+     * A bare "09:00" for a window three days out reads as three hours out. The
+     * core hands over a moment rather than a time of day precisely so this can
+     * tell the two apart, which the position-in-the-week arithmetic it replaced
+     * could not.
+     */
+    private static CharSequence startText(long unix) {
+        final Calendar start = Calendar.getInstance();
+        start.setTimeInMillis(unix * 1000L);
+        final String time = timeText(start.get(Calendar.HOUR_OF_DAY) * 60
+                + start.get(Calendar.MINUTE));
+        final Calendar now = Calendar.getInstance();
+        if (start.get(Calendar.YEAR) == now.get(Calendar.YEAR)
+                && start.get(Calendar.DAY_OF_YEAR) == now.get(Calendar.DAY_OF_YEAR)) {
+            return time;
         }
-        return (next == null)
-                ? formatString(R.string.PurpleScheduleNowOnly, outside)
-                : formatString(R.string.PurpleScheduleNow, outside, timeText(next.from));
+        return LocaleController.getInstance().getFormatterWeek()
+                .format(start.getTime()) + " " + time;
     }
 
     /**
@@ -549,49 +576,6 @@ public class PurpleScheduleActivity extends UniversalFragment
             }
         }
         return null;
-    }
-
-    /**
-     * The enabled rule that starts soonest, wrapping past Sunday.
-     *
-     * Worked out here rather than asked of the core: the core answers what is
-     * happening now, and "what happens next" is a question only a screen asks.
-     * Positions are minutes from Monday 00:00, so a window earlier in the week
-     * than this moment simply lands a week later.
-     */
-    public static PurpleCore.ScheduleRule nextRule(List<PurpleCore.ScheduleRule> rules) {
-        final Calendar calendar = Calendar.getInstance();
-        final int dow = calendar.get(Calendar.DAY_OF_WEEK);
-        // Calendar counts from Sunday; the core counts Monday .. Sunday as
-        // 1 .. 7, the way the file spells its day names.
-        final int today = (dow == Calendar.SUNDAY) ? 7 : dow - 1;
-        final int nowAt = (today - 1) * 1440
-                + calendar.get(Calendar.HOUR_OF_DAY) * 60
-                + calendar.get(Calendar.MINUTE);
-
-        PurpleCore.ScheduleRule best = null;
-        int bestDelta = Integer.MAX_VALUE;
-        for (int a = 0, n = rules.size(); a < n; ++a) {
-            final PurpleCore.ScheduleRule rule = rules.get(a);
-            if (!rule.enabled || rule.from < 0) {
-                continue;
-            }
-            for (int b = 0; b < rule.days.length; ++b) {
-                final int day = rule.days[b];
-                if (day < 1 || day > 7) {
-                    continue;
-                }
-                int delta = ((day - 1) * 1440 + rule.from) - nowAt;
-                if (delta <= 0) {
-                    delta += 7 * 1440;
-                }
-                if (delta < bestDelta) {
-                    bestDelta = delta;
-                    best = rule;
-                }
-            }
-        }
-        return best;
     }
 
     // ---- taps ----------------------------------------------------------------
