@@ -1444,6 +1444,34 @@ Java_org_telegram_messenger_purple_PurpleCore_spliceMemberNative(
 	return ToJava(env, SpliceJson(result));
 }
 
+// A new empty [lists.x], for the "New list..." row in the membership box.
+//
+// No naming callback, unlike spliceMemberNative: there is no member line yet to
+// put a comment on. `title' is written only when it says something the name
+// does not, so handing over the name twice writes no title line at all.
+//
+// The core refuses an empty name, one starting with '*' - which the parser
+// would refuse too, since nobody reading the file could tell such a list from a
+// "*set" spread - and a name already taken. Those refusals are the message the
+// box shows, so nothing here checks them a second time.
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_addListNative(
+		JNIEnv *env,
+		jclass,
+		jbyteArray settingsUtf8,
+		jstring name,
+		jstring title) {
+	auto text = QString();
+	if (!ReadUtf8(env, settingsUtf8, text)) {
+		return nullptr;
+	}
+	return ToJava(env, SpliceJson(Purple::AddList(
+		text,
+		QStringLiteral("settings.toml"),
+		FromJava(env, name),
+		FromJava(env, title))));
+}
+
 // One boolean under one table - the Premium switch and the two Work Mode flags
 // the settings screen owns. No naming callback: there is no member line to put
 // a comment on, and the splice keeps whatever the user wrote after the value.

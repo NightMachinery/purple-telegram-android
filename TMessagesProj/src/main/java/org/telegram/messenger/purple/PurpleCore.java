@@ -127,6 +127,9 @@ public final class PurpleCore {
     private static native String spliceMemberNative(
             byte[] settingsUtf8, String list, long bareId, boolean add, String titlesJson);
 
+    private static native String addListNative(
+            byte[] settingsUtf8, String name, String title);
+
     private static native String setTableBoolNative(
             byte[] settingsUtf8, String table, String key, boolean value);
 
@@ -730,6 +733,27 @@ public final class PurpleCore {
         ensureLoaded();
         try {
             return splice(spliceMemberNative(settings, list, bareId, add, titles));
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return new SpliceResult(null, false, "the core could not be reached");
+        }
+    }
+
+    /**
+     * Writes a new empty {@code [lists.x]}, just after the last one already
+     * there so the lists stay together.
+     *
+     * The list is created and nothing else: no preset names it yet, so it
+     * changes what the app shows only once one does.
+     *
+     * @param title said only when it says something the name does not
+     * @return a refusal in {@code error} for an empty name, one starting with
+     *         {@code *}, or a name already taken - all of them worth showing
+     */
+    public static SpliceResult addList(byte[] settings, String name, String title) {
+        ensureLoaded();
+        try {
+            return splice(addListNative(settings, name, title));
         } catch (UnsatisfiedLinkError | RuntimeException e) {
             FileLog.e(e);
             return new SpliceResult(null, false, "the core could not be reached");
