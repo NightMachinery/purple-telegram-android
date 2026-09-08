@@ -164,6 +164,7 @@ import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.SvgHelper;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
+import org.telegram.messenger.purple.PurpleLastSeen;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.tgnet.ConnectionsManager;
@@ -11391,6 +11392,14 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             } else {
                 isOnline[0] = false;
                 newString2 = LocaleController.formatUserStatus(currentAccount, user, isOnline, shortStatus ? new boolean[1] : null);
+                // Purple: the same reason the chat header appends, in its long
+                // form. The screen width is what is handed over rather than the
+                // measured text view, and deliberately: this line runs the whole
+                // width of the profile less one left inset, where the header's
+                // sits between two 52dp button gutters - so the profile is where
+                // the sentence fits and the header is where the eyes do.
+                newString2 = PurpleLastSeen.decorate(
+                        user, newString2, AndroidUtilities.displaySize.x).toString();
                 hiddenStatusButton = user != null && !isOnline[0] && !getUserConfig().isPremium() && user.status != null && (user.status instanceof TLRPC.TL_userStatusRecently || user.status instanceof TLRPC.TL_userStatusLastMonth || user.status instanceof TLRPC.TL_userStatusLastWeek) && user.status.by_me;
                 if (onlineTextView[1] != null && !mediaHeaderVisible) {
                     int key = isOnline[0] && peerColor == null ? Theme.key_profile_status : Theme.key_actionBarDefaultSubtitle;
