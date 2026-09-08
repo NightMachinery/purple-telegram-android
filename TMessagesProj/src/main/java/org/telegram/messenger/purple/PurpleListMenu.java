@@ -12,7 +12,6 @@
 
 package org.telegram.messenger.purple;
 
-import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.R;
@@ -20,12 +19,9 @@ import org.telegram.messenger.UserObject;
 import org.telegram.tgnet.TLRPC;
 
 import java.io.File;
-import java.nio.charset.Charset;
 import java.util.List;
 
 public final class PurpleListMenu {
-
-    private static final Charset UTF_8 = Charset.forName("UTF-8");
 
     private PurpleListMenu() {
     }
@@ -74,30 +70,17 @@ public final class PurpleListMenu {
             return "settings.toml is missing";
         }
         final long bareId = PurpleGate.bareIdOf(currentAccount, dialogId);
-        final PurpleCore.SpliceResult result = PurpleCore.spliceMember(
-                settings,
-                list.name,
-                bareId,
-                add,
-                titlesJson(currentAccount, list, bareId));
-        if (!result.ok()) {
-            FileLog.e("Purple: list edit refused: " + result.error);
-            return result.error;
-        }
-        if (!result.changed || result.text == null) {
-            // Already how it was asked to be. Not an error, and not worth a
-            // write that would only churn the file's timestamp.
-            return null;
-        }
-        if (!PurpleSettings.writeAtomic(
-                PurpleSettings.settingsFile(), result.text.getBytes(UTF_8))) {
-            return "could not write settings.toml";
-        }
-        // The file the gate reads has changed under it. The watcher would get
-        // there on its own, but only after its quiet period, and a chat the
-        // user has just filed should move now.
-        PurpleGate.reload("list edit");
-        return null;
+        // Write, reload and the three outcomes are PurpleWriter's, shared with
+        // every other edit: a refusal leaves the file alone, and a splice that
+        // changed nothing is not worth churning the timestamp for.
+        return PurpleWriter.apply(
+                PurpleCore.spliceMember(
+                        settings,
+                        list.name,
+                        bareId,
+                        add,
+                        titlesJson(currentAccount, list, bareId)),
+                "list edit");
     }
 
     /**
