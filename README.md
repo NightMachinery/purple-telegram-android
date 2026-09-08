@@ -142,9 +142,44 @@ work, which is editing the account to change a view. The chats stay archived:
 they are still in the Archive, and a pin they carry there stays a pin there
 rather than jumping them to the top of the main list.
 
+**Settings → Purple** is the fork's own screen: Work Mode with the running
+preset as its subtitle, the schedule, the Local Premium switch, the
+hide-from-suggestions switch, and a section for the settings file - an editor,
+Send to Saved Messages (the desktop's shape and caption, so either client can
+import it), a check of Saved Messages for a newer file, Import from a file,
+Share the file, and the path with a tap to copy. The two switches are written
+into `settings.toml` through the same splice the desktop uses and read back
+from it, so a refused write leaves the switch where the file is.
+
+The **editor** is the only way to change a line on a phone without root: a
+monospace field parsed as you type, with a status line that says OK, how many
+warnings, or the line and column of a syntax error - tap it to go there. Save
+refuses a file that does not parse or is over 64 KB, refuses when the file on
+disk moved since it was opened, backs up to `settings.toml.bak` and reloads
+once. Warnings are listed after a save; the import path only counts them.
+
+The **schedule screen** shows the rules in file order with their own enabled
+switch, what the schedule wants right now, and the rules the parser refused
+with its reason. A rule is edited in a dialog: days, from and to, the preset
+(Normal first, since a window has to be able to turn Work Mode off), enabled,
+delete. Rules have no name; the app addresses one by its position in the file
+and hands the core the window and preset it read, so an outside edit landing
+under an open dialog is refused rather than misapplied.
+
+Two keys new to the file, shared with the desktop. `[suggestions]
+hide_invisible_p` (default true) keeps a chat the preset hides - and no extra
+view or shown folder tab reaches - out of the frequent-contact strip, the
+recent searches, the quick-share row, the gift and boost pickers and the OS
+share sheet's direct targets. Typed search and the forward picker still find
+it. A preset's `hide_archive_p` (default true) takes the archive out of the
+way while it runs: no pull-down, no row, the state of an account that never
+archived anything; archiving still works, search and the Archive settings
+screen still reach it, and `hide_archive_p = false` on the preset keeps the
+pull. Under Normal both are stock.
+
 Work Mode is ported, the launch-time offer of a settings import included. The
-archive and the contents of a folder tab are deliberately unfiltered: a preset
-decides its own view, a folder decides its own tab.
+contents of a folder tab are deliberately unfiltered: a preset decides its own
+view, a folder decides its own tab.
 
 ### Push notifications
 
