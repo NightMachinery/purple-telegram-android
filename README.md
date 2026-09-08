@@ -147,7 +147,8 @@ rather than jumping them to the top of the main list.
 
 **Settings → Purple** is the fork's own screen: Work Mode with the running
 preset as its subtitle, the schedule, the Local Premium switch, the
-hide-from-suggestions switch, and a section for the settings file - an editor,
+hide-from-suggestions switch, this device's name and id, and a section for the
+settings file - an editor,
 Send to Saved Messages (the desktop's shape and caption, so either client can
 import it), a check of Saved Messages for a newer file, Import from a file,
 Share the file, and the path with a tap to copy. The two switches are written
@@ -161,13 +162,45 @@ refuses a file that does not parse or is over 64 KB, refuses when the file on
 disk moved since it was opened, backs up to `settings.toml.bak` and reloads
 once. Warnings are listed after a save; the import path only counts them.
 
-The **schedule screen** shows the rules in file order with their own enabled
-switch, what the schedule wants right now, and the rules the parser refused
-with its reason. A rule is edited in a dialog: days, from and to, the preset
-(Normal first, since a window has to be able to turn Work Mode off), enabled,
-delete. Rules have no name; the app addresses one by its position in the file
-and hands the core the window and preset it read, so an outside edit landing
-under an open dialog is refused rather than misapplied.
+The **schedule screen** is the list of rulesets, with the master switch, the
+pause, and a line saying what the schedule is doing now - "now: work until
+17:00, then home" inside a window, "now: home until 09:00" outside one. What
+happens between the windows is a key rather than a constant: `[schedule]
+outside` names the preset in force whenever no rule covers the moment, and a
+window ending is a move to that, which still only undoes a preset the schedule
+itself put there.
+
+**Pausing** takes a date. "Pause the schedule" with no date is what it always
+was, held off until you lift it; give it a date and the tick lifts it itself at
+midnight of that day and catches up on the windows it missed in the same pass.
+The pause lives in `state.toml`, so it never touches the file you edit.
+
+A **ruleset** is a named group of rules and the devices it is for -
+`any`, a class (`mobile`, `desktop`), a platform (`android`, `ios`, `macos`,
+`windows`, `linux`) or one device's id - and what it does about them: disabled,
+enabled, or always. Only the most specific *enabled* ruleset that applies to
+this device runs, so a ruleset naming this phone replaces the one for mobiles
+rather than piling on top of it; every applicable *always* ruleset runs
+alongside whichever that is. A ruleset may name its own `outside`. One
+settings.toml therefore describes every device you carry it to, and the phone
+lists - and edits - the laptop's rulesets as well as its own. Rules written
+before rulesets existed still work: they are shown as "Rules" and run
+everywhere.
+
+Tapping a ruleset opens its rules, with Mode and Applies to above them. A rule
+is edited in a dialog: days, from and to, the preset (Normal first, since a
+window has to be able to turn Work Mode off), enabled, delete. Rules have no
+name; the app addresses one by its ruleset and its position in that ruleset and
+hands the core the window and preset it read, so an outside edit landing under
+an open dialog is refused rather than misapplied. Rules and rulesets the parser
+refused are listed with its reason.
+
+**This device** on the settings screen shows what this install calls itself -
+`android-` and eight hex digits of a hash of the OS's own identifier, so the id
+survives clearing the app's data and the raw identifier never lands in a file
+you send anywhere. Tap it to give the device a name; the name goes into
+`[devices]` in `settings.toml` and travels with the file, so the laptop calls
+this one the same thing.
 
 **Follow Do Not Disturb** on the same settings screen is `[focus_sync]`, the
 key the desktop reads on macOS: turning any Do Not Disturb mode on puts

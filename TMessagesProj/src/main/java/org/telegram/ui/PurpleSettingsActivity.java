@@ -22,6 +22,7 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
 import android.text.TextUtils;
+import android.util.TypedValue;
 import android.view.View;
 
 import androidx.core.content.FileProvider;
@@ -37,11 +38,15 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.SendMessagesHelper;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.purple.PurpleCore;
+import org.telegram.messenger.purple.PurpleDevice;
 import org.telegram.messenger.purple.PurpleGate;
 import org.telegram.messenger.purple.PurpleSettings;
 import org.telegram.messenger.purple.PurpleSyncOffer;
 import org.telegram.messenger.purple.PurpleWriter;
+import org.telegram.ui.ActionBar.AlertDialog;
+import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.BulletinFactory;
+import org.telegram.ui.Components.EditTextBoldCursor;
 import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalAdapter;
 import org.telegram.ui.Components.UniversalFragment;
@@ -71,6 +76,7 @@ public class PurpleSettingsActivity extends UniversalFragment
     private static final int ROW_PATH = 10;
     private static final int ROW_NOTIFICATIONS = 11;
     private static final int ROW_FOCUS = 12;
+    private static final int ROW_DEVICE = 13;
 
     /**
      * The file picker's request code. Its result arrives at
@@ -160,8 +166,30 @@ public class PurpleSettingsActivity extends UniversalFragment
         items.add(UItem.asShadow(fileStatus(state) + "\n"
                 + getString(R.string.PurpleFilePathInfo)));
 
+        // Under the file rather than under Work Mode: the label is a line in
+        // settings.toml like any other, and the id beside it is the string a
+        // ruleset in that file names to mean this phone.
+        items.add(UItem.asButton(ROW_DEVICE, getString(R.string.PurpleThisDevice),
+                deviceValue(state)));
+        items.add(UItem.asShadow(getString(R.string.PurpleThisDeviceInfo)));
+
         items.add(UItem.asButton(ROW_NOTIFICATIONS, getString(R.string.PurpleNotificationsRow)));
         items.add(UItem.asShadow(getString(R.string.PurpleNotificationsInfo)));
+    }
+
+    /**
+     * What this device is called, and what it is.
+     *
+     * Both, because they answer different questions: the label is what a person
+     * reads on the ruleset rows, and the id is what has to be typed into the
+     * file on the OTHER machine to aim a ruleset at this one. An unlabelled
+     * device shows as itself, which is also what the core does with it.
+     */
+    private static CharSequence deviceValue(PurpleCore.Loaded state) {
+        final String label = PurpleDevice.labelFor(state, PurpleDevice.id());
+        return (label == null)
+                ? PurpleDevice.id()
+                : (label + " · " + PurpleDevice.id());
     }
 
     /**
@@ -263,6 +291,9 @@ public class PurpleSettingsActivity extends UniversalFragment
                         .show();
             }
             break;
+        case ROW_DEVICE:
+            nameDevice();
+            break;
         case ROW_NOTIFICATIONS:
             presentFragment(new NotificationsSettingsActivity());
             break;
@@ -291,6 +322,48 @@ public class PurpleSettingsActivity extends UniversalFragment
         if (listView != null) {
             listView.adapter.update(true);
         }
+    }
+
+    /**
+     * Names this device, into {@code [devices]}.
+     *
+     * The table is {@code "<id>" = "<label>"}, so the id is the KEY, and
+     * {@code setTableString} writes a key it has to add bare. That works
+     * because an id is letters, digits and a hyphen, all of which a bare TOML
+     * key allows; the core reads a key the user quoted just the same.
+     *
+     * An empty name writes an empty label rather than removing the line, which
+     * the core and this screen both read as no name at all.
+     */
+    private void nameDevice() {
+        final Activity activity = getParentActivity();
+        if (activity == null) {
+            return;
+        }
+        final PurpleCore.Loaded state = PurpleGate.state();
+        final String known = PurpleDevice.labelFor(state, PurpleDevice.id());
+
+        final EditTextBoldCursor field = new EditTextBoldCursor(activity);
+        field.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+        field.setTextColor(Theme.getColor(Theme.key_dialogTextBlack));
+        field.setHintTextColor(Theme.getColor(Theme.key_dialogTextHint));
+        field.setBackgroundDrawable(null);
+        field.setSingleLine(true);
+        field.setHint(getString(R.string.PurpleThisDevice));
+        field.setPadding(AndroidUtilities.dp(20), 0, AndroidUtilities.dp(20), 0);
+        if (known != null) {
+            field.setText(known);
+        }
+
+        final AlertDialog.Builder builder = new AlertDialog.Builder(activity);
+        builder.setTitle(getString(R.string.PurpleThisDeviceTitle));
+        builder.setMessage(PurpleDevice.id());
+        builder.setView(field);
+        builder.setPositiveButton(getString(R.string.Save), (dialog, which) -> write(
+                PurpleWriter.setTableString("devices", PurpleDevice.id(),
+                        field.getText().toString().trim(), "device label")));
+        builder.setNegativeButton(getString(R.string.Cancel), null);
+        showDialog(builder.create());
     }
 
     // ---- the file, in and out ------------------------------------------------
