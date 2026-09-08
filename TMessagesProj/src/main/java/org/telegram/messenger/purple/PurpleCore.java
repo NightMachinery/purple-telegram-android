@@ -114,6 +114,9 @@ public final class PurpleCore {
 
     private static native String scheduleTickNative(byte[] stateUtf8);
 
+    private static native String focusTickNative(
+            byte[] stateUtf8, boolean active, String enterTarget);
+
     private static native String setOverrideNative(
             byte[] stateUtf8, long bareId, int kind, int seconds);
 
@@ -385,6 +388,49 @@ public final class PurpleCore {
         }
     }
 
+    /** What one focus pass decided, or null when it decided nothing. */
+    public static final class FocusChange {
+        /**
+         * What happened, for the log line: {@code none} when only the flag
+         * moved, {@code entered}, {@code restored} when leaving put the
+         * pre-focus preset back, {@code schedule} when a window that opened
+         * during the session took it instead, {@code exited} when
+         * {@code exit_preset} named one outright, {@code kept} when the preset
+         * in force was chosen during the session and outlives it.
+         */
+        public final String change;
+
+        /** The preset in force afterwards. */
+        public final String preset;
+
+        /** What put it there, as the core names the source. */
+        public final String source;
+
+        /** True while focus is holding the preset. */
+        public final boolean session;
+
+        /**
+         * What the schedule wanted at the moment this session began, handed
+         * back only when one just began. The caller keeps it until
+         * {@link #session} goes false: it is what tells leaving whether a
+         * window opened or closed while focus held the preset, and state.toml
+         * has no key for it.
+         */
+        public final String enterTarget;
+
+        public final String text;
+
+        FocusChange(String change, String preset, String source, boolean session,
+                String enterTarget, String text) {
+            this.change = change;
+            this.preset = preset;
+            this.source = source;
+            this.session = session;
+            this.enterTarget = enterTarget;
+            this.text = text;
+        }
+    }
+
     /**
      * Starts or ends a peek.
      *
@@ -490,6 +536,52 @@ public final class PurpleCore {
                     object.optString("target", ""),
                     object.optString("kept", ""),
                     object.optString("keptSource", ""),
+                    text);
+        } catch (JSONException e) {
+            FileLog.e(e);
+            return null;
+        }
+    }
+
+    /**
+     * One pass of OS focus sync: record what the interruption filter says, and
+     * act on it if that is an edge.
+     *
+     * The detector and the policy in one call, unlike the desktop where they
+     * are two - see the bridge. {@code ensureLoaded} is not called here: like
+     * the schedule tick this answers from the settings already in the gate, and
+     * nothing has loaded them yet before the first reload.
+     *
+     * @param active     whether the OS says a focus mode is on
+     * @param enterTarget what the caller remembers of {@link
+     *                    FocusChange#enterTarget}, or null
+     * @return what to do, or null when there is nothing to write
+     */
+    public static FocusChange focusTick(byte[] state, boolean active, String enterTarget) {
+        final String json;
+        try {
+            json = focusTickNative(state, active, enterTarget);
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return null;
+        }
+        if (json == null) {
+            return null;
+        }
+        try {
+            final JSONObject object = new JSONObject(json);
+            final String text = object.isNull("text") ? null : object.optString("text", null);
+            if (text == null) {
+                return null;
+            }
+            return new FocusChange(
+                    object.optString("change", "none"),
+                    object.optString("preset", ""),
+                    object.optString("source", ""),
+                    object.optBoolean("session", false),
+                    object.isNull("enterTarget")
+                            ? null
+                            : object.optString("enterTarget", null),
                     text);
         } catch (JSONException e) {
             FileLog.e(e);
@@ -1070,6 +1162,23 @@ public final class PurpleCore {
         /** The rules the parser kept, in file order. */
         public final List<ScheduleRule> scheduleRules;
 
+        /**
+         * Whether {@code [focus_sync]} is on - the parser's answer, not the
+         * file's. It turns the flag off itself when {@code enter_preset} names
+         * nothing that exists, so a switch reading the raw key would sit on
+         * while nothing happened.
+         */
+        public final boolean focusSyncEnabled;
+
+        /** The preset a focus mode turns on, or empty when the file names none. */
+        public final String focusSyncEnter;
+
+        /**
+         * What leaving one goes back to: a preset name, or {@code previous} -
+         * the default - for whatever was running when focus took over.
+         */
+        public final String focusSyncExit;
+
         /** Peek and schedule, which move on a clock rather than on an edit. */
         public final Clock clock;
 
@@ -1092,8 +1201,9 @@ public final class PurpleCore {
                 List<View> views, boolean hideEverywhere,
                 boolean hideInvisibleSuggestions, boolean hideArchive,
                 boolean scheduleEnabled, String scheduleTarget, int scheduleNowIndex,
-                List<ScheduleRule> scheduleRules, Clock clock, boolean premium,
-                String stateText) {
+                List<ScheduleRule> scheduleRules, boolean focusSyncEnabled,
+                String focusSyncEnter, String focusSyncExit, Clock clock,
+                boolean premium, String stateText) {
             this.ok = ok;
             this.error = error;
             this.warnings = warnings;
@@ -1121,6 +1231,9 @@ public final class PurpleCore {
             this.scheduleTarget = scheduleTarget;
             this.scheduleNowIndex = scheduleNowIndex;
             this.scheduleRules = scheduleRules;
+            this.focusSyncEnabled = focusSyncEnabled;
+            this.focusSyncEnter = focusSyncEnter;
+            this.focusSyncExit = focusSyncExit;
             this.clock = clock;
             this.premium = premium;
             this.stateText = stateText;
@@ -1150,7 +1263,8 @@ public final class PurpleCore {
                     Collections.<ExemptFolder>emptyList(), STOCK_DEFAULT_MODES, 0,
                     Collections.<PresetInfo>emptyList(), Collections.<View>emptyList(),
                     false, true, true, false, null, -1,
-                    Collections.<ScheduleRule>emptyList(), Clock.NONE, true, null);
+                    Collections.<ScheduleRule>emptyList(), false, "", "previous",
+                    Clock.NONE, true, null);
         }
 
         static Loaded fromJson(String json) {
@@ -1296,6 +1410,12 @@ public final class PurpleCore {
                                 : object.optString("scheduleTarget", null),
                         object.optInt("scheduleNowIndex", -1),
                         scheduleRules,
+                        // Off unless the result says otherwise, which is also
+                        // the core's default: a load that somehow lacks the
+                        // table must not start driving the preset.
+                        object.optBoolean("focusSyncEnabled", false),
+                        object.optString("focusSyncEnter", ""),
+                        object.optString("focusSyncExit", "previous"),
                         Clock.fromJson(object),
                         object.optBoolean("premium", true),
                         object.isNull("stateText") ? null : object.optString("stateText", null));

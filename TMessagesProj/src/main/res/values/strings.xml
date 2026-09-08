@@ -11338,6 +11338,10 @@
     <string name="PurplePremiumLocalInfo">Unlocks the Premium features this client withholds on its own. Nothing is bought and nothing reaches the server.</string>
     <string name="PurpleHideSuggestions">Hide hidden chats from suggestions</string>
     <string name="PurpleHideSuggestionsInfo">Keeps a chat the preset hides out of recent and frequent chats, the share sheet and the direct-share targets. It stays in search and in the forward picker.</string>
+    <string name="PurpleFollowDnd">Follow Do Not Disturb</string>
+    <string name="PurpleFollowDndInfo">Do Not Disturb on: %1$s. Off: %2$s.</string>
+    <string name="PurpleFollowDndPrevious">whatever was running before</string>
+    <string name="PurpleFollowDndUnset">settings.toml names no preset for this. Set [focus_sync] enter_preset, and optionally exit_preset, before turning it on.</string>
     <string name="PurpleSettingsFileHeader">Settings file</string>
     <string name="PurpleSettingsFileOk">Read without a complaint.</string>
     <string name="PurpleSettingsFileWarnings_one">Read, with %1$d warning.</string>
