@@ -174,7 +174,13 @@ once. Warnings are listed after a save; the import path only counts them.
 
 The **schedule screen** is the list of rulesets, with the master switch, the
 pause, and a line saying what the schedule is doing now - "now: work until
-17:00, then home" inside a window, "now: home until 09:00" outside one. What
+17:00, then home" inside a window, "now: home until 09:00" outside one, and
+"Mon 09:00" rather than a bare time for a window that is not today. Which of
+those sentences it is comes from the core, along with every part of it; only
+the wording is here, because it lives in `strings.xml` and goes through the
+usual translation pipeline. The schedule tick and the focus policy went the
+same way: they were written once here in the bridge and once in the desktop
+fork, in C++ both times, and are now one tested function each. What
 happens between the windows is a key rather than a constant: `[schedule]
 outside` names the preset in force whenever no rule covers the moment, and a
 window ending is a move to that, which still only undoes a preset the schedule
