@@ -1447,6 +1447,18 @@ public final class PurpleCore {
         public final boolean hideInvisibleSuggestions;
 
         /**
+         * Whether the Channels tab's "similar channels" section is drawn -
+         * {@code [suggestions] recommended_channels_p}.
+         *
+         * Off unless the file says otherwise, which is the opposite default
+         * from everything else in the table and deliberately so: it is the one
+         * suggestion in the app that is not assembled out of your own chats -
+         * the server picks it - and a fork about deciding who reaches you is
+         * not the place to switch that on for somebody.
+         */
+        public final boolean recommendedChannels;
+
+        /**
          * Whether the archive is out of the way while this preset runs -
          * {@code hide_archive_p}: no pull gesture, no row, the same state as an
          * account that has never archived anything.
@@ -1596,6 +1608,7 @@ public final class PurpleCore {
             this.views = views;
             this.hideEverywhere = hideEverywhere;
             this.hideInvisibleSuggestions = hideInvisibleSuggestions;
+            this.recommendedChannels = recommendedChannels;
             this.hideArchive = hideArchive;
             this.scheduleEnabled = scheduleEnabled;
             this.scheduleTarget = scheduleTarget;
@@ -1830,10 +1843,15 @@ public final class PurpleCore {
                         presets,
                         views,
                         object.optBoolean("hideEverywhere", false),
-                        // The next three default true, matching the core's
-                        // own defaults, so a result that somehow lacks them
-                        // keeps hiding rather than quietly revealing.
+                        // These three default true, matching the core's own
+                        // defaults, so a result that somehow lacks them keeps
+                        // hiding rather than quietly revealing.
                         object.optBoolean("hideInvisibleSuggestions", true),
+                        // The exception, and false for the same reason the
+                        // core has it false: the server's channel picks are
+                        // the one suggestion not made out of your own chats,
+                        // so a result missing the key leaves them out.
+                        object.optBoolean("recommendedChannels", false),
                         object.optBoolean("hideArchive", true),
                         object.optBoolean("scheduleEnabled", true),
                         object.isNull("scheduleTarget")

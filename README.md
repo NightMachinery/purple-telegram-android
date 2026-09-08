@@ -224,16 +224,21 @@ to the schedule rather than to the preset the session started with - a window
 missed for the length of a focus mode was the one case where the two features
 disagreed.
 
-Two keys new to the file, shared with the desktop. `[suggestions]
+Three keys new to the file, shared with the desktop. `[suggestions]
 hide_invisible_p` (default true) keeps a chat the preset hides - and no extra
 view or shown folder tab reaches - out of the frequent-contact strip, the
 recent searches, the quick-share row, the gift and boost pickers and the OS
-share sheet's direct targets. Typed search and the forward picker still find
-it. A preset's `hide_archive_p` (default true) takes the archive out of the
-way while it runs: no pull-down, no row, the state of an account that never
-archived anything; archiving still works, search and the Archive settings
-screen still reach it, and `hide_archive_p = false` on the preset keeps the
-pull. Under Normal both are stock.
+share sheet's direct targets. The Channels tab of global search follows the
+same rule - your own channels are filtered by it, and the "similar channels"
+the server suggests are left out of the tab entirely while a preset filters,
+since they are the one strip not assembled out of your own chats, until
+`[suggestions] recommended_channels_p = true` (default false) asks for them
+back. Typed search and the forward picker still find it. A preset's
+`hide_archive_p` (default true) takes the archive out of the way while it runs:
+no pull-down, no row, the state of an account that never archived anything;
+archiving still works, search and the Archive settings screen still reach it,
+and `hide_archive_p = false` on the preset keeps the pull. Under Normal all
+three are stock.
 
 Work Mode is ported, the launch-time offer of a settings import included. The
 contents of a folder tab are deliberately unfiltered: a preset decides its own
