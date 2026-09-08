@@ -307,6 +307,14 @@ period onto one clock, which is what a schedule window gets placed by;
 hiding; and a month gets an hour-by-weekday heat map. Export writes a CSV to
 the app's cache and hands it to the share sheet.
 
+Day boundaries are decided in the device's own local time, read from the C
+library, which knows the whole daylight-saving rule - so a range that straddles
+a change still has days of the right length. Java measures the offset in force
+and the bridge checks its answer against it before trusting it; if the two ever
+disagree the offset wins, which is an hour out across a change and right the
+rest of the year. Qt's named zones are never asked for: resolving one needs a
+JavaVM this library deliberately never installs, and asking crashed the process.
+
 **Budgets** are `[[screen_time.budgets]]`, each with a `target` (`all`,
 `chat:<id>`, `kind:<kind>`, `preset:<name>`), a `per_day`, and a `mode`. A
 `soft` budget shows a bulletin at the limit, once per chat per day, and does
