@@ -259,6 +259,7 @@ add_library(purplecore SHARED
         purple/purple/purple_settings.cpp
         purple/purple/purple_splice.cpp
         purple/purple/purple_state.cpp
+        purple/purple/purple_screentime.cpp
         purple/purple/purple_engine.cpp)
 
 # C++20 over the file-wide -std=c++14: a later -std wins with clang, and the

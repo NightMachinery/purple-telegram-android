@@ -22,6 +22,7 @@ any later version.
 #include <QtCore/QDateTime>
 #include <QtCore/QString>
 
+#include <algorithm>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -185,6 +186,18 @@ struct Gate {
 [[nodiscard]] Gate &TheGate() {
 	static auto result = Gate();
 	return result;
+}
+
+// How long a read stays worth showing, from the loaded file.
+//
+// The trade natives are handed state.toml and nothing else - the caller owns
+// that file and the write - so the one setting they need comes from here. A
+// gate that has never loaded answers with the core's own default, which is the
+// same 24h the desktop uses, so a query before the first load is not wrong.
+[[nodiscard]] int RememberSeconds() {
+	auto &gate = TheGate();
+	const auto lock = std::lock_guard(gate.mutex);
+	return gate.settings.lastSeen.tradeRememberSeconds;
 }
 
 // What a preset does, in the numbers the preset picker prints. Mirrors
@@ -1213,6 +1226,22 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 	// file it just wrote and reads the key out of that.
 	json += QStringLiteral(",\"sendAfterSave\":");
 	AppendJsonBool(json, gate.settings.sync.sendAfterSave);
+	// Purple: [last_seen], handed over whole. The two switches are read on
+	// every status line the chat header and the profile draw, and the three
+	// durations by the trade; a JNI call per paint to ask whether a reason may
+	// be appended is exactly the cost this path cannot carry. Read from the
+	// file rather than from the resolution because none of it belongs to a
+	// preset - it is how a status line reads, not what gets through.
+	json += QStringLiteral(",\"lastSeenReasons\":");
+	AppendJsonBool(json, gate.settings.lastSeen.reasons);
+	json += QStringLiteral(",\"lastSeenTrade\":");
+	AppendJsonBool(json, gate.settings.lastSeen.trade);
+	json += QStringLiteral(",\"lastSeenTradeHold\":");
+	json += QString::number(gate.settings.lastSeen.tradeHoldSeconds);
+	json += QStringLiteral(",\"lastSeenTradeRemember\":");
+	json += QString::number(gate.settings.lastSeen.tradeRememberSeconds);
+	json += QStringLiteral(",\"lastSeenTradeCooldown\":");
+	json += QString::number(gate.settings.lastSeen.tradeCooldownSeconds);
 	json += QStringLiteral(",\"views\":");
 	AppendViewsJson(json, gate.resolved);
 	// Every list in the file, not the running preset's - the membership menu
@@ -2106,6 +2135,176 @@ Java_org_telegram_messenger_purple_PurpleCore_noteImportedNative(
 		return nullptr;
 	}
 	return ToJava(env, NoteFingerprint(stateText, bytes, false));
+}
+
+// Why a last seen reads as coarse, as the core's LastSeenReason numbers it.
+//
+// Three booleans rather than the status object because the core has no idea
+// what a TL_userStatusRecently is and must not learn: the client that owns the
+// TL layer flattens it to "is there a real moment in this", "is it one of the
+// three coarse spellings", "does it carry by_me", and the one shared rule
+// answers the same way in both forks.
+//
+// Touches neither the gate nor any file, so it costs no lock - it is asked
+// once per status line drawn.
+extern "C" JNIEXPORT jint JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_lastSeenReasonNative(
+		JNIEnv *,
+		jclass,
+		jboolean exactKnown,
+		jboolean coarse,
+		jboolean byMe) {
+	return jint(Purple::ReasonFor(
+		exactKnown == JNI_TRUE,
+		coarse == JNI_TRUE,
+		byMe == JNI_TRUE));
+}
+
+// Writes down one finished trade and hands back the state.toml text to save.
+//
+// A `wasOnline' of zero is not a failure to record: a trade whose hold ran out
+// without an exact status ever arriving is still a moment of exposure that
+// happened, and it is what the cooldown counts. Parses the text it is given
+// rather than the loaded gate, like every other state writer here, because the
+// caller owns the file and the write.
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_rememberTradeNative(
+		JNIEnv *env,
+		jclass,
+		jbyteArray stateUtf8,
+		jlong peer,
+		jlong readAt,
+		jlong wasOnline) {
+	auto stateText = QString();
+	if (!ReadUtf8(env, stateUtf8, stateText)) {
+		return nullptr;
+	}
+	const auto id = Purple::PeerIdValue(peer);
+	if (!id || !readAt) {
+		return nullptr;
+	}
+	auto state = Purple::ParseState(stateText, QStringLiteral("state.toml"));
+	Purple::RememberTrade(state, id, readAt, wasOnline);
+	// Dropped here rather than at the next load, so a file that has been
+	// traded against for a year does not carry a year of stale records that
+	// nothing will ever show. The remember window comes from the gate because
+	// it is a setting and this is handed only state.
+	Purple::PruneLastSeenTrades(state, readAt, RememberSeconds());
+	return ToJava(env, Purple::SerializeState(state));
+}
+
+// What was read for this person, if it is still worth showing: a two-element
+// array of `read_at' and `was_online', or null for nothing remembered.
+//
+// Two numbers rather than one because both status lines it feeds need both:
+// "last seen 14:32" is the moment and "as of 3 min ago" is the age of the
+// news, and a reader given only the moment would have to pretend it was read
+// just now.
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_rememberedTradeNative(
+		JNIEnv *env,
+		jclass,
+		jbyteArray stateUtf8,
+		jlong peer,
+		jlong now) {
+	auto stateText = QString();
+	if (!ReadUtf8(env, stateUtf8, stateText)) {
+		return nullptr;
+	}
+	const auto state = Purple::ParseState(
+		stateText,
+		QStringLiteral("state.toml"));
+	const auto trade = Purple::RememberedTrade(
+		state,
+		Purple::PeerIdValue(peer),
+		now ? int64(now) : NowUnix(),
+		RememberSeconds());
+	if (!trade) {
+		return nullptr;
+	}
+	const auto result = env->NewLongArray(2);
+	if (!result) {
+		return nullptr;
+	}
+	const jlong values[2] = { jlong(trade->readAtUnix), jlong(trade->wasOnlineUnix) };
+	env->SetLongArrayRegion(result, 0, 2, values);
+	return result;
+}
+
+// Whether a trade with this person may be offered now, or whether the last one
+// is still inside its cooldown. The cooldown is the gate's, for the same reason
+// the remember window is: it is a setting, and only state was handed over.
+extern "C" JNIEXPORT jboolean JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_tradeAllowedNative(
+		JNIEnv *env,
+		jclass,
+		jbyteArray stateUtf8,
+		jlong peer,
+		jlong now) {
+	auto stateText = QString();
+	if (!ReadUtf8(env, stateUtf8, stateText)) {
+		return JNI_FALSE;
+	}
+	const auto state = Purple::ParseState(
+		stateText,
+		QStringLiteral("state.toml"));
+	auto &gate = TheGate();
+	auto cooldown = 0;
+	{
+		const auto lock = std::lock_guard(gate.mutex);
+		cooldown = gate.settings.lastSeen.tradeCooldownSeconds;
+	}
+	return Purple::TradeAllowed(
+		state,
+		Purple::PeerIdValue(peer),
+		now ? int64(now) : NowUnix(),
+		cooldown) ? JNI_TRUE : JNI_FALSE;
+}
+
+// Every trade still worth showing, newest read first, as JSON for the trade log
+// on the settings screen.
+//
+// A list native as well as the per-peer one above because the log is the one
+// caller that has no peer in hand - it is asking what happened, not about
+// somebody - and walking the file peer by peer would need the list first
+// anyway.
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_tradesNative(
+		JNIEnv *env,
+		jclass,
+		jbyteArray stateUtf8,
+		jlong now) {
+	auto stateText = QString();
+	if (!ReadUtf8(env, stateUtf8, stateText)) {
+		return nullptr;
+	}
+	auto state = Purple::ParseState(stateText, QStringLiteral("state.toml"));
+	const auto at = now ? int64(now) : NowUnix();
+	Purple::PruneLastSeenTrades(state, at, RememberSeconds());
+	auto trades = state.lastSeenTrades;
+	std::sort(trades.begin(), trades.end(), [](
+			const Purple::LastSeenTrade &a,
+			const Purple::LastSeenTrade &b) {
+		return a.readAtUnix > b.readAtUnix;
+	});
+	auto json = QString();
+	json += QChar('[');
+	auto first = true;
+	for (const auto &trade : trades) {
+		if (!first) {
+			json += QChar(',');
+		}
+		first = false;
+		json += QStringLiteral("{\"peer\":");
+		json += QString::number(qint64(trade.peer));
+		json += QStringLiteral(",\"readAt\":");
+		json += QString::number(qint64(trade.readAtUnix));
+		json += QStringLiteral(",\"wasOnline\":");
+		json += QString::number(qint64(trade.wasOnlineUnix));
+		json += QChar('}');
+	}
+	json += QChar(']');
+	return ToJava(env, json);
 }
 
 // Android calls JNI_OnLoad after loading a library, and it finds the symbol

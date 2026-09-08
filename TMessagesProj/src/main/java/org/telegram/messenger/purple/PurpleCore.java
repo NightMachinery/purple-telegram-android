@@ -167,6 +167,20 @@ public final class PurpleCore {
 
     private static native String noteImportedNative(byte[] stateUtf8, byte[] fileBytes);
 
+    private static native int lastSeenReasonNative(
+            boolean exactKnown, boolean coarse, boolean byMe);
+
+    private static native String rememberTradeNative(
+            byte[] stateUtf8, long peer, long readAt, long wasOnline);
+
+    private static native long[] rememberedTradeNative(
+            byte[] stateUtf8, long peer, long now);
+
+    private static native boolean tradeAllowedNative(
+            byte[] stateUtf8, long peer, long now);
+
+    private static native String tradesNative(byte[] stateUtf8, long now);
+
     /**
      * The three "until" decisions, numbered as the core's {@code OverrideKind}.
      *
@@ -1562,6 +1576,40 @@ public final class PurpleCore {
          */
         public final boolean sendAfterSave;
 
+        /**
+         * Whether a coarse last seen says why it is coarse, in the chat header
+         * and the profile - {@code [last_seen] reasons_p}.
+         *
+         * On unless the file says otherwise, matching the core: "last seen
+         * recently" with no reason is the fork withholding something it knows.
+         */
+        public final boolean lastSeenReasons;
+
+        /**
+         * Whether the "show mine to see theirs" sheet is offered at all -
+         * {@code [last_seen] trade_p}. The reason line is tappable only while
+         * this is on, so turning it off leaves the explanation and takes away
+         * the offer.
+         */
+        public final boolean lastSeenTrade;
+
+        /**
+         * How long to wait for their exact {@code was_online} after asking,
+         * before putting the privacy rules back - {@code trade_hold}. Short by
+         * design: the whole exposure is this window.
+         */
+        public final int lastSeenTradeHold;
+
+        /** How long a read stays worth showing - {@code trade_remember}. */
+        public final int lastSeenTradeRemember;
+
+        /**
+         * The least time between two trades with the same person -
+         * {@code trade_cooldown}. One trade is a moment of exposure chosen on
+         * purpose; one offered every time their chat opens is a subscription.
+         */
+        public final int lastSeenTradeCooldown;
+
         /** What this install told the core it calls itself. */
         public final String deviceId;
 
@@ -1585,6 +1633,8 @@ public final class PurpleCore {
                 List<String> scheduleChosen, List<ScheduleRule> scheduleRules,
                 boolean focusSyncEnabled, String focusSyncEnter, String focusSyncExit,
                 Clock clock, boolean premium, boolean sendAfterSave,
+                boolean lastSeenReasons, boolean lastSeenTrade, int lastSeenTradeHold,
+                int lastSeenTradeRemember, int lastSeenTradeCooldown,
                 String deviceId, List<DeviceLabel> devices, String stateText) {
             this.ok = ok;
             this.error = error;
@@ -1623,6 +1673,11 @@ public final class PurpleCore {
             this.clock = clock;
             this.premium = premium;
             this.sendAfterSave = sendAfterSave;
+            this.lastSeenReasons = lastSeenReasons;
+            this.lastSeenTrade = lastSeenTrade;
+            this.lastSeenTradeHold = lastSeenTradeHold;
+            this.lastSeenTradeRemember = lastSeenTradeRemember;
+            this.lastSeenTradeCooldown = lastSeenTradeCooldown;
             this.deviceId = deviceId;
             this.devices = devices;
             this.stateText = stateText;
@@ -1684,7 +1739,7 @@ public final class PurpleCore {
                     Collections.<ScheduleRuleset>emptyList(),
                     Collections.<String>emptyList(),
                     Collections.<ScheduleRule>emptyList(), false, "", "previous",
-                    Clock.NONE, true, false, "",
+                    Clock.NONE, true, false, true, true, 10, 24 * 3600, 5 * 60, "",
                     Collections.<DeviceLabel>emptyList(), null);
         }
 
@@ -1876,12 +1931,135 @@ public final class PurpleCore {
                         // core: nothing should start posting documents because
                         // a load result came back short of a key.
                         object.optBoolean("sendAfterSave", false),
+                        // Both on unless the result says otherwise, matching
+                        // the core: a load short of the keys should explain a
+                        // coarse status rather than quietly go back to
+                        // withholding the reason it knows.
+                        object.optBoolean("lastSeenReasons", true),
+                        object.optBoolean("lastSeenTrade", true),
+                        object.optInt("lastSeenTradeHold", 10),
+                        object.optInt("lastSeenTradeRemember", 24 * 3600),
+                        object.optInt("lastSeenTradeCooldown", 5 * 60),
                         object.optString("deviceId", ""),
                         devices,
                         object.isNull("stateText") ? null : object.optString("stateText", null));
             } catch (JSONException e) {
                 return failed("bad result from the core");
             }
+        }
+    }
+
+    /**
+     * Why a last seen reads as coarse, as the core's {@code LastSeenReason}
+     * numbers it.
+     *
+     * {@link #REASON_NONE} is both "there is a real moment in this status" and
+     * "a long time ago": the server has no field saying whether the second is
+     * inactivity or a block, and the fork does not guess. Only
+     * {@link #REASON_BY_ME} has anything the user can act on, and it is the
+     * only one the trade is offered for.
+     */
+    public static final int REASON_NONE = 0;
+    public static final int REASON_BY_ME = 1;
+    public static final int REASON_HIDDEN_BY_THEM = 2;
+
+    /**
+     * Why one status is coarse. The three booleans are what the TL layer
+     * flattens to - the core knows nothing about TL_userStatusRecently and must
+     * not learn - so both forks answer this the same way from one rule.
+     *
+     * @param exactKnown a status carrying a real {@code was_online}
+     * @param coarse     one of recently / last week / last month
+     * @param byMe       the {@code by_me} flag on a coarse status
+     */
+    public static int lastSeenReason(boolean exactKnown, boolean coarse, boolean byMe) {
+        ensureLoaded();
+        return lastSeenReasonNative(exactKnown, coarse, byMe);
+    }
+
+    /**
+     * Writes down one finished trade and returns the state.toml text to save,
+     * or null if the state could not be read.
+     *
+     * A {@code wasOnlineUnix} of zero records a trade whose hold ran out with
+     * no exact status ever arriving. That is still a moment of exposure that
+     * happened, and it is what the cooldown counts.
+     */
+    public static String rememberTrade(byte[] stateUtf8, long peer, long readAtUnix,
+            long wasOnlineUnix) {
+        ensureLoaded();
+        return rememberTradeNative(stateUtf8, peer, readAtUnix, wasOnlineUnix);
+    }
+
+    /**
+     * What was read for one person, if the read is still inside
+     * {@code trade_remember}, or null.
+     */
+    public static Trade rememberedTrade(byte[] stateUtf8, long peer, long nowUnix) {
+        ensureLoaded();
+        final long[] pair = rememberedTradeNative(stateUtf8, peer, nowUnix);
+        return (pair == null || pair.length < 2)
+                ? null
+                : new Trade(peer, pair[0], pair[1]);
+    }
+
+    /**
+     * Whether a trade with this person may be offered now, or whether the last
+     * one is still inside {@code trade_cooldown}.
+     */
+    public static boolean tradeAllowed(byte[] stateUtf8, long peer, long nowUnix) {
+        ensureLoaded();
+        return tradeAllowedNative(stateUtf8, peer, nowUnix);
+    }
+
+    /** Every trade still worth showing, newest read first. */
+    public static List<Trade> trades(byte[] stateUtf8, long nowUnix) {
+        ensureLoaded();
+        final List<Trade> result = new ArrayList<>();
+        final String json = tradesNative(stateUtf8, nowUnix);
+        if (json == null) {
+            return result;
+        }
+        try {
+            final JSONArray array = new JSONArray(json);
+            for (int i = 0; i < array.length(); ++i) {
+                final JSONObject entry = array.optJSONObject(i);
+                if (entry == null) {
+                    continue;
+                }
+                result.add(new Trade(
+                        entry.optLong("peer", 0),
+                        entry.optLong("readAt", 0),
+                        entry.optLong("wasOnline", 0)));
+            }
+        } catch (JSONException e) {
+            FileLog.e("Purple: bad trade list from the core", e);
+        }
+        return Collections.unmodifiableList(result);
+    }
+
+    /**
+     * One remembered trade: we showed this person our last seen for a few
+     * seconds, read theirs, and put our privacy rules back.
+     */
+    public static final class Trade {
+
+        /** The bare user id we traded with. */
+        public final long peer;
+
+        /** When we read it, in unix seconds - the "as of". */
+        public final long readAtUnix;
+
+        /**
+         * Their real {@code was_online}, in unix seconds. Zero for a trade
+         * whose hold ran out with nothing exact ever arriving.
+         */
+        public final long wasOnlineUnix;
+
+        Trade(long peer, long readAtUnix, long wasOnlineUnix) {
+            this.peer = peer;
+            this.readAtUnix = readAtUnix;
+            this.wasOnlineUnix = wasOnlineUnix;
         }
     }
 
