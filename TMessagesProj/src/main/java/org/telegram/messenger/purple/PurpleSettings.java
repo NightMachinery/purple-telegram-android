@@ -134,8 +134,26 @@ public final class PurpleSettings {
         builder.show();
     }
 
+    /**
+     * Replaces settings.toml with bytes the caller has already parsed.
+     *
+     * The one writer that is not a splice: the editor hands over the whole file
+     * because the whole file is what it was editing. Public so that screen can
+     * reach it without widening {@link #writeAtomic}, which stays package-only
+     * on purpose - it writes any bytes anywhere and keeps no backup.
+     *
+     * @param reason what asked for it, for the reload's log line
+     */
+    public static boolean save(byte[] bytes, String reason) {
+        return store(bytes, reason);
+    }
+
     /** Backs the current file up, then atomically replaces it with {@code bytes}. */
     private static boolean store(byte[] bytes) {
+        return store(bytes, "import");
+    }
+
+    private static boolean store(byte[] bytes, String reason) {
         final File target = settingsFile();
         try {
             if (target.exists()) {
@@ -149,8 +167,8 @@ public final class PurpleSettings {
             return false;
         }
         // The file the gate reads has just changed under it, so resolve again
-        // rather than leave the imported settings waiting for the next restart.
-        PurpleGate.reload("import");
+        // rather than leave the new settings waiting for the next restart.
+        PurpleGate.reload(reason);
         return true;
     }
 
