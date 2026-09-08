@@ -62,7 +62,11 @@ the same splice the desktop uses, so your comments, ordering and blank lines
 survive, and the line carries the chat's name as a trailing comment. This
 exists because the ids in `members` are not shown anywhere in Telegram's UI, so
 building a list otherwise means reading a number off a profile and typing it in
-by hand.
+by hand. The box stays open across a tick, since filing a chat is usually more
+than one decision, and its rows and verdict line are re-read from the file
+after each one. The app's own writes to `settings.toml` do not come back
+through the file watcher as a second reload: the watcher compares the file
+against the bytes the app is already running on, the way the desktop does.
 
 Three files live in the app's private storage, at
 `/data/data/org.purple.telegram/files/purple/`. `settings.toml` is yours,
