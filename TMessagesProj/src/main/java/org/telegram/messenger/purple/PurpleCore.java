@@ -182,6 +182,22 @@ public final class PurpleCore {
     private static native String tradesNative(byte[] stateUtf8, long now);
 
     /**
+     * What the running preset would say about one chat with the peek set aside.
+     * Prefer {@link PurpleGate#hiddenWhilePeeking}, which is the only caller
+     * and the only question this answers.
+     */
+    private static native int visibleUnpeekedNative(long bareId, int kind);
+
+    private static native String screenTimeReportNative(byte[] settingsUtf8,
+            byte[] logUtf8, long fromMs, long toMs, int bucketUnit, String timeZone);
+
+    private static native String screenTimeLedgerNative(byte[] settingsUtf8,
+            byte[] logUtf8, long dayStartMs, String timeZone);
+
+    private static native String screenTimePruneNative(byte[] settingsUtf8,
+            byte[] logUtf8, long nowMs);
+
+    /**
      * The three "until" decisions, numbered as the core's {@code OverrideKind}.
      *
      * A decision about one chat under one preset, with a deadline: show it
@@ -1190,6 +1206,23 @@ public final class PurpleCore {
     }
 
     /**
+     * The same answer with a running peek set aside, for the one question a
+     * peek makes unanswerable: whether the chat you are looking at is one the
+     * preset hides.
+     *
+     * {@link #visible} cannot say. A peek is part of the resolution, so the
+     * core already answers {@link #SHOW_ALWAYS} for everything while one runs -
+     * which is right for drawing a chat list and wrong for asking why the chat
+     * is on it. Asked once per chat opened, never per row.
+     */
+    public static int visibleUnpeeked(long bareId, int kind) {
+        if (!loaded) {
+            ensureLoaded();
+        }
+        return visibleUnpeekedNative(bareId, kind);
+    }
+
+    /**
      * The state.toml text that makes {@code preset} the active one, chosen by
      * hand. Pure: the caller writes the result and calls
      * {@link #load(byte[], byte[])} again, which is what keeps the file and the
@@ -1739,7 +1772,8 @@ public final class PurpleCore {
                     Collections.<ScheduleRuleset>emptyList(),
                     Collections.<String>emptyList(),
                     Collections.<ScheduleRule>emptyList(), false, "", "previous",
-                    Clock.NONE, true, false, true, true, 10, 24 * 3600, 5 * 60, "",
+                    Clock.NONE, true, false, true, true, 10, 24 * 3600, 5 * 60,
+                    false, 3, 30, 60, 90, 0, "",
                     Collections.<DeviceLabel>emptyList(), null);
         }
 
