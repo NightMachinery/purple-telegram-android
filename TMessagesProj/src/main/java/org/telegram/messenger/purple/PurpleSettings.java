@@ -145,15 +145,22 @@ public final class PurpleSettings {
      * @param reason what asked for it, for the reload's log line
      */
     public static boolean save(byte[] bytes, String reason) {
-        return store(bytes, reason);
+        return store(bytes, reason, false);
     }
 
     /** Backs the current file up, then atomically replaces it with {@code bytes}. */
     private static boolean store(byte[] bytes) {
-        return store(bytes, "import");
+        return store(bytes, "import", true);
     }
 
-    private static boolean store(byte[] bytes, String reason) {
+    /**
+     * @param fromImport whether these bytes came from the other device rather
+     *                   than from something done on this one. It is the whole
+     *                   difference the auto-send cares about: an import is
+     *                   never sent back, and it is what writes down the
+     *                   fingerprint that keeps it from being.
+     */
+    private static boolean store(byte[] bytes, String reason, boolean fromImport) {
         final File target = settingsFile();
         try {
             if (target.exists()) {
@@ -169,6 +176,7 @@ public final class PurpleSettings {
         // The file the gate reads has just changed under it, so resolve again
         // rather than leave the new settings waiting for the next restart.
         PurpleGate.reload(reason);
+        PurpleSync.afterWrite(reason, fromImport);
         return true;
     }
 

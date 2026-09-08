@@ -27,20 +27,17 @@ import android.view.View;
 
 import androidx.core.content.FileProvider;
 
-import org.telegram.messenger.AccountInstance;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
-import org.telegram.messenger.FileLoader;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.MediaController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
-import org.telegram.messenger.SendMessagesHelper;
-import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.purple.PurpleCore;
 import org.telegram.messenger.purple.PurpleDevice;
 import org.telegram.messenger.purple.PurpleGate;
 import org.telegram.messenger.purple.PurpleSettings;
+import org.telegram.messenger.purple.PurpleSync;
 import org.telegram.messenger.purple.PurpleSyncOffer;
 import org.telegram.messenger.purple.PurpleWriter;
 import org.telegram.ui.ActionBar.AlertDialog;
@@ -52,14 +49,7 @@ import org.telegram.ui.Components.UniversalAdapter;
 import org.telegram.ui.Components.UniversalFragment;
 
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Date;
-import java.util.Locale;
 
 public class PurpleSettingsActivity extends UniversalFragment
         implements NotificationCenter.NotificationCenterDelegate {
@@ -77,6 +67,7 @@ public class PurpleSettingsActivity extends UniversalFragment
     private static final int ROW_NOTIFICATIONS = 11;
     private static final int ROW_FOCUS = 12;
     private static final int ROW_DEVICE = 13;
+    private static final int ROW_AUTOSEND = 14;
 
     /**
      * The file picker's request code. Its result arrives at
@@ -165,6 +156,16 @@ public class PurpleSettingsActivity extends UniversalFragment
                 PurpleSettings.settingsFile().getAbsolutePath()));
         items.add(UItem.asShadow(fileStatus(state) + "\n"
                 + getString(R.string.PurpleFilePathInfo)));
+
+        // Its own block under the file rather than a line beside the Send
+        // button, because it is a standing decision and the button is one
+        // action: turning it on means every later save posts a document, which
+        // is a different kind of thing to agree to than pressing Send once.
+        final UItem autoSend =
+                UItem.asCheck(ROW_AUTOSEND, getString(R.string.PurpleSendAfterSave));
+        autoSend.checked = (state != null && state.sendAfterSave);
+        items.add(autoSend);
+        items.add(UItem.asShadow(getString(R.string.PurpleSendAfterSaveInfo)));
 
         // Under the file rather than under Work Mode: the label is a line in
         // settings.toml like any other, and the id beside it is the string a
@@ -274,6 +275,10 @@ public class PurpleSettingsActivity extends UniversalFragment
         case ROW_SEND:
             sendToSaved();
             break;
+        case ROW_AUTOSEND:
+            write(PurpleWriter.setTableBool(
+                    "sync", "send_after_save_p", !item.checked, "auto-send switch"));
+            break;
         case ROW_CHECK:
             checkSaved();
             break;
@@ -372,68 +377,18 @@ public class PurpleSettingsActivity extends UniversalFragment
      * Puts a copy in Saved Messages, so the desktop and the next phone can pick
      * it up through the same offer this build already answers.
      *
-     * Refused when the file does not parse, which is the desktop's rule too:
-     * sending a broken file is how you break the machine you meant to sync.
+     * The send itself is {@link PurpleSync}'s, shared with the switch below it:
+     * the caption, the staged name and the refusal of a file that does not
+     * parse are what the other client matches on, so there is one copy of them.
+     * All that is left here is saying how it went.
      */
     private void sendToSaved() {
-        final Activity activity = getParentActivity();
-        final File source = PurpleSettings.settingsFile();
-        if (activity == null) {
+        final String refusal = PurpleSync.sendToSavedMessages(
+                currentAccount, PurpleGate.settingsBytes());
+        if (refusal != null) {
+            error(refusal);
             return;
         }
-        if (!source.exists()) {
-            error(getString(R.string.PurpleFileMissing));
-            return;
-        }
-        final byte[] bytes = read(source);
-        if (bytes == null) {
-            error(getString(R.string.PurpleImportFailed));
-            return;
-        }
-        final PurpleCore.ParseResult parsed;
-        try {
-            parsed = PurpleCore.parse(bytes);
-        } catch (UnsatisfiedLinkError | RuntimeException e) {
-            FileLog.e(e);
-            error(getString(R.string.PurpleCoreUnavailable));
-            return;
-        }
-        if (!parsed.ok) {
-            error(getString(R.string.PurpleSendRefused));
-            return;
-        }
-        // Staged under the exact name, because the name is what the launch
-        // offer and the chat's own menu item match on. Sending the real file
-        // would work too, but it would hand an uploader a path the gate is
-        // writing to.
-        final File staged = new File(
-                FileLoader.getDirectory(FileLoader.MEDIA_DIR_CACHE),
-                PurpleSettings.FILE_NAME);
-        if (!writeBytes(staged, bytes)) {
-            error(getString(R.string.PurpleImportFailed));
-            return;
-        }
-        final String caption = "Purple settings · schema v" + parsed.version + " · "
-                + new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(new Date())
-                + " · Android";
-        SendMessagesHelper.prepareSendingDocument(
-                AccountInstance.getInstance(currentAccount),
-                staged.getAbsolutePath(),
-                staged.getAbsolutePath(),
-                null,
-                caption,
-                "text/plain",
-                UserConfig.getInstance(currentAccount).getClientUserId(),
-                null,
-                null,
-                null,
-                null,
-                null,
-                true,
-                0,
-                null,
-                null,
-                false);
         if (BulletinFactory.canShowBulletin(this)) {
             BulletinFactory.of(this)
                     .createSimpleBulletin(R.raw.contact_check, getString(R.string.PurpleSentToSaved))
@@ -541,42 +496,6 @@ public class PurpleSettingsActivity extends UniversalFragment
     private void error(CharSequence text) {
         if (BulletinFactory.canShowBulletin(this)) {
             BulletinFactory.of(this).createErrorBulletin(text).show();
-        }
-    }
-
-    private static byte[] read(File file) {
-        try {
-            final InputStream in = new FileInputStream(file);
-            try {
-                final java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
-                final byte[] buffer = new byte[8192];
-                int count;
-                while ((count = in.read(buffer)) > 0) {
-                    out.write(buffer, 0, count);
-                }
-                return out.toByteArray();
-            } finally {
-                in.close();
-            }
-        } catch (Exception e) {
-            FileLog.e(e);
-            return null;
-        }
-    }
-
-    private static boolean writeBytes(File file, byte[] bytes) {
-        try {
-            final OutputStream out = new FileOutputStream(file);
-            try {
-                out.write(bytes);
-                out.flush();
-            } finally {
-                out.close();
-            }
-            return true;
-        } catch (Exception e) {
-            FileLog.e(e);
-            return false;
         }
     }
 }

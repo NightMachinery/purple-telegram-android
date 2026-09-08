@@ -53,6 +53,11 @@ public final class PurpleWriter {
         // there on its own, but only after its quiet period, and a switch the
         // user has just flipped should take effect now.
         PurpleGate.reload(reason);
+        // And the other machine may want it. Nothing happens here unless
+        // [sync] send_after_save_p is on; the reload comes first because the
+        // send reads the file back, and this device should already be running
+        // whatever it is about to post.
+        PurpleSync.afterWrite(reason, false);
         return null;
     }
 

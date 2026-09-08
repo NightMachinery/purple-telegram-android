@@ -11406,5 +11406,7 @@
     <string name="PurpleSendRefused">settings.toml does not parse, so nothing was sent.</string>
     <string name="PurpleNothingNewer">Nothing newer in Saved Messages.</string>
     <string name="PurpleCheckingSaved">Looking in Saved Messages\u2026</string>
+    <string name="PurpleSendAfterSave">Send to Saved Messages after every save</string>
+    <string name="PurpleSendAfterSaveInfo">Every change this app makes to settings.toml is posted to Saved Messages, five seconds after the last one, so a run of taps is one document. A file imported from Saved Messages is never sent back, and the same file is never sent twice.</string>
     <string name="PurpleWriteFailed">Could not edit settings.toml: %1$s</string>
 </resources>
