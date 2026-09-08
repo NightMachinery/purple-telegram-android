@@ -1607,6 +1607,18 @@ public final class PurpleCore {
         public final String scheduleOutside;
 
         /**
+         * What {@code [schedule] outside} itself says - the key, not what this
+         * device ends up running because of it.
+         *
+         * The same string as {@link #scheduleOutside} until a chosen ruleset
+         * names an {@code outside} of its own, and different from it exactly
+         * when one does. The schedule screen's row edits this key, so this is
+         * the value that row has to show and open its picker on: a row reading
+         * the resolved one shows a preset and then saves over a different one.
+         */
+        public final String scheduleOutsideKey;
+
+        /**
          * The preset the schedule wants right now, or null when no window
          * covers the moment - which includes a schedule switched off or with no
          * rules. Null is a different answer from wanting Normal, and has to be:
@@ -1782,6 +1794,7 @@ public final class PurpleCore {
                 boolean hideInvisibleSuggestions, boolean recommendedChannels,
                 boolean hideArchive,
                 boolean scheduleEnabled, String scheduleTarget, String scheduleOutside,
+                String scheduleOutsideKey,
                 ScheduleNow scheduleNow, List<ScheduleRuleset> scheduleRulesets,
                 List<String> scheduleChosen, List<ScheduleRule> scheduleRules,
                 boolean focusSyncEnabled, String focusSyncEnter, String focusSyncExit,
@@ -1819,6 +1832,7 @@ public final class PurpleCore {
             this.scheduleEnabled = scheduleEnabled;
             this.scheduleTarget = scheduleTarget;
             this.scheduleOutside = scheduleOutside;
+            this.scheduleOutsideKey = scheduleOutsideKey;
             this.scheduleNow = scheduleNow;
             this.scheduleRulesets = scheduleRulesets;
             this.scheduleChosen = scheduleChosen;
@@ -1897,7 +1911,7 @@ public final class PurpleCore {
                     Collections.<String>emptyList(),
                     Collections.<ExemptFolder>emptyList(), STOCK_DEFAULT_MODES, 0,
                     Collections.<PresetInfo>emptyList(), Collections.<View>emptyList(),
-                    false, true, false, true, false, null, "normal", null,
+                    false, true, false, true, false, null, "normal", "normal", null,
                     Collections.<ScheduleRuleset>emptyList(),
                     Collections.<String>emptyList(),
                     Collections.<ScheduleRule>emptyList(), false, "", "previous",
@@ -2078,6 +2092,11 @@ public final class PurpleCore {
                         // "normal" unless the result says otherwise, matching
                         // the core's own default for the key.
                         object.optString("scheduleOutside", "normal"),
+                        // The key's own default, which is the same word for the
+                        // same reason. A result short of both keys therefore
+                        // says they agree, which is the quiet answer: the row
+                        // explains an override only when it can see one.
+                        object.optString("scheduleOutsideKey", "normal"),
                         scheduleNow,
                         scheduleRulesets,
                         names(object, "scheduleChosen"),

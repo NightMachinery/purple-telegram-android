@@ -1335,6 +1335,13 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 	// more, which is why the status line has to be told rather than assume.
 	json += QStringLiteral(",\"scheduleOutside\":");
 	AppendJsonString(json, activeSchedule.outside);
+	// And [schedule] outside as the file spells it, which is a different
+	// question: the one above is what this device runs between its windows, and
+	// this is the key the schedule screen's row edits. They differ exactly when
+	// a chosen ruleset overrides the key - and a row that showed the resolved
+	// value would then be showing one preset while saving over another.
+	json += QStringLiteral(",\"scheduleOutsideKey\":");
+	AppendJsonString(json, gate.settings.schedule.outside);
 	// The enabled check is here rather than inside ScheduleRuleNow(): the
 	// resolved-schedule overload answers what the rules say, and a schedule
 	// switched off has rules that say things it is not doing.
