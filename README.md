@@ -81,7 +81,8 @@ accepted, used when the real one is missing or unreadable - the resolution in
 `state.toml` remembers the order a preset resolved to but not what its lists
 contained, so without the copy a vanished `settings.toml` would leave every
 chat unclaimed and therefore hidden. The preset picker says when it is running
-from the copy.
+from the copy. A fourth, `screentime.log`, is there only once `[screen_time]`
+is switched on - see **Screen time** below.
 
 A preset only ever *adds* a mute: a chat you muted by hand stays muted whichever
 entry claims it, and switching presets never un-silences anything. So every
@@ -263,6 +264,60 @@ person is refused for `trade_cooldown` (five minutes), so a tap cannot become a
 standing subscription. Every trade is listed under **Trades** on the Purple
 settings screen: who, what was read, how long ago. A trade that came back with
 nothing is listed too, because the seconds of exposure happened either way.
+
+**Screen time** is `[screen_time]`, and it is off until `enabled_p = true` says
+otherwise - it is a record of what you looked at and for how long, and nothing
+should start keeping one of those because a version number moved. With it on,
+the app appends raw events to `screentime.log` beside `settings.toml`: a chat
+coming to the front and leaving it, the app entering and leaving the
+foreground, the screen locking, the preset changing, and the send actions - a
+composer edit, a send, a voice recording started, an attachment picked, a reply
+or an edit begun. Time that is not in a chat - the list, search, settings - is
+its own bucket, "elsewhere", so the splits add up to foreground time rather
+than to something smaller with no name. Nothing is ever sent anywhere: the file
+lives in the app's private storage, it is not part of the Saved Messages
+exchange, and two devices would double-count nothing useful anyway.
+
+What the log does *not* hold is a single total. Sessions, the active-versus-
+reading split and every number on the screen are derived by the shared core at
+read time, out of the raw lines and the thresholds in force when you look - so
+changing one re-reads the history you already have instead of only shaping what
+happens next. `action_span` (3 s) is how long one send action counts as active,
+and also the throttle on composer edits, so a burst of typing is one event and
+not one per key. `active_gap` (30 s) is how close two actions have to be for
+the whole gap between them to count as well, which is what makes a conversation
+read as active time rather than a row of three-second spikes. `idle_after`
+(60 s) without a touch, scroll or send pauses the session, stamped back to
+where the input actually stopped. `retention_days` (90) is how much is kept;
+the log is walked for expired lines once a day, and 0 keeps everything.
+
+Settings → Purple → **Screen time** draws it, with last week's line as the
+row's own subtitle. A period switcher (Today, Week, Month, or a custom range
+from two date pickers), a headline with the total, the active share and the
+change against the period before, a bar chart stacked by chat kind - hours for
+Today, days otherwise - and the chats ranked with proportional bars and each
+one's active share. Tapping a chat opens its own page: the same chart and the
+same hour-of-day profile for that chat alone. Chips filter it: active only,
+one kind, one preset. Under that, **Reading load** folds every day in the
+period onto one clock, which is what a schedule window gets placed by;
+**Hidden while peeking** is the time spent in chats the running preset was
+hiding; and a month gets an hour-by-weekday heat map. Export writes a CSV to
+the app's cache and hands it to the share sheet.
+
+**Budgets** are `[[screen_time.budgets]]`, each with a `target` (`all`,
+`chat:<id>`, `kind:<kind>`, `preset:<name>`), a `per_day`, and a `mode`. A
+`soft` budget shows a bulletin at the limit, once per chat per day, and does
+nothing else. A `hard` one puts a cover over the message list and the composer
+naming the budget, with one `snooze` (5 m by default, at most `snoozes_per_day`
+= 2; either at 0 disables it and makes the cap absolute). A hard cap never
+touches messages or notifications - the chat still receives, still notifies,
+is still in the list and still searchable - and the session keeps recording
+behind the cover, counted as reading, so time spent sitting on it still shows
+in the total. The Screen time screen lists the budgets with what each has spent
+today; they are written by hand in the `settings.toml` editor, because the
+splice this app writes through has no operation for appending an entry to an
+array of tables and a screen that wrote TOML by hand would be a screen that ate
+your comments.
 
 Work Mode is ported, the launch-time offer of a settings import included. The
 contents of a folder tab are deliberately unfiltered: a preset decides its own
