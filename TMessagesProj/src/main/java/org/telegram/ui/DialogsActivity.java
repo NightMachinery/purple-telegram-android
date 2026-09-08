@@ -130,6 +130,7 @@ import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.XiaomiUtilities;
 import org.telegram.messenger.browser.Browser;
+import org.telegram.messenger.purple.PurpleCore;
 import org.telegram.messenger.purple.PurpleGate;
 import org.telegram.messenger.purple.PurpleListMenu;
 import org.telegram.messenger.purple.PurpleSyncOffer;
@@ -3679,7 +3680,17 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 
                 @Override
                 public void onPageScrolled(float progress) {
-                    if (progress == 1 && viewPages[1].getVisibility() != View.VISIBLE && !searching) {
+                    // Purple: no incoming page means there is no swipe to draw,
+                    // whatever the progress. A programmatic scrollToTab onto the
+                    // tab already selected returns early from onPageSelected
+                    // above and so never makes viewPages[1] visible, but the
+                    // indicator animation still runs and still reports progress
+                    // - and translating viewPages[0] by it parks the chat list a
+                    // screen width off to the side, where only a real tab switch
+                    // would ever put it back. Guarding only the last frame was
+                    // worse than not guarding at all: it skipped the very frame
+                    // that resets the translation.
+                    if (viewPages[1].getVisibility() != View.VISIBLE && !searching) {
                         return;
                     }
                     if (animatingForward) {
@@ -6906,20 +6917,59 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     }
 
     /**
-     * Purple: which preset the strip was last built for. The selected tab is an
-     * index into a list whose membership a preset switch changes, so an index
-     * that is still in range afterwards quietly means a different folder.
+     * Purple: what the strip was last built for. The selected tab is an index
+     * into a list whose membership a preset switch changes, so an index that is
+     * still in range afterwards quietly means a different folder.
+     *
+     * A description of the strip rather than {@code PurpleGate.generation()},
+     * which moves on every reload - a peek, a schedule tick, an override
+     * expiring, a list edit, the watcher - none of which changes which tabs
+     * exist. Comparing generations made all of those throw the user back to All
+     * chats. Null until the first build, which is the "never seen" state and is
+     * not itself a change.
      */
-    private int purpleFilterGeneration = -1;
+    private String purpleStripIdentity;
+
+    /**
+     * Purple: the running preset, its invented tabs and its folder selection,
+     * in one string that changes exactly when the strip's membership does.
+     *
+     * Plain fields off one volatile read, on a path that already rebuilds every
+     * tab, so there is nothing to cache. Under Normal the preset name is empty,
+     * which is the same answer for "nothing is running" however it got there.
+     */
+    private static String purpleStripIdentityNow() {
+        final PurpleCore.Loaded state = PurpleGate.state();
+        if (state == null) {
+            return "";
+        }
+        final StringBuilder identity = new StringBuilder();
+        identity.append(state.normal || state.preset == null ? "" : state.preset);
+        for (int a = 0, n = state.views.size(); a < n; ++a) {
+            identity.append('\n').append(state.views.get(a).name);
+        }
+        identity.append('\t');
+        for (int a = 0, n = state.folders.size(); a < n; ++a) {
+            final PurpleCore.FolderEntry folder = state.folders.get(a);
+            // enabled and show as well as the name, because both of them decide
+            // whether the folder's tab is on the strip at all, and a strip that
+            // gained or lost a tab is exactly what this is asking about.
+            identity.append(folder.all ? "*ALL" : folder.name)
+                    .append(folder.enabled ? '+' : '-')
+                    .append(folder.show ? '+' : '-')
+                    .append('\n');
+        }
+        return identity.toString();
+    }
 
     private void updateFilterTabs(boolean force, boolean animated) {
         if (filterTabsView == null || inPreviewMode || searchIsShowed || (rightSlidingDialogContainer != null && rightSlidingDialogContainer.hasFragment())) {
             return;
         }
-        final int purpleGeneration = PurpleGate.generation();
-        final boolean purplePresetChanged = purpleFilterGeneration >= 0
-                && purpleFilterGeneration != purpleGeneration;
-        purpleFilterGeneration = purpleGeneration;
+        final String purpleIdentity = purpleStripIdentityNow();
+        final boolean purplePresetChanged = purpleStripIdentity != null
+                && !purpleStripIdentity.equals(purpleIdentity);
+        purpleStripIdentity = purpleIdentity;
         if (filterOptions != null) {
             filterOptions.dismiss();
             filterOptions = null;
@@ -6978,10 +7028,17 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 }
                 if (filterTabsView.isLocked(filterTabsView.getCurrentTabId())) {
                     filterTabsView.selectFirstTab();
-                } else if (purplePresetChanged) {
+                } else if (purplePresetChanged
+                        && viewPages[0].selectedType != filterTabsView.getFirstTabId()) {
                     // Land on All chats rather than on whatever folder now
                     // happens to sit at the old index. The stable-id walk above
                     // only rescues a tab that left the strip.
+                    //
+                    // Not when it is already the selected one: selectFirstTab
+                    // has no "already there" check of its own, so asking for the
+                    // tab under the finger runs a page animation with no page in
+                    // flight. scrollToFolder makes the same test for the same
+                    // reason.
                     filterTabsView.selectFirstTab();
                 }
             }
