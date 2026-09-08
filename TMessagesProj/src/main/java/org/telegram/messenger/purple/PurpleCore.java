@@ -93,7 +93,8 @@ public final class PurpleCore {
      * Reloads both files into the native gate and resolves the active preset.
      * Returns the raw JSON; prefer {@link #load(byte[], byte[])}.
      */
-    private static native String loadNative(byte[] settingsUtf8, byte[] stateUtf8);
+    private static native String loadNative(byte[] settingsUtf8, byte[] stateUtf8,
+            String deviceId, String devicePlatform, String deviceClass);
 
     /**
      * What the running resolution says about one chat: the show mode in the low
@@ -110,9 +111,11 @@ public final class PurpleCore {
 
     private static native String togglePeekNative(byte[] stateUtf8);
 
-    private static native String setSchedulePausedNative(byte[] stateUtf8, boolean paused);
+    private static native String setSchedulePausedNative(
+            byte[] stateUtf8, boolean paused, long until);
 
-    private static native String scheduleTickNative(byte[] stateUtf8);
+    private static native String scheduleTickNative(byte[] stateUtf8,
+            String deviceId, String devicePlatform, String deviceClass);
 
     private static native String focusTickNative(
             byte[] stateUtf8, boolean active, String enterTarget);
@@ -133,18 +136,29 @@ public final class PurpleCore {
     private static native String setTableBoolNative(
             byte[] settingsUtf8, String table, String key, boolean value);
 
+    private static native String setTableStringNative(
+            byte[] settingsUtf8, String table, String key, String value);
+
+    private static native String addRulesetNative(
+            byte[] settingsUtf8, String name, String device, String mode);
+
+    private static native String removeRulesetNative(byte[] settingsUtf8, String name);
+
+    private static native String setRulesetStringNative(
+            byte[] settingsUtf8, String name, String key, String value);
+
     private static native String setScheduleRuleNative(
-            byte[] settingsUtf8, int index, int expectedFrom, int expectedTill,
-            String expectedPreset, boolean enabled, int[] days, int from, int till,
-            String preset);
+            byte[] settingsUtf8, String ruleset, int index, int expectedFrom,
+            int expectedTill, String expectedPreset, boolean enabled, int[] days,
+            int from, int till, String preset);
 
     private static native String appendScheduleRuleNative(
-            byte[] settingsUtf8, boolean enabled, int[] days, int from, int till,
-            String preset);
+            byte[] settingsUtf8, String ruleset, boolean enabled, int[] days,
+            int from, int till, String preset);
 
     private static native String removeScheduleRuleNative(
-            byte[] settingsUtf8, int index, int expectedFrom, int expectedTill,
-            String expectedPreset);
+            byte[] settingsUtf8, String ruleset, int index, int expectedFrom,
+            int expectedTill, String expectedPreset);
 
     /**
      * The three "until" decisions, numbered as the core's {@code OverrideKind}.
@@ -255,7 +269,21 @@ public final class PurpleCore {
 
         public final boolean schedulePaused;
 
-        /** True when settings.toml describes a schedule at all. */
+        /**
+         * When the pause runs out, in local wall-clock seconds. Zero means it
+         * lasts until it is lifted by hand, which is what a pause has always
+         * been and what an older state.toml still says - a different thing
+         * from a deadline that has already passed, and the reason this is not
+         * simply a number of hours left.
+         */
+        public final long schedulePausedUntil;
+
+        /**
+         * True when there is a schedule to pause: this device runs at least one
+         * rule, or the file describes a ruleset at all. The second half matters
+         * on a phone whose only rules are the laptop's - the schedule is still
+         * there to be switched off, even though nothing on this device fires.
+         */
         public final boolean scheduleConfigured;
 
         /**
@@ -290,13 +318,15 @@ public final class PurpleCore {
         public final int recentStyle;
 
         Clock(boolean peeking, long peekDeadline, int peekSeconds,
-                boolean schedulePaused, boolean scheduleConfigured,
+                boolean schedulePaused, long schedulePausedUntil,
+                boolean scheduleConfigured,
                 List<Override> overrides, long nextOverrideDeadline, int hideScope,
                 int recentSeconds, int recentScope, int recentStyle) {
             this.peeking = peeking;
             this.peekDeadline = peekDeadline;
             this.peekSeconds = peekSeconds;
             this.schedulePaused = schedulePaused;
+            this.schedulePausedUntil = schedulePausedUntil;
             this.scheduleConfigured = scheduleConfigured;
             this.overrides = overrides;
             this.nextOverrideDeadline = nextOverrideDeadline;
@@ -306,7 +336,7 @@ public final class PurpleCore {
             this.recentStyle = recentStyle;
         }
 
-        static final Clock NONE = new Clock(false, 0, 0, false, false,
+        static final Clock NONE = new Clock(false, 0, 0, false, 0, false,
                 Collections.<Override>emptyList(), 0, SCOPE_UNCOUNTED,
                 0, RECENT_ALREADY_IN_VIEW, STYLE_NONE);
 
@@ -331,6 +361,7 @@ public final class PurpleCore {
                     object.optLong("peekDeadline", 0),
                     object.optInt("peekSeconds", 0),
                     object.optBoolean("schedulePaused", false),
+                    object.optLong("schedulePausedUntil", 0),
                     object.optBoolean("scheduleConfigured", false),
                     overrides,
                     object.optLong("nextOverrideDeadline", 0),
@@ -371,6 +402,16 @@ public final class PurpleCore {
         /** True when the preset itself moved, not only the recorded target. */
         public final boolean applied;
 
+        /**
+         * True when this tick is the one that lifted a pause that had run out.
+         *
+         * Worth its own flag rather than being folded into {@code applied}: the
+         * pause is what the ticking itself is conditioned on, so a cleared
+         * pause that nothing reread would stop the clock that had just cleared
+         * it - even on a tick that moved no preset.
+         */
+        public final boolean unpaused;
+
         /** The preset the schedule now wants. */
         public final String target;
 
@@ -382,8 +423,10 @@ public final class PurpleCore {
 
         public final String text;
 
-        Tick(boolean applied, String target, String kept, String keptSource, String text) {
+        Tick(boolean applied, boolean unpaused, String target, String kept,
+                String keptSource, String text) {
             this.applied = applied;
+            this.unpaused = unpaused;
             this.target = target;
             this.kept = kept;
             this.keptSource = keptSource;
@@ -502,9 +545,9 @@ public final class PurpleCore {
      *
      * @return the text to write, or null when the core could not be reached
      */
-    public static String setSchedulePaused(byte[] state, boolean paused) {
+    public static String setSchedulePaused(byte[] state, boolean paused, long until) {
         try {
-            return setSchedulePausedNative(state, paused);
+            return setSchedulePausedNative(state, paused, until);
         } catch (UnsatisfiedLinkError | RuntimeException e) {
             FileLog.e(e);
             return null;
@@ -517,10 +560,11 @@ public final class PurpleCore {
      * @return what to do, or null when there is nothing to do - which is every
      *         tick except the ones that land on a boundary
      */
-    public static Tick scheduleTick(byte[] state) {
+    public static Tick scheduleTick(byte[] state,
+            String deviceId, String devicePlatform, String deviceClass) {
         final String json;
         try {
-            json = scheduleTickNative(state);
+            json = scheduleTickNative(state, deviceId, devicePlatform, deviceClass);
         } catch (UnsatisfiedLinkError | RuntimeException e) {
             FileLog.e(e);
             return null;
@@ -536,6 +580,7 @@ public final class PurpleCore {
             }
             return new Tick(
                     object.optBoolean("applied", false),
+                    object.optBoolean("unpaused", false),
                     object.optString("target", ""),
                     object.optString("kept", ""),
                     object.optString("keptSource", ""),
@@ -614,20 +659,30 @@ public final class PurpleCore {
     }
 
     /**
-     * One {@code [[schedule.rules]]} block, as the schedule screen draws and
-     * edits it.
+     * One rule block, as the schedule screens draw and edit it.
      *
      * Only the rules the parser kept are here. A broken one has no window and
      * no preset to draw, so the screen names it from {@link Loaded#warnings}
      * instead - that is the only place the reason it was dropped survives.
      *
-     * {@code index} is the position in the RAW array, counting the dropped
-     * ones, because that is the address the splice edits by: a rule numbered by
-     * its position in this list would move the moment a broken one above it was
-     * fixed. {@code from} and {@code till} are minutes since midnight, so
+     * {@code index} is the position in the RAW array of its own ruleset,
+     * counting the dropped ones, because that is the address the splice edits
+     * by: a rule numbered by its position in this list would move the moment a
+     * broken one above it was fixed. {@code ruleset} is the other half of that
+     * address. {@code from} and {@code till} are minutes since midnight, so
      * {@code "9:00"} and {@code "09:00"} are one rule.
      */
     public static final class ScheduleRule {
+        /**
+         * Where this rule lives, as every splice op wants it: empty for the
+         * flat {@code [[schedule.rules]]} array, a ruleset's name otherwise.
+         *
+         * Not a display name. The implicit ruleset wrapping the flat rules is
+         * called "rules" on screen but is addressed with an empty name, and a
+         * file is free to spell out a real ruleset called "rules" as well.
+         */
+        public final String ruleset;
+
         public final int index;
 
         /** The line its header is on, 1-based, for a screen that points at it. */
@@ -642,8 +697,9 @@ public final class PurpleCore {
         public final int till;
         public final String preset;
 
-        private ScheduleRule(int index, int line, boolean enabled, int[] days,
-                int from, int till, String preset) {
+        private ScheduleRule(String ruleset, int index, int line, boolean enabled,
+                int[] days, int from, int till, String preset) {
+            this.ruleset = ruleset;
             this.index = index;
             this.line = line;
             this.enabled = enabled;
@@ -651,6 +707,103 @@ public final class PurpleCore {
             this.from = from;
             this.till = till;
             this.preset = preset;
+        }
+    }
+
+    /**
+     * One {@code [[schedule.rulesets]]} block: a named group of rules and the
+     * answer to "which devices is this for".
+     *
+     * Every ruleset the file describes is handed over, not only the ones this
+     * device runs - editing the laptop's half of the schedule from the phone is
+     * the whole reason for there being one file.
+     *
+     * The flat {@code [[schedule.rules]]} array arrives as one of these too,
+     * first, with {@link #implicit} set: it resolves through exactly the same
+     * path as everything else, so a file that never heard of rulesets needs no
+     * special case anywhere above this line.
+     */
+    public static final class ScheduleRuleset {
+        /** What it is called, and what to print. "rules" for the implicit one. */
+        public final String name;
+
+        /**
+         * What to hand a splice op. Empty for the implicit ruleset, whose rules
+         * live in the flat array; {@link #name} for every other.
+         */
+        public final String address;
+
+        /**
+         * Which devices it is for: {@code any}, a class ({@code mobile},
+         * {@code desktop}), a platform ({@code android}, {@code ios},
+         * {@code macos}, {@code windows}, {@code linux}) or a device id.
+         * Anything the core does not recognise is taken as a device id, since
+         * the list of platforms is closed and the list of devices is not.
+         */
+        public final String device;
+
+        /** {@code disabled}, {@code enabled} or {@code always}. */
+        public final String mode;
+
+        /**
+         * What it wants between its windows, or null when it leaves that to
+         * {@code [schedule] outside}. Null is not the same answer as "normal".
+         */
+        public final String outside;
+
+        /** True for the flat {@code [[schedule.rules]]} array in ruleset form. */
+        public final boolean implicit;
+
+        /** Its position in the raw array, or -1 for the implicit one. */
+        public final int index;
+
+        /** The line its header is on, 1-based, or 0 when there is no file. */
+        public final int line;
+
+        /** Its rules in file order, the disabled ones included. */
+        public final List<ScheduleRule> rules;
+
+        private ScheduleRuleset(String name, String address, String device, String mode,
+                String outside, boolean implicit, int index, int line,
+                List<ScheduleRule> rules) {
+            this.name = name;
+            this.address = address;
+            this.device = device;
+            this.mode = mode;
+            this.outside = outside;
+            this.implicit = implicit;
+            this.index = index;
+            this.line = line;
+            this.rules = rules;
+        }
+    }
+
+    /** The two halves of one rule's address: which ruleset, and where in it. */
+    public static final class ScheduleNow {
+        public final String ruleset;
+        public final int index;
+
+        private ScheduleNow(String ruleset, int index) {
+            this.ruleset = ruleset;
+            this.index = index;
+        }
+    }
+
+    /**
+     * What {@code [devices]} calls one device id.
+     *
+     * The label lives in settings.toml rather than in a preference so that it
+     * travels with the file: a laptop showing "the phone" beside a ruleset is
+     * the entire reason for writing one down. Nothing depends on a device being
+     * listed - an unlisted id shows as itself.
+     */
+    public static final class DeviceLabel {
+        public final String id;
+        public final String label;
+
+        private DeviceLabel(String id, String label) {
+            this.id = id;
+            this.label = label;
         }
     }
 
@@ -780,21 +933,93 @@ public final class PurpleCore {
     }
 
     /**
-     * Rewrites one schedule rule in place, key by key.
+     * Sets one string under one table - {@code [schedule] outside}, and the
+     * label {@code [devices]} gives an id.
      *
-     * {@code index} is {@link ScheduleRule#index}: the rule's position in the
-     * raw array, counting the ones the parser threw away. The three
-     * {@code expected} values are what the screen read off the rule, and the
-     * core refuses when the rule there no longer says them - so a dialog left
-     * open while the file moved underneath cannot rewrite a different rule.
+     * The string half of {@link #setTableBool} and written the same way: the
+     * value is replaced where it stands, the key and any trailing comment stay
+     * as the user wrote them, and a file that never mentioned the table gains
+     * it rather than being re-serialised.
      */
-    public static SpliceResult setScheduleRule(
-            byte[] settings, int index, int expectedFrom, int expectedTill,
-            String expectedPreset, boolean enabled, int[] days, int from, int till,
-            String preset) {
+    public static SpliceResult setTableString(
+            byte[] settings, String table, String key, String value) {
         ensureLoaded();
         try {
-            return splice(setScheduleRuleNative(settings, index, expectedFrom,
+            return splice(setTableStringNative(settings, table, key, value));
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return new SpliceResult(null, false, "the core could not be reached");
+        }
+    }
+
+    /**
+     * Writes a new empty {@code [[schedule.rulesets]]} block.
+     *
+     * {@code device} and {@code mode} are written only when they are not the
+     * defaults, so a file where every ruleset spells out what it would have
+     * meant anyway does not happen.
+     *
+     * @return a refusal in {@code error} for an empty name or one already
+     *         taken - the name is the address every later edit goes through
+     */
+    public static SpliceResult addRuleset(
+            byte[] settings, String name, String device, String mode) {
+        ensureLoaded();
+        try {
+            return splice(addRulesetNative(settings, name, device, mode));
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return new SpliceResult(null, false, "the core could not be reached");
+        }
+    }
+
+    /** Takes a whole ruleset out, its rules with it. */
+    public static SpliceResult removeRuleset(byte[] settings, String name) {
+        ensureLoaded();
+        try {
+            return splice(removeRulesetNative(settings, name));
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return new SpliceResult(null, false, "the core could not be reached");
+        }
+    }
+
+    /**
+     * Sets one of a ruleset's own string keys - {@code device}, {@code mode},
+     * {@code outside}, or {@code name} for a rename.
+     *
+     * An empty {@code value} takes the key out of the file, which is how a
+     * screen says "back to the default" without writing the default down.
+     */
+    public static SpliceResult setRulesetString(
+            byte[] settings, String name, String key, String value) {
+        ensureLoaded();
+        try {
+            return splice(setRulesetStringNative(settings, name, key, value));
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return new SpliceResult(null, false, "the core could not be reached");
+        }
+    }
+
+    /**
+     * Rewrites one schedule rule in place, key by key.
+     *
+     * {@code ruleset} and {@code index} are the rule's address - {@link
+     * ScheduleRule#ruleset} and {@link ScheduleRule#index}: which block it
+     * lives in, empty for the flat array, and its position in that block's raw
+     * array counting the ones the parser threw away. The three {@code expected}
+     * values are what the screen read off the rule, and the core refuses when
+     * the rule there no longer says them - so a dialog left open while the file
+     * moved underneath cannot rewrite a different rule.
+     */
+    public static SpliceResult setScheduleRule(
+            byte[] settings, String ruleset, int index, int expectedFrom,
+            int expectedTill, String expectedPreset, boolean enabled, int[] days,
+            int from, int till, String preset) {
+        ensureLoaded();
+        try {
+            return splice(setScheduleRuleNative(settings, ruleset, index, expectedFrom,
                     expectedTill, expectedPreset, enabled, days, from, till, preset));
         } catch (UnsatisfiedLinkError | RuntimeException e) {
             FileLog.e(e);
@@ -802,14 +1027,14 @@ public final class PurpleCore {
         }
     }
 
-    /** Writes a new rule after the last one, or starts the section. */
+    /** Writes a new rule after the ruleset's last one, or starts the section. */
     public static SpliceResult appendScheduleRule(
-            byte[] settings, boolean enabled, int[] days, int from, int till,
-            String preset) {
+            byte[] settings, String ruleset, boolean enabled, int[] days, int from,
+            int till, String preset) {
         ensureLoaded();
         try {
             return splice(appendScheduleRuleNative(
-                    settings, enabled, days, from, till, preset));
+                    settings, ruleset, enabled, days, from, till, preset));
         } catch (UnsatisfiedLinkError | RuntimeException e) {
             FileLog.e(e);
             return new SpliceResult(null, false, "the core could not be reached");
@@ -818,12 +1043,12 @@ public final class PurpleCore {
 
     /** Takes one rule out, on the same expectation as {@link #setScheduleRule}. */
     public static SpliceResult removeScheduleRule(
-            byte[] settings, int index, int expectedFrom, int expectedTill,
-            String expectedPreset) {
+            byte[] settings, String ruleset, int index, int expectedFrom,
+            int expectedTill, String expectedPreset) {
         ensureLoaded();
         try {
             return splice(removeScheduleRuleNative(
-                    settings, index, expectedFrom, expectedTill, expectedPreset));
+                    settings, ruleset, index, expectedFrom, expectedTill, expectedPreset));
         } catch (UnsatisfiedLinkError | RuntimeException e) {
             FileLog.e(e);
             return new SpliceResult(null, false, "the core could not be reached");
@@ -858,13 +1083,18 @@ public final class PurpleCore {
      * resolved. Either array may be null, which is what a missing file looks
      * like on a fresh install.
      *
-     * @param settings the bytes of settings.toml, or null
-     * @param state    the bytes of state.toml, or null
+     * @param settings       the bytes of settings.toml, or null
+     * @param state          the bytes of state.toml, or null
+     * @param deviceId       what this install calls itself, for the rulesets
+     * @param devicePlatform "android"
+     * @param deviceClass    "mobile"
      * @return the resolution now in force, never null
      */
-    public static Loaded load(byte[] settings, byte[] state) {
+    public static Loaded load(byte[] settings, byte[] state,
+            String deviceId, String devicePlatform, String deviceClass) {
         ensureLoaded();
-        return Loaded.fromJson(loadNative(settings, state));
+        return Loaded.fromJson(
+                loadNative(settings, state, deviceId, devicePlatform, deviceClass));
     }
 
     /**
@@ -1168,6 +1398,16 @@ public final class PurpleCore {
         public final boolean scheduleEnabled;
 
         /**
+         * The preset this device wants between its windows: the most specific
+         * chosen ruleset that names one, or {@code [schedule] outside}.
+         *
+         * Not always "normal" any more, which is what makes it worth handing
+         * over: a window ending is a move to THIS, and a status line that
+         * assumed Normal would be describing somebody else's file.
+         */
+        public final String scheduleOutside;
+
+        /**
          * The preset the schedule wants right now, or null when no window
          * covers the moment - which includes a schedule switched off or with no
          * rules. Null is a different answer from wanting Normal, and has to be:
@@ -1177,13 +1417,36 @@ public final class PurpleCore {
         public final String scheduleTarget;
 
         /**
-         * {@link ScheduleRule#index} of the rule the moment is inside, or -1.
-         * Worked out by the core rather than here, so the midnight-crossing
-         * case has one implementation rather than two.
+         * The address of the rule the moment is inside, or null when none is -
+         * which includes a schedule switched off and one with no rule for this
+         * device. Worked out by the core rather than here, so the
+         * midnight-crossing case has one implementation rather than two.
          */
-        public final int scheduleNowIndex;
+        public final ScheduleNow scheduleNow;
 
-        /** The rules the parser kept, in file order. */
+        /**
+         * Every ruleset the file describes, the implicit one first. All of
+         * them, not only the ones this device runs: editing the laptop's half
+         * of the schedule from the phone is the point of there being one file.
+         */
+        public final List<ScheduleRuleset> scheduleRulesets;
+
+        /**
+         * The names of the rulesets this device chose, in the order their rules
+         * were merged. For a screen that has to explain why a rule is or is not
+         * running here.
+         */
+        public final List<String> scheduleChosen;
+
+        /**
+         * The rules this device actually runs, merged out of the rulesets it
+         * chose: most specific first, then file order, enabled rules only -
+         * which is the order the first-match engine walks them in.
+         *
+         * Not every rule in the file. A screen listing what a ruleset holds
+         * reads {@link ScheduleRuleset#rules} instead; this list is what is
+         * happening, not what is written down.
+         */
         public final List<ScheduleRule> scheduleRules;
 
         /**
@@ -1213,6 +1476,12 @@ public final class PurpleCore {
          */
         public final boolean premium;
 
+        /** What this install told the core it calls itself. */
+        public final String deviceId;
+
+        /** The friendly names {@code [devices]} gives ids, in file order. */
+        public final List<DeviceLabel> devices;
+
         /** The state.toml text to write back, or null when it did not change. */
         public final String stateText;
 
@@ -1224,10 +1493,12 @@ public final class PurpleCore {
                 int[] defaultModes, int listCount, List<PresetInfo> presets,
                 List<View> views, boolean hideEverywhere,
                 boolean hideInvisibleSuggestions, boolean hideArchive,
-                boolean scheduleEnabled, String scheduleTarget, int scheduleNowIndex,
-                List<ScheduleRule> scheduleRules, boolean focusSyncEnabled,
-                String focusSyncEnter, String focusSyncExit, Clock clock,
-                boolean premium, String stateText) {
+                boolean scheduleEnabled, String scheduleTarget, String scheduleOutside,
+                ScheduleNow scheduleNow, List<ScheduleRuleset> scheduleRulesets,
+                List<String> scheduleChosen, List<ScheduleRule> scheduleRules,
+                boolean focusSyncEnabled, String focusSyncEnter, String focusSyncExit,
+                Clock clock, boolean premium, String deviceId,
+                List<DeviceLabel> devices, String stateText) {
             this.ok = ok;
             this.error = error;
             this.warnings = warnings;
@@ -1253,14 +1524,48 @@ public final class PurpleCore {
             this.hideArchive = hideArchive;
             this.scheduleEnabled = scheduleEnabled;
             this.scheduleTarget = scheduleTarget;
-            this.scheduleNowIndex = scheduleNowIndex;
+            this.scheduleOutside = scheduleOutside;
+            this.scheduleNow = scheduleNow;
+            this.scheduleRulesets = scheduleRulesets;
+            this.scheduleChosen = scheduleChosen;
             this.scheduleRules = scheduleRules;
             this.focusSyncEnabled = focusSyncEnabled;
             this.focusSyncEnter = focusSyncEnter;
             this.focusSyncExit = focusSyncExit;
             this.clock = clock;
             this.premium = premium;
+            this.deviceId = deviceId;
+            this.devices = devices;
             this.stateText = stateText;
+        }
+
+        /** One array of rule blocks out of the load result, empty if absent. */
+        private static List<ScheduleRule> rules(JSONArray array) {
+            final List<ScheduleRule> result = new ArrayList<>();
+            if (array == null) {
+                return result;
+            }
+            for (int i = 0; i < array.length(); ++i) {
+                final JSONObject entry = array.optJSONObject(i);
+                if (entry == null) {
+                    continue;
+                }
+                final JSONArray weekdays = entry.optJSONArray("days");
+                final int[] days = new int[weekdays == null ? 0 : weekdays.length()];
+                for (int a = 0; a < days.length; ++a) {
+                    days[a] = weekdays.optInt(a, 0);
+                }
+                result.add(new ScheduleRule(
+                        entry.optString("ruleset", ""),
+                        entry.optInt("index", -1),
+                        entry.optInt("line", 0),
+                        entry.optBoolean("enabled", true),
+                        days,
+                        entry.optInt("from", -1),
+                        entry.optInt("to", -1),
+                        entry.optString("preset", "")));
+            }
+            return result;
         }
 
         /** One array of folder names out of the load result, empty if absent. */
@@ -1286,9 +1591,11 @@ public final class PurpleCore {
                     Collections.<String>emptyList(),
                     Collections.<ExemptFolder>emptyList(), STOCK_DEFAULT_MODES, 0,
                     Collections.<PresetInfo>emptyList(), Collections.<View>emptyList(),
-                    false, true, true, false, null, -1,
+                    false, true, true, false, null, "normal", null,
+                    Collections.<ScheduleRuleset>emptyList(),
+                    Collections.<String>emptyList(),
                     Collections.<ScheduleRule>emptyList(), false, "", "previous",
-                    Clock.NONE, true, null);
+                    Clock.NONE, true, "", Collections.<DeviceLabel>emptyList(), null);
         }
 
         static Loaded fromJson(String json) {
@@ -1360,27 +1667,50 @@ public final class PurpleCore {
                         views.add(new View(entry.optString("name", ""), pinned));
                     }
                 }
-                final List<ScheduleRule> scheduleRules = new ArrayList<>();
-                final JSONArray rules = object.optJSONArray("scheduleRules");
-                if (rules != null) {
-                    for (int i = 0; i < rules.length(); ++i) {
-                        final JSONObject entry = rules.optJSONObject(i);
+                final List<ScheduleRule> scheduleRules =
+                        rules(object.optJSONArray("scheduleRules"));
+                final List<ScheduleRuleset> scheduleRulesets = new ArrayList<>();
+                final JSONArray rulesets = object.optJSONArray("scheduleRulesets");
+                if (rulesets != null) {
+                    for (int i = 0; i < rulesets.length(); ++i) {
+                        final JSONObject entry = rulesets.optJSONObject(i);
                         if (entry == null) {
                             continue;
                         }
-                        final JSONArray weekdays = entry.optJSONArray("days");
-                        final int[] days = new int[weekdays == null ? 0 : weekdays.length()];
-                        for (int a = 0; a < days.length; ++a) {
-                            days[a] = weekdays.optInt(a, 0);
-                        }
-                        scheduleRules.add(new ScheduleRule(
+                        scheduleRulesets.add(new ScheduleRuleset(
+                                entry.optString("name", ""),
+                                entry.optString("address", ""),
+                                entry.optString("device", "any"),
+                                entry.optString("mode", "enabled"),
+                                // Null and "normal" are different answers: one
+                                // leaves the question to [schedule] outside and
+                                // the other overrides it with the same word.
+                                entry.isNull("outside")
+                                        ? null
+                                        : entry.optString("outside", null),
+                                entry.optBoolean("implicit", false),
                                 entry.optInt("index", -1),
                                 entry.optInt("line", 0),
-                                entry.optBoolean("enabled", true),
-                                days,
-                                entry.optInt("from", -1),
-                                entry.optInt("to", -1),
-                                entry.optString("preset", "")));
+                                rules(entry.optJSONArray("rules"))));
+                    }
+                }
+                final JSONObject nowAt = object.optJSONObject("scheduleNow");
+                final ScheduleNow scheduleNow = (nowAt == null)
+                        ? null
+                        : new ScheduleNow(
+                                nowAt.optString("ruleset", ""),
+                                nowAt.optInt("index", -1));
+                final List<DeviceLabel> devices = new ArrayList<>();
+                final JSONArray labelled = object.optJSONArray("devices");
+                if (labelled != null) {
+                    for (int i = 0; i < labelled.length(); ++i) {
+                        final JSONObject entry = labelled.optJSONObject(i);
+                        if (entry == null) {
+                            continue;
+                        }
+                        devices.add(new DeviceLabel(
+                                entry.optString("id", ""),
+                                entry.optString("label", "")));
                     }
                 }
 
@@ -1432,7 +1762,12 @@ public final class PurpleCore {
                         object.isNull("scheduleTarget")
                                 ? null
                                 : object.optString("scheduleTarget", null),
-                        object.optInt("scheduleNowIndex", -1),
+                        // "normal" unless the result says otherwise, matching
+                        // the core's own default for the key.
+                        object.optString("scheduleOutside", "normal"),
+                        scheduleNow,
+                        scheduleRulesets,
+                        names(object, "scheduleChosen"),
                         scheduleRules,
                         // Off unless the result says otherwise, which is also
                         // the core's default: a load that somehow lacks the
@@ -1442,6 +1777,8 @@ public final class PurpleCore {
                         object.optString("focusSyncExit", "previous"),
                         Clock.fromJson(object),
                         object.optBoolean("premium", true),
+                        object.optString("deviceId", ""),
+                        devices,
                         object.isNull("stateText") ? null : object.optString("stateText", null));
             } catch (JSONException e) {
                 return failed("bad result from the core");

@@ -259,7 +259,10 @@ public final class PurplePresetPicker {
                 Theme.getColor(Theme.key_listSelector, resourcesProvider), Theme.RIPPLE_MASK_ALL));
         pause.setOnClickListener(v -> {
             final boolean wanted = !pause.isChecked();
-            if (PurpleGate.setSchedulePaused(wanted)) {
+            // Zero: the box's checkbox is a plain pause, with no moment on it.
+            // Pausing until a date is a decision with a picker behind it, and
+            // it lives on the schedule screen where there is room to say so.
+            if (PurpleGate.setSchedulePaused(wanted, 0)) {
                 pause.setChecked(wanted, true);
             }
         });

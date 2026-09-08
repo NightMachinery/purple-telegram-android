@@ -77,6 +77,68 @@ public final class PurpleWriter {
     }
 
     /**
+     * Sets one string under one table - {@code [schedule] outside}, and the
+     * label {@code [devices]} gives a device id.
+     *
+     * The string half of {@link #setTableBool}, and read fresh for the same
+     * reason.
+     */
+    public static String setTableString(
+            String table, String key, String value, String reason) {
+        final byte[] settings = PurpleGate.settingsBytes();
+        if (settings == null) {
+            return "settings.toml is missing";
+        }
+        return apply(
+                PurpleCore.setTableString(settings, table, key, value),
+                reason);
+    }
+
+    /**
+     * Writes a new empty {@code [[schedule.rulesets]]} block.
+     *
+     * @return null on success, or the core's refusal - an empty name, or one
+     *         already taken, since the name is how every later edit finds it
+     */
+    public static String addRuleset(
+            String name, String device, String mode, String reason) {
+        final byte[] settings = PurpleGate.settingsBytes();
+        if (settings == null) {
+            return "settings.toml is missing";
+        }
+        return apply(
+                PurpleCore.addRuleset(settings, name, device, mode),
+                reason);
+    }
+
+    /** Takes a whole ruleset out, its rules with it. */
+    public static String removeRuleset(String name, String reason) {
+        final byte[] settings = PurpleGate.settingsBytes();
+        if (settings == null) {
+            return "settings.toml is missing";
+        }
+        return apply(PurpleCore.removeRuleset(settings, name), reason);
+    }
+
+    /**
+     * Sets one of a ruleset's own string keys - {@code device}, {@code mode},
+     * {@code outside}, or {@code name} for a rename.
+     *
+     * An empty {@code value} takes the key out of the file, which is how a
+     * screen says "back to the default" without writing the default down.
+     */
+    public static String setRulesetString(
+            String name, String key, String value, String reason) {
+        final byte[] settings = PurpleGate.settingsBytes();
+        if (settings == null) {
+            return "settings.toml is missing";
+        }
+        return apply(
+                PurpleCore.setRulesetString(settings, name, key, value),
+                reason);
+    }
+
+    /**
      * Creates a list, empty.
      *
      * No title: the box asks for one name, and a title that only repeats the
@@ -101,45 +163,50 @@ public final class PurpleWriter {
      * it is editing. The core refuses when the rule at {@code index} no longer
      * says them, which is what stops a dialog left open across somebody else's
      * edit from rewriting a rule other than the one on it.
+     *
+     * {@code ruleset} is where the rule lives: empty for the flat
+     * {@code [[schedule.rules]]} array, a ruleset's name otherwise, and
+     * {@code index} then counts within that one.
      */
     public static String setScheduleRule(
-            int index, int expectedFrom, int expectedTill, String expectedPreset,
-            boolean enabled, int[] days, int from, int till, String preset,
-            String reason) {
+            String ruleset, int index, int expectedFrom, int expectedTill,
+            String expectedPreset, boolean enabled, int[] days, int from, int till,
+            String preset, String reason) {
         final byte[] settings = PurpleGate.settingsBytes();
         if (settings == null) {
             return "settings.toml is missing";
         }
         return apply(
-                PurpleCore.setScheduleRule(settings, index, expectedFrom, expectedTill,
-                        expectedPreset, enabled, days, from, till, preset),
+                PurpleCore.setScheduleRule(settings, ruleset, index, expectedFrom,
+                        expectedTill, expectedPreset, enabled, days, from, till, preset),
                 reason);
     }
 
-    /** Writes a new rule after the last one, or starts the section. */
+    /** Writes a new rule after the ruleset's last one, or starts the section. */
     public static String appendScheduleRule(
-            boolean enabled, int[] days, int from, int till, String preset,
-            String reason) {
+            String ruleset, boolean enabled, int[] days, int from, int till,
+            String preset, String reason) {
         final byte[] settings = PurpleGate.settingsBytes();
         if (settings == null) {
             return "settings.toml is missing";
         }
         return apply(
-                PurpleCore.appendScheduleRule(settings, enabled, days, from, till, preset),
+                PurpleCore.appendScheduleRule(
+                        settings, ruleset, enabled, days, from, till, preset),
                 reason);
     }
 
     /** Takes one rule out, on the same expectation as {@link #setScheduleRule}. */
     public static String removeScheduleRule(
-            int index, int expectedFrom, int expectedTill, String expectedPreset,
-            String reason) {
+            String ruleset, int index, int expectedFrom, int expectedTill,
+            String expectedPreset, String reason) {
         final byte[] settings = PurpleGate.settingsBytes();
         if (settings == null) {
             return "settings.toml is missing";
         }
         return apply(
-                PurpleCore.removeScheduleRule(
-                        settings, index, expectedFrom, expectedTill, expectedPreset),
+                PurpleCore.removeScheduleRule(settings, ruleset, index, expectedFrom,
+                        expectedTill, expectedPreset),
                 reason);
     }
 }

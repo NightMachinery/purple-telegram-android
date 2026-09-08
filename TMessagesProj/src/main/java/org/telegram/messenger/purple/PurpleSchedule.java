@@ -57,16 +57,23 @@ public final class PurpleSchedule {
     /**
      * Whether there is anything for the clock to do.
      *
-     * A file with no rules and a schedule the user has paused are both "no", so
-     * the ticking stops entirely rather than waking every thirty seconds to read
-     * state.toml and decide nothing. Both start it again through
-     * {@link #refresh()}, since both are changes to a file the gate reloads.
+     * A file with no rules and a schedule the user has paused with no deadline
+     * are both "no", so the ticking stops entirely rather than waking every
+     * thirty seconds to read state.toml and decide nothing. Both start it again
+     * through {@link #refresh()}, since both are changes to a file the gate
+     * reloads.
+     *
+     * A pause that names a moment is the exception and has to be: nothing else
+     * looks at that deadline, so a clock that stopped for the pause would be
+     * the one thing that could have noticed it running out.
      */
     private static boolean running() {
         final PurpleCore.Loaded current = PurpleGate.state();
-        return current != null
-                && current.clock.scheduleConfigured
-                && !current.clock.schedulePaused;
+        if (current == null || !current.clock.scheduleConfigured) {
+            return false;
+        }
+        return !current.clock.schedulePaused
+                || current.clock.schedulePausedUntil > 0;
     }
 
     private static void tick() {
@@ -91,18 +98,27 @@ public final class PurpleSchedule {
      * settles after exactly one pass rather than looping.
      */
     private static void apply() {
-        final PurpleCore.Tick tick = PurpleCore.scheduleTick(PurpleState.read());
+        final PurpleCore.Tick tick = PurpleCore.scheduleTick(PurpleState.read(),
+                PurpleDevice.id(), PurpleDevice.PLATFORM, PurpleDevice.CLASS);
         if (tick == null) {
             return;
         }
         if (!PurpleState.write(tick.text.getBytes(UTF_8))) {
             return;
         }
-        FileLog.d("Purple: schedule wants '" + tick.target + "'"
-                + (tick.applied
-                        ? "."
-                        : ", keeping '" + tick.kept + "' (" + tick.keptSource + ")."));
-        if (tick.applied) {
+        if (tick.unpaused) {
+            FileLog.d("Purple: the schedule pause ran out.");
+        }
+        // Empty means the tick had nothing to want - which only happens on the
+        // one that lifted a pause with no window to catch up on. Saying the
+        // schedule wants '' would be a line about nothing.
+        if (tick.target.length() > 0) {
+            FileLog.d("Purple: schedule wants '" + tick.target + "'"
+                    + (tick.applied
+                            ? "."
+                            : ", keeping '" + tick.kept + "' (" + tick.keptSource + ")."));
+        }
+        if (tick.applied || tick.unpaused) {
             PurpleGate.reload("schedule");
         }
         // When it was not applied, only the recorded target moved: nothing about
@@ -110,5 +126,9 @@ public final class PurpleSchedule {
         // write above is still what matters, and it is what makes this boundary
         // happen once rather than on every tick from here on. The next reload
         // reads the file back, so nothing is left stale by not doing one now.
+        //
+        // A lifted pause is the exception, whether or not it moved a preset: the
+        // pause is what running() reads to decide whether to keep ticking, so
+        // the reload is what lets the clock that cleared it carry on.
     }
 }

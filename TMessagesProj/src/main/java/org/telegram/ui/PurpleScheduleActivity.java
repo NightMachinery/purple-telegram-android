@@ -145,7 +145,7 @@ public class PurpleScheduleActivity extends UniversalFragment
         if (state == null || state.scheduleRules.isEmpty()) {
             return getString(R.string.PurpleScheduleNoRules);
         }
-        final PurpleCore.ScheduleRule now = ruleAt(state, state.scheduleNowIndex);
+        final PurpleCore.ScheduleRule now = ruleAt(state, state.scheduleNow);
         if (now == null || !state.scheduleEnabled || state.clock.schedulePaused) {
             return getString(R.string.PurpleScheduleNothingNow);
         }
@@ -241,14 +241,30 @@ public class PurpleScheduleActivity extends UniversalFragment
         return String.format(Locale.US, "%02d:%02d", (minutes / 60) % 24, minutes % 60);
     }
 
-    /** The rule carrying this sourceIndex, or null. */
-    public static PurpleCore.ScheduleRule ruleAt(PurpleCore.Loaded state, int index) {
-        if (state == null || index < 0) {
+    /** The running rule carrying this address, or null. */
+    public static PurpleCore.ScheduleRule ruleAt(
+            PurpleCore.Loaded state, PurpleCore.ScheduleNow at) {
+        if (state == null || at == null || at.index < 0) {
             return null;
         }
-        for (int a = 0, n = state.scheduleRules.size(); a < n; ++a) {
-            if (state.scheduleRules.get(a).index == index) {
-                return state.scheduleRules.get(a);
+        return ruleAt(state.scheduleRules, at.ruleset, at.index);
+    }
+
+    /**
+     * The rule at this address, or null.
+     *
+     * Both halves have to match: a rule is numbered within its own ruleset, so
+     * index 0 names one rule per ruleset and the name is what tells them apart.
+     */
+    public static PurpleCore.ScheduleRule ruleAt(
+            List<PurpleCore.ScheduleRule> rules, String ruleset, int index) {
+        if (rules == null || index < 0) {
+            return null;
+        }
+        for (int a = 0, n = rules.size(); a < n; ++a) {
+            final PurpleCore.ScheduleRule rule = rules.get(a);
+            if (rule.index == index && rule.ruleset.equals(ruleset)) {
+                return rule;
             }
         }
         return null;
@@ -274,7 +290,7 @@ public class PurpleScheduleActivity extends UniversalFragment
         }
         final String count =
                 formatPluralString("PurpleScheduleRuleCount", state.scheduleRules.size());
-        final PurpleCore.ScheduleRule now = ruleAt(state, state.scheduleNowIndex);
+        final PurpleCore.ScheduleRule now = ruleAt(state, state.scheduleNow);
         // The clock line alone once there is one: a settings row's value has
         // room for about twenty characters, and "1 rule, now: work until..."
         // lost the only part of it worth reading. The count is the first
@@ -345,7 +361,7 @@ public class PurpleScheduleActivity extends UniversalFragment
         if (item.id == ROW_PAUSED) {
             // Not a splice: this one lives in state.toml and has its own writer,
             // which reloads for itself.
-            PurpleGate.setSchedulePaused(!item.checked);
+            PurpleGate.setSchedulePaused(!item.checked, 0);
             refresh();
             return;
         }
@@ -357,7 +373,10 @@ public class PurpleScheduleActivity extends UniversalFragment
             // Re-read rather than trusting the row: a reload may have landed
             // between the draw and the tap, and every write below is fenced on
             // what the rule says right now.
-            final PurpleCore.ScheduleRule rule = ruleAt(PurpleGate.state(), item.id - RULE_BASE);
+            final PurpleCore.Loaded fresh = PurpleGate.state();
+            final PurpleCore.ScheduleRule rule = (fresh == null)
+                    ? null
+                    : ruleAt(fresh.scheduleRules, "", item.id - RULE_BASE);
             if (rule == null) {
                 refresh();
                 return;
@@ -370,7 +389,7 @@ public class PurpleScheduleActivity extends UniversalFragment
             // written back exactly as read - which is also what makes the
             // expected fingerprint match.
             write(PurpleWriter.setScheduleRule(
-                    rule.index, rule.from, rule.till, rule.preset,
+                    rule.ruleset, rule.index, rule.from, rule.till, rule.preset,
                     !rule.enabled, rule.days, rule.from, rule.till, rule.preset,
                     "schedule rule switch"));
         }
@@ -607,12 +626,12 @@ public class PurpleScheduleActivity extends UniversalFragment
         }
         if (existing == null) {
             write(PurpleWriter.appendScheduleRule(
-                    enabled, chosen, from, till, preset, "schedule rule added"));
+                    "", enabled, chosen, from, till, preset, "schedule rule added"));
             return;
         }
         write(PurpleWriter.setScheduleRule(
-                existing.index, existing.from, existing.till, existing.preset,
-                enabled, chosen, from, till, preset,
+                existing.ruleset, existing.index, existing.from, existing.till,
+                existing.preset, enabled, chosen, from, till, preset,
                 "schedule rule edited"));
     }
 
@@ -625,8 +644,8 @@ public class PurpleScheduleActivity extends UniversalFragment
         builder.setTitle(getString(R.string.PurpleScheduleDeleteTitle));
         builder.setMessage(ruleLine(rule));
         builder.setPositiveButton(getString(R.string.Delete), (dialog, which) -> write(
-                PurpleWriter.removeScheduleRule(
-                        rule.index, rule.from, rule.till, rule.preset, "schedule rule removed")));
+                PurpleWriter.removeScheduleRule(rule.ruleset, rule.index, rule.from,
+                        rule.till, rule.preset, "schedule rule removed")));
         builder.setNegativeButton(getString(R.string.Cancel), null);
         showDialog(builder.create());
     }
