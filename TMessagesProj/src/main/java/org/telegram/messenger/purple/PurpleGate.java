@@ -22,6 +22,7 @@ import androidx.collection.LongSparseArray;
 
 import org.telegram.messenger.AccountInstance;
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.FileLog;
@@ -32,6 +33,7 @@ import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
+import org.telegram.messenger.Utilities;
 import org.telegram.messenger.UserObject;
 import org.telegram.tgnet.TLRPC;
 
@@ -2255,6 +2257,72 @@ public final class PurpleGate {
                 } catch (Exception e) {
                     FileLog.e(e);
                 }
+            }
+            dropHiddenConversationShortcuts();
+        });
+    }
+
+    /**
+     * Takes a hidden chat's conversation shortcut out of the OS.
+     *
+     * buildShortcuts() above only writes the frequent-contact targets. A
+     * notification writes a second kind, the long-lived "ndid_" conversation
+     * shortcut a bubble needs, and the OS keeps it for as long as the app
+     * does - so a chat that notified an hour ago under Normal is still a
+     * direct-share target after the preset hid it. A preset never lets such
+     * a chat notify, so nothing puts it back while the preset runs; the next
+     * notification after the preset ends re-creates it.
+     *
+     * Reads on the UI thread, where the dialogs are; the removal is a binder
+     * call and goes to the global queue, the way buildShortcuts() does it.
+     */
+    private static void dropHiddenConversationShortcuts() {
+        if (android.os.Build.VERSION.SDK_INT < 29) {
+            return;
+        }
+        final ArrayList<String> stale = new ArrayList<>();
+        try {
+            final java.util.List<androidx.core.content.pm.ShortcutInfoCompat> current =
+                    androidx.core.content.pm.ShortcutManagerCompat.getDynamicShortcuts(
+                            ApplicationLoader.applicationContext);
+            for (int i = 0, n = current.size(); i < n; ++i) {
+                final String id = current.get(i).getId();
+                if (id == null || !id.startsWith("ndid_")) {
+                    continue;
+                }
+                final long did;
+                try {
+                    did = Long.parseLong(id.substring(5));
+                } catch (NumberFormatException e) {
+                    continue;
+                }
+                for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; ++a) {
+                    if (!UserConfig.getInstance(a).isClientActivated()) {
+                        continue;
+                    }
+                    if (MessagesController.getInstance(a).dialogs_dict.get(did) == null) {
+                        continue;
+                    }
+                    if (hiddenEverywhere(a, did) || hiddenFromSuggestions(a, did)) {
+                        stale.add(id);
+                    }
+                    break;
+                }
+            }
+        } catch (Exception e) {
+            FileLog.e(e);
+            return;
+        }
+        if (stale.isEmpty()) {
+            return;
+        }
+        Utilities.globalQueue.postRunnable(() -> {
+            try {
+                androidx.core.content.pm.ShortcutManagerCompat.removeLongLivedShortcuts(
+                        ApplicationLoader.applicationContext, stale);
+                FileLog.d("Purple: " + stale.size() + " conversation shortcut(s) of hidden chats removed.");
+            } catch (Exception e) {
+                FileLog.e(e);
             }
         });
     }
