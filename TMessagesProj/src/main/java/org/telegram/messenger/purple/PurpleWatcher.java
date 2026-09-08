@@ -45,8 +45,24 @@ public final class PurpleWatcher {
      */
     private static final long QUIET_MS = 400;
 
-    private static final Runnable RELOAD =
-            () -> PurpleGate.reload("settings.toml changed on disk");
+    private static final Runnable RELOAD = () -> {
+        // The app writes this file itself - a list edit, an import, the preset
+        // switch that follows one - and every one of those reloads
+        // synchronously before returning. The watcher then hears its own write
+        // and would reload a second time, half a second later, over whatever
+        // the user is by then looking at. Comparing the file on disk against
+        // the bytes the gate is running on separates that echo from a real
+        // outside change; the desktop fork does the same in purple_config.cpp.
+        //
+        // A deletion, or a file that has moved on again since, does not match
+        // and reloads as it always did.
+        if (PurpleGate.runningSettings(PurpleGate.settingsBytes())) {
+            FileLog.d("Purple: settings.toml changed, but it is what we are "
+                    + "already running; not reloading.");
+            return;
+        }
+        PurpleGate.reload("settings.toml changed on disk");
+    };
 
     private PurpleWatcher() {
     }
@@ -78,9 +94,10 @@ public final class PurpleWatcher {
                     }
                     // Posting to the UI thread both debounces (the handler drops
                     // the pending one) and serialises this against the reload an
-                    // import or a preset switch is doing. An import reloads
-                    // twice as a result, once for its own write and once for
-                    // this - idempotent, and the log line says which is which.
+                    // import or a preset switch is doing. That reload has
+                    // already happened by the time this runs, which is what
+                    // lets RELOAD recognise the app's own write and leave it
+                    // alone - so an import reloads once, not twice.
                     AndroidUtilities.cancelRunOnUIThread(RELOAD);
                     AndroidUtilities.runOnUIThread(RELOAD, QUIET_MS);
                 }

@@ -38,6 +38,8 @@ import org.telegram.tgnet.TLRPC;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.Charset;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -239,6 +241,51 @@ public final class PurpleGate {
         return readSettings();
     }
 
+    /**
+     * The settings.toml the running resolution was built from - its length and
+     * SHA-256 - or null when there was no file to read.
+     *
+     * Kept for one caller: {@link PurpleWatcher} has to tell an edit somebody
+     * else made from the echo of the app's own write, which has already
+     * reloaded synchronously by the time the watcher hears about it. The
+     * desktop fork does the same comparison in {@code purple_config.cpp}.
+     */
+    private static volatile String settingsFingerprint;
+
+    /** Length and SHA-256 of these bytes, or null for "there is no file". */
+    private static String fingerprintOf(byte[] settings) {
+        if (settings == null) {
+            return null;
+        }
+        try {
+            final byte[] sum = MessageDigest.getInstance("SHA-256").digest(settings);
+            final StringBuilder out = new StringBuilder(sum.length * 2 + 12);
+            out.append(settings.length).append(':');
+            for (int a = 0; a < sum.length; ++a) {
+                out.append(Character.forDigit((sum[a] >> 4) & 0xf, 16))
+                        .append(Character.forDigit(sum[a] & 0xf, 16));
+            }
+            return out.toString();
+        } catch (NoSuchAlgorithmException e) {
+            // Then nothing can be compared, and every event is a real one.
+            FileLog.e(e);
+            return null;
+        }
+    }
+
+    /**
+     * Whether these bytes are the settings.toml the resolution already runs on.
+     *
+     * False whenever either side is unknown, which is the safe direction: a
+     * file that has just been deleted, or one that could not be digested, is
+     * reported as a change and gets its reload.
+     */
+    public static boolean runningSettings(byte[] settings) {
+        final String known = settingsFingerprint;
+        final String candidate = fingerprintOf(settings);
+        return known != null && known.equals(candidate);
+    }
+
     /** Loads settings.toml and state.toml once, the first time anyone asks. */
     public static void ensureLoaded() {
         if (everLoaded) {
@@ -318,6 +365,10 @@ public final class PurpleGate {
         }
 
         loaded = next;
+        // What the watcher compares the file against. Set from the bytes this
+        // reload actually read, so the app's own write comes straight back as
+        // "already running" rather than as a change to react to.
+        settingsFingerprint = fingerprintOf(settings);
         synchronized (cacheLock) {
             modeCache.clear();
         }
