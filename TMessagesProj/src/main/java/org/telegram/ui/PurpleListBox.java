@@ -14,6 +14,7 @@ import static org.telegram.messenger.LocaleController.formatString;
 import static org.telegram.messenger.LocaleController.getString;
 
 import android.app.Activity;
+import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.widget.LinearLayout;
@@ -87,25 +88,43 @@ public final class PurpleListBox {
         // it. Until this line existed, a chat missing from the view and a chat
         // sitting in it under a mode looked identical from here.
         final String verdict = PurpleListMenu.verdictLine(currentAccount, dialogId);
-        if (verdict != null) {
-            layout.addView(note(activity, verdict,
-                    Theme.getColor(Theme.key_dialogTextGray2, resourcesProvider)));
+        final TextView verdictView = verdict == null ? null
+                : note(activity, verdict,
+                        Theme.getColor(Theme.key_dialogTextGray2, resourcesProvider));
+        if (verdictView != null) {
+            layout.addView(verdictView);
         }
 
-        for (int a = 0, n = lists.size(); a < n; ++a) {
+        // Kept, because the box no longer closes on a tick: these are the views
+        // the file's new answer is pushed back into.
+        final int count = lists.size();
+        final PurpleCore.ListEntry[] entries = new PurpleCore.ListEntry[count];
+        final CheckBoxCell[] cells = new CheckBoxCell[count];
+        for (int a = 0; a < count; ++a) {
+            final int index = a;
             final PurpleCore.ListEntry list = lists.get(a);
+            entries[a] = list;
             final CheckBoxCell cell = new CheckBoxCell(activity, 1, resourcesProvider);
-            cell.setText(titleOf(list), null, list.member, a < n - 1);
+            cells[a] = cell;
+            cell.setText(titleOf(list), null, list.member, a < count - 1);
             cell.setPadding(dp(4), 0, dp(4), 0);
             cell.setBackground(Theme.createSelectorDrawable(
                     Theme.getColor(Theme.key_listSelector, resourcesProvider), Theme.RIPPLE_MASK_ALL));
             cell.setOnClickListener(v -> {
-                // Dismiss first, the way a menu item does: the write reloads
-                // and rebuilds the chat list underneath, and a box left open
-                // over that would be showing membership it no longer knows.
-                builder.getDismissRunnable().run();
+                // The box stays open. Filing a chat is usually more than one
+                // decision - out of one list and into another - and closing on
+                // the first made the second a fresh trip through the chat menu.
+                // The chat list rebuilding underneath is not a reason to close:
+                // nothing here reads it, and the rows are refreshed from the
+                // file below, which is the only thing they were ever showing.
+                //
+                // The checkbox and not the captured entry says which way this
+                // goes, so a row that has been ticked once already asks for the
+                // opposite of what is on screen rather than of what the box was
+                // built with.
+                final boolean wanted = !cell.isChecked();
                 final String error = PurpleListMenu.toggle(
-                        currentAccount, dialogId, list, !list.member);
+                        currentAccount, dialogId, entries[index], wanted);
                 if (error != null) {
                     // The file is unchanged and so is the running resolution;
                     // the detail is in the log, which is where a TOML problem
@@ -113,7 +132,9 @@ public final class PurpleListBox {
                     Toast.makeText(activity,
                             getString(R.string.PurpleListsFailed),
                             Toast.LENGTH_SHORT).show();
+                    return;
                 }
+                refreshRows(currentAccount, dialogId, entries, cells, verdictView, builder);
             });
             layout.addView(cell);
         }
@@ -149,6 +170,50 @@ public final class PurpleListBox {
 
         builder.setNegativeButton(getString(R.string.Close), null);
         fragment.showDialog(builder.create());
+    }
+
+    /**
+     * Puts the file's answer back into the open box after a tick.
+     *
+     * Read again rather than flipped in place, for the reason the write itself
+     * rereads: a list can match by {@code kinds} as well as by member id, so
+     * filing a chat in one list can change what another says about it, and the
+     * verdict line above them is a statement about the running resolution
+     * rather than about any single row.
+     *
+     * A file whose lists have been renamed, added to or reordered underneath
+     * the open box cannot be shown by these rows at all - row three would be
+     * ticking a list it no longer names - so that closes the box instead. It
+     * takes an outside edit between two taps, and closing is what the box did
+     * on every tap until now.
+     */
+    private static void refreshRows(int currentAccount, long dialogId,
+            PurpleCore.ListEntry[] entries, CheckBoxCell[] cells, TextView verdictView,
+            AlertDialog.Builder builder) {
+        final List<PurpleCore.ListEntry> fresh = PurpleListMenu.listsFor(currentAccount, dialogId);
+        if (fresh.size() != cells.length) {
+            builder.getDismissRunnable().run();
+            return;
+        }
+        for (int a = 0; a < cells.length; ++a) {
+            if (!TextUtils.equals(fresh.get(a).name, entries[a].name)) {
+                builder.getDismissRunnable().run();
+                return;
+            }
+        }
+        for (int a = 0; a < cells.length; ++a) {
+            entries[a] = fresh.get(a);
+            cells[a].setChecked(entries[a].member, true);
+        }
+        if (verdictView != null) {
+            // Only when there is still one to show. It goes away with the
+            // preset and not with a list edit, so a null here means the answer
+            // is unchanged rather than empty.
+            final String verdict = PurpleListMenu.verdictLine(currentAccount, dialogId);
+            if (verdict != null) {
+                verdictView.setText(verdict);
+            }
+        }
     }
 
     /**
