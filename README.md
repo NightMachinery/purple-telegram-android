@@ -166,6 +166,19 @@ delete. Rules have no name; the app addresses one by its position in the file
 and hands the core the window and preset it read, so an outside edit landing
 under an open dialog is refused rather than misapplied.
 
+**Follow Do Not Disturb** on the same settings screen is `[focus_sync]`, the
+key the desktop reads on macOS: turning any Do Not Disturb mode on puts
+`enter_preset` in force, and turning it off goes back to `exit_preset` -
+`previous`, the default, meaning whatever was running before. Android needs no
+permission to read the interruption filter, so this is a switch and not a
+prompt; the switch reflects what the parser did rather than the key, since a
+`[focus_sync]` naming no `enter_preset` is turned off for you. A preset chosen
+by hand during a focus session stands, and outlives it. If a schedule window
+opens or closes while focus is holding the preset, leaving hands the chat list
+to the schedule rather than to the preset the session started with - a window
+missed for the length of a focus mode was the one case where the two features
+disagreed.
+
 Two keys new to the file, shared with the desktop. `[suggestions]
 hide_invisible_p` (default true) keeps a chat the preset hides - and no extra
 view or shown folder tab reaches - out of the frequent-contact strip, the

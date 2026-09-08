@@ -485,6 +485,96 @@ void AppendScheduleRulesJson(QString &out, const Purple::Schedule &schedule) {
 	return result;
 }
 
+// The two halves of the desktop's focus policy (purple_focus.cpp), which the
+// bridge carries verbatim because Android has nowhere else to put them: there
+// is no second process holding an rpl subscription, only the receiver that
+// reads the filter and the state write that has to follow it.
+
+// Entering: remember what was running and why, so leaving can put both back,
+// and let the preset [focus_sync] names take over.
+void FocusEnter(Purple::State &state, const Purple::Settings &settings) {
+	const auto from = state.activePreset;
+
+	// Focus cannot be what we remember returning to, or a hand-edited state
+	// file could leave the two pointing at each other.
+	const auto fromSource = (state.activeSource == Purple::PresetSource::Focus)
+		? Purple::PresetSource::Manual
+		: state.activeSource;
+	state.focusSeen = true;
+	state.previousPreset = from;
+	state.previousSource = fromSource;
+	state.activePreset = settings.focusSync.enterPreset;
+	state.activeSource = Purple::PresetSource::Focus;
+}
+
+// Leaving. Answers which of the four things it did, for the log line.
+//
+// `enterTarget' is what the schedule wanted at the moment focus took over, and
+// `knownEnterTarget' is false when nothing remembers - see the missed-window
+// case below.
+[[nodiscard]] QString FocusLeave(
+		Purple::State &state,
+		const Purple::Settings &settings,
+		bool knownEnterTarget,
+		const QString &enterTarget) {
+	if (state.activeSource != Purple::PresetSource::Focus) {
+		// The preset in force is not the one focus imposed: it was chosen while
+		// focus was on, and that choice outlives the focus session.
+		state.focusSeen = false;
+		return QStringLiteral("kept");
+	}
+	const auto &sync = settings.focusSync;
+	const auto restore = Purple::IsPreviousPresetName(sync.exitPreset);
+	const auto previous = state.previousPreset;
+	const auto previousSource = state.previousSource;
+	state.focusSeen = false;
+	state.previousPreset = QString();
+	state.previousSource = Purple::PresetSource::Manual;
+	if (restore) {
+		// A schedule window that opened - or closed - while focus held the
+		// preset was recorded by the tick and never applied, because focus is
+		// the more immediate signal. Putting the pre-focus preset back now would
+		// leave the tick nothing to do, since the target it compares against has
+		// already moved, and the window would be missed until the next boundary.
+		// So the boundary rule runs here instead, on the same asymmetry the tick
+		// uses: a window that has opened overrides what was there, and one that
+		// has closed only undoes a preset the schedule itself set - which is why
+		// it is the pre-focus source, not the focus one, that decides.
+		//
+		// Only when something remembers what the schedule wanted when focus took
+		// over. That is not a key state.toml has, so the caller keeps it beside
+		// the file and it is simply absent after a restart, in which case this
+		// restores exactly as it did before.
+		const auto target = state.schedulePaused
+			? std::optional<QString>()
+			: Purple::ScheduleTarget(
+				settings.schedule,
+				QDateTime::currentDateTime());
+		const auto moved = knownEnterTarget
+			&& target
+			&& (*target != enterTarget);
+		if (moved
+			&& (*target != Purple::NormalPreset()
+				|| previousSource == Purple::PresetSource::Schedule)) {
+			state.activePreset = *target;
+			state.activeSource = Purple::PresetSource::Schedule;
+			state.scheduleTarget = *target;
+			return QStringLiteral("schedule");
+		}
+	}
+	const auto wanted = restore ? previous : sync.exitPreset;
+
+	// Restoring puts back the reason as well as the preset, so a window the
+	// schedule had opened still closes at its own boundary afterwards. A preset
+	// named outright was not put there by either, so it is the user's until
+	// something moves it.
+	state.activePreset = wanted.isEmpty() ? Purple::NormalPreset() : wanted;
+	state.activeSource = restore
+		? previousSource
+		: Purple::PresetSource::Manual;
+	return restore ? QStringLiteral("restored") : QStringLiteral("exited");
+}
+
 } // namespace
 
 extern "C" JNIEXPORT jstring JNICALL
@@ -761,6 +851,17 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 	json += QString::number(ruleNow ? ruleNow->sourceIndex : -1);
 	json += QStringLiteral(",\"scheduleRules\":");
 	AppendScheduleRulesJson(json, gate.settings.schedule);
+	// [focus_sync] as the row showing it needs it. The enabled flag is the
+	// parser's rather than the file's: it turns focus sync off itself when
+	// enter_preset names nothing that exists, and a switch reading the file
+	// instead would sit on while nothing happened. The two preset names travel
+	// with it so the row can say what it will do and not only that it is on.
+	json += QStringLiteral(",\"focusSyncEnabled\":");
+	AppendJsonBool(json, gate.settings.focusSync.enabled);
+	json += QStringLiteral(",\"focusSyncEnter\":");
+	AppendJsonString(json, gate.settings.focusSync.enterPreset);
+	json += QStringLiteral(",\"focusSyncExit\":");
+	AppendJsonString(json, gate.settings.focusSync.exitPreset);
 	// Handed over whole rather than asked per chat, exactly as the exempt
 	// folders are: shown() runs once per row per rebuild, and a JNI call with a
 	// state parse behind it is the one thing that path cannot carry. Only the
@@ -1061,6 +1162,100 @@ Java_org_telegram_messenger_purple_PurpleCore_scheduleTickNative(
 		apply ? QString() : Purple::PresetSourceName(source));
 	json += QStringLiteral(",\"text\":");
 	AppendJsonString(json, Purple::SerializeState(state));
+	json += QChar('}');
+	return ToJava(env, json);
+}
+
+// One pass of OS focus sync, mirroring the desktop's purple_focus.cpp.
+//
+// Both halves in one call, unlike the desktop, where a detector writes the flag
+// and a policy watching state.toml acts on it. Android has one caller - the
+// receiver that read the interruption filter - and splitting the write in two
+// would only mean two rewrites of state.toml for one change of focus.
+//
+// A pure function of the settings already loaded, the state text handed in, the
+// filter and the wall clock. Null comes back whenever there is nothing to
+// write, which is every call but the ones at an edge.
+//
+// `enterTarget' is what the schedule wanted when the running focus session
+// began, or null when nothing remembers; the result hands back a fresh one to
+// keep whenever a session starts. It is not in state.toml because this client
+// does not own that schema - see FocusLeave() for what it is for.
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_focusTickNative(
+		JNIEnv *env,
+		jclass,
+		jbyteArray stateUtf8,
+		jboolean active,
+		jstring enterTarget) {
+	auto stateText = QString();
+	if (!ReadUtf8(env, stateUtf8, stateText)) {
+		return nullptr;
+	}
+	auto &gate = TheGate();
+	const auto lock = std::lock_guard(gate.mutex);
+	if (!gate.loaded) {
+		return nullptr;
+	}
+	const auto known = (enterTarget != nullptr);
+	const auto remembered = FromJava(env, enterTarget);
+	auto state = Purple::ParseState(stateText, QStringLiteral("state.toml"));
+	state.focusActive = (active == JNI_TRUE);
+
+	const auto &sync = gate.settings.focusSync;
+	auto change = QStringLiteral("none");
+	auto entered = std::optional<QString>();
+	if (!sync.enabled) {
+		// Switching focus sync off while it is holding a preset has to hand that
+		// preset back. Leaving it in force would be a preset nothing on screen
+		// explains and nothing left running would ever lift.
+		if (state.activeSource == Purple::PresetSource::Focus) {
+			change = FocusLeave(state, gate.settings, known, remembered);
+		} else if (state.focusSeen) {
+			state.focusSeen = false;
+		}
+	} else if (state.focusActive == state.focusSeen) {
+		// No edge, so nothing happens - which is exactly what makes a preset
+		// chosen by hand mid-session stand until focus itself changes. The flag
+		// above may still have moved on its own, and that write is the point of
+		// this call being made at all.
+	} else if (state.focusActive) {
+		FocusEnter(state, gate.settings);
+		change = QStringLiteral("entered");
+		// Handed back for the caller to keep until the session ends. Empty means
+		// the schedule wanted nothing, which is a different answer from wanting
+		// Normal and stays distinguishable from it.
+		entered = Purple::ScheduleTarget(
+			gate.settings.schedule,
+			QDateTime::currentDateTime()).value_or(QString());
+	} else {
+		change = FocusLeave(state, gate.settings, known, remembered);
+	}
+
+	const auto serialized = Purple::SerializeState(state);
+	if (serialized == stateText) {
+		return nullptr;
+	}
+	auto json = QStringLiteral("{\"change\":");
+	AppendJsonString(json, change);
+	json += QStringLiteral(",\"preset\":");
+	AppendJsonString(json, state.activePreset.isEmpty()
+		? Purple::NormalPreset()
+		: state.activePreset);
+	json += QStringLiteral(",\"source\":");
+	AppendJsonString(json, Purple::PresetSourceName(state.activeSource));
+	// Whether focus is holding the preset now. False is the caller's cue to
+	// forget the entry target, so a session that ended leaves nothing behind.
+	json += QStringLiteral(",\"session\":");
+	AppendJsonBool(json, state.activeSource == Purple::PresetSource::Focus);
+	json += QStringLiteral(",\"enterTarget\":");
+	if (entered) {
+		AppendJsonString(json, *entered);
+	} else {
+		json += QStringLiteral("null");
+	}
+	json += QStringLiteral(",\"text\":");
+	AppendJsonString(json, serialized);
 	json += QChar('}');
 	return ToJava(env, json);
 }

@@ -70,6 +70,7 @@ public class PurpleSettingsActivity extends UniversalFragment
     private static final int ROW_SHARE = 9;
     private static final int ROW_PATH = 10;
     private static final int ROW_NOTIFICATIONS = 11;
+    private static final int ROW_FOCUS = 12;
 
     /**
      * The file picker's request code. Its result arrives at
@@ -140,6 +141,14 @@ public class PurpleSettingsActivity extends UniversalFragment
         items.add(suggestions);
         items.add(UItem.asShadow(getString(R.string.PurpleHideSuggestionsInfo)));
 
+        final UItem focus = UItem.asCheck(ROW_FOCUS, getString(R.string.PurpleFollowDnd));
+        // The parser's answer rather than the raw key: it turns focus sync off
+        // itself when enter_preset names no preset that exists, so a switch
+        // that showed the key would sit on over a file that does nothing.
+        focus.checked = (state != null && state.focusSyncEnabled);
+        items.add(focus);
+        items.add(UItem.asShadow(focusShadow(state)));
+
         items.add(UItem.asHeader(getString(R.string.PurpleSettingsFileHeader)));
         items.add(UItem.asButton(ROW_EDIT, getString(R.string.PurpleEditSettings)));
         items.add(UItem.asButton(ROW_SEND, getString(R.string.PurpleSendToSaved)));
@@ -179,6 +188,38 @@ public class PurpleSettingsActivity extends UniversalFragment
         return formatPluralString("PurpleSettingsFileWarnings", warnings);
     }
 
+    /**
+     * Which presets Do Not Disturb moves between, from the file.
+     *
+     * A file that names no enter_preset is the one case worth a sentence of its
+     * own: the parser has already turned focus sync off over it, so a row that
+     * only said "off" would leave the user flipping a switch that snaps back.
+     */
+    private static CharSequence focusShadow(PurpleCore.Loaded state) {
+        final String enter = state == null ? "" : state.focusSyncEnter;
+        if (TextUtils.isEmpty(enter)) {
+            return getString(R.string.PurpleFollowDndUnset);
+        }
+        final String exit = state == null ? "" : state.focusSyncExit;
+        return formatString(R.string.PurpleFollowDndInfo, enter, exitLabel(exit));
+    }
+
+    /**
+     * What leaving a focus mode goes back to.
+     *
+     * "previous" is a keyword and not a preset name, so it is spelled out
+     * rather than quoted; an empty exit_preset means Normal, the same
+     * fall-through the core takes.
+     */
+    private static String exitLabel(String exit) {
+        if (TextUtils.isEmpty(exit)) {
+            return getString(R.string.PurplePresetNormal);
+        }
+        return "previous".equalsIgnoreCase(exit)
+                ? getString(R.string.PurpleFollowDndPrevious)
+                : exit;
+    }
+
     @Override
     protected void onClick(UItem item, View view, int position, float x, float y) {
         switch (item.id) {
@@ -194,6 +235,10 @@ public class PurpleSettingsActivity extends UniversalFragment
         case ROW_SUGGESTIONS:
             write(PurpleWriter.setTableBool(
                     "suggestions", "hide_invisible_p", !item.checked, "suggestions switch"));
+            break;
+        case ROW_FOCUS:
+            write(PurpleWriter.setTableBool(
+                    "focus_sync", "enabled_p", !item.checked, "focus sync switch"));
             break;
         case ROW_EDIT:
             presentFragment(new PurpleSettingsEditorActivity());

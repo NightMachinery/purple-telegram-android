@@ -403,6 +403,12 @@ public final class PurpleGate {
         // would: a rule added, a pause lifted, or a preset chosen by hand that
         // the schedule now has an opinion about.
         PurpleSchedule.refresh();
+
+        // And focus sync, for the half of the same reason that is about the
+        // file rather than the clock: [focus_sync] going off while it holds a
+        // preset has to hand that preset back, and nothing but a reload says
+        // it went off. The first of these is also what starts the listener.
+        PurpleFocus.refresh();
     }
 
     /**
