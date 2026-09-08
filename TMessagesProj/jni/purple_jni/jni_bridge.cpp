@@ -1419,6 +1419,28 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 	json += QString::number(gate.settings.lastSeen.tradeRememberSeconds);
 	json += QStringLiteral(",\"lastSeenTradeCooldown\":");
 	json += QString::number(gate.settings.lastSeen.tradeCooldownSeconds);
+	// Purple: [screen_time], the switch and the three thresholds. The recorder
+	// reads all four on every touch, every keystroke burst and every chat
+	// opened, so they travel with the resolution rather than being asked for -
+	// a JNI call with a file parse behind it on the touch path is exactly what
+	// this cannot cost. The budgets are NOT here: they are only ever needed
+	// beside what has been spent against them, and that is the ledger's call.
+	//
+	// Off is the default and the file has to say so before anything is
+	// written down. Nothing should start keeping a record of what you looked
+	// at because a version number moved.
+	json += QStringLiteral(",\"screenTimeEnabled\":");
+	AppendJsonBool(json, gate.settings.screenTime.enabled);
+	json += QStringLiteral(",\"screenTimeActionSpan\":");
+	json += QString::number(gate.settings.screenTime.actionSpanSeconds);
+	json += QStringLiteral(",\"screenTimeActiveGap\":");
+	json += QString::number(gate.settings.screenTime.activeGapSeconds);
+	json += QStringLiteral(",\"screenTimeIdleAfter\":");
+	json += QString::number(gate.settings.screenTime.idleAfterSeconds);
+	json += QStringLiteral(",\"screenTimeRetentionDays\":");
+	json += QString::number(gate.settings.screenTime.retentionDays);
+	json += QStringLiteral(",\"screenTimeBudgets\":");
+	json += QString::number(int(gate.settings.screenTime.budgets.size()));
 	json += QStringLiteral(",\"views\":");
 	AppendViewsJson(json, gate.resolved);
 	// Every list in the file, not the running preset's - the membership menu
@@ -2482,6 +2504,304 @@ Java_org_telegram_messenger_purple_PurpleCore_tradesNative(
 	}
 	json += QChar(']');
 	return ToJava(env, json);
+}
+
+// Purple: whether the running preset would hide this chat with the peek set
+// aside - which is the only way to answer "time in hidden chats while peeking".
+//
+// visibleNative cannot do it. A peek is a field of the resolution, so Visible()
+// already answers Always for every chat while one runs, and every caller of
+// that native gets the revealed answer for free - which is exactly right for
+// drawing a chat list and exactly wrong for asking why the chat is on it.
+//
+// Same packed int as visibleNative, minus the view bits: this is asked once per
+// chat opened, not once per row, so there is nothing to ride along.
+extern "C" JNIEXPORT jint JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_visibleUnpeekedNative(
+		JNIEnv *,
+		jclass,
+		jlong bareId,
+		jint kind) {
+	constexpr auto kNotifyBit = jint(0x10);
+	constexpr auto kStock = jint(int(Purple::ShowMode::Always)) | kNotifyBit;
+
+	if (kind < 0 || kind > int(Purple::ChatKind::Bot)) {
+		return kStock;
+	}
+	auto &gate = TheGate();
+	const auto lock = std::lock_guard(gate.mutex);
+	if (!gate.loaded || gate.resolved.normal) {
+		return kStock;
+	}
+	// A copy with the peek put back, rather than clearing it on the live one:
+	// the gate is shared and the chat list is asking it the other question from
+	// another thread while this runs.
+	auto unpeeked = gate.resolved;
+	unpeeked.peeking = false;
+	const auto visibility = Purple::Visible(
+		gate.settings,
+		unpeeked,
+		Purple::PeerIdValue(bareId),
+		Purple::ChatKind(kind));
+	return jint(int(visibility.show))
+		| (visibility.notify ? kNotifyBit : jint(0));
+}
+
+// Purple: the whole screen-time report for one window, in one call.
+//
+// One native rather than one per view because every number on that screen comes
+// out of the same derivation: parsing the log and deriving its sessions is the
+// expensive half, and asking for the headline, the chart, the ranks, the heat
+// map and the comparison separately would pay for it five times.
+//
+// `settingsUtf8' rather than the loaded gate: the thresholds have to be the
+// same ones the caller is about to name on screen, and the gate can reload
+// underneath a screen that is mid-draw. The log arrives as bytes for the same
+// reason - the caller owns the file.
+//
+// Filters are not a parameter. The scope object is written once for the whole
+// range and once per preset that appears in it, and each carries its chats,
+// its per-kind totals and its buckets split by kind - so "active only", a kind
+// chip and a preset chip are all lookups in what came back rather than a
+// second query.
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_screenTimeReportNative(
+		JNIEnv *env,
+		jclass,
+		jbyteArray settingsUtf8,
+		jbyteArray logUtf8,
+		jlong fromMs,
+		jlong toMs,
+		jint bucketUnit,
+		jstring timeZone) {
+	auto settingsText = QString();
+	auto logText = QString();
+	if (!ReadUtf8(env, settingsUtf8, settingsText)
+		|| !ReadUtf8(env, logUtf8, logText)) {
+		return nullptr;
+	}
+	const auto parsed = Purple::ParseSettings(
+		settingsText,
+		QStringLiteral("settings.toml"));
+	const auto &screenTime = parsed.settings.screenTime;
+	const auto events = Purple::ParseEventLog(logText);
+	const auto sessions = Purple::DeriveSessions(events, screenTime);
+	const auto zone = ZoneFrom(FromJava(env, timeZone));
+	const auto unit = BucketUnitFrom(bucketUnit);
+	const auto from = int64(fromMs);
+	const auto to = int64(toMs);
+
+	auto json = QString();
+	json.reserve(4096);
+	json += QChar('{');
+	AppendScopeJson(json, sessions, from, to, unit, zone);
+
+	// The reading load: every day in the range folded onto one clock. Always
+	// asked for, whatever unit the bars are in, because it answers a different
+	// question - not how much, but when in a day - and it is what a schedule
+	// window gets placed by.
+	json += QStringLiteral(",\"reading\":");
+	AppendBucketsJson(
+		json,
+		sessions,
+		from,
+		to,
+		Purple::BucketUnit::HourOfDay,
+		zone);
+
+	// Hour by weekday. Drawn for a month, where a row of thirty-one bars has
+	// stopped saying anything about the shape of a week.
+	const auto heat = Purple::HeatMapFor(sessions, from, to, zone);
+	json += QStringLiteral(",\"heat\":{\"totalMs\":[");
+	for (auto day = 0; day != 7; ++day) {
+		if (day) {
+			json += QChar(',');
+		}
+		json += QChar('[');
+		for (auto hour = 0; hour != 24; ++hour) {
+			if (hour) {
+				json += QChar(',');
+			}
+			json += QString::number(qint64(heat.totalMs[day][hour]));
+		}
+		json += QChar(']');
+	}
+	json += QStringLiteral("],\"activeMs\":[");
+	for (auto day = 0; day != 7; ++day) {
+		if (day) {
+			json += QChar(',');
+		}
+		json += QChar('[');
+		for (auto hour = 0; hour != 24; ++hour) {
+			if (hour) {
+				json += QChar(',');
+			}
+			json += QString::number(qint64(heat.activeMs[day][hour]));
+		}
+		json += QChar(']');
+	}
+	json += QStringLiteral("]}");
+
+	// This range against the one of the same length before it. `changePercent'
+	// is absent rather than zero for a previous range with nothing in it: there
+	// is no percentage change from zero, and a number written there would be
+	// invented.
+	const auto compare = Purple::Compare(sessions, from, to);
+	json += QStringLiteral(",\"compare\":{\"deltaMs\":");
+	json += QString::number(qint64(compare.deltaMs));
+	json += QStringLiteral(",\"previousTotalMs\":");
+	json += QString::number(qint64(compare.previous.totalMs));
+	json += QStringLiteral(",\"previousActiveMs\":");
+	json += QString::number(qint64(compare.previous.activeMs));
+	json += QStringLiteral(",\"changePercent\":");
+	if (compare.changePercent) {
+		json += QString::number(*compare.changePercent);
+	} else {
+		json += QStringLiteral("null");
+	}
+	json += QChar('}');
+
+	// One scope per preset that actually appears, in the core's own rank order,
+	// so the chips are the presets the range HAS rather than the ones the file
+	// declares. An empty name is Normal, spelled as the file spells it.
+	const auto totals = Purple::RangeTotals(sessions, from, to);
+	json += QStringLiteral(",\"presets\":[");
+	auto firstPreset = true;
+	for (const auto &preset : totals.presets) {
+		if (!firstPreset) {
+			json += QChar(',');
+		}
+		firstPreset = false;
+		auto only = std::vector<Purple::Session>();
+		for (const auto &session : sessions) {
+			if (!session.preset.compare(preset.preset, Qt::CaseInsensitive)) {
+				only.push_back(session);
+			}
+		}
+		json += QStringLiteral("{\"preset\":");
+		AppendJsonString(json, preset.preset);
+		json += QChar(',');
+		AppendScopeJson(json, only, from, to, unit, zone);
+		json += QChar('}');
+	}
+	json += QStringLiteral("]}");
+	return ToJava(env, json);
+}
+
+// Purple: what every budget has spent on one day.
+//
+// The day is handed over as a moment inside it rather than as a date, because
+// which day a moment belongs to is a local-time question and the answer has to
+// be the same one the buckets used. `settings' carries the thresholds AND the
+// budgets for the reason BudgetLedger takes them together: counting today with
+// one set of rules and judging it by another would be a ledger nobody could
+// check.
+//
+// Each entry carries the budget as written as well as what it spent, so the
+// cover can name it and the screen can list it without a second call to work
+// out what "kind:groups" meant.
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_screenTimeLedgerNative(
+		JNIEnv *env,
+		jclass,
+		jbyteArray settingsUtf8,
+		jbyteArray logUtf8,
+		jlong dayStartMs,
+		jstring timeZone) {
+	auto settingsText = QString();
+	auto logText = QString();
+	if (!ReadUtf8(env, settingsUtf8, settingsText)
+		|| !ReadUtf8(env, logUtf8, logText)) {
+		return nullptr;
+	}
+	const auto parsed = Purple::ParseSettings(
+		settingsText,
+		QStringLiteral("settings.toml"));
+	const auto &screenTime = parsed.settings.screenTime;
+	const auto events = Purple::ParseEventLog(logText);
+	const auto zone = ZoneFrom(FromJava(env, timeZone));
+	const auto day = QDateTime::fromMSecsSinceEpoch(int64(dayStartMs), zone)
+		.date();
+	const auto ledger = Purple::BudgetLedger(events, screenTime, day, zone);
+
+	auto json = QString();
+	json += QChar('[');
+	for (const auto &entry : ledger) {
+		if (entry.index) {
+			json += QChar(',');
+		}
+		const auto &budget = screenTime.budgets[entry.index];
+		json += QStringLiteral("{\"index\":");
+		json += QString::number(entry.index);
+		json += QStringLiteral(",\"target\":");
+		AppendJsonString(json, budget.target);
+		json += QStringLiteral(",\"targetKind\":");
+		json += QString::number(int(budget.kind));
+		json += QStringLiteral(",\"chat\":");
+		json += QString::number(qint64(budget.chat));
+		json += QStringLiteral(",\"chatKind\":");
+		json += QString::number(int(budget.chatKind));
+		json += QStringLiteral(",\"preset\":");
+		AppendJsonString(json, budget.preset);
+		json += QStringLiteral(",\"spentMs\":");
+		json += QString::number(qint64(entry.spentMs));
+		json += QStringLiteral(",\"perDayMs\":");
+		json += QString::number(qint64(entry.perDayMs));
+		json += QStringLiteral(",\"reached\":");
+		AppendJsonBool(json, entry.reached);
+		json += QStringLiteral(",\"mode\":");
+		json += QString::number(int(budget.mode));
+		json += QStringLiteral(",\"snoozeSeconds\":");
+		json += QString::number(budget.snoozeSeconds);
+		json += QStringLiteral(",\"snoozesPerDay\":");
+		json += QString::number(budget.snoozesPerDay);
+		// Whether one more snooze is left is the core's rule and not a
+		// subtraction the caller should be doing: a soft budget never puts a
+		// cover up at all, and a `snoozes_per_day = 0' makes a hard one
+		// absolute. The count of snoozes already taken is the caller's, since
+		// nothing about it is in the log.
+		json += QStringLiteral(",\"snoozable\":");
+		AppendJsonBool(json, Purple::CoverAllowed(0, budget));
+		json += QChar('}');
+	}
+	json += QChar(']');
+	return ToJava(env, json);
+}
+
+// Purple: the log with everything past `retention_days' dropped, as the text to
+// write back.
+//
+// Pure, like the core's Prune: this hands back what the file should say and the
+// caller does the writing, because the caller is the only thing that knows how
+// to replace a file it is also appending to. Null for a log that could not be
+// read; the caller leaves the file alone on a null rather than truncating it.
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_screenTimePruneNative(
+		JNIEnv *env,
+		jclass,
+		jbyteArray settingsUtf8,
+		jbyteArray logUtf8,
+		jlong nowMs) {
+	auto settingsText = QString();
+	auto logText = QString();
+	if (!ReadUtf8(env, settingsUtf8, settingsText)
+		|| !ReadUtf8(env, logUtf8, logText)) {
+		return nullptr;
+	}
+	const auto parsed = Purple::ParseSettings(
+		settingsText,
+		QStringLiteral("settings.toml"));
+	const auto kept = Purple::Prune(
+		Purple::ParseEventLog(logText),
+		int64(nowMs),
+		parsed.settings.screenTime.retentionDays);
+	auto out = QString();
+	out.reserve(logText.size());
+	for (const auto &event : kept) {
+		out += Purple::FormatEvent(event);
+		out += QChar('\n');
+	}
+	return ToJava(env, out);
 }
 
 // Android calls JNI_OnLoad after loading a library, and it finds the symbol
