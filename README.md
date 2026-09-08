@@ -178,7 +178,10 @@ pause, and a line saying what the schedule is doing now - "now: work until
 happens between the windows is a key rather than a constant: `[schedule]
 outside` names the preset in force whenever no rule covers the moment, and a
 window ending is a move to that, which still only undoes a preset the schedule
-itself put there.
+itself put there. The row shows that key as the file spells it, not what this
+device works out from it: a ruleset may override the key, and when one does the
+row says which ruleset is winning rather than showing its answer and then
+saving over a key nobody here reads.
 
 **Pausing** takes a date. "Pause the schedule" with no date is what it always
 was, held off until you lift it; give it a date and the tick lifts it itself at

@@ -150,8 +150,8 @@ public class PurpleScheduleActivity extends UniversalFragment
         items.add(UItem.asShadow(getString(R.string.PurpleScheduleRulesetsInfo)));
 
         items.add(UItem.asButton(ROW_OUTSIDE, getString(R.string.PurpleScheduleOutsideRow),
-                presetLabel(state, state == null ? NORMAL_PRESET : state.scheduleOutside)));
-        items.add(UItem.asShadow(getString(R.string.PurpleScheduleOutsideInfo)));
+                outsideValue(state)));
+        items.add(UItem.asShadow(outsideInfo(state)));
 
         // A rule the parser threw away has no window and no preset to draw, so
         // it cannot be a row. The warning is the only place the reason survives,
@@ -229,6 +229,78 @@ public class PurpleScheduleActivity extends UniversalFragment
      */
     public static CharSequence summary(PurpleCore.Loaded state) {
         return statusLine(state);
+    }
+
+    // ---- the "outside these windows" row --------------------------------------
+
+    /**
+     * What the row shows for {@code [schedule] outside}.
+     *
+     * The key, not what this device is running, because the key is what the row
+     * writes: a row that read "Home" off a ruleset and then saved over
+     * {@code [schedule] outside} would be about one thing and edit another,
+     * which is exactly the confusion this is here to end.
+     */
+    private static CharSequence outsideValue(PurpleCore.Loaded state) {
+        return presetLabel(state, (state == null)
+                ? NORMAL_PRESET
+                : state.scheduleOutsideKey);
+    }
+
+    /**
+     * The text under the row, with the override named when there is one.
+     *
+     * Because the row shows the key, it can now be showing a preset this device
+     * is not running: a chosen ruleset naming its own {@code outside} overrides
+     * the key here. Left unsaid, a save would look like it never took - the row
+     * would read back exactly what was written while the schedule went on doing
+     * something else - so the row's own paragraph names the ruleset that is
+     * winning, which is also where the change has to be made instead.
+     *
+     * It goes here rather than beside the label because a TextCell ellipsizes
+     * its value at a fraction of the screen's width; a sentence there would be
+     * cut off in precisely the case it was added for. This paragraph wraps.
+     */
+    private static CharSequence outsideInfo(PurpleCore.Loaded state) {
+        final CharSequence info = getString(R.string.PurpleScheduleOutsideInfo);
+        if (state == null || samePreset(state.scheduleOutsideKey, state.scheduleOutside)) {
+            return info;
+        }
+        final CharSequence running = presetLabel(state, state.scheduleOutside);
+        final PurpleCore.ScheduleRuleset winner = outsideOverride(state);
+        // Naming nothing beats naming the wrong thing: the two values can only
+        // part company because some chosen ruleset said so, but if this screen
+        // cannot see which one it says the half it is sure of.
+        return info + " " + ((winner == null)
+                ? formatString(R.string.PurpleScheduleOutsideOverridden, running)
+                : formatString(R.string.PurpleScheduleOutsideOverriddenBy,
+                        rulesetTitle(winner), running));
+    }
+
+    /**
+     * The chosen ruleset whose {@code outside} is overriding the key, or null.
+     *
+     * The core's rule read back rather than guessed at: {@code scheduleChosen}
+     * is already the merge order - most specific ruleset first, file order among
+     * equals - and ActiveSchedule() takes the first entry in it that names an
+     * {@code outside}, so walking the same list the same way finds the same one.
+     *
+     * Null when nothing in the list names one, which is a file whose key is not
+     * being overridden at all.
+     */
+    private static PurpleCore.ScheduleRuleset outsideOverride(PurpleCore.Loaded state) {
+        for (int a = 0, n = state.scheduleChosen.size(); a < n; ++a) {
+            final String name = state.scheduleChosen.get(a);
+            for (int b = 0, m = state.scheduleRulesets.size(); b < m; ++b) {
+                final PurpleCore.ScheduleRuleset ruleset = state.scheduleRulesets.get(b);
+                // Null outside is a ruleset that leaves the question to the key,
+                // so it is not the one winning even when it is the one chosen.
+                if (ruleset.outside != null && ruleset.name.equalsIgnoreCase(name)) {
+                    return ruleset;
+                }
+            }
+        }
+        return null;
     }
 
     /** The parser's complaints about rules and rulesets it dropped, in file order. */
@@ -328,6 +400,18 @@ public class PurpleScheduleActivity extends UniversalFragment
     /** Whether a preset name means stock Telegram. Empty does too, as the core has it. */
     public static boolean isNormal(String preset) {
         return TextUtils.isEmpty(preset) || NORMAL_PRESET.equalsIgnoreCase(preset);
+    }
+
+    /**
+     * Whether two preset names mean the same preset.
+     *
+     * Through {@link #isNormal} on both sides, so the three ways of writing
+     * stock Telegram - absent, empty and "normal" - count as one answer. The
+     * file and the core each use a different one of them, and a comparison that
+     * did not know that would report a disagreement nobody wrote.
+     */
+    private static boolean samePreset(String one, String other) {
+        return isNormal(one) ? isNormal(other) : one.equalsIgnoreCase(other);
     }
 
     /**
@@ -627,6 +711,15 @@ public class PurpleScheduleActivity extends UniversalFragment
 
     // ---- the schedule's own outside preset ------------------------------------
 
+    /**
+     * Pick what {@code [schedule] outside} names.
+     *
+     * Opened on the key, not on what the device is running: the picker writes
+     * the key, so the entry it starts with has to be the one the write would
+     * leave alone. A ruleset overriding the key is the row's business to
+     * explain and not the picker's to obey - a picker that opened on the
+     * ruleset's preset would offer to copy it into a key nobody reads.
+     */
     private void pickOutside() {
         final Context context = getParentActivity();
         final PurpleCore.Loaded state = PurpleGate.state();
@@ -634,7 +727,7 @@ public class PurpleScheduleActivity extends UniversalFragment
             return;
         }
         showPresetPicker(this, context, state, getString(R.string.PurpleScheduleOutsideRow),
-                state.scheduleOutside, null,
+                state.scheduleOutsideKey, null,
                 chosen -> write(PurpleWriter.setTableString(
                         "schedule", "outside", chosen, "schedule outside")));
     }

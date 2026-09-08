@@ -11328,7 +11328,9 @@
     <string name="PurpleScheduleDeviceOther">Another device\u2019s id</string>
     <string name="PurpleScheduleOutsideRow">Outside these windows</string>
     <string name="PurpleScheduleOutsideSame">Same as the schedule</string>
-    <string name="PurpleScheduleOutsideInfo">The preset in force whenever no window covers the moment. A window ending moves to this, and only undoes a preset the schedule itself put there.</string>
+    <string name="PurpleScheduleOutsideInfo">The preset in force whenever no window covers the moment. A window ending moves to this, and only undoes a preset the schedule itself put there. A ruleset can name its own instead, and on the devices that ruleset runs on its answer is the one used.</string>
+    <string name="PurpleScheduleOutsideOverriddenBy">On this device the ruleset %1$s overrides it and runs %2$s instead, so changing this row will not change what happens here.</string>
+    <string name="PurpleScheduleOutsideOverridden">On this device a ruleset overrides it and runs %1$s instead, so changing this row will not change what happens here.</string>
     <string name="PurpleScheduleImplicitInfo">The plain rules in the file, from before rulesets existed. They run on every device; move them into a ruleset to aim them at one.</string>
     <string name="PurpleScheduleRulePreset">Preset</string>
     <string name="PurpleScheduleDeleteRuleset">Delete this ruleset</string>
