@@ -64,16 +64,44 @@ public class DialogsChannelsAdapter extends UniversalAdapter {
 
     public void updateMyChannels() {
         ArrayList<TLRPC.Chat> channels = new ArrayList<>();
+        // Purple: one snapshot of the folder strip for the whole walk. The
+        // predicate has to know which folders the running preset is showing,
+        // and asking for that per channel would rebuild the same list a
+        // hundred times for an answer that cannot move inside one rebuild.
+        final ArrayList<MessagesController.DialogFilter> suggestionFolders =
+                PurpleGate.suggestionFolders(currentAccount);
         ArrayList<TLRPC.Dialog> dialogs = MessagesController.getInstance(currentAccount).getAllDialogs();
         for (TLRPC.Dialog d : dialogs) {
             TLRPC.Chat chat = MessagesController.getInstance(currentAccount).getChat(-d.id);
             if (chat == null || !ChatObject.isChannelAndNotMegaGroup(chat) || !ChatObject.isPublic(chat) || ChatObject.isNotInChat(chat)) continue;
+            // Purple: "my channels" is a strip of your own chats like the
+            // recent and frequent ones, so a channel the running preset hides -
+            // and that no shown folder tab reaches - is left out of it. Typed
+            // search below is untouched and still finds it.
+            if (PurpleGate.hiddenFromSuggestions(currentAccount, d.id, suggestionFolders)) continue;
             channels.add(chat);
             if (channels.size() >= 100)
                 break;
         }
         myChannels.clear();
         myChannels.addAll(channels);
+    }
+
+    /**
+     * Purple: whether the "similar channels" section is drawn at all.
+     *
+     * The one suggestion in the app that is not assembled out of your own
+     * chats - the server picks it - which is why a preset that is hiding
+     * things does not get to show it uninvited. {@code [suggestions]
+     * recommended_channels_p} brings it back under a preset; under Normal the
+     * tab is stock, section and all.
+     */
+    public static boolean purpleRecommendedShown() {
+        if (!PurpleGate.filtering()) {
+            return true;
+        }
+        final PurpleCore.Loaded state = PurpleGate.state();
+        return state != null && state.recommendedChannels;
     }
 
     public void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
@@ -91,7 +119,12 @@ public class DialogsChannelsAdapter extends UniversalAdapter {
                     items.add(UItem.asProfileCell(myChannels.get(i)).withUsername(true));
                 }
             }
-            MessagesController.ChannelRecommendations recommendations = MessagesController.getInstance(currentAccount).getCachedChannelRecommendations(0);
+            // Purple: null when the section is off, which takes the flickers
+            // below with it - a shimmer for a list that is never going to
+            // arrive would be the tab loading forever.
+            final boolean recommended = purpleRecommendedShown();
+            MessagesController.ChannelRecommendations recommendations = !recommended ? null
+                    : MessagesController.getInstance(currentAccount).getCachedChannelRecommendations(0);
             if (recommendations != null) {
                 ArrayList<TLRPC.Chat> chats = new ArrayList<>();
                 for (TLObject obj : recommendations.chats) {

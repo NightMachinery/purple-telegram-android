@@ -712,7 +712,13 @@ public class SearchViewPager extends ViewPagerFixed implements FilteredSearchVie
         }
 
         if (view == channelsSearchContainer) {
-            MessagesController.getInstance(currentAccount).getChannelRecommendations(0);
+            // Purple: not asked for while the section that would draw them is
+            // hidden. The request is the app going to the server for chats you
+            // are not in, and a preset that is hiding things has no use for the
+            // answer - so it is not fetched and discarded, it is not fetched.
+            if (DialogsChannelsAdapter.purpleRecommendedShown()) {
+                MessagesController.getInstance(currentAccount).getChannelRecommendations(0);
+            }
             channelsSearchAdapter.search(query);
             channelsEmptyView.setKeyboardHeight(keyboardSize, false);
         } else if (view == botsSearchContainer) {
@@ -1430,6 +1436,11 @@ public class SearchViewPager extends ViewPagerFixed implements FilteredSearchVie
             channelsSearchAdapter.updateMyChannels();
             channelsSearchAdapter.update(true);
         } else if (id == NotificationCenter.dialogDeleted || id == NotificationCenter.dialogsNeedReload) {
+            // Purple: this is also how a preset change reaches the tab.
+            // PurpleGate.postRefresh posts dialogsNeedReload and
+            // dialogFiltersUpdated together, and this branch already rebuilds
+            // the whole adapter, so observing the second one as well would only
+            // buy a duplicate rebuild on every ordinary folder edit.
             channelsSearchAdapter.updateMyChannels();
             channelsSearchAdapter.update(true);
         } else if (id == NotificationCenter.reloadWebappsHints) {

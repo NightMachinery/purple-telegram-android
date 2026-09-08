@@ -1176,6 +1176,12 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 	// about it.
 	json += QStringLiteral(",\"hideInvisibleSuggestions\":");
 	AppendJsonBool(json, gate.settings.suggestions.hideInvisible);
+	// Whether the Channels tab's "similar channels" section is drawn at all.
+	// The one suggestion in the app that is not assembled out of your own
+	// chats - the server picks it - which is why it is off by default and why
+	// a preset that is hiding things does not get to show it uninvited.
+	json += QStringLiteral(",\"recommendedChannels\":");
+	AppendJsonBool(json, gate.settings.suggestions.recommendedChannels);
 	// Whether the archive is out of the way while this preset runs. From the
 	// resolution, like hideEverywhere and for the same reason: it is the
 	// preset's own decision, and a cached resolution has to carry it.
