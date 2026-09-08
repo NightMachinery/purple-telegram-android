@@ -51,6 +51,7 @@ import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
+import org.telegram.messenger.purple.PurpleLastSeen;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBar;
@@ -60,6 +61,7 @@ import org.telegram.ui.ActionBar.SimpleTextView;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Business.BusinessLinksController;
 import org.telegram.ui.ChatActivity;
+import org.telegram.ui.PurpleLastSeenTrade;
 import org.telegram.ui.Components.Forum.ForumUtilities;
 import org.telegram.ui.ProfileActivity;
 import org.telegram.ui.Stories.StoriesUtilities;
@@ -389,8 +391,68 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
     };
 
     private boolean pressed;
+
+    /**
+     * Purple: the user whose status line is carrying the trade offer, or zero.
+     *
+     * Set by updateSubtitle, which is the only thing that knows whether the mark
+     * was drawn at all. The touch handler must not decide that again from the
+     * status, because the two would disagree for the frame between a status
+     * arriving and the redraw that follows it.
+     */
+    private long purpleTradeUser;
+
+    private boolean purpleTradePressed;
+
+    /**
+     * Purple: how wide the status line may draw, in pixels.
+     *
+     * The same arithmetic onMeasure does, asked again because updateSubtitle
+     * runs before the first measure. Zero from that first call reads as narrow,
+     * which is the right way to be wrong: the eyes fit anywhere.
+     */
+    private int purpleSubtitleWidth() {
+        final int width = getMeasuredWidth();
+        return (width > 0)
+                ? width - dp((avatarImageView.getVisibility() == VISIBLE ? 54 : 0) + 16)
+                : 0;
+    }
+
+    /** Purple: whether this point is on the status line. */
+    private boolean purpleOnSubtitle(float x, float y) {
+        final View view = getSubtitleTextView();
+        return view != null
+                && view.getVisibility() == VISIBLE
+                && y >= view.getTop()
+                && y <= view.getBottom()
+                && x >= view.getLeft()
+                && x <= view.getLeft() + Math.max(view.getMeasuredWidth(), dp(48));
+    }
+
     @Override
     public boolean onTouchEvent(MotionEvent ev) {
+        // Purple: the status line is a target of its own while it is carrying
+        // the offer. Taken here rather than with an OnClickListener on the
+        // subtitle, because the container swallows the touch on its way past
+        // and a listener under it would never see one.
+        if (ev.getAction() == MotionEvent.ACTION_DOWN) {
+            purpleTradePressed = purpleTradeUser != 0
+                    && parentFragment != null
+                    && purpleOnSubtitle(ev.getX(), ev.getY());
+        } else if (purpleTradePressed
+                && (ev.getAction() == MotionEvent.ACTION_UP
+                    || ev.getAction() == MotionEvent.ACTION_CANCEL)) {
+            final boolean tapped = ev.getAction() == MotionEvent.ACTION_UP
+                    && purpleOnSubtitle(ev.getX(), ev.getY());
+            purpleTradePressed = false;
+            pressed = false;
+            bounce.setPressed(false);
+            AndroidUtilities.cancelRunOnUIThread(this.onLongClick);
+            if (tapped) {
+                PurpleLastSeenTrade.show(parentFragment, currentAccount, purpleTradeUser);
+            }
+            return true;
+        }
         if (ev.getAction() == MotionEvent.ACTION_DOWN && canSearch()) {
             pressed = true;
             bounce.setPressed(true);
@@ -1085,6 +1147,10 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
     private boolean showingSavedMessagesHint;
 
     public void updateSubtitle(boolean animated) {
+        // Purple: cleared before anything decides what the line says, so a path
+        // that never reaches the status branch below - a chat, a bot, Saved
+        // Messages - cannot leave the last user's offer armed under it.
+        purpleTradeUser = 0;
         if (parentFragment == null) {
             return;
         }
@@ -1241,6 +1307,14 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
                     isOnline[0] = false;
                     newStatus = LocaleController.formatUserStatus(currentAccount, user, isOnline, allowShorterStatus ? statusMadeShorter : null);
                     useOnlineColor = isOnline[0];
+                    // Purple: why the status is coarse, or what the last trade
+                    // actually read. Appended here rather than inside
+                    // formatUserStatus because the reason is a fact about our
+                    // own privacy rules and not about the date the formatter is
+                    // rendering, and because only this side knows how much room
+                    // the line has - a header this narrow gets the eyes.
+                    newStatus = PurpleLastSeen.decorate(user, newStatus, purpleSubtitleWidth());
+                    purpleTradeUser = PurpleLastSeen.tappable(user) ? user.id : 0;
                 }
                 newSubtitle = newStatus;
             } else {
