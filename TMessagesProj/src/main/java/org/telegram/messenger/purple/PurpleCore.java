@@ -160,6 +160,13 @@ public final class PurpleCore {
             byte[] settingsUtf8, String ruleset, int index, int expectedFrom,
             int expectedTill, String expectedPreset);
 
+    private static native boolean shouldAutoSendNative(byte[] settingsUtf8,
+            byte[] stateUtf8, byte[] fileBytes, boolean wroteFromImport);
+
+    private static native String noteSentNative(byte[] stateUtf8, byte[] fileBytes);
+
+    private static native String noteImportedNative(byte[] stateUtf8, byte[] fileBytes);
+
     /**
      * The three "until" decisions, numbered as the core's {@code OverrideKind}.
      *
@@ -1055,6 +1062,63 @@ public final class PurpleCore {
         }
     }
 
+    /**
+     * Whether saving these bytes should also post them to Saved Messages.
+     *
+     * The whole of the ping-pong rule, and it lives in the core on purpose:
+     * the app around it has a network, a Saved Messages history and a file
+     * watcher, which makes it the worst possible place to prove anything about
+     * when a save deserves a document.
+     *
+     * @param settings the settings.toml that was just written - where the
+     *                 switch is read from
+     * @param state the current state.toml, or null
+     * @param file the same bytes, as the fingerprint is taken over them
+     * @param wroteFromImport whether this save IS an import writing the file it
+     *                        just received, which never sends
+     * @return false whenever the core could not be reached, which is the
+     *         direction that costs a document rather than sends a stray one
+     */
+    public static boolean shouldAutoSend(
+            byte[] settings, byte[] state, byte[] file, boolean wroteFromImport) {
+        ensureLoaded();
+        try {
+            return shouldAutoSendNative(settings, state, file, wroteFromImport);
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return false;
+        }
+    }
+
+    /**
+     * Returns the state.toml text remembering the file this device just sent.
+     *
+     * @return the text to write, or null when the core could not be reached
+     */
+    public static String noteSent(byte[] state, byte[] file) {
+        ensureLoaded();
+        try {
+            return noteSentNative(state, file);
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return null;
+        }
+    }
+
+    /**
+     * The same for the file this device just wrote because the other one sent
+     * it, which is what stops it from being sent straight back.
+     */
+    public static String noteImported(byte[] state, byte[] file) {
+        ensureLoaded();
+        try {
+            return noteImportedNative(state, file);
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return null;
+        }
+    }
+
     /** The one shape every splice answers in, unpacked. */
     private static SpliceResult splice(String json) {
         if (json == null) {
@@ -1476,6 +1540,16 @@ public final class PurpleCore {
          */
         public final boolean premium;
 
+        /**
+         * Whether saving settings.toml also posts it to Saved Messages -
+         * {@code [sync] send_after_save_p}.
+         *
+         * Off unless the file says otherwise: sending is a message in a real
+         * chat, so it should be something asked for once, in words, and not
+         * something an upgrade started doing on somebody's behalf.
+         */
+        public final boolean sendAfterSave;
+
         /** What this install told the core it calls itself. */
         public final String deviceId;
 
@@ -1492,13 +1566,14 @@ public final class PurpleCore {
                 List<String> quietFolders, List<ExemptFolder> exemptFolders,
                 int[] defaultModes, int listCount, List<PresetInfo> presets,
                 List<View> views, boolean hideEverywhere,
-                boolean hideInvisibleSuggestions, boolean hideArchive,
+                boolean hideInvisibleSuggestions, boolean recommendedChannels,
+                boolean hideArchive,
                 boolean scheduleEnabled, String scheduleTarget, String scheduleOutside,
                 ScheduleNow scheduleNow, List<ScheduleRuleset> scheduleRulesets,
                 List<String> scheduleChosen, List<ScheduleRule> scheduleRules,
                 boolean focusSyncEnabled, String focusSyncEnter, String focusSyncExit,
-                Clock clock, boolean premium, String deviceId,
-                List<DeviceLabel> devices, String stateText) {
+                Clock clock, boolean premium, boolean sendAfterSave,
+                String deviceId, List<DeviceLabel> devices, String stateText) {
             this.ok = ok;
             this.error = error;
             this.warnings = warnings;
@@ -1534,6 +1609,7 @@ public final class PurpleCore {
             this.focusSyncExit = focusSyncExit;
             this.clock = clock;
             this.premium = premium;
+            this.sendAfterSave = sendAfterSave;
             this.deviceId = deviceId;
             this.devices = devices;
             this.stateText = stateText;
@@ -1591,11 +1667,12 @@ public final class PurpleCore {
                     Collections.<String>emptyList(),
                     Collections.<ExemptFolder>emptyList(), STOCK_DEFAULT_MODES, 0,
                     Collections.<PresetInfo>emptyList(), Collections.<View>emptyList(),
-                    false, true, true, false, null, "normal", null,
+                    false, true, false, true, false, null, "normal", null,
                     Collections.<ScheduleRuleset>emptyList(),
                     Collections.<String>emptyList(),
                     Collections.<ScheduleRule>emptyList(), false, "", "previous",
-                    Clock.NONE, true, "", Collections.<DeviceLabel>emptyList(), null);
+                    Clock.NONE, true, false, "",
+                    Collections.<DeviceLabel>emptyList(), null);
         }
 
         static Loaded fromJson(String json) {
@@ -1777,6 +1854,10 @@ public final class PurpleCore {
                         object.optString("focusSyncExit", "previous"),
                         Clock.fromJson(object),
                         object.optBoolean("premium", true),
+                        // Off unless the result says otherwise, matching the
+                        // core: nothing should start posting documents because
+                        // a load result came back short of a key.
+                        object.optBoolean("sendAfterSave", false),
                         object.optString("deviceId", ""),
                         devices,
                         object.isNull("stateText") ? null : object.optString("stateText", null));

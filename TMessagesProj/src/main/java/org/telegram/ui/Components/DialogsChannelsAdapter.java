@@ -20,6 +20,8 @@ import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.R;
+import org.telegram.messenger.purple.PurpleCore;
+import org.telegram.messenger.purple.PurpleGate;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
@@ -106,7 +108,7 @@ public class DialogsChannelsAdapter extends UniversalAdapter {
                 for (TLRPC.Chat chat : chats) {
                     items.add(UItem.asProfileCell(chat));
                 }
-            } else {
+            } else if (recommended) {
                 items.add(UItem.asFlicker(FlickerLoadingView.GRAY_SECTION));
                 items.add(UItem.asFlicker(FlickerLoadingView.PROFILE_SEARCH_CELL));
                 items.add(UItem.asFlicker(FlickerLoadingView.PROFILE_SEARCH_CELL));

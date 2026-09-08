@@ -151,9 +151,18 @@ hide-from-suggestions switch, this device's name and id, and a section for the
 settings file - an editor,
 Send to Saved Messages (the desktop's shape and caption, so either client can
 import it), a check of Saved Messages for a newer file, Import from a file,
-Share the file, and the path with a tap to copy. The two switches are written
+Share the file, and the path with a tap to copy. Every switch on it is written
 into `settings.toml` through the same splice the desktop uses and read back
 from it, so a refused write leaves the switch where the file is.
+
+**Send to Saved Messages after every save** on the same screen is `[sync]
+send_after_save_p`, off until you turn it on because sending is a message in a
+real chat: with it on, every change the app makes to `settings.toml` posts the
+file five seconds after the last one, so a run of checkbox taps is one document
+rather than six. A file that arrived from Saved Messages is never sent back and
+the same bytes are never sent twice - `state.toml` remembers the fingerprint of
+the last file this device sent and the last one it imported, which is what
+keeps two machines that already agree from bouncing the file between them.
 
 The **editor** is the only way to change a line on a phone without root: a
 monospace field parsed as you type, with a status line that says OK, how many

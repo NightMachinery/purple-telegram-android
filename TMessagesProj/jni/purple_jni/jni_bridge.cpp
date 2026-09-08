@@ -17,6 +17,7 @@ any later version.
 #include "purple/purple_splice.h"
 #include "purple/purple_state.h"
 
+#include <QtCore/QByteArray>
 #include <QtCore/QChar>
 #include <QtCore/QDateTime>
 #include <QtCore/QString>
@@ -114,6 +115,29 @@ void AppendJsonBool(QString &out, bool value) {
 		return false;
 	}
 	out = QString::fromUtf8(reinterpret_cast<const char*>(bytes), int(length));
+	env->ReleaseByteArrayElements(array, bytes, JNI_ABORT);
+	return true;
+}
+
+// The same bytes, undecoded. The auto-send fingerprint is a hash of the file
+// exactly as it sits on disk, so it has to be taken over these and not over a
+// QString that has already been through UTF-8: a byte sequence the decoder
+// repaired would hash as the repair rather than as the file, and the other
+// device - which hashed the real bytes - would never agree with it.
+[[nodiscard]] bool ReadRaw(JNIEnv *env, jbyteArray array, QByteArray &out) {
+	out = QByteArray();
+	if (!array) {
+		return true;
+	}
+	const auto length = env->GetArrayLength(array);
+	if (length <= 0) {
+		return true;
+	}
+	auto *bytes = env->GetByteArrayElements(array, nullptr);
+	if (!bytes) {
+		return false;
+	}
+	out = QByteArray(reinterpret_cast<const char*>(bytes), int(length));
 	env->ReleaseByteArrayElements(array, bytes, JNI_ABORT);
 	return true;
 }
@@ -773,6 +797,26 @@ void FocusEnter(Purple::State &state, const Purple::Settings &settings) {
 	return restore ? QStringLiteral("restored") : QStringLiteral("exited");
 }
 
+// Writes down which settings.toml this device last sent, or last wrote because
+// the other device sent it.
+//
+// Two fields and one function, because the two events differ only in which one
+// they claim: what stops the ping-pong is that both are remembered, not that
+// they are remembered differently.
+[[nodiscard]] QString NoteFingerprint(
+		const QString &stateText,
+		const QByteArray &bytes,
+		bool sent) {
+	auto state = Purple::ParseState(stateText, QStringLiteral("state.toml"));
+	const auto fingerprint = Purple::SettingsFingerprint(bytes);
+	if (sent) {
+		state.lastSentFingerprint = fingerprint;
+	} else {
+		state.lastImportedFingerprint = fingerprint;
+	}
+	return Purple::SerializeState(state);
+}
+
 } // namespace
 
 extern "C" JNIEXPORT jstring JNICALL
@@ -1157,6 +1201,12 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 	json += (gate.settings.premium.enabled
 		? QStringLiteral("true")
 		: QStringLiteral("false"));
+	// Whether a save also posts the file to Saved Messages. Handed over rather
+	// than asked for at the moment of a write, so the switch on the settings
+	// screen has something to draw itself from - the write path parses the
+	// file it just wrote and reads the key out of that.
+	json += QStringLiteral(",\"sendAfterSave\":");
+	AppendJsonBool(json, gate.settings.sync.sendAfterSave);
 	json += QStringLiteral(",\"views\":");
 	AppendViewsJson(json, gate.resolved);
 	// Every list in the file, not the running preset's - the membership menu
@@ -1975,6 +2025,81 @@ Java_org_telegram_messenger_purple_PurpleCore_removeScheduleRuleNative(
 		FromJava(env, ruleset),
 		int(index),
 		ReadExpected(env, expectedFrom, expectedTill, expectedPreset))));
+}
+
+// Whether saving these bytes should also post them to Saved Messages.
+//
+// Four arguments where three would seem to do, because `settingsUtf8' and
+// `fileBytes' are the same file read for two different purposes: the switch
+// comes out of parsing it, and the fingerprint is taken over the bytes exactly
+// as they were written. Keeping them apart is what lets a caller ask the
+// question about a file it has not installed yet.
+extern "C" JNIEXPORT jboolean JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_shouldAutoSendNative(
+		JNIEnv *env,
+		jclass,
+		jbyteArray settingsUtf8,
+		jbyteArray stateUtf8,
+		jbyteArray fileBytes,
+		jboolean wroteFromImport) {
+	auto settingsText = QString();
+	auto stateText = QString();
+	auto bytes = QByteArray();
+	if (!ReadUtf8(env, settingsUtf8, settingsText)
+		|| !ReadUtf8(env, stateUtf8, stateText)
+		|| !ReadRaw(env, fileBytes, bytes)) {
+		return JNI_FALSE;
+	}
+	// A file that will not parse leaves default settings behind, whose
+	// send_after_save_p is false - which is the answer this should give for one
+	// anyway, since the send itself refuses a file that does not parse.
+	const auto parsed = Purple::ParseSettings(
+		settingsText,
+		QStringLiteral("settings.toml"));
+	const auto state = Purple::ParseState(
+		stateText,
+		QStringLiteral("state.toml"));
+	return Purple::ShouldAutoSend(
+		parsed.settings,
+		state,
+		bytes,
+		wroteFromImport == JNI_TRUE) ? JNI_TRUE : JNI_FALSE;
+}
+
+// Records the file this device has just sent, so that saving the same bytes
+// again is not a second document in the same chat.
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_noteSentNative(
+		JNIEnv *env,
+		jclass,
+		jbyteArray stateUtf8,
+		jbyteArray fileBytes) {
+	auto stateText = QString();
+	auto bytes = QByteArray();
+	if (!ReadUtf8(env, stateUtf8, stateText)
+		|| !ReadRaw(env, fileBytes, bytes)) {
+		return nullptr;
+	}
+	return ToJava(env, NoteFingerprint(stateText, bytes, true));
+}
+
+// Records the file this device has just written because the other one sent it,
+// so it is not sent straight back. That is the ping-pong: A saves and sends, B
+// imports and saves, B sends what it just received, A imports it, and a file
+// two machines already agree about bounces between them.
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_noteImportedNative(
+		JNIEnv *env,
+		jclass,
+		jbyteArray stateUtf8,
+		jbyteArray fileBytes) {
+	auto stateText = QString();
+	auto bytes = QByteArray();
+	if (!ReadUtf8(env, stateUtf8, stateText)
+		|| !ReadRaw(env, fileBytes, bytes)) {
+		return nullptr;
+	}
+	return ToJava(env, NoteFingerprint(stateText, bytes, false));
 }
 
 // Android calls JNI_OnLoad after loading a library, and it finds the symbol
