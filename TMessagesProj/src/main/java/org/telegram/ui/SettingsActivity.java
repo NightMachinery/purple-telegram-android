@@ -853,9 +853,11 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                 presentSettingFragment(new FiltersSetupActivity());
                 break;
             case 4:
-                // A dialog rather than a fragment: choosing a preset is one tap
-                // and the picker is the same one the chat list menu opens.
-                PurplePresetPicker.show(this);
+                // The whole of Work Mode, not just the preset. The one-tap
+                // picker stays where a one-tap answer belongs - on the chat
+                // list's own menu - and this row, which sits among the other
+                // settings sections, opens the screen that matches them.
+                presentSettingFragment(new PurpleSettingsActivity());
                 break;
             case 8:
                 presentSettingFragment(new SessionsActivity(0));
