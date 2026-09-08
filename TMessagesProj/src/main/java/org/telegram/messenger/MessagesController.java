@@ -9740,6 +9740,15 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public boolean hasHiddenArchive() {
+        // Purple: a preset with hide_archive_p makes the app look like an
+        // account that has never archived anything. Answering false here is
+        // what turns off every pull site at once - the gesture, the peek
+        // header, the scroll offsets - because all of them ask this one
+        // question, and a state the app has always had to handle needs no new
+        // branch anywhere.
+        if (PurpleGate.hidingArchive()) {
+            return false;
+        }
         return SharedConfig.archiveHidden && dialogs_dict.get(DialogObject.makeFolderDialogId(1)) != null;
     }
 

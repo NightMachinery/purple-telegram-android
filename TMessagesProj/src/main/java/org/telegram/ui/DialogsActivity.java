@@ -2580,7 +2580,13 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                         }
                         if (folderId == 0) {
                             if (added == 2) {
-                                if (SharedConfig.archiveHidden) {
+                                // Purple: the first thing archived normally
+                                // unhides the archive so you can see where it
+                                // went. Under hide_archive_p there is nowhere
+                                // for it to appear, and flipping the shared
+                                // preference here would pin the row for good -
+                                // outliving the preset that asked for it.
+                                if (SharedConfig.archiveHidden && !PurpleGate.hidingArchive()) {
                                     SharedConfig.toggleArchiveHidden();
                                 }
                                 parentPage.dialogsItemAnimator.prepareForRemove();

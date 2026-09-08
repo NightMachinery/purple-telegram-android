@@ -703,6 +703,31 @@ public final class PurpleGate {
     }
 
     /**
+     * Whether the archive is out of the way while a preset runs.
+     *
+     * Mirrors {@code hide_archive_p}: no pull gesture, no row in the list, the
+     * same state as an account that has never archived anything - which is a
+     * state every path in the app already handles, and the reason this is one
+     * flag rather than a hook at each pull site.
+     *
+     * On unless the preset says otherwise, which is the opposite default from
+     * {@code hide_everywhere_p}: a preset that has already named what gets
+     * through has no reason to leave a door to the rest of it open.
+     *
+     * A peek does not bring it back. Peek suspends the hiding of chats, and a
+     * chat the archive holds is not hidden by the preset - it is filed. Making
+     * the row appear and vanish on the peek timer would shift the whole list by
+     * one on both edges, for no chat anybody was looking for.
+     */
+    public static boolean hidingArchive() {
+        if (!filtering) {
+            return false;
+        }
+        final PurpleCore.Loaded current = loaded;
+        return current != null && current.hideArchive;
+    }
+
+    /**
      * The span a row is in the view only for the moment, on the monotonic clock.
      *
      * Covers both reasons a row can be here on a timer - the close buffer and a
@@ -1319,8 +1344,17 @@ public final class PurpleGate {
         for (int a = 0; a < count; ++a) {
             final TLRPC.Dialog dialog = source.get(a);
             final boolean show;
-            if (dialog == null || DialogObject.isFolderDialogId(dialog.id)) {
+            if (dialog == null) {
                 show = true;
+            } else if (DialogObject.isFolderDialogId(dialog.id)) {
+                // The Archive row is not a chat and no list has a say in it -
+                // except the one preset-wide switch that takes it out
+                // altogether. Dropping it here as well as answering
+                // hasHiddenArchive() is what covers the pinned case: an account
+                // whose archive row is pinned rather than pulled has it in
+                // dialogs_dict like any other row, and hasHiddenArchive() is
+                // never asked about that one.
+                show = !hidingArchive();
             } else {
                 final int packed = packedFor(currentAccount, dialog.id);
 
