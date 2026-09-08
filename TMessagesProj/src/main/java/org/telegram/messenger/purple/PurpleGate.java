@@ -379,6 +379,13 @@ public final class PurpleGate {
         }
         filtering = !next.normal;
         ++generation;
+        // Purple: the recorder wants two things out of every reload - whether
+        // it is switched on at all, and the name of the preset now running,
+        // which cuts the session so that every second of the log has exactly
+        // one. Called before the refresh below rather than after, so a Preset
+        // event lands at the moment the resolution changed and not after a
+        // chat list rebuild.
+        PurpleScreenTime.onLoaded(next);
         refreshPeekTimer(next);
         refreshOverrideTimer(next);
         rebuildViewFilters(next);
@@ -2054,6 +2061,54 @@ public final class PurpleGate {
             return true;
         }
         return shownForMode(currentAccount, dialog, packedFor(currentAccount, dialog.id));
+    }
+
+    /**
+     * Whether this chat is one the running preset hides, reached by peeking.
+     *
+     * The screen-time log's `hidden' flag, and the one question a peek makes
+     * unanswerable through {@link #shown}: a peek is part of the resolution, so
+     * the core answers {@code SHOW_ALWAYS} for everything while one runs and
+     * every row on the chat list is shown - which is the point of a peek and
+     * exactly why it cannot also say what you are peeking AT.
+     *
+     * So this asks the core the other question, against the same resolution
+     * with the peek set aside, and finishes it against the unread state here
+     * the way {@link #shownForMode} does - a chat gated on unread that HAS
+     * unread is not hidden, and counting it as peeked would be wrong.
+     *
+     * False whenever nothing is peeking, which is the ordinary case and costs
+     * two volatile reads.
+     *
+     * @param dialogId a TLRPC.Dialog id, not a bare id
+     */
+    public static boolean hiddenWhilePeeking(int currentAccount, long dialogId) {
+        if (!filtering || !peeking() || DialogObject.isFolderDialogId(dialogId)) {
+            return false;
+        }
+        final TLRPC.Dialog dialog =
+                MessagesController.getInstance(currentAccount).dialogs_dict.get(dialogId);
+        if (dialog == null) {
+            return false;
+        }
+        // A hide made by hand is a reason the chat would be gone too, and the
+        // peek is what is revealing it - the same order byHand() applies.
+        if (overrideFor(currentAccount, dialogId) == PurpleCore.OVERRIDE_HIDE) {
+            return true;
+        }
+        final int packed;
+        try {
+            packed = PurpleCore.visibleUnpeeked(
+                    bareIdOf(currentAccount, dialogId),
+                    kindOf(currentAccount, dialogId));
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return false;
+        }
+        return !shownForShowMode(
+                currentAccount,
+                dialog,
+                effectiveMode(currentAccount, dialogId, packed));
     }
 
     /**

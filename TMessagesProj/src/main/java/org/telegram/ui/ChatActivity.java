@@ -184,6 +184,7 @@ import org.telegram.messenger.Timer;
 import org.telegram.messenger.TranslateController;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.purple.PurpleGate;
+import org.telegram.messenger.purple.PurpleScreenTime;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.VideoEditedInfo;
@@ -6839,6 +6840,10 @@ public class ChatActivity extends BaseFragment implements
             @Override
             public void onScrolled(RecyclerView recyclerView, int dx, int dy) {
                 final ChatActivity chatToUpdate = parentChatActivity != null ? parentChatActivity : ChatActivity.this;
+
+                // Purple: reading is scrolling, and a long read with no touch
+                // landing on this view would otherwise look like an idle one.
+                PurpleScreenTime.input();
 
                 chatListView.invalidate();
                 if (contentView != null) {
@@ -17412,6 +17417,11 @@ public class ChatActivity extends BaseFragment implements
             if (messageMetricsView != null) {
                 messageMetricsView.setIsUserActive();
             }
+            // Purple: a touch is input, and input is what "idle" is the absence
+            // of. Not written down - a line per MotionEvent would drown the
+            // log - it only resets the watchdog, which is the one thing that
+            // sees touches at all. See PurpleScreenTime.input().
+            PurpleScreenTime.input();
 
             float expandY;
             if (AndroidUtilities.isInMultiwindow || isInBubbleMode()) {
@@ -29783,6 +29793,17 @@ public class ChatActivity extends BaseFragment implements
         super.onResume();
         checkShowBlur(false);
         activityResumeTime = System.currentTimeMillis();
+        // Purple: this chat is now the one in front of the user. onResume and
+        // onPause are the pair that says so - a fragment further down the back
+        // stack is paused, a tab switch pauses the one leaving and resumes the
+        // one arriving - where onFragmentCreate would have counted a chat that
+        // is merely still on the stack. Only a real conversation counts:
+        // scheduled messages and the saved-messages views are the same chat
+        // seen another way, and would double it.
+        if (chatMode == 0) {
+            PurpleScreenTime.openChat(currentAccount, dialog_id);
+            purpleCheckBudget();
+        }
         if (openImport && getSendMessagesHelper().getImportingHistory(dialog_id) != null) {
             ImportingAlert alert = new ImportingAlert(getParentActivity(), null, this, themeDelegate);
             alert.setOnHideListener(dialog -> {
@@ -29994,6 +30015,14 @@ public class ChatActivity extends BaseFragment implements
     public void onPause() {
         super.onPause();
         scrolling = false;
+        // Purple: and the chat is gone from the front. What replaces it is
+        // "elsewhere" - the list, search, settings - unless the app itself
+        // went away, in which case the Background event has already ended the
+        // session and this writes nothing.
+        if (chatMode == 0) {
+            PurpleScreenTime.closeChat(currentAccount, dialog_id);
+            AndroidUtilities.cancelRunOnUIThread(purpleBudgetCheck);
+        }
         if (scrimPopupWindow != null) {
             scrimPopupWindow.setPauseNotifications(false);
             closeMenu();

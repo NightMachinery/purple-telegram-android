@@ -12,6 +12,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 
+import org.telegram.messenger.purple.PurpleScreenTime;
 import org.telegram.tgnet.ConnectionsManager;
 
 public class ScreenReceiver extends BroadcastReceiver {
@@ -24,12 +25,21 @@ public class ScreenReceiver extends BroadcastReceiver {
             }
             ConnectionsManager.getInstance(UserConfig.selectedAccount).setAppPaused(true, true);
             ApplicationLoader.isScreenOn = false;
+            // Purple: a chat you cannot see is not screen time, and the screen
+            // locking is the one way the app stays "resumed" while nobody is
+            // looking. The activity's own pause usually follows, and finds this
+            // already done. See PurpleScreenTime.foreground().
+            PurpleScreenTime.foreground(false);
         } else if (intent.getAction().equals(Intent.ACTION_SCREEN_ON)) {
             if (BuildVars.LOGS_ENABLED) {
                 FileLog.d("screen on");
             }
             ConnectionsManager.getInstance(UserConfig.selectedAccount).setAppPaused(false, true);
             ApplicationLoader.isScreenOn = true;
+            // Not the mirror of the line above: the screen coming on says
+            // nothing about this app being in front of it. Only a resume does,
+            // so nothing is written here and the session restarts when the
+            // activity says it has.
         }
         NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.screenStateChanged);
     }

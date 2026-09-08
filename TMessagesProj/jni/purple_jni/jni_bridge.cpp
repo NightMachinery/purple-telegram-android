@@ -13,6 +13,7 @@ any later version.
 #include <jni.h>
 
 #include "purple/purple_engine.h"
+#include "purple/purple_screentime.h"
 #include "purple/purple_settings.h"
 #include "purple/purple_splice.h"
 #include "purple/purple_state.h"
@@ -828,6 +829,182 @@ void FocusEnter(Purple::State &state, const Purple::Settings &settings) {
 		state.lastImportedFingerprint = fingerprint;
 	}
 	return Purple::SerializeState(state);
+}
+
+
+// Purple: [screen_time]. Everything below reads screentime.log and answers in
+// JSON. Nothing here keeps state between calls, because the log IS the state:
+// the recorder appends events and every number a screen draws is derived from
+// them at read time, so a threshold changed in settings.toml re-derives the
+// history that is already on disk instead of only shaping what happens next.
+
+// Which row of bars the caller asked for. The Java constants are these
+// enumerators by value; an unknown one falls to HourOfDay, which is the only
+// unit that is meaningful for any range at all.
+[[nodiscard]] Purple::BucketUnit BucketUnitFrom(jint value) {
+	static_assert(int(Purple::BucketUnit::HourOfDay) == 0);
+	static_assert(int(Purple::BucketUnit::Day) == 1);
+	static_assert(int(Purple::BucketUnit::Week) == 2);
+	static_assert(int(Purple::BucketUnit::Month) == 3);
+	switch (value) {
+	case 1: return Purple::BucketUnit::Day;
+	case 2: return Purple::BucketUnit::Week;
+	case 3: return Purple::BucketUnit::Month;
+	}
+	return Purple::BucketUnit::HourOfDay;
+}
+
+// The zone a day boundary is decided in.
+//
+// The named id is tried first, so a caller that can name its zone gets it - and
+// "UTC+02:00" spellings resolve without any platform data at all, since Qt
+// answers those from its own UTC backend. A named IANA id, though, needs Qt's
+// Android timezone backend, which reaches Java through a JavaVM that Qt's own
+// JNI_OnLoad installs - and this library deliberately never lets that run (see
+// the JNI_OnLoad at the bottom of this file). So the fallback is not UTC, which
+// would silently move every day boundary by hours: it is QTimeZone::LocalTime,
+// the device's own zone as the C library reports it, DST included and no Java
+// anywhere near it.
+[[nodiscard]] QTimeZone ZoneFrom(const QString &id) {
+	if (!id.isEmpty()) {
+		const auto named = QTimeZone(id.toUtf8());
+		if (named.isValid()) {
+			return named;
+		}
+	}
+	return QTimeZone(QTimeZone::LocalTime);
+}
+
+void AppendChatTotalsJson(QString &out, const std::vector<Purple::ChatTotal> &chats) {
+	out += QChar('[');
+	auto first = true;
+	for (const auto &chat : chats) {
+		if (!first) {
+			out += QChar(',');
+		}
+		first = false;
+		out += QStringLiteral("{\"dialogId\":");
+		out += QString::number(qint64(chat.dialogId));
+		out += QStringLiteral(",\"kind\":");
+		out += QString::number(int(chat.chatKind));
+		out += QStringLiteral(",\"totalMs\":");
+		out += QString::number(qint64(chat.totalMs));
+		out += QStringLiteral(",\"activeMs\":");
+		out += QString::number(qint64(chat.activeMs));
+		out += QChar('}');
+	}
+	out += QChar(']');
+}
+
+void AppendKindTotalsJson(QString &out, const std::vector<Purple::KindTotal> &kinds) {
+	out += QChar('[');
+	auto first = true;
+	for (const auto &kind : kinds) {
+		if (!first) {
+			out += QChar(',');
+		}
+		first = false;
+		out += QStringLiteral("{\"kind\":");
+		out += QString::number(int(kind.chatKind));
+		out += QStringLiteral(",\"totalMs\":");
+		out += QString::number(qint64(kind.totalMs));
+		out += QStringLiteral(",\"activeMs\":");
+		out += QString::number(qint64(kind.activeMs));
+		out += QChar('}');
+	}
+	out += QChar(']');
+}
+
+// One row of bars, with each bar split by chat kind so the chart can stack.
+//
+// The split is five passes of Buckets() over the sessions of one kind rather
+// than a wider Bucket struct: the core's bucketing is the part that knows about
+// calendars, and asking it five times costs nothing next to teaching this file
+// what a week is. Every pass walks the same window, so the sub-buckets line up
+// with the parent's index for index.
+void AppendBucketsJson(
+		QString &out,
+		const std::vector<Purple::Session> &sessions,
+		int64 fromMs,
+		int64 toMs,
+		Purple::BucketUnit unit,
+		const QTimeZone &zone) {
+	const auto whole = Purple::Buckets(sessions, fromMs, toMs, unit, zone);
+
+	constexpr auto kKinds = 5;
+	auto perKind = std::vector<std::vector<Purple::Bucket>>();
+	perKind.reserve(kKinds);
+	for (auto k = 0; k != kKinds; ++k) {
+		auto only = std::vector<Purple::Session>();
+		for (const auto &session : sessions) {
+			if (int(session.chatKind) == k) {
+				only.push_back(session);
+			}
+		}
+		perKind.push_back(Purple::Buckets(only, fromMs, toMs, unit, zone));
+	}
+
+	out += QChar('[');
+	for (auto i = 0, count = int(whole.size()); i != count; ++i) {
+		const auto &bucket = whole[i];
+		if (i) {
+			out += QChar(',');
+		}
+		out += QStringLiteral("{\"index\":");
+		out += QString::number(bucket.index);
+		out += QStringLiteral(",\"startMs\":");
+		out += QString::number(qint64(bucket.startMs));
+		out += QStringLiteral(",\"endMs\":");
+		out += QString::number(qint64(bucket.endMs));
+		out += QStringLiteral(",\"label\":");
+		AppendJsonString(out, bucket.label);
+		out += QStringLiteral(",\"totalMs\":");
+		out += QString::number(qint64(bucket.totalMs));
+		out += QStringLiteral(",\"activeMs\":");
+		out += QString::number(qint64(bucket.activeMs));
+		out += QStringLiteral(",\"kinds\":[");
+		for (auto k = 0; k != kKinds; ++k) {
+			if (k) {
+				out += QChar(',');
+			}
+			const auto &row = perKind[k];
+			out += QStringLiteral("{\"totalMs\":");
+			out += QString::number(qint64(
+				(i < int(row.size())) ? row[i].totalMs : int64(0)));
+			out += QStringLiteral(",\"activeMs\":");
+			out += QString::number(qint64(
+				(i < int(row.size())) ? row[i].activeMs : int64(0)));
+			out += QChar('}');
+		}
+		out += QStringLiteral("]}");
+	}
+	out += QChar(']');
+}
+
+// Everything a chart, a ranked list and a headline need about one set of
+// sessions over one window. Written once and used twice: for the whole range,
+// and again for each preset that appears in it, which is what makes the preset
+// chip a lookup rather than a second query the caller has no signature for.
+void AppendScopeJson(
+		QString &out,
+		const std::vector<Purple::Session> &sessions,
+		int64 fromMs,
+		int64 toMs,
+		Purple::BucketUnit unit,
+		const QTimeZone &zone) {
+	const auto totals = Purple::RangeTotals(sessions, fromMs, toMs);
+	out += QStringLiteral("\"totalMs\":");
+	out += QString::number(qint64(totals.totalMs));
+	out += QStringLiteral(",\"activeMs\":");
+	out += QString::number(qint64(totals.activeMs));
+	out += QStringLiteral(",\"hiddenMs\":");
+	out += QString::number(qint64(totals.hiddenMs));
+	out += QStringLiteral(",\"chats\":");
+	AppendChatTotalsJson(out, totals.chats);
+	out += QStringLiteral(",\"kinds\":");
+	AppendKindTotalsJson(out, totals.kinds);
+	out += QStringLiteral(",\"buckets\":");
+	AppendBucketsJson(out, sessions, fromMs, toMs, unit, zone);
 }
 
 } // namespace
