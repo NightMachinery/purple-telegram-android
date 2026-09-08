@@ -576,7 +576,15 @@ public final class PurpleScreenTime {
      * this build.
      */
     public static String zoneId() {
-        return TimeZone.getDefault().getID();
+        // The offset spelling, not the IANA id: the bridge's Qt cannot resolve
+        // a named zone without a JavaVM it never gets, and crashed trying (see
+        // ZoneFrom in the bridge). The offset is the one in force now, so a
+        // range that straddles a DST change is an hour off on the far side
+        // of it - a known, small cost until the core takes a zone rule.
+        final int offsetMinutes = TimeZone.getDefault().getOffset(System.currentTimeMillis()) / 60000;
+        final int abs = Math.abs(offsetMinutes);
+        return String.format(java.util.Locale.US, "UTC%s%02d:%02d",
+                offsetMinutes < 0 ? "-" : "+", abs / 60, abs % 60);
     }
 
     /**
