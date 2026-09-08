@@ -893,13 +893,40 @@ void FocusEnter(Purple::State &state, const Purple::Settings &settings) {
 	// dereferences the null it gets back before isValid() could say no. So
 	// the Java side sends the offset spelling, and anything else is treated
 	// as "no zone named", not tried.
+	const auto local = QTimeZone(QTimeZone::LocalTime);
+	auto fixed = QTimeZone();
 	if (id.startsWith(QStringLiteral("UTC"))) {
 		const auto named = QTimeZone(id.toUtf8());
 		if (named.isValid()) {
-			return named;
+			fixed = named;
 		}
 	}
-	return QTimeZone(QTimeZone::LocalTime);
+	if (!fixed.isValid()) {
+		return local;
+	}
+
+	// Both describe the same zone and only one of them knows about daylight
+	// saving. A fixed offset is the offset in force today, so a report over a
+	// range that straddles a change puts every day boundary past it an hour
+	// out; LocalTime is the C library's own answer, which has the whole rule
+	// and reaches no Java at all - bionic reads the zone from TZ or from the
+	// system property, so nothing here depends on the JavaVM that is missing.
+	//
+	// So LocalTime is what we want, and the fixed offset is how we check it.
+	// The check is deliberately the very operation the report depends on -
+	// turning an instant into a local date - rather than a cheaper question
+	// about the zone object, so a build where LocalTime does not work is
+	// caught by the thing that would have been wrong. Disagreeing now means
+	// LocalTime is not answering for this device, and then the offset Java
+	// measured is the better of the two: it is exactly what this build did
+	// before, an hour out only across a change rather than wrong every day.
+	const auto now = QDateTime::currentMSecsSinceEpoch();
+	const auto viaLocal = QDateTime::fromMSecsSinceEpoch(now, local);
+	const auto viaFixed = QDateTime::fromMSecsSinceEpoch(now, fixed);
+	return (viaLocal.date() == viaFixed.date()
+		&& viaLocal.time() == viaFixed.time())
+		? local
+		: fixed;
 }
 
 void AppendChatTotalsJson(QString &out, const std::vector<Purple::ChatTotal> &chats) {

@@ -567,20 +567,19 @@ public final class PurpleScreenTime {
     }
 
     /**
-     * The zone a day boundary is decided in.
+     * The zone a day boundary is decided in, as the offset in force right now.
      *
-     * Named rather than an offset, so a range crossing a DST change still has
-     * days of the right length. The bridge falls back to the device's own local
-     * time when it cannot resolve the name, which is the same zone by another
-     * route - see ZoneFrom() there for why the name may not resolve at all in
-     * this build.
+     * Not the answer the report actually uses any more, and still worth
+     * sending. The bridge decides day boundaries with the C library's own local
+     * time, which knows the whole daylight-saving rule rather than today's
+     * offset; this value is what it checks that answer against, because a build
+     * where local time does not resolve would otherwise be wrong silently. See
+     * ZoneFrom() there.
      */
     public static String zoneId() {
-        // The offset spelling, not the IANA id: the bridge's Qt cannot resolve
-        // a named zone without a JavaVM it never gets, and crashed trying (see
-        // ZoneFrom in the bridge). The offset is the one in force now, so a
-        // range that straddles a DST change is an hour off on the far side
-        // of it - a known, small cost until the core takes a zone rule.
+        // The offset spelling, never the IANA id: the bridge's Qt cannot
+        // resolve a named zone without a JavaVM it never gets, and crashed
+        // trying (see ZoneFrom in the bridge).
         final int offsetMinutes = TimeZone.getDefault().getOffset(System.currentTimeMillis()) / 60000;
         final int abs = Math.abs(offsetMinutes);
         return String.format(java.util.Locale.US, "UTC%s%02d:%02d",
