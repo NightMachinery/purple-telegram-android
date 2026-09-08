@@ -275,15 +275,19 @@ public class PurpleScheduleActivity extends UniversalFragment
         final String count =
                 formatPluralString("PurpleScheduleRuleCount", state.scheduleRules.size());
         final PurpleCore.ScheduleRule now = ruleAt(state, state.scheduleNowIndex);
+        // The clock line alone once there is one: a settings row's value has
+        // room for about twenty characters, and "1 rule, now: work until..."
+        // lost the only part of it worth reading. The count is the first
+        // thing the schedule screen itself shows.
         if (now != null) {
-            return count + ", " + formatString(R.string.PurpleScheduleNow,
+            return formatString(R.string.PurpleScheduleNow,
                     now.preset, timeText(now.till));
         }
         final PurpleCore.ScheduleRule next = nextRule(state.scheduleRules);
         if (next == null) {
             return count;
         }
-        return count + ", " + formatString(R.string.PurpleScheduleNext,
+        return formatString(R.string.PurpleScheduleNext,
                 next.preset, timeText(next.from));
     }
 
