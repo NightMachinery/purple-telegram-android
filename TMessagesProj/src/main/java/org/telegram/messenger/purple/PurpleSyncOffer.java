@@ -95,6 +95,72 @@ public final class PurpleSyncOffer {
         });
     }
 
+    /**
+     * The same lookup, asked for by hand from the Work Mode settings screen.
+     *
+     * Two rules differ from the launch check. "Already offered" does not apply:
+     * somebody who presses a button called "check" has asked again on purpose,
+     * and answering nothing would read as broken. "Newer than the local file"
+     * still does - offering to replace settings.toml with an older copy of
+     * itself is the one thing this must never do - and when it holds, the
+     * caller is told so rather than left with silence.
+     *
+     * @param done runs on the UI thread with true when an import was offered
+     */
+    public static void checkNow(BaseFragment fragment, int currentAccount, Answer done) {
+        if (fragment == null || currentAccount < 0
+                || !UserConfig.getInstance(currentAccount).isClientActivated()) {
+            done.run(false);
+            return;
+        }
+        // Marked as looked at either way, so the next launch does not repeat by
+        // itself what has just been done by hand.
+        synchronized (checked) {
+            checked.add(currentAccount);
+        }
+        search(currentAccount, PurpleSettings.FILE_NAME, first -> {
+            if (first != null) {
+                done.run(offerNow(fragment, currentAccount, first));
+                return;
+            }
+            search(currentAccount, "", second -> done.run(offerNow(fragment, currentAccount, second)));
+        });
+    }
+
+    /** Whether the caller's request found something worth offering. */
+    public interface Answer {
+        void run(boolean offered);
+    }
+
+    private static boolean offerNow(BaseFragment fragment, int account, TLRPC.Message message) {
+        if (message == null) {
+            return false;
+        }
+        final File local = PurpleSettings.settingsFile();
+        final long localStamp = local.exists() ? local.lastModified() / 1000L : 0L;
+        if (message.date <= localStamp) {
+            // Not newer, so nothing to offer. The id still moves on for the
+            // same reason the launch check moves it: this message will not
+            // become worth offering later either.
+            MessagesController.getMainSettings(account).edit().putInt(OFFERED_KEY, message.id).apply();
+            FileLog.d("Purple: sync check: msg " + message.id + " is not newer than the local file.");
+            return false;
+        }
+        if (!BulletinFactory.canShowBulletin(fragment)) {
+            return false;
+        }
+        MessagesController.getMainSettings(account).edit().putInt(OFFERED_KEY, message.id).apply();
+        BulletinFactory.of(fragment)
+                .createSimpleBulletin(
+                        R.raw.info,
+                        LocaleController.getString(R.string.PurpleSyncOffer),
+                        LocaleController.getString(R.string.Import),
+                        Bulletin.DURATION_PROLONG,
+                        () -> startImport(fragment, account, message))
+                .show();
+        return true;
+    }
+
     /** What a Saved Messages lookup came back with, or null. */
     private interface Found {
         void run(TLRPC.Message message);
