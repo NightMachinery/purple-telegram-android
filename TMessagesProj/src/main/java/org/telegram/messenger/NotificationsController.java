@@ -66,6 +66,7 @@ import androidx.core.graphics.drawable.IconCompat;
 
 import com.google.common.collect.Lists;
 
+import org.telegram.messenger.purple.PurpleAccent;
 import org.telegram.messenger.purple.PurpleGate;
 import org.telegram.messenger.purple.PurpleRecent;
 import org.telegram.messenger.support.LongSparseIntArray;
@@ -4705,7 +4706,7 @@ public class NotificationsController extends BaseController implements Notificat
                     .setGroupSummary(true)
                     .setShowWhen(true)
                     .setWhen(((long) lastMessageObject.messageOwner.date) * 1000)
-                    .setColor(0xff11acfa);
+                    .setColor(PurpleAccent.notification());
 
             long[] vibrationPattern = null;
             Uri sound = null;
@@ -5703,7 +5704,7 @@ public class NotificationsController extends BaseController implements Notificat
                     .setContentText(text.toString())
                     .setAutoCancel(true)
                     .setNumber(dialogKey.story ? storyPushMessages.size() : messageObjects.size())
-                    .setColor(0xff11acfa)
+                    .setColor(PurpleAccent.notification())
                     .setGroupSummary(false)
                     .setWhen(date)
                     .setShowWhen(true)
