@@ -1,11 +1,17 @@
 /*
  * This is the source code of Purple Telegram for Android.
  *
- * The schedule: which preset runs when, as rows instead of [[schedule.rules]]
- * blocks. Every write goes through the core's splice, addressed by the rule's
- * position in the raw array and fenced by what this screen read off it, so a
- * dialog left open while the file moved underneath refuses rather than
- * rewriting somebody else's rule.
+ * The schedule: which preset runs when, as rows instead of TOML blocks.
+ *
+ * This screen is the list of rulesets - the named groups of rules, each aimed
+ * at the devices it is for - with the master switch, the pause and the line
+ * saying what the schedule is doing right now above them. One ruleset's rules
+ * are edited on PurpleRulesetActivity, which every row here opens.
+ *
+ * Every write goes through the core's splice, a rule addressed by its ruleset
+ * and its position in that ruleset's raw array and fenced by what the screen
+ * read off it, so a dialog left open while the file moved underneath refuses
+ * rather than rewriting somebody else's rule.
  *
  * The tick needs no change for any of this: every write reloads, and the tick
  * reads the schedule the gate is holding.
@@ -13,11 +19,10 @@
 
 package org.telegram.ui;
 
-import static org.telegram.messenger.LocaleController.formatPluralString;
 import static org.telegram.messenger.LocaleController.formatString;
 import static org.telegram.messenger.LocaleController.getString;
 
-import android.app.TimePickerDialog;
+import android.app.DatePickerDialog;
 import android.content.Context;
 import android.text.TextUtils;
 import android.util.TypedValue;
@@ -31,14 +36,16 @@ import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.purple.PurpleCore;
+import org.telegram.messenger.purple.PurpleDevice;
 import org.telegram.messenger.purple.PurpleGate;
 import org.telegram.messenger.purple.PurpleWriter;
 import org.telegram.ui.ActionBar.AlertDialog;
+import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
-import org.telegram.ui.Cells.CheckBoxCell;
 import org.telegram.ui.Cells.NotificationsCheckCell;
 import org.telegram.ui.Cells.RadioColorCell;
 import org.telegram.ui.Components.BulletinFactory;
+import org.telegram.ui.Components.EditTextBoldCursor;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalAdapter;
@@ -46,6 +53,7 @@ import org.telegram.ui.Components.UniversalFragment;
 
 import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 
@@ -54,10 +62,20 @@ public class PurpleScheduleActivity extends UniversalFragment
 
     private static final int ROW_ENABLED = 1;
     private static final int ROW_PAUSED = 2;
-    private static final int ROW_ADD = 3;
+    private static final int ROW_PAUSE_UNTIL = 3;
+    private static final int ROW_OUTSIDE = 4;
+    private static final int ROW_ADD_RULESET = 5;
 
-    /** Rule rows carry sourceIndex above this, so one id space serves both. */
-    private static final int RULE_BASE = 1000;
+    /** Ruleset rows carry their position above this, so one id space serves both. */
+    private static final int RULESET_BASE = 1000;
+
+    /** The name the core gives the no-preset preset, spelled as the file does. */
+    public static final String NORMAL_PRESET = "normal";
+
+    /** Every scope a ruleset can name that is not a device id, in row order. */
+    private static final String[] SCOPES = {
+        "any", "desktop", "mobile", "android", "ios", "macos", "windows", "linux",
+    };
 
 
     // Every reload the gate does ends in this signal, whichever account-wide
@@ -101,31 +119,39 @@ public class PurpleScheduleActivity extends UniversalFragment
         items.add(enabled);
         items.add(UItem.asShadow(getString(R.string.PurpleScheduleOnInfo)));
 
-        final UItem paused = UItem.asCheck(ROW_PAUSED, getString(R.string.PurpleSchedulePauseToday));
-        // state.toml, not settings.toml: a pause is about today and expires on
-        // its own, so it is not something the file should remember.
-        paused.checked = (state != null && state.clock.schedulePaused);
-        items.add(paused);
-        items.add(UItem.asShadow(getString(R.string.PurpleSchedulePauseTodayInfo)));
+        final boolean paused = (state != null && state.clock.schedulePaused);
+        final UItem pause = UItem.asCheck(ROW_PAUSED, getString(R.string.PurpleSchedulePause));
+        // state.toml, not settings.toml: a pause is a decision about the next
+        // few hours and expires on its own, so it is not something the file
+        // shared between devices should remember.
+        pause.checked = paused;
+        items.add(pause);
+        if (paused) {
+            // Only while something is held off. A deadline row over an unpaused
+            // schedule would be asking when to stop doing nothing.
+            items.add(UItem.asButton(ROW_PAUSE_UNTIL,
+                    getString(R.string.PurpleSchedulePauseUntilRow),
+                    untilText(state.clock.schedulePausedUntil)));
+        }
+        items.add(UItem.asShadow(getString(R.string.PurpleSchedulePauseInfo)));
 
-        items.add(UItem.asHeader(getString(R.string.PurpleScheduleRulesHeader)));
+        items.add(UItem.asHeader(getString(R.string.PurpleScheduleRulesetsHeader)));
         items.add(UItem.asShadow(statusLine(state)));
 
         if (state != null) {
-            for (int a = 0, n = state.scheduleRules.size(); a < n; ++a) {
-                final PurpleCore.ScheduleRule rule = state.scheduleRules.get(a);
-                // A two-part row: the switch alone is enabled_p, and the rest
-                // of it opens the editor. One row rather than two because they
-                // are one rule, and the quick answer - "not this week" - should
-                // not cost a dialog.
-                final UItem row = UItem.asButtonCheck(
-                        RULE_BASE + rule.index, window(rule), rule.preset);
-                row.checked = rule.enabled;
-                items.add(row);
+            for (int a = 0, n = state.scheduleRulesets.size(); a < n; ++a) {
+                final PurpleCore.ScheduleRuleset ruleset = state.scheduleRulesets.get(a);
+                items.add(UItem.asButton(RULESET_BASE + a,
+                        rulesetTitle(ruleset), rulesetSubtitle(state, ruleset)));
             }
         }
-        items.add(UItem.asButton(ROW_ADD, getString(R.string.PurpleScheduleAddRule)));
-        items.add(UItem.asShadow(getString(R.string.PurpleScheduleRulesInfo)));
+        items.add(UItem.asButton(ROW_ADD_RULESET,
+                getString(R.string.PurpleScheduleAddRuleset)));
+        items.add(UItem.asShadow(getString(R.string.PurpleScheduleRulesetsInfo)));
+
+        items.add(UItem.asButton(ROW_OUTSIDE, getString(R.string.PurpleScheduleOutsideRow),
+                presetLabel(state, state == null ? NORMAL_PRESET : state.scheduleOutside)));
+        items.add(UItem.asShadow(getString(R.string.PurpleScheduleOutsideInfo)));
 
         // A rule the parser threw away has no window and no preset to draw, so
         // it cannot be a row. The warning is the only place the reason survives,
@@ -140,19 +166,72 @@ public class PurpleScheduleActivity extends UniversalFragment
         }
     }
 
-    /** What the schedule is doing right now, above the rules. */
-    private static CharSequence statusLine(PurpleCore.Loaded state) {
-        if (state == null || state.scheduleRules.isEmpty()) {
+    // ---- what the schedule is doing -------------------------------------------
+
+    /**
+     * What the schedule is doing right now, in one line.
+     *
+     * Three shapes, and the difference between them is the whole of what
+     * `outside' added. Inside a window it says what runs and what takes over
+     * when the window ends, because that is no longer always Normal. Outside
+     * one it says what is running now and until when. "Nothing scheduled" is
+     * kept for the one case it is still true of: nothing runs, and nothing is
+     * what the schedule wants between the windows either.
+     */
+    public static CharSequence statusLine(PurpleCore.Loaded state) {
+        if (state == null) {
             return getString(R.string.PurpleScheduleNoRules);
         }
-        final PurpleCore.ScheduleRule now = ruleAt(state, state.scheduleNow);
-        if (now == null || !state.scheduleEnabled || state.clock.schedulePaused) {
-            return getString(R.string.PurpleScheduleNothingNow);
+        if (!state.scheduleEnabled) {
+            return getString(R.string.PurpleScheduleOffLine);
         }
-        return formatString(R.string.PurpleScheduleNow, now.preset, timeText(now.till));
+        if (state.clock.schedulePaused) {
+            return (state.clock.schedulePausedUntil > 0)
+                    ? formatString(R.string.PurpleSchedulePausedUntil,
+                            dateText(state.clock.schedulePausedUntil))
+                    : getString(R.string.PurpleSchedulePausedLine);
+        }
+        if (state.scheduleRules.isEmpty()) {
+            // "No rules" and "none of them are this device's" are different
+            // things to be told, and with rulesets the second is the one a
+            // phone holding the laptop's schedule will keep seeing.
+            return getString(state.scheduleRulesets.isEmpty()
+                    ? R.string.PurpleScheduleNoRules
+                    : R.string.PurpleScheduleNoneHere);
+        }
+        final CharSequence outside = presetLabel(state, state.scheduleOutside);
+        final PurpleCore.ScheduleRule now = ruleAt(state, state.scheduleNow);
+        if (now != null) {
+            return formatString(R.string.PurpleScheduleNowThen,
+                    presetLabel(state, now.preset), timeText(now.till), outside);
+        }
+        final PurpleCore.ScheduleRule next = nextRule(state.scheduleRules);
+        if (isNormal(state.scheduleOutside)) {
+            // Nothing is running, so the interesting half is what comes next -
+            // and saying "now: Normal" about stock Telegram would be describing
+            // the absence of a preset as one.
+            return (next == null)
+                    ? getString(R.string.PurpleScheduleNothingNow)
+                    : formatString(R.string.PurpleScheduleNext,
+                            presetLabel(state, next.preset), timeText(next.from));
+        }
+        return (next == null)
+                ? formatString(R.string.PurpleScheduleNowOnly, outside)
+                : formatString(R.string.PurpleScheduleNow, outside, timeText(next.from));
     }
 
-    /** The parser's complaints about rules it dropped, in file order. */
+    /**
+     * The same line, for the Work Mode settings row.
+     *
+     * One implementation rather than two: everything the row has to say is
+     * already worked out here, and a second copy of "now: work until 17:00,
+     * then home" would drift the first time one of them was corrected.
+     */
+    public static CharSequence summary(PurpleCore.Loaded state) {
+        return statusLine(state);
+    }
+
+    /** The parser's complaints about rules and rulesets it dropped, in file order. */
     private static List<String> brokenRules(PurpleCore.Loaded state) {
         final List<String> result = new ArrayList<>();
         if (state == null) {
@@ -160,11 +239,116 @@ public class PurpleScheduleActivity extends UniversalFragment
         }
         for (int a = 0, n = state.warnings.size(); a < n; ++a) {
             final String warning = state.warnings.get(a);
-            if (warning != null && warning.startsWith("schedule rule ")) {
+            // Both prefixes: a rule in the flat array is "schedule rule N", one
+            // inside a ruleset is "schedule ruleset 'x' rule N", and so is the
+            // complaint about a ruleset that was skipped whole.
+            if (warning != null
+                    && (warning.startsWith("schedule rule ")
+                            || warning.startsWith("schedule ruleset "))) {
                 result.add(warning);
             }
         }
         return result;
+    }
+
+    // ---- naming ---------------------------------------------------------------
+
+    /** What to call a ruleset on a row. The implicit one has no name of its own. */
+    public static CharSequence rulesetTitle(PurpleCore.ScheduleRuleset ruleset) {
+        return ruleset.implicit()
+                ? getString(R.string.PurpleScheduleRulesHeader)
+                : ruleset.name;
+    }
+
+    /** "This device · Enabled": who it is for, and what it does about it. */
+    public static CharSequence rulesetSubtitle(
+            PurpleCore.Loaded state, PurpleCore.ScheduleRuleset ruleset) {
+        return scopeLabel(state, ruleset.device) + " · " + modeLabel(ruleset.mode);
+    }
+
+    /**
+     * What a ruleset's {@code device} means, in words.
+     *
+     * "This device" wins over the label, because that is the more useful of the
+     * two things it could say: a person reading the phone's screen already
+     * knows what they called the phone. Anything the core does not recognise is
+     * a device id, so it falls through to the label {@code [devices]} gives it,
+     * and to the raw id when nothing does.
+     */
+    public static CharSequence scopeLabel(PurpleCore.Loaded state, String device) {
+        final String wanted = (device == null) ? "" : device.trim();
+        if (wanted.length() == 0 || wanted.equalsIgnoreCase("any")) {
+            return getString(R.string.PurpleScheduleDeviceAny);
+        }
+        if (state != null && wanted.equalsIgnoreCase(state.deviceId)) {
+            return getString(R.string.PurpleScheduleDeviceThis);
+        }
+        final int known = scopeIndex(wanted);
+        if (known >= 0) {
+            return getString(scopeString(known));
+        }
+        final String label = PurpleDevice.labelFor(state, wanted);
+        return (label != null) ? label : wanted;
+    }
+
+    /** Which of {@link #SCOPES} this is, or -1 for a device id. */
+    private static int scopeIndex(String device) {
+        for (int a = 0; a < SCOPES.length; ++a) {
+            if (SCOPES[a].equalsIgnoreCase(device)) {
+                return a;
+            }
+        }
+        return -1;
+    }
+
+    private static int scopeString(int index) {
+        switch (index) {
+        case 1: return R.string.PurpleScheduleDeviceDesktop;
+        case 2: return R.string.PurpleScheduleDeviceMobile;
+        case 3: return R.string.PurpleScheduleDeviceAndroid;
+        case 4: return R.string.PurpleScheduleDeviceIos;
+        case 5: return R.string.PurpleScheduleDeviceMacos;
+        case 6: return R.string.PurpleScheduleDeviceWindows;
+        case 7: return R.string.PurpleScheduleDeviceLinux;
+        default: return R.string.PurpleScheduleDeviceAny;
+        }
+    }
+
+    /** {@code disabled} / {@code enabled} / {@code always}, in words. */
+    public static CharSequence modeLabel(String mode) {
+        if ("disabled".equalsIgnoreCase(mode)) {
+            return getString(R.string.PurpleScheduleModeDisabled);
+        }
+        if ("always".equalsIgnoreCase(mode)) {
+            return getString(R.string.PurpleScheduleModeAlways);
+        }
+        return getString(R.string.PurpleScheduleModeEnabled);
+    }
+
+    /** Whether a preset name means stock Telegram. Empty does too, as the core has it. */
+    public static boolean isNormal(String preset) {
+        return TextUtils.isEmpty(preset) || NORMAL_PRESET.equalsIgnoreCase(preset);
+    }
+
+    /**
+     * A preset's title, or its name when the file gave it none.
+     *
+     * Normal is not in the file - it is the absence of a preset - so it is
+     * named by hand here, the same way the preset radio list has to add it.
+     */
+    public static CharSequence presetLabel(PurpleCore.Loaded state, String preset) {
+        if (isNormal(preset)) {
+            return getString(R.string.PurplePresetNormal);
+        }
+        if (state != null) {
+            for (int a = 0, n = state.presets.size(); a < n; ++a) {
+                final PurpleCore.PresetInfo info = state.presets.get(a);
+                if (info.name.equalsIgnoreCase(preset)) {
+                    return TextUtils.isEmpty(info.title) ? info.name : info.title;
+                }
+            }
+        }
+        return preset;
     }
 
     // ---- one line per rule ---------------------------------------------------
@@ -241,6 +425,19 @@ public class PurpleScheduleActivity extends UniversalFragment
         return String.format(Locale.US, "%02d:%02d", (minutes / 60) % 24, minutes % 60);
     }
 
+    /** A wall-clock second as a date, in the user's own locale. */
+    public static String dateText(long unix) {
+        return LocaleController.getInstance()
+                .getFormatterDayMonth().format(new Date(unix * 1000L));
+    }
+
+    /** What the pause row's value says: a date, or that there is no deadline. */
+    public static CharSequence untilText(long unix) {
+        return (unix > 0)
+                ? dateText(unix)
+                : getString(R.string.PurpleSchedulePauseUnpaused);
+    }
+
     /** The running rule carrying this address, or null. */
     public static PurpleCore.ScheduleRule ruleAt(
             PurpleCore.Loaded state, PurpleCore.ScheduleNow at) {
@@ -268,43 +465,6 @@ public class PurpleScheduleActivity extends UniversalFragment
             }
         }
         return null;
-    }
-
-    /**
-     * The schedule in one line, for the Work Mode settings row.
-     *
-     * Here rather than there because everything it needs to say - the rule
-     * running, the one coming, how a window is named - is already written on
-     * this screen, and two implementations of "now: work until 17:00" would
-     * drift the first time one of them was corrected.
-     */
-    public static CharSequence summary(PurpleCore.Loaded state) {
-        if (state == null || state.scheduleRules.isEmpty()) {
-            return getString(R.string.PurpleScheduleNoRules);
-        }
-        if (!state.scheduleEnabled) {
-            return getString(R.string.PurpleScheduleOff);
-        }
-        if (state.clock.schedulePaused) {
-            return getString(R.string.PurpleSchedulePaused2);
-        }
-        final String count =
-                formatPluralString("PurpleScheduleRuleCount", state.scheduleRules.size());
-        final PurpleCore.ScheduleRule now = ruleAt(state, state.scheduleNow);
-        // The clock line alone once there is one: a settings row's value has
-        // room for about twenty characters, and "1 rule, now: work until..."
-        // lost the only part of it worth reading. The count is the first
-        // thing the schedule screen itself shows.
-        if (now != null) {
-            return formatString(R.string.PurpleScheduleNow,
-                    now.preset, timeText(now.till));
-        }
-        final PurpleCore.ScheduleRule next = nextRule(state.scheduleRules);
-        if (next == null) {
-            return count;
-        }
-        return formatString(R.string.PurpleScheduleNext,
-                next.preset, timeText(next.from));
     }
 
     /**
@@ -355,59 +515,43 @@ public class PurpleScheduleActivity extends UniversalFragment
     @Override
     protected void onClick(UItem item, View view, int position, float x, float y) {
         if (item.id == ROW_ENABLED) {
-            write(PurpleWriter.setTableBool("schedule", "enabled_p", !item.checked, "schedule switch"));
+            write(PurpleWriter.setTableBool("schedule", "enabled_p", !item.checked,
+                    "schedule switch"));
             return;
         }
         if (item.id == ROW_PAUSED) {
             // Not a splice: this one lives in state.toml and has its own writer,
-            // which reloads for itself.
+            // which reloads for itself. Zero on the way in - a pause starts
+            // open-ended, and the row below is where a deadline is put on it.
             PurpleGate.setSchedulePaused(!item.checked, 0);
             refresh();
             return;
         }
-        if (item.id == ROW_ADD) {
-            editRule(null);
+        if (item.id == ROW_PAUSE_UNTIL) {
+            pickUntil();
             return;
         }
-        if (item.id >= RULE_BASE) {
+        if (item.id == ROW_OUTSIDE) {
+            pickOutside();
+            return;
+        }
+        if (item.id == ROW_ADD_RULESET) {
+            addRuleset();
+            return;
+        }
+        if (item.id >= RULESET_BASE) {
             // Re-read rather than trusting the row: a reload may have landed
-            // between the draw and the tap, and every write below is fenced on
-            // what the rule says right now.
-            final PurpleCore.Loaded fresh = PurpleGate.state();
-            final PurpleCore.ScheduleRule rule = (fresh == null)
-                    ? null
-                    : ruleAt(fresh.scheduleRules, "", item.id - RULE_BASE);
-            if (rule == null) {
+            // between the draw and the tap, and a ruleset that has gone would
+            // otherwise open an empty screen.
+            final PurpleCore.Loaded state = PurpleGate.state();
+            final int at = item.id - RULESET_BASE;
+            if (state == null || at >= state.scheduleRulesets.size()) {
                 refresh();
                 return;
             }
-            if (!onSwitch(view, x)) {
-                editRule(rule);
-                return;
-            }
-            // The switch alone: only enabled_p moves, and every other key is
-            // written back exactly as read - which is also what makes the
-            // expected fingerprint match.
-            write(PurpleWriter.setScheduleRule(
-                    rule.ruleset, rule.index, rule.from, rule.till, rule.preset,
-                    !rule.enabled, rule.days, rule.from, rule.till, rule.preset,
-                    "schedule rule switch"));
+            presentFragment(new PurpleRulesetActivity(
+                    state.scheduleRulesets.get(at).address));
         }
-    }
-
-    /**
-     * Whether a tap landed on the row's switch rather than on the row.
-     *
-     * The cell hands out its own switch, so the split is asked of the view that
-     * drew it instead of guessed from a width this screen would have to keep in
-     * step with the cell.
-     */
-    private static boolean onSwitch(View view, float x) {
-        if (!(view instanceof NotificationsCheckCell)) {
-            return false;
-        }
-        final View box = ((NotificationsCheckCell) view).getCheckBox();
-        return box != null && x >= box.getLeft() && x <= box.getRight();
     }
 
     @Override
@@ -430,129 +574,318 @@ public class PurpleScheduleActivity extends UniversalFragment
         refresh();
     }
 
-    // ---- the rule editor -----------------------------------------------------
+    // ---- pausing until a date -------------------------------------------------
 
     /**
-     * Opens the editor over one rule, or over nothing for a new one.
+     * When the pause should run out.
      *
-     * The rule is re-read from the gate at Save rather than trusted from here,
-     * and the fingerprint sent with the write is the one this dialog was opened
-     * on - so a file that moved while the dialog stood open is refused by the
-     * core instead of being quietly overwritten.
+     * Midnight at the start of the chosen day, so "until Monday" means the whole
+     * of Sunday and none of Monday - which is what a person picking a date on a
+     * pause means by it. Tomorrow is the default and the earliest: a deadline
+     * earlier than that has already passed by the time it is written, and a
+     * pause that lifts itself on the next tick is not a pause.
      */
-    private void editRule(PurpleCore.ScheduleRule existing) {
+    private void pickUntil() {
+        final Context context = getParentActivity();
+        if (context == null) {
+            return;
+        }
+        final Calendar tomorrow = midnightTomorrow();
+        final DatePickerDialog dialog = new DatePickerDialog(
+                context,
+                (view, year, month, day) -> {
+                    final Calendar until = Calendar.getInstance();
+                    until.set(year, month, day, 0, 0, 0);
+                    until.set(Calendar.MILLISECOND, 0);
+                    PurpleGate.setSchedulePaused(true, until.getTimeInMillis() / 1000L);
+                    refresh();
+                },
+                tomorrow.get(Calendar.YEAR),
+                tomorrow.get(Calendar.MONTH),
+                tomorrow.get(Calendar.DAY_OF_MONTH));
+        dialog.getDatePicker().setMinDate(tomorrow.getTimeInMillis());
+        // The way back to an open-ended pause, since the picker itself has no
+        // button for "no date at all".
+        dialog.setButton(DatePickerDialog.BUTTON_NEUTRAL,
+                getString(R.string.PurpleSchedulePauseUnpaused),
+                (d, which) -> {
+                    PurpleGate.setSchedulePaused(true, 0);
+                    refresh();
+                });
+        showDialog(dialog);
+    }
+
+    private static Calendar midnightTomorrow() {
+        final Calendar calendar = Calendar.getInstance();
+        calendar.add(Calendar.DAY_OF_YEAR, 1);
+        calendar.set(Calendar.HOUR_OF_DAY, 0);
+        calendar.set(Calendar.MINUTE, 0);
+        calendar.set(Calendar.SECOND, 0);
+        calendar.set(Calendar.MILLISECOND, 0);
+        return calendar;
+    }
+
+    // ---- the schedule's own outside preset ------------------------------------
+
+    private void pickOutside() {
         final Context context = getParentActivity();
         final PurpleCore.Loaded state = PurpleGate.state();
         if (context == null || state == null) {
             return;
         }
+        showPresetPicker(this, context, state, getString(R.string.PurpleScheduleOutsideRow),
+                state.scheduleOutside, null,
+                chosen -> write(PurpleWriter.setTableString(
+                        "schedule", "outside", chosen, "schedule outside")));
+    }
 
-        final boolean[] days = new boolean[8];
-        if (existing != null) {
-            for (int a = 0; a < existing.days.length; ++a) {
-                if (existing.days[a] >= 1 && existing.days[a] <= 7) {
-                    days[existing.days[a]] = true;
-                }
-            }
-        } else {
-            // Weekdays: the window somebody adding a work schedule almost always
-            // wants, and the one that is most tedious to tick seven times.
-            for (int a = 1; a <= 5; ++a) {
-                days[a] = true;
-            }
+    // ---- a new ruleset --------------------------------------------------------
+
+    /**
+     * Name it, say who it is for and what it does, and write the block.
+     *
+     * Two writes rather than one: AddRuleset() takes the device and the mode,
+     * which are the two keys a ruleset cannot be read without, and `outside' is
+     * an override that most rulesets do not want - so it is written afterwards
+     * and only when it was asked for, leaving a file that says nothing extra.
+     */
+    private void addRuleset() {
+        final Context context = getParentActivity();
+        final PurpleCore.Loaded state = PurpleGate.state();
+        if (context == null || state == null) {
+            return;
         }
-        final int[] from = { existing != null ? existing.from : 9 * 60 };
-        final int[] till = { existing != null ? existing.till : 17 * 60 };
-        final boolean[] enabled = { existing == null || existing.enabled };
-        final String[] preset = { existing != null
-                ? existing.preset
-                : (state.presets.isEmpty() ? NORMAL_PRESET : state.presets.get(0).name) };
+        final String[] device = { "any" };
+        final String[] mode = { "enabled" };
+        final String[] outside = { null };
 
         final LinearLayout layout = new LinearLayout(context);
         layout.setOrientation(LinearLayout.VERTICAL);
 
-        for (int day = 1; day <= 7; ++day) {
-            final int index = day;
-            final CheckBoxCell cell = new CheckBoxCell(context, 1);
-            cell.setBackgroundDrawable(Theme.getSelectorDrawable(false));
-            cell.setText(dayName(day), "", days[day], true);
-            cell.setPadding(AndroidUtilities.dp(LocaleController.isRTL ? 16 : 8), 0,
-                    AndroidUtilities.dp(LocaleController.isRTL ? 8 : 16), 0);
-            cell.setOnClickListener(v -> {
-                days[index] = !days[index];
-                ((CheckBoxCell) v).setChecked(days[index], true);
-            });
-            layout.addView(cell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 50));
-        }
+        final EditTextBoldCursor name = new EditTextBoldCursor(context);
+        name.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+        name.setTextColor(Theme.getColor(Theme.key_dialogTextBlack));
+        name.setHintTextColor(Theme.getColor(Theme.key_dialogTextHint));
+        name.setBackgroundDrawable(null);
+        name.setSingleLine(true);
+        name.setHint(getString(R.string.PurpleScheduleRulesetName));
+        name.setPadding(AndroidUtilities.dp(20), 0, AndroidUtilities.dp(20), 0);
+        layout.addView(name, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 50));
 
-        final TextView fromRow = timeRow(context, layout, R.string.PurpleScheduleFrom, from[0]);
-        fromRow.setOnClickListener(v -> pickTime(context, from[0], minutes -> {
-            from[0] = minutes;
-            fromRow.setText(getString(R.string.PurpleScheduleFrom) + "   " + timeText(minutes));
-        }));
-        final TextView tillRow = timeRow(context, layout, R.string.PurpleScheduleTo, till[0]);
-        tillRow.setOnClickListener(v -> pickTime(context, till[0], minutes -> {
-            till[0] = minutes;
-            tillRow.setText(getString(R.string.PurpleScheduleTo) + "   " + timeText(minutes));
+        final TextView appliesTo = pickerRow(context, layout,
+                getString(R.string.PurpleScheduleAppliesTo), scopeLabel(state, device[0]));
+        appliesTo.setOnClickListener(v -> showScopePicker(this, context, state, device[0], chosen -> {
+            device[0] = chosen;
+            appliesTo.setText(getString(R.string.PurpleScheduleAppliesTo)
+                    + "   " + scopeLabel(state, chosen));
         }));
 
-        // Normal first, and by hand: it is a preset name the file may use like
-        // any other, but it is not written in settings.toml, so it is not in
-        // the list the core hands over. Without it a window could turn Work
-        // Mode on and no window could turn it off again.
-        final ArrayList<RadioColorCell> radios = new ArrayList<>();
-        addPresetRadio(context, layout, radios, preset,
-                NORMAL_PRESET, getString(R.string.PurplePresetNormal));
-        for (int a = 0, n = state.presets.size(); a < n; ++a) {
-            final PurpleCore.PresetInfo info = state.presets.get(a);
-            addPresetRadio(context, layout, radios, preset,
-                    info.name, TextUtils.isEmpty(info.title) ? info.name : info.title);
-        }
+        final TextView modeRow = pickerRow(context, layout,
+                getString(R.string.PurpleScheduleMode), modeLabel(mode[0]));
+        modeRow.setOnClickListener(v -> showModePicker(this, context, mode[0], chosen -> {
+            mode[0] = chosen;
+            modeRow.setText(getString(R.string.PurpleScheduleMode)
+                    + "   " + modeLabel(chosen));
+        }));
 
-        final CheckBoxCell enabledCell = new CheckBoxCell(context, 1);
-        enabledCell.setBackgroundDrawable(Theme.getSelectorDrawable(false));
-        enabledCell.setText(getString(R.string.PurpleScheduleEnabledRow), "", enabled[0], false);
-        enabledCell.setPadding(AndroidUtilities.dp(LocaleController.isRTL ? 16 : 8), 0,
-                AndroidUtilities.dp(LocaleController.isRTL ? 8 : 16), 0);
-        enabledCell.setOnClickListener(v -> {
-            enabled[0] = !enabled[0];
-            enabledCell.setChecked(enabled[0], true);
-        });
-        layout.addView(enabledCell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 50));
+        final TextView outsideRow = pickerRow(context, layout,
+                getString(R.string.PurpleScheduleOutsideRow),
+                getString(R.string.PurpleScheduleOutsideSame));
+        outsideRow.setOnClickListener(v -> showPresetPicker(this, context, state,
+                getString(R.string.PurpleScheduleOutsideRow), outside[0],
+                getString(R.string.PurpleScheduleOutsideSame),
+                chosen -> {
+                    outside[0] = (chosen.length() == 0) ? null : chosen;
+                    outsideRow.setText(getString(R.string.PurpleScheduleOutsideRow) + "   "
+                            + (outside[0] == null
+                                    ? getString(R.string.PurpleScheduleOutsideSame)
+                                    : presetLabel(state, outside[0])));
+                }));
 
         final AlertDialog.Builder builder = new AlertDialog.Builder(context);
-        builder.setTitle(getString(existing == null
-                ? R.string.PurpleScheduleRuleNew
-                : R.string.PurpleScheduleRuleEdit));
+        builder.setTitle(getString(R.string.PurpleScheduleRulesetNew));
         builder.setView(layout);
-        builder.setPositiveButton(getString(R.string.Save),
-                (dialog, which) -> saveRule(existing, days, from[0], till[0], enabled[0], preset[0]));
+        builder.setPositiveButton(getString(R.string.Save), (dialog, which) -> {
+            final String wanted = name.getText().toString().trim();
+            if (wanted.length() == 0) {
+                error(getString(R.string.PurpleScheduleRulesetNoName));
+                return;
+            }
+            final String failed = PurpleWriter.addRuleset(
+                    wanted, device[0], mode[0], "ruleset added");
+            if (failed == null && outside[0] != null) {
+                write(PurpleWriter.setRulesetString(
+                        wanted, "outside", outside[0], "ruleset outside"));
+                return;
+            }
+            write(failed);
+        });
         builder.setNegativeButton(getString(R.string.Cancel), null);
-        if (existing != null) {
-            builder.setNeutralButton(getString(R.string.Delete),
-                    (dialog, which) -> confirmDelete(existing));
-        }
         showDialog(builder.create());
     }
 
-    /** The name the core gives the no-preset preset, spelled as the file does. */
-    private static final String NORMAL_PRESET = "normal";
+    // ---- the pickers, shared with the ruleset screen ---------------------------
 
-    private void addPresetRadio(
+    /** What a picker hands back: the chosen value, empty for "say nothing". */
+    public interface Chosen {
+        void run(String value);
+    }
+
+    /**
+     * A tappable "Label   value" row inside a dialog.
+     *
+     * The dialog is a plain LinearLayout rather than a fragment, so there is no
+     * UItem to use and no cell that draws a value beside a label; this is the
+     * same shape the rule editor's time rows already use.
+     */
+    public static TextView pickerRow(
+            Context context, LinearLayout layout, CharSequence label, CharSequence value) {
+        final TextView row = new TextView(context);
+        row.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+        row.setTextColor(Theme.getColor(Theme.key_dialogTextBlack));
+        row.setGravity((LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT)
+                | Gravity.CENTER_VERTICAL);
+        row.setPadding(AndroidUtilities.dp(20), 0, AndroidUtilities.dp(20), 0);
+        row.setBackgroundDrawable(Theme.getSelectorDrawable(false));
+        row.setText(label + "   " + value);
+        layout.addView(row, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 50));
+        return row;
+    }
+
+    /**
+     * The preset radio list, with Normal first.
+     *
+     * Normal is added by hand: it is a preset name the file may use like any
+     * other, but it is not written in settings.toml, so it is not in the list
+     * the core hands over. Without it a window could turn Work Mode on and no
+     * window could turn it off again.
+     *
+     * `sameAs' adds a row above it meaning "say nothing here", which answers
+     * with an empty string - the way a ruleset defers to [schedule] outside.
+     */
+    public static void showPresetPicker(
+            BaseFragment fragment,
+            Context context,
+            PurpleCore.Loaded state,
+            CharSequence title,
+            String current,
+            CharSequence sameAs,
+            Chosen chosen) {
+        final LinearLayout layout = new LinearLayout(context);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        final ArrayList<RadioColorCell> radios = new ArrayList<>();
+        final String[] picked = { (current == null) ? "" : current };
+        if (sameAs != null) {
+            addRadio(context, layout, radios, picked, "", sameAs);
+        }
+        addRadio(context, layout, radios, picked,
+                NORMAL_PRESET, getString(R.string.PurplePresetNormal));
+        for (int a = 0, n = state.presets.size(); a < n; ++a) {
+            final PurpleCore.PresetInfo info = state.presets.get(a);
+            addRadio(context, layout, radios, picked, info.name,
+                    TextUtils.isEmpty(info.title) ? info.name : info.title);
+        }
+        final AlertDialog.Builder builder = new AlertDialog.Builder(context);
+        builder.setTitle(title);
+        builder.setView(layout);
+        builder.setPositiveButton(getString(R.string.Save),
+                (dialog, which) -> chosen.run(picked[0]));
+        builder.setNegativeButton(getString(R.string.Cancel), null);
+        fragment.showDialog(builder.create());
+    }
+
+    /** Disabled / Enabled / Always, as the core spells them in the file. */
+    public static void showModePicker(
+            BaseFragment fragment, Context context, String current, Chosen chosen) {
+        final LinearLayout layout = new LinearLayout(context);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        final ArrayList<RadioColorCell> radios = new ArrayList<>();
+        final String[] picked = { (current == null) ? "enabled" : current };
+        addRadio(context, layout, radios, picked, "disabled",
+                getString(R.string.PurpleScheduleModeDisabled));
+        addRadio(context, layout, radios, picked, "enabled",
+                getString(R.string.PurpleScheduleModeEnabled));
+        addRadio(context, layout, radios, picked, "always",
+                getString(R.string.PurpleScheduleModeAlways));
+        final AlertDialog.Builder builder = new AlertDialog.Builder(context);
+        builder.setTitle(getString(R.string.PurpleScheduleMode));
+        builder.setView(layout);
+        builder.setPositiveButton(getString(R.string.Save),
+                (dialog, which) -> chosen.run(picked[0]));
+        builder.setNegativeButton(getString(R.string.Cancel), null);
+        fragment.showDialog(builder.create());
+    }
+
+    /**
+     * Who a ruleset is for: the eight the core knows, this device by id, and a
+     * field for another device's id.
+     *
+     * The field is the whole reason the list is not just radios: a device id is
+     * something you read off the other machine's settings screen and type in
+     * once, and there is nowhere else on the phone to type it.
+     */
+    public static void showScopePicker(
+            BaseFragment fragment, Context context, PurpleCore.Loaded state,
+            String current, Chosen chosen) {
+        final LinearLayout layout = new LinearLayout(context);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        final ArrayList<RadioColorCell> radios = new ArrayList<>();
+
+        final String deviceId = (state == null) ? "" : state.deviceId;
+        final boolean isThis = deviceId.length() > 0 && deviceId.equalsIgnoreCase(current);
+        final boolean isOther = !isThis && scopeIndex(current) < 0;
+        final String[] picked = { isOther ? "" : (current == null ? "any" : current) };
+
+        for (int a = 0; a < SCOPES.length; ++a) {
+            addRadio(context, layout, radios, picked, SCOPES[a],
+                    getString(scopeString(a)));
+        }
+        if (deviceId.length() > 0) {
+            addRadio(context, layout, radios, picked, deviceId,
+                    getString(R.string.PurpleScheduleDeviceThis));
+        }
+        // The free-text row is not a radio: typing in it IS choosing it, and a
+        // radio the field could disagree with would be two answers on screen.
+        final EditTextBoldCursor other = new EditTextBoldCursor(context);
+        other.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+        other.setTextColor(Theme.getColor(Theme.key_dialogTextBlack));
+        other.setHintTextColor(Theme.getColor(Theme.key_dialogTextHint));
+        other.setBackgroundDrawable(null);
+        other.setSingleLine(true);
+        other.setHint(getString(R.string.PurpleScheduleDeviceOther));
+        other.setPadding(AndroidUtilities.dp(20), 0, AndroidUtilities.dp(20), 0);
+        if (isOther) {
+            other.setText(current);
+        }
+        layout.addView(other, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 50));
+
+        final AlertDialog.Builder builder = new AlertDialog.Builder(context);
+        builder.setTitle(getString(R.string.PurpleScheduleAppliesTo));
+        builder.setView(layout);
+        builder.setPositiveButton(getString(R.string.Save), (dialog, which) -> {
+            final String typed = other.getText().toString().trim();
+            chosen.run(typed.length() > 0 ? typed : picked[0]);
+        });
+        builder.setNegativeButton(getString(R.string.Cancel), null);
+        fragment.showDialog(builder.create());
+    }
+
+    /** One radio row in a dialog, keeping the group in step. */
+    public static void addRadio(
             Context context,
             LinearLayout layout,
             ArrayList<RadioColorCell> radios,
-            String[] chosen,
-            String name,
+            String[] picked,
+            String value,
             CharSequence label) {
         final RadioColorCell cell = new RadioColorCell(context);
         cell.setPadding(AndroidUtilities.dp(4), 0, AndroidUtilities.dp(4), 0);
         cell.setCheckColor(Theme.getColor(Theme.key_radioBackground),
                 Theme.getColor(Theme.key_dialogRadioBackgroundChecked));
-        cell.setTextAndValue(label, name.equalsIgnoreCase(chosen[0]));
+        cell.setTextAndValue(label, value.equalsIgnoreCase(picked[0]));
         cell.setBackgroundDrawable(Theme.getSelectorDrawable(false));
         cell.setOnClickListener(v -> {
-            chosen[0] = name;
+            picked[0] = value;
             for (int b = 0; b < radios.size(); ++b) {
                 radios.get(b).setChecked(radios.get(b) == v, true);
             }
@@ -561,93 +894,19 @@ public class PurpleScheduleActivity extends UniversalFragment
         layout.addView(cell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 50));
     }
 
-    private TextView timeRow(Context context, LinearLayout layout, int label, int minutes) {
-        final TextView row = new TextView(context);
-        row.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
-        row.setTextColor(Theme.getColor(Theme.key_dialogTextBlack));
-        row.setGravity((LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL);
-        row.setPadding(AndroidUtilities.dp(20), 0, AndroidUtilities.dp(20), 0);
-        row.setBackgroundDrawable(Theme.getSelectorDrawable(false));
-        row.setText(getString(label) + "   " + timeText(minutes));
-        layout.addView(row, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 50));
-        return row;
-    }
-
-    private interface Picked {
-        void run(int minutes);
-    }
-
-    private void pickTime(Context context, int minutes, Picked picked) {
-        final int start = Math.max(0, minutes);
-        // 24 hours whatever the phone is set to: the file writes "09:00" and a
-        // picker that said "9:00 AM" would be describing a different notation
-        // than the one being edited.
-        new TimePickerDialog(
-                context,
-                (view, hour, minute) -> picked.run(hour * 60 + minute),
-                (start / 60) % 24,
-                start % 60,
-                true).show();
-    }
-
-    private void saveRule(
-            PurpleCore.ScheduleRule existing,
-            boolean[] days,
-            int from,
-            int till,
-            boolean enabled,
-            String preset) {
-        int count = 0;
-        for (int a = 1; a <= 7; ++a) {
-            if (days[a]) {
-                ++count;
-            }
+    /**
+     * Whether a tap landed on the row's switch rather than on the row.
+     *
+     * The cell hands out its own switch, so the split is asked of the view that
+     * drew it instead of guessed from a width a screen would have to keep in
+     * step with the cell.
+     */
+    public static boolean onSwitch(View view, float x) {
+        if (!(view instanceof NotificationsCheckCell)) {
+            return false;
         }
-        if (count == 0) {
-            error(getString(R.string.PurpleScheduleNoDays));
-            return;
-        }
-        if (from == till) {
-            // A window with no width is not a rule, and the core refuses it
-            // too - said here so the answer arrives before the write.
-            error(getString(R.string.PurpleScheduleSameTime));
-            return;
-        }
-        if (TextUtils.isEmpty(preset)) {
-            error(getString(R.string.PurpleScheduleNoPreset));
-            return;
-        }
-        final int[] chosen = new int[count];
-        int at = 0;
-        for (int a = 1; a <= 7; ++a) {
-            if (days[a]) {
-                chosen[at++] = a;
-            }
-        }
-        if (existing == null) {
-            write(PurpleWriter.appendScheduleRule(
-                    "", enabled, chosen, from, till, preset, "schedule rule added"));
-            return;
-        }
-        write(PurpleWriter.setScheduleRule(
-                existing.ruleset, existing.index, existing.from, existing.till,
-                existing.preset, enabled, chosen, from, till, preset,
-                "schedule rule edited"));
-    }
-
-    private void confirmDelete(PurpleCore.ScheduleRule rule) {
-        final Context context = getParentActivity();
-        if (context == null) {
-            return;
-        }
-        final AlertDialog.Builder builder = new AlertDialog.Builder(context);
-        builder.setTitle(getString(R.string.PurpleScheduleDeleteTitle));
-        builder.setMessage(ruleLine(rule));
-        builder.setPositiveButton(getString(R.string.Delete), (dialog, which) -> write(
-                PurpleWriter.removeScheduleRule(rule.ruleset, rule.index, rule.from,
-                        rule.till, rule.preset, "schedule rule removed")));
-        builder.setNegativeButton(getString(R.string.Cancel), null);
-        showDialog(builder.create());
+        final View box = ((NotificationsCheckCell) view).getCheckBox();
+        return box != null && x >= box.getLeft() && x <= box.getRight();
     }
 
     private void error(CharSequence text) {
