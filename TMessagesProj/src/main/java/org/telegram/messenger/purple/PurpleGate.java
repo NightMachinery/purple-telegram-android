@@ -463,11 +463,16 @@ public final class PurpleGate {
      * boundary rule as everything else: the target moved while it was not
      * looking, so the reload below re-ticks and it applies once.
      *
+     * @param until when the pause runs out, in local wall-clock seconds, or
+     *              zero for one that lasts until it is lifted by hand. A pause
+     *              with a deadline lifts itself in the tick and catches up
+     *              there, by exactly the same rule as an unpause here.
      * @return whether the choice reached state.toml
      */
-    public static boolean setSchedulePaused(boolean paused) {
+    public static boolean setSchedulePaused(boolean paused, long until) {
         ensureLoaded();
-        final String text = PurpleCore.setSchedulePaused(PurpleState.read(), paused);
+        final String text = PurpleCore.setSchedulePaused(
+                PurpleState.read(), paused, until);
         if (text == null || !PurpleState.write(text.getBytes(UTF_8))) {
             return false;
         }
@@ -2178,7 +2183,12 @@ public final class PurpleGate {
     /** One load attempt; null when the bridge could not be called at all. */
     private static PurpleCore.Loaded load(byte[] settings, byte[] state) {
         try {
-            return PurpleCore.load(settings, state);
+            // The identity travels with every load because the schedule it
+            // resolves is this device's: which rulesets apply, and therefore
+            // which rules run and what the preset is between them, is a
+            // question the file cannot answer on its own.
+            return PurpleCore.load(settings, state, PurpleDevice.id(),
+                    PurpleDevice.PLATFORM, PurpleDevice.CLASS);
         } catch (UnsatisfiedLinkError | RuntimeException e) {
             FileLog.e(e);
             return null;

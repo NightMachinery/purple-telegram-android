@@ -147,6 +147,15 @@ struct Gate {
 	Purple::State state;
 	Purple::Resolved resolved;
 	bool loaded = false;
+
+	// What this install reports itself as, so a ruleset can name it. Handed
+	// over by loadNative rather than worked out here: the id is a hash of an
+	// Android identifier and the platform is a fact about the build, neither of
+	// which the core or this file has any way to ask for.
+	//
+	// Kept because a caller that has no identity of its own to offer still has
+	// to resolve the same schedule this device is running - see focusTickNative.
+	Purple::DeviceIdentity device;
 };
 
 [[nodiscard]] Gate &TheGate() {
@@ -389,46 +398,209 @@ void AppendPresetJson(
 	json += QChar('}');
 }
 
-// Every [[schedule.rules]] block the parser kept, as
-// [{"index","line","enabled","days","from","to","preset"}]. Times are minutes
-// since midnight, which is what a time picker speaks and what the splice
-// compares against, so "9:00" and "09:00" are one rule on both sides.
+// Where a ruleset is edited, which is not always what it is called. The
+// implicit ruleset - the flat [[schedule.rules]] array wearing a ruleset's
+// clothes - is named "rules" for a screen to print, but every splice op
+// addresses it with an empty name, and a file is free to spell out a real
+// ruleset called "rules" as well. Handing the screen the name would have it
+// edit that one instead.
+[[nodiscard]] QString RulesetAddress(const Purple::ScheduleRuleset &ruleset) {
+	return ruleset.implicit() ? QString() : ruleset.name;
+}
+
+// One rule block the parser kept, as
+// {"ruleset","index","line","enabled","days","from","to","preset"}. Times are
+// minutes since midnight, which is what a time picker speaks and what the
+// splice compares against, so "9:00" and "09:00" are one rule on both sides.
 //
 // A rule the parser threw away is not here: it has no window and no preset to
 // draw. The schedule screen names those from `warnings' instead, which is the
 // only place the reason it was dropped survives. `index' is the position in the
-// RAW array, counting the dropped ones, because that is the address the splicer
-// edits by - a rule numbered by its position in this list would move whenever a
-// broken one above it was fixed.
-void AppendScheduleRulesJson(QString &out, const Purple::Schedule &schedule) {
+// RAW array WITHIN ITS RULESET, counting the dropped ones, because that is the
+// address the splicer edits by - a rule numbered by its position in this list
+// would move whenever a broken one above it was fixed. `ruleset' is the other
+// half of that address.
+void AppendScheduleRuleJson(
+		QString &out,
+		const Purple::ScheduleRule &rule,
+		const QString &ruleset) {
+	out += QStringLiteral("{\"ruleset\":");
+	AppendJsonString(out, ruleset);
+	out += QStringLiteral(",\"index\":");
+	out += QString::number(rule.sourceIndex);
+	out += QStringLiteral(",\"line\":");
+	out += QString::number(rule.sourceLine);
+	out += QStringLiteral(",\"enabled\":");
+	AppendJsonBool(out, rule.enabled);
+	out += QStringLiteral(",\"days\":[");
+	auto firstDay = true;
+	for (const auto day : rule.days) {
+		if (!firstDay) {
+			out += QChar(',');
+		}
+		firstDay = false;
+		out += QString::number(day);
+	}
+	out += QStringLiteral("],\"from\":");
+	out += QString::number(rule.from);
+	out += QStringLiteral(",\"to\":");
+	out += QString::number(rule.till);
+	out += QStringLiteral(",\"preset\":");
+	AppendJsonString(out, rule.preset);
+	out += QChar('}');
+}
+
+// Every ruleset the file describes, in file order and with the implicit one
+// first, as the screen listing and editing them needs it. All of them, not only
+// the ones this device runs: a ruleset for the laptop is still a row on the
+// phone, because the whole point of one settings.toml is that the phone is
+// where you edit the laptop's half of it.
+void AppendRulesetsJson(QString &out, const Purple::Schedule &schedule) {
 	out += QChar('[');
 	auto first = true;
-	for (const auto &rule : schedule.rules) {
+	for (const auto &ruleset : schedule.rulesets) {
 		if (!first) {
 			out += QChar(',');
 		}
 		first = false;
-		out += QStringLiteral("{\"index\":");
-		out += QString::number(rule.sourceIndex);
+		out += QStringLiteral("{\"name\":");
+		AppendJsonString(out, ruleset.name);
+		out += QStringLiteral(",\"address\":");
+		AppendJsonString(out, RulesetAddress(ruleset));
+		out += QStringLiteral(",\"device\":");
+		AppendJsonString(out, ruleset.device);
+		out += QStringLiteral(",\"mode\":");
+		AppendJsonString(out, Purple::RulesetModeName(ruleset.mode));
+		// Null rather than "normal": a ruleset that says nothing leaves the
+		// question to [schedule] outside, which is not the same answer as one
+		// that names Normal outright.
+		out += QStringLiteral(",\"outside\":");
+		if (ruleset.outside) {
+			AppendJsonString(out, *ruleset.outside);
+		} else {
+			out += QStringLiteral("null");
+		}
+		out += QStringLiteral(",\"implicit\":");
+		AppendJsonBool(out, ruleset.implicit());
+		out += QStringLiteral(",\"index\":");
+		out += QString::number(ruleset.sourceIndex);
 		out += QStringLiteral(",\"line\":");
-		out += QString::number(rule.sourceLine);
-		out += QStringLiteral(",\"enabled\":");
-		AppendJsonBool(out, rule.enabled);
-		out += QStringLiteral(",\"days\":[");
-		auto firstDay = true;
-		for (const auto day : rule.days) {
-			if (!firstDay) {
+		out += QString::number(ruleset.sourceLine);
+		out += QStringLiteral(",\"rules\":[");
+		auto firstRule = true;
+		for (const auto &rule : ruleset.rules) {
+			if (!firstRule) {
 				out += QChar(',');
 			}
-			firstDay = false;
-			out += QString::number(day);
+			firstRule = false;
+			AppendScheduleRuleJson(out, rule, RulesetAddress(ruleset));
 		}
-		out += QStringLiteral("],\"from\":");
-		out += QString::number(rule.from);
-		out += QStringLiteral(",\"to\":");
-		out += QString::number(rule.till);
-		out += QStringLiteral(",\"preset\":");
-		AppendJsonString(out, rule.preset);
+		out += QStringLiteral("]}");
+	}
+	out += QChar(']');
+}
+
+// The rules this device actually runs: the chosen rulesets' enabled rules,
+// most specific ruleset first and file order among equals, which is the order
+// the first-match engine walks them in.
+//
+// Rebuilt from `chosen' rather than copied out of `active.rules' so each rule
+// can say which ruleset it came from. The two lists are the same rules in the
+// same order by construction - ActiveSchedule() fills one from the other.
+void AppendActiveRulesJson(
+		QString &out,
+		const Purple::ScheduleForDevice &active) {
+	out += QChar('[');
+	auto first = true;
+	const auto append = [&](
+			const Purple::ScheduleRule &rule,
+			const QString &ruleset) {
+		if (!first) {
+			out += QChar(',');
+		}
+		first = false;
+		AppendScheduleRuleJson(out, rule, ruleset);
+	};
+	if (active.chosen.empty()) {
+		// A Schedule nothing parsed - one assembled by a caller filling in the
+		// flat list - has no ruleset to stand for its rules. ActiveSchedule()
+		// takes them as they are, and so does this.
+		for (const auto rule : active.rules) {
+			append(*rule, QString());
+		}
+	} else {
+		for (const auto ruleset : active.chosen) {
+			for (const auto &rule : ruleset->rules) {
+				if (rule.enabled) {
+					append(rule, RulesetAddress(*ruleset));
+				}
+			}
+		}
+	}
+	out += QChar(']');
+}
+
+// Which rule the moment is inside, as {"ruleset","index"} - the two halves of
+// its splice address - or null when none is.
+//
+// The ruleset is found by which one's rules the returned pointer sits in, since
+// ActiveSchedule() hands back pointers into the Schedule it was built from and
+// a rule carries no name of its own.
+void AppendScheduleNowJson(
+		QString &out,
+		const Purple::ScheduleForDevice &active,
+		const Purple::ScheduleRule *rule) {
+	if (!rule) {
+		out += QStringLiteral("null");
+		return;
+	}
+	auto address = QString();
+	for (const auto ruleset : active.chosen) {
+		const auto &rules = ruleset->rules;
+		if (rule >= rules.data() && rule < rules.data() + rules.size()) {
+			address = RulesetAddress(*ruleset);
+			break;
+		}
+	}
+	out += QStringLiteral("{\"ruleset\":");
+	AppendJsonString(out, address);
+	out += QStringLiteral(",\"index\":");
+	out += QString::number(rule->sourceIndex);
+	out += QChar('}');
+}
+
+// The names of the rulesets this device chose, in the order their rules were
+// merged. Display names - "rules" for the implicit one - because this list is
+// only ever printed.
+void AppendChosenJson(
+		QString &out,
+		const Purple::ScheduleForDevice &active) {
+	out += QChar('[');
+	auto first = true;
+	for (const auto ruleset : active.chosen) {
+		if (!first) {
+			out += QChar(',');
+		}
+		first = false;
+		AppendJsonString(out, ruleset->name);
+	}
+	out += QChar(']');
+}
+
+// The friendly names [devices] gives ids, in file order, so every screen that
+// has an id to print can print what it is called instead.
+void AppendDevicesJson(QString &out, const Purple::Settings &settings) {
+	out += QChar('[');
+	auto first = true;
+	for (const auto &device : settings.devices) {
+		if (!first) {
+			out += QChar(',');
+		}
+		first = false;
+		out += QStringLiteral("{\"id\":");
+		AppendJsonString(out, device.id);
+		out += QStringLiteral(",\"label\":");
+		AppendJsonString(out, device.label);
 		out += QChar('}');
 	}
 	out += QChar(']');
@@ -485,6 +657,22 @@ void AppendScheduleRulesJson(QString &out, const Purple::Schedule &schedule) {
 	return result;
 }
 
+// What the caller says this device is. Nothing here validates it: the core
+// matches a ruleset's `device' against all three fields, ignoring case, and an
+// identity nothing in the file names simply matches the rulesets that asked for
+// no device in particular.
+[[nodiscard]] Purple::DeviceIdentity ReadDevice(
+		JNIEnv *env,
+		jstring id,
+		jstring platform,
+		jstring cls) {
+	auto result = Purple::DeviceIdentity();
+	result.id = FromJava(env, id);
+	result.platform = FromJava(env, platform);
+	result.cls = FromJava(env, cls);
+	return result;
+}
+
 // The two halves of the desktop's focus policy (purple_focus.cpp), which the
 // bridge carries verbatim because Android has nowhere else to put them: there
 // is no second process holding an rpl subscription, only the receiver that
@@ -515,6 +703,7 @@ void FocusEnter(Purple::State &state, const Purple::Settings &settings) {
 [[nodiscard]] QString FocusLeave(
 		Purple::State &state,
 		const Purple::Settings &settings,
+		const Purple::DeviceIdentity &device,
 		bool knownEnterTarget,
 		const QString &enterTarget) {
 	if (state.activeSource != Purple::PresetSource::Focus) {
@@ -549,13 +738,22 @@ void FocusEnter(Purple::State &state, const Purple::Settings &settings) {
 			? std::optional<QString>()
 			: Purple::ScheduleTarget(
 				settings.schedule,
-				QDateTime::currentDateTime());
+				QDateTime::currentDateTime(),
+				device);
 		const auto moved = knownEnterTarget
 			&& target
 			&& (*target != enterTarget);
+
+		// The same boundary rule the tick runs, asked of the core rather than
+		// spelled out again here: with rulesets and an `outside' key, "a window
+		// ending" is no longer "the target is Normal", and the two copies of
+		// that sentence would have drifted the moment one of them was fixed.
 		if (moved
-			&& (*target != Purple::NormalPreset()
-				|| previousSource == Purple::PresetSource::Schedule)) {
+			&& Purple::ScheduleApplies(
+				settings.schedule,
+				device,
+				*target,
+				previousSource)) {
 			state.activePreset = *target;
 			state.activeSource = Purple::PresetSource::Schedule;
 			state.scheduleTarget = *target;
@@ -677,7 +875,10 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 		JNIEnv *env,
 		jclass,
 		jbyteArray settingsUtf8,
-		jbyteArray stateUtf8) {
+		jbyteArray stateUtf8,
+		jstring deviceId,
+		jstring devicePlatform,
+		jstring deviceClass) {
 	auto settingsText = QString();
 	auto stateText = QString();
 	if (!ReadUtf8(env, settingsUtf8, settingsText)
@@ -695,6 +896,11 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 
 	auto &gate = TheGate();
 	const auto lock = std::lock_guard(gate.mutex);
+
+	// Kept for the calls that resolve the same schedule without being handed an
+	// identity of their own. It is a constant of the install, so re-reading it
+	// on every load costs nothing and there is nowhere for it to go stale.
+	gate.device = ReadDevice(env, deviceId, devicePlatform, deviceClass);
 
 	const auto parsed = Purple::ParseSettings(
 		settingsText,
@@ -824,33 +1030,71 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 	json += QString::number(gate.settings.peek.autoOffSeconds);
 	json += QStringLiteral(",\"schedulePaused\":");
 	AppendJsonBool(json, gate.state.schedulePaused);
+	// Zero means a pause that lasts until it is lifted by hand, which is what a
+	// pause has always been and what an older state.toml still says. Separate
+	// from the flag for the same reason peekDeadline is: "paused" and "paused
+	// until Monday" are two answers, not one number that happens to be missing.
+	json += QStringLiteral(",\"schedulePausedUntil\":");
+	json += QString::number(qint64(gate.state.schedulePausedUntil));
 	// A switch that holds off nothing explains nothing, so the pause row is
-	// there only when the file describes a schedule at all.
+	// there only when the file describes a schedule at all. Rulesets widen what
+	// that means: a file whose only rules are the laptop's still has a schedule
+	// to pause, even though this device runs none of it.
+	const auto activeSchedule = Purple::ActiveSchedule(
+		gate.settings.schedule,
+		gate.device);
 	json += QStringLiteral(",\"scheduleConfigured\":");
-	AppendJsonBool(json, !gate.settings.schedule.rules.empty());
-	// The schedule as the screen editing it needs it: the master switch, the
-	// rules in file order, and which of them - if any - the moment is inside.
+	AppendJsonBool(json, !activeSchedule.rules.empty()
+		|| !gate.settings.schedule.rulesets.empty());
+	// The schedule as the screens editing it need it: the master switch, every
+	// ruleset in the file, the rules this device actually runs, and which of
+	// them - if any - the moment is inside.
 	//
 	// The rule now is worked out here rather than on the Java side because
 	// ScheduleTarget() already has to find it, and a second implementation of
-	// the midnight-crossing case is a second thing to keep in step. It is
-	// named by sourceIndex rather than by a position in the list above, so the
-	// screen highlights the right row even when a broken rule sits among them.
+	// the midnight-crossing case is a second thing to keep in step. It is named
+	// by ruleset and sourceIndex rather than by a position in the list above, so
+	// the screen highlights the right row even when a broken rule sits among
+	// them.
 	json += QStringLiteral(",\"scheduleEnabled\":");
 	AppendJsonBool(json, gate.settings.schedule.enabled);
 	const auto now = QDateTime::currentDateTime();
-	const auto target = Purple::ScheduleTarget(gate.settings.schedule, now);
+	const auto target = Purple::ScheduleTarget(
+		gate.settings.schedule,
+		now,
+		gate.device);
 	json += QStringLiteral(",\"scheduleTarget\":");
 	if (target) {
 		AppendJsonString(json, *target);
 	} else {
 		json += QStringLiteral("null");
 	}
-	const auto ruleNow = Purple::ScheduleRuleNow(gate.settings.schedule, now);
-	json += QStringLiteral(",\"scheduleNowIndex\":");
-	json += QString::number(ruleNow ? ruleNow->sourceIndex : -1);
+	// What this device wants between its windows: the most specific chosen
+	// ruleset that names one, or [schedule] outside. Not always "normal" any
+	// more, which is why the status line has to be told rather than assume.
+	json += QStringLiteral(",\"scheduleOutside\":");
+	AppendJsonString(json, activeSchedule.outside);
+	// The enabled check is here rather than inside ScheduleRuleNow(): the
+	// resolved-schedule overload answers what the rules say, and a schedule
+	// switched off has rules that say things it is not doing.
+	const auto ruleNow = gate.settings.schedule.enabled
+		? Purple::ScheduleRuleNow(activeSchedule, now)
+		: nullptr;
+	json += QStringLiteral(",\"scheduleNow\":");
+	AppendScheduleNowJson(json, activeSchedule, ruleNow);
+	json += QStringLiteral(",\"scheduleChosen\":");
+	AppendChosenJson(json, activeSchedule);
+	json += QStringLiteral(",\"scheduleRulesets\":");
+	AppendRulesetsJson(json, gate.settings.schedule);
 	json += QStringLiteral(",\"scheduleRules\":");
-	AppendScheduleRulesJson(json, gate.settings.schedule);
+	AppendActiveRulesJson(json, activeSchedule);
+	// Who this device says it is, and what [devices] calls the ids it knows -
+	// so a ruleset naming an id can be shown as "the phone" and this device can
+	// be told apart from the rest of them.
+	json += QStringLiteral(",\"deviceId\":");
+	AppendJsonString(json, gate.device.id);
+	json += QStringLiteral(",\"devices\":");
+	AppendDevicesJson(json, gate.settings);
 	// [focus_sync] as the row showing it needs it. The enabled flag is the
 	// parser's rather than the file's: it turns focus sync off itself when
 	// enter_preset names nothing that exists, and a switch reading the file
@@ -1081,18 +1325,25 @@ Java_org_telegram_messenger_purple_PurpleCore_togglePeekNative(
 // Holds the schedule off, or lets it catch up again. A decision about today
 // rather than about the configuration, which is why it lives in state.toml and
 // nothing in settings.toml turns it on.
+//
+// `until' is unix seconds, or zero for the pause that lasts until it is lifted
+// by hand - which is what a pause has always been. The deadline is cleared
+// alongside the flag on the way out, so an unpause never leaves a moment behind
+// for the next pause to inherit.
 extern "C" JNIEXPORT jstring JNICALL
 Java_org_telegram_messenger_purple_PurpleCore_setSchedulePausedNative(
 		JNIEnv *env,
 		jclass,
 		jbyteArray stateUtf8,
-		jboolean paused) {
+		jboolean paused,
+		jlong until) {
 	auto stateText = QString();
 	if (!ReadUtf8(env, stateUtf8, stateText)) {
 		return nullptr;
 	}
 	auto state = Purple::ParseState(stateText, QStringLiteral("state.toml"));
 	state.schedulePaused = (paused == JNI_TRUE);
+	state.schedulePausedUntil = state.schedulePaused ? int64(until) : 0;
 	return ToJava(env, Purple::SerializeState(state));
 }
 
@@ -1106,7 +1357,10 @@ extern "C" JNIEXPORT jstring JNICALL
 Java_org_telegram_messenger_purple_PurpleCore_scheduleTickNative(
 		JNIEnv *env,
 		jclass,
-		jbyteArray stateUtf8) {
+		jbyteArray stateUtf8,
+		jstring deviceId,
+		jstring devicePlatform,
+		jstring deviceClass) {
 	auto stateText = QString();
 	if (!ReadUtf8(env, stateUtf8, stateText)) {
 		return nullptr;
@@ -1116,14 +1370,29 @@ Java_org_telegram_messenger_purple_PurpleCore_scheduleTickNative(
 	if (!gate.loaded) {
 		return nullptr;
 	}
+	const auto device = ReadDevice(env, deviceId, devicePlatform, deviceClass);
 	auto state = Purple::ParseState(stateText, QStringLiteral("state.toml"));
+
+	// A pause with a deadline lifts itself. Both fields go at once and the
+	// ordinary boundary rule then runs below in this same tick, so the windows
+	// missed while it was held off are caught up on immediately rather than at
+	// the next window edge - which for a pause lifting on a Sunday evening
+	// could be a whole day away.
+	auto unpaused = false;
 	if (state.schedulePaused) {
-		return nullptr;
+		if (!Purple::ScheduleUnpauseDue(state, NowUnix())) {
+			return nullptr;
+		}
+		state.schedulePaused = false;
+		state.schedulePausedUntil = 0;
+		unpaused = true;
 	}
 	const auto target = Purple::ScheduleTarget(
 		gate.settings.schedule,
-		QDateTime::currentDateTime());
-	if (!target || *target == state.scheduleTarget) {
+		QDateTime::currentDateTime(),
+		device);
+	const auto boundary = target && (*target != state.scheduleTarget);
+	if (!boundary && !unpaused) {
 		// Acting on the change rather than on the value is the whole design.
 		// It is what lets a preset chosen by hand stand until the next boundary
 		// instead of being overwritten on the next tick, and what makes a
@@ -1131,7 +1400,7 @@ Java_org_telegram_messenger_purple_PurpleCore_scheduleTickNative(
 		// next launch.
 		return nullptr;
 	}
-	const auto wanted = *target;
+	const auto wanted = boundary ? *target : state.scheduleTarget;
 	const auto source = state.activeSource;
 	const auto active = state.activePreset;
 
@@ -1141,10 +1410,19 @@ Java_org_telegram_messenger_purple_PurpleCore_scheduleTickNative(
 	// for that preset has passed, which is no reason at all to undo something
 	// asked for. Focus is left alone in both directions: it is the more
 	// immediate signal, and a schedule fighting it would make both unreadable.
-	const auto apply = (source != Purple::PresetSource::Focus)
-		&& (wanted != Purple::NormalPreset()
-			|| source == Purple::PresetSource::Schedule);
-	state.scheduleTarget = wanted;
+	//
+	// Asked of the core rather than spelled out here, because "a window ending"
+	// is a move to this device's own `outside' and no longer to Normal, and a
+	// second copy of that sentence is a second thing to get subtly wrong.
+	const auto apply = boundary
+		&& Purple::ScheduleApplies(
+			gate.settings.schedule,
+			device,
+			wanted,
+			source);
+	if (boundary) {
+		state.scheduleTarget = wanted;
+	}
 	if (apply) {
 		state.activePreset = wanted;
 		state.activeSource = Purple::PresetSource::Schedule;
@@ -1152,6 +1430,12 @@ Java_org_telegram_messenger_purple_PurpleCore_scheduleTickNative(
 
 	auto json = QStringLiteral("{\"applied\":");
 	AppendJsonBool(json, apply);
+	// Whether this tick is the one that lifted a pause that had run out. The
+	// caller reloads on it as well as on `applied': the pause is what its own
+	// ticking is conditioned on, so a cleared pause nothing reread would stop
+	// the clock that had just cleared it.
+	json += QStringLiteral(",\"unpaused\":");
+	AppendJsonBool(json, unpaused);
 	json += QStringLiteral(",\"target\":");
 	AppendJsonString(json, wanted);
 	json += QStringLiteral(",\"kept\":");
@@ -1210,7 +1494,12 @@ Java_org_telegram_messenger_purple_PurpleCore_focusTickNative(
 		// preset back. Leaving it in force would be a preset nothing on screen
 		// explains and nothing left running would ever lift.
 		if (state.activeSource == Purple::PresetSource::Focus) {
-			change = FocusLeave(state, gate.settings, known, remembered);
+			change = FocusLeave(
+				state,
+				gate.settings,
+				gate.device,
+				known,
+				remembered);
 		} else if (state.focusSeen) {
 			state.focusSeen = false;
 		}
@@ -1227,9 +1516,15 @@ Java_org_telegram_messenger_purple_PurpleCore_focusTickNative(
 		// Normal and stays distinguishable from it.
 		entered = Purple::ScheduleTarget(
 			gate.settings.schedule,
-			QDateTime::currentDateTime()).value_or(QString());
+			QDateTime::currentDateTime(),
+			gate.device).value_or(QString());
 	} else {
-		change = FocusLeave(state, gate.settings, known, remembered);
+		change = FocusLeave(
+			state,
+			gate.settings,
+			gate.device,
+			known,
+			remembered);
 	}
 
 	const auto serialized = Purple::SerializeState(state);
@@ -1495,15 +1790,111 @@ Java_org_telegram_messenger_purple_PurpleCore_setTableBoolNative(
 		value == JNI_TRUE)));
 }
 
+// One string under one table - [schedule] outside, and the label a device is
+// given in [devices]. The string half of setTableBoolNative and there for the
+// same reason: the file is hand-owned, so the app rewrites the value and leaves
+// the key, the spacing and any trailing comment where the user put them.
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_setTableStringNative(
+		JNIEnv *env,
+		jclass,
+		jbyteArray settingsUtf8,
+		jstring table,
+		jstring key,
+		jstring value) {
+	auto text = QString();
+	if (!ReadUtf8(env, settingsUtf8, text)) {
+		return nullptr;
+	}
+	return ToJava(env, SpliceJson(Purple::SetTableString(
+		text,
+		QStringLiteral("settings.toml"),
+		FromJava(env, table),
+		FromJava(env, key),
+		FromJava(env, value))));
+}
+
+// The three ruleset ops. A ruleset is addressed by name and never by position,
+// because its position moves whenever one above it is added or taken away and
+// an index a screen read a minute ago would then edit the wrong one.
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_addRulesetNative(
+		JNIEnv *env,
+		jclass,
+		jbyteArray settingsUtf8,
+		jstring name,
+		jstring device,
+		jstring mode) {
+	auto text = QString();
+	if (!ReadUtf8(env, settingsUtf8, text)) {
+		return nullptr;
+	}
+	// Enabled for a mode nothing could read, which is the opposite of the
+	// parser's choice for the same input and deliberately so: the parser is
+	// reading a sentence somebody wrote and cannot finish, while this is a
+	// screen that offered three buttons and got something else.
+	const auto parsed = Purple::ParseRulesetMode(FromJava(env, mode));
+	return ToJava(env, SpliceJson(Purple::AddRuleset(
+		text,
+		QStringLiteral("settings.toml"),
+		FromJava(env, name),
+		FromJava(env, device),
+		parsed.value_or(Purple::RulesetMode::Enabled))));
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_removeRulesetNative(
+		JNIEnv *env,
+		jclass,
+		jbyteArray settingsUtf8,
+		jstring name) {
+	auto text = QString();
+	if (!ReadUtf8(env, settingsUtf8, text)) {
+		return nullptr;
+	}
+	return ToJava(env, SpliceJson(Purple::RemoveRuleset(
+		text,
+		QStringLiteral("settings.toml"),
+		FromJava(env, name))));
+}
+
+// One of a ruleset's own string keys - 'device', 'mode', 'outside', or 'name'
+// for a rename. An empty value takes the key out of the file, which is how a
+// screen says "back to the default" without writing the default down.
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_setRulesetStringNative(
+		JNIEnv *env,
+		jclass,
+		jbyteArray settingsUtf8,
+		jstring name,
+		jstring key,
+		jstring value) {
+	auto text = QString();
+	if (!ReadUtf8(env, settingsUtf8, text)) {
+		return nullptr;
+	}
+	return ToJava(env, SpliceJson(Purple::SetRulesetString(
+		text,
+		QStringLiteral("settings.toml"),
+		FromJava(env, name),
+		FromJava(env, key),
+		FromJava(env, value))));
+}
+
 // The three schedule ops. Each carries the window and preset the screen read
 // off the rule, and the core refuses when the rule at that index no longer says
 // them - which is what stops a dialog left open across an edit from rewriting
 // or deleting the wrong rule.
+//
+// `ruleset' is where the rule lives: empty for the flat [[schedule.rules]]
+// array, a name for a [[schedule.rulesets]] block, and `index' then counts
+// within that one.
 extern "C" JNIEXPORT jstring JNICALL
 Java_org_telegram_messenger_purple_PurpleCore_setScheduleRuleNative(
 		JNIEnv *env,
 		jclass,
 		jbyteArray settingsUtf8,
+		jstring ruleset,
 		jint index,
 		jint expectedFrom,
 		jint expectedTill,
@@ -1528,6 +1919,7 @@ Java_org_telegram_messenger_purple_PurpleCore_setScheduleRuleNative(
 	return ToJava(env, SpliceJson(Purple::SetScheduleRule(
 		text,
 		QStringLiteral("settings.toml"),
+		FromJava(env, ruleset),
 		int(index),
 		ReadExpected(env, expectedFrom, expectedTill, expectedPreset),
 		rule)));
@@ -1538,6 +1930,7 @@ Java_org_telegram_messenger_purple_PurpleCore_appendScheduleRuleNative(
 		JNIEnv *env,
 		jclass,
 		jbyteArray settingsUtf8,
+		jstring ruleset,
 		jboolean enabled,
 		jintArray days,
 		jint from,
@@ -1558,6 +1951,7 @@ Java_org_telegram_messenger_purple_PurpleCore_appendScheduleRuleNative(
 	return ToJava(env, SpliceJson(Purple::AppendScheduleRule(
 		text,
 		QStringLiteral("settings.toml"),
+		FromJava(env, ruleset),
 		rule)));
 }
 
@@ -1566,6 +1960,7 @@ Java_org_telegram_messenger_purple_PurpleCore_removeScheduleRuleNative(
 		JNIEnv *env,
 		jclass,
 		jbyteArray settingsUtf8,
+		jstring ruleset,
 		jint index,
 		jint expectedFrom,
 		jint expectedTill,
@@ -1577,6 +1972,7 @@ Java_org_telegram_messenger_purple_PurpleCore_removeScheduleRuleNative(
 	return ToJava(env, SpliceJson(Purple::RemoveScheduleRule(
 		text,
 		QStringLiteral("settings.toml"),
+		FromJava(env, ruleset),
 		int(index),
 		ReadExpected(env, expectedFrom, expectedTill, expectedPreset))));
 }
