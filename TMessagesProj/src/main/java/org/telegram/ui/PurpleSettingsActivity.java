@@ -30,16 +30,21 @@ import androidx.core.content.FileProvider;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.FileLog;
+import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MediaController;
+import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
+import org.telegram.messenger.UserObject;
 import org.telegram.messenger.purple.PurpleCore;
 import org.telegram.messenger.purple.PurpleDevice;
 import org.telegram.messenger.purple.PurpleGate;
+import org.telegram.messenger.purple.PurpleLastSeen;
 import org.telegram.messenger.purple.PurpleSettings;
 import org.telegram.messenger.purple.PurpleSync;
 import org.telegram.messenger.purple.PurpleSyncOffer;
 import org.telegram.messenger.purple.PurpleWriter;
+import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.BulletinFactory;
@@ -50,6 +55,7 @@ import org.telegram.ui.Components.UniversalFragment;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.List;
 
 public class PurpleSettingsActivity extends UniversalFragment
         implements NotificationCenter.NotificationCenterDelegate {
@@ -68,6 +74,18 @@ public class PurpleSettingsActivity extends UniversalFragment
     private static final int ROW_FOCUS = 12;
     private static final int ROW_DEVICE = 13;
     private static final int ROW_AUTOSEND = 14;
+    private static final int ROW_LAST_SEEN_REASONS = 15;
+    private static final int ROW_LAST_SEEN_TRADE = 16;
+
+    /**
+     * Where the trade log's rows start numbering.
+     *
+     * Far above the fixed rows so a log of any length can never collide with
+     * one, and read-only: onClick has no case for them on purpose. A row here
+     * is a record of something that already happened, and there is nothing to
+     * do to it.
+     */
+    private static final int ROW_TRADE_FIRST = 1000;
 
     /**
      * The file picker's request code. Its result arrives at
@@ -146,6 +164,39 @@ public class PurpleSettingsActivity extends UniversalFragment
         items.add(focus);
         items.add(UItem.asShadow(focusShadow(state)));
 
+        // Not part of a preset, for the same reason [peek] and [recent] are not:
+        // this is a decision about how a status line reads, not about what gets
+        // through. Two switches rather than one because they are two questions -
+        // the explanation is drawn either way, and only the offer under it needs
+        // the privacy call.
+        items.add(UItem.asHeader(getString(R.string.PurpleLastSeenHeader)));
+        final UItem reasons =
+                UItem.asCheck(ROW_LAST_SEEN_REASONS, getString(R.string.PurpleLastSeenReasonsRow));
+        reasons.checked = (state == null || state.lastSeenReasons);
+        items.add(reasons);
+        final UItem trade =
+                UItem.asCheck(ROW_LAST_SEEN_TRADE, getString(R.string.PurpleLastSeenTradeRow));
+        trade.checked = (state == null || state.lastSeenTrade);
+        items.add(trade);
+        items.add(UItem.asShadow(getString(R.string.PurpleLastSeenInfo)));
+
+        // The log. Read out of state.toml on every rebuild rather than kept in a
+        // field, exactly like the switches above: a trade made from a chat
+        // header while this screen was in the back stack has to show up when it
+        // comes forward again.
+        items.add(UItem.asHeader(getString(R.string.PurpleTradesHeader)));
+        final List<PurpleCore.Trade> trades = PurpleLastSeen.trades();
+        if (trades.isEmpty()) {
+            items.add(UItem.asShadow(getString(R.string.PurpleTradesEmpty)));
+        } else {
+            for (int i = 0; i < trades.size(); ++i) {
+                final PurpleCore.Trade entry = trades.get(i);
+                items.add(UItem.asButton(ROW_TRADE_FIRST + i, tradeName(entry.peer),
+                        tradeValue(entry)));
+            }
+            items.add(UItem.asShadow(getString(R.string.PurpleTradesInfo)));
+        }
+
         items.add(UItem.asHeader(getString(R.string.PurpleSettingsFileHeader)));
         items.add(UItem.asButton(ROW_EDIT, getString(R.string.PurpleEditSettings)));
         items.add(UItem.asButton(ROW_SEND, getString(R.string.PurpleSendToSaved)));
@@ -176,6 +227,33 @@ public class PurpleSettingsActivity extends UniversalFragment
 
         items.add(UItem.asButton(ROW_NOTIFICATIONS, getString(R.string.PurpleNotificationsRow)));
         items.add(UItem.asShadow(getString(R.string.PurpleNotificationsInfo)));
+    }
+
+    /**
+     * Who a trade was with.
+     *
+     * The bare id when the app has never heard of the user, which is the honest
+     * answer rather than a blank: state.toml outlives a logout, and a record
+     * whose person this install cannot name is still a record of a trade.
+     */
+    private CharSequence tradeName(long peer) {
+        final TLRPC.User user = MessagesController.getInstance(currentAccount).getUser(peer);
+        return (user == null) ? String.valueOf(peer) : UserObject.getUserName(user);
+    }
+
+    /**
+     * What one trade read, and how long ago it read it.
+     *
+     * A trade that read nothing is still shown, and says so: the exposure
+     * happened either way, and hiding the ones that came back empty would make
+     * the log say the trade always works.
+     */
+    private static CharSequence tradeValue(PurpleCore.Trade trade) {
+        final CharSequence what = (trade.wasOnlineUnix > 0)
+                ? LocaleController.formatDateOnline(trade.wasOnlineUnix, null)
+                : getString(R.string.PurpleTradeRowNothing);
+        return formatString(R.string.PurpleTradeRowValue, what,
+                PurpleLastSeen.ago(trade.readAtUnix));
     }
 
     /**
@@ -278,6 +356,14 @@ public class PurpleSettingsActivity extends UniversalFragment
         case ROW_AUTOSEND:
             write(PurpleWriter.setTableBool(
                     "sync", "send_after_save_p", !item.checked, "auto-send switch"));
+            break;
+        case ROW_LAST_SEEN_REASONS:
+            write(PurpleWriter.setTableBool(
+                    "last_seen", "reasons_p", !item.checked, "last seen reasons switch"));
+            break;
+        case ROW_LAST_SEEN_TRADE:
+            write(PurpleWriter.setTableBool(
+                    "last_seen", "trade_p", !item.checked, "last seen trade switch"));
             break;
         case ROW_CHECK:
             checkSaved();
