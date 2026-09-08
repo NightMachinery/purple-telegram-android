@@ -39,7 +39,6 @@ import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.ContactsController;
 import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.LocaleController;
-import org.telegram.messenger.MediaDataController;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.NotificationCenter;
@@ -52,6 +51,7 @@ import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_account;
+import org.telegram.ui.Adapters.DialogsSearchAdapter;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
@@ -607,7 +607,9 @@ public class UserSelectorBottomSheet extends BottomSheetWithRecyclerListView imp
 
     private void initHints(boolean needUpdate) {
         if (hints.isEmpty()) {
-            hints.addAll(MediaDataController.getInstance(currentAccount).hints);
+            // Purple: the frequent-chats strip, so it answers to the same
+            // two switches as every other one.
+            hints.addAll(DialogsSearchAdapter.CategoryAdapterRecycler.visibleHints(currentAccount));
             if (needUpdate) {
                 updateItems(true, true);
             }

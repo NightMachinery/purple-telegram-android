@@ -10,12 +10,12 @@ import androidx.annotation.NonNull;
 
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.DialogObject;
-import org.telegram.messenger.MediaDataController;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.tgnet.TLRPC;
+import org.telegram.ui.Adapters.DialogsSearchAdapter;
 import org.telegram.ui.Cells.ChatMessageCell;
 import org.telegram.ui.Components.Bulletin;
 
@@ -150,7 +150,12 @@ public class QuickShareSelectorOverlayLayout extends View {
         dialogs.add(selfUserId);
 
         if (config.suggestContacts) {
-            final ArrayList<TLRPC.TL_topPeer> hints = MediaDataController.getInstance(currentAccount).hints;
+            // Purple: the same frequent-chats list the search strip draws, so
+            // it answers to the same two switches. Reading MediaDataController
+            // directly is what made this row the one place a globally hidden
+            // chat still surfaced.
+            final ArrayList<TLRPC.TL_topPeer> hints =
+                    DialogsSearchAdapter.CategoryAdapterRecycler.visibleHints(currentAccount);
             for (TLRPC.TL_topPeer peer : hints) {
                 if (peer.peer.user_id == 0) {
                     continue;
