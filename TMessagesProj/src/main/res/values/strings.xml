@@ -11409,4 +11409,35 @@
     <string name="PurpleSendAfterSave">Send to Saved Messages after every save</string>
     <string name="PurpleSendAfterSaveInfo">Every change this app makes to settings.toml is posted to Saved Messages, five seconds after the last one, so a run of taps is one document. A file imported from Saved Messages is never sent back, and the same file is never sent twice.</string>
     <string name="PurpleWriteFailed">Could not edit settings.toml: %1$s</string>
+    <!-- Purple: why a last seen is coarse, appended to the status line -->
+    <string name="PurpleLastSeenByMe">share yours to see</string>
+    <string name="PurpleLastSeenByMeShort">\uD83D\uDC40</string>
+    <string name="PurpleLastSeenAsOf">%1$s \u00b7 as of %2$s</string>
+    <string name="PurpleLastSeenAgoNow">just now</string>
+    <string name="PurpleLastSeenAgoMinutes_one">%1$d min ago</string>
+    <string name="PurpleLastSeenAgoMinutes_other">%1$d min ago</string>
+    <string name="PurpleLastSeenAgoHours_one">%1$d hour ago</string>
+    <string name="PurpleLastSeenAgoHours_other">%1$d hours ago</string>
+    <!-- Purple: the last seen trade, and its log on the settings screen -->
+    <string name="PurpleTradeTitle">Show mine to see theirs</string>
+    <string name="PurpleTradeText">%1$s cannot see your last seen, so the server will not show you theirs.\n\nSharing once lets %1$s see your last seen for about %2$d seconds while this app asks for theirs, then puts your privacy settings back exactly as they were. Those seconds are real: if they look during them, they see when you were last online.</string>
+    <string name="PurpleTradeShare">Share once</string>
+    <string name="PurpleTradeDontAsk">Don\'t ask again</string>
+    <string name="PurpleTradeNotNeeded">%1$s is not hidden because of your settings, so there is nothing to trade.</string>
+    <string name="PurpleTradeCooldown">You already traded with %1$s a moment ago.</string>
+    <string name="PurpleTradeWorking">Sharing yours\u2026</string>
+    <string name="PurpleTradeUnresolved">Some of your Last Seen exceptions name people this app cannot address right now, so nothing was changed. Open Settings \u2192 Privacy and Security \u2192 Last Seen once, then try again.</string>
+    <string name="PurpleTradeFailed">The trade did not go through: %1$s. Your privacy settings are unchanged.</string>
+    <string name="PurpleTradeRestoreFailed">Could not put your privacy settings back: %1$s. Check Settings \u2192 Privacy and Security \u2192 Last Seen.</string>
+    <string name="PurpleTradeTimedOut">Nothing exact arrived in time. Your privacy settings are back as they were.</string>
+    <string name="PurpleTradeDone">%1$s. Your privacy settings are back as they were.</string>
+    <string name="PurpleLastSeenHeader">Last seen</string>
+    <string name="PurpleLastSeenReasonsRow">Say why a last seen is hidden</string>
+    <string name="PurpleLastSeenTradeRow">Offer to trade</string>
+    <string name="PurpleLastSeenInfo">A last seen the server coarsened because of YOUR privacy settings is marked in the chat header and the profile. Nothing is said about one the other person hid, and nothing at all about \"a long time ago\" - the server does not say whether that is inactivity or a block, and this app does not guess.\n\nWith the offer on, tapping that mark shows them your last seen for a few seconds, reads theirs, and puts your settings back.</string>
+    <string name="PurpleTradesHeader">Trades</string>
+    <string name="PurpleTradesEmpty">Nothing traded recently.</string>
+    <string name="PurpleTradesInfo">What each trade read, and when. A trade is forgotten once it is older than trade_remember.</string>
+    <string name="PurpleTradeRowValue">%1$s \u00b7 read %2$s</string>
+    <string name="PurpleTradeRowNothing">nothing arrived</string>
 </resources>

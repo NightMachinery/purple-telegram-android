@@ -240,6 +240,30 @@ archiving still works, search and the Archive settings screen still reach it,
 and `hide_archive_p = false` on the preset keeps the pull. Under Normal all
 three are stock.
 
+**Last seen** is `[last_seen]`, and it answers a question the app normally
+leaves hanging. Hide your own last seen and Telegram stops showing you other
+people's - the server says so, in a `by_me` flag on the coarse status, and this
+fork passes that on instead of printing a bare "last seen recently". With
+`reasons_p` (default true) the chat header and the profile append *share yours
+to see* to a status that is coarse **because of your own privacy settings**,
+collapsing to an eye in a header too narrow for the sentence. Nothing is
+appended when the other person hid theirs - that is their setting, and there is
+nothing to offer about it - and nothing at all to "a long time ago": the server
+does not say whether that is inactivity or a block, and the fork does not guess.
+
+Tapping the mark opens **Show mine to see theirs**, unless `trade_p = false`
+turns the offer off and leaves the explanation. The sheet says what it costs
+before anything is sent; Share once then adds that one person to your
+last-seen allow list, asks the server for their status, and puts your privacy
+settings back exactly as they were - after a success, after a timeout
+(`trade_hold`, ten seconds by default) and after an error alike. What came back
+is remembered for `trade_remember` (a day) and shown in place of the coarse
+text as "last seen 14:32 · as of 3 min ago", and a second trade with the same
+person is refused for `trade_cooldown` (five minutes), so a tap cannot become a
+standing subscription. Every trade is listed under **Trades** on the Purple
+settings screen: who, what was read, how long ago. A trade that came back with
+nothing is listed too, because the seconds of exposure happened either way.
+
 Work Mode is ported, the launch-time offer of a settings import included. The
 contents of a folder tab are deliberately unfiltered: a preset decides its own
 view, a folder decides its own tab.
