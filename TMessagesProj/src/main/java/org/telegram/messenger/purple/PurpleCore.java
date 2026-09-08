@@ -124,6 +124,22 @@ public final class PurpleCore {
     private static native String spliceMemberNative(
             byte[] settingsUtf8, String list, long bareId, boolean add, String titlesJson);
 
+    private static native String setTableBoolNative(
+            byte[] settingsUtf8, String table, String key, boolean value);
+
+    private static native String setScheduleRuleNative(
+            byte[] settingsUtf8, int index, int expectedFrom, int expectedTill,
+            String expectedPreset, boolean enabled, int[] days, int from, int till,
+            String preset);
+
+    private static native String appendScheduleRuleNative(
+            byte[] settingsUtf8, boolean enabled, int[] days, int from, int till,
+            String preset);
+
+    private static native String removeScheduleRuleNative(
+            byte[] settingsUtf8, int index, int expectedFrom, int expectedTill,
+            String expectedPreset);
+
     /**
      * The three "until" decisions, numbered as the core's {@code OverrideKind}.
      *
@@ -502,6 +518,47 @@ public final class PurpleCore {
         }
     }
 
+    /**
+     * One {@code [[schedule.rules]]} block, as the schedule screen draws and
+     * edits it.
+     *
+     * Only the rules the parser kept are here. A broken one has no window and
+     * no preset to draw, so the screen names it from {@link Loaded#warnings}
+     * instead - that is the only place the reason it was dropped survives.
+     *
+     * {@code index} is the position in the RAW array, counting the dropped
+     * ones, because that is the address the splice edits by: a rule numbered by
+     * its position in this list would move the moment a broken one above it was
+     * fixed. {@code from} and {@code till} are minutes since midnight, so
+     * {@code "9:00"} and {@code "09:00"} are one rule.
+     */
+    public static final class ScheduleRule {
+        public final int index;
+
+        /** The line its header is on, 1-based, for a screen that points at it. */
+        public final int line;
+
+        public final boolean enabled;
+
+        /** Monday .. Sunday as 1 .. 7, in the order the file wrote them. */
+        public final int[] days;
+
+        public final int from;
+        public final int till;
+        public final String preset;
+
+        private ScheduleRule(int index, int line, boolean enabled, int[] days,
+                int from, int till, String preset) {
+            this.index = index;
+            this.line = line;
+            this.enabled = enabled;
+            this.days = days;
+            this.from = from;
+            this.till = till;
+            this.preset = preset;
+        }
+    }
+
     /** What a splice did, or why it did nothing. */
     public static final class SpliceResult {
         /** The whole file as it should now be written, or null on failure. */
@@ -578,13 +635,87 @@ public final class PurpleCore {
      */
     public static SpliceResult spliceMember(
             byte[] settings, String list, long bareId, boolean add, String titles) {
-        final String json;
+        ensureLoaded();
         try {
-            json = spliceMemberNative(settings, list, bareId, add, titles);
+            return splice(spliceMemberNative(settings, list, bareId, add, titles));
         } catch (UnsatisfiedLinkError | RuntimeException e) {
             FileLog.e(e);
             return new SpliceResult(null, false, "the core could not be reached");
         }
+    }
+
+    /**
+     * Sets one boolean under one table - {@code [premium] enabled_p} and the two
+     * Work Mode flags the settings screen owns.
+     *
+     * Written through the splice like everything else: the key, the spacing and
+     * any trailing comment stay exactly as the user wrote them, and a file that
+     * never mentioned the table gains it rather than being re-serialised.
+     */
+    public static SpliceResult setTableBool(
+            byte[] settings, String table, String key, boolean value) {
+        ensureLoaded();
+        try {
+            return splice(setTableBoolNative(settings, table, key, value));
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return new SpliceResult(null, false, "the core could not be reached");
+        }
+    }
+
+    /**
+     * Rewrites one schedule rule in place, key by key.
+     *
+     * {@code index} is {@link ScheduleRule#index}: the rule's position in the
+     * raw array, counting the ones the parser threw away. The three
+     * {@code expected} values are what the screen read off the rule, and the
+     * core refuses when the rule there no longer says them - so a dialog left
+     * open while the file moved underneath cannot rewrite a different rule.
+     */
+    public static SpliceResult setScheduleRule(
+            byte[] settings, int index, int expectedFrom, int expectedTill,
+            String expectedPreset, boolean enabled, int[] days, int from, int till,
+            String preset) {
+        ensureLoaded();
+        try {
+            return splice(setScheduleRuleNative(settings, index, expectedFrom,
+                    expectedTill, expectedPreset, enabled, days, from, till, preset));
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return new SpliceResult(null, false, "the core could not be reached");
+        }
+    }
+
+    /** Writes a new rule after the last one, or starts the section. */
+    public static SpliceResult appendScheduleRule(
+            byte[] settings, boolean enabled, int[] days, int from, int till,
+            String preset) {
+        ensureLoaded();
+        try {
+            return splice(appendScheduleRuleNative(
+                    settings, enabled, days, from, till, preset));
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return new SpliceResult(null, false, "the core could not be reached");
+        }
+    }
+
+    /** Takes one rule out, on the same expectation as {@link #setScheduleRule}. */
+    public static SpliceResult removeScheduleRule(
+            byte[] settings, int index, int expectedFrom, int expectedTill,
+            String expectedPreset) {
+        ensureLoaded();
+        try {
+            return splice(removeScheduleRuleNative(
+                    settings, index, expectedFrom, expectedTill, expectedPreset));
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return new SpliceResult(null, false, "the core could not be reached");
+        }
+    }
+
+    /** The one shape every splice answers in, unpacked. */
+    private static SpliceResult splice(String json) {
         if (json == null) {
             return new SpliceResult(null, false, "no result from the core");
         }
@@ -893,6 +1024,52 @@ public final class PurpleCore {
          */
         public final boolean hideEverywhere;
 
+        /**
+         * Whether a chat the running preset hides is also kept out of the
+         * recent and frequent strips - {@code [suggestions] hide_invisible_p}.
+         *
+         * On unless the file says otherwise: a work mode that took a chat out
+         * of the list and then offered it back in the share sheet would be
+         * answering the same question two ways. One switch for the whole app
+         * rather than a property of the preset, which is why it is read from
+         * the file and not from the resolution.
+         */
+        public final boolean hideInvisibleSuggestions;
+
+        /**
+         * Whether the archive is out of the way while this preset runs -
+         * {@code hide_archive_p}: no pull gesture, no row, the same state as an
+         * account that has never archived anything.
+         *
+         * On unless the preset says otherwise, which is the opposite default
+         * from {@link #hideEverywhere} and deliberately so: a preset that has
+         * already named what gets through has no reason to leave a door to the
+         * rest of it open. Only ever asked while a preset is filtering.
+         */
+        public final boolean hideArchive;
+
+        /** Whether {@code [schedule]} is switched on at all. */
+        public final boolean scheduleEnabled;
+
+        /**
+         * The preset the schedule wants right now, or null when no window
+         * covers the moment - which includes a schedule switched off or with no
+         * rules. Null is a different answer from wanting Normal, and has to be:
+         * otherwise an empty section would quietly force Normal over every
+         * other way of choosing a preset.
+         */
+        public final String scheduleTarget;
+
+        /**
+         * {@link ScheduleRule#index} of the rule the moment is inside, or -1.
+         * Worked out by the core rather than here, so the midnight-crossing
+         * case has one implementation rather than two.
+         */
+        public final int scheduleNowIndex;
+
+        /** The rules the parser kept, in file order. */
+        public final List<ScheduleRule> scheduleRules;
+
         /** Peek and schedule, which move on a clock rather than on an edit. */
         public final Clock clock;
 
@@ -912,7 +1089,10 @@ public final class PurpleCore {
                 boolean foldersRestricted, List<String> silencedFolders,
                 List<String> quietFolders, List<ExemptFolder> exemptFolders,
                 int[] defaultModes, int listCount, List<PresetInfo> presets,
-                List<View> views, boolean hideEverywhere, Clock clock, boolean premium,
+                List<View> views, boolean hideEverywhere,
+                boolean hideInvisibleSuggestions, boolean hideArchive,
+                boolean scheduleEnabled, String scheduleTarget, int scheduleNowIndex,
+                List<ScheduleRule> scheduleRules, Clock clock, boolean premium,
                 String stateText) {
             this.ok = ok;
             this.error = error;
@@ -935,6 +1115,12 @@ public final class PurpleCore {
             this.presets = presets;
             this.views = views;
             this.hideEverywhere = hideEverywhere;
+            this.hideInvisibleSuggestions = hideInvisibleSuggestions;
+            this.hideArchive = hideArchive;
+            this.scheduleEnabled = scheduleEnabled;
+            this.scheduleTarget = scheduleTarget;
+            this.scheduleNowIndex = scheduleNowIndex;
+            this.scheduleRules = scheduleRules;
             this.clock = clock;
             this.premium = premium;
             this.stateText = stateText;
@@ -963,7 +1149,8 @@ public final class PurpleCore {
                     Collections.<String>emptyList(),
                     Collections.<ExemptFolder>emptyList(), STOCK_DEFAULT_MODES, 0,
                     Collections.<PresetInfo>emptyList(), Collections.<View>emptyList(),
-                    false, Clock.NONE, true, null);
+                    false, true, true, false, null, -1,
+                    Collections.<ScheduleRule>emptyList(), Clock.NONE, true, null);
         }
 
         static Loaded fromJson(String json) {
@@ -1035,6 +1222,29 @@ public final class PurpleCore {
                         views.add(new View(entry.optString("name", ""), pinned));
                     }
                 }
+                final List<ScheduleRule> scheduleRules = new ArrayList<>();
+                final JSONArray rules = object.optJSONArray("scheduleRules");
+                if (rules != null) {
+                    for (int i = 0; i < rules.length(); ++i) {
+                        final JSONObject entry = rules.optJSONObject(i);
+                        if (entry == null) {
+                            continue;
+                        }
+                        final JSONArray weekdays = entry.optJSONArray("days");
+                        final int[] days = new int[weekdays == null ? 0 : weekdays.length()];
+                        for (int a = 0; a < days.length; ++a) {
+                            days[a] = weekdays.optInt(a, 0);
+                        }
+                        scheduleRules.add(new ScheduleRule(
+                                entry.optInt("index", -1),
+                                entry.optInt("line", 0),
+                                entry.optBoolean("enabled", true),
+                                days,
+                                entry.optInt("from", -1),
+                                entry.optInt("to", -1),
+                                entry.optString("preset", "")));
+                    }
+                }
 
                 final JSONArray array = object.optJSONArray("presets");
                 if (array != null) {
@@ -1075,6 +1285,17 @@ public final class PurpleCore {
                         presets,
                         views,
                         object.optBoolean("hideEverywhere", false),
+                        // The next three default true, matching the core's
+                        // own defaults, so a result that somehow lacks them
+                        // keeps hiding rather than quietly revealing.
+                        object.optBoolean("hideInvisibleSuggestions", true),
+                        object.optBoolean("hideArchive", true),
+                        object.optBoolean("scheduleEnabled", true),
+                        object.isNull("scheduleTarget")
+                                ? null
+                                : object.optString("scheduleTarget", null),
+                        object.optInt("scheduleNowIndex", -1),
+                        scheduleRules,
                         Clock.fromJson(object),
                         object.optBoolean("premium", true),
                         object.isNull("stateText") ? null : object.optString("stateText", null));

@@ -24,6 +24,7 @@ any later version.
 #include <map>
 #include <mutex>
 #include <optional>
+#include <vector>
 
 namespace {
 
@@ -388,6 +389,102 @@ void AppendPresetJson(
 	json += QChar('}');
 }
 
+// Every [[schedule.rules]] block the parser kept, as
+// [{"index","line","enabled","days","from","to","preset"}]. Times are minutes
+// since midnight, which is what a time picker speaks and what the splice
+// compares against, so "9:00" and "09:00" are one rule on both sides.
+//
+// A rule the parser threw away is not here: it has no window and no preset to
+// draw. The schedule screen names those from `warnings' instead, which is the
+// only place the reason it was dropped survives. `index' is the position in the
+// RAW array, counting the dropped ones, because that is the address the splicer
+// edits by - a rule numbered by its position in this list would move whenever a
+// broken one above it was fixed.
+void AppendScheduleRulesJson(QString &out, const Purple::Schedule &schedule) {
+	out += QChar('[');
+	auto first = true;
+	for (const auto &rule : schedule.rules) {
+		if (!first) {
+			out += QChar(',');
+		}
+		first = false;
+		out += QStringLiteral("{\"index\":");
+		out += QString::number(rule.sourceIndex);
+		out += QStringLiteral(",\"line\":");
+		out += QString::number(rule.sourceLine);
+		out += QStringLiteral(",\"enabled\":");
+		AppendJsonBool(out, rule.enabled);
+		out += QStringLiteral(",\"days\":[");
+		auto firstDay = true;
+		for (const auto day : rule.days) {
+			if (!firstDay) {
+				out += QChar(',');
+			}
+			firstDay = false;
+			out += QString::number(day);
+		}
+		out += QStringLiteral("],\"from\":");
+		out += QString::number(rule.from);
+		out += QStringLiteral(",\"to\":");
+		out += QString::number(rule.till);
+		out += QStringLiteral(",\"preset\":");
+		AppendJsonString(out, rule.preset);
+		out += QChar('}');
+	}
+	out += QChar(']');
+}
+
+// What every splice answers with. One shape for all of them, because the Java
+// side unpacks them all through the same reader: a refusal is `error' with no
+// text, and "already how it was asked to be" is changed=false with no error.
+[[nodiscard]] QString SpliceJson(const Purple::SpliceResult &result) {
+	auto json = QStringLiteral("{\"changed\":");
+	AppendJsonBool(json, result.changed);
+	json += QStringLiteral(",\"error\":");
+	AppendJsonString(json, result.error);
+	json += QStringLiteral(",\"text\":");
+	AppendJsonString(json, result.ok() ? result.text : QString());
+	json += QChar('}');
+	return json;
+}
+
+// The weekdays a schedule op was handed. False means the VM could not hand the
+// array over, and it has thrown by the time it says so - the same contract as
+// ReadUtf8 above. A null array is an empty list, which the core refuses on its
+// own terms rather than here.
+[[nodiscard]] bool ReadInts(JNIEnv *env, jintArray array, std::vector<int> &out) {
+	out.clear();
+	if (!array) {
+		return true;
+	}
+	const auto length = env->GetArrayLength(array);
+	if (length <= 0) {
+		return true;
+	}
+	auto *values = env->GetIntArrayElements(array, nullptr);
+	if (!values) {
+		return false;
+	}
+	out.assign(values, values + length);
+	env->ReleaseIntArrayElements(array, values, JNI_ABORT);
+	return true;
+}
+
+// What the screen believed it was editing. Every schedule op carries one and
+// the core refuses when the rule at that index no longer says it, so a dialog
+// left open while the file moved underneath cannot rewrite a different rule.
+[[nodiscard]] Purple::ScheduleRuleExpected ReadExpected(
+		JNIEnv *env,
+		jint from,
+		jint till,
+		jstring preset) {
+	auto result = Purple::ScheduleRuleExpected();
+	result.from = int(from);
+	result.till = int(till);
+	result.preset = FromJava(env, preset);
+	return result;
+}
+
 } // namespace
 
 extern "C" JNIEXPORT jstring JNICALL
@@ -502,6 +599,7 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 			"\"title\":\"Normal\",\"lists\":0,\"usedCache\":false,"
 			"\"cacheReason\":\"\",\"activeMissing\":false,"
 			"\"foldersRestricted\":false,\"folders\":[],"
+			"\"hideInvisibleSuggestions\":true,\"hideArchive\":true,"
 			"\"presets\":[],\"stateText\":null}"));
 	}
 
@@ -640,6 +738,29 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 	// there only when the file describes a schedule at all.
 	json += QStringLiteral(",\"scheduleConfigured\":");
 	AppendJsonBool(json, !gate.settings.schedule.rules.empty());
+	// The schedule as the screen editing it needs it: the master switch, the
+	// rules in file order, and which of them - if any - the moment is inside.
+	//
+	// The rule now is worked out here rather than on the Java side because
+	// ScheduleTarget() already has to find it, and a second implementation of
+	// the midnight-crossing case is a second thing to keep in step. It is
+	// named by sourceIndex rather than by a position in the list above, so the
+	// screen highlights the right row even when a broken rule sits among them.
+	json += QStringLiteral(",\"scheduleEnabled\":");
+	AppendJsonBool(json, gate.settings.schedule.enabled);
+	const auto now = QDateTime::currentDateTime();
+	const auto target = Purple::ScheduleTarget(gate.settings.schedule, now);
+	json += QStringLiteral(",\"scheduleTarget\":");
+	if (target) {
+		AppendJsonString(json, *target);
+	} else {
+		json += QStringLiteral("null");
+	}
+	const auto ruleNow = Purple::ScheduleRuleNow(gate.settings.schedule, now);
+	json += QStringLiteral(",\"scheduleNowIndex\":");
+	json += QString::number(ruleNow ? ruleNow->sourceIndex : -1);
+	json += QStringLiteral(",\"scheduleRules\":");
+	AppendScheduleRulesJson(json, gate.settings.schedule);
 	// Handed over whole rather than asked per chat, exactly as the exempt
 	// folders are: shown() runs once per row per rebuild, and a JNI call with a
 	// state parse behind it is the one thing that path cannot carry. Only the
@@ -659,6 +780,18 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 	// so a resolution restored from the cache carries it too.
 	json += QStringLiteral(",\"hideEverywhere\":");
 	AppendJsonBool(json, gate.resolved.hideEverywhere);
+	// Whether a chat the preset hides is also left out of the recent and
+	// frequent strips. Read straight from the file rather than from the
+	// resolution: it is one switch for the whole app, not a property of the
+	// preset, so a resolution restored from the cache has nothing to say
+	// about it.
+	json += QStringLiteral(",\"hideInvisibleSuggestions\":");
+	AppendJsonBool(json, gate.settings.suggestions.hideInvisible);
+	// Whether the archive is out of the way while this preset runs. From the
+	// resolution, like hideEverywhere and for the same reason: it is the
+	// preset's own decision, and a cached resolution has to carry it.
+	json += QStringLiteral(",\"hideArchive\":");
+	AppendJsonBool(json, gate.resolved.hideArchive);
 	// Read on every row while a chat is in its grace period, so it travels with
 	// the rest rather than being asked for. Zero disables it, and the Java side
 	// re-reads it on every query - which is what makes turning [recent] off take
@@ -1113,15 +1246,116 @@ Java_org_telegram_messenger_purple_PurpleCore_spliceMemberNative(
 	const auto result = add
 		? Purple::AddListMember(text, path, list, id, naming)
 		: Purple::RemoveListMember(text, path, list, id, naming);
+	return ToJava(env, SpliceJson(result));
+}
 
-	auto json = QStringLiteral("{\"changed\":");
-	AppendJsonBool(json, result.changed);
-	json += QStringLiteral(",\"error\":");
-	AppendJsonString(json, result.error);
-	json += QStringLiteral(",\"text\":");
-	AppendJsonString(json, result.ok() ? result.text : QString());
-	json += QChar('}');
-	return ToJava(env, json);
+// One boolean under one table - the Premium switch and the two Work Mode flags
+// the settings screen owns. No naming callback: there is no member line to put
+// a comment on, and the splice keeps whatever the user wrote after the value.
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_setTableBoolNative(
+		JNIEnv *env,
+		jclass,
+		jbyteArray settingsUtf8,
+		jstring table,
+		jstring key,
+		jboolean value) {
+	auto text = QString();
+	if (!ReadUtf8(env, settingsUtf8, text)) {
+		return nullptr;
+	}
+	return ToJava(env, SpliceJson(Purple::SetTableBool(
+		text,
+		QStringLiteral("settings.toml"),
+		FromJava(env, table),
+		FromJava(env, key),
+		value == JNI_TRUE)));
+}
+
+// The three schedule ops. Each carries the window and preset the screen read
+// off the rule, and the core refuses when the rule at that index no longer says
+// them - which is what stops a dialog left open across an edit from rewriting
+// or deleting the wrong rule.
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_setScheduleRuleNative(
+		JNIEnv *env,
+		jclass,
+		jbyteArray settingsUtf8,
+		jint index,
+		jint expectedFrom,
+		jint expectedTill,
+		jstring expectedPreset,
+		jboolean enabled,
+		jintArray days,
+		jint from,
+		jint till,
+		jstring preset) {
+	auto text = QString();
+	if (!ReadUtf8(env, settingsUtf8, text)) {
+		return nullptr;
+	}
+	auto rule = Purple::ScheduleRule();
+	if (!ReadInts(env, days, rule.days)) {
+		return nullptr;
+	}
+	rule.enabled = (enabled == JNI_TRUE);
+	rule.from = int(from);
+	rule.till = int(till);
+	rule.preset = FromJava(env, preset);
+	return ToJava(env, SpliceJson(Purple::SetScheduleRule(
+		text,
+		QStringLiteral("settings.toml"),
+		int(index),
+		ReadExpected(env, expectedFrom, expectedTill, expectedPreset),
+		rule)));
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_appendScheduleRuleNative(
+		JNIEnv *env,
+		jclass,
+		jbyteArray settingsUtf8,
+		jboolean enabled,
+		jintArray days,
+		jint from,
+		jint till,
+		jstring preset) {
+	auto text = QString();
+	if (!ReadUtf8(env, settingsUtf8, text)) {
+		return nullptr;
+	}
+	auto rule = Purple::ScheduleRule();
+	if (!ReadInts(env, days, rule.days)) {
+		return nullptr;
+	}
+	rule.enabled = (enabled == JNI_TRUE);
+	rule.from = int(from);
+	rule.till = int(till);
+	rule.preset = FromJava(env, preset);
+	return ToJava(env, SpliceJson(Purple::AppendScheduleRule(
+		text,
+		QStringLiteral("settings.toml"),
+		rule)));
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_removeScheduleRuleNative(
+		JNIEnv *env,
+		jclass,
+		jbyteArray settingsUtf8,
+		jint index,
+		jint expectedFrom,
+		jint expectedTill,
+		jstring expectedPreset) {
+	auto text = QString();
+	if (!ReadUtf8(env, settingsUtf8, text)) {
+		return nullptr;
+	}
+	return ToJava(env, SpliceJson(Purple::RemoveScheduleRule(
+		text,
+		QStringLiteral("settings.toml"),
+		int(index),
+		ReadExpected(env, expectedFrom, expectedTill, expectedPreset))));
 }
 
 // Android calls JNI_OnLoad after loading a library, and it finds the symbol
