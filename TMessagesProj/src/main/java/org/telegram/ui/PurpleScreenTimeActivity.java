@@ -21,6 +21,7 @@ import static org.telegram.messenger.LocaleController.getString;
 
 import android.app.Activity;
 import android.app.DatePickerDialog;
+import android.app.TimePickerDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Canvas;
@@ -29,6 +30,7 @@ import android.graphics.Paint;
 import android.graphics.RectF;
 import android.net.Uri;
 import android.os.Build;
+import android.text.InputType;
 import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -57,10 +59,13 @@ import org.telegram.messenger.purple.PurpleScreenTime;
 import org.telegram.messenger.purple.PurpleWriter;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
+import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Cells.RadioColorCell;
 import org.telegram.ui.Components.AvatarDrawable;
 import org.telegram.ui.Components.BackupImageView;
 import org.telegram.ui.Components.BulletinFactory;
+import org.telegram.ui.Components.EditTextBoldCursor;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalAdapter;
@@ -80,6 +85,7 @@ public class PurpleScreenTimeActivity extends UniversalFragment
     private static final int ROW_ENABLED = 1;
     private static final int ROW_HIDDEN = 2;
     private static final int ROW_EXPORT = 3;
+    private static final int ROW_BUDGET_ADD = 4;
 
     /**
      * The heights the drawn rows take, in dp.
@@ -432,43 +438,93 @@ public class PurpleScreenTimeActivity extends UniversalFragment
     }
 
     /**
-     * The budgets, listed with what they have spent today.
+     * The budgets, listed with what each has spent today, and the row that adds
+     * one.
      *
-     * Listed and not editable, and that is a gap with a reason: the splice has
-     * ops for a boolean, a string, a list member, a view's pins and a schedule
-     * rule, and no general "append an entry to an array of tables". A budget is
-     * exactly that shape, so adding one from a dialog would mean either a new
-     * core op or this screen writing TOML by hand into a file whose comments
-     * and layout are the point of it being TOML. Until the core grows the op,
-     * budgets are written in the settings.toml editor, and the shadow line says
-     * so rather than leaving an "Add" button that cannot work.
+     * Every row is an editor: tapping a budget opens the same dialog the Add
+     * row opens, prefilled, with a Delete. The three writes go through the
+     * core's budget splices, so a block keeps its comments and its spacing and
+     * only the keys the dialog actually changed are rewritten.
      */
     private void fillBudgets(ArrayList<UItem> items) {
         items.add(UItem.asHeader(getString(R.string.PurpleScreenTimeBudgets)));
-        if (ledger.isEmpty()) {
-            items.add(UItem.asShadow(getString(R.string.PurpleScreenTimeBudgetsEmpty)));
-            return;
-        }
         for (int i = 0; i < ledger.size(); ++i) {
             final PurpleCore.Budget budget = ledger.get(i);
             items.add(UItem.asButton(ROW_BUDGET_FIRST + i, budgetName(budget),
                     budgetValue(budget)));
         }
-        items.add(UItem.asShadow(getString(R.string.PurpleScreenTimeBudgetsInfo)));
+        items.add(UItem.asButton(ROW_BUDGET_ADD,
+                getString(R.string.PurpleScreenTimeBudgetAdd)));
+        items.add(UItem.asShadow(getString(ledger.isEmpty()
+                ? R.string.PurpleScreenTimeBudgetsEmpty
+                : R.string.PurpleScreenTimeBudgetsInfo)));
     }
 
     private CharSequence budgetName(PurpleCore.Budget budget) {
-        switch (budget.targetKind) {
-        case PurpleCore.BUDGET_CHAT:
-            return chatName(budget.chat);
-        case PurpleCore.BUDGET_KIND:
-            return kindLabel(budget.chatKind);
-        case PurpleCore.BUDGET_PRESET:
-            return TextUtils.isEmpty(budget.preset)
-                    ? getString(R.string.PurplePresetNormal)
-                    : budget.preset;
-        default:
+        return targetLabel(PurpleGate.state(), budget.target);
+    }
+
+    /**
+     * A target as a person reads it - the same answer for a budget in the file
+     * and for one being chosen in the dialog, which is why it works off the
+     * target string rather than off the fields the parser made of it.
+     */
+    private CharSequence targetLabel(PurpleCore.Loaded state, String target) {
+        final String text = (target == null) ? "" : target.trim();
+        if (text.length() == 0 || "all".equalsIgnoreCase(text)) {
             return getString(R.string.PurpleScreenTimeBudgetAll);
+        }
+        final int colon = text.indexOf(':');
+        if (colon <= 0) {
+            return text;
+        }
+        final String prefix = text.substring(0, colon).trim().toLowerCase();
+        final String rest = text.substring(colon + 1).trim();
+        if ("chat".equals(prefix)) {
+            final long id = parseId(rest);
+            return (id == 0) ? text : chatName(id);
+        }
+        if ("kind".equals(prefix)) {
+            for (int kind = 0; kind < PurpleCore.SCREEN_KIND_COUNT; ++kind) {
+                if (kindKey(kind).equalsIgnoreCase(rest)) {
+                    return kindLabel(kind);
+                }
+            }
+            return text;
+        }
+        if ("preset".equals(prefix)) {
+            return PurpleScheduleActivity.presetLabel(state, rest);
+        }
+        return text;
+    }
+
+    /** How the file spells a kind inside a budget target. */
+    private static String kindKey(int kind) {
+        switch (kind) {
+        case PurpleCore.SCREEN_KIND_PRIVATE:
+            return "private";
+        case PurpleCore.SCREEN_KIND_GROUP:
+            return "groups";
+        case PurpleCore.SCREEN_KIND_CHANNEL:
+            return "channels";
+        case PurpleCore.SCREEN_KIND_BOT:
+            return "bots";
+        default:
+            return "elsewhere";
+        }
+    }
+
+    /**
+     * A typed or written chat id as this codebase spells one: bare, positive.
+     * There is no {@code -100} channel prefix here - see
+     * {@link PurpleGate#bareIdOf} - so a signed id pasted out of somewhere else
+     * is taken for the chat it names rather than refused.
+     */
+    private static long parseId(String text) {
+        try {
+            return Math.abs(Long.parseLong(text.trim()));
+        } catch (NumberFormatException e) {
+            return 0;
         }
     }
 
@@ -482,6 +538,350 @@ public class PurpleScreenTimeActivity extends UniversalFragment
                 ? (spent + " · " + mode + " · "
                         + getString(R.string.PurpleScreenTimeBudgetReached))
                 : (spent + " · " + mode);
+    }
+
+    // ---- the budget editor ---------------------------------------------------
+
+    /** What a new budget starts at: an hour a day, soft, nothing else said. */
+    private static final int DEFAULT_PER_DAY_SECONDS = 60 * 60;
+
+    /** The core's own defaults for the two snooze keys. */
+    private static final int DEFAULT_SNOOZE_SECONDS = 5 * 60;
+    private static final int DEFAULT_SNOOZES_PER_DAY = 2;
+
+    /** How many of the report's chats the target picker offers by name. */
+    private static final int CHATS_OFFERED = 12;
+
+    /**
+     * Opens the editor over one budget, or over nothing for a new one.
+     *
+     * The target this dialog was opened on is sent with the write, and the core
+     * refuses when the budget at that index no longer says it - so a file that
+     * moved while the dialog stood open is refused rather than quietly
+     * overwritten. A budget has no other identity: the target is what it is
+     * about, and everything else in the block is what this dialog is for.
+     */
+    private void editBudget(PurpleCore.Budget existing) {
+        final Context context = getParentActivity();
+        if (context == null) {
+            return;
+        }
+        final PurpleCore.Loaded state = PurpleGate.state();
+
+        // "all" for a new one: the budget list is drawn on the whole screen and
+        // not on a chat's own page, so there is no chat this dialog was opened
+        // "about" and nothing better to start from.
+        final String[] target = { (existing != null) ? existing.target : "all" };
+        final int[] perDay = { (existing != null)
+                ? (int) (existing.perDayMs / 1000)
+                : DEFAULT_PER_DAY_SECONDS };
+        final String[] mode = { (existing != null && existing.mode == PurpleCore.BUDGET_HARD)
+                ? "hard"
+                : "soft" };
+        // What the fields opened on, so a box somebody emptied falls back to
+        // the number that was in it rather than to the core's default.
+        final int openedSnooze =
+                ((existing != null) ? existing.snoozeSeconds : DEFAULT_SNOOZE_SECONDS) / 60;
+        final int openedSnoozes =
+                (existing != null) ? existing.snoozesPerDay : DEFAULT_SNOOZES_PER_DAY;
+
+        final LinearLayout layout = new LinearLayout(context);
+        layout.setOrientation(LinearLayout.VERTICAL);
+
+        final String targetTitle = getString(R.string.PurpleScreenTimeBudgetTarget);
+        final TextView targetRow = PurpleScheduleActivity.pickerRow(
+                context, layout, targetTitle, targetLabel(state, target[0]));
+        targetRow.setOnClickListener(v -> pickTarget(context, state, target[0], chosen -> {
+            target[0] = chosen;
+            targetRow.setText(targetTitle + "   " + targetLabel(state, chosen));
+        }));
+
+        final String perDayTitle = getString(R.string.PurpleScreenTimeBudgetPerDay);
+        final TextView perDayRow = PurpleScheduleActivity.pickerRow(
+                context, layout, perDayTitle, formatSpan(perDay[0] * 1000L));
+        perDayRow.setOnClickListener(v -> pickDuration(context, perDay[0], seconds -> {
+            perDay[0] = seconds;
+            perDayRow.setText(perDayTitle + "   " + formatSpan(seconds * 1000L));
+        }));
+
+        // The two snooze numbers live in their own box so the mode picker can
+        // hide them in one call: a soft budget never puts a cover up, so asking
+        // how long its snooze lasts would be asking about nothing.
+        final LinearLayout snoozeBox = new LinearLayout(context);
+        snoozeBox.setOrientation(LinearLayout.VERTICAL);
+
+        final String modeTitle = getString(R.string.PurpleScreenTimeBudgetMode);
+        final TextView modeRow = PurpleScheduleActivity.pickerRow(
+                context, layout, modeTitle, modeLabel(mode[0]));
+        modeRow.setOnClickListener(v -> pickMode(context, mode[0], chosen -> {
+            mode[0] = chosen;
+            modeRow.setText(modeTitle + "   " + modeLabel(chosen));
+            snoozeBox.setVisibility(isHard(chosen) ? View.VISIBLE : View.GONE);
+        }));
+
+        layout.addView(snoozeBox,
+                LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        final EditTextBoldCursor snooze = numberRow(context, snoozeBox,
+                getString(R.string.PurpleScreenTimeBudgetSnooze), openedSnooze);
+        final EditTextBoldCursor snoozes = numberRow(context, snoozeBox,
+                getString(R.string.PurpleScreenTimeBudgetSnoozes), openedSnoozes);
+        snoozeBox.setVisibility(isHard(mode[0]) ? View.VISIBLE : View.GONE);
+
+        final AlertDialog.Builder builder = new AlertDialog.Builder(context);
+        builder.setTitle(getString(existing == null
+                ? R.string.PurpleScreenTimeBudgetNew
+                : R.string.PurpleScreenTimeBudgetEdit));
+        builder.setView(layout);
+        builder.setPositiveButton(getString(R.string.Save), (dialog, which) -> {
+            // Read whatever the fields hold even for a soft budget. They are
+            // the numbers the file already had, and blanking them on the way
+            // through would lose a hard budget's snooze settings the moment it
+            // was turned soft. The core writes neither key when it is the
+            // default anyway.
+            final int snoozeSeconds = number(snooze, openedSnooze) * 60;
+            final int perDaySnoozes = number(snoozes, openedSnoozes);
+            afterWrite(existing == null
+                    ? PurpleWriter.appendBudget(target[0], perDay[0], mode[0],
+                            snoozeSeconds, perDaySnoozes, "budget added")
+                    : PurpleWriter.setBudget(existing.sourceIndex, existing.target,
+                            target[0], perDay[0], mode[0], snoozeSeconds, perDaySnoozes,
+                            "budget edited"));
+        });
+        builder.setNegativeButton(getString(R.string.Cancel), null);
+        if (existing != null) {
+            builder.setNeutralButton(getString(R.string.Delete), (dialog, which) ->
+                    afterWrite(PurpleWriter.removeBudget(
+                            existing.sourceIndex, existing.target, "budget removed")));
+        }
+        showDialog(builder.create());
+    }
+
+    /**
+     * A budget write's answer.
+     *
+     * The re-read is not optional and is not the gate's reload doing it: the
+     * ledger on this screen comes out of the log and the file together, and a
+     * refusal reloads nothing at all - so without this the rows would go on
+     * showing the budgets that were there before the edit.
+     */
+    private void afterWrite(String error) {
+        if (error != null && BulletinFactory.canShowBulletin(this)) {
+            BulletinFactory.of(this)
+                    .createErrorBulletin(formatString(R.string.PurpleWriteFailed, error))
+                    .show();
+        }
+        refresh();
+    }
+
+    /** "soft" and "hard" are what the file says; the core reads nothing else. */
+    private static boolean isHard(String mode) {
+        return "hard".equalsIgnoreCase(mode);
+    }
+
+    private static CharSequence modeLabel(String mode) {
+        return getString(isHard(mode)
+                ? R.string.PurpleScreenTimeBudgetHardName
+                : R.string.PurpleScreenTimeBudgetSoftName);
+    }
+
+    private interface PickedSeconds {
+        void run(int seconds);
+    }
+
+    /**
+     * What a budget counts, as one radio list.
+     *
+     * One list rather than a menu of four sub-pickers because the answer is one
+     * string with one meaning, and a chooser that asked for a category and then
+     * a value would let a half-made answer sit on screen.
+     *
+     * There is no chat picker in this fork to reuse, and opening the chat list
+     * as one would mean pushing a fragment over an open dialog and losing
+     * everything else in it. So the chats offered are the ones the report is
+     * already holding - which are the chats worth a budget, being the ones the
+     * time went to - and the field underneath takes any other id, the same
+     * radios-plus-a-field shape the schedule's device picker uses.
+     */
+    private void pickTarget(
+            Context context, PurpleCore.Loaded state, String current,
+            PurpleScheduleActivity.Chosen picked) {
+        // The chats worked out first, because whether the one this budget is
+        // already about is among them decides whether it is a radio or the
+        // thing in the field.
+        final List<Long> offered = new ArrayList<>();
+        final List<PurpleCore.ChatSpan> chats =
+                (report == null) ? new ArrayList<>() : report.chats;
+        for (int a = 0; a < chats.size() && offered.size() < CHATS_OFFERED; ++a) {
+            final long id = chats.get(a).dialogId;
+            if (id != 0) {
+                // "Elsewhere" is not a chat; it is the kind of the same name.
+                offered.add(id);
+            }
+        }
+        final long chat = current.toLowerCase().startsWith("chat:")
+                ? parseId(current.substring(5))
+                : 0;
+        // A chat no radio offers is typed instead, and typing IS choosing it -
+        // so no radio starts on, rather than one the field would disagree with.
+        final boolean listed = (chat != 0) && offered.contains(chat);
+
+        final LinearLayout layout = new LinearLayout(context);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        final ArrayList<RadioColorCell> radios = new ArrayList<>();
+        final String[] chosen = { (chat != 0 && !listed) ? "" : current };
+
+        PurpleScheduleActivity.addRadio(context, layout, radios, chosen,
+                "all", getString(R.string.PurpleScreenTimeBudgetAll));
+
+        section(context, layout, getString(R.string.PurpleScreenTimeBudgetKinds));
+        for (int kind = 0; kind < PurpleCore.SCREEN_KIND_COUNT; ++kind) {
+            PurpleScheduleActivity.addRadio(context, layout, radios, chosen,
+                    "kind:" + kindKey(kind), kindLabel(kind));
+        }
+
+        section(context, layout, getString(R.string.PurpleScreenTimeBudgetPresets));
+        PurpleScheduleActivity.addRadio(context, layout, radios, chosen,
+                "preset:" + PurpleScheduleActivity.NORMAL_PRESET,
+                getString(R.string.PurplePresetNormal));
+        if (state != null) {
+            for (int a = 0, n = state.presets.size(); a < n; ++a) {
+                final PurpleCore.PresetInfo info = state.presets.get(a);
+                PurpleScheduleActivity.addRadio(context, layout, radios, chosen,
+                        "preset:" + info.name,
+                        TextUtils.isEmpty(info.title) ? info.name : info.title);
+            }
+        }
+
+        if (!offered.isEmpty()) {
+            section(context, layout, getString(R.string.PurpleScreenTimeChats));
+            for (int a = 0; a < offered.size(); ++a) {
+                final long id = offered.get(a);
+                PurpleScheduleActivity.addRadio(context, layout, radios, chosen,
+                        "chat:" + id, chatName(id));
+            }
+        }
+
+        final EditTextBoldCursor other = new EditTextBoldCursor(context);
+        other.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+        other.setTextColor(Theme.getColor(Theme.key_dialogTextBlack));
+        other.setHintTextColor(Theme.getColor(Theme.key_dialogTextHint));
+        other.setBackgroundDrawable(null);
+        other.setSingleLine(true);
+        other.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_SIGNED);
+        other.setHint(getString(R.string.PurpleScreenTimeBudgetChatId));
+        other.setPadding(dp(20), 0, dp(20), 0);
+        if (chat != 0 && !listed) {
+            other.setText(String.valueOf(chat));
+        }
+        layout.addView(other, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 50));
+
+        final AlertDialog.Builder builder = new AlertDialog.Builder(context);
+        builder.setTitle(getString(R.string.PurpleScreenTimeBudgetTarget));
+        builder.setView(layout);
+        builder.setPositiveButton(getString(R.string.Save), (dialog, which) -> {
+            final long id = parseId(other.getText().toString());
+            if (id != 0 && chosen[0].length() == 0) {
+                picked.run("chat:" + id);
+            } else if (chosen[0].length() > 0) {
+                picked.run(chosen[0]);
+            }
+        });
+        builder.setNegativeButton(getString(R.string.Cancel), null);
+        showDialog(builder.create());
+    }
+
+    private void pickMode(
+            Context context, String current, PurpleScheduleActivity.Chosen picked) {
+        final LinearLayout layout = new LinearLayout(context);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        final ArrayList<RadioColorCell> radios = new ArrayList<>();
+        final String[] chosen = { isHard(current) ? "hard" : "soft" };
+        PurpleScheduleActivity.addRadio(context, layout, radios, chosen, "soft",
+                getString(R.string.PurpleScreenTimeBudgetSoftRow));
+        PurpleScheduleActivity.addRadio(context, layout, radios, chosen, "hard",
+                getString(R.string.PurpleScreenTimeBudgetHardRow));
+        final AlertDialog.Builder builder = new AlertDialog.Builder(context);
+        builder.setTitle(getString(R.string.PurpleScreenTimeBudgetMode));
+        builder.setView(layout);
+        builder.setPositiveButton(getString(R.string.Save),
+                (dialog, which) -> picked.run(chosen[0]));
+        builder.setNegativeButton(getString(R.string.Cancel), null);
+        showDialog(builder.create());
+    }
+
+    /**
+     * A day's allowance, picked on a 24-hour clock read as a length.
+     *
+     * The clock is the picker this app already has for hours and minutes, and
+     * 24 hours is not a limit worth a second widget: an allowance of a whole
+     * day is a budget that can never be reached.
+     */
+    private void pickDuration(Context context, int seconds, PickedSeconds picked) {
+        final int start = Math.max(0, seconds);
+        new TimePickerDialog(
+                context,
+                (view, hour, minute) -> picked.run(hour * 3600 + minute * 60),
+                (start / 3600) % 24,
+                (start / 60) % 60,
+                true).show();
+    }
+
+    /**
+     * A "Label  [number]" row inside a dialog.
+     *
+     * A label beside the field rather than in its hint, because the hint goes
+     * away the moment there is a value in the box and these two rows are always
+     * prefilled.
+     */
+    private static EditTextBoldCursor numberRow(
+            Context context, LinearLayout layout, CharSequence label, int value) {
+        final LinearLayout row = new LinearLayout(context);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(dp(20), 0, dp(20), 0);
+
+        final TextView title = new TextView(context);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+        title.setTextColor(Theme.getColor(Theme.key_dialogTextBlack));
+        title.setGravity((LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT)
+                | Gravity.CENTER_VERTICAL);
+        title.setText(label);
+        row.addView(title, LayoutHelper.createLinear(0, LayoutHelper.MATCH_PARENT, 1f));
+
+        final EditTextBoldCursor field = new EditTextBoldCursor(context);
+        field.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+        field.setTextColor(Theme.getColor(Theme.key_dialogTextBlack));
+        field.setHintTextColor(Theme.getColor(Theme.key_dialogTextHint));
+        field.setBackgroundDrawable(null);
+        field.setSingleLine(true);
+        field.setInputType(InputType.TYPE_CLASS_NUMBER);
+        field.setGravity((LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT)
+                | Gravity.CENTER_VERTICAL);
+        field.setText(String.valueOf(Math.max(0, value)));
+        row.addView(field, LayoutHelper.createLinear(64, LayoutHelper.MATCH_PARENT));
+
+        layout.addView(row, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 50));
+        return field;
+    }
+
+    /** A quiet heading between two runs of radios. */
+    private static void section(Context context, LinearLayout layout, CharSequence text) {
+        final TextView view = new TextView(context);
+        view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+        view.setTextColor(Theme.getColor(Theme.key_dialogTextGray2));
+        view.setGravity((LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT)
+                | Gravity.BOTTOM);
+        view.setPadding(dp(24), 0, dp(24), dp(4));
+        view.setText(text);
+        layout.addView(view, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 36));
+    }
+
+    /** What a number field holds, or {@code fallback} when it holds nothing. */
+    private static int number(EditTextBoldCursor field, int fallback) {
+        try {
+            return Math.max(0, Integer.parseInt(field.getText().toString().trim()));
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
     }
 
     /** The ranked chats the chips have left, longest first. */
@@ -652,7 +1052,18 @@ public class PurpleScreenTimeActivity extends UniversalFragment
             exportCsv();
             return;
         }
-        if (item.id >= ROW_CHAT_FIRST && item.id < ROW_BUDGET_FIRST) {
+        if (item.id == ROW_BUDGET_ADD) {
+            editBudget(null);
+            return;
+        }
+        if (item.id >= ROW_BUDGET_FIRST) {
+            final int at = item.id - ROW_BUDGET_FIRST;
+            if (at >= 0 && at < ledger.size()) {
+                editBudget(ledger.get(at));
+            }
+            return;
+        }
+        if (item.id >= ROW_CHAT_FIRST) {
             final List<PurpleCore.ChatSpan> chats = ranked(scope());
             final int at = item.id - ROW_CHAT_FIRST;
             if (at >= 0 && at < chats.size()) {

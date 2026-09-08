@@ -214,4 +214,60 @@ public final class PurpleWriter {
                         expectedTill, expectedPreset),
                 reason);
     }
+
+    /**
+     * Writes a new {@code [[screen_time.budgets]]} block after the last one.
+     *
+     * {@code target} is spelled the way the file spells it - {@code "all"},
+     * {@code "chat:<id>"}, {@code "kind:<kind>"}, {@code "preset:<name>"} -
+     * because that is what the key holds, and the parser is the only thing that
+     * knows the grammar. A target the parser cannot read back is refused by the
+     * core rather than written, so a screen that got one wrong hears about it
+     * instead of leaving a budget that is not there.
+     *
+     * @return null on success, or a reason to show the user
+     */
+    public static String appendBudget(
+            String target, int perDaySeconds, String mode, int snoozeSeconds,
+            int snoozesPerDay, String reason) {
+        final byte[] settings = PurpleGate.settingsBytes();
+        if (settings == null) {
+            return "settings.toml is missing";
+        }
+        return apply(
+                PurpleCore.appendBudget(settings, target, perDaySeconds, mode,
+                        snoozeSeconds, snoozesPerDay),
+                reason);
+    }
+
+    /**
+     * Rewrites one budget, key by key.
+     *
+     * {@code index} is {@link PurpleCore.Budget#sourceIndex} and
+     * {@code expectedTarget} is the target the screen read off it. The core
+     * refuses when the budget there says something else, which is what stops a
+     * dialog left open across somebody else's edit from rewriting a budget
+     * other than the one it was opened on.
+     */
+    public static String setBudget(
+            int index, String expectedTarget, String target, int perDaySeconds,
+            String mode, int snoozeSeconds, int snoozesPerDay, String reason) {
+        final byte[] settings = PurpleGate.settingsBytes();
+        if (settings == null) {
+            return "settings.toml is missing";
+        }
+        return apply(
+                PurpleCore.setBudget(settings, index, expectedTarget, target,
+                        perDaySeconds, mode, snoozeSeconds, snoozesPerDay),
+                reason);
+    }
+
+    /** Takes one budget out, on the same expectation as {@link #setBudget}. */
+    public static String removeBudget(int index, String expectedTarget, String reason) {
+        final byte[] settings = PurpleGate.settingsBytes();
+        if (settings == null) {
+            return "settings.toml is missing";
+        }
+        return apply(PurpleCore.removeBudget(settings, index, expectedTarget), reason);
+    }
 }

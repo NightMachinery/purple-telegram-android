@@ -695,6 +695,26 @@ void AppendDevicesJson(QString &out, const Purple::Settings &settings) {
 	return result;
 }
 
+[[nodiscard]] Purple::ScreenTimeBudget ReadBudget(
+		JNIEnv *env,
+		jstring target,
+		jint perDaySeconds,
+		jstring mode,
+		jint snoozeSeconds,
+		jint snoozesPerDay) {
+	auto budget = Purple::ScreenTimeBudget();
+	budget.target = FromJava(env, target);
+	budget.perDaySeconds = int(perDaySeconds);
+	// Soft for a mode nothing could read, the same choice addRulesetNative
+	// makes and for the same reason: this is a screen that offered two buttons
+	// and got something else, not a file being read as charitably as possible.
+	budget.mode = Purple::ParseBudgetMode(FromJava(env, mode))
+		.value_or(Purple::BudgetMode::Soft);
+	budget.snoozeSeconds = int(snoozeSeconds);
+	budget.snoozesPerDay = int(snoozesPerDay);
+	return budget;
+}
+
 // What the caller says this device is. Nothing here validates it: the core
 // matches a ruleset's `device' against all three fields, ignoring case, and an
 // identity nothing in the file names simply matches the rulesets that asked for
@@ -2268,6 +2288,94 @@ Java_org_telegram_messenger_purple_PurpleCore_removeScheduleRuleNative(
 		ReadExpected(env, expectedFrom, expectedTill, expectedPreset))));
 }
 
+// Purple: the three budget ops.
+//
+// A budget is addressed by `index' - ScreenTimeBudget::sourceIndex, its place
+// in the raw [[screen_time.budgets]] array counting the ones the parser threw
+// away - together with `expectedTarget', the target the screen read off it. The
+// core refuses when the budget there says something else, which is what stops a
+// dialog left open across somebody else's edit from rewriting the wrong budget.
+// The target is the only identity a budget has: everything else in the block is
+// what the dialog is open to change.
+//
+// The five fields are the five keys the core writes. `kind', `chat' and
+// `preset' are not among them: they are what the parser makes of the target
+// string, and a bridge that sent them too would be a second copy of a grammar
+// that already lives in one place.
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_appendBudgetNative(
+		JNIEnv *env,
+		jclass,
+		jbyteArray settingsUtf8,
+		jstring target,
+		jint perDaySeconds,
+		jstring mode,
+		jint snoozeSeconds,
+		jint snoozesPerDay) {
+	auto text = QString();
+	if (!ReadUtf8(env, settingsUtf8, text)) {
+		return nullptr;
+	}
+	return ToJava(env, SpliceJson(Purple::AppendBudget(
+		text,
+		QStringLiteral("settings.toml"),
+		ReadBudget(
+			env,
+			target,
+			perDaySeconds,
+			mode,
+			snoozeSeconds,
+			snoozesPerDay))));
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_setBudgetNative(
+		JNIEnv *env,
+		jclass,
+		jbyteArray settingsUtf8,
+		jint index,
+		jstring expectedTarget,
+		jstring target,
+		jint perDaySeconds,
+		jstring mode,
+		jint snoozeSeconds,
+		jint snoozesPerDay) {
+	auto text = QString();
+	if (!ReadUtf8(env, settingsUtf8, text)) {
+		return nullptr;
+	}
+	return ToJava(env, SpliceJson(Purple::SetBudget(
+		text,
+		QStringLiteral("settings.toml"),
+		int(index),
+		FromJava(env, expectedTarget),
+		ReadBudget(
+			env,
+			target,
+			perDaySeconds,
+			mode,
+			snoozeSeconds,
+			snoozesPerDay))));
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_removeBudgetNative(
+		JNIEnv *env,
+		jclass,
+		jbyteArray settingsUtf8,
+		jint index,
+		jstring expectedTarget) {
+	auto text = QString();
+	if (!ReadUtf8(env, settingsUtf8, text)) {
+		return nullptr;
+	}
+	return ToJava(env, SpliceJson(Purple::RemoveBudget(
+		text,
+		QStringLiteral("settings.toml"),
+		int(index),
+		FromJava(env, expectedTarget))));
+}
+
 // Whether saving these bytes should also post them to Saved Messages.
 //
 // Four arguments where three would seem to do, because `settingsUtf8' and
@@ -2733,13 +2841,22 @@ Java_org_telegram_messenger_purple_PurpleCore_screenTimeLedgerNative(
 
 	auto json = QString();
 	json += QChar('[');
+	auto first = true;
 	for (const auto &entry : ledger) {
-		if (entry.index) {
+		if (!first) {
 			json += QChar(',');
 		}
+		first = false;
 		const auto &budget = screenTime.budgets[entry.index];
 		json += QStringLiteral("{\"index\":");
 		json += QString::number(entry.index);
+		// Where the block actually sits in the file, counting the budgets the
+		// parser threw away. `index' above addresses the parsed list - which is
+		// what the cover keys its snooze counts on - while this is the address
+		// the splice ops take, and a file with a broken budget in the middle is
+		// the case where the two differ.
+		json += QStringLiteral(",\"sourceIndex\":");
+		json += QString::number(budget.sourceIndex);
 		json += QStringLiteral(",\"target\":");
 		AppendJsonString(json, budget.target);
 		json += QStringLiteral(",\"targetKind\":");
