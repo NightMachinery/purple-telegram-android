@@ -314,10 +314,10 @@ touches messages or notifications - the chat still receives, still notifies,
 is still in the list and still searchable - and the session keeps recording
 behind the cover, counted as reading, so time spent sitting on it still shows
 in the total. The Screen time screen lists the budgets with what each has spent
-today; they are written by hand in the `settings.toml` editor, because the
-splice this app writes through has no operation for appending an entry to an
-array of tables and a screen that wrote TOML by hand would be a screen that ate
-your comments.
+today and edits them in place - Add budget, or tap one, for a dialog over the
+target, the allowance, the mode and the two snooze numbers - writing through the
+core's budget splices, so a block keeps its comments and only the keys you
+changed are rewritten.
 
 Work Mode is ported, the launch-time offer of a settings import included. The
 contents of a folder tab are deliberately unfiltered: a preset decides its own

@@ -160,6 +160,17 @@ public final class PurpleCore {
             byte[] settingsUtf8, String ruleset, int index, int expectedFrom,
             int expectedTill, String expectedPreset);
 
+    private static native String appendBudgetNative(
+            byte[] settingsUtf8, String target, int perDaySeconds, String mode,
+            int snoozeSeconds, int snoozesPerDay);
+
+    private static native String setBudgetNative(
+            byte[] settingsUtf8, int index, String expectedTarget, String target,
+            int perDaySeconds, String mode, int snoozeSeconds, int snoozesPerDay);
+
+    private static native String removeBudgetNative(
+            byte[] settingsUtf8, int index, String expectedTarget);
+
     private static native boolean shouldAutoSendNative(byte[] settingsUtf8,
             byte[] stateUtf8, byte[] fileBytes, boolean wroteFromImport);
 
@@ -1086,6 +1097,71 @@ public final class PurpleCore {
         try {
             return splice(removeScheduleRuleNative(
                     settings, ruleset, index, expectedFrom, expectedTill, expectedPreset));
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return new SpliceResult(null, false, "the core could not be reached");
+        }
+    }
+
+    /**
+     * Writes a new {@code [[screen_time.budgets]]} block after the last one.
+     *
+     * The five arguments are the five keys the core writes: the target as it is
+     * spelled in the file ({@code "all"}, {@code "chat:<id>"},
+     * {@code "kind:<kind>"}, {@code "preset:<name>"}), the day's allowance in
+     * seconds, {@code "soft"} or {@code "hard"}, and the two snooze numbers.
+     * What the target <em>means</em> is not among them: that is the parser's
+     * grammar, and a second copy of it here would be a second thing to keep in
+     * step. The core refuses a target it cannot read back, so a screen that got
+     * one wrong is told so rather than leaving a budget that is not there.
+     *
+     * {@code mode}, {@code snooze} and {@code snoozes_per_day} are written only
+     * when they are not the defaults, so a file does not fill up with lines
+     * spelling out what it would have meant anyway.
+     */
+    public static SpliceResult appendBudget(
+            byte[] settings, String target, int perDaySeconds, String mode,
+            int snoozeSeconds, int snoozesPerDay) {
+        ensureLoaded();
+        try {
+            return splice(appendBudgetNative(settings, target, perDaySeconds, mode,
+                    snoozeSeconds, snoozesPerDay));
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return new SpliceResult(null, false, "the core could not be reached");
+        }
+    }
+
+    /**
+     * Rewrites one budget in place, key by key.
+     *
+     * {@code index} is {@link Budget#sourceIndex}: the block's place in the raw
+     * array, counting the budgets the parser threw away, so a broken one in the
+     * middle of the file does not move the ones after it.
+     * {@code expectedTarget} is the target the screen read off it, and the core
+     * refuses when the budget there says something else - a budget has no other
+     * identity, and everything else in the block is what a dialog is open to
+     * change.
+     */
+    public static SpliceResult setBudget(
+            byte[] settings, int index, String expectedTarget, String target,
+            int perDaySeconds, String mode, int snoozeSeconds, int snoozesPerDay) {
+        ensureLoaded();
+        try {
+            return splice(setBudgetNative(settings, index, expectedTarget, target,
+                    perDaySeconds, mode, snoozeSeconds, snoozesPerDay));
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return new SpliceResult(null, false, "the core could not be reached");
+        }
+    }
+
+    /** Takes one budget out, on the same expectation as {@link #setBudget}. */
+    public static SpliceResult removeBudget(
+            byte[] settings, int index, String expectedTarget) {
+        ensureLoaded();
+        try {
+            return splice(removeBudgetNative(settings, index, expectedTarget));
         } catch (UnsatisfiedLinkError | RuntimeException e) {
             FileLog.e(e);
             return new SpliceResult(null, false, "the core could not be reached");
@@ -2478,8 +2554,18 @@ public final class PurpleCore {
     /** One {@code [[screen_time.budgets]]} entry, and what it has spent today. */
     public static final class Budget {
 
-        /** Its position in the file, so a screen can address it back. */
+        /** Its position among the budgets the parser kept. */
         public final int index;
+
+        /**
+         * Its position in the raw {@code [[screen_time.budgets]]} array,
+         * counting the ones the parser threw away - the core's
+         * {@code ScreenTimeBudget::sourceIndex}, and the address {@link
+         * PurpleCore#setBudget} and {@link PurpleCore#removeBudget} take. It
+         * differs from {@link #index} exactly when the file holds a budget the
+         * parser could not read.
+         */
+        public final int sourceIndex;
 
         /** The target as written - {@code "all"}, {@code "kind:groups"}, … */
         public final String target;
@@ -2511,6 +2597,7 @@ public final class PurpleCore {
 
         Budget(JSONObject json) {
             this.index = json.optInt("index", 0);
+            this.sourceIndex = json.optInt("sourceIndex", this.index);
             this.target = json.optString("target", "all");
             this.targetKind = json.optInt("targetKind", BUDGET_ALL);
             this.chat = json.optLong("chat", 0);
