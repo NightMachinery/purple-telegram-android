@@ -1481,6 +1481,10 @@ public final class PurpleGate {
             }
             return;
         }
+        // The list being replaced, read once. Its objects are published - other
+        // threads are holding them through the volatile - so nothing here
+        // touches one; only the localId is copied out of it.
+        final ArrayList<MessagesController.DialogFilter> previous = viewFilters;
         final ArrayList<MessagesController.DialogFilter> result =
                 new ArrayList<>(next.views.size());
         boolean incomplete = false;
@@ -1489,6 +1493,17 @@ public final class PurpleGate {
             filter.id = VIEW_ID_BASE + i;
             filter.name = next.views.get(i).name;
             filter.order = i;
+            // The tab strip tracks a tab by localId, and a fresh object per
+            // reload hands it a number it has never seen - so the strip reads
+            // every invented tab as new, its stable-id rescue can never match,
+            // and the user is thrown back to the first tab. Reloads happen for
+            // a peek, a schedule tick and a list edit as well as a preset
+            // switch, so this is most of them. The same view keeps the same
+            // number by position, which is what identity means here: view i is
+            // the i-th tab the preset asked for.
+            if (i < previous.size()) {
+                filter.localId = previous.get(i).localId;
+            }
             incomplete |= !fillViewPins(filter, next.views.get(i).pinned);
             result.add(filter);
         }
@@ -1961,6 +1976,7 @@ public final class PurpleGate {
      */
     private static void postRefresh() {
         AndroidUtilities.runOnUIThread(() -> {
+            dropStaleViewSelections();
             for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; ++a) {
                 if (!UserConfig.getInstance(a).isClientActivated()) {
                     continue;
@@ -1982,5 +1998,57 @@ public final class PurpleGate {
                 MessagesStorage.getInstance(a).updateAllFiltersCountersForPurple();
             }
         });
+    }
+
+    /**
+     * Forgets a selected filter that was one of the preset's invented tabs and
+     * is not on the strip any more.
+     *
+     * A selection is a live object, and the sort below refills whichever one it
+     * finds there. A view that the reload took away still answers membership -
+     * by id, out of bits nothing sets any more - so it answers "no" for every
+     * chat, and the page under it would draw an empty list until the user
+     * touched another tab. Cleared before the sort rather than after, so the
+     * sort is not spent filling a list nobody can reach.
+     *
+     * Only the invented tabs. A real folder that goes away is Telegram's own
+     * business and it already handles it; a view is ours alone.
+     *
+     * On the UI thread, because {@code reload()} is not: the first load runs
+     * from wherever asked for it, and this reaches into MessagesController.
+     */
+    private static void dropStaleViewSelections() {
+        final ArrayList<MessagesController.DialogFilter> current = viewFilters;
+        for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; ++a) {
+            if (!UserConfig.getInstance(a).isClientActivated()) {
+                continue;
+            }
+            final MessagesController controller = MessagesController.getInstance(a);
+            for (int k = 0; k < controller.selectedDialogFilter.length; ++k) {
+                final MessagesController.DialogFilter selected = controller.selectedDialogFilter[k];
+                if (selected == null || !isExtraView(selected) || stillOnStrip(current, selected)) {
+                    continue;
+                }
+                controller.selectDialogFilter(null, k);
+            }
+        }
+    }
+
+    /**
+     * Whether a view is still one of the strip's, matched by id.
+     *
+     * By id and not by object, because every reload builds new filters: an
+     * object comparison would call every surviving view stale and drop a
+     * perfectly good selection on each peek.
+     */
+    private static boolean stillOnStrip(
+            ArrayList<MessagesController.DialogFilter> current,
+            MessagesController.DialogFilter selected) {
+        for (int a = 0, n = current.size(); a < n; ++a) {
+            if (current.get(a).id == selected.id) {
+                return true;
+            }
+        }
+        return false;
     }
 }
