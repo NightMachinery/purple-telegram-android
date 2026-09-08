@@ -23,6 +23,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.purple.PurpleCore;
@@ -316,12 +317,18 @@ public final class PurpleListBox {
         field.setPadding(dp(24), dp(4), dp(24), 0);
         builder.setView(field);
 
-        // Save closes this box only. The one behind it stays where it was and
-        // rebuilds, so the new list is a row with a tick in it rather than a
-        // reason to go back through the chat menu.
-        builder.setPositiveButton(getString(R.string.Save), (dialog, which) -> createList(
-                activity, rows, currentAccount, dialogId, field.getText().toString()));
-        builder.setNegativeButton(getString(R.string.Cancel), null);
+        // A fragment holds one dialog: showing this one dismissed the lists
+        // box behind it (seen on the emulator - the box was gone after Save).
+        // So the box is opened again afterwards, on Save and on Cancel alike,
+        // and comes back rebuilt from the file with the new list ticked, which
+        // is what the user was looking at and what they came here to change.
+        final Runnable reopen = () -> AndroidUtilities.runOnUIThread(
+                () -> show(fragment, currentAccount, dialogId));
+        builder.setPositiveButton(getString(R.string.Save), (dialog, which) -> {
+            createList(activity, rows, currentAccount, dialogId, field.getText().toString());
+            reopen.run();
+        });
+        builder.setNegativeButton(getString(R.string.Cancel), (dialog, which) -> reopen.run());
         fragment.showDialog(builder.create());
     }
 
