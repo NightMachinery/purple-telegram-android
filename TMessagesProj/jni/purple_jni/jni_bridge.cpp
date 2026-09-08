@@ -866,7 +866,14 @@ void FocusEnter(Purple::State &state, const Purple::Settings &settings) {
 // the device's own zone as the C library reports it, DST included and no Java
 // anywhere near it.
 [[nodiscard]] QTimeZone ZoneFrom(const QString &id) {
-	if (!id.isEmpty()) {
+	// Only a "UTC+02:00" spelling is ever handed to the QByteArray
+	// constructor. Seen on the emulator: an IANA id there is not a fallback
+	// case but a crash - QTimeZone reaches for Qt's Android backend, which
+	// asks QJniEnvironment for a JavaVM this library never installed, and
+	// dereferences the null it gets back before isValid() could say no. So
+	// the Java side sends the offset spelling, and anything else is treated
+	// as "no zone named", not tried.
+	if (id.startsWith(QStringLiteral("UTC"))) {
 		const auto named = QTimeZone(id.toUtf8());
 		if (named.isValid()) {
 			return named;
