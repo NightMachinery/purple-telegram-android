@@ -237,22 +237,40 @@ public class DialogsSearchAdapter extends RecyclerListView.SelectionAdapter {
          * Purple: the frequent chats this strip may show.
          *
          * MediaDataController's list is read by position by everything here
-         * and by the click handlers around it, so a globally hidden chat is
-         * taken out of a copy rather than skipped in place. The copy is only
-         * made while a preset asks for global hiding; the rest of the time
-         * this is the list itself, and costs one field read.
+         * and by the click handlers around it, so a chat that must not appear
+         * is taken out of a copy rather than skipped in place. The copy is only
+         * made while a preset asks for one of the two kinds of hiding; the rest
+         * of the time this is the list itself, and costs two field reads.
+         *
+         * Two questions, not one. {@code hide_everywhere_p} takes a chat out of
+         * the app, so it is gone from here as a consequence. {@code
+         * [suggestions] hide_invisible_p} is about these strips alone: the chat
+         * stays in search and in the forward picker, and only stops being
+         * offered as a suggestion.
+         *
+         * The folder snapshot is taken once for the whole list. Asking per row
+         * would walk every folder on the strip for every hint.
          */
         public static ArrayList<TLRPC.TL_topPeer> visibleHints(int currentAccount) {
             final ArrayList<TLRPC.TL_topPeer> all = MediaDataController.getInstance(currentAccount).hints;
-            if (!PurpleGate.hidingEverywhere()) {
+            final boolean everywhere = PurpleGate.hidingEverywhere();
+            final boolean suggestions = PurpleGate.hidingFromSuggestions();
+            if (!everywhere && !suggestions) {
                 return all;
             }
+            final ArrayList<MessagesController.DialogFilter> folders =
+                    suggestions ? PurpleGate.suggestionFolders(currentAccount) : null;
             final ArrayList<TLRPC.TL_topPeer> out = new ArrayList<>(all.size());
             for (int a = 0, n = all.size(); a < n; a++) {
                 final TLRPC.TL_topPeer peer = all.get(a);
-                if (!PurpleGate.hiddenEverywhere(currentAccount, DialogObject.getPeerDialogId(peer.peer))) {
-                    out.add(peer);
+                final long dialogId = DialogObject.getPeerDialogId(peer.peer);
+                if (everywhere && PurpleGate.hiddenEverywhere(currentAccount, dialogId)) {
+                    continue;
                 }
+                if (PurpleGate.hiddenFromSuggestions(currentAccount, dialogId, folders)) {
+                    continue;
+                }
+                out.add(peer);
             }
             return out;
         }
@@ -2386,11 +2404,21 @@ public class DialogsSearchAdapter extends RecyclerListView.SelectionAdapter {
     public void filterRecent(String query) {
         filteredRecentQuery = query;
         filtered2RecentSearchObjects.clear();
+        // Purple: recent searches only. filter() above also feeds typed search
+        // results, and a chat you have named by typing its name is not a
+        // suggestion - refusing to find it would be hiding it from search,
+        // which [suggestions] does not claim to do. The snapshot is taken once
+        // for the pass, not per entry.
+        final ArrayList<MessagesController.DialogFilter> purpleFolders =
+                PurpleGate.suggestionFolders(currentAccount);
         if (TextUtils.isEmpty(query)) {
             filteredRecentSearchObjects.clear();
             final int count = recentSearchObjects.size();
             for (int i = 0; i < count; ++i) {
                 if (delegate != null && delegate.getSearchForumDialogId() == recentSearchObjects.get(i).did || !filter(recentSearchObjects.get(i).object)) {
+                    continue;
+                }
+                if (PurpleGate.hiddenFromSuggestions(currentAccount, recentSearchObjects.get(i).did, purpleFolders)) {
                     continue;
                 }
                 filteredRecentSearchObjects.add(recentSearchObjects.get(i));
@@ -2405,6 +2433,9 @@ public class DialogsSearchAdapter extends RecyclerListView.SelectionAdapter {
                 continue;
             }
             if (delegate != null && delegate.getSearchForumDialogId() == obj.did || !filter(recentSearchObjects.get(i).object)) {
+                continue;
+            }
+            if (PurpleGate.hiddenFromSuggestions(currentAccount, obj.did, purpleFolders)) {
                 continue;
             }
             String title = null, username = null;

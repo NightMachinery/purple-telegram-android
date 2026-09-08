@@ -32,6 +32,7 @@ import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
+import org.telegram.ui.Adapters.DialogsSearchAdapter;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.BottomSheetWithRecyclerListView;
@@ -307,7 +308,9 @@ public class MultiContactsSelectorBottomSheet extends BottomSheetWithRecyclerLis
         contacts.addAll(ContactsController.getInstance(currentAccount).contacts);
         contactsMap.putAll(ContactsController.getInstance(currentAccount).usersSectionsDict);
         contactsLetters.addAll(ContactsController.getInstance(currentAccount).sortedUsersSectionsArray);
-        hints.addAll(MediaDataController.getInstance(currentAccount).hints);
+        // Purple: the frequent-chats strip, so it answers to the same two
+        // switches as every other one.
+        hints.addAll(DialogsSearchAdapter.CategoryAdapterRecycler.visibleHints(currentAccount));
         if (filterBots != null && filterBots) {
             hints.addAll(MediaDataController.getInstance(currentAccount).webapps);
         }

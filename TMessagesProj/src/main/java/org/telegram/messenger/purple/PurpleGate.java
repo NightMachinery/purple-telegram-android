@@ -395,6 +395,7 @@ public final class PurpleGate {
         }
 
         postRefresh();
+        rebuildShortcuts();
 
         // Either file can change the answer sooner than the next thirty seconds
         // would: a rule added, a pause lifted, or a preset chosen by hand that
@@ -2022,6 +2023,150 @@ public final class PurpleGate {
                 || mode == PurpleCore.SHOW_MENTION;
     }
 
+    /**
+     * Whether the preset alone would show this dialog - no "until", no peek, no
+     * close buffer.
+     *
+     * Not the same question as {@link #shown}, which routes through
+     * {@link #byHand} and applies the grace period on top. The suggestions
+     * strips want this one: a chat you have just closed is meant to linger in
+     * the chat list for a moment, but making it appear in the share sheet and
+     * then vanish from it a minute later is a flicker nobody asked for.
+     */
+    public static boolean shownByPreset(int currentAccount, TLRPC.Dialog dialog) {
+        if (!filtering || dialog == null) {
+            return true;
+        }
+        if (DialogObject.isFolderDialogId(dialog.id)) {
+            return true;
+        }
+        return shownForMode(currentAccount, dialog, packedFor(currentAccount, dialog.id));
+    }
+
+    /**
+     * Whether a folder tab the preset is showing already holds this chat.
+     *
+     * Asked of the strip rather than of the account's folders, because a folder
+     * with no tab is not somewhere you can reach the chat from. The preset's
+     * own invented tabs are covered by the same walk without a second test:
+     * {@link #shownFilters} puts them on the strip as real filters, so a chat
+     * one of them holds is one tap away exactly as a folder's is.
+     *
+     * `folders' is a {@link #shownFilters} snapshot the caller took once for a
+     * whole batch. Null means take one here, which is right for a lone question
+     * and wrong inside a loop: building the strip's view per row would walk
+     * every folder for every hint.
+     */
+    public static boolean reachableElsewhere(
+            int currentAccount,
+            long dialogId,
+            ArrayList<MessagesController.DialogFilter> folders) {
+        try {
+            final MessagesController controller = MessagesController.getInstance(currentAccount);
+            final TLRPC.Dialog dialog = controller.dialogs_dict.get(dialogId);
+            if (dialog == null) {
+                return false;
+            }
+            final ArrayList<MessagesController.DialogFilter> shown = (folders != null)
+                    ? folders
+                    : shownFilters(controller.getDialogFiltersUnrestricted());
+            if (shown == null) {
+                return false;
+            }
+            for (int a = 0, n = shown.size(); a < n; ++a) {
+                final MessagesController.DialogFilter filter = shown.get(a);
+                if (filter == null || filter.isDefault()) {
+                    // The default tab is the view being decided, so it is not
+                    // "elsewhere".
+                    continue;
+                }
+                if (folderHolds(currentAccount, filter, dialogId)) {
+                    return true;
+                }
+            }
+        } catch (Exception e) {
+            // A list the UI thread was rewriting underneath us. "Not reachable
+            // elsewhere" is the generous answer, and generous is the safe
+            // direction here: the worst it costs is one grace period given
+            // where a stricter reading would have withheld it.
+            return false;
+        }
+        return false;
+    }
+
+    /**
+     * Whether anything at all can be missing from a suggestions strip.
+     *
+     * The cheap gate every hook asks first, so a file that never mentions
+     * {@code [suggestions]} - or a peek that has suspended the preset - costs
+     * one field read per strip rather than one folder walk per row.
+     */
+    public static boolean hidingFromSuggestions() {
+        if (!filtering) {
+            return false;
+        }
+        final PurpleCore.Loaded current = loaded;
+        return current != null
+                && current.hideInvisibleSuggestions
+                && !current.clock.peeking;
+    }
+
+    /**
+     * The strip snapshot a batch of {@link #hiddenFromSuggestions} calls shares,
+     * or null when there is nothing to hide.
+     */
+    public static ArrayList<MessagesController.DialogFilter> suggestionFolders(int currentAccount) {
+        if (!hidingFromSuggestions()) {
+            return null;
+        }
+        try {
+            return shownFilters(MessagesController.getInstance(currentAccount)
+                    .getDialogFiltersUnrestricted());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Whether this chat is kept out of the recent and frequent strips -
+     * {@code [suggestions] hide_invisible_p}.
+     *
+     * A work mode that took a chat out of the chat list and then offered it
+     * back in the share sheet would be answering the same question two ways.
+     * But a chat one tap away on a folder tab the preset is showing is not
+     * hidden at all, and leaving it out of the strips would only make it harder
+     * to reach something the preset already lets through.
+     *
+     * Decided on the preset alone - see {@link #shownByPreset} - so a chat you
+     * have just closed does not flicker into a strip and back out of it while
+     * its grace period runs.
+     *
+     * @param folders a {@link #suggestionFolders} snapshot, or null to take one
+     */
+    public static boolean hiddenFromSuggestions(
+            int currentAccount,
+            long dialogId,
+            ArrayList<MessagesController.DialogFilter> folders) {
+        if (!hidingFromSuggestions()) {
+            return false;
+        }
+        final TLRPC.Dialog dialog =
+                MessagesController.getInstance(currentAccount).dialogs_dict.get(dialogId);
+        // A chat with no dialog object is in no list this could take it out of.
+        if (dialog == null || shownByPreset(currentAccount, dialog)) {
+            return false;
+        }
+        return !reachableElsewhere(currentAccount, dialogId, folders);
+    }
+
+    /** The same question for a lone caller, which takes its own snapshot. */
+    public static boolean hiddenFromSuggestions(int currentAccount, long dialogId) {
+        return hiddenFromSuggestions(
+                currentAccount,
+                dialogId,
+                suggestionFolders(currentAccount));
+    }
+
     /** One load attempt; null when the bridge could not be called at all. */
     private static PurpleCore.Loaded load(byte[] settings, byte[] state) {
         try {
@@ -2081,6 +2226,35 @@ public final class PurpleGate {
                 // "hide until" takes its chat out of every running total and
                 // a reload is what starts and ends one.
                 MessagesStorage.getInstance(a).updateAllFiltersCountersForPurple();
+            }
+        });
+    }
+
+    /**
+     * Rewrites the OS share sheet's direct-share targets.
+     *
+     * They are built from the same frequent-chats list the suggestion strips
+     * draw, but they live outside the app and no chat-list rebuild reaches
+     * them - so without this the sheet keeps offering what the last preset let
+     * through until something unrelated next touches the hints.
+     *
+     * On the reload path rather than in {@code postRefresh}, which also runs
+     * every time a grace period starts or runs out. The suggestions predicate
+     * is deliberately blind to the grace period, so a chat closing cannot
+     * change this list, and rebuilding icons on every chat close would be work
+     * for nothing.
+     */
+    private static void rebuildShortcuts() {
+        AndroidUtilities.runOnUIThread(() -> {
+            for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; ++a) {
+                if (!UserConfig.getInstance(a).isClientActivated()) {
+                    continue;
+                }
+                try {
+                    MediaDataController.getInstance(a).buildShortcuts();
+                } catch (Exception e) {
+                    FileLog.e(e);
+                }
             }
         });
     }

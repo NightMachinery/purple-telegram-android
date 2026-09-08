@@ -205,57 +205,15 @@ public final class PurpleRecent {
         case PurpleCore.RECENT_ANY_OPEN_CHAT:
             return true;
         case PurpleCore.RECENT_EXCEPT_IN_FOLDER:
-            return !reachableElsewhere(currentAccount, dialogId);
+            // Null: one chat is being opened, so there is no batch to share a
+            // strip snapshot with.
+            return !PurpleGate.reachableElsewhere(currentAccount, dialogId, null);
         default: {
             final TLRPC.Dialog dialog =
                     MessagesController.getInstance(currentAccount).dialogs_dict.get(dialogId);
             return dialog != null && PurpleGate.shown(currentAccount, dialog);
         }
         }
-    }
-
-    /**
-     * Whether a folder tab the preset is showing already holds this chat.
-     *
-     * Asked of the strip rather than of the account's folders, because a folder
-     * with no tab is not somewhere you can reach the chat from. The desktop also
-     * checks the preset's extra views here; there are none on Android yet, and
-     * this is one of the places that will need them when there are.
-     *
-     * Runs once per chat opened, not per row, so building the strip's view here
-     * is the honest way to ask rather than a cost worth avoiding.
-     */
-    private static boolean reachableElsewhere(int currentAccount, long dialogId) {
-        try {
-            final MessagesController controller = MessagesController.getInstance(currentAccount);
-            final TLRPC.Dialog dialog = controller.dialogs_dict.get(dialogId);
-            if (dialog == null) {
-                return false;
-            }
-            final ArrayList<MessagesController.DialogFilter> shown =
-                    PurpleGate.shownFilters(controller.getDialogFiltersUnrestricted());
-            if (shown == null) {
-                return false;
-            }
-            for (int a = 0, n = shown.size(); a < n; ++a) {
-                final MessagesController.DialogFilter filter = shown.get(a);
-                if (filter == null || filter.isDefault()) {
-                    // The default tab is the view being decided, so it is not
-                    // "elsewhere".
-                    continue;
-                }
-                if (PurpleGate.folderHolds(currentAccount, filter, dialogId)) {
-                    return true;
-                }
-            }
-        } catch (Exception e) {
-            // A list the UI thread was rewriting underneath us. "Not reachable
-            // elsewhere" is the generous answer, and generous is the safe
-            // direction here: the worst it costs is one grace period given
-            // where a stricter reading would have withheld it.
-            return false;
-        }
-        return false;
     }
 
     /** Drops any entry for this chat. Callers hold the lock. */
