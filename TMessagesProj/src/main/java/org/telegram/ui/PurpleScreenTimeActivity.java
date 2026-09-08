@@ -787,7 +787,11 @@ public class PurpleScreenTimeActivity extends UniversalFragment
             }
         });
         builder.setNegativeButton(getString(R.string.Cancel), null);
-        showDialog(builder.create());
+        // Shown directly, not through the fragment's showDialog: that
+        // dismisses whatever dialog is up first, and the budget editor this
+        // picker sits over is exactly that dialog. The time picker below does
+        // the same, for the same reason.
+        builder.create().show();
     }
 
     private void pickMode(
@@ -806,7 +810,7 @@ public class PurpleScreenTimeActivity extends UniversalFragment
         builder.setPositiveButton(getString(R.string.Save),
                 (dialog, which) -> picked.run(chosen[0]));
         builder.setNegativeButton(getString(R.string.Cancel), null);
-        showDialog(builder.create());
+        builder.create().show();
     }
 
     /**
