@@ -334,6 +334,31 @@ void AppendExemptFoldersJson(QString &json, const Purple::Resolved &resolved) {
 	json += QChar(']');
 }
 
+// The folders that said something about their people's stories. Same shape as
+// the exempt folders above, and lifted out for the same reason: almost no
+// preset mentions stories on a folder at all, and that has to be one empty list
+// to test rather than a folder walk per story.
+//
+// A name and a mode and nothing else, because a story folder has nothing else
+// to say - there is no "pinned only" half here, since a folder that speaks for
+// its people speaks for all of them.
+void AppendStoryFoldersJson(QString &json, const Purple::Resolved &resolved) {
+	json += QChar('[');
+	auto first = true;
+	for (const auto &folder : resolved.storyFolders) {
+		if (!first) {
+			json += QChar(',');
+		}
+		first = false;
+		json += QStringLiteral("{\"name\":");
+		AppendJsonString(json, folder.name);
+		json += QStringLiteral(",\"mode\":");
+		json += QString::number(int(folder.mode));
+		json += QChar('}');
+	}
+	json += QChar(']');
+}
+
 // DefaultShowMode() for each ChatKind, by kind index. Handed over rather than
 // exposed as a second native: it is four numbers that only change when the core
 // does, and a chat asking for its own default is on the row-drawing path.
@@ -1463,6 +1488,14 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 	AppendNamesJson(json, gate.resolved.quietFolders);
 	json += QStringLiteral(",\"exemptFolders\":");
 	AppendExemptFoldersJson(json, gate.resolved);
+	// What the stories strip does while this preset runs, and whichever folders
+	// overrode it for their own people. From the resolution, like hideArchive
+	// and hideEverywhere: it is the preset's own decision, so a resolution
+	// restored from the cache has to carry it.
+	json += QStringLiteral(",\"stories\":");
+	json += QString::number(int(gate.resolved.stories));
+	json += QStringLiteral(",\"storyFolders\":");
+	AppendStoryFoldersJson(json, gate.resolved);
 	json += QStringLiteral(",\"defaultModes\":");
 	AppendDefaultModesJson(json);
 	json += QStringLiteral(",\"presets\":[");
@@ -2576,6 +2609,109 @@ Java_org_telegram_messenger_purple_PurpleCore_visibleUnpeekedNative(
 		Purple::ChatKind(kind));
 	return jint(int(visibility.show))
 		| (visibility.notify ? kNotifyBit : jint(0));
+}
+
+// Purple: whether this peer belongs on the stories strip.
+//
+// The desktop's Purple::StoryShown(), with the same precedence: a peek reveals
+// everything, then a folder beats a list entry and both beat the preset's own
+// policy, and `follow' means "whoever the preset does not exclude outright".
+//
+// Two arguments the desktop does not need, and both for the same reason the
+// exempt-folder plumbing has them: the core has never heard of a Telegram
+// folder, so folder membership is Java's answer to give. `folderMode' is what
+// the folders holding this chat said about its stories - -1 for "none of them
+// said anything", which is the usual case - and `exemptFolder' is whether a
+// folder pulls the chat into the preset's view, which speaks for it here the
+// way it already does for hiding.
+//
+// `hasUnseen' is passed in rather than looked up, exactly as the desktop passes
+// it: the caller has the unread state right where the filter runs, so the seen
+// half of the ladder costs nothing and this needs no access to story state.
+extern "C" JNIEXPORT jboolean JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_storyShownNative(
+		JNIEnv *,
+		jclass,
+		jlong bareId,
+		jint kind,
+		jboolean hasUnseen,
+		jint folderMode,
+		jboolean exemptFolder) {
+	static_assert(int(Purple::StoryMode::Always) == 0);
+	static_assert(int(Purple::StoryMode::Unseen) == 1);
+	static_assert(int(Purple::StoryMode::Never) == 2);
+
+	if (kind < 0 || kind > int(Purple::ChatKind::Bot)) {
+		// A kind the core cannot be asked about. Shown is the harmless
+		// direction, the same one visibleNative takes.
+		return JNI_TRUE;
+	}
+	auto &gate = TheGate();
+	const auto lock = std::lock_guard(gate.mutex);
+	if (!gate.loaded || gate.resolved.normal) {
+		return JNI_TRUE;
+	}
+	if (gate.resolved.stories == Purple::StoryPolicy::None) {
+		return JNI_FALSE;
+	} else if (gate.resolved.peeking) {
+		// A peek reveals stories along with the chats they belong to. It is one
+		// deliberate look at what the preset is keeping from you, and a strip
+		// that stayed filtered through it would be answering a question nobody
+		// asked twice.
+		return JNI_TRUE;
+	}
+
+	// A folder beats a list entry, the same way a folder already beats one for
+	// hiding, and both beat the preset's own policy.
+	auto mode = std::optional<Purple::StoryMode>();
+	if (folderMode >= int(Purple::StoryMode::Always)
+		&& folderMode <= int(Purple::StoryMode::Never)) {
+		mode = Purple::StoryMode(folderMode);
+	}
+	const auto id = Purple::PeerIdValue(bareId);
+	if (!mode) {
+		if (const auto entry = Purple::MatchList(
+				gate.settings,
+				gate.resolved,
+				id,
+				Purple::ChatKind(kind))) {
+			mode = entry->stories;
+		}
+	}
+	if (mode) {
+		switch (*mode) {
+		case Purple::StoryMode::Always: return JNI_TRUE;
+		case Purple::StoryMode::Unseen: return hasUnseen;
+		case Purple::StoryMode::Never: return JNI_FALSE;
+		}
+	}
+
+	// Whether the preset excludes this chat outright, rather than merely
+	// holding it back for being quiet. The distinction is the whole of what
+	// `follow' means: a story IS new activity, so somebody the preset admits
+	// under `message' or `mention' keeps theirs, and only somebody it refuses
+	// altogether loses it. The peek is already ruled out above, so asking the
+	// live resolution here asks it unpeeked.
+	const auto excluded = [&] {
+		if (exemptFolder == JNI_TRUE) {
+			return false;
+		}
+		return Purple::Visible(
+			gate.settings,
+			gate.resolved,
+			id,
+			Purple::ChatKind(kind)).show == Purple::ShowMode::Never;
+	};
+	switch (gate.resolved.stories) {
+	case Purple::StoryPolicy::All: return JNI_TRUE;
+	case Purple::StoryPolicy::AllUnseen: return hasUnseen;
+	case Purple::StoryPolicy::Follow:
+		return excluded() ? JNI_FALSE : JNI_TRUE;
+	case Purple::StoryPolicy::FollowUnseen:
+		return (hasUnseen == JNI_TRUE && !excluded()) ? JNI_TRUE : JNI_FALSE;
+	case Purple::StoryPolicy::None: return JNI_FALSE;
+	}
+	return JNI_TRUE;
 }
 
 // Purple: the whole screen-time report for one window, in one call.

@@ -40,6 +40,7 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.SendMessagesHelper;
 import org.telegram.messenger.Timer;
 import org.telegram.messenger.UserConfig;
+import org.telegram.messenger.purple.PurpleGate;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.VideoEditedInfo;
@@ -282,7 +283,18 @@ public class StoriesController {
     }
 
     public boolean hasStories() {
-        return (dialogListStories != null && dialogListStories.size() > 0) || hasSelfStories();
+        // Purple: whether the strip has anything left to draw, which is what
+        // this decides, so it asks the shown list rather than the raw one. Your
+        // own row goes through the same gate as anybody else's - Saved Messages
+        // has no exemption from the lists either, so under `follow' the
+        // add-a-story button goes away unless a list names you.
+        return (dialogListStories != null && getDialogListStoriesShown().size() > 0)
+                || (hasSelfStories() && selfStoryShownOnStrip());
+    }
+
+    /** Purple: whether your own row belongs on the strip. */
+    public boolean selfStoryShownOnStrip() {
+        return storyShownOnStrip(UserConfig.getInstance(currentAccount).getClientUserId());
     }
 
     public void loadStories() {
@@ -677,6 +689,51 @@ public class StoriesController {
 
     public ArrayList<TL_stories.PeerStories> getDialogListStories() {
         return dialogListStories;
+    }
+
+    /**
+     * Purple: the same list with whoever the running preset hides left out.
+     *
+     * One accessor rather than a check at every draw site, and deliberately not
+     * a filter of {@link #dialogListStories} itself: that list also feeds the
+     * counters, the archive strip and the upstream hidden/unhidden machinery,
+     * none of which has anything to do with a work preset, and filtering there
+     * would be lying to code that never asked. The desktop fork draws the same
+     * line, in {@code dialogs_stories_content.cpp}.
+     *
+     * @return {@code dialogListStories} itself when nothing is hidden, so the
+     *         common path allocates nothing
+     */
+    public ArrayList<TL_stories.PeerStories> getDialogListStoriesShown() {
+        if (!PurpleGate.filteringStories()) {
+            return dialogListStories;
+        }
+        ArrayList<TL_stories.PeerStories> result = null;
+        for (int i = 0, n = dialogListStories.size(); i < n; ++i) {
+            final TL_stories.PeerStories peerStories = dialogListStories.get(i);
+            if (storyShownOnStrip(DialogObject.getPeerDialogId(peerStories.peer))) {
+                if (result != null) {
+                    result.add(peerStories);
+                }
+                continue;
+            }
+            if (result == null) {
+                result = new ArrayList<>(dialogListStories.subList(0, i));
+            }
+        }
+        return result == null ? dialogListStories : result;
+    }
+
+    /**
+     * Purple: whether this peer belongs on the strip above the chat list.
+     *
+     * The seen half is answered here because this is where the unread state
+     * already is - the gate takes it as an argument rather than looking it up,
+     * exactly as the desktop's {@code Purple::StoryShown()} does.
+     */
+    public boolean storyShownOnStrip(long dialogId) {
+        return PurpleGate.storyShown(
+                currentAccount, dialogId, hasUnreadStories(dialogId));
     }
 
     public TL_stories.PeerStories getStories(long peerId) {
@@ -4278,7 +4335,13 @@ public class StoriesController {
     }
 
     public boolean hasOnlySelfStories() {
-        return hasSelfStories() && (getDialogListStories().isEmpty() || (getDialogListStories().size() == 1 && DialogObject.getPeerDialogId(getDialogListStories().get(0).peer) == UserConfig.getInstance(currentAccount).clientUserId));
+        // Purple: the shown list and your own gate, because this is the other
+        // half of what keeps the strip on screen - DialogsActivity draws the
+        // cell when this is true even though hasStories() is false, so a self
+        // row the preset hides has to be false here too or the strip would
+        // stay up with nothing in it.
+        final ArrayList<TL_stories.PeerStories> shown = getDialogListStoriesShown();
+        return hasSelfStories() && selfStoryShownOnStrip() && (shown.isEmpty() || (shown.size() == 1 && DialogObject.getPeerDialogId(shown.get(0).peer) == UserConfig.getInstance(currentAccount).clientUserId));
     }
 
     public void sortHiddenStories() {

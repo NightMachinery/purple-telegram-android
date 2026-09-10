@@ -62,6 +62,7 @@ import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.NotificationsController;
 import org.telegram.messenger.R;
+import org.telegram.messenger.purple.PurpleGate;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.TLObject;
@@ -1105,7 +1106,16 @@ public class NotificationsCustomSettingsActivity extends BaseFragment implements
         final ArrayList<TLRPC.TL_topPeer> topPeers;
         if (currentType == TYPE_STORIES) {
             MediaDataController.getInstance(currentAccount).loadHints(true);
-            topPeers = new ArrayList<>(MediaDataController.getInstance(currentAccount).hints);
+            // Purple: the rows below are not exceptions you made - they are up
+            // to six top peers the screen seeds itself with, which is the same
+            // frequent-contact strip under another name, so [suggestions]
+            // applies. An exception you made by hand is read out of the
+            // preferences below and is left alone. Filtered here, on the way
+            // in, because the rest of the walk is on the storage thread and the
+            // gate reads the loaded dialogs.
+            topPeers = PurpleGate.visibleTopPeers(
+                    currentAccount,
+                    MediaDataController.getInstance(currentAccount).hints);
         } else {
             topPeers = null;
         }
