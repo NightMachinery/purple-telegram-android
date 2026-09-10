@@ -1855,9 +1855,20 @@ public class ShareAlert extends BottomSheet implements NotificationCenter.Notifi
             @Override
             public void setRecentSearch(ArrayList<DialogsSearchAdapter.RecentSearchObject> arrayList, LongSparseArray<DialogsSearchAdapter.RecentSearchObject> hashMap) {
                 if (arrayList != null) {
+                    // Purple: this sheet keeps its own copy of the recent table
+                    // rather than going through DialogsSearchAdapter, so the
+                    // hook that filters the search screen's Recent list does not
+                    // reach it - the same [suggestions] rule has to be applied
+                    // here. One snapshot for the whole pass, as everywhere else.
+                    final ArrayList<MessagesController.DialogFilter> purpleFolders =
+                            PurpleGate.suggestionFolders(currentAccount);
                     for (int i = 0; i < arrayList.size(); ++i) {
                         DialogsSearchAdapter.RecentSearchObject recentSearchObject = arrayList.get(i);
                         if (recentSearchObject.object instanceof TLRPC.Chat && !ChatObject.canWriteToChat((TLRPC.Chat) recentSearchObject.object)) {
+                            arrayList.remove(i);
+                            i--;
+                        } else if (PurpleGate.hiddenEverywhere(currentAccount, recentSearchObject.did)
+                                || PurpleGate.hiddenFromSuggestions(currentAccount, recentSearchObject.did, purpleFolders)) {
                             arrayList.remove(i);
                             i--;
                         }

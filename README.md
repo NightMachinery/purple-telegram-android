@@ -243,12 +243,50 @@ same rule - your own channels are filtered by it, and the "similar channels"
 the server suggests are left out of the tab entirely while a preset filters,
 since they are the one strip not assembled out of your own chats, until
 `[suggestions] recommended_channels_p = true` (default false) asks for them
-back. Typed search and the forward picker still find it. A preset's
-`hide_archive_p` (default true) takes the archive out of the way while it runs:
-no pull-down, no row, the state of an account that never archived anything;
-archiving still works, search and the Archive settings screen still reach it,
-and `hide_archive_p = false` on the preset keeps the pull. Under Normal all
-three are stock.
+back. Typed search and the forward picker still find it.
+
+Four more surfaces are covered by the same key, each because it is a list the
+app filled for you rather than one you wrote. The share sheet's own **Recent
+chats** section keeps a second copy of the recent-search table instead of
+reading the search screen's, so it is filtered where it loads that copy; its
+top frequent-contacts row already went through the shared one. The **stories
+notification exceptions** on both Notifications screens seed themselves with
+the top five or six peers, and those seeded rows are the frequent strip under
+another name - an exception you made by hand is yours and is left alone. The
+**Contacts tab is deliberately not filtered**, and neither is its search: it is
+the full address book, the same list the desktop's contacts box shows unhooked,
+and the compose button opens exactly that screen with no frequent row of its
+own. The **contacts home-screen widget** is not filtered either: with no chats
+picked it falls back to the top four read straight out of SQLite on the storage
+thread, before the users and chats are loaded, which is the same place and the
+same reason the push-eligibility mirror is left alone.
+
+A preset's `hide_archive_p` (default true) takes the archive out of the way
+while it runs: no pull-down, no row, the state of an account that never
+archived anything; archiving still works, search and the Archive settings
+screen still reach it, and `hide_archive_p = false` on the preset keeps the
+pull. Under Normal all three are stock.
+
+The **stories strip** above the chat list follows the preset as well, through
+`stories` on the preset. `"all"` leaves it alone, `"all_unseen"` keeps whoever
+still has something unwatched, `"follow"` - the default - hides whoever the
+preset excludes outright and keeps whoever it is merely holding back for being
+quiet, `"follow_unseen"` is both, and `"none"` turns the strip off. A
+`list_order` entry or a folder overrides that for its own people with
+`"always"`, `"unseen"` or `"never"`; a folder beats an entry and both beat the
+policy, which is the order hiding already uses. A peek reveals stories along
+with the chats they belong to. Your own row is governed like anybody else's,
+since the lists give Saved Messages no exemption either, so under `follow` the
+add-a-story button goes away unless a list names you - and the strip goes with
+it when nothing is left to draw.
+
+Three things follow the filter with it: the collapsed strip, the count in its
+title, and the chain a swipe walks onward along, so swiping past the last
+person shown cannot land on somebody the preset hid. Two deliberately do not.
+The archive's hidden-stories strip is Telegram's own idea of hidden - the
+people you moved there yourself - and has nothing to do with a preset. And the
+story counters the rest of the app keeps are left alone, because filtering them
+would be lying to code that never asked about a work mode.
 
 **Last seen** is `[last_seen]`, and it answers a question the app normally
 leaves hanging. Hide your own last seen and Telegram stops showing you other

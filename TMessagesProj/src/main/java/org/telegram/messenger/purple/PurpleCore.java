@@ -47,6 +47,32 @@ public final class PurpleCore {
     /** The core's own limit on views, main view included. */
     public static final int VIEW_LIMIT = 16;
 
+    /**
+     * What the stories strip does while a preset runs, as the core's
+     * {@code Purple::StoryPolicy} numbers it. Each value hides strictly more
+     * than the one before it, and {@link #STORY_FOLLOW} is the default: it
+     * hides whoever the preset excludes outright and keeps whoever it is merely
+     * holding back for being quiet, because a story <i>is</i> new activity.
+     */
+    public static final int STORY_ALL = 0;
+    public static final int STORY_ALL_UNSEEN = 1;
+    public static final int STORY_FOLLOW = 2;
+    public static final int STORY_FOLLOW_UNSEEN = 3;
+    public static final int STORY_NONE = 4;
+
+    /**
+     * What one list entry or one folder says about its own people's stories, as
+     * {@code Purple::StoryMode} numbers it. A narrower vocabulary than the
+     * policy above on purpose: an entry is already a set of people, so "all"
+     * would mean nothing there.
+     */
+    public static final int STORY_MODE_ALWAYS = 0;
+    public static final int STORY_MODE_UNSEEN = 1;
+    public static final int STORY_MODE_NEVER = 2;
+
+    /** No folder said anything, so the entry or the policy decides. */
+    public static final int STORY_MODE_UNSET = -1;
+
     /** What a chat is, as the core's Purple::ChatKind numbers it. */
     public static final int KIND_PRIVATE = 0;
     public static final int KIND_GROUP = 1;
@@ -198,6 +224,13 @@ public final class PurpleCore {
      * and the only question this answers.
      */
     private static native int visibleUnpeekedNative(long bareId, int kind);
+
+    /**
+     * Whether this peer belongs on the stories strip. Prefer
+     * {@link PurpleGate#storyShown}, which supplies the two folder answers.
+     */
+    private static native boolean storyShownNative(long bareId, int kind,
+            boolean hasUnseen, int folderMode, boolean exemptFolder);
 
     private static native String screenTimeReportNative(byte[] settingsUtf8,
             byte[] logUtf8, long fromMs, long toMs, int bucketUnit, String timeZone);
@@ -1380,6 +1413,26 @@ public final class PurpleCore {
     }
 
     /**
+     * Whether this peer's story belongs on the strip.
+     *
+     * The core's whole precedence in one call: a peek reveals everything, then
+     * a folder beats a list entry and both beat the preset's own policy.
+     *
+     * @param hasUnseen    whether anything of theirs is still unwatched
+     * @param folderMode   a {@code STORY_MODE_} value from the folders holding
+     *                     this chat, or {@link #STORY_MODE_UNSET}
+     * @param exemptFolder whether a folder pulls this chat into the preset's
+     *                     view, which speaks for its story too
+     */
+    public static boolean storyShown(long bareId, int kind, boolean hasUnseen,
+            int folderMode, boolean exemptFolder) {
+        if (!loaded) {
+            ensureLoaded();
+        }
+        return storyShownNative(bareId, kind, hasUnseen, folderMode, exemptFolder);
+    }
+
+    /**
      * The state.toml text that makes {@code preset} the active one, chosen by
      * hand. Pure: the caller writes the result and calls
      * {@link #load(byte[], byte[])} again, which is what keeps the file and the
@@ -1511,6 +1564,27 @@ public final class PurpleCore {
         }
     }
 
+    /**
+     * One folder that said something about its people's stories.
+     *
+     * The same shape as {@link ExemptFolder} and for the same reason - the core
+     * has never heard of a Telegram folder, so it hands over the names it read
+     * and {@link PurpleGate} is the side that knows which folder holds what.
+     * There is no "pinned only" half here: a folder that speaks for its people
+     * speaks for all of them.
+     */
+    public static final class StoryFolder {
+        public final String name;
+
+        /** A {@code STORY_MODE_} value; never {@link #STORY_MODE_UNSET}. */
+        public final int mode;
+
+        private StoryFolder(String name, int mode) {
+            this.name = name;
+            this.mode = mode;
+        }
+    }
+
     public static final class FolderEntry {
         /** The name as settings.toml wrote it; meaningless when {@link #all}. */
         public final String name;
@@ -1610,6 +1684,16 @@ public final class PurpleCore {
          * emptiness before anything walks anything.
          */
         public final List<ExemptFolder> exemptFolders;
+
+        /** What the stories strip does while this preset runs, a {@code STORY_}. */
+        public final int stories;
+
+        /**
+         * The folders that overrode that for their own people. Empty in almost
+         * every preset, and checked for emptiness before anything walks
+         * anything, the same way {@link #exemptFolders} is.
+         */
+        public final List<StoryFolder> storyFolders;
 
         /**
          * {@code DefaultShowMode()} for each {@code KIND_} value, by index.
@@ -1873,6 +1957,7 @@ public final class PurpleCore {
                 String cacheReason, boolean activeMissing, List<FolderEntry> folders,
                 boolean foldersRestricted, List<String> silencedFolders,
                 List<String> quietFolders, List<ExemptFolder> exemptFolders,
+                int stories, List<StoryFolder> storyFolders,
                 int[] defaultModes, int listCount, List<PresetInfo> presets,
                 List<View> views, boolean hideEverywhere,
                 boolean hideInvisibleSuggestions, boolean recommendedChannels,
@@ -1907,6 +1992,8 @@ public final class PurpleCore {
             this.quietFolders = quietFolders;
             this.listCount = listCount;
             this.exemptFolders = exemptFolders;
+            this.stories = stories;
+            this.storyFolders = storyFolders;
             this.defaultModes = defaultModes;
             this.presets = presets;
             this.views = views;
@@ -1995,7 +2082,12 @@ public final class PurpleCore {
                     Collections.<FolderEntry>emptyList(), false,
                     Collections.<String>emptyList(),
                     Collections.<String>emptyList(),
-                    Collections.<ExemptFolder>emptyList(), STOCK_DEFAULT_MODES, 0,
+                    Collections.<ExemptFolder>emptyList(),
+                    // Nothing loaded, so nothing is filtering and the policy is
+                    // never consulted; STORY_ALL says so out loud rather than
+                    // leaving a value that would hide something if it ever were.
+                    STORY_ALL, Collections.<StoryFolder>emptyList(),
+                    STOCK_DEFAULT_MODES, 0,
                     Collections.<PresetInfo>emptyList(), Collections.<View>emptyList(),
                     false, true, false, true, false, null, "normal", "normal", null,
                     ScheduleStatus.fromJson(null),
@@ -2049,6 +2141,19 @@ public final class PurpleCore {
                                 entry.optString("name", ""),
                                 entry.optBoolean("pinned", false),
                                 entry.optInt("showMode", MODE_UNSET)));
+                    }
+                }
+                final List<StoryFolder> storyFolders = new ArrayList<>();
+                final JSONArray storyNamed = object.optJSONArray("storyFolders");
+                if (storyNamed != null) {
+                    for (int i = 0; i < storyNamed.length(); ++i) {
+                        final JSONObject entry = storyNamed.optJSONObject(i);
+                        if (entry == null) {
+                            continue;
+                        }
+                        storyFolders.add(new StoryFolder(
+                                entry.optString("name", ""),
+                                entry.optInt("mode", STORY_MODE_ALWAYS)));
                     }
                 }
                 int[] defaultModes = STOCK_DEFAULT_MODES;
@@ -2157,6 +2262,12 @@ public final class PurpleCore {
                         silencedFolders,
                         quietFolders,
                         exemptFolders,
+                        // Follow when the key is missing, which is the core's
+                        // own default and the conservative one: a result that
+                        // somehow lacks it keeps following the preset rather
+                        // than quietly showing everybody.
+                        object.optInt("stories", STORY_FOLLOW),
+                        storyFolders,
                         defaultModes,
                         object.optInt("listCount", 0),
                         presets,

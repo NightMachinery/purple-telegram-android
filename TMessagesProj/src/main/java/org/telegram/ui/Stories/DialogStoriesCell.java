@@ -62,6 +62,7 @@ import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
+import org.telegram.messenger.purple.PurpleGate;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.TLObject;
@@ -589,11 +590,19 @@ public class DialogStoriesCell extends FrameLayout implements NotificationCenter
         oldMiniItems.clear();
         oldMiniItems.addAll(miniItems);
         items.clear();
-        if (type != TYPE_ARCHIVE) {
+        // Purple: your own row is governed like anybody else's, since the lists
+        // give Saved Messages no exemption either - so under `follow' the
+        // add-a-story button goes away unless a list names you.
+        final boolean selfShown = type != TYPE_ARCHIVE
+                && storiesController.selfStoryShownOnStrip();
+        if (selfShown) {
             items.add(new Item(UserConfig.getInstance(currentAccount).getClientUserId()));
         }
 
-        ArrayList<TL_stories.PeerStories> allStories = type == TYPE_ARCHIVE ? storiesController.getHiddenList() : storiesController.getDialogListStories();
+        // Purple: the archive's own strip is never filtered - it is the
+        // upstream hidden/unhidden machinery, which has nothing to do with a
+        // work preset - so only the chat list's strip asks the shown accessor.
+        ArrayList<TL_stories.PeerStories> allStories = type == TYPE_ARCHIVE ? storiesController.getHiddenList() : storiesController.getDialogListStoriesShown();
         for (int i = 0; i < allStories.size(); i++) {
             long dialogId = DialogObject.getPeerDialogId(allStories.get(i).peer);
             if (dialogId != UserConfig.getInstance(currentAccount).getClientUserId()) {
@@ -601,12 +610,20 @@ public class DialogStoriesCell extends FrameLayout implements NotificationCenter
             }
         }
         int size = items.size();
-        if (!storiesController.hasSelfStories()) {
+        if (!storiesController.hasSelfStories() && (type == TYPE_ARCHIVE || selfShown)) {
             size--;
         }
         int totalCount;
         boolean hidden = type == TYPE_ARCHIVE;
         totalCount = Math.max(1, Math.max(storiesController.getTotalStoriesCount(hidden), size));
+        if (!hidden && PurpleGate.filteringStories()) {
+            // Purple: the count the title prints is the strip's own, so while a
+            // preset is filtering it counts what is on the strip rather than
+            // what the server said. Otherwise the title would announce stories
+            // the strip is deliberately not showing, which is the leak said out
+            // loud. The desktop moves Content::total after the same loop.
+            totalCount = Math.max(1, size);
+        }
 
         currentTitle = null;
         if (storiesController.hasOnlySelfStories()) {
@@ -673,7 +690,11 @@ public class DialogStoriesCell extends FrameLayout implements NotificationCenter
 
     private boolean shouldDrawSelfInMini() {
         long dialogId = UserConfig.getInstance(currentAccount).clientUserId;
-        return storiesController.hasUnreadStories(dialogId) || (storiesController.hasSelfStories() && storiesController.getDialogListStories().size() <= 3);
+        // Purple: the collapsed strip is the same strip, so it counts the shown
+        // list. A hidden peer padding this out to four would push your own row
+        // out of a row of three that has space for it.
+        return storiesController.storyShownOnStrip(dialogId)
+                && (storiesController.hasUnreadStories(dialogId) || (storiesController.hasSelfStories() && storiesController.getDialogListStoriesShown().size() <= 3));
     }
 
     Comparator<StoryCell> comparator = (o1, o2) -> o2.position - o1.position;

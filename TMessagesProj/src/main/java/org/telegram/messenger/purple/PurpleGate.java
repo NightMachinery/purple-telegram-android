@@ -373,6 +373,7 @@ public final class PurpleGate {
         settingsFingerprint = fingerprintOf(settings);
         synchronized (cacheLock) {
             modeCache.clear();
+            storyCache.clear();
         }
         if (next.stateText != null) {
             PurpleState.write(next.stateText.getBytes(UTF_8));
@@ -2235,6 +2236,226 @@ public final class PurpleGate {
                 suggestionFolders(currentAccount));
     }
 
+    /**
+     * A copy of a top-peer list with the chats the preset hides taken out.
+     *
+     * {@code DialogsSearchAdapter.CategoryAdapterRecycler.visibleHints()} is
+     * the same walk for the one caller that draws the list in place; this is
+     * for the callers that take a copy of it anyway and then sort or seed rows
+     * out of it, where handing back the live list would be wrong whatever the
+     * preset said. Always a fresh mutable list, since that is what they do with
+     * it.
+     *
+     * @param hints {@code MediaDataController.hints}, or any list like it
+     */
+    public static ArrayList<TLRPC.TL_topPeer> visibleTopPeers(
+            int currentAccount, ArrayList<TLRPC.TL_topPeer> hints) {
+        final ArrayList<TLRPC.TL_topPeer> out = new ArrayList<>(
+                hints == null ? 0 : hints.size());
+        if (hints == null) {
+            return out;
+        }
+        final boolean everywhere = hidingEverywhere();
+        final boolean suggestions = hidingFromSuggestions();
+        if (!everywhere && !suggestions) {
+            out.addAll(hints);
+            return out;
+        }
+        final ArrayList<MessagesController.DialogFilter> folders =
+                suggestions ? suggestionFolders(currentAccount) : null;
+        for (int a = 0, n = hints.size(); a < n; ++a) {
+            final TLRPC.TL_topPeer peer = hints.get(a);
+            if (peer == null || peer.peer == null) {
+                continue;
+            }
+            final long dialogId = DialogObject.getPeerDialogId(peer.peer);
+            if (everywhere && hiddenEverywhere(currentAccount, dialogId)) {
+                continue;
+            }
+            if (hiddenFromSuggestions(currentAccount, dialogId, folders)) {
+                continue;
+            }
+            out.add(peer);
+        }
+        return out;
+    }
+
+    /**
+     * Whether the stories strip has to be asked about at all.
+     *
+     * The cheap gate the strip asks first. Deliberately not "the policy is
+     * something other than {@code all}": a list entry or a folder can say
+     * {@code never} under any policy, so a preset that said nothing about
+     * stories still has to be asked. It is one volatile read either way, and
+     * under Normal it is the only cost.
+     */
+    public static boolean filteringStories() {
+        return filtering && loaded != null;
+    }
+
+    /**
+     * Whether this peer's story belongs on the strip.
+     *
+     * The desktop fork's {@code Purple::StoryShown()}, whose precedence lives
+     * in the bridge: a peek reveals everything, then a folder beats a list
+     * entry and both beat the preset's own policy, and {@code follow} means
+     * "whoever the preset does not exclude outright".
+     *
+     * The two folder answers are worked out here rather than there for the
+     * reason every folder question on this side is: the core has never heard of
+     * a Telegram folder, so membership is Java's to answer.
+     *
+     * {@code hasUnseen} is passed in rather than looked up, exactly as the
+     * desktop passes it - the caller has the unread state right where the
+     * filter runs, so the seen half of the ladder costs nothing.
+     *
+     * @param dialogId a TLRPC.Dialog id, not a bare id
+     */
+    public static boolean storyShown(int currentAccount, long dialogId, boolean hasUnseen) {
+        if (!filteringStories() || DialogObject.isFolderDialogId(dialogId)) {
+            return true;
+        }
+        final Integer cached = cachedStoryAnswer(dialogId);
+        if (cached != null) {
+            return (cached & (hasUnseen ? STORY_SHOWN_UNSEEN : STORY_SHOWN_SEEN)) != 0;
+        }
+        final PurpleCore.Loaded current = loaded;
+        final int folderMode = storyFolderMode(currentAccount, dialogId);
+        final boolean exempt = current != null
+                && !current.exemptFolders.isEmpty()
+                && exemptFolderMode(currentAccount, dialogId) != PurpleCore.MODE_UNSET;
+        final boolean answer;
+        try {
+            answer = PurpleCore.storyShown(
+                    bareIdOf(currentAccount, dialogId),
+                    kindOf(currentAccount, dialogId),
+                    hasUnseen,
+                    folderMode,
+                    exempt);
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            // Nothing to decide with, so decide nothing: the stock strip.
+            return true;
+        }
+        if (cacheableStoryAnswer(current)) {
+            cacheStoryAnswer(currentAccount, dialogId, hasUnseen, answer);
+        }
+        return answer;
+    }
+
+    /** Bit set in {@link #storyCache} when the story shows while unseen. */
+    private static final int STORY_SHOWN_UNSEEN = 0x1;
+
+    /** Bit set in {@link #storyCache} when it shows with everything watched. */
+    private static final int STORY_SHOWN_SEEN = 0x2;
+
+    /**
+     * The strip's answer per chat, both halves of the seen ladder in one int.
+     *
+     * The same bargain {@link #modeCache} strikes, with the seen half kept
+     * rather than recomputed: the whole answer moves only when the resolution
+     * does, so one native call per chat per reload is all it can be worth - and
+     * the second half costs a second call at fill time instead of a call on
+     * every pass, because a story's seen state flips exactly once.
+     *
+     * Filled only for a preset that mentions no folder, which is the usual one.
+     * A folder's membership moves without a reload - a chat is added to one, a
+     * folder's rule starts matching it - and this cache has no way to hear
+     * about that, so a preset with folder opinions pays the walk every time
+     * rather than answering out of a cache that could be stale.
+     */
+    private static final LongSparseArray<Integer> storyCache = new LongSparseArray<>();
+
+    private static boolean cacheableStoryAnswer(PurpleCore.Loaded current) {
+        return current != null
+                && current.storyFolders.isEmpty()
+                && current.exemptFolders.isEmpty();
+    }
+
+    private static Integer cachedStoryAnswer(long dialogId) {
+        synchronized (cacheLock) {
+            return storyCache.get(dialogId);
+        }
+    }
+
+    private static void cacheStoryAnswer(
+            int currentAccount, long dialogId, boolean hasUnseen, boolean answer) {
+        final boolean other;
+        try {
+            other = PurpleCore.storyShown(
+                    bareIdOf(currentAccount, dialogId),
+                    kindOf(currentAccount, dialogId),
+                    !hasUnseen,
+                    PurpleCore.STORY_MODE_UNSET,
+                    false);
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return;
+        }
+        int packed = 0;
+        if (hasUnseen ? answer : other) {
+            packed |= STORY_SHOWN_UNSEEN;
+        }
+        if (hasUnseen ? other : answer) {
+            packed |= STORY_SHOWN_SEEN;
+        }
+        synchronized (cacheLock) {
+            storyCache.put(dialogId, packed);
+        }
+    }
+
+    /**
+     * What the folders holding this chat said about its stories, if any did.
+     *
+     * Most permissive wins, as with the exempt walk: a narrow folder saying no
+     * must not speak for a wide one that would say yes. The core's enum is
+     * declared in permissiveness order here - always, unseen, never - so the
+     * lower number is the more permissive one and no ranking table is needed.
+     *
+     * Mirrors the desktop fork's {@code StoryFolderMode()}.
+     */
+    private static int storyFolderMode(int currentAccount, long dialogId) {
+        final PurpleCore.Loaded current = loaded;
+        if (current == null || current.storyFolders.isEmpty()) {
+            // The common case, and free: a preset that said nothing about any
+            // folder's stories never reaches the walk below.
+            return PurpleCore.STORY_MODE_UNSET;
+        }
+        int result = PurpleCore.STORY_MODE_UNSET;
+        try {
+            final MessagesController controller = MessagesController.getInstance(currentAccount);
+            final ArrayList<MessagesController.DialogFilter> filters =
+                    controller.getDialogFiltersUnrestricted();
+            final TLRPC.Dialog dialog = controller.dialogs_dict.get(dialogId);
+            if (filters == null || filters.isEmpty() || dialog == null) {
+                return PurpleCore.STORY_MODE_UNSET;
+            }
+            final long asked = unwrapped(controller, dialogId);
+            final AccountInstance account = AccountInstance.getInstance(currentAccount);
+            for (int a = 0, n = filters.size(); a < n; ++a) {
+                final MessagesController.DialogFilter filter = filters.get(a);
+                if (filter == null || filter.isDefault()) {
+                    continue;
+                }
+                for (int i = 0, count = current.storyFolders.size(); i < count; ++i) {
+                    final PurpleCore.StoryFolder folder = current.storyFolders.get(i);
+                    if (!folder.name.equalsIgnoreCase(filter.name)
+                            || !filter.includesDialog(account, asked, dialog)) {
+                        continue;
+                    }
+                    if (result == PurpleCore.STORY_MODE_UNSET || folder.mode < result) {
+                        result = folder.mode;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // Same tolerance as the exempt walk: "no folder said anything"
+            // leaves the decision where it already was.
+            return PurpleCore.STORY_MODE_UNSET;
+        }
+        return result;
+    }
+
     /** One load attempt; null when the bridge could not be called at all. */
     private static PurpleCore.Loaded load(byte[] settings, byte[] state) {
         try {
@@ -2292,6 +2513,14 @@ public final class PurpleGate {
                 // the strip is rebuilt from this one signal - the same one a
                 // folder edit sends.
                 NotificationCenter.getInstance(a).postNotificationName(NotificationCenter.dialogFiltersUpdated);
+                // The stories strip follows the preset too, and nothing about
+                // the sources changes when a preset does - so without this it
+                // would sit there showing what the last preset let through
+                // until the next story arrived. The desktop merges
+                // Purple::ActiveChanges() into the strip's own producer for
+                // exactly this reason; here the strip is rebuilt from this one
+                // signal, which DialogsActivity already listens for.
+                NotificationCenter.getInstance(a).postNotificationName(NotificationCenter.storiesUpdated);
                 // A preset also decides what is silenced, and the unread
                 // counters are built from muted/unmuted buckets, so switching
                 // one moves numbers that no chat-list rebuild would touch.

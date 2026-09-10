@@ -9012,7 +9012,12 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             return;
         }
         StoriesController storiesController = MessagesController.getInstance(currentAccount).getStoriesController();
-        ArrayList<TL_stories.PeerStories> stories = new ArrayList<>(onlyArchived ? storiesController.getHiddenList() : storiesController.getDialogListStories());
+        // Purple: the tail of this list is padded onto whatever the push named,
+        // so it is the same onward chain a swipe walks and takes the same
+        // filter. The chats the push itself named are left alone - a preset
+        // never lets a hidden chat notify, so anything that got here was
+        // already allowed to.
+        ArrayList<TL_stories.PeerStories> stories = new ArrayList<>(onlyArchived ? storiesController.getHiddenList() : storiesController.getDialogListStoriesShown());
         ArrayList<Long> peerIds = new ArrayList<>();
         ArrayList<Long> toLoadPeerIds = new ArrayList<>();
         final long[] finalDialogIds;
