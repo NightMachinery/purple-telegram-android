@@ -2570,6 +2570,61 @@ Java_org_telegram_messenger_purple_PurpleCore_tradesNative(
 	return ToJava(env, json);
 }
 
+// The whole last-seen decision for one person: which of the three lines to
+// draw, whether tapping it opens the trade, and the numbers each needs.
+//
+// From the gate rather than from a handed-over state.toml, unlike every other
+// trade native above it. This one sits on the drawing path - a status line
+// asks it once per bind, and a member list binds a row at a time while it
+// scrolls - so parsing the file per row is not a thing to do. visibleNative is
+// asked the same way for the same reason, and the gate is kept current the
+// same way too: the trade writes state.toml and then reloads, which is what
+// every other state write in this app already does.
+//
+// Five longs rather than JSON because the caller wants numbers and this is the
+// path where a parse would show. The order is line, tappable, was_online,
+// read_at, cooldown_left - see PurpleCore.LastSeenNote, which is the only
+// reader.
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_lastSeenNoteNative(
+		JNIEnv *env,
+		jclass,
+		jlong bareId,
+		jint reason,
+		jboolean coarse) {
+	// A reason from outside the enum is the caller's bug, and None is the
+	// answer that adds nothing rather than the one that invents a tail.
+	const auto known = (reason >= jint(Purple::LastSeenReason::None))
+		&& (reason <= jint(Purple::LastSeenReason::HiddenByThem));
+	auto note = Purple::LastSeenNote();
+	{
+		auto &gate = TheGate();
+		const auto lock = std::lock_guard(gate.mutex);
+		note = Purple::LastSeenNoteNow(
+			gate.settings,
+			gate.state,
+			Purple::PeerIdValue(bareId),
+			known
+				? Purple::LastSeenReason(reason)
+				: Purple::LastSeenReason::None,
+			coarse == JNI_TRUE,
+			NowUnix());
+	}
+	const auto result = env->NewLongArray(5);
+	if (!result) {
+		return nullptr;
+	}
+	const jlong values[5] = {
+		jlong(note.line),
+		jlong(note.tappable ? 1 : 0),
+		jlong(note.wasOnlineUnix),
+		jlong(note.readAtUnix),
+		jlong(note.cooldownLeftSeconds),
+	};
+	env->SetLongArrayRegion(result, 0, 5, values);
+	return result;
+}
+
 // Purple: whether the running preset would hide this chat with the peek set
 // aside - which is the only way to answer "time in hidden chats while peeking".
 //

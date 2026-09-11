@@ -11427,6 +11427,10 @@
     <string name="PurpleTradeDontAsk">Don\'t ask again</string>
     <string name="PurpleTradeNotNeeded">%1$s is not hidden because of your settings, so there is nothing to trade.</string>
     <string name="PurpleTradeCooldown">You already traded with %1$s a moment ago.</string>
+    <string name="PurpleTradeRefresh">Refresh now</string>
+    <string name="PurpleTradeRemembered">You traded with %1$s already: %2$s, read %3$s.</string>
+    <string name="PurpleTradeCooldownLeft">You can refresh in %1$s</string>
+    <string name="PurpleTradeCooldownNow">You can refresh now</string>
     <string name="PurpleTradeWorking">Sharing yours\u2026</string>
     <string name="PurpleTradeUnresolved">Some of your Last Seen exceptions name people this app cannot address right now, so nothing was changed. Open Settings \u2192 Privacy and Security \u2192 Last Seen once, then try again.</string>
     <string name="PurpleTradeFailed">The trade did not go through: %1$s. Your privacy settings are unchanged.</string>
