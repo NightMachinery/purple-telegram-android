@@ -255,6 +255,8 @@ public final class PurpleCore {
     private static native String screenTimePruneNative(byte[] settingsUtf8,
             byte[] logUtf8, long nowMs);
 
+    private static native String formatSpanNative(long ms);
+
     /**
      * The three "until" decisions, numbered as the core's {@code OverrideKind}.
      *
@@ -2770,6 +2772,42 @@ public final class PurpleCore {
     public static String screenTimePrune(byte[] settings, byte[] log, long nowMs) {
         ensureLoaded();
         return screenTimePruneNative(settings, log, nowMs);
+    }
+
+    /**
+     * A span of milliseconds as a person reads it: "1 d 3 h 2 m", "1 h",
+     * "59 m", "48 s", "0 s".
+     *
+     * The core's formatter, not a copy of it. Which units appear, where the
+     * seconds stop below a minute, and what an empty span says are decisions
+     * with tests behind them in the core, and both clients print the same
+     * string because they ask the same function. This side used to have its
+     * own copy and the copy had drifted: no day unit, so twenty-seven hours
+     * read as "27 h", and a bare "0" where the core says "0 s".
+     *
+     * Cheap enough to call per row per bind: one JNI call and a string, with
+     * no file read and no gate behind it.
+     *
+     * @return the formatted span, or the raw seconds with their unit when the
+     *         core could not be asked - which on this screen cannot happen,
+     *         because every number on it came out of the same library
+     */
+    public static String formatSpan(long ms) {
+        try {
+            if (!loaded) {
+                ensureLoaded();
+            }
+            final String formatted = formatSpanNative(ms);
+            if (formatted != null) {
+                return formatted;
+            }
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+        }
+        // Deliberately not the core's rules written out a second time: a
+        // fallback that looked right would be a second formatter to keep in
+        // step. This one is unmistakably the fallback.
+        return Math.max(0, ms) / 1000 + " s";
     }
 
     /** One chat's share of a window. */

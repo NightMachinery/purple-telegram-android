@@ -1294,21 +1294,20 @@ public class PurpleScreenTimeActivity extends UniversalFragment
         }
     }
 
-    /** "6 h 12 m", "12 m", "48 s", "0". Never a bare number of milliseconds. */
+    /**
+     * "1 d 3 h 2 m", "1 h", "59 m", "48 s", "0 s". Never a bare number of
+     * milliseconds.
+     *
+     * The core's formatter, asked through the bridge, and every span on this
+     * screen and on the cover goes through here. It used to be written out in
+     * Java, and a second copy of a rule is a second copy to keep in step: this
+     * one had no day unit, so a chat with twenty-seven hours in it read as
+     * "27 h", and it said a bare "0" where the core says "0 s". Now there is
+     * one formatter and one set of tests, and the desktop prints the same
+     * strings.
+     */
     public static String formatSpan(long ms) {
-        final long seconds = Math.max(0, ms) / 1000;
-        if (seconds <= 0) {
-            return "0";
-        }
-        final long hours = seconds / 3600;
-        final long minutes = (seconds % 3600) / 60;
-        if (hours > 0) {
-            return (minutes > 0) ? (hours + " h " + minutes + " m") : (hours + " h");
-        }
-        if (minutes > 0) {
-            return minutes + " m";
-        }
-        return seconds + " s";
+        return PurpleCore.formatSpan(ms);
     }
 
     /** A share as a whole percent. Zero of zero is zero, not a division. */
@@ -1622,6 +1621,18 @@ public class PurpleScreenTimeActivity extends UniversalFragment
     /** One ranked chat: avatar, name, a proportional bar and its active share. */
     private static class ChatRow extends FrameLayout {
 
+        /**
+         * What the name keeps whatever the span says, and the gap between
+         * them, in dp.
+         *
+         * NAME_END_MARGIN is only what the name starts with, before the first
+         * measure has anything to say; onMeasure replaces it with the width
+         * the span actually took.
+         */
+        private static final int MIN_NAME = 72;
+        private static final int NAME_GAP = 12;
+        private static final int NAME_END_MARGIN = 100;
+
         private final BackupImageView avatar;
         private final AvatarDrawable avatarDrawable = new AvatarDrawable();
         private final TextView name;
@@ -1646,16 +1657,33 @@ public class PurpleScreenTimeActivity extends UniversalFragment
             name.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
             name.setSingleLine(true);
             name.setEllipsize(TextUtils.TruncateAt.END);
+            // A chat name is whatever its owner typed, in whatever script.
+            // The paragraph direction comes from the text rather than from the
+            // app's locale, and the gravity is start rather than left, so a
+            // Persian name lays itself out right to left inside its own box
+            // and is cut at its own end. Both only work because onMeasure
+            // gives that box an end: an unbounded name had nothing to be cut
+            // at and ran straight over the span beside it.
+            name.setTextDirection(View.TEXT_DIRECTION_FIRST_STRONG);
+            name.setGravity(Gravity.START);
             name.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
             addView(name, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT,
-                    Gravity.LEFT | Gravity.TOP, 64, 7, 100, 0));
+                    Gravity.LEFT | Gravity.TOP, 64, 7, NAME_END_MARGIN, 0));
 
             value = new TextView(context);
             value.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
             value.setGravity(Gravity.RIGHT);
             value.setSingleLine(true);
+            // Wrapping its own text rather than a fixed box. The box was 96dp
+            // and "1 h 18 m · 68% active" is wider than that, and a single
+            // line wider than its view with a right gravity is laid out from
+            // the right edge leftwards - so the string was cut at its *start*
+            // and the row read "8 m · 68% active". The ellipsis below is the
+            // backstop for a font scale that overruns even the room measured
+            // for it: cut at the end, where a reader can see it happen.
+            value.setEllipsize(TextUtils.TruncateAt.END);
             value.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
-            addView(value, LayoutHelper.createFrame(96, LayoutHelper.WRAP_CONTENT,
+            addView(value, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT,
                     Gravity.RIGHT | Gravity.TOP, 0, 9, 16, 0));
         }
 
@@ -1688,6 +1716,38 @@ public class PurpleScreenTimeActivity extends UniversalFragment
 
         @Override
         protected void onMeasure(int widthSpec, int heightSpec) {
+            // The span first, at whatever width its text wants, and the name
+            // gets what is left. That order is the fix: the two views used to
+            // be sized independently - the name the whole row, the span a
+            // fixed 96dp - so on a long chat name they overlapped, and on a
+            // long span the span was cut at the wrong end. Now they share one
+            // width and neither can reach into the other's half.
+            //
+            // The span is capped so that it cannot take the row: a name always
+            // keeps MIN_NAME, and past that the span ellipsizes like anything
+            // else.
+            final int width = MeasureSpec.getSize(widthSpec);
+            final int room = Math.max(0, width - dp(64 + 16 + NAME_GAP + MIN_NAME));
+            value.measure(
+                    MeasureSpec.makeMeasureSpec(room, MeasureSpec.AT_MOST),
+                    MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED));
+
+            // Both params are mutated rather than set: setLayoutParams asks
+            // for another layout pass from inside a measure, and
+            // super.onMeasure below reads the fields either way. The span's
+            // width is pinned to what it just measured rather than left as
+            // wrap_content, because the frame would otherwise re-measure it
+            // against the whole row and hand it back more than the name was
+            // told to leave.
+            final int trailing = value.getMeasuredWidth();
+            final FrameLayout.LayoutParams valueParams =
+                    (FrameLayout.LayoutParams) value.getLayoutParams();
+            valueParams.width = trailing;
+
+            final FrameLayout.LayoutParams params =
+                    (FrameLayout.LayoutParams) name.getLayoutParams();
+            params.rightMargin = trailing + dp(16 + NAME_GAP);
+
             super.onMeasure(widthSpec,
                     MeasureSpec.makeMeasureSpec(dp(56), MeasureSpec.EXACTLY));
         }
