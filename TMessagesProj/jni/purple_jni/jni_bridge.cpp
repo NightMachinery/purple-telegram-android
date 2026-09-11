@@ -1265,12 +1265,15 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 	// last position rather than none.
 	json += QStringLiteral(",\"peekUntilStopped\":");
 	AppendJsonBool(json, Purple::PeekUntilStopped(gate.state));
-	// How long a tap lasts - `[peek] tap', falling back to `auto_off'. Read
-	// through the core's PeekTapSeconds() rather than off the struct, so the
-	// fallback is written once and a phone cannot decide it differently.
+	// How long a tap lasts ON THIS DEVICE. The overload that takes the identity
+	// is the one to call from here: this is a phone, so it answers `[peek]
+	// tap_mobile' and five minutes when the file does not write it, rather than
+	// the `tap'-else-`auto_off' a keyboard gets. Nothing downstream picks a
+	// length of its own - Java is handed the resolved number and shows it.
 	// Zero is a real answer here: a tap that starts a peek with no clock.
 	json += QStringLiteral(",\"peekTap\":");
-	json += QString::number(Purple::PeekTapSeconds(gate.settings));
+	json += QString::number(
+		Purple::PeekTapSeconds(gate.settings, gate.device));
 	// The lengths the chips offer, shortest first. From the core for the reason
 	// the core says out loud: two hand-written lists is how a phone's chips and
 	// a desktop's row come to offer different minutes for the same feature.

@@ -457,8 +457,9 @@ public final class PurpleGate {
      *
      * @param seconds how long it lasts, or zero for one that runs until it is
      *                turned off by hand. Never a constant at the call site: the
-     *                tap length is {@code [peek] tap} and the chips are the
-     *                core's own row, and both arrive through the load.
+     *                tap length is {@code [peek] tap_mobile} resolved for this
+     *                device and the chips are the core's own row, and both
+     *                arrive through the load.
      * @return what happened, so the caller can say which way it went
      */
     public static PurpleCore.PeekChange startPeek(int seconds) {
