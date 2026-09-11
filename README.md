@@ -320,6 +320,12 @@ archived anything; archiving still works, search and the Archive settings
 screen still reach it, and `hide_archive_p = false` on the preset keeps the
 pull. Under Normal all three are stock.
 
+`hide_add_story_p` (default true) is the same shape for the **add-a-story
+button**, your own row at the head of the stories strip: a preset that has
+already named what gets through has no reason to leave a way in standing
+there. Say `hide_add_story_p = false` on the preset to keep the button. A peek
+puts it back, and under Normal it is untouched.
+
 The **stories strip** above the chat list follows the preset as well, through
 `stories` on the preset. `"all"` leaves it alone, `"all_unseen"` keeps whoever
 still has something unwatched, `"follow"` - the default - hides whoever the
@@ -328,10 +334,13 @@ quiet, `"follow_unseen"` is both, and `"none"` turns the strip off. A
 `list_order` entry or a folder overrides that for its own people with
 `"always"`, `"unseen"` or `"never"`; a folder beats an entry and both beat the
 policy, which is the order hiding already uses. A peek reveals stories along
-with the chats they belong to. Your own row is governed like anybody else's,
-since the lists give Saved Messages no exemption either, so under `follow` the
-add-a-story button goes away unless a list names you - and the strip goes with
-it when nothing is left to draw.
+with the chats they belong to. Your own row is the one none of that reaches:
+it is `hide_add_story_p` and nothing else - not the `stories` policy, not a
+list, not a folder - because a door to posting is not a chat the preset is
+judging, and tying it to whether some list happens to name Saved Messages was
+tying it to a chat it has nothing to do with. Hidden by default while a preset
+filters, back under Normal and back for a peek, and the strip goes with it when
+nothing is left to draw.
 
 Three things follow the filter with it: the collapsed strip, the count in its
 title, and the chain a swipe walks onward along, so swiping past the last

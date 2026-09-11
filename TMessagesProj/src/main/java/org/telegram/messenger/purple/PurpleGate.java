@@ -2349,11 +2349,20 @@ public final class PurpleGate {
      * desktop passes it - the caller has the unread state right where the
      * filter runs, so the seen half of the ladder costs nothing.
      *
+     * Your own row is the one exception, and it is taken before anything else
+     * below runs: see {@link #addStoryShown}. It never reaches the ladder and
+     * never reaches the cache, so every caller that asks about the self id -
+     * the strip, the collapsed strip, the title count, the onward chain -
+     * gets the one answer without having to know to ask differently.
+     *
      * @param dialogId a TLRPC.Dialog id, not a bare id
      */
     public static boolean storyShown(int currentAccount, long dialogId, boolean hasUnseen) {
         if (!filteringStories() || DialogObject.isFolderDialogId(dialogId)) {
             return true;
+        }
+        if (dialogId == UserConfig.getInstance(currentAccount).getClientUserId()) {
+            return addStoryShown();
         }
         final Integer cached = cachedStoryAnswer(dialogId);
         if (cached != null) {
@@ -2381,6 +2390,42 @@ public final class PurpleGate {
             cacheStoryAnswer(currentAccount, dialogId, hasUnseen, answer);
         }
         return answer;
+    }
+
+    /**
+     * Whether the "add a story" button - your own row at the head of the
+     * stories strip - belongs there.
+     *
+     * Its own question, answered from {@code hide_add_story_p} alone. It used
+     * to go through the same ladder as anybody else's row, which meant that
+     * under {@code follow} the button disappeared unless some list happened to
+     * name Saved Messages: a door to posting tied to the membership of a chat
+     * it has nothing to do with. The row is yours, so neither the preset's
+     * {@code stories} policy nor a list nor a folder gets a say in it.
+     *
+     * True under Normal, since the flag is only ever asked while a preset is
+     * filtering. True while peeking, which is this client's rule rather than
+     * the flag's: a peek is one deliberate look past the preset, and a strip
+     * that showed everybody's story back but not the way to answer with one
+     * would be half a look.
+     *
+     * Hidden unless the preset says otherwise, the same default and the same
+     * reasoning as {@link #hidingArchive}: a preset that has already named what
+     * gets through has no reason to leave a way in standing on the strip.
+     *
+     * No account argument, for the same reason {@link #hidingArchive} takes
+     * none: a preset is the app's, not one login's, and there is nothing here
+     * to look a dialog up by.
+     */
+    public static boolean addStoryShown() {
+        if (!filteringStories()) {
+            return true;
+        }
+        final PurpleCore.Loaded current = loaded;
+        if (current == null || current.clock.peeking) {
+            return true;
+        }
+        return !current.hideAddStory;
     }
 
     /** Bit set in {@link #storyCache} when the story shows while unseen. */

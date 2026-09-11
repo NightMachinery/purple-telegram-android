@@ -1898,6 +1898,24 @@ public final class PurpleCore {
          */
         public final boolean hideArchive;
 
+        /**
+         * Whether the "add a story" button - your own row at the head of the
+         * stories strip - is off the strip while this preset runs:
+         * {@code hide_add_story_p}.
+         *
+         * Its own key rather than a consequence of {@code stories} and the
+         * lists, which is how the row used to be decided: the row is yours, so
+         * whether some list happens to name Saved Messages has nothing to say
+         * about a door to posting. On unless the preset says otherwise, the
+         * same default and the same reasoning as {@link #hideArchive}, and only
+         * ever asked while a preset is filtering.
+         *
+         * Putting the button back for a peek is this client's rule rather than
+         * the flag's - see {@link PurpleGate#addStoryShown} - so nothing here
+         * goes soft while one runs.
+         */
+        public final boolean hideAddStory;
+
         /** Whether {@code [schedule]} is switched on at all. */
         public final boolean scheduleEnabled;
 
@@ -2101,7 +2119,7 @@ public final class PurpleCore {
                 int[] defaultModes, int listCount, List<PresetInfo> presets,
                 List<View> views, boolean hideEverywhere,
                 boolean hideInvisibleSuggestions, boolean recommendedChannels,
-                boolean hideArchive,
+                boolean hideArchive, boolean hideAddStory,
                 boolean scheduleEnabled, String scheduleTarget, String scheduleOutside,
                 String scheduleOutsideKey,
                 ScheduleNow scheduleNow, ScheduleStatus scheduleStatus,
@@ -2141,6 +2159,7 @@ public final class PurpleCore {
             this.hideInvisibleSuggestions = hideInvisibleSuggestions;
             this.recommendedChannels = recommendedChannels;
             this.hideArchive = hideArchive;
+            this.hideAddStory = hideAddStory;
             this.scheduleEnabled = scheduleEnabled;
             this.scheduleTarget = scheduleTarget;
             this.scheduleOutside = scheduleOutside;
@@ -2229,7 +2248,13 @@ public final class PurpleCore {
                     STORY_ALL, Collections.<StoryFolder>emptyList(),
                     STOCK_DEFAULT_MODES, 0,
                     Collections.<PresetInfo>emptyList(), Collections.<View>emptyList(),
-                    false, true, false, true, false, null, "normal", "normal", null,
+                    // hideEverywhere, hideInvisibleSuggestions,
+                    // recommendedChannels, hideArchive, hideAddStory, then the
+                    // schedule. The two hiding flags carry the core's defaults
+                    // even here, where nothing is filtering and neither is
+                    // asked, rather than a value that would reveal if one were.
+                    false, true, false, true, true,
+                    false, null, "normal", "normal", null,
                     ScheduleStatus.fromJson(null),
                     Collections.<ScheduleRuleset>emptyList(),
                     Collections.<String>emptyList(),
@@ -2423,6 +2448,10 @@ public final class PurpleCore {
                         // so a result missing the key leaves them out.
                         object.optBoolean("recommendedChannels", false),
                         object.optBoolean("hideArchive", true),
+                        // Same default and the same reason: a result that
+                        // somehow lacks the key keeps the button hidden rather
+                        // than quietly putting a door back on the strip.
+                        object.optBoolean("hideAddStory", true),
                         object.optBoolean("scheduleEnabled", true),
                         object.isNull("scheduleTarget")
                                 ? null

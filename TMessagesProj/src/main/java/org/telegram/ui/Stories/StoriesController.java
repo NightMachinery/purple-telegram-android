@@ -285,16 +285,24 @@ public class StoriesController {
     public boolean hasStories() {
         // Purple: whether the strip has anything left to draw, which is what
         // this decides, so it asks the shown list rather than the raw one. Your
-        // own row goes through the same gate as anybody else's - Saved Messages
-        // has no exemption from the lists either, so under `follow' the
-        // add-a-story button goes away unless a list names you.
+        // own row answers for itself - see selfStoryShownOnStrip below - so a
+        // preset that hides the add-a-story button collapses the strip with it
+        // when nobody else is left on it.
         return (dialogListStories != null && getDialogListStoriesShown().size() > 0)
                 || (hasSelfStories() && selfStoryShownOnStrip());
     }
 
-    /** Purple: whether your own row belongs on the strip. */
+    /**
+     * Purple: whether your own row - the add-a-story button - belongs on the
+     * strip.
+     *
+     * `hide_add_story_p' and nothing else: not the preset's `stories' policy,
+     * not a list, not a folder. The gate takes the self id off the ladder
+     * itself, so this is the ordinary accessor asked about the ordinary id and
+     * every other caller of storyShownOnStrip() gets the same answer for it.
+     */
     public boolean selfStoryShownOnStrip() {
-        return storyShownOnStrip(UserConfig.getInstance(currentAccount).getClientUserId());
+        return PurpleGate.addStoryShown();
     }
 
     public void loadStories() {

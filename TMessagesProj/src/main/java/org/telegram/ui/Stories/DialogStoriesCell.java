@@ -590,9 +590,10 @@ public class DialogStoriesCell extends FrameLayout implements NotificationCenter
         oldMiniItems.clear();
         oldMiniItems.addAll(miniItems);
         items.clear();
-        // Purple: your own row is governed like anybody else's, since the lists
-        // give Saved Messages no exemption either - so under `follow' the
-        // add-a-story button goes away unless a list names you.
+        // Purple: your own row answers for itself, from `hide_add_story_p'
+        // alone - a door to posting is not a chat the preset is judging, so
+        // neither the `stories' policy nor the lists nor the folders get a say.
+        // A peek puts it back with everything else.
         final boolean selfShown = type != TYPE_ARCHIVE
                 && storiesController.selfStoryShownOnStrip();
         if (selfShown) {
@@ -691,9 +692,10 @@ public class DialogStoriesCell extends FrameLayout implements NotificationCenter
     private boolean shouldDrawSelfInMini() {
         long dialogId = UserConfig.getInstance(currentAccount).clientUserId;
         // Purple: the collapsed strip is the same strip, so it counts the shown
-        // list. A hidden peer padding this out to four would push your own row
-        // out of a row of three that has space for it.
-        return storiesController.storyShownOnStrip(dialogId)
+        // list and asks the same one question about your own row. A hidden peer
+        // padding this out to four would push your own row out of a row of
+        // three that has space for it.
+        return storiesController.selfStoryShownOnStrip()
                 && (storiesController.hasUnreadStories(dialogId) || (storiesController.hasSelfStories() && storiesController.getDialogListStoriesShown().size() <= 3));
     }
 
