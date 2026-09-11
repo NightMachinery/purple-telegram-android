@@ -719,8 +719,8 @@ public class UserCell extends FrameLayout implements NotificationCenter.Notifica
                     statusTextView.setText(getString(R.string.Online));
                 } else {
                     statusTextView.setTextColor(statusColor);
-                    // Purple: the mark, and a remembered read in place of the coarse
-                    // phrase. No width is handed over and none is wanted: a row
+                    // Purple: the mark, and a remembered read in place of whatever
+                    // the status says. No width is handed over and none is wanted: a row
                     // carries the eyes rather than the sentence, because a row has
                     // exactly one click and it belongs to the row.
                     statusTextView.setText(PurpleLastSeen.decorate(currentUser,

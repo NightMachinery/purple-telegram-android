@@ -215,8 +215,7 @@ public final class PurpleCore {
 
     private static native String noteImportedNative(byte[] stateUtf8, byte[] fileBytes);
 
-    private static native int lastSeenReasonNative(
-            boolean exactKnown, boolean coarse, boolean byMe);
+    private static native int lastSeenReasonNative(int shape, boolean byMe);
 
     private static native String rememberTradeNative(
             byte[] stateUtf8, long peer, long readAt, long wasOnline);
@@ -230,7 +229,7 @@ public final class PurpleCore {
     private static native String tradesNative(byte[] stateUtf8, long now);
 
     private static native long[] lastSeenNoteNative(
-            long bareId, int reason, boolean coarse);
+            long bareId, int reason, int shape);
 
     /**
      * What the running preset would say about one chat with the peek set aside.
@@ -2524,17 +2523,39 @@ public final class PurpleCore {
     public static final int REASON_HIDDEN_BY_THEM = 2;
 
     /**
-     * Why one status is coarse. The three booleans are what the TL layer
+     * What SHAPE a last seen has, as the core's {@code LastSeenShape} numbers
+     * it - the one fact about a status the core cannot work out for itself,
+     * since a status is a TL type and the core has never heard of one.
+     *
+     * {@link #SHAPE_EXACT} is a real {@code was_online} or online now,
+     * {@link #SHAPE_COARSE} the three vague spellings, and
+     * {@link #SHAPE_LONG_AGO} is {@code userStatusEmpty} - "a long time ago",
+     * which is not a coarsening of anything: the server is not withholding a
+     * moment there, it is saying there is no recent one.
+     *
+     * The numbering is load-bearing, because it crosses JNI as a plain int.
+     * The bridge and the core both pin it with asserts; {@link PurpleLastSeen}
+     * is what flattens a {@code TLRPC.UserStatus} into it.
+     */
+    public static final int SHAPE_EXACT = 0;
+    public static final int SHAPE_COARSE = 1;
+    public static final int SHAPE_LONG_AGO = 2;
+
+    /**
+     * Why one status reads the way it does. The shape is what the TL layer
      * flattens to - the core knows nothing about TL_userStatusRecently and must
      * not learn - so both forks answer this the same way from one rule.
      *
-     * @param exactKnown a status carrying a real {@code was_online}
-     * @param coarse     one of recently / last week / last month
-     * @param byMe       the {@code by_me} flag on a coarse status
+     * Only a coarse status has a reason at all: an exact one has nothing to
+     * explain, and "a long time ago" is the one the fork refuses to explain,
+     * because inactivity and a block look the same from here.
+     *
+     * @param shape one of the {@code SHAPE_} values
+     * @param byMe  the {@code by_me} flag on a coarse status
      */
-    public static int lastSeenReason(boolean exactKnown, boolean coarse, boolean byMe) {
+    public static int lastSeenReason(int shape, boolean byMe) {
         ensureLoaded();
-        return lastSeenReasonNative(exactKnown, coarse, byMe);
+        return lastSeenReasonNative(shape, byMe);
     }
 
     /**
@@ -2619,16 +2640,16 @@ public final class PurpleCore {
      *
      * @param bareId the person's user id
      * @param reason one of the {@code REASON_} values
-     * @param coarse whether the status is one of the three vague spellings
+     * @param shape  one of the {@code SHAPE_} values
      * @return never null; a plain line is what a core that cannot be reached
      *         answers, and a plain line is the app exactly as it shipped
      */
-    public static LastSeenNote lastSeenNote(long bareId, int reason, boolean coarse) {
+    public static LastSeenNote lastSeenNote(long bareId, int reason, int shape) {
         try {
             if (!loaded) {
                 ensureLoaded();
             }
-            final long[] packed = lastSeenNoteNative(bareId, reason, coarse);
+            final long[] packed = lastSeenNoteNative(bareId, reason, shape);
             if (packed != null && packed.length >= 5) {
                 return new LastSeenNote(
                         (int) packed[0],

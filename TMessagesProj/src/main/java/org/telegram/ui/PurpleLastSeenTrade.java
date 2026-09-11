@@ -104,8 +104,9 @@ public final class PurpleLastSeenTrade {
         }
         final String name = UserObject.getFirstName(user);
         if (PurpleLastSeen.reasonFor(user) != PurpleCore.REASON_BY_ME) {
-            // Either their own setting or an exact time already: in neither case
-            // is there anything of ours in the way to move.
+            // Their own setting, an exact time already, or "a long time ago",
+            // which is not a coarsening of anything: in none of the three is
+            // there anything of ours in the way to move.
             error(fragment, formatString(R.string.PurpleTradeNotNeeded, name));
             return;
         }

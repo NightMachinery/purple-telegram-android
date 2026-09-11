@@ -2552,13 +2552,42 @@ Java_org_telegram_messenger_purple_PurpleCore_noteImportedNative(
 	return ToJava(env, NoteFingerprint(stateText, bytes, false));
 }
 
-// Why a last seen reads as coarse, as the core's LastSeenReason numbers it.
+namespace {
+
+// The int Java sends for a status shape, as the core's enum.
 //
-// Three booleans rather than the status object because the core has no idea
+// The numbering is the wire format rather than an implementation detail - it
+// crosses JNI as a plain int - so it is pinned here, at the boundary it crosses,
+// the way storyShownNative pins StoryMode at its own. The core pins it a second
+// time in purple_settings.h, where a reordering would actually be typed.
+//
+// Anything outside the three is the caller's bug, and Exact is the answer that
+// changes nothing: it is the shape with nothing to explain and nothing to put
+// over the top of, so a status the fork cannot read is left as the app wrote it
+// - the same direction visibleNative and storyShownNative take when asked about
+// something they cannot place.
+[[nodiscard]] Purple::LastSeenShape ShapeOrExact(jint shape) {
+	static_assert(int(Purple::LastSeenShape::Exact) == 0);
+	static_assert(int(Purple::LastSeenShape::Coarse) == 1);
+	static_assert(int(Purple::LastSeenShape::LongAgo) == 2);
+
+	return (shape >= jint(Purple::LastSeenShape::Exact)
+		&& shape <= jint(Purple::LastSeenShape::LongAgo))
+		? Purple::LastSeenShape(shape)
+		: Purple::LastSeenShape::Exact;
+}
+
+} // namespace
+
+// Why a last seen reads the way it does, as the core's LastSeenReason numbers
+// it.
+//
+// A shape and a flag rather than the status object because the core has no idea
 // what a TL_userStatusRecently is and must not learn: the client that owns the
-// TL layer flattens it to "is there a real moment in this", "is it one of the
-// three coarse spellings", "does it carry by_me", and the one shared rule
-// answers the same way in both forks.
+// TL layer flattens its status to one of the three shapes, and the one shared
+// rule answers the same way in both forks. One value rather than the pair of
+// booleans this used to take, so that "exact AND coarse" is not a state Java
+// can hand over for the core to have an opinion about.
 //
 // Touches neither the gate nor any file, so it costs no lock - it is asked
 // once per status line drawn.
@@ -2566,12 +2595,10 @@ extern "C" JNIEXPORT jint JNICALL
 Java_org_telegram_messenger_purple_PurpleCore_lastSeenReasonNative(
 		JNIEnv *,
 		jclass,
-		jboolean exactKnown,
-		jboolean coarse,
+		jint shape,
 		jboolean byMe) {
 	return jint(Purple::ReasonFor(
-		exactKnown == JNI_TRUE,
-		coarse == JNI_TRUE,
+		ShapeOrExact(shape),
 		byMe == JNI_TRUE));
 }
 
@@ -2743,7 +2770,7 @@ Java_org_telegram_messenger_purple_PurpleCore_lastSeenNoteNative(
 		jclass,
 		jlong bareId,
 		jint reason,
-		jboolean coarse) {
+		jint shape) {
 	// A reason from outside the enum is the caller's bug, and None is the
 	// answer that adds nothing rather than the one that invents a tail.
 	const auto known = (reason >= jint(Purple::LastSeenReason::None))
@@ -2759,7 +2786,7 @@ Java_org_telegram_messenger_purple_PurpleCore_lastSeenNoteNative(
 			known
 				? Purple::LastSeenReason(reason)
 				: Purple::LastSeenReason::None,
-			coarse == JNI_TRUE,
+			ShapeOrExact(shape),
 			NowUnix());
 	}
 	const auto result = env->NewLongArray(5);
