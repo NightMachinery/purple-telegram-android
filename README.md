@@ -83,7 +83,25 @@ is *left*, not what was asked for, so a five-minute peek with ninety seconds on
 it lights `2 min` - nothing anywhere remembers the length a peek was started
 with, since `state.toml` holds a deadline and that is all. The lengths and the
 rounding that picks the lit one are both the core's, so the phone's chips and
-the desktop's row cannot drift apart. Under Normal the whole thing is dimmed,
+the desktop's row cannot drift apart.
+
+Above the chips the same stops are a **dial**: a ring with a tick per length,
+the selection drawn as a filled arc from the first stop round to it, and the
+length - or the countdown, while a peek is running - written in the middle. It
+does not take a touch just because a finger landed on it. A press on the ring is
+watched rather than claimed, and the gesture becomes the dial's only on a
+**press-and-hold** or on movement **along** the ring, so a mis-aimed swipe still
+scrolls the sheet instead of starting a peek. Once it has the gesture there is a
+haptic tick per stop crossed, the peek starts on the release, and releasing away
+from the ring abandons it and leaves the peek as it was. A plain tap on a tick
+starts that length outright, the way a chip does. It snaps to the same stops,
+`until I stop` included, one position past the last; it never reads a continuous
+angle, and between two stops it takes the nearer one with a tie going to the
+shorter, because a control that quietly rounds a peek up reveals more than was
+asked for. The chips stay: a row of words is the discoverable path and the dial
+is the quick one once you know it is there.
+
+Under Normal the whole thing - row, dial and chips - is dimmed and inert,
 beneath the line that says why: nothing is hidden there to peek at.
 
 A chat can be filed into a list from the chat list itself: select it, then
