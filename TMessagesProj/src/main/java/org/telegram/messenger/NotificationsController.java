@@ -1800,16 +1800,29 @@ public class NotificationsController extends BaseController implements Notificat
                                 }
                             }
                             // Purple: a chat the running preset hides does not
-                            // light the icon. The other branch of this method
-                            // needs no such line - it sums counters that a
-                            // hidden chat never enters, because getNotifyOverride
-                            // silences it - but this one walks every dialog, so
-                            // it has to be told. Skipping is safe here in a way
-                            // subtracting afterwards would not be: the total is
-                            // built up from what is left, so it cannot go
+                            // light the icon, and this branch walks every dialog
+                            // so it has to be told. Skipping is safe here in a
+                            // way subtracting afterwards would not be: the total
+                            // is built up from what is left, so it cannot go
                             // negative. Silenced-but-shown chats still count,
                             // because counting muted chats is exactly what this
                             // branch was asked to do.
+                            //
+                            // This used to say the other branch needed no such
+                            // line, because a hidden chat never enters the
+                            // counters it sums - getNotifyOverride silences it,
+                            // and the muted bucket is dropped. Both halves were
+                            // wrong. Hiding and silencing are independent bits
+                            // in the preset (SHOW_MASK against NOTIFY_BIT), so a
+                            // hidden chat can be perfectly audible; and two
+                            // kinds of row escape EXCLUDE_MUTED even when it is
+                            // muted - a chat with an unread mention is filed in
+                            // the unmuted bucket on purpose
+                            // (MessagesStorage.calcUnreadCounters), and the
+                            // source query picks up unread_mark and mention-only
+                            // rows whose unread_count is zero. The counters ask
+                            // the preset for themselves now, through the shown-
+                            // only buckets the default tab is summed from.
                             if (dialog != null && !PurpleGate.shown(a, dialog)) {
                                 continue;
                             }

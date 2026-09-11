@@ -2751,6 +2751,24 @@ public class MessagesStorage extends BaseController {
     private LongSparseArray<Integer> dialogsWithMentions = new LongSparseArray<>();
     private LongSparseArray<Integer> dialogsWithUnread = new LongSparseArray<>();
 
+    /**
+     * Purple: one unread chat into a bucket, and into that bucket's shown-only
+     * mirror unless the running preset is hiding it.
+     *
+     * The pair is what lets the default tab and a folder tab disagree honestly.
+     * A folder tab draws an unfiltered list and is summed from the full bucket;
+     * "All chats" is the preset's own view and is summed from the mirror. Kept
+     * as one call so the two cannot drift - every place that files a chat files
+     * it in both or in neither.
+     */
+    private static void purpleBucket(
+            int[][] all, int[][] shownOnly, int idx1, int idx2, boolean shown) {
+        all[idx1][idx2]++;
+        if (shown) {
+            shownOnly[idx1][idx2]++;
+        }
+    }
+
     private void calcUnreadCounters(boolean apply) {
         SQLiteCursor cursor = null;
         try {
@@ -2844,6 +2862,25 @@ public class MessagesStorage extends BaseController {
             // adding and the subtracting ones, or a chat that was never counted
             // would be taken off a tab twice.
             int purpleUncounted = 0;
+            // The tab half of the same feature, and the one the badge actually
+            // disagreed over. "All chats" is the preset's own view - its list is
+            // run through PurpleGate.filter before it is drawn - while its total
+            // was summed from every unread chat in the account, so a preset that
+            // hid one unread chat put a 1 on a tab with nothing unread under it.
+            //
+            // A parallel set of buckets rather than a number taken off the total
+            // afterwards. The buckets below keep counting every chat, so a
+            // folder tab still counts exactly what it draws (a folder tab is
+            // deliberately unfiltered); these mirrors take only the ones the
+            // preset is showing, and the default tab is summed from them
+            // instead. Nothing is ever subtracted - the last subtraction in this
+            // fork's history drove a badge to -334.
+            final int[][] shownContacts = new int[2][2];
+            final int[][] shownNonContacts = new int[2][2];
+            final int[][] shownBots = new int[2][2];
+            final int[][] shownChannels = new int[2][2];
+            final int[][] shownGroups = new int[2][2];
+            final int[][] shownCommunities = new int[2][2];
             if (!usersToLoad.isEmpty()) {
                 getUsersInternal(usersToLoad, users, true);
                 for (int a = 0, N = users.size(); a < N; a++) {
@@ -2859,14 +2896,17 @@ public class MessagesStorage extends BaseController {
                     }
                     if (!PurpleGate.countedInTotals(currentAccount, user.id)) {
                         purpleUncounted++;
-                    } else if (isUserCollapsedInCommunity(chatsDict, user)) {
-                        communities[idx1][idx2]++;
-                    } else if (user.bot) {
-                        bots[idx1][idx2]++;
-                    } else if (user.self || user.contact) {
-                        contacts[idx1][idx2]++;
                     } else {
-                        nonContacts[idx1][idx2]++;
+                        final boolean shown = PurpleGate.shown(currentAccount, user.id);
+                        if (isUserCollapsedInCommunity(chatsDict, user)) {
+                            purpleBucket(communities, shownCommunities, idx1, idx2, shown);
+                        } else if (user.bot) {
+                            purpleBucket(bots, shownBots, idx1, idx2, shown);
+                        } else if (user.self || user.contact) {
+                            purpleBucket(contacts, shownContacts, idx1, idx2, shown);
+                        } else {
+                            purpleBucket(nonContacts, shownNonContacts, idx1, idx2, shown);
+                        }
                     }
                     usersDict.put(user.id, user);
                 }
@@ -2903,10 +2943,13 @@ public class MessagesStorage extends BaseController {
                         // symmetric, since they ask about the same user id.
                         if (!PurpleGate.countedInTotals(currentAccount, did)) {
                             purpleUncounted++;
-                        } else if (user.self || user.contact) {
-                            contacts[idx1][idx2]++;
                         } else {
-                            nonContacts[idx1][idx2]++;
+                            final boolean shown = PurpleGate.shown(currentAccount, did);
+                            if (user.self || user.contact) {
+                                purpleBucket(contacts, shownContacts, idx1, idx2, shown);
+                            } else {
+                                purpleBucket(nonContacts, shownNonContacts, idx1, idx2, shown);
+                            }
                         }
                         int count = encryptedChatsByUsersCount.get(user.id, 0);
                         encryptedChatsByUsersCount.put(user.id, count + 1);
@@ -2939,12 +2982,15 @@ public class MessagesStorage extends BaseController {
                         purpleUncounted++;
                     } else if (ChatObject.isCommunity(chat)) {
 
-                    } else if (isChatCollapsedInCommunity(chatsDict, chat)) {
-                        communities[idx1][idx2]++;
-                    } else if (ChatObject.isChannel(chat) && !chat.megagroup) {
-                        channels[idx1][idx2]++;
                     } else {
-                        groups[idx1][idx2]++;
+                        final boolean shown = PurpleGate.shown(currentAccount, -chat.id);
+                        if (isChatCollapsedInCommunity(chatsDict, chat)) {
+                            purpleBucket(communities, shownCommunities, idx1, idx2, shown);
+                        } else if (ChatObject.isChannel(chat) && !chat.megagroup) {
+                            purpleBucket(channels, shownChannels, idx1, idx2, shown);
+                        } else {
+                            purpleBucket(groups, shownGroups, idx1, idx2, shown);
+                        }
                     }
                     chatsDict.put(chat.id, chat);
                 }
@@ -2966,6 +3012,20 @@ public class MessagesStorage extends BaseController {
                 final boolean isFilter = a < N;
                 final boolean isMain = a == N;
                 final boolean isArchive = a == N + 1;
+
+                // Purple: which set of buckets this tab is summed from. Only the
+                // default tab reads the shown-only mirrors, because only its
+                // list is run through the preset; a folder tab and the archive
+                // draw what they count, so they read the full buckets and are
+                // bit-for-bit what they were before this hook existed. Named
+                // after the fields they stand in for so that the sum below - all
+                // of it stock Telegram - needs no change at all.
+                final int[][] contacts = isMain ? shownContacts : this.contacts;
+                final int[][] nonContacts = isMain ? shownNonContacts : this.nonContacts;
+                final int[][] bots = isMain ? shownBots : this.bots;
+                final int[][] channels = isMain ? shownChannels : this.channels;
+                final int[][] groups = isMain ? shownGroups : this.groups;
+                final int[][] communities = isMain ? shownCommunities : this.communities;
 
                 MessagesController.DialogFilter filter;
                 int flags;
@@ -3195,6 +3255,23 @@ public class MessagesStorage extends BaseController {
                     if (apply) {
                         mainUnreadCount = unreadCount;
                     }
+                    // Purple: the same sum once more over the full buckets, so
+                    // the log can say what the preset cost this badge. Main's
+                    // flags are fixed and few - every kind, the archive out, the
+                    // muted half in only when the badge setting asks for it, and
+                    // a collapsed community wherever it is filed - so it is
+                    // spelled out here rather than run through the block above.
+                    // It feeds the log and nothing else: the number drawn is the
+                    // one already assigned, built up rather than taken apart.
+                    int purpleStock = this.contacts[0][0] + this.nonContacts[0][0]
+                            + this.groups[0][0] + this.channels[0][0] + this.bots[0][0]
+                            + this.communities[0][0] + this.communities[1][0];
+                    if ((flags & MessagesController.DIALOG_FILTER_FLAG_EXCLUDE_MUTED) == 0) {
+                        purpleStock += this.contacts[0][1] + this.nonContacts[0][1]
+                                + this.groups[0][1] + this.channels[0][1] + this.bots[0][1]
+                                + this.communities[0][1] + this.communities[1][1];
+                    }
+                    PurpleGate.logCounters(unreadCount, purpleStock);
                 } else if (isArchive) {
                     pendingArchiveUnreadCount = unreadCount;
                     if (apply) {
