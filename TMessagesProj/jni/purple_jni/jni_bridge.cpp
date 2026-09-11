@@ -1124,6 +1124,7 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 			"\"cacheReason\":\"\",\"activeMissing\":false,"
 			"\"foldersRestricted\":false,\"folders\":[],"
 			"\"hideInvisibleSuggestions\":true,\"hideArchive\":true,"
+			"\"hideAddStory\":true,"
 			"\"presets\":[],\"stateText\":null}"));
 	}
 
@@ -1435,6 +1436,14 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 	// preset's own decision, and a cached resolution has to carry it.
 	json += QStringLiteral(",\"hideArchive\":");
 	AppendJsonBool(json, gate.resolved.hideArchive);
+	// Whether the "add a story" button - your own row at the head of the
+	// stories strip - is off the strip while this preset runs. Its own key
+	// rather than a consequence of `stories' and the lists: the row is yours,
+	// so whether some list happens to name Saved Messages has nothing to say
+	// about a door to posting. From the resolution for the same reason
+	// hideArchive is, and a cached resolution carries it.
+	json += QStringLiteral(",\"hideAddStory\":");
+	AppendJsonBool(json, gate.resolved.hideAddStory);
 	// Read on every row while a chat is in its grace period, so it travels with
 	// the rest rather than being asked for. Zero disables it, and the Java side
 	// re-reads it on every query - which is what makes turning [recent] off take
