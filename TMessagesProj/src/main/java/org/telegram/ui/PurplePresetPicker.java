@@ -286,9 +286,10 @@ public final class PurplePresetPicker {
                 if (now == null) {
                     return;
                 }
-                // The tap length is [peek] tap, falling back to auto_off in the
-                // core. Read from the load every time rather than captured, so
-                // an edit to the file lands on the next tap.
+                // The tap length is [peek] tap_mobile, five minutes when the
+                // file does not write it, resolved in the core. Read from the
+                // load every time rather than captured, so an edit to the file
+                // lands on the next tap.
                 final int tap = now.clock.peekTap;
                 if (!now.clock.peeking) {
                     PurpleGate.startPeek(tap);

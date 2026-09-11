@@ -56,15 +56,19 @@ apps compile the same core, so a `settings.toml` moved across through Saved
 Messages behaves identically.
 
 **Peek** is the temporary look past the running preset, and it sits in the same
-box, under the preset it suspends. `[peek] tap` is how long a tap on it lasts
-and `auto_off` is the fallback for a file that does not say - so a phone can
-have its own length without touching the key a desktop reads, and a file with
-neither key gives a peek that runs until you turn it off, which is also what
-`"off"` means written out. `hotkey` and `hotkey_length` are read and ignored:
-there is no key to bind on a phone.
+box, under the preset it suspends. `[peek] tap_mobile` is how long a tap on it
+lasts here, and **five minutes** when the file does not write that key - not
+`tap` and not `auto_off`, which is the one place these keys break their own
+pattern. A phone has no `settings.toml` of its own: it reads one written at a
+keyboard and carried over through Saved Messages, so falling back would mean
+every phone tapping for a length nobody chose for it, and a tap on the list in
+your hand is a longer look than a shortcut fired mid-sentence. Write
+`tap_mobile = "off"` for a peek that runs until you turn it off. `tap`,
+`auto_off`, `hotkey` and `hotkey_length` are read and ignored here: the first
+two are what a keyboard taps for, and there is no key to bind on a phone.
 
-Tapping the row starts a peek of `tap`; tapping it again while one is running
-*extends* it by another `tap`, measured from the deadline it already has rather
+Tapping the row starts a peek of `tap_mobile`; tapping it again while one is
+running *extends* it by another, measured from the deadline it already has rather
 than from now, so two quick taps buy two lengths. It stops at an hour - past
 that it is not a peek any more, it is the preset off, and there is a plainer way
 to say that. A tap that finds the cap already spent ends the peek instead and

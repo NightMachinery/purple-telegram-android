@@ -370,11 +370,15 @@ public final class PurpleCore {
         public final boolean peekUntilStopped;
 
         /**
-         * How long a tap on the peek control lasts, in seconds: {@code [peek]
-         * tap}, falling back to {@code auto_off} when the file does not say.
+         * How long a tap on the peek control lasts, in seconds. On a phone that
+         * is {@code [peek] tap_mobile}, and five minutes when the file does not
+         * write it - not {@code tap} and not {@code auto_off}, because this
+         * device cannot edit the file it is reading and a fallback would hand
+         * it a length chosen at somebody's keyboard.
+         *
          * Zero is a real answer - a tap that starts a peek with no clock on it
-         * - rather than a missing one, which is why the fallback is the core's
-         * PeekTapSeconds() rather than a check here.
+         * - rather than a missing one, which is why the resolving is the core's
+         * PeekTapSeconds(settings, device) rather than a check here.
          */
         public final int peekTap;
 
