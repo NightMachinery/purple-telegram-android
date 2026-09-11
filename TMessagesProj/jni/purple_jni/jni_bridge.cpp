@@ -3175,6 +3175,25 @@ Java_org_telegram_messenger_purple_PurpleCore_screenTimePruneNative(
 	return ToJava(env, out);
 }
 
+// Purple: a span of milliseconds as the one string both clients print.
+//
+// The rules - which units appear, where the seconds stop, what zero says - are
+// the core's and are tested there. This client used to carry its own copy in
+// Java, and the copy had already drifted: it knew no day unit, so a chat with
+// twenty-seven hours in it read as "27 h", and it said a bare "0" where the
+// core says "0 s".
+//
+// Pure: no gate, no files, nothing to fail. A row that calls it once per bind
+// pays one JNI call for an answer nobody would want cached separately from the
+// formatter that produces it.
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_formatSpanNative(
+		JNIEnv *env,
+		jclass,
+		jlong ms) {
+	return ToJava(env, Purple::FormatSpan(int64(ms)));
+}
+
 // Android calls JNI_OnLoad after loading a library, and it finds the symbol
 // with dlsym on the library handle - a search that reaches this library's
 // dependencies too. Qt Core is one of those, and Qt's JNI_OnLoad expects to be

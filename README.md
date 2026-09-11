@@ -445,6 +445,12 @@ period onto one clock, which is what a schedule window gets placed by;
 hiding; and a month gets an hour-by-weekday heat map. Export writes a CSV to
 the app's cache and hands it to the share sheet.
 
+Every length on that screen is written by the shared core, so both clients
+spell one the same way: `1 d 3 h 2 m`, `1 h`, `59 m`, `48 s`, and `0 s` for
+nothing at all. The day unit is new here - a chat with twenty-seven hours in it
+used to read as `27 h` - and an empty bar now says `0 s` rather than a bare
+`0`.
+
 Day boundaries are decided in the device's own local time, read from the C
 library, which knows the whole daylight-saving rule - so a range that straddles
 a change still has days of the right length. Java measures the offset in force
