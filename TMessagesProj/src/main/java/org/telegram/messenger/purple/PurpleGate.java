@@ -95,6 +95,9 @@ public final class PurpleGate {
     /** The same, for the folder strip, which is rebuilt on every accessor call. */
     private static volatile long lastFolderLog;
 
+    /** The same, for the counter line, which a burst of recounts would flood. */
+    private static volatile long lastCounterLog;
+
     /**
      * Bumped by every reload. The chat list watches it to notice that the strip
      * it is holding was built for a different preset: the tab the user is on is
@@ -682,6 +685,35 @@ public final class PurpleGate {
         default: break;
         }
         return shownForMode(currentAccount, dialog, packedFor(currentAccount, dialog.id));
+    }
+
+    /**
+     * The same question asked with an id, for the callers that have no dialog.
+     *
+     * Two ways to be told "shown" without the preset ever being consulted, and
+     * both of them are the answer we want where this is asked from - the unread
+     * counters, on the storage thread, at any point in the app's life. Nothing
+     * is filtering, so nothing is hidden; or the chat has no row in
+     * {@code dialogs_dict} yet, which at cold start is every chat, and a chat
+     * MessagesController has not loaded cannot be told apart from a bot or a
+     * channel anyway. Failing open is the only safe direction for a count: a
+     * number one too high is a nuisance, a number the user cannot find anywhere
+     * in the list below it is a bug report.
+     *
+     * Never calls {@link #ensureLoaded()}, for the same reason
+     * {@link #countedInTotals} must not - it is asked from the storage thread,
+     * and the {@code isDialogMuted} calls beside it in those loops already
+     * establish that reading MessagesController's memory from there is fine.
+     *
+     * @param dialogId a TLRPC.Dialog id, not a bare id
+     */
+    public static boolean shown(int currentAccount, long dialogId) {
+        if (!filtering) {
+            return true;
+        }
+        return shown(
+                currentAccount,
+                MessagesController.getInstance(currentAccount).dialogs_dict.get(dialogId));
     }
 
     /**
@@ -1847,8 +1879,14 @@ public final class PurpleGate {
      * a zero on an invented tab full of unread chats.
      *
      * The default folder passes straight through. All chats is the preset's own
-     * view, and the total behind it has already been rewritten by the hooks in
-     * the counters themselves.
+     * view, and the total behind it is summed in {@code calcUnreadCounters}
+     * from the shown half of its buckets, so it already agrees with the rows.
+     *
+     * That claim used to be made about the hide-until hooks alone, and it was
+     * false: those ask {@link #countedInTotals}, which never asks the preset, so
+     * an ordinary chat the running lists hid was counted in full while the list
+     * under the badge did not show it. The badge said 1 with nothing unread on
+     * screen. The shown-only buckets are what makes the sentence true.
      *
      * @param stockCount what Telegram would have drawn: the main unread count
      *                   for the default folder, {@code filter.unreadCount} for
@@ -1979,6 +2017,38 @@ public final class PurpleGate {
         FileLog.d("Purple: folder strip showing " + shown + " of " + total
                 + (peeking ? " (peeking)" : "")
                 + (missing == null ? "." : ", naming folders that do not exist: " + missing + "."));
+    }
+
+    /**
+     * Says how far the default tab's badge is from the number it would have
+     * shown with no preset running.
+     *
+     * The counter half of the line {@link #filter} logs for the list, and meant
+     * to be read next to it: that one says how many rows the preset took out of
+     * "All chats", this one says how many unread chats went with them. A phone
+     * with no debugger attached is the only place this feature is ever really
+     * exercised, and a badge is a number with no way to ask it what it is
+     * counting, so the two lines together are the whole of the evidence.
+     *
+     * Silent when the preset costs the badge nothing, which is the usual case
+     * and the case an unfiltered account is always in. Throttled like its
+     * neighbours because a recount is posted on every dialog update, and a
+     * burst of them arriving together would push everything else out of the log.
+     *
+     * @param drawn the number the default tab is about to draw
+     * @param stock the number it would have drawn before the preset had its say
+     */
+    public static void logCounters(int drawn, int stock) {
+        if (drawn == stock) {
+            return;
+        }
+        final long now = SystemClock.elapsedRealtime();
+        if (now - lastCounterLog < 1000L) {
+            return;
+        }
+        lastCounterLog = now;
+        FileLog.d("Purple: All chats counter " + drawn + " of " + stock + ", "
+                + (stock - drawn) + " unread chats hidden by the preset left out.");
     }
 
     /** Whether some entry other than "*ALL" already claims this folder. */
