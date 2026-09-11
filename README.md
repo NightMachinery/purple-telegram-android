@@ -146,10 +146,28 @@ you.
 
 A hidden chat does not notify and does not light the app icon: the preset is
 consulted by the same gate a mute goes through, so the message is never
-collected into a notification at all. One rough edge remains - with
-Notifications - Badge Counter - "Include muted chats" turned on, the in-app
-"All chats" tab counter still includes hidden chats, though the launcher badge
-does not.
+collected into a notification at all. Nor does it put a number on the in-app
+"All chats" tab, which used to disagree with the list right underneath it - a
+badge of 1 over a list with nothing unread in it. That tab is the preset's own
+view, so its counter is now summed only from the chats the preset is showing. A
+folder tab still counts every chat it holds, because what a folder tab draws is
+deliberately unfiltered, so there its badge and its rows already agree.
+
+What the counter dropped goes to logcat, meant to be read next to the line the
+chat list logs about its rows:
+
+    Purple: 12 of 40 dialogs hidden, 0 unread-gated (0 showing), 12 silenced.
+    Purple: All chats counter 3 of 5, 2 unread chats hidden by the preset left out.
+
+Both are throttled to one a second. The second appears only while a preset is
+actually costing the badge something, so an account with nothing hidden never
+sees it - and the two lines together are how you check the fix on a phone,
+without a debugger.
+
+One rough edge remains. That counter is rebuilt from scratch only on a full
+recount; in between, a message arriving in a hidden chat is applied to the
+running total as a delta that does not yet ask the preset, so the number can be
+one too high until the next rebuild.
 
 A preset also picks which folder tabs are on the strip, in the order it names
 them. `"*ALL"` is every folder it does not name elsewhere, expanded where you
