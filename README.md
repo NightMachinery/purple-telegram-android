@@ -371,10 +371,10 @@ click and it belongs to the row, opening that person or ticking them, and a row
 that sometimes opens a sheet instead would be worse than one that always does
 the one thing. So the mark there says the fork has something to add about this
 last seen, and the header and the profile are where you act on it. A remembered
-read is different: it replaces the coarse phrase in every one of those places,
-because what a trade bought is a fact about that person and a member list still
-saying "last seen recently" beside a profile saying "last seen 14:32" would be
-the fork disagreeing with itself in two windows of the same app.
+read is different: it replaces the phrase underneath in every one of those
+places, because what a trade bought is a fact about that person, and a member
+list still saying "last seen recently" beside a profile saying "last seen 14:32"
+would be the fork disagreeing with itself in two windows of the same app.
 
 Some status lines are deliberately left alone. The chat list writes its own
 subtitles, and a chat list row is the one row in the app whose whole job is to
@@ -395,12 +395,24 @@ before anything is sent; Share once then adds that one person to your
 last-seen allow list, asks the server for their status, and puts your privacy
 settings back exactly as they were - after a success, after a timeout
 (`trade_hold`, ten seconds by default) and after an error alike. What came back
-is remembered for `trade_remember` (a day) and shown in place of the coarse
-text as "last seen 14:32 · as of 3 min ago", and a second trade with the same
-person has to wait out `trade_cooldown` (five minutes), so a tap cannot become
-a standing subscription. Every trade is listed under **Trades** on the Purple
-settings screen: who, what was read, how long ago. A trade that came back with
-nothing is listed too, because the seconds of exposure happened either way.
+is remembered for `trade_remember` (a day) and shown in place of whatever the
+status says, as "last seen 14:32 · as of 3 min ago". A second trade with the
+same person has to wait out `trade_cooldown` (five minutes), so a tap cannot
+become a standing subscription. Every trade is listed under **Trades** on the
+Purple settings screen: who, what was read, how long ago. A trade that came back
+with nothing is listed too, because the seconds of exposure happened either way.
+
+That read survives their status going quiet. If they stop being merely coarse
+and become **a long time ago** - they went inactive, or shut you out - the
+remembered line stays, for as long as `trade_remember` keeps it: what gates it
+is the age of the memory, not the shape of the status underneath, and a read
+does not stop being a real moment that was really read because they moved since.
+If anything that is when it is worth the most, because it is now the only moment
+anybody has. The only thing that takes its place is a fresher one: the server
+handing over a real time again. The line is not tappable there, because there is
+nothing left to trade for - a privacy setting of yours is not what is in the way
+any more - and "a long time ago" is still never *explained*, since the server is
+not withholding a moment and there is nobody to attribute it to.
 
 The remembered line is a link too, and that is a repair rather than a flourish.
 The tail used to be the only door into the sheet, so the first trade replaced

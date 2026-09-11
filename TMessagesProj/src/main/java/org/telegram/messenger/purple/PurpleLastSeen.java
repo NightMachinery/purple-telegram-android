@@ -1,8 +1,8 @@
 /*
  * This is the source code of Purple Telegram for Android.
  *
- * The [last_seen] table: why a coarse last seen is coarse, and what a finished
- * trade left behind. Mirrors the desktop fork's last-seen reasons - see
+ * The [last_seen] table: why a last seen reads the way it does, and what a
+ * finished trade left behind. Mirrors the desktop fork's last-seen reasons - see
  * docs/purple/work_mode.md, "Last seen: reasons and the trade".
  *
  * The words, and nothing but the words. Which of the three lines a status gets,
@@ -24,6 +24,7 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
+import org.telegram.messenger.UserObject;
 import org.telegram.tgnet.TLRPC;
 
 import java.util.Collections;
@@ -75,34 +76,57 @@ public final class PurpleLastSeen {
     }
 
     /**
+     * Which of the three shapes this user's status has, as one of the
+     * {@code PurpleCore.SHAPE_} values.
+     *
+     * The one fact about a status the core cannot work out for itself: a status
+     * is a TL type, and neither fork's TL layer belongs in there. So this is
+     * where a {@code TLRPC.UserStatus} is flattened, and the shared rules take
+     * it from there.
+     *
+     * The three coarse spellings are asked about first, because the app
+     * normalises their {@code expires} to a sentinel lazily and one that has
+     * not been through {@code formatUserStatus} yet still reads as zero.
+     *
+     * What is left over follows the line the app itself draws, in
+     * {@code LocaleController.formatUserStatus}: a null status, a deleted user
+     * and an {@code expires} of zero are all "a long time ago" there -
+     * {@code userStatusEmpty}, and {@code userStatusHidden}, which is what the
+     * app stores for a user whose status it was never told - so they are
+     * {@link PurpleCore#SHAPE_LONG_AGO} here. Everything else has a real moment
+     * in it, online now included, and is {@link PurpleCore#SHAPE_EXACT}.
+     */
+    public static int shapeFor(TLRPC.User user) {
+        final TLRPC.UserStatus status = (user == null) ? null : user.status;
+        if ((status instanceof TLRPC.TL_userStatusRecently)
+                || (status instanceof TLRPC.TL_userStatusLastWeek)
+                || (status instanceof TLRPC.TL_userStatusLastMonth)) {
+            return PurpleCore.SHAPE_COARSE;
+        }
+        if (status == null || status.expires == 0 || UserObject.isDeleted(user)) {
+            return PurpleCore.SHAPE_LONG_AGO;
+        }
+        return PurpleCore.SHAPE_EXACT;
+    }
+
+    /**
      * Why this user's last seen reads the way it does, as one of the
      * {@code PurpleCore.REASON_} values.
      *
-     * The flattening the core asks for: a status carrying a real moment is
-     * exact, the three coarse spellings are coarse, and {@code by_me} is the
-     * flag the server sets when the coarsening is the consequence of OUR
-     * privacy rules. Everything else - {@code userStatusEmpty}, "a long time
-     * ago" - is {@link PurpleCore#REASON_NONE}, because inactivity and a block
-     * look identical there and the server does not say which.
+     * Only a coarse status has one: {@code by_me} is the flag the server sets
+     * when the coarsening is the consequence of OUR privacy rules, and it is
+     * read nowhere else. An exact status has nothing to explain, and "a long
+     * time ago" is the one the fork refuses to explain, because inactivity and
+     * a block look identical there and the server does not say which. Both are
+     * {@link PurpleCore#REASON_NONE}, and the core is what says so.
      */
     public static int reasonFor(TLRPC.User user) {
         final TLRPC.UserStatus status = (user == null) ? null : user.status;
         if (status == null || user.self || user.bot || user.deleted) {
             return PurpleCore.REASON_NONE;
         }
-        final boolean exact = (status instanceof TLRPC.TL_userStatusOnline)
-                || (status instanceof TLRPC.TL_userStatusOffline);
-        final boolean coarse = (status instanceof TLRPC.TL_userStatusRecently)
-                || (status instanceof TLRPC.TL_userStatusLastWeek)
-                || (status instanceof TLRPC.TL_userStatusLastMonth);
-        if (!exact && !coarse) {
-            // userStatusEmpty, or userStatusHidden - which is what the app
-            // stores for a user whose status it was never told. Neither has a
-            // reason to give.
-            return PurpleCore.REASON_NONE;
-        }
         try {
-            return PurpleCore.lastSeenReason(exact, coarse, status.by_me);
+            return PurpleCore.lastSeenReason(shapeFor(user), status.by_me);
         } catch (UnsatisfiedLinkError | RuntimeException e) {
             // Asked once per status line drawn, so a build without the core in
             // it must answer rather than log: no reason is the quiet answer,
@@ -191,30 +215,43 @@ public final class PurpleLastSeen {
      * about which of the three lines a status gets - they had already drifted
      * on the last of them once.
      *
-     * A status that is not coarse stops here rather than crossing into the
-     * native: it is the first thing {@code LastSeenNoteNow} answers, and this
-     * is the drawing path, where most of the people on screen have a status
-     * with nothing to explain. The one field the core would still have filled
-     * in is the cooldown, and nothing asks a plain line about that - see
-     * {@link #cooldownLeft}, which asks for it by itself.
+     * An EXACT status stops here rather than crossing into the native - and
+     * only an exact one, which is the change: "a long time ago" used to stop
+     * here too, and that is exactly where a remembered read is worth the most,
+     * because it is now the only moment anybody has. An exact status is the
+     * first thing {@code LastSeenNoteNow} answers and this is the drawing path,
+     * where most of the people on screen have one; the one field the core would
+     * still have filled in is the cooldown, and nothing asks a plain line about
+     * that - see {@link #cooldownLeft}, which asks for it by itself.
+     *
+     * Ourselves, a bot and a deleted account stop here too. None of them has a
+     * status anybody traded for, so there is nothing remembered to put over it.
      */
     private static PurpleCore.LastSeenNote note(TLRPC.User user) {
-        if (user == null || !coarse(user)) {
+        if (user == null || user.self || user.bot || user.deleted) {
             return PurpleCore.LastSeenNote.PLAIN;
         }
-        return PurpleCore.lastSeenNote(user.id, reasonFor(user), true);
+        final int shape = shapeFor(user);
+        if (shape == PurpleCore.SHAPE_EXACT) {
+            return PurpleCore.LastSeenNote.PLAIN;
+        }
+        return PurpleCore.lastSeenNote(user.id, reasonFor(user), shape);
     }
 
     /**
      * The status line with the fork's part appended, or the line untouched.
      *
      * Three answers and no fourth, and which one is the core's to say. A
-     * remembered trade replaces the coarse text outright - it is a real moment,
-     * read on purpose, and saying "last seen recently" over the top of it would
-     * be throwing away the one thing the trade was for. A coarse status the
-     * server says is coarse because of OUR rules gets the offer. Everything
-     * else - hidden by them, "a long time ago", an exact time - is left exactly
-     * as the app wrote it, because there is nothing true to add.
+     * remembered trade replaces the text underneath outright - it is a real
+     * moment, read on purpose, and saying "last seen recently" over the top of
+     * it would be throwing away the one thing the trade was for. That holds
+     * over "a long time ago" as well, for as long as {@code trade_remember}
+     * keeps the memory: what gates it is the age of the read, not the shape of
+     * the status that has since moved under it. A coarse status the server says
+     * is coarse because of OUR rules gets the offer. Everything else - hidden
+     * by them, an exact time, "a long time ago" with no read to put over it -
+     * is left exactly as the app wrote it, because there is nothing true to
+     * add.
      *
      * Only the words are decided here, and only because words are the half the
      * core deliberately does not carry: it would have to ship English to one of
@@ -283,16 +320,13 @@ public final class PurpleLastSeen {
         if (userId == 0) {
             return 0;
         }
+        // SHAPE_EXACT, because the cooldown is filled in before the core looks
+        // at the shape at all and an exact status is the cheapest way past it -
+        // there is no status being described here, only a number being asked
+        // for.
         return PurpleCore.lastSeenNote(
-                userId, PurpleCore.REASON_NONE, false).cooldownLeftSeconds;
-    }
-
-    /** Whether this status is one of the three coarse spellings. */
-    private static boolean coarse(TLRPC.User user) {
-        final TLRPC.UserStatus status = (user == null) ? null : user.status;
-        return (status instanceof TLRPC.TL_userStatusRecently)
-                || (status instanceof TLRPC.TL_userStatusLastWeek)
-                || (status instanceof TLRPC.TL_userStatusLastMonth);
+                userId, PurpleCore.REASON_NONE,
+                PurpleCore.SHAPE_EXACT).cooldownLeftSeconds;
     }
 
     /**
