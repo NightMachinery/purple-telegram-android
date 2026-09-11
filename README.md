@@ -299,6 +299,34 @@ appended when the other person hid theirs - that is their setting, and there is
 nothing to offer about it - and nothing at all to "a long time ago": the server
 does not say whether that is inactivity or a block, and the fork does not guess.
 
+The words are for the two places with room for them and somewhere to put a
+second tap: the chat header and the profile. Everywhere else the fork draws the
+eye alone after the status - the contacts tab and the generic user rows, search
+results, the group-create and add-participant pickers, the member lists on a
+chat's Members screen, and the share and boost selectors. Those rows are
+informational on purpose and not for want of trying: a row has exactly one
+click and it belongs to the row, opening that person or ticking them, and a row
+that sometimes opens a sheet instead would be worse than one that always does
+the one thing. So the mark there says the fork has something to add about this
+last seen, and the header and the profile are where you act on it. A remembered
+read is different: it replaces the coarse phrase in every one of those places,
+because what a trade bought is a fact about that person and a member list still
+saying "last seen recently" beside a profile saying "last seen 14:32" would be
+the fork disagreeing with itself in two windows of the same app.
+
+Some status lines are deliberately left alone. The chat list writes its own
+subtitles, and a chat list row is the one row in the app whose whole job is to
+be scanned - a mark there would be noise in the place that most needs to stay
+quiet. The preview header at the top of that screen shows your *own* last seen,
+where there is by definition nothing of yours in the way. The popup
+notification, the add-contact screen, the phonebook share sheet and the
+limit-reached sheet are each a single-purpose box where the status is context
+rather than a subject. `DialogObject`'s helper is left alone for a
+different reason: it is a generic formatter with no idea who is asking, so
+hooking it would reach every one of those places blind. And `ProfileActivity2`
+is unreachable in this build - nothing constructs it - so hooking it would be
+hooking dead code.
+
 Tapping the mark opens **Show mine to see theirs**, unless `trade_p = false`
 turns the offer off and leaves the explanation. The sheet says what it costs
 before anything is sent; Share once then adds that one person to your
@@ -307,10 +335,33 @@ settings back exactly as they were - after a success, after a timeout
 (`trade_hold`, ten seconds by default) and after an error alike. What came back
 is remembered for `trade_remember` (a day) and shown in place of the coarse
 text as "last seen 14:32 · as of 3 min ago", and a second trade with the same
-person is refused for `trade_cooldown` (five minutes), so a tap cannot become a
-standing subscription. Every trade is listed under **Trades** on the Purple
+person has to wait out `trade_cooldown` (five minutes), so a tap cannot become
+a standing subscription. Every trade is listed under **Trades** on the Purple
 settings screen: who, what was read, how long ago. A trade that came back with
 nothing is listed too, because the seconds of exposure happened either way.
+
+The remembered line is a link too, and that is a repair rather than a flourish.
+The tail used to be the only door into the sheet, so the first trade replaced
+the door with the read and the second trade was unreachable for a whole
+`trade_remember` unless the record happened to expire first. Tapping the
+remembered line now opens the same sheet, which says what was last read and
+counts the wait down - *You can refresh in 3:12*, recomputed from the clock
+every second rather than decremented, so a box left open across a suspend does
+not go on counting time that has already been spent. The button beside it is
+held disabled until the wait runs out and then becomes **Refresh now** without
+the box having to be closed and opened again. A first trade's sheet is exactly
+the sheet it always was. The line stops being a link when their last seen is no
+longer coarse because of *your* rules: they have changed their own privacy
+since, and there is nothing left to trade for.
+
+The other refusals are still toasts, because none of them is a wait: the offer
+switched off, a last seen that is not coarse because of your own rules, and a
+trade already running are each a "no" that will not turn into a "yes" while the
+box sits there. And a remembered read is shown whatever `reasons_p` says. That
+switch governs the fork *explaining* a status; a read the user asked for out
+loud is an answer to their own question, and turning the explanations off
+should not hide it. Its tap works for the same reason - a dead tap on a line
+you can plainly see would be that switch reaching somewhere it was never about.
 
 The trade also stands where Telegram's own offer stood. The sheet behind a
 message's *seen by* line used to open with a button that made your last seen
@@ -318,7 +369,11 @@ visible to **everybody**, for good, on one tap; this fork does not carry a
 control like that, so that button is the trade, and with `trade_p = false`
 there is no button at all - only the note that the offer is off, where the
 switch is, and that Telegram's own Privacy settings are still the deliberate
-way to show your last seen to everyone.
+way to show your last seen to everyone. The profile's own button agrees with
+the line beside it - both ask the core the one question - so it stands for a
+remembered read as well, and it no longer hides itself from a premium account:
+upstream's button was a promo for a permanent change, and this one is the
+trade.
 
 **Screen time** is `[screen_time]`, and it is off until `enabled_p = true` says
 otherwise - it is a record of what you looked at and for how long, and nothing

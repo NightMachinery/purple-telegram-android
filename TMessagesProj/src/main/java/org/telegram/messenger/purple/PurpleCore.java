@@ -218,6 +218,9 @@ public final class PurpleCore {
 
     private static native String tradesNative(byte[] stateUtf8, long now);
 
+    private static native long[] lastSeenNoteNative(
+            long bareId, int reason, boolean coarse);
+
     /**
      * What the running preset would say about one chat with the peek set aside.
      * Prefer {@link PurpleGate#hiddenWhilePeeking}, which is the only caller
@@ -2427,6 +2430,95 @@ public final class PurpleCore {
             FileLog.e("Purple: bad trade list from the core", e);
         }
         return Collections.unmodifiableList(result);
+    }
+
+    /**
+     * What the fork does to one person's status line, as the core's
+     * {@code LastSeenLine} numbers it.
+     *
+     * {@link #LINE_PLAIN} is the app's own text left exactly as it wrote it,
+     * and it is the answer for most people most of the time.
+     */
+    public static final int LINE_PLAIN = 0;
+    public static final int LINE_BY_ME_TAIL = 1;
+    public static final int LINE_REMEMBERED = 2;
+
+    /**
+     * The whole three-way decision for one status line, from the loaded gate.
+     *
+     * Both the settings ({@code reasons_p}, {@code trade_p}, the two windows)
+     * and the trades live in the gate, so this asks nothing of the file system
+     * - which is what makes it safe on the drawing path, where a member list
+     * asks it once per row per bind.
+     *
+     * @param bareId the person's user id
+     * @param reason one of the {@code REASON_} values
+     * @param coarse whether the status is one of the three vague spellings
+     * @return never null; a plain line is what a core that cannot be reached
+     *         answers, and a plain line is the app exactly as it shipped
+     */
+    public static LastSeenNote lastSeenNote(long bareId, int reason, boolean coarse) {
+        try {
+            if (!loaded) {
+                ensureLoaded();
+            }
+            final long[] packed = lastSeenNoteNative(bareId, reason, coarse);
+            if (packed != null && packed.length >= 5) {
+                return new LastSeenNote(
+                        (int) packed[0],
+                        packed[1] != 0,
+                        packed[2],
+                        packed[3],
+                        (int) packed[4]);
+            }
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            // Asked once per status line drawn, so a build without the core in
+            // it must answer rather than log.
+        }
+        return LastSeenNote.PLAIN;
+    }
+
+    /**
+     * What to draw for one person's last seen, and whether it can be tapped.
+     *
+     * The words are not here and are not in the core either: each app has its
+     * own string catalogue, and this carries the decision and the numbers the
+     * sentence needs.
+     */
+    public static final class LastSeenNote {
+
+        /** Nothing to add, nothing to tap - the app's own line. */
+        static final LastSeenNote PLAIN = new LastSeenNote(LINE_PLAIN, false, 0, 0, 0);
+
+        /** One of the {@code LINE_} values. */
+        public final int line;
+
+        /** Whether tapping this line should open the trade sheet. */
+        public final boolean tappable;
+
+        /** Remembered only: their real {@code was_online}, in unix seconds. */
+        public final long wasOnlineUnix;
+
+        /** Remembered only: when we read it - the "as of". */
+        public final long readAtUnix;
+
+        /**
+         * Seconds until a fresh trade with this person would be allowed, or 0.
+         *
+         * Filled in whatever the line is, because it is the sheet's countdown
+         * rather than the line's, and the sheet is reachable from a line that
+         * says nothing about it.
+         */
+        public final int cooldownLeftSeconds;
+
+        LastSeenNote(int line, boolean tappable, long wasOnlineUnix, long readAtUnix,
+                int cooldownLeftSeconds) {
+            this.line = line;
+            this.tappable = tappable;
+            this.wasOnlineUnix = wasOnlineUnix;
+            this.readAtUnix = readAtUnix;
+            this.cooldownLeftSeconds = cooldownLeftSeconds;
+        }
     }
 
     /**

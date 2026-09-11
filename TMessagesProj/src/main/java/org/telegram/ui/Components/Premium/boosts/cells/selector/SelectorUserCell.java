@@ -21,6 +21,7 @@ import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
+import org.telegram.messenger.purple.PurpleLastSeen;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_stories;
 import org.telegram.ui.ActionBar.Theme;
@@ -205,7 +206,12 @@ public class SelectorUserCell extends BaseCell {
                 setSubtitle(LocaleController.getString(R.string.Bot));
             }
         } else {
-            setSubtitle(LocaleController.formatUserStatus(UserConfig.selectedAccount, user, isOnline));
+            // Purple: the mark, and a remembered read in place of the coarse
+            // phrase. No width is handed over and none is wanted: a row
+            // carries the eyes rather than the sentence, because a row has
+            // exactly one click and it belongs to the row.
+            setSubtitle(PurpleLastSeen.decorate(user,
+                    LocaleController.formatUserStatus(UserConfig.selectedAccount, user, isOnline)));
         }
         subtitleTextView.setTextColor(Theme.getColor(isOnline[0] ? Theme.key_dialogTextBlue2 : Theme.key_dialogTextGray3, resourcesProvider));
         if (checkBox != null) {

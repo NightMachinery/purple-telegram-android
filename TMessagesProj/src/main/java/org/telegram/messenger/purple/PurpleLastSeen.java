@@ -5,12 +5,17 @@
  * trade left behind. Mirrors the desktop fork's last-seen reasons - see
  * docs/purple/work_mode.md, "Last seen: reasons and the trade".
  *
- * Two questions and nothing else. "Why does this say 'last seen recently'" is
- * answered by the core from three booleans the TL layer flattens, so both forks
- * give the same answer from one rule. "What did I read the last time I traded
- * with this person" is answered out of state.toml, which is why this file also
- * owns the little cache in front of it: the chat header asks on every status
- * line it draws, and a TOML parse per draw is not a thing to do.
+ * The words, and nothing but the words. Which of the three lines a status gets,
+ * whether it can be tapped and how long the cooldown has left are one question
+ * asked of one rule in the core - LastSeenNoteNow - so the two forks cannot
+ * drift apart about it again. What is left here is English and pixels: the
+ * catalogue the sentence comes out of, and how much room the caller has for it.
+ *
+ * The little cache is still in front of state.toml for the trade log and for
+ * the sheet, which want the record itself rather than a decision about it. The
+ * drawing path does not go through it any more: it asks the gate, which holds
+ * the state it was last loaded with, and noteTrade reloads so that it holds the
+ * trade that was just written.
  */
 
 package org.telegram.messenger.purple;
@@ -129,25 +134,6 @@ public final class PurpleLastSeen {
     }
 
     /**
-     * Whether a trade with this person may be offered now.
-     *
-     * False for {@code trade_cooldown} after the last one: a trade is a moment
-     * of exposure chosen on purpose, and one offered again every time their
-     * chat opens would be a standing subscription nobody agreed to.
-     */
-    public static boolean tradeAllowed(long userId) {
-        if (userId == 0) {
-            return false;
-        }
-        try {
-            return PurpleCore.tradeAllowed(
-                    PurpleState.read(), userId, System.currentTimeMillis() / 1000L);
-        } catch (UnsatisfiedLinkError | RuntimeException e) {
-            return false;
-        }
-    }
-
-    /**
      * Writes down a finished trade.
      *
      * A {@code wasOnlineUnix} of zero is recorded too, and deliberately: a
@@ -176,6 +162,13 @@ public final class PurpleLastSeen {
         // the way past.
         cached = null;
         cachedGeneration = -1;
+        // And the gate is told, because the gate is what the status lines now
+        // ask: it holds the state it was last loaded with, and a trade written
+        // only to the file would be invisible to every line until something
+        // else happened to reload. The same write-then-reload every other state
+        // change here does, and the generation bump it carries is what empties
+        // the map above for good measure.
+        PurpleGate.reload("last seen trade");
         return true;
     }
 
@@ -192,15 +185,40 @@ public final class PurpleLastSeen {
     private static final int NARROW_DP = 280;
 
     /**
+     * The core's decision for this user's line, and the numbers behind it.
+     *
+     * One question asked of one rule, so the two apps cannot come to disagree
+     * about which of the three lines a status gets - they had already drifted
+     * on the last of them once.
+     *
+     * A status that is not coarse stops here rather than crossing into the
+     * native: it is the first thing {@code LastSeenNoteNow} answers, and this
+     * is the drawing path, where most of the people on screen have a status
+     * with nothing to explain. The one field the core would still have filled
+     * in is the cooldown, and nothing asks a plain line about that - see
+     * {@link #cooldownLeft}, which asks for it by itself.
+     */
+    private static PurpleCore.LastSeenNote note(TLRPC.User user) {
+        if (user == null || !coarse(user)) {
+            return PurpleCore.LastSeenNote.PLAIN;
+        }
+        return PurpleCore.lastSeenNote(user.id, reasonFor(user), true);
+    }
+
+    /**
      * The status line with the fork's part appended, or the line untouched.
      *
-     * Three answers and no fourth, in this order. A remembered trade replaces
-     * the coarse text outright - it is a real moment, read on purpose, and
-     * saying "last seen recently" over the top of it would be throwing away the
-     * one thing the trade was for. A coarse status the server says is coarse
-     * because of OUR rules gets the offer. Everything else - hidden by them, "a
-     * long time ago", an exact time - is left exactly as the app wrote it,
-     * because there is nothing true to add.
+     * Three answers and no fourth, and which one is the core's to say. A
+     * remembered trade replaces the coarse text outright - it is a real moment,
+     * read on purpose, and saying "last seen recently" over the top of it would
+     * be throwing away the one thing the trade was for. A coarse status the
+     * server says is coarse because of OUR rules gets the offer. Everything
+     * else - hidden by them, "a long time ago", an exact time - is left exactly
+     * as the app wrote it, because there is nothing true to add.
+     *
+     * Only the words are decided here, and only because words are the half the
+     * core deliberately does not carry: it would have to ship English to one of
+     * the two apps' string catalogues.
      *
      * @param availableWidthPx what the subtitle was given to draw in; zero when
      *                         nothing has been measured yet, which reads as
@@ -211,19 +229,13 @@ public final class PurpleLastSeen {
         if (user == null || status == null) {
             return status;
         }
-        if (!coarse(user)) {
-            return status;
-        }
-        final PurpleCore.Trade trade = remembered(user.id);
-        if (trade != null && trade.wasOnlineUnix > 0) {
-            // Not gated on reasons_p: this is not the fork explaining a status,
-            // it is the fork showing what a trade the user asked for actually
-            // read. Turning the explanations off should not hide the answer.
+        final PurpleCore.LastSeenNote note = note(user);
+        if (note.line == PurpleCore.LINE_REMEMBERED) {
             return LocaleController.formatString(R.string.PurpleLastSeenAsOf,
-                    LocaleController.formatDateOnline(trade.wasOnlineUnix, null),
-                    ago(trade.readAtUnix));
+                    LocaleController.formatDateOnline(note.wasOnlineUnix, null),
+                    ago(note.readAtUnix));
         }
-        if (!reasons() || reasonFor(user) != PurpleCore.REASON_BY_ME) {
+        if (note.line != PurpleCore.LINE_BY_ME_TAIL) {
             return status;
         }
         final boolean narrow = availableWidthPx <= 0
@@ -234,23 +246,45 @@ public final class PurpleLastSeen {
     }
 
     /**
+     * The same line for a row that has no width to offer and wants none.
+     *
+     * The member lists, the pickers and the contacts tab carry the mark alone -
+     * the words belong to the two places that can also be tapped - so they ask
+     * for the narrow form outright rather than measuring a status text view
+     * that has not been laid out yet at the moment it is filled in.
+     */
+    public static CharSequence decorate(TLRPC.User user, CharSequence status) {
+        return decorate(user, status, 0);
+    }
+
+    /**
      * Whether tapping this status line should offer the trade.
      *
-     * Both switches, and in this order: {@code trade_p} is the offer and
-     * {@code reasons_p} is the line the offer is attached to, so a line that is
-     * not being drawn is not a thing to tap. A user already showing a
-     * remembered read is not offered either - the cooldown would refuse it, and
-     * a tap that only ever produces a refusal is not a tap.
+     * Straight from the core, which is the repair: a remembered line is
+     * tappable too, so the first trade no longer replaces the only door into
+     * the sheet and leaves the second one unreachable for a whole
+     * {@code trade_remember}. Inside the cooldown the sheet counts the wait
+     * down rather than refusing - see PurpleLastSeenTrade.
      */
     public static boolean tappable(TLRPC.User user) {
-        if (user == null || !reasons() || !tradeOffered()) {
-            return false;
+        return note(user).tappable;
+    }
+
+    /**
+     * How long until a trade with this person would be allowed again, in
+     * seconds, or 0 when one is allowed right now.
+     *
+     * What the sheet counts down. Asked of the core on its own - with no status
+     * to describe - because the sheet is reachable from a line that says
+     * nothing about the cooldown, and from the seen-by sheet's button, which
+     * has no status line at all.
+     */
+    public static int cooldownLeft(long userId) {
+        if (userId == 0) {
+            return 0;
         }
-        if (reasonFor(user) != PurpleCore.REASON_BY_ME) {
-            return false;
-        }
-        final PurpleCore.Trade trade = remembered(user.id);
-        return trade == null || trade.wasOnlineUnix <= 0;
+        return PurpleCore.lastSeenNote(
+                userId, PurpleCore.REASON_NONE, false).cooldownLeftSeconds;
     }
 
     /** Whether this status is one of the three coarse spellings. */

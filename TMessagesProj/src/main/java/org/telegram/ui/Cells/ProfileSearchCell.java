@@ -47,6 +47,7 @@ import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.utils.DrawableUtils;
+import org.telegram.messenger.purple.PurpleLastSeen;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_account;
@@ -658,7 +659,12 @@ public class ProfileSearchCell extends BaseCell implements NotificationCenter.No
                         isOnline = new boolean[1];
                     }
                     isOnline[0] = false;
-                    statusString = LocaleController.formatUserStatus(currentAccount, user, isOnline);
+                    // Purple: the mark, and a remembered read in place of the coarse
+                    // phrase. No width is handed over and none is wanted: a row
+                    // carries the eyes rather than the sentence, because a row has
+                    // exactly one click and it belongs to the row.
+                    statusString = PurpleLastSeen.decorate(user,
+                            LocaleController.formatUserStatus(currentAccount, user, isOnline));
                     if (isOnline[0]) {
                         currentStatusPaint = Theme.dialogs_onlinePaint;
                     }

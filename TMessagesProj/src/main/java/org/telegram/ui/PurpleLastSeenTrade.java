@@ -27,8 +27,11 @@ import static org.telegram.messenger.LocaleController.getString;
 import android.app.Activity;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.util.TypedValue;
 import android.view.Gravity;
-import android.widget.FrameLayout;
+import android.view.View;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
@@ -53,6 +56,7 @@ import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.LayoutHelper;
 
 import java.util.ArrayList;
+import java.util.Locale;
 
 public final class PurpleLastSeenTrade {
 
@@ -82,9 +86,12 @@ public final class PurpleLastSeenTrade {
     /**
      * Offers, or refuses, a trade with this user.
      *
-     * Both refusals are said out loud rather than silently doing nothing: the
-     * tap came from a mark this fork drew, so a tap that does nothing would read
-     * as a bug rather than as an answer.
+     * The refusals that are said out loud are the ones that will not turn into
+     * a yes while the box sits there: the offer switched off, a last seen that
+     * is not coarse because of our own rules, a trade already running. A
+     * cooldown is not one of those - it is a wait - so where there is a
+     * remembered read to show it beside, the sheet opens and counts it down
+     * rather than firing a toast that vanishes without saying how much is left.
      */
     public static void show(BaseFragment fragment, int currentAccount, long userId) {
         if (fragment == null || userId == 0) {
@@ -102,57 +109,185 @@ public final class PurpleLastSeenTrade {
             error(fragment, formatString(R.string.PurpleTradeNotNeeded, name));
             return;
         }
-        if (!PurpleLastSeen.tradeAllowed(userId)) {
-            error(fragment, formatString(R.string.PurpleTradeCooldown, name));
-            return;
-        }
         if (running != 0) {
             return;
         }
-        if (noAsk()) {
+        final PurpleCore.Trade read = PurpleLastSeen.remembered(userId);
+        // A trade whose hold ran out with nothing exact arriving left no line
+        // on screen, so there is nothing for a countdown to stand beside and
+        // the cooldown is a refusal again.
+        final boolean refresh = read != null && read.wasOnlineUnix > 0;
+        final int cooldownLeft = PurpleLastSeen.cooldownLeft(userId);
+        if (cooldownLeft > 0 && !refresh) {
+            error(fragment, formatString(R.string.PurpleTradeCooldown, name));
+            return;
+        }
+        if (cooldownLeft <= 0 && noAsk()) {
             // The sheet was the consent, and it was given once for good. The tap
             // is still per trade, which is what keeps this from being a toggle.
             start(fragment, currentAccount, user);
             return;
         }
-        confirm(fragment, currentAccount, user, name);
+        confirm(fragment, currentAccount, user, name, refresh ? read : null, cooldownLeft);
     }
 
-    /** The sheet: what the seconds cost, and the two ways out of it. */
+    /**
+     * The sheet: what the seconds cost, what the last trade read, how long the
+     * wait has left, and the two ways out of it.
+     *
+     * The countdown is recomputed from the clock on every tick rather than
+     * decremented, so a box left open across a suspend does not go on counting
+     * a wait that wall-clock time has already spent. It runs while the box is
+     * up and is cancelled when it goes, because a ticker outliving its dialog
+     * would hold the fragment and update a view nobody is looking at.
+     */
     private static void confirm(BaseFragment fragment, int currentAccount,
-            TLRPC.User user, String name) {
+            TLRPC.User user, String name, PurpleCore.Trade read, int cooldownLeft) {
         final Activity activity = fragment.getParentActivity();
         if (activity == null) {
             return;
         }
         final AlertDialog.Builder builder = new AlertDialog.Builder(activity);
         builder.setTitle(getString(R.string.PurpleTradeTitle));
-        builder.setMessage(formatString(
-                R.string.PurpleTradeText, name, PurpleLastSeen.holdSeconds()));
+        final CharSequence explanation = formatString(
+                R.string.PurpleTradeText, name, PurpleLastSeen.holdSeconds());
+        builder.setMessage((read == null)
+                ? explanation
+                : (explanation + "\n\n" + formatString(R.string.PurpleTradeRemembered,
+                        name,
+                        LocaleController.formatDateOnline(read.wasOnlineUnix, null),
+                        PurpleLastSeen.ago(read.readAtUnix))));
+
+        final LinearLayout wrapper = new LinearLayout(activity);
+        wrapper.setOrientation(LinearLayout.VERTICAL);
+
+        // Only where there is a wait to report. A first trade's sheet is
+        // exactly the sheet it always was.
+        final TextView waiting;
+        if (read != null) {
+            waiting = new TextView(activity);
+            waiting.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+            waiting.setTextColor(Theme.getColor(Theme.key_dialogTextGray2));
+            waiting.setText(waitText(cooldownLeft));
+            wrapper.addView(waiting, LayoutHelper.createLinear(
+                    LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT,
+                    Gravity.TOP | Gravity.LEFT, 24, 0, 24, 4));
+        } else {
+            waiting = null;
+        }
 
         final boolean[] noAsk = new boolean[] { false };
-        final FrameLayout wrapper = new FrameLayout(activity);
-        final CheckBoxCell cell = new CheckBoxCell(activity, 1);
-        cell.setBackground(Theme.getSelectorDrawable(false));
-        cell.setText(getString(R.string.PurpleTradeDontAsk), "", false, false);
-        cell.setOnClickListener(v -> {
-            noAsk[0] = !noAsk[0];
-            ((CheckBoxCell) v).setChecked(noAsk[0], true);
-        });
-        wrapper.addView(cell, LayoutHelper.createFrame(
-                LayoutHelper.MATCH_PARENT, 48, Gravity.TOP | Gravity.LEFT, 8, 0, 8, 0));
+        // Left out once it has been answered for good: the sheet is open here
+        // to say how long the wait is, not to ask a question that is settled.
+        if (!noAsk()) {
+            final CheckBoxCell cell = new CheckBoxCell(activity, 1);
+            cell.setBackground(Theme.getSelectorDrawable(false));
+            cell.setText(getString(R.string.PurpleTradeDontAsk), "", false, false);
+            cell.setOnClickListener(v -> {
+                noAsk[0] = !noAsk[0];
+                ((CheckBoxCell) v).setChecked(noAsk[0], true);
+            });
+            wrapper.addView(cell, LayoutHelper.createLinear(
+                    LayoutHelper.MATCH_PARENT, 48, Gravity.TOP | Gravity.LEFT, 8, 0, 8, 0));
+        }
         builder.setView(wrapper);
 
-        builder.setPositiveButton(getString(R.string.PurpleTradeShare), (dialog, which) -> {
-            // Written only on the way through Share. A "don't ask again" ticked
-            // and then cancelled is not an answer to the question that was asked.
+        // "Refresh now" rather than "Share once" for somebody already traded
+        // with: this is a second look, and the button should say which of the
+        // two it is before it is pressed.
+        builder.setPositiveButton(getString((read == null)
+                ? R.string.PurpleTradeShare
+                : R.string.PurpleTradeRefresh), (box, which) -> {
+            // Checked again rather than trusted to the disabled button: the
+            // button is the only thing holding the press back, and a wait this
+            // fork got wrong would be a trade the cooldown was supposed to stop.
+            if (PurpleLastSeen.cooldownLeft(user.id) > 0) {
+                return;
+            }
+            // Written only on the way through the button. A "don't ask again"
+            // ticked and then cancelled is not an answer to the question that
+            // was asked.
             if (noAsk[0]) {
                 setNoAsk(true);
             }
             start(fragment, currentAccount, user);
         });
         builder.setNegativeButton(getString(R.string.Cancel), null);
-        fragment.showDialog(builder.create());
+
+        final AlertDialog dialog = builder.create();
+        if (fragment.showDialog(dialog, d -> stopTicking()) == null) {
+            return;
+        }
+        final View button = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+        setPressable(button, cooldownLeft <= 0);
+        if (waiting == null || cooldownLeft <= 0) {
+            return;
+        }
+        tick(user.id, waiting, button);
+    }
+
+    /** The ticker, so a dialog that goes takes it with it. */
+    private static Runnable ticking;
+
+    /**
+     * Counts the wait down a second at a time, from the clock.
+     *
+     * Stops at zero rather than going on: the button is pressable from then on,
+     * and a runnable re-posting itself every second for as long as somebody
+     * leaves the box open is a thing to switch off once it has nothing left to
+     * say.
+     */
+    private static void tick(long userId, TextView waiting, View button) {
+        stopTicking();
+        final Runnable step = new Runnable() {
+            @Override
+            public void run() {
+                if (ticking != this) {
+                    return;
+                }
+                final int left = PurpleLastSeen.cooldownLeft(userId);
+                waiting.setText(waitText(left));
+                if (left <= 0) {
+                    setPressable(button, true);
+                    ticking = null;
+                    return;
+                }
+                AndroidUtilities.runOnUIThread(this, 1000L);
+            }
+        };
+        ticking = step;
+        AndroidUtilities.runOnUIThread(step, 1000L);
+    }
+
+    private static void stopTicking() {
+        if (ticking != null) {
+            AndroidUtilities.cancelRunOnUIThread(ticking);
+            ticking = null;
+        }
+    }
+
+    /** "You can refresh in 3:12", or that the wait is over. */
+    private static CharSequence waitText(int secondsLeft) {
+        if (secondsLeft <= 0) {
+            return getString(R.string.PurpleTradeCooldownNow);
+        }
+        return formatString(R.string.PurpleTradeCooldownLeft, String.format(
+                Locale.US, "%d:%02d", secondsLeft / 60, secondsLeft % 60));
+    }
+
+    /**
+     * Greys the button out, or hands it back.
+     *
+     * Disabled rather than hidden: the wait is what the box is open to say, and
+     * a button that appears out of nowhere when it ends would leave nothing for
+     * the countdown to have been counting towards.
+     */
+    private static void setPressable(View button, boolean pressable) {
+        if (button == null) {
+            return;
+        }
+        button.setEnabled(pressable);
+        button.setAlpha(pressable ? 1f : 0.5f);
     }
 
     /**
