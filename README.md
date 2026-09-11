@@ -55,6 +55,37 @@ which also shows whatever the file got wrong. The rules, the keys and the reason
 apps compile the same core, so a `settings.toml` moved across through Saved
 Messages behaves identically.
 
+**Peek** is the temporary look past the running preset, and it sits in the same
+box, under the preset it suspends. `[peek] tap` is how long a tap on it lasts
+and `auto_off` is the fallback for a file that does not say - so a phone can
+have its own length without touching the key a desktop reads, and a file with
+neither key gives a peek that runs until you turn it off, which is also what
+`"off"` means written out. `hotkey` and `hotkey_length` are read and ignored:
+there is no key to bind on a phone.
+
+Tapping the row starts a peek of `tap`; tapping it again while one is running
+*extends* it by another `tap`, measured from the deadline it already has rather
+than from now, so two quick taps buy two lengths. It stops at an hour - past
+that it is not a peek any more, it is the preset off, and there is a plainer way
+to say that. A tap that finds the cap already spent ends the peek instead and
+says so, and so does a tap on a peek with no clock on it, which has no deadline
+for an extension to move. A **long press ends it** outright. This is where the
+phone parts company with the desktop, where the second press of the *checkbox*
+ends the peek and extending is the hotkey's job: a phone has no hotkey to give
+that to, and a tap while the chats are back is nearly always "not yet" rather
+than "done".
+
+Under the row is a row of **chips** - one minute to an hour, and `until I stop`
+one position past the end of them. Tapping one starts a peek of that length, or
+restarts a running one at it rather than adding to it: a chip that says `5 min`
+and leaves eleven is a chip lying about what it did. The lit chip follows what
+is *left*, not what was asked for, so a five-minute peek with ninety seconds on
+it lights `2 min` - nothing anywhere remembers the length a peek was started
+with, since `state.toml` holds a deadline and that is all. The lengths and the
+rounding that picks the lit one are both the core's, so the phone's chips and
+the desktop's row cannot drift apart. Under Normal the whole thing is dimmed,
+beneath the line that says why: nothing is hidden there to peek at.
+
 A chat can be filed into a list from the chat list itself: select it, then
 **Work Mode lists** in the overflow. Every list is offered, ticked where the
 chat is already a member, and a tap adds or removes it. The write goes through

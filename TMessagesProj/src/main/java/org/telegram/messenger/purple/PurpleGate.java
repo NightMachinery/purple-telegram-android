@@ -444,7 +444,7 @@ public final class PurpleGate {
     }
 
     /**
-     * Starts or ends a peek: every chat back in the list, no group waiting for a
+     * Starts a peek: every chat back in the list, no group waiting for a
      * mention, every folder on the strip.
      *
      * It reveals; it does not un-silence. The two halves of a preset answer
@@ -453,13 +453,52 @@ public final class PurpleGate {
      * already on the screen, taken back two minutes later, is not what looking
      * at the chat list asked for. The engine enforces that, not this method.
      *
+     * Starting one while another is running restarts it at the new length.
+     *
+     * @param seconds how long it lasts, or zero for one that runs until it is
+     *                turned off by hand. Never a constant at the call site: the
+     *                tap length is {@code [peek] tap} and the chips are the
+     *                core's own row, and both arrive through the load.
      * @return what happened, so the caller can say which way it went
      */
-    public static PurpleCore.PeekChange togglePeek() {
+    public static PurpleCore.PeekChange startPeek(int seconds) {
         ensureLoaded();
-        final PurpleCore.PeekChange change = PurpleCore.togglePeek(PurpleState.read());
+        final PurpleCore.PeekChange change =
+                PurpleCore.startPeek(PurpleState.read(), seconds);
         if (change.text != null && PurpleState.write(change.text.getBytes(UTF_8))) {
-            reload(change.peeking ? "peek" : "peek over");
+            reload("peek");
+        }
+        return change;
+    }
+
+    /**
+     * Adds to a running peek, measured from the deadline it already has and
+     * capped at an hour from now.
+     *
+     * Nothing is written when nothing moved - the cap already spent, or a peek
+     * with no clock on it - so the caller can tell "it runs longer now" from
+     * "there was nothing left to give it" and say so.
+     *
+     * @return what happened; {@code extended} says whether the deadline moved
+     */
+    public static PurpleCore.PeekChange extendPeek(int seconds) {
+        ensureLoaded();
+        final PurpleCore.PeekChange change =
+                PurpleCore.extendPeek(PurpleState.read(), seconds);
+        if (change.extended
+                && change.text != null
+                && PurpleState.write(change.text.getBytes(UTF_8))) {
+            reload("peek extended");
+        }
+        return change;
+    }
+
+    /** Ends a running peek, putting back whatever the preset was hiding. */
+    public static PurpleCore.PeekChange stopPeek() {
+        ensureLoaded();
+        final PurpleCore.PeekChange change = PurpleCore.stopPeek(PurpleState.read());
+        if (change.text != null && PurpleState.write(change.text.getBytes(UTF_8))) {
+            reload("peek over");
         }
         return change;
     }

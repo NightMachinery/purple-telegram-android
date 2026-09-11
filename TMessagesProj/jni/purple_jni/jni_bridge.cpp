@@ -1259,8 +1259,30 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 	// questions rather than one number that happens to be missing.
 	json += QStringLiteral(",\"peekDeadline\":");
 	json += QString::number(qint64(gate.state.peekDeadlineUnix));
-	json += QStringLiteral(",\"peekSeconds\":");
-	json += QString::number(gate.settings.peek.autoOffSeconds);
+	// The other half of that answer: a peek with no clock on it, which is what
+	// `auto_off = "off"' means. The deadline above is zero for it and zero for
+	// "no peek is running", and the chips have to tell those apart to light the
+	// last position rather than none.
+	json += QStringLiteral(",\"peekUntilStopped\":");
+	AppendJsonBool(json, Purple::PeekUntilStopped(gate.state));
+	// How long a tap lasts - `[peek] tap', falling back to `auto_off'. Read
+	// through the core's PeekTapSeconds() rather than off the struct, so the
+	// fallback is written once and a phone cannot decide it differently.
+	// Zero is a real answer here: a tap that starts a peek with no clock.
+	json += QStringLiteral(",\"peekTap\":");
+	json += QString::number(Purple::PeekTapSeconds(gate.settings));
+	// The lengths the chips offer, shortest first. From the core for the reason
+	// the core says out loud: two hand-written lists is how a phone's chips and
+	// a desktop's row come to offer different minutes for the same feature.
+	json += QStringLiteral(",\"peekDetents\":[");
+	const auto &detents = Purple::PeekDetentsSeconds();
+	for (auto i = 0; i != int(detents.size()); ++i) {
+		if (i) {
+			json += QChar(',');
+		}
+		json += QString::number(detents[i]);
+	}
+	json += QChar(']');
 	json += QStringLiteral(",\"schedulePaused\":");
 	AppendJsonBool(json, gate.state.schedulePaused);
 	// Zero means a pause that lasts until it is lifted by hand, which is what a
@@ -1610,14 +1632,140 @@ Java_org_telegram_messenger_purple_PurpleCore_setPresetNative(
 	return ToJava(env, Purple::SerializeState(state));
 }
 
-// Starts or ends a peek, mirroring the desktop's Purple::TogglePeek().
+// The three peek gestures - start, extend, stop - mirroring the desktop's
+// StartPeekFor(), ExtendPeekBy() and EndPeek().
 //
-// Unlike setPresetNative this one does take the lock, because the answer
-// depends on the running resolution rather than only on the file: a peek over
-// Normal has nothing to reveal, and starting one anyway would leave a peek
-// running that no chat list could show the end of.
+// They replaced one togglePeekNative(), which could only ever start the one
+// length in the file. A phone taps the control for a look at the list it is
+// holding and a desktop fires a key mid-sentence, so the lengths parted company
+// - and once a length is a number the user picks, "the other way round" is not
+// what a second tap means.
+//
+// The state change itself is the core's: StartPeek(), ExtendPeek() and
+// StopPeek() are two lines each and both apps carried both of them. What stays
+// here is the refusal, which needs the running resolution rather than the file:
+// a peek over Normal has nothing to reveal, and starting one anyway would leave
+// a peek running that no chat list could show the end of. That is also why
+// these take the lock, unlike setPresetNative.
+
+namespace {
+
+// What all three answer with. `peeking' and `left' are read back off the state
+// they just wrote rather than predicted, so an extension that the cap clipped
+// reports where it actually landed.
+[[nodiscard]] QString PeekRefusedJson() {
+	return QStringLiteral("{\"refused\":true,\"peeking\":false,"
+		"\"extended\":false,\"seconds\":0,\"left\":0,\"text\":null}");
+}
+
+[[nodiscard]] QString PeekChangeJson(
+		const Purple::State &state,
+		bool extended,
+		int seconds,
+		int64 nowUnix) {
+	auto json = QStringLiteral("{\"refused\":false,\"peeking\":");
+	AppendJsonBool(json, Purple::PeekLive(state, nowUnix));
+	json += QStringLiteral(",\"extended\":");
+	AppendJsonBool(json, extended);
+	json += QStringLiteral(",\"seconds\":");
+	json += QString::number(seconds);
+	// Zero when nothing is running AND when the running peek has no clock on
+	// it, exactly as the core's PeekLeftSeconds() answers it - the caller that
+	// needs to tell those apart asks peekUntilStopped on the next load.
+	json += QStringLiteral(",\"left\":");
+	json += QString::number(Purple::PeekLeftSeconds(state, nowUnix));
+	json += QStringLiteral(",\"text\":");
+	AppendJsonString(json, Purple::SerializeState(state));
+	json += QChar('}');
+	return json;
+}
+
+} // namespace
+
+// Starts a peek of `seconds', or one with no clock on it when `seconds' is
+// zero - which is what `[peek] auto_off = "off"' means, and what the last chip
+// asks for.
+//
+// Starting one while another is running RESTARTS it at the new length rather
+// than adding to it. A chip that says "5 min" and leaves eleven on the clock is
+// a chip lying about what it did; adding is the tap-again gesture's job, where
+// there is no number on screen to contradict.
 extern "C" JNIEXPORT jstring JNICALL
-Java_org_telegram_messenger_purple_PurpleCore_togglePeekNative(
+Java_org_telegram_messenger_purple_PurpleCore_startPeekNative(
+		JNIEnv *env,
+		jclass,
+		jbyteArray stateUtf8,
+		jint seconds) {
+	auto stateText = QString();
+	if (!ReadUtf8(env, stateUtf8, stateText)) {
+		return nullptr;
+	}
+	auto &gate = TheGate();
+	const auto lock = std::lock_guard(gate.mutex);
+	if (!gate.loaded || gate.resolved.normal) {
+		return ToJava(env, PeekRefusedJson());
+	}
+	const auto now = NowUnix();
+	auto state = Purple::ParseState(stateText, QStringLiteral("state.toml"));
+	[[maybe_unused]] const auto started = Purple::StartPeek(state, now, seconds);
+	return ToJava(env, PeekChangeJson(state, false, int(seconds), now));
+}
+
+// Adds `addSeconds' to a running peek, measured from the deadline it already
+// has rather than from now, so two quick taps buy two lengths and not one and a
+// bit. Capped at kPeekExtendCapSeconds from now: past an hour it is not a peek
+// any more, it is the preset off, and there is a plainer way to say that.
+//
+// `extended' comes back false, with nothing touched, when there is nothing to
+// move - the cap already spent, or a peek with no clock on it, which is already
+// longer than any extension could make it. The caller ends the peek instead: a
+// control that can start something it cannot stop is worse than one that means
+// two things.
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_extendPeekNative(
+		JNIEnv *env,
+		jclass,
+		jbyteArray stateUtf8,
+		jint addSeconds) {
+	auto stateText = QString();
+	if (!ReadUtf8(env, stateUtf8, stateText)) {
+		return nullptr;
+	}
+	auto &gate = TheGate();
+	const auto lock = std::lock_guard(gate.mutex);
+	if (!gate.loaded || gate.resolved.normal) {
+		return ToJava(env, PeekRefusedJson());
+	}
+	const auto now = NowUnix();
+	auto state = Purple::ParseState(stateText, QStringLiteral("state.toml"));
+	const auto extended = Purple::ExtendPeek(
+		state,
+		now,
+		addSeconds,
+		Purple::kPeekExtendCapSeconds);
+	return ToJava(env, PeekChangeJson(state, extended, int(addSeconds), now));
+}
+
+// Which chip a length is: the index into peekDetents, or its size for zero -
+// "until I stop", which lives one position past the last of them.
+//
+// A pure function of the core's row, and it is here rather than in Java for the
+// reason the row itself is: the rounding is part of the row. A length between
+// two detents reads as the nearer one and a tie reads as the SHORTER, because a
+// control that silently rounds a peek up is a control that reveals more than
+// was asked for - and that is not a rule two apps should each have a copy of.
+extern "C" JNIEXPORT jint JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_peekDetentIndexNative(
+		JNIEnv *,
+		jclass,
+		jint seconds) {
+	return Purple::PeekDetentIndex(int(seconds));
+}
+
+// Ends one. The deadline is cleared with the flag, so a peek started again
+// later cannot inherit a stale one.
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_stopPeekNative(
 		JNIEnv *env,
 		jclass,
 		jbyteArray stateUtf8) {
@@ -1627,24 +1775,16 @@ Java_org_telegram_messenger_purple_PurpleCore_togglePeekNative(
 	}
 	auto &gate = TheGate();
 	const auto lock = std::lock_guard(gate.mutex);
+	// Refused under Normal like the other two, although stopping there could do
+	// no harm: nothing offers it under Normal, and a flag left over from before
+	// a switch to Normal is cleared by the load itself rather than by a caller
+	// who would have to know to ask.
 	if (!gate.loaded || gate.resolved.normal) {
-		return ToJava(env, QStringLiteral(
-			"{\"refused\":true,\"peeking\":false,\"seconds\":0,\"text\":null}"));
+		return ToJava(env, PeekRefusedJson());
 	}
-	const auto wanted = !gate.resolved.peeking;
-	const auto seconds = wanted ? gate.settings.peek.autoOffSeconds : 0;
 	auto state = Purple::ParseState(stateText, QStringLiteral("state.toml"));
-	state.peekActive = wanted;
-	state.peekDeadlineUnix = (seconds > 0) ? (NowUnix() + seconds) : 0;
-
-	auto json = QStringLiteral("{\"refused\":false,\"peeking\":");
-	AppendJsonBool(json, wanted);
-	json += QStringLiteral(",\"seconds\":");
-	json += QString::number(seconds);
-	json += QStringLiteral(",\"text\":");
-	AppendJsonString(json, Purple::SerializeState(state));
-	json += QChar('}');
-	return ToJava(env, json);
+	Purple::StopPeek(state);
+	return ToJava(env, PeekChangeJson(state, false, 0, NowUnix()));
 }
 
 // Holds the schedule off, or lets it catch up again. A decision about today
