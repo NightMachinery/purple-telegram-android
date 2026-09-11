@@ -11289,6 +11289,8 @@
     <string name="PurplePeekChipMinutes">%1$d min</string>
     <string name="PurplePeekChipHours">%1$d h</string>
     <string name="PurplePeekChipUntilStop">until I stop</string>
+    <string name="PurplePeekDialFor">Peek for %1$s</string>
+    <string name="PurplePeekDialUntilStop">Peek until you turn it off</string>
     <string name="PurpleSchedulePause">Pause the schedule</string>
     <!-- Purple: the schedule screen -->
     <string name="PurpleScheduleTitle">Schedule</string>
