@@ -11285,6 +11285,10 @@
     <string name="PurplePeekingLeft">Peeking - %1$s left</string>
     <string name="PurplePeekStarted">Peeking - everything the preset hides is showing.</string>
     <string name="PurplePeekOver">Peek over.</string>
+    <string name="PurplePeekOverCapped">Peek over - it was already as long as a peek gets.</string>
+    <string name="PurplePeekChipMinutes">%1$d min</string>
+    <string name="PurplePeekChipHours">%1$d h</string>
+    <string name="PurplePeekChipUntilStop">until I stop</string>
     <string name="PurpleSchedulePause">Pause the schedule</string>
     <!-- Purple: the schedule screen -->
     <string name="PurpleScheduleTitle">Schedule</string>

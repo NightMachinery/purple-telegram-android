@@ -135,7 +135,18 @@ public final class PurpleCore {
      */
     private static native String setPresetNative(byte[] stateUtf8, String preset);
 
-    private static native String togglePeekNative(byte[] stateUtf8);
+    /**
+     * The three peek gestures. Each returns the state.toml text to write along
+     * with what it did, or refuses when there is nothing running to peek past.
+     * Prefer {@link #startPeek}, {@link #extendPeek} and {@link #stopPeek}.
+     */
+    private static native String startPeekNative(byte[] stateUtf8, int seconds);
+
+    private static native String extendPeekNative(byte[] stateUtf8, int addSeconds);
+
+    private static native String stopPeekNative(byte[] stateUtf8);
+
+    private static native int peekDetentIndexNative(int seconds);
 
     private static native String setSchedulePausedNative(
             byte[] stateUtf8, boolean paused, long until);
@@ -348,8 +359,30 @@ public final class PurpleCore {
          */
         public final long peekDeadline;
 
-        /** What {@code [peek] auto_off} is set to, in seconds; zero disables it. */
-        public final int peekSeconds;
+        /**
+         * True while the running peek is one with no clock on it. The other
+         * half of {@link #peekDeadline}, which is zero both for that and for
+         * "nothing is running" - the chips have to tell those apart to light
+         * the last position rather than none of them.
+         */
+        public final boolean peekUntilStopped;
+
+        /**
+         * How long a tap on the peek control lasts, in seconds: {@code [peek]
+         * tap}, falling back to {@code auto_off} when the file does not say.
+         * Zero is a real answer - a tap that starts a peek with no clock on it
+         * - rather than a missing one, which is why the fallback is the core's
+         * PeekTapSeconds() rather than a check here.
+         */
+        public final int peekTap;
+
+        /**
+         * The lengths the chips offer, in seconds, shortest first. From the
+         * core rather than written out here: two hand-written lists is how a
+         * phone's chips and a desktop's row come to offer different minutes for
+         * the same feature.
+         */
+        public final List<Integer> peekDetents;
 
         public final boolean schedulePaused;
 
@@ -401,14 +434,17 @@ public final class PurpleCore {
          */
         public final int recentStyle;
 
-        Clock(boolean peeking, long peekDeadline, int peekSeconds,
+        Clock(boolean peeking, long peekDeadline, boolean peekUntilStopped,
+                int peekTap, List<Integer> peekDetents,
                 boolean schedulePaused, long schedulePausedUntil,
                 boolean scheduleConfigured,
                 List<Override> overrides, long nextOverrideDeadline, int hideScope,
                 int recentSeconds, int recentScope, int recentStyle) {
             this.peeking = peeking;
             this.peekDeadline = peekDeadline;
-            this.peekSeconds = peekSeconds;
+            this.peekUntilStopped = peekUntilStopped;
+            this.peekTap = peekTap;
+            this.peekDetents = peekDetents;
             this.schedulePaused = schedulePaused;
             this.schedulePausedUntil = schedulePausedUntil;
             this.scheduleConfigured = scheduleConfigured;
@@ -420,7 +456,8 @@ public final class PurpleCore {
             this.recentStyle = recentStyle;
         }
 
-        static final Clock NONE = new Clock(false, 0, 0, false, 0, false,
+        static final Clock NONE = new Clock(false, 0, false, 0,
+                Collections.<Integer>emptyList(), false, 0, false,
                 Collections.<Override>emptyList(), 0, SCOPE_UNCOUNTED,
                 0, RECENT_ALREADY_IN_VIEW, STYLE_NONE);
 
@@ -440,10 +477,19 @@ public final class PurpleCore {
                             entry.optLong("until", 0)));
                 }
             }
+            final List<Integer> detents = new ArrayList<>();
+            final JSONArray lengths = object.optJSONArray("peekDetents");
+            if (lengths != null) {
+                for (int i = 0; i < lengths.length(); ++i) {
+                    detents.add(lengths.optInt(i, 0));
+                }
+            }
             return new Clock(
                     object.optBoolean("peeking", false),
                     object.optLong("peekDeadline", 0),
-                    object.optInt("peekSeconds", 0),
+                    object.optBoolean("peekUntilStopped", false),
+                    object.optInt("peekTap", 0),
+                    Collections.unmodifiableList(detents),
                     object.optBoolean("schedulePaused", false),
                     object.optLong("schedulePausedUntil", 0),
                     object.optBoolean("scheduleConfigured", false),
@@ -456,7 +502,10 @@ public final class PurpleCore {
         }
     }
 
-    /** What a {@link #togglePeek(byte[])} did, so the caller can say so. */
+    /**
+     * What one of {@link #startPeek}, {@link #extendPeek} or {@link #stopPeek}
+     * did, so the caller can say so.
+     */
     public static final class PeekChange {
         /**
          * True when there was nothing to peek at, because nothing is running.
@@ -467,16 +516,35 @@ public final class PurpleCore {
 
         public final boolean peeking;
 
+        /**
+         * True when an extension actually moved the deadline. False, with
+         * nothing written, when there was nothing to move: the hour cap already
+         * spent, or a peek with no clock on it, which is already longer than
+         * any extension could make it. Always false for a start or a stop.
+         */
+        public final boolean extended;
+
         /** How long this peek will run, or zero for "until you turn it off". */
         public final int seconds;
+
+        /**
+         * What is left on the clock now. Zero when nothing is running AND when
+         * the running peek has no clock on it, exactly as the core's
+         * PeekLeftSeconds() answers it - {@link Clock#peekUntilStopped} on the
+         * next load is what tells those two apart.
+         */
+        public final int left;
 
         /** The state.toml text to write, or null when nothing should be. */
         public final String text;
 
-        PeekChange(boolean refused, boolean peeking, int seconds, String text) {
+        PeekChange(boolean refused, boolean peeking, boolean extended,
+                int seconds, int left, String text) {
             this.refused = refused;
             this.peeking = peeking;
+            this.extended = extended;
             this.seconds = seconds;
+            this.left = left;
             this.text = text;
         }
     }
@@ -562,33 +630,96 @@ public final class PurpleCore {
     }
 
     /**
-     * Starts or ends a peek.
+     * Starts a peek of {@code seconds}, or one with no clock on it when
+     * {@code seconds} is zero.
+     *
+     * Starting one while another is running restarts it at the new length
+     * rather than adding to it - a chip that names a length and then leaves
+     * twice that on the clock is a chip lying about what it did.
      *
      * @param state the current state.toml, or null
      * @return what happened; never null, and {@code text} is null when there is
      *         nothing to write
      */
-    public static PeekChange togglePeek(byte[] state) {
-        final String json;
+    public static PeekChange startPeek(byte[] state, int seconds) {
         try {
-            json = togglePeekNative(state);
+            return peekChange(startPeekNative(state, seconds));
         } catch (UnsatisfiedLinkError | RuntimeException e) {
             FileLog.e(e);
-            return new PeekChange(true, false, 0, null);
+            return PEEK_REFUSED;
         }
+    }
+
+    /**
+     * Adds {@code seconds} to a running peek, measured from the deadline it
+     * already has and capped at an hour from now.
+     *
+     * @return what happened; {@code extended} is false and nothing was written
+     *         when there was nothing to move
+     */
+    public static PeekChange extendPeek(byte[] state, int seconds) {
+        try {
+            return peekChange(extendPeekNative(state, seconds));
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return PEEK_REFUSED;
+        }
+    }
+
+    /** Ends a running peek, clearing its deadline with the flag. */
+    public static PeekChange stopPeek(byte[] state) {
+        try {
+            return peekChange(stopPeekNative(state));
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return PEEK_REFUSED;
+        }
+    }
+
+    /**
+     * Which chip a length is: a position in {@link Clock#peekDetents}, or its
+     * size for zero, which is "until I stop" one place past the last of them.
+     *
+     * The core's, not this side's, for the same reason the row of lengths is:
+     * the rounding - nearest, and a tie reads as the shorter, because rounding
+     * a peek up would reveal more than was asked for - is part of the row.
+     *
+     * @return the index, or -1 when the core could not be asked, which lights
+     *         no chip rather than the wrong one
+     */
+    public static int peekDetentIndex(int seconds) {
+        try {
+            if (!loaded) {
+                ensureLoaded();
+            }
+            return peekDetentIndexNative(seconds);
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return -1;
+        }
+    }
+
+    /** What the three above answer with when the core could not be asked. */
+    private static final PeekChange PEEK_REFUSED =
+            new PeekChange(true, false, false, 0, 0, null);
+
+    /** The one shape all three natives return. */
+    private static PeekChange peekChange(String json) {
         if (json == null) {
-            return new PeekChange(true, false, 0, null);
+            return PEEK_REFUSED;
         }
         try {
             final JSONObject object = new JSONObject(json);
             return new PeekChange(
                     object.optBoolean("refused", false),
                     object.optBoolean("peeking", false),
+                    object.optBoolean("extended", false),
                     object.optInt("seconds", 0),
+                    object.optInt("left", 0),
                     object.isNull("text") ? null : object.optString("text", null));
         } catch (JSONException e) {
             FileLog.e(e);
-            return new PeekChange(true, false, 0, null);
+            return PEEK_REFUSED;
         }
     }
 

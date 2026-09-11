@@ -22,12 +22,16 @@ import android.app.Activity;
 import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.HapticFeedbackConstants;
+import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
+import org.telegram.messenger.Utilities;
 import org.telegram.messenger.purple.PurpleCore;
 import org.telegram.messenger.purple.PurpleGate;
 import org.telegram.messenger.purple.PurpleSettings;
@@ -36,6 +40,7 @@ import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.CheckBoxCell;
 import org.telegram.ui.Cells.RadioColorCell;
+import org.telegram.ui.Components.LayoutHelper;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -204,8 +209,9 @@ public final class PurplePresetPicker {
     private static final Runnable[] PEEK_TICK = new Runnable[1];
 
     /**
-     * Adds the peek checkbox, and the schedule pause when the file describes a
-     * schedule at all - a switch that holds off nothing explains nothing.
+     * Adds the peek checkbox and its chips, and the schedule pause when the
+     * file describes a schedule at all - a switch that holds off nothing
+     * explains nothing.
      */
     private static void addClockRows(Activity activity, LinearLayout layout,
             Theme.ResourcesProvider resourcesProvider, PurpleCore.Loaded state) {
@@ -214,14 +220,25 @@ public final class PurplePresetPicker {
         final CheckBoxCell peek = new CheckBoxCell(activity, 1, resourcesProvider);
         peek.setPadding(dp(4), 0, dp(4), 0);
 
+        // The same switch with a number on it. The row is the core's
+        // PeekDetentsSeconds() with "until I stop" one position past the end of
+        // it, which is exactly where the core puts a length of zero.
+        final PeekChips chips = new PeekChips(
+                activity, resourcesProvider, state.clock.peekDetents);
+
         // Follows the gate rather than the click, so a peek ended by its own
-        // timer moves the tick here too.
+        // timer moves the tick here too - and the lit chip with it, since it
+        // follows what is left rather than what was asked for.
         final Runnable tick = new Runnable() {
             @Override
             public void run() {
                 final PurpleCore.Loaded now = PurpleGate.state();
                 final boolean peeking = now != null && now.clock.peeking;
-                peek.setText(peekText(now), null, peeking, pausable);
+                // No divider under the checkbox any more, whatever follows it:
+                // the chips below are the same control, and a line drawn
+                // between them would cut it in half.
+                peek.setText(peekText(now), null, peeking, false);
+                chips.refresh(now);
                 if (peeking && now.clock.peekDeadline > 0) {
                     AndroidUtilities.runOnUIThread(this, 1000);
                 }
@@ -229,24 +246,78 @@ public final class PurplePresetPicker {
         };
         cancelTick();
         PEEK_TICK[0] = tick;
-        tick.run();
 
         if (state.normal) {
             // Says why it does nothing rather than sitting there greyed out with
             // no explanation. Starting a peek here would leave one running that
-            // no chat list could show the end of.
+            // no chat list could show the end of. The chips are dimmed under the
+            // sentence that explains them rather than carrying one of their own.
             peek.setEnabled(false);
             peek.setAlpha(0.5f);
         } else {
             peek.setBackground(Theme.createSelectorDrawable(
                     Theme.getColor(Theme.key_listSelector, resourcesProvider), Theme.RIPPLE_MASK_ALL));
+
+            // A tap while a peek is running EXTENDS it, where the desktop's
+            // checkbox ends it. A phone has no hotkey to carry the extension,
+            // and a tap on the control while the chats are back is nearly always
+            // "not yet" rather than "done" - the peek is running because
+            // something is still being looked at. Ending it is the long press.
+            //
+            // It still ends the peek when there is nothing left to extend: the
+            // hour cap spent, or no clock on it to move. A control that can
+            // start something it cannot stop is worse than one that means two
+            // things.
             peek.setOnClickListener(v -> {
-                PurpleGate.togglePeek();
-                AndroidUtilities.cancelRunOnUIThread(tick);
-                tick.run();
+                final PurpleCore.Loaded now = PurpleGate.state();
+                if (now == null) {
+                    return;
+                }
+                // The tap length is [peek] tap, falling back to auto_off in the
+                // core. Read from the load every time rather than captured, so
+                // an edit to the file lands on the next tap.
+                final int tap = now.clock.peekTap;
+                if (!now.clock.peeking) {
+                    PurpleGate.startPeek(tap);
+                } else if (!PurpleGate.extendPeek(tap).extended) {
+                    final boolean untilStopped = now.clock.peekUntilStopped;
+                    PurpleGate.stopPeek();
+                    Toast.makeText(activity, getString(untilStopped
+                                    ? R.string.PurplePeekOver
+                                    : R.string.PurplePeekOverCapped),
+                            Toast.LENGTH_SHORT).show();
+                }
+                restartTick(tick);
+            });
+
+            // The way out, since the tap no longer is one. Not consumed when
+            // nothing is running: a long press that silently does nothing on a
+            // control that is off would read as the gesture being broken rather
+            // than as there being nothing to end.
+            peek.setOnLongClickListener(v -> {
+                final PurpleCore.Loaded now = PurpleGate.state();
+                if (now == null || !now.clock.peeking) {
+                    return false;
+                }
+                v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS,
+                        HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING);
+                PurpleGate.stopPeek();
+                restartTick(tick);
+                return true;
+            });
+
+            chips.setOnPick(seconds -> {
+                // A chip pressed while a peek is running RESTARTS it at that
+                // length rather than adding to it: a chip that says "5 min" and
+                // leaves eleven is a chip lying about what it did.
+                PurpleGate.startPeek(seconds);
+                restartTick(tick);
             });
         }
         layout.addView(peek);
+        layout.addView(chips, LayoutHelper.createLinear(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        tick.run();
 
         if (!pausable) {
             return;
@@ -280,6 +351,158 @@ public final class PurplePresetPicker {
         if (PEEK_TICK[0] != null) {
             AndroidUtilities.cancelRunOnUIThread(PEEK_TICK[0]);
             PEEK_TICK[0] = null;
+        }
+    }
+
+    /**
+     * Redraws the row now rather than up to a second from now.
+     *
+     * Every gesture here changes what the label and the chips say, and the
+     * countdown is what would otherwise carry the change - so a stop, which
+     * cancels the countdown, would leave the last frame of it on screen.
+     */
+    private static void restartTick(Runnable tick) {
+        AndroidUtilities.cancelRunOnUIThread(tick);
+        tick.run();
+    }
+
+    /**
+     * The lengths a peek can be started at, as a row of chips under the
+     * checkbox.
+     *
+     * Its own small widget rather than the screen-time screen's ChipRow: that
+     * one paints itself with the list background and reads the theme without a
+     * resources provider, both of which are wrong inside a dialog. What is
+     * shared is the shape - a HorizontalScrollView of rounded TextViews - and
+     * it is fifteen lines of it.
+     *
+     * The lengths themselves are never written here. They arrive from the
+     * core's PeekDetentsSeconds() through the load, because two hand-written
+     * lists is how a phone's chips and a desktop's row come to offer different
+     * minutes for the same feature.
+     */
+    private static final class PeekChips extends HorizontalScrollView {
+
+        private final Theme.ResourcesProvider resourcesProvider;
+        private final LinearLayout row;
+
+        /** The detents, with zero - "until I stop" - one position past them. */
+        private final List<Integer> lengths = new ArrayList<>();
+        private final List<TextView> chips = new ArrayList<>();
+
+        private Utilities.Callback<Integer> onPick;
+        private int lit = -1;
+        private boolean enabled = true;
+
+        PeekChips(Activity activity, Theme.ResourcesProvider resourcesProvider,
+                List<Integer> detents) {
+            super(activity);
+            this.resourcesProvider = resourcesProvider;
+            setHorizontalScrollBarEnabled(false);
+            setClipToPadding(false);
+            row = new LinearLayout(activity);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setPadding(dp(20), dp(2), dp(20), dp(10));
+            addView(row, LayoutHelper.createFrame(
+                    LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT));
+
+            if (detents != null) {
+                lengths.addAll(detents);
+            }
+            // Zero is the only thing that means "no clock on it", and the core
+            // puts it one position past the last detent rather than somewhere
+            // else entirely - so the row is one continuous set of choices.
+            lengths.add(0);
+            for (int i = 0; i < lengths.size(); ++i) {
+                final int seconds = lengths.get(i);
+                final TextView chip = new TextView(activity);
+                chip.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+                chip.setText(chipText(seconds));
+                chip.setSingleLine(true);
+                chip.setGravity(Gravity.CENTER);
+                chip.setPadding(dp(12), dp(5), dp(12), dp(5));
+                chip.setOnClickListener(v -> {
+                    if (onPick != null) {
+                        onPick.run(seconds);
+                    }
+                });
+                final LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                        LayoutHelper.WRAP_CONTENT, dp(28));
+                params.rightMargin = dp(6);
+                row.addView(chip, params);
+                chips.add(chip);
+            }
+            paint();
+        }
+
+        void setOnPick(Utilities.Callback<Integer> callback) {
+            onPick = callback;
+        }
+
+        /**
+         * Which chip is lit, and whether any of them may be pressed.
+         *
+         * It follows what is LEFT rather than what was asked for, so a
+         * five-minute peek with ninety seconds on it lights the two-minute
+         * chip. Nothing anywhere remembers the length a peek was started with -
+         * state.toml holds a deadline and that is all - and inventing a memory
+         * for it so that a highlight could sit still would be storing a fact to
+         * make a picture tidier.
+         */
+        void refresh(PurpleCore.Loaded state) {
+            final boolean normal = (state == null) || state.normal;
+            final int wanted;
+            if (normal || !state.clock.peeking) {
+                wanted = -1;
+            } else if (state.clock.peekUntilStopped) {
+                wanted = lengths.size() - 1;
+            } else {
+                final long left = state.clock.peekDeadline
+                        - System.currentTimeMillis() / 1000L;
+                // At least a second, because the rounding reads zero as "until
+                // I stop": the last second of a countdown must not light the
+                // chip that means the opposite of ending.
+                wanted = PurpleCore.peekDetentIndex((int) Math.max(left, 1L));
+            }
+            if (wanted == lit && (!normal) == enabled) {
+                return;
+            }
+            lit = wanted;
+            enabled = !normal;
+            paint();
+        }
+
+        private void paint() {
+            final int on = Theme.getColor(
+                    Theme.key_featuredStickers_addButton, resourcesProvider);
+            final int off = Theme.multAlpha(Theme.getColor(
+                    Theme.key_dialogTextGray2, resourcesProvider), 0.12f);
+            for (int i = 0; i < chips.size(); ++i) {
+                final TextView chip = chips.get(i);
+                final boolean checked = (i == lit);
+                chip.setTextColor(checked
+                        ? Theme.getColor(Theme.key_featuredStickers_buttonText, resourcesProvider)
+                        : Theme.getColor(Theme.key_dialogTextBlack, resourcesProvider));
+                chip.setBackground(Theme.createSimpleSelectorRoundRectDrawable(
+                        dp(14), checked ? on : off,
+                        Theme.getColor(Theme.key_listSelector, resourcesProvider)));
+                chip.setEnabled(enabled);
+            }
+            setAlpha(enabled ? 1f : 0.5f);
+        }
+
+        /**
+         * A length as a chip names it, in the core's own units: minutes up to
+         * the hour, and the position past the last detent is the one with no
+         * clock on it.
+         */
+        private static CharSequence chipText(int seconds) {
+            if (seconds <= 0) {
+                return getString(R.string.PurplePeekChipUntilStop);
+            } else if (seconds >= 3600 && (seconds % 3600) == 0) {
+                return formatString(R.string.PurplePeekChipHours, seconds / 3600);
+            }
+            return formatString(R.string.PurplePeekChipMinutes, seconds / 60);
         }
     }
 
