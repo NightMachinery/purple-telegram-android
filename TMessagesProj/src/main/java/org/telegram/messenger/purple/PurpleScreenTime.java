@@ -62,6 +62,8 @@ public final class PurpleScreenTime {
     private static final String KIND_PRESET = "preset";
     private static final String KIND_FOREGROUND = "foreground";
     private static final String KIND_BACKGROUND = "background";
+    private static final String KIND_PEEK = "peek";
+    private static final String KIND_PEEK_END = "peek_end";
 
     /** The core's ScreenTimeKind spellings, by the value it numbers them with. */
     private static final String[] CHAT_KINDS = {
@@ -100,6 +102,20 @@ public final class PurpleScreenTime {
 
     /** Whether an Open has been written for the state above and not yet ended. */
     private static boolean sessionOpen;
+
+    /**
+     * The peek last written into the log: whether one was running, and the
+     * deadline it had.
+     *
+     * Both, because the deadline moving is worth a line of its own - an
+     * extension, or the control tapped again at another length. The core reads
+     * a second "peek" with no end between as the SAME peek and not a new one,
+     * and takes the newest deadline it saw, which is what stops a peek that
+     * outlived the process from swallowing the hours the phone spent with
+     * Telegram killed.
+     */
+    private static boolean peeking;
+    private static long peekDeadlineMs;
 
     /** The preset last written into an event, so a change can be noticed. */
     private static String preset = "";
@@ -163,6 +179,12 @@ public final class PurpleScreenTime {
                 sessionOpen = false;
                 cancelIdle();
             }
+            // Nothing is being written any more, so the peek is forgotten
+            // rather than ended: a "peek_end" into a log that has stopped
+            // recording would be a line about a moment nothing else in it
+            // covers. Recording again announces whatever is running then.
+            peeking = false;
+            peekDeadlineMs = 0;
             started = false;
             return;
         }
@@ -177,6 +199,7 @@ public final class PurpleScreenTime {
                 append(now(), KIND_PRESET, dialogId, chatKind, preset, "", hidden);
             }
         }
+        checkPeek(next);
         if (foreground && !sessionOpen) {
             // Two ways to arrive here, and they want the same thing: the switch
             // was turned on while the app was already in front, or the gate
@@ -186,6 +209,37 @@ public final class PurpleScreenTime {
             append(at, KIND_FOREGROUND, 0, PurpleCore.SCREEN_KIND_ELSEWHERE, preset, "", false);
             open(at);
         }
+    }
+
+    /**
+     * Writes the peek line when a peek starts, ends, or has its deadline moved.
+     *
+     * Every one of those arrives here as a gate reload - starting, extending
+     * and stopping all write state and reload, and so does the timer that ends
+     * a peek at its deadline - so there is nothing to hook beyond this, and no
+     * timer of this file's own.
+     *
+     * Not tied to a session, unlike every other kind here. A peek is not a chat
+     * being in front of you: most are started to look at the chat list itself,
+     * which is exactly the use the "time in hidden chats" number cannot see, and
+     * one started with the app in front can still be running when it goes away.
+     */
+    private static void checkPeek(PurpleCore.Loaded next) {
+        final boolean running = next.clock.peeking;
+        final long deadline = running ? next.clock.peekDeadline * 1000L : 0;
+        if (running == peeking && deadline == peekDeadlineMs) {
+            return;
+        }
+        peeking = running;
+        peekDeadlineMs = deadline;
+        append(now(), running ? KIND_PEEK : KIND_PEEK_END, 0,
+                PurpleCore.SCREEN_KIND_ELSEWHERE, preset,
+                // The deadline rides in the action field, which is what the
+                // core reads it out of. A peek with no clock on it has none,
+                // and is bounded by nothing - that one really does run until it
+                // is stopped.
+                (running && deadline > 0) ? Long.toString(deadline) : "",
+                false);
     }
 
     /**

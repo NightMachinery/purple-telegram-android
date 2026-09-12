@@ -11483,6 +11483,11 @@
     <string name="PurpleScreenTimeReadingInfo">Every day in the period folded onto one clock, so a schedule window can be placed where the time actually goes.</string>
     <string name="PurpleScreenTimeHidden">Hidden while peeking</string>
     <string name="PurpleScreenTimeHiddenInfo">Time spent in chats the running preset was hiding, reached by peeking. Part of the total above, not on top of it.</string>
+    <string name="PurpleScreenTimePeek">Peeked</string>
+    <string name="PurpleScreenTimePeekNever">never</string>
+    <string name="PurpleScreenTimePeekOnce">once · %1$s</string>
+    <string name="PurpleScreenTimePeekTimes">%1$d times · %2$s</string>
+    <string name="PurpleScreenTimePeekInfo">How often a peek was started in this period, and how long the peeks ran for. Peek is the way out of the preset, so this is how much of the period the preset was not being kept to - which is not the same as the line above it, since most peeks are a look at the chat list itself rather than at any chat in it.</string>
     <string name="PurpleScreenTimeHeat">Hour by weekday</string>
     <string name="PurpleScreenTimeHeatInfo">Rows are Monday to Sunday. Darker is more time. Drawn from the whole period, whatever the chips above are filtering.</string>
     <string name="PurpleScreenTimeBudgets">Budgets</string>

@@ -3030,6 +3030,19 @@ public final class PurpleCore {
         /** One scope per preset that appears in the range, longest first. */
         public final List<Scope> presets;
 
+        /**
+         * How much peek there was in the range: how many, and how long they
+         * ran for.
+         *
+         * Not the same question as {@code hiddenMs}, which is time spent IN
+         * the chats the preset hides. Most peeks are started to look at the
+         * list itself, and those show up here and nowhere else - which is why
+         * the line is worth drawing: peek is the way out of the preset, so how
+         * much it is used is how much the preset was not being kept to.
+         */
+        public final int peekCount;
+        public final long peekMs;
+
         private Report(JSONObject json) {
             super(json);
             this.reading = buckets(json.optJSONArray("reading"));
@@ -3056,6 +3069,8 @@ public final class PurpleCore {
                 }
             }
             this.presets = Collections.unmodifiableList(scopes);
+            this.peekCount = json.optInt("peekCount", 0);
+            this.peekMs = json.optLong("peekMs", 0);
         }
 
         private static void fillHeat(JSONArray rows, long[][] into) {
