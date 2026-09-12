@@ -148,6 +148,12 @@ public final class PurpleCore {
 
     private static native int peekDetentIndexNative(int seconds);
 
+    /**
+     * The screen locked, or the app's own passcode lock engaged. Prefer
+     * {@link PurpleGate#locked}.
+     */
+    private static native String peekLockedNative(byte[] stateUtf8, int screenLock);
+
     private static native String setSchedulePausedNative(
             byte[] stateUtf8, boolean paused, long until);
 
@@ -675,6 +681,29 @@ public final class PurpleCore {
     public static PeekChange stopPeek(byte[] state) {
         try {
             return peekChange(stopPeekNative(state));
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return PEEK_REFUSED;
+        }
+    }
+
+    /**
+     * Reports a lock, and ends the running peek if the file says this lock ends
+     * one here.
+     *
+     * The decision is the core's, out of the three {@code [peek]} keys, and the
+     * caller only says what happened - which is what keeps the phone and the
+     * desktop from drifting apart on a rule written in one file. On a phone the
+     * screen lock is never one of them: a phone locks all day by itself.
+     *
+     * @param screenLock true for the device's own screen lock, false for
+     *                   Telegram's passcode lock
+     * @return what happened; {@code text} is null when nothing moved, which is
+     *         the ordinary answer on a phone
+     */
+    public static PeekChange locked(byte[] state, boolean screenLock) {
+        try {
+            return peekChange(peekLockedNative(state, screenLock ? 1 : 0));
         } catch (UnsatisfiedLinkError | RuntimeException e) {
             FileLog.e(e);
             return PEEK_REFUSED;

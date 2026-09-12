@@ -108,6 +108,26 @@ is the quick one once you know it is there.
 Under Normal the whole thing - row, dial and chips - is dimmed and inert,
 beneath the line that says why: nothing is hidden there to peek at.
 
+A peek ends at its deadline or when you end it, and on a phone that is very
+nearly all there is to it. The device's **screen lock never ends a peek** and
+there is no key to make it: a phone's screen locks all day by itself - a
+timeout, a pocket, a glance away - and a peek that could not survive that would
+be no use on the one device where the screen is always going off.
+`[peek] end_on_app_lock_mobile_p` is the single exception and it is **off**
+unless the file turns it on; with it on, Telegram's own passcode lock ends a
+running peek. Off by default because that lock is usually on a short timer too,
+so on by default would end a peek every few minutes for most people - somebody
+who locks the app by hand can switch it on.
+
+The desktop has both `end_on_screen_lock_p` and `end_on_app_lock_p` and turns
+them **on** by default. That is one rule applied to two machines rather than an
+inconsistency to be tidied away: a desktop locks because somebody got up, and a
+machine nobody is sitting at should not be left showing what the preset hides,
+while a phone's locks say nothing at all about where its owner is. Nothing
+anywhere tries to tell a lock you performed from one a timer fired - that would
+be a guess, made twice, on two platforms, and wrong quietly. The keys say it out
+loud instead.
+
 A chat can be filed into a list from the chat list itself: select it, then
 **Work Mode lists** in the overflow. Every list is offered, ticked where the
 chat is already a member, and a tap adds or removes it. The write goes through
