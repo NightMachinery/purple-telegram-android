@@ -493,11 +493,19 @@ visible to **everybody**, for good, on one tap; this fork does not carry a
 control like that, so that button is the trade, and with `trade_p = false`
 there is no button at all - only the note that the offer is off, where the
 switch is, and that Telegram's own Privacy settings are still the deliberate
-way to show your last seen to everyone. The profile's own button agrees with
-the line beside it - both ask the core the one question - so it stands for a
+way to show your last seen to everyone. The profile's own button stands for a
 remembered read as well, and it no longer hides itself from a premium account:
 upstream's button was a promo for a permanent change, and this one is the
 trade.
+
+That button follows `trade_p` alone, and not `reasons_p`. It is drawn beside
+the status rather than inside it, so it is the offer's control and not the
+explanation's - and it has to be, because it is the only door left when the
+explanations are off. A tail switched off cannot be tapped, a remembered line
+needs a trade to exist before it can be the way in, and the seen-by sheet's
+button is reached from this one. Gating it on the tail meant that turning the
+explanations off quietly took the whole feature away from anybody who had not
+traded already, which is neither what the switch says nor what it is for.
 
 **Screen time** is `[screen_time]`, and it is off until `enabled_p = true` says
 otherwise - it is a record of what you looked at and for how long, and nothing
