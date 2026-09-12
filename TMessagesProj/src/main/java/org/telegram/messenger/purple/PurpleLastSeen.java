@@ -308,6 +308,35 @@ public final class PurpleLastSeen {
     }
 
     /**
+     * Whether the trade has anything to offer about this person, drawn line or
+     * no drawn line.
+     *
+     * The same question {@link #tappable} answers, asked for an affordance that
+     * is not a line. A tap target has to sit on something the user can see, so
+     * a tail {@code reasons_p} switched off is rightly not tappable - but the
+     * profile's button is drawn beside the status rather than inside it, and it
+     * belongs to the offer rather than to the explanation.
+     *
+     * Gating it on the line left {@code reasons_p = false} with no way into the
+     * sheet at all for somebody who had never traded: the tail was gone by
+     * request, the remembered line needs a trade to exist before it can be the
+     * door, and the seen-by sheet's own button is only reachable from this one.
+     * The offer is {@code trade_p} and nothing else, which is what the key says
+     * it means.
+     */
+    public static boolean offered(TLRPC.User user) {
+        if (tappable(user)) {
+            return true;
+        }
+        // Not the note's line, because there is no line: the offer stands on
+        // the same two facts the tail would have been drawn from, minus the
+        // switch that governs drawing it.
+        return tradeOffered()
+                && shapeFor(user) == PurpleCore.SHAPE_COARSE
+                && reasonFor(user) == PurpleCore.REASON_BY_ME;
+    }
+
+    /**
      * How long until a trade with this person would be allowed again, in
      * seconds, or 0 when one is allowed right now.
      *
