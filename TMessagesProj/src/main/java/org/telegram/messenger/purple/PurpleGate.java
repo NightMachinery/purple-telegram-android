@@ -545,6 +545,39 @@ public final class PurpleGate {
     }
 
     /**
+     * Telegram's own passcode lock engaged.
+     *
+     * Reported rather than acted on: whether a lock ends a running peek is
+     * {@code [peek] end_on_app_lock_mobile_p}, which is OFF by default, so on a
+     * phone this ordinarily writes nothing and rebuilds nothing. A passcode
+     * lock on a five-minute timer would otherwise end a peek every few minutes,
+     * and a peek that cannot survive the screen going off is no use on the one
+     * device where the screen is always going off.
+     *
+     * The device's own screen lock is deliberately NOT reported here and has no
+     * key: a phone locks constantly, by itself, and there is nothing in that
+     * worth a switch. The desktop, where a lock means somebody got up, reports
+     * both.
+     *
+     * Called from the one place both the passcode item and the auto-lock timer
+     * go through, because the core does not care which of them it was - the key
+     * is the answer, not a guess at what the user meant.
+     */
+    public static void locked() {
+        if (!peeking()) {
+            // A volatile read of the last load, and deliberately not
+            // ensureLoaded(): nothing is peeking, so there is nothing to end,
+            // and putting the passcode screen up is not a reason to start the
+            // gate and read two files.
+            return;
+        }
+        final PurpleCore.PeekChange change = PurpleCore.locked(PurpleState.read(), false);
+        if (change.text != null && PurpleState.write(change.text.getBytes(UTF_8))) {
+            reload("app locked");
+        }
+    }
+
+    /**
      * Holds the schedule off, or lets it catch up.
      *
      * Unpausing catches up with wherever the schedule has got to, by the same

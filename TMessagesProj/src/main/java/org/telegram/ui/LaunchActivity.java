@@ -138,6 +138,7 @@ import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.messenger.pip.PipActivityController;
+import org.telegram.messenger.purple.PurpleGate;
 import org.telegram.messenger.purple.PurpleScreenTime;
 import org.telegram.messenger.pip.activity.IPipActivity;
 import org.telegram.messenger.pip.activity.IPipActivityHandler;
@@ -1427,6 +1428,12 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             selectAnimatedEmojiDialog = null;
         }
         SharedConfig.appLocked = true;
+        // Purple: the app locked, which may end a running peek. Reported from
+        // the one place the passcode item and the auto-lock timer both come
+        // through, because the rule is a key in settings.toml and not a guess
+        // at which of them it was - and on a phone that key is off by default,
+        // so this ordinarily does nothing at all.
+        PurpleGate.locked();
         if (SecretMediaViewer.hasInstance() && SecretMediaViewer.getInstance().isVisible()) {
             SecretMediaViewer.getInstance().closePhoto(false, false);
         } else if (PhotoViewer.hasInstance() && PhotoViewer.getInstance().isVisible()) {

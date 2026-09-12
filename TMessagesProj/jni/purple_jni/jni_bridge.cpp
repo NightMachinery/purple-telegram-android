@@ -1758,6 +1758,48 @@ Java_org_telegram_messenger_purple_PurpleCore_extendPeekNative(
 	return ToJava(env, PeekChangeJson(state, extended, int(addSeconds), now));
 }
 
+// Purple: the device locked, or the app did.
+//
+// The client reports the event and nothing more; whether it ends a peek is the
+// core's answer, out of the three `[peek]' keys, and on a phone the screen lock
+// is never one of them - a phone locks all day by itself. The default here is
+// that NOTHING a phone does ends a peek early: `end_on_app_lock_mobile_p' is off
+// until somebody turns it on, because a passcode lock on a five-minute timer
+// would end a peek every few minutes.
+//
+// `extended' comes back false and `text' is null when nothing moved, so the
+// caller writes no file and rebuilds no list for a lock that changed nothing.
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_peekLockedNative(
+		JNIEnv *env,
+		jclass,
+		jbyteArray stateUtf8,
+		jint screenLock) {
+	auto stateText = QString();
+	if (!ReadUtf8(env, stateUtf8, stateText)) {
+		return nullptr;
+	}
+	auto &gate = TheGate();
+	const auto lock = std::lock_guard(gate.mutex);
+	if (!gate.loaded || gate.resolved.normal) {
+		return ToJava(env, PeekRefusedJson());
+	}
+	const auto now = NowUnix();
+	auto state = Purple::ParseState(stateText, QStringLiteral("state.toml"));
+	const auto ended = Purple::EndPeekForLock(
+		state,
+		now,
+		gate.settings,
+		gate.device,
+		screenLock
+			? Purple::LockKind::Screen
+			: Purple::LockKind::App);
+	if (!ended) {
+		return ToJava(env, PeekRefusedJson());
+	}
+	return ToJava(env, PeekChangeJson(state, false, 0, now));
+}
+
 // Which chip a length is: the index into peekDetents, or its size for zero -
 // "until I stop", which lives one position past the last of them.
 //
