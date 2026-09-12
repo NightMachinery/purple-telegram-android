@@ -238,6 +238,16 @@ public final class PurplePresetPicker {
         final PeekDial dial = new PeekDial(activity, resourcesProvider, lengths);
         final PeekChips chips = new PeekChips(activity, resourcesProvider, lengths);
 
+        // The grey line that says where the extension went. Only while a peek
+        // is running, because that is the only time there is anything to
+        // extend - a line telling you to long-press to lengthen something that
+        // is not running is noise on a control that already carries two
+        // gestures. Not built at all under Normal, where the whole thing is
+        // dead and the line would be describing a gesture that does nothing.
+        final TextView extendHint = state.normal ? null
+                : note(activity, getString(R.string.PurplePeekLongPressExtend),
+                        Theme.getColor(Theme.key_dialogTextGray2, resourcesProvider));
+
         // Follows the gate rather than the click, so a peek ended by its own
         // timer moves the tick here too - and the lit chip with it, since it
         // follows what is left rather than what was asked for.
@@ -250,6 +260,9 @@ public final class PurplePresetPicker {
                 // the chips below are the same control, and a line drawn
                 // between them would cut it in half.
                 peek.setText(peekText(now), null, peeking, false);
+                if (extendHint != null) {
+                    extendHint.setVisibility(peeking ? View.VISIBLE : View.GONE);
+                }
                 dial.refresh(now);
                 chips.refresh(now);
                 if (peeking && now.clock.peekDeadline > 0) {
@@ -271,43 +284,46 @@ public final class PurplePresetPicker {
             peek.setBackground(Theme.createSelectorDrawable(
                     Theme.getColor(Theme.key_listSelector, resourcesProvider), Theme.RIPPLE_MASK_ALL));
 
-            // A tap while a peek is running EXTENDS it, where the desktop's
-            // checkbox ends it. A phone has no hotkey to carry the extension,
-            // and a tap on the control while the chats are back is nearly always
-            // "not yet" rather than "done" - the peek is running because
-            // something is still being looked at. Ending it is the long press.
-            //
-            // It still ends the peek when there is nothing left to extend: the
-            // hour cap spent, or no clock on it to move. A control that can
-            // start something it cannot stop is worse than one that means two
-            // things.
+            // The tap is the toggle the checkbox looks like: it starts a peek,
+            // and a second tap ends it, the way the desktop's checkbox has
+            // always behaved. The tap used to EXTEND a running peek instead,
+            // with the stop hidden on a long press that nothing on screen
+            // mentioned, and the first report of it was somebody tapping to
+            // turn a peek off and watching the time go up. A checkbox that
+            // will not uncheck is broken however good the reason.
             peek.setOnClickListener(v -> {
                 final PurpleCore.Loaded now = PurpleGate.state();
                 if (now == null) {
                     return;
                 }
-                // The tap length is [peek] tap_mobile, five minutes when the
-                // file does not write it, resolved in the core. Read from the
-                // load every time rather than captured, so an edit to the file
-                // lands on the next tap.
-                final int tap = now.clock.peekTap;
                 if (!now.clock.peeking) {
-                    PurpleGate.startPeek(tap);
-                } else if (!PurpleGate.extendPeek(tap).extended) {
-                    final boolean untilStopped = now.clock.peekUntilStopped;
+                    // The tap length is [peek] tap_mobile, five minutes when
+                    // the file does not write it, resolved in the core. Read
+                    // from the load every time rather than captured, so an edit
+                    // to the file lands on the next tap.
+                    PurpleGate.startPeek(now.clock.peekTap);
+                } else {
                     PurpleGate.stopPeek();
-                    Toast.makeText(activity, getString(untilStopped
-                                    ? R.string.PurplePeekOver
-                                    : R.string.PurplePeekOverCapped),
-                            Toast.LENGTH_SHORT).show();
                 }
                 restartTick(tick);
             });
 
-            // The way out, since the tap no longer is one. Not consumed when
-            // nothing is running: a long press that silently does nothing on a
-            // control that is off would read as the gesture being broken rather
-            // than as there being nothing to end.
+            // Extending is the long press, and the grey line under the control
+            // is what says so - it is the one gesture here that nothing about
+            // the control's own shape would suggest. It stays on the phone
+            // because there is no hotkey to give it to, the way the desktop
+            // does, and a tap while the chats are back is often "not yet"
+            // rather than "done".
+            //
+            // It ends the peek when there is nothing left to extend: the hour
+            // cap spent, or no clock on it to move. Those are the tap's two old
+            // sentences, moved across with the branch that says them, because a
+            // control that can start something it cannot stop is worse than one
+            // that means two things.
+            //
+            // Not consumed when nothing is running: a long press that silently
+            // did nothing on a control that is off would read as the gesture
+            // being broken rather than as there being nothing to extend.
             peek.setOnLongClickListener(v -> {
                 final PurpleCore.Loaded now = PurpleGate.state();
                 if (now == null || !now.clock.peeking) {
@@ -315,7 +331,14 @@ public final class PurplePresetPicker {
                 }
                 v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS,
                         HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING);
-                PurpleGate.stopPeek();
+                if (!PurpleGate.extendPeek(now.clock.peekTap).extended) {
+                    final boolean untilStopped = now.clock.peekUntilStopped;
+                    PurpleGate.stopPeek();
+                    Toast.makeText(activity, getString(untilStopped
+                                    ? R.string.PurplePeekOver
+                                    : R.string.PurplePeekOverCapped),
+                            Toast.LENGTH_SHORT).show();
+                }
                 restartTick(tick);
                 return true;
             });
@@ -337,6 +360,12 @@ public final class PurplePresetPicker {
                 DIAL_SIZE, DIAL_SIZE, Gravity.CENTER_HORIZONTAL, 0, 4, 0, 2));
         layout.addView(chips, LayoutHelper.createLinear(
                 LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        // Under the chips rather than between the checkbox and the dial: those
+        // three are one control, and a line of text drawn through the middle of
+        // them would cut it in half.
+        if (extendHint != null) {
+            layout.addView(extendHint);
+        }
         tick.run();
 
         if (!pausable) {
