@@ -11400,16 +11400,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 // the sentence fits and the header is where the eyes do.
                 newString2 = PurpleLastSeen.decorate(
                         user, newString2, AndroidUtilities.displaySize.x).toString();
-                // Purple: the button belongs to the offer rather than to the
-                // explanation, so it stands wherever a trade would have
-                // something to read - a remembered one included, and with
-                // reasons_p off as well, where there is no tail to tap and this
-                // is then the only door into the sheet. It still goes when
-                // trade_p does. Upstream's own test is gone with it: that button
-                // was a promo for a permanent change and hid itself from a
-                // premium account, and this one opens the trade, so hiding it
-                // there was hiding the feature from precisely the people who
-                // came looking for it.
                 hiddenStatusButton = PurpleLastSeen.offered(user);
                 if (onlineTextView[1] != null && !mediaHeaderVisible) {
                     int key = isOnline[0] && peerColor == null ? Theme.key_profile_status : Theme.key_actionBarDefaultSubtitle;

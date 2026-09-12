@@ -411,19 +411,6 @@ appended when the other person hid theirs - that is their setting, and there is
 nothing to offer about it - and nothing at all to "a long time ago": the server
 does not say whether that is inactivity or a block, and the fork does not guess.
 
-Three things have to line up before there is anything to offer - the status is
-coarse, the server blames your own rules for it, and the two switches are on -
-and from the outside all three failures look identical: no mark, no button,
-nothing to tap. Which one it is goes to logcat, at most twice a minute and only
-while coarse statuses are on screen:
-
-    Purple: last seen: 12 coarse, 0 by me (reasons on, offer on)
-
-A zero on the second number with both switches on means nothing on screen is
-coarse because of *your* rules - your own last seen is not what is in the way -
-and no setting of the fork's can conjure an offer out of that. The other shapes
-name the switch that is off.
-
 The words are for the two places with room for them and somewhere to put a
 second tap: the chat header and the profile. Everywhere else the fork draws the
 eye alone after the status - the contacts tab and the generic user rows, search
@@ -511,14 +498,11 @@ remembered read as well, and it no longer hides itself from a premium account:
 upstream's button was a promo for a permanent change, and this one is the
 trade.
 
-That button follows `trade_p` alone, and not `reasons_p`. It is drawn beside
-the status rather than inside it, so it is the offer's control and not the
-explanation's - and it has to be, because it is the only door left when the
-explanations are off. A tail switched off cannot be tapped, a remembered line
-needs a trade to exist before it can be the way in, and the seen-by sheet's
-button is reached from this one. Gating it on the tail meant that turning the
-explanations off quietly took the whole feature away from anybody who had not
-traded already, which is neither what the switch says nor what it is for.
+That button follows `trade_p` and not `reasons_p`: it is drawn beside the
+status rather than in it, so it stands for any last seen that is coarse because
+of your own rules, tail or no tail. With the explanations off it is the only
+way into the sheet - the tail is gone by request, a remembered line needs a
+trade to exist first, and the seen-by sheet's button is reached from this one.
 
 **Screen time** is `[screen_time]`, and it is off until `enabled_p = true` says
 otherwise - it is a record of what you looked at and for how long, and nothing
