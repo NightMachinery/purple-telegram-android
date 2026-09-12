@@ -67,17 +67,18 @@ your hand is a longer look than a shortcut fired mid-sentence. Write
 `auto_off`, `hotkey` and `hotkey_length` are read and ignored here: the first
 two are what a keyboard taps for, and there is no key to bind on a phone.
 
-Tapping the row starts a peek of `tap_mobile`; tapping it again while one is
-running *extends* it by another, measured from the deadline it already has rather
-than from now, so two quick taps buy two lengths. It stops at an hour - past
-that it is not a peek any more, it is the preset off, and there is a plainer way
-to say that. A tap that finds the cap already spent ends the peek instead and
-says so, and so does a tap on a peek with no clock on it, which has no deadline
-for an extension to move. A **long press ends it** outright. This is where the
-phone parts company with the desktop, where the second press of the *checkbox*
-ends the peek and extending is the hotkey's job: a phone has no hotkey to give
-that to, and a tap while the chats are back is nearly always "not yet" rather
-than "done".
+Tapping the row starts a peek of `tap_mobile`, and **tapping it again ends it**,
+the way the desktop's checkbox does: a checkbox that will not uncheck is broken
+however good the reason. A **long press extends** the running peek by another
+`tap_mobile`, measured from the deadline it already has rather than from now, so
+two long presses buy two lengths; while a peek is running a grey line under the
+row, the dial and the chips says `Long press to extend`, since that is the one
+gesture here nothing about the control's own shape suggests. Extending is the
+phone's share of what the desktop gives its hotkey, which has no key to be bound
+to here. It stops at an hour - past that it is not a peek any more, it is the
+preset off, and there is a plainer way to say that. A long press that finds the
+cap already spent ends the peek instead and says so, and so does a long press on
+a peek with no clock on it, which has no deadline for an extension to move.
 
 Under the row is a row of **chips** - one minute to an hour, and `until I stop`
 one position past the end of them. Tapping one starts a peek of that length, or
@@ -106,7 +107,9 @@ asked for. The chips stay: a row of words is the discoverable path and the dial
 is the quick one once you know it is there.
 
 Under Normal the whole thing - row, dial and chips - is dimmed and inert,
-beneath the line that says why: nothing is hidden there to peek at.
+beneath the line that says why: nothing is hidden there to peek at. The grey
+line about the long press is not drawn there, or at any other time no peek is
+running, because there would be nothing for it to lengthen.
 
 A peek ends at its deadline or when you end it, and on a phone that is very
 nearly all there is to it. The device's **screen lock never ends a peek** and
