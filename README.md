@@ -411,6 +411,19 @@ appended when the other person hid theirs - that is their setting, and there is
 nothing to offer about it - and nothing at all to "a long time ago": the server
 does not say whether that is inactivity or a block, and the fork does not guess.
 
+Three things have to line up before there is anything to offer - the status is
+coarse, the server blames your own rules for it, and the two switches are on -
+and from the outside all three failures look identical: no mark, no button,
+nothing to tap. Which one it is goes to logcat, at most twice a minute and only
+while coarse statuses are on screen:
+
+    Purple: last seen: 12 coarse, 0 by me (reasons on, offer on)
+
+A zero on the second number with both switches on means nothing on screen is
+coarse because of *your* rules - your own last seen is not what is in the way -
+and no setting of the fork's can conjure an offer out of that. The other shapes
+name the switch that is off.
+
 The words are for the two places with room for them and somewhere to put a
 second tap: the chat header and the profile. Everywhere else the fork draws the
 eye alone after the status - the contacts tab and the generic user rows, search

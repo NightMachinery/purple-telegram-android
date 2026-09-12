@@ -235,7 +235,65 @@ public final class PurpleLastSeen {
         if (shape == PurpleCore.SHAPE_EXACT) {
             return PurpleCore.LastSeenNote.PLAIN;
         }
-        return PurpleCore.lastSeenNote(user.id, reasonFor(user), shape);
+        final int reason = reasonFor(user);
+        if (shape == PurpleCore.SHAPE_COARSE) {
+            countCoarse(reason);
+        }
+        return PurpleCore.lastSeenNote(user.id, reason, shape);
+    }
+
+    /** When the line below last said anything, so it says it rarely. */
+    private static long countedSince;
+
+    /** Coarse statuses drawn since then, and how many the server blamed on us. */
+    private static int coarseSeen;
+
+    private static int coarseByMe;
+
+    /**
+     * The discriminator for "the offer never appears any more".
+     *
+     * Three things have to line up before the trade can be offered about
+     * somebody - the status is coarse, the server says it is coarse because of
+     * OUR rules, and the two switches are on - and from the outside all three
+     * failures look the same: no mark, no button, nothing to tap. This says
+     * which of them it is, in the shape 14a's counter line took, because the
+     * one thing that cannot be worked out by reading the code is what the
+     * server is actually sending to one particular account:
+     *
+     *     Purple: last seen: 12 coarse, 0 by me (reasons on, offer on)
+     *
+     * A zero on the second number with the switches on means nobody's status is
+     * ours to trade for - the account's own last seen is not the thing in the
+     * way - and no change in here can conjure an offer out of that. The other
+     * shapes name the switch that is off.
+     *
+     * Counted rather than printed per row, and at most once every half minute,
+     * because a member list binds a row at a time while it scrolls. It counts
+     * questions rather than people - one row asks for the line and again for
+     * the tap - so the two totals are a ratio to read and not a census. Drawing
+     * is the UI thread's, so the counters are not synchronised: a number that
+     * exists to be read by eye can afford to lose a race it will not have.
+     */
+    private static void countCoarse(int reason) {
+        coarseSeen += 1;
+        if (reason == PurpleCore.REASON_BY_ME) {
+            coarseByMe += 1;
+        }
+        final long now = System.currentTimeMillis();
+        if (countedSince == 0) {
+            countedSince = now;
+            return;
+        }
+        if (now - countedSince < 30_000L) {
+            return;
+        }
+        FileLog.d("Purple: last seen: " + coarseSeen + " coarse, " + coarseByMe
+                + " by me (reasons " + (reasons() ? "on" : "off")
+                + ", offer " + (tradeOffered() ? "on" : "off") + ")");
+        countedSince = now;
+        coarseSeen = 0;
+        coarseByMe = 0;
     }
 
     /**
