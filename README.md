@@ -164,10 +164,19 @@ actually costing the badge something, so an account with nothing hidden never
 sees it - and the two lines together are how you check the fix on a phone,
 without a debugger.
 
-One rough edge remains. That counter is rebuilt from scratch only on a full
-recount; in between, a message arriving in a hidden chat is applied to the
-running total as a delta that does not yet ask the preset, so the number can be
-one too high until the next rebuild.
+Between those rebuilds the total is not recounted but nudged: a message arriving
+adds one, a chat being read takes one off. That arithmetic has two halves
+separated in time, and a preset can change its mind about a chat in between - a
+peek reveals one that was hidden when its message landed, a `show_mode` watching
+unread hides one the moment you read it - so a badge kept in step that way drifts
+in both directions and does not come back. While a preset is filtering, a nudge
+that involves a chat it is not showing is therefore not applied to "All chats" at
+all; the tab keeps the number its last rebuild gave it and one is scheduled, a
+second and a half later, so that a burst of messages costs one rebuild rather
+than one each. Every other tab is nudged as before, since those count what they
+draw. This too says so in logcat:
+
+    Purple: All chats delta held back, 2 unread chats the preset hides were in it; recount in 1500ms.
 
 A preset also picks which folder tabs are on the strip, in the order it names
 them. `"*ALL"` is every folder it does not name elsewhere, expanded where you
