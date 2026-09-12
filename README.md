@@ -481,7 +481,8 @@ otherwise - it is a record of what you looked at and for how long, and nothing
 should start keeping one of those because a version number moved. With it on,
 the app appends raw events to `screentime.log` beside `settings.toml`: a chat
 coming to the front and leaving it, the app entering and leaving the
-foreground, the screen locking, the preset changing, and the send actions - a
+foreground, the screen locking, the preset changing, a peek starting and
+ending, and the send actions - a
 composer edit, a send, a voice recording started, an attachment picked, a reply
 or an edit begun. Time that is not in a chat - the list, search, settings - is
 its own bucket, "elsewhere", so the splits add up to foreground time rather
@@ -512,8 +513,19 @@ same hour-of-day profile for that chat alone. Chips filter it: active only,
 one kind, one preset. Under that, **Reading load** folds every day in the
 period onto one clock, which is what a schedule window gets placed by;
 **Hidden while peeking** is the time spent in chats the running preset was
-hiding; and a month gets an hour-by-weekday heat map. Export writes a CSV to
-the app's cache and hands it to the share sheet.
+hiding; **Peeked** is how often a peek was started in the period and how long
+the peeks ran; and a month gets an hour-by-weekday heat map. Export writes a
+CSV to the app's cache and hands it to the share sheet.
+
+Those last two are not the same number. Hidden-while-peeking is time spent *in*
+the chats the preset hides, and most peeks are a look at the chat list itself -
+they reveal the list, nothing on it gets opened, and that use shows up in
+**Peeked** and nowhere else. Peek is the way out of the preset, so how much it
+is used is how much of the period the preset was not being kept to, which is the
+figure worth having. The log gains a line when a peek starts and another when it
+ends, and one more whenever a running peek's deadline moves - that last is what
+lets a peek that outlived the process be counted as the minutes it really ran
+rather than as every hour until the app was next opened.
 
 Every length on that screen is written by the shared core, so both clients
 spell one the same way: `1 d 3 h 2 m`, `1 h`, `59 m`, `48 s`, and `0 s` for

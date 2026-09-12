@@ -86,6 +86,7 @@ public class PurpleScreenTimeActivity extends UniversalFragment
     private static final int ROW_HIDDEN = 2;
     private static final int ROW_EXPORT = 3;
     private static final int ROW_BUDGET_ADD = 4;
+    private static final int ROW_PEEK = 5;
 
     /**
      * The heights the drawn rows take, in dp.
@@ -415,6 +416,15 @@ public class PurpleScreenTimeActivity extends UniversalFragment
             items.add(UItem.asButton(ROW_HIDDEN, getString(R.string.PurpleScreenTimeHidden),
                     formatSpan(report.hiddenMs)));
             items.add(UItem.asShadow(getString(R.string.PurpleScreenTimeHiddenInfo)));
+
+            // How much peek there was, which is a different question from the
+            // line above it: that one is time spent IN the chats the preset
+            // hides, and most peeks are started to look at the chat list
+            // itself. Peek is the way out of the preset, so this is how much
+            // of the period the preset was not being kept to.
+            items.add(UItem.asButton(ROW_PEEK, getString(R.string.PurpleScreenTimePeek),
+                    peekedText(report)));
+            items.add(UItem.asShadow(getString(R.string.PurpleScreenTimePeekInfo)));
 
             // Only for a long period. Seven days of hour-by-weekday is the
             // same seven bars the chart above already drew, one per row, and a
@@ -1308,6 +1318,21 @@ public class PurpleScreenTimeActivity extends UniversalFragment
      */
     public static String formatSpan(long ms) {
         return PurpleCore.formatSpan(ms);
+    }
+
+    /**
+     * "4 times · 23 m", and the two shapes that are not that: no peek at all,
+     * and one - which would otherwise read "1 times".
+     */
+    private static String peekedText(PurpleCore.Report report) {
+        if (report.peekCount <= 0) {
+            return getString(R.string.PurpleScreenTimePeekNever);
+        } else if (report.peekCount == 1) {
+            return formatString(R.string.PurpleScreenTimePeekOnce,
+                    formatSpan(report.peekMs));
+        }
+        return formatString(R.string.PurpleScreenTimePeekTimes,
+                report.peekCount, formatSpan(report.peekMs));
     }
 
     /** A share as a whole percent. Zero of zero is zero, not a division. */

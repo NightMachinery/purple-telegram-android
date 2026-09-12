@@ -3062,6 +3062,20 @@ Java_org_telegram_messenger_purple_PurpleCore_screenTimeReportNative(
 	}
 	json += QChar('}');
 
+	// How much peek there was: how many and how long. Derived from the events
+	// rather than from the sessions, because a peek is not a chat being in
+	// front of you - most are started to look at the list itself - and it is a
+	// different question from the `hiddenMs' in the scope above, which is time
+	// spent IN the chats the preset hides.
+	const auto peeked = Purple::PeekUsageIn(
+		Purple::DerivePeeks(events),
+		from,
+		to);
+	json += QStringLiteral(",\"peekCount\":");
+	json += QString::number(peeked.count);
+	json += QStringLiteral(",\"peekMs\":");
+	json += QString::number(qint64(peeked.totalMs));
+
 	// One scope per preset that actually appears, in the core's own rank order,
 	// so the chips are the presets the range HAS rather than the ones the file
 	// declares. An empty name is Normal, spelled as the file spells it.
