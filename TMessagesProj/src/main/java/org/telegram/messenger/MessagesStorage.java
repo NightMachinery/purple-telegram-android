@@ -1296,6 +1296,12 @@ public class MessagesStorage extends BaseController {
      * number the chat no longer contributes to until some unrelated message
      * happened to recount it. Reloads are rare - a preset switch, a file edit,
      * an "until" made or expired - so a full recount is the cheap answer.
+     *
+     * A second caller since: {@link PurpleGate#recountSoon}, which is what the
+     * incremental counter asks for when a delta would have had to be trusted
+     * across a change in what the preset shows. That one is not rare, so it
+     * arrives debounced - but it wants this same rebuild and not a narrower
+     * one, because the badge it is repairing is summed from every bucket.
      */
     public void updateAllFiltersCountersForPurple() {
         storageQueue.postRunnable(() -> resetAllUnreadCounters(false));
@@ -6271,6 +6277,30 @@ public class MessagesStorage extends BaseController {
         // read. A chat left out of one direction and not the other would drift
         // the tab a little further wrong on every message.
         int purpleUncounted = 0;
+        // The badge half of the same problem, and the half a preset can drift on
+        // its own. calcUnreadCounters sums "All chats" from the chats the preset
+        // is showing; this pass does not sum anything, it moves the total it
+        // finds. That delta is two halves separated in time - a +1 when a chat
+        // goes unread, a -1 when it is read - and what PurpleGate.shown answers
+        // about the chat can change in between, so gating the delta on shown()
+        // would be a second bug rather than a fix. A peek reveals a chat that
+        // was hidden when its message arrived, and the -1 lands on a +1 that was
+        // never applied; a show_mode watching unread hides the chat the moment
+        // it is read, and the +1 is stranded where nothing will ever take it
+        // off. One badge falls through zero, the other climbs and stays.
+        //
+        // So the delta is not gated here, it is abandoned. A pass that touched a
+        // chat the preset is not showing leaves the "All chats" total exactly as
+        // it found it and asks PurpleGate.recountSoon for a rebuild instead.
+        // Whenever the predicate is involved at all, the number comes from the
+        // database rather than from arithmetic whose two halves could disagree,
+        // and nothing half-counted is left behind to be corrected later.
+        //
+        // Counted rather than flagged only so the log line can say how many.
+        // The buckets themselves go on taking every chat, so a folder tab and
+        // the archive get their delta exactly as before: those lists are
+        // deliberately unfiltered and they count what they draw.
+        int purpleUnshown = 0;
         if (!usersToLoad.isEmpty()) {
             getUsersInternal(usersToLoad, users);
             for (int a = 0, N = users.size(); a < N; a++) {
@@ -6287,14 +6317,19 @@ public class MessagesStorage extends BaseController {
                 }
                 if (!PurpleGate.countedInTotals(currentAccount, user.id)) {
                     purpleUncounted++;
-                } else if (isUserCollapsedInCommunity(chatsDict, user)) {
-                    communities[idx1][idx2]++;
-                } else if (user.bot) {
-                    bots[idx1][idx2]++;
-                } else if (user.self || user.contact) {
-                    contacts[idx1][idx2]++;
                 } else {
-                    nonContacts[idx1][idx2]++;
+                    if (!PurpleGate.shown(currentAccount, user.id)) {
+                        purpleUnshown++;
+                    }
+                    if (isUserCollapsedInCommunity(chatsDict, user)) {
+                        communities[idx1][idx2]++;
+                    } else if (user.bot) {
+                        bots[idx1][idx2]++;
+                    } else if (user.self || user.contact) {
+                        contacts[idx1][idx2]++;
+                    } else {
+                        nonContacts[idx1][idx2]++;
+                    }
                 }
                 usersDict.put(user.id, user);
             }
@@ -6330,10 +6365,15 @@ public class MessagesStorage extends BaseController {
                     // ask about that same user id - stay symmetric with this.
                     if (!PurpleGate.countedInTotals(currentAccount, did)) {
                         purpleUncounted++;
-                    } else if (user.self || user.contact) {
-                        contacts[idx1][idx2]++;
                     } else {
-                        nonContacts[idx1][idx2]++;
+                        if (!PurpleGate.shown(currentAccount, did)) {
+                            purpleUnshown++;
+                        }
+                        if (user.self || user.contact) {
+                            contacts[idx1][idx2]++;
+                        } else {
+                            nonContacts[idx1][idx2]++;
+                        }
                     }
                     int count = encryptedChatsByUsersCount.get(user.id, 0);
                     encryptedChatsByUsersCount.put(user.id, count + 1);
@@ -6368,21 +6408,26 @@ public class MessagesStorage extends BaseController {
                     purpleUncounted++;
                 } else if (ChatObject.isCommunity(chat)) {
 
-                } else if (isChatCollapsedInCommunity(chatsDict, chat)) {
-                    communities[idx1][idx2]++;
                 } else {
-                    if (muted && dialogsToUpdateMentions != null && dialogsToUpdateMentions.indexOfKey(-chat.id) >= 0) {
-                        if (ChatObject.isChannel(chat) && !chat.megagroup) {
-                            mentionChannels[idx1]++;
-                        } else {
-                            mentionGroups[idx1]++;
-                        }
+                    if (!PurpleGate.shown(currentAccount, -chat.id)) {
+                        purpleUnshown++;
                     }
-                    if (read && !hasUnread && !hasMention || !read && newUnreadDialogs.indexOfKey(-chat.id) >= 0) {
-                        if (ChatObject.isChannel(chat) && !chat.megagroup) {
-                            channels[idx1][idx2]++;
-                        } else {
-                            groups[idx1][idx2]++;
+                    if (isChatCollapsedInCommunity(chatsDict, chat)) {
+                        communities[idx1][idx2]++;
+                    } else {
+                        if (muted && dialogsToUpdateMentions != null && dialogsToUpdateMentions.indexOfKey(-chat.id) >= 0) {
+                            if (ChatObject.isChannel(chat) && !chat.megagroup) {
+                                mentionChannels[idx1]++;
+                            } else {
+                                mentionGroups[idx1]++;
+                            }
+                        }
+                        if (read && !hasUnread && !hasMention || !read && newUnreadDialogs.indexOfKey(-chat.id) >= 0) {
+                            if (ChatObject.isChannel(chat) && !chat.megagroup) {
+                                channels[idx1][idx2]++;
+                            } else {
+                                groups[idx1][idx2]++;
+                            }
                         }
                     }
                 }
@@ -6402,11 +6447,38 @@ public class MessagesStorage extends BaseController {
             FileLog.d("Purple: " + purpleUncounted
                     + " chats under a hide until left out of the folder counts");
         }
+        // Whether this pass may move the "All chats" total at all, and the ask
+        // for the rebuild that stands in for the delta it is giving up.
+        //
+        // False whenever no preset is filtering, and that is the whole proof
+        // that an unfiltered account runs exactly as it did before this hook
+        // existed: PurpleGate.shown answers shown without looking at anything
+        // when filtering is off, so no walk above can have raised the count, so
+        // the loop below runs every tab including this one, and recountSoon is
+        // never reached.
+        final boolean purpleSkipMain = purpleUnshown > 0;
+        if (purpleSkipMain) {
+            PurpleGate.recountSoon(currentAccount, purpleUnshown);
+        }
 
         for (int a = 0, N = dialogFilters.size(); a < N + 2; a++) {
             final boolean isFilter = a < N;
             final boolean isMain = a == N;
             final boolean isArchive = a == N + 1;
+
+            // Purple: the half being given up. "All chats" keeps the number its
+            // last full recount gave it and waits for the one just asked for;
+            // every other tab applies its delta as always, because a folder tab
+            // and the archive draw unfiltered lists and count what they draw.
+            //
+            // Leaving the iteration is the whole of it. pendingMainUnreadCount
+            // is read at the top of this pass through the loop and written at
+            // the bottom, the filter-specific blocks in between are skipped for
+            // the default tab anyway, and nothing else in here has an effect
+            // outside the local sum - so not entering is exactly not adjusting.
+            if (isMain && purpleSkipMain) {
+                continue;
+            }
 
             int unreadCount;
             MessagesController.DialogFilter filter;

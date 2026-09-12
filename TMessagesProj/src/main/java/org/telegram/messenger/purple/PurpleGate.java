@@ -99,6 +99,43 @@ public final class PurpleGate {
     private static volatile long lastCounterLog;
 
     /**
+     * How long a delta that could not be applied waits for the recount it asked
+     * for. See {@link #recountSoon}.
+     *
+     * Long enough to swallow a burst, which is the only reason to wait at all: a
+     * getDifference that delivers messages to a dozen chats runs the
+     * incremental pass a dozen times within a few hundred milliseconds, and one
+     * rebuild at the end of that is worth twelve. Short enough that nobody sees
+     * the wait: the eye takes longer than this to travel from a notification to
+     * the chat list, and the number it lands on is the one the last full recount
+     * left, not a wrong one.
+     *
+     * And a second reason for this length rather than a shorter one. The
+     * evidence a recount leaves is {@link #logCounters}, throttled to one line a
+     * second; at half a second the log would show fewer recounts than actually
+     * ran, which is the worst thing a diagnostic can do. At a second and a half
+     * every recount this schedules can leave its line behind it.
+     */
+    private static final long RECOUNT_DELAY_MS = 1500L;
+
+    /**
+     * When the recount already on its way for each account is due, so that a
+     * burst of held-back deltas asks for one rebuild and not one each.
+     *
+     * A deadline rather than a flag something has to come back and clear, which
+     * is one fewer way to get stuck: nothing here can leave an account believing
+     * forever that a rebuild is on its way, because the window ends by itself
+     * whether or not the runnable it was taken for ever ran. Only the request is
+     * suppressed, never the rebuild.
+     *
+     * Under a lock because array elements are not volatile and this is written
+     * from whichever storage thread held a delta back.
+     */
+    private static final long[] recountDue = new long[UserConfig.MAX_ACCOUNT_COUNT];
+
+    private static final Object recountLock = new Object();
+
+    /**
      * Bumped by every reload. The chat list watches it to notice that the strip
      * it is holding was built for a different preset: the tab the user is on is
      * an index into a list whose membership just changed, so an index that is
@@ -714,6 +751,67 @@ public final class PurpleGate {
         return shown(
                 currentAccount,
                 MessagesController.getInstance(currentAccount).dialogs_dict.get(dialogId));
+    }
+
+    /**
+     * Asks for every unread counter to be rebuilt, shortly and only once.
+     *
+     * What the incremental counter reaches for when it must not do its own
+     * arithmetic. {@code MessagesStorage.updateFiltersReadCounter} moves the
+     * running totals by a delta instead of recounting, and that delta is two
+     * halves separated in time - a +1 when a chat goes unread, a -1 when it is
+     * read - while the answer {@link #shown} gives about that chat can change in
+     * between. Gating the delta on {@code shown} is therefore not a fix but a
+     * second bug: a peek reveals a chat that was hidden when its message
+     * arrived, so a -1 lands on a +1 that never happened and the badge falls
+     * through zero; a show_mode watching unread hides a chat the moment it is
+     * read, so the +1 is stranded and the badge climbs and stays there.
+     *
+     * So while a preset is filtering, a pass that touched a chat the preset does
+     * not show does not adjust the "All chats" total at all - it leaves the
+     * number the last rebuild gave it and calls this. Whenever the predicate is
+     * involved, the number comes from the database rather than from arithmetic
+     * whose two halves could disagree. Nothing half-counted is left behind to be
+     * corrected later, which is what makes the rule self-healing rather than one
+     * more thing to keep in step.
+     *
+     * The rebuild is the one a reload already takes: this ends in the same
+     * {@code MessagesStorage.updateAllFiltersCountersForPurple} that
+     * {@link #postRefresh} does, so the fork has one full recount in it and not
+     * two to keep in agreement.
+     *
+     * Debounced from the front, not the back: the first held-back delta sets the
+     * deadline and everything inside the window is absorbed by it. Cancelling
+     * and reposting would push the deadline out on every message, and an account
+     * busy enough to need this most would then never get its rebuild at all.
+     *
+     * Safe from any thread. The deadline is taken under a lock, and the work is
+     * posted - to the UI thread, and from there onto the storage queue, where a
+     * recount runs anyway. A caller already on the storage queue therefore
+     * cannot have the rebuild run inside its own pass: it lands behind it, and
+     * so sees everything that pass did.
+     *
+     * @param chats how many chats in the held-back pass the preset was hiding,
+     *              for the log line and nothing else
+     */
+    public static void recountSoon(int currentAccount, int chats) {
+        final long now = SystemClock.elapsedRealtime();
+        synchronized (recountLock) {
+            if (now < recountDue[currentAccount]) {
+                return;
+            }
+            recountDue[currentAccount] = now + RECOUNT_DELAY_MS;
+        }
+        // Not throttled, because the window above already is: at most one of
+        // these a window, and each stands for a rebuild that was really asked
+        // for. Counting them in the log is counting the badge's repairs.
+        FileLog.d("Purple: All chats delta held back, " + chats
+                + " unread chats the preset hides were in it; recount in "
+                + RECOUNT_DELAY_MS + "ms.");
+        AndroidUtilities.runOnUIThread(
+                () -> MessagesStorage.getInstance(currentAccount)
+                        .updateAllFiltersCountersForPurple(),
+                RECOUNT_DELAY_MS);
     }
 
     /**
