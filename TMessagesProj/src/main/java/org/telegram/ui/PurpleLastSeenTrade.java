@@ -149,9 +149,12 @@ public final class PurpleLastSeenTrade {
         }
         final AlertDialog.Builder builder = new AlertDialog.Builder(activity);
         builder.setTitle(getString(R.string.PurpleTradeTitle));
+        final boolean showSkipConfirmation = !noAsk();
         final CharSequence explanation = formatString(
                 R.string.PurpleTradeText, name, PurpleLastSeen.holdSeconds())
-                + "\n\n" + getString(R.string.PurpleTradeDontAskHelp);
+                + (showSkipConfirmation
+                        ? "\n\n" + getString(R.string.PurpleTradeDontAskHelp)
+                        : "");
         builder.setMessage((read == null)
                 ? explanation
                 : (explanation + "\n\n" + formatString(R.string.PurpleTradeRemembered,
@@ -180,7 +183,7 @@ public final class PurpleLastSeenTrade {
         final boolean[] noAsk = new boolean[] { false };
         // Left out once it has been answered for good: the sheet is open here
         // to say how long the wait is, not to ask a question that is settled.
-        if (!noAsk()) {
+        if (showSkipConfirmation) {
             final CheckBoxCell cell = new CheckBoxCell(activity, 1);
             cell.setBackground(Theme.getSelectorDrawable(false));
             cell.setText(getString(R.string.PurpleTradeDontAsk), "", false, false);
