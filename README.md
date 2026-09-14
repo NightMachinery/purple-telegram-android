@@ -468,9 +468,14 @@ Peek**. **Peek Last Seen** also appears in the chat menu and in the profile's
 eligibility check: Last Seen Peeks are enabled and the server has sent a coarse
 status with `by_me`. The other person therefore shares their last seen in
 principle, but Telegram is withholding it because you do not share yours with
-them. The chat-header mark is display-aware: its own shared-core predicate
-requires either the explanatory tail or a remembered read to be visible, then
-the peek itself rechecks central eligibility before it starts. Actions stay
+them. The first Last Seen access loads those settings before either decorating
+the status or deciding whether its tap and menus are available, so a cold start
+cannot leave a visible Peek action with nowhere to go. The chat menu also reads
+the current user status when it opens, so a `by_me` update cannot leave it out
+of step with the header. The chat-header mark is display-aware: its own
+shared-core predicate requires either the explanatory tail or a remembered
+read to be visible, then the peek itself rechecks central eligibility before
+it starts. Actions stay
 absent when the other person hid their own status, when an exact status is
 already visible, for bots and deleted accounts, and when Last Seen Peeks are
 disabled.

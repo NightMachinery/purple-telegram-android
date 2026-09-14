@@ -3899,8 +3899,9 @@ public class ChatActivity extends BaseFragment implements
                         presentFragment(new ContactAddActivity(args));
                     }
                 } else if (id == peek_last_seen) {
-                    if (PurpleLastSeen.peekEligible(currentUser)) {
-                        PurpleLastSeenTrade.show(ChatActivity.this, currentAccount, currentUser.id);
+                    final TLRPC.User user = getLastSeenPeekUser();
+                    if (user != null) {
+                        PurpleLastSeenTrade.show(ChatActivity.this, currentAccount, user.id);
                     }
                 } else if (id == mute) {
                     toggleMute(false);
@@ -4317,8 +4318,9 @@ public class ChatActivity extends BaseFragment implements
                 public void onShowSubMenu() {
                     updateScrimSourceBitmap();
                     if (headerItem.hasSubItem(peek_last_seen)) {
+                        final TLRPC.User user = getLastSeenPeekUser();
                         headerItem.setSubItemShown(
-                                peek_last_seen, PurpleLastSeen.peekEligible(currentUser));
+                                peek_last_seen, PurpleLastSeen.peekEligible(user));
                     }
                 }
 
@@ -4421,8 +4423,9 @@ public class ChatActivity extends BaseFragment implements
             if (currentUser != null && chatMode != MODE_SAVED) {
                 headerItem.lazilyAddSubItem(peek_last_seen, R.drawable.msg_view_file,
                         getString(R.string.PurplePeekAction));
+                final TLRPC.User user = getLastSeenPeekUser();
                 headerItem.setSubItemShown(
-                        peek_last_seen, PurpleLastSeen.peekEligible(currentUser));
+                        peek_last_seen, PurpleLastSeen.peekEligible(user));
                 headerItem.lazilyAddSubItem(call, R.drawable.msg_callback, LocaleController.getString(R.string.Call));
                 headerItem.lazilyAddSubItem(video_call, R.drawable.msg_videocall, LocaleController.getString(R.string.VideoCall));
                 if (userFull != null && userFull.phone_calls_available) {
@@ -35599,6 +35602,15 @@ public class ChatActivity extends BaseFragment implements
 
     public TLRPC.User getCurrentUser() {
         return currentUser;
+    }
+
+    private TLRPC.User getLastSeenPeekUser() {
+        final TLRPC.User user = currentUser;
+        if (user == null) {
+            return null;
+        }
+        final TLRPC.User canonical = getMessagesController().getUser(user.id);
+        return canonical != null ? canonical : user;
     }
 
     public long getSendMonoForumPeerId() {
