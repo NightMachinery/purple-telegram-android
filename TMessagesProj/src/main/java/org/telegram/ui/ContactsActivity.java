@@ -229,6 +229,7 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.updateInterfaces);
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.encryptedChatCreated);
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.closeChats);
+        NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.dialogFiltersUpdated);
         checkPermission = UserConfig.getInstance(currentAccount).syncContacts;
         if (arguments != null) {
             onlyUsers = arguments.getBoolean("onlyUsers", false);
@@ -271,6 +272,7 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.updateInterfaces);
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.encryptedChatCreated);
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.closeChats);
+        NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.dialogFiltersUpdated);
         delegate = null;
     }
 
@@ -428,6 +430,16 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
             @Override
             protected boolean acceptUser(TLRPC.User user) {
                 return !lastSeenFilter || PurpleLastSeen.canSeeOrPeek(user);
+            }
+
+            @Override
+            protected boolean allowUnregisteredContacts() {
+                return !lastSeenFilter;
+            }
+
+            @Override
+            protected boolean acceptSearchResult(Object object) {
+                return !lastSeenFilter || (object instanceof TLRPC.User && acceptUser((TLRPC.User) object));
             }
 
             @Override
@@ -1270,7 +1282,7 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
     }
 
     private void refreshLastSeenSearch() {
-        if (lastSeenFilter && listView != null
+        if (listView != null
                 && listView.getAdapter() == searchListViewAdapter
                 && !TextUtils.isEmpty(searchQuery)) {
             searchListViewAdapter.searchDialogs(searchQuery);
@@ -1411,6 +1423,11 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
             }
             if ((mask & MessagesController.UPDATE_MASK_STATUS) != 0 && !sortByName && listViewAdapter != null) {
                 scheduleSort();
+            }
+        } else if (id == NotificationCenter.dialogFiltersUpdated) {
+            if (lastSeenFilter && listViewAdapter != null) {
+                listViewAdapter.notifyDataSetChanged();
+                refreshLastSeenSearch();
             }
         } else if (id == NotificationCenter.encryptedChatCreated) {
             if (createSecretChat && creatingChat) {
