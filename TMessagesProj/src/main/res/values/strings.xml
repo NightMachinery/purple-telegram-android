@@ -11427,7 +11427,7 @@
     <string name="PurpleLastSeenAgoMinutes_other">%1$d min ago</string>
     <string name="PurpleLastSeenAgoHours_one">%1$d hour ago</string>
     <string name="PurpleLastSeenAgoHours_other">%1$d hours ago</string>
-    <string name="PurpleContactsVisibleLastSeen">Show visible or peekable last seen</string>
+    <string name="PurpleContactsVisibleLastSeen">Visible or peekable last seen</string>
     <!-- Purple: Last Seen Peek, and its recent reads on the settings screen -->
     <string name="PurpleTradeTitle">Last Seen Peek</string>
     <string name="PurpleTradeText">%1$s shares their last seen in principle, but Telegram hides it because you do not share yours with them.\n\nA Last Seen Peek temporarily shows your last seen to %1$s - and only %1$s - for about %2$d seconds while this app reads theirs, then restores your privacy settings.</string>
