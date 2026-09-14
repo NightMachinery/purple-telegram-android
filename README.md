@@ -450,7 +450,7 @@ member list still saying "last seen recently" beside a profile saying "last
 seen 14:32" would be the fork disagreeing with itself in two windows of the same
 app.
 
-The Contacts page's **More** menu has **Show visible or peekable last seen**.
+The Contacts page's **More** menu has **Visible or peekable last seen**.
 It is an in-session filter, never a saved preference, and it applies to the
 main list and Contacts search, including server and phone matches. Search keeps
 only Telegram users that meet the same rule; phonebook-only contacts and other
