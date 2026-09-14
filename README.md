@@ -426,8 +426,9 @@ would be lying to code that never asked about a work mode.
 leaves hanging. Hide your own last seen and Telegram stops showing you other
 people's - the server says so, in a `by_me` flag on the coarse status, and this
 fork passes that on instead of printing a bare "last seen recently". With
-`reasons_p` (default true) the chat header and the profile append *Last Seen
-Peek* to a status that is coarse **because of your own privacy settings**,
+`reasons_p` (default true) and `trade_p` (also default true), the chat header
+and the profile append *Last Seen Peek* to a status that is coarse **because of
+your own privacy settings**,
 collapsing to an eye in a header too narrow for the sentence. Nothing is
 appended when the other person hid theirs - that is their setting, and there is
 no Last Seen Peek to perform - and nothing at all to "a long time ago": the server
@@ -448,6 +449,14 @@ places, because what a Last Seen Peek read is a fact about that person, and a
 member list still saying "last seen recently" beside a profile saying "last
 seen 14:32" would be the fork disagreeing with itself in two windows of the same
 app.
+
+The Contacts page's **More** menu has **Show visible or peekable last seen**.
+It is an in-session filter, never a saved preference, and it applies to the
+main list and its local contact search results. It keeps an ordinary exact or
+online status, a remembered exact Peek that the status row currently displays,
+or a coarse `by_me` status that an enabled Last Seen Peek could reveal. It
+leaves out yourself, bots and deleted accounts. Turning `trade_p` off removes
+only the coarse Peek candidates; exact and remembered results remain.
 
 Some status lines are deliberately left alone. The chat list writes its own
 subtitles, and a chat list row is the one row in the app whose whole job is to
@@ -484,10 +493,11 @@ Starting a Last Seen Peek adds only that person to your last-seen allow list,
 asks the server for their exact status, and restores your original privacy rules
 after a success, a timeout (`trade_hold`, ten seconds by default), or an error.
 The setting is labeled **Allow Last Seen Peeks**; its existing schema key remains
-`trade_p`. The confirmation checkbox is labeled **Skip confirmation for all
-future peeks on this device**. That one saved choice skips the confirmation for
-every future peek on this device. Every peek still requires a tap, still shares
-with only the selected person, and still ends after the short hold.
+`trade_p` and defaults to true. The confirmation checkbox is labeled **Skip
+confirmation for all future peeks on this device**. That one saved choice skips
+the confirmation for every future peek on this device. Every peek still requires
+a tap, still shares with only the selected person, and still ends after the short
+hold.
 
 What came back is remembered for `trade_remember` (a day) and shown in place of
 whatever the status says, as "last seen 14:32 · as of 3 min ago". Another peek
@@ -508,10 +518,10 @@ privacy setting is no longer what hides their status, and "a long time ago" is
 still never *explained*, since the server is
 not withholding a moment and there is nobody to attribute it to.
 
-The remembered line is a link too, and that is a repair rather than a flourish.
-The tail used to be the only door into the sheet, so the first peek replaced
-the door with the read and the next peek was unreachable for a whole
-`trade_remember` unless the record happened to expire first. Tapping the
+With `trade_p` enabled, the remembered line is a link too, and that is a repair
+rather than a flourish. The tail used to be the only door into the sheet, so the
+first peek replaced the door with the read and the next peek was unreachable for
+a whole `trade_remember` unless the record happened to expire first. Tapping the
 remembered line now opens the same sheet, which says what was last read and
 counts the wait down - *You can peek again in 3:12*, recomputed from the clock
 every second rather than decremented, so a box left open across a suspend does
@@ -519,17 +529,17 @@ not go on counting time that has already been spent. The button beside it is
 held disabled until the wait runs out and then becomes **Peek Again** without
 the box having to be closed and opened again. The line stops being a link when
 their last seen is no longer coarse because of *your* rules: they have changed
-their own privacy
-since, and a Last Seen Peek is no longer eligible.
+their own privacy since, and a Last Seen Peek is no longer eligible.
 
 The other refusals are still toasts, because none of them is a wait: Last Seen
 Peeks being disabled, a last seen that is not coarse because of your own rules,
 and a peek already running are each a "no" that will not turn into a "yes" while
-the box sits there. And a remembered read is shown whatever `reasons_p` says. That
-switch governs the fork *explaining* a status; a read the user asked for out
-loud is an answer to their own question, and turning the explanations off
-should not hide it. Its tap works for the same reason - a dead tap on a line
-you can plainly see would be that switch reaching somewhere it was never about.
+the box sits there. A remembered exact read is shown whatever `reasons_p` says.
+That switch governs the fork *explaining* a status; a read the user asked for out
+loud is an answer to their own question, and turning the explanations off should
+not hide it. Turning `trade_p` off removes the suffix and every Peek action,
+including the remembered line's tap, but keeps that valid remembered result
+visible and inert.
 
 The same Last Seen Peek also replaces Telegram's permanent-sharing button in a
 message's *seen by* sheet. Its hidden-status row stays clickable for an eligible
@@ -537,8 +547,8 @@ Peek target on every account tier and opens the Peek version of the sheet rather
 than the read-receipt version. With `trade_p = false` there is no button there;
 the sheet explains where to enable Last Seen Peeks and where Telegram's own
 Privacy settings live if the user deliberately wants to share with everybody.
-This button follows `trade_p` independently of `reasons_p`, because the latter
-only controls the explanatory tail.
+This button requires `trade_p`; the explanatory suffix requires both `trade_p`
+and `reasons_p`.
 
 **Screen time** is `[screen_time]`, and it is off until `enabled_p = true` says
 otherwise - it is a record of what you looked at and for how long, and nothing

@@ -318,6 +318,18 @@ public final class PurpleLastSeen {
                 && reasonFor(user) == PurpleCore.REASON_BY_ME;
     }
 
+    public static boolean canSeeOrPeek(TLRPC.User user) {
+        if (user == null || user.self || user.bot || UserObject.isDeleted(user)) {
+            return false;
+        }
+        if (shapeFor(user) == PurpleCore.SHAPE_EXACT) {
+            return true;
+        }
+        final PurpleCore.LastSeenNote note = note(user);
+        return (note.line == PurpleCore.LINE_REMEMBERED && note.wasOnlineUnix > 0)
+                || peekEligible(user);
+    }
+
     /**
      * How long until a peek at this person would be allowed again, in
      * seconds, or 0 when one is allowed right now.
