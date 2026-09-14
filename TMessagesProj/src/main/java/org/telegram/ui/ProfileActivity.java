@@ -2552,8 +2552,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     finishFragment();
                 } else if (id == peek_last_seen) {
                     final TLRPC.User user = getMessagesController().getUser(userId);
-                    if (PurpleLastSeen.peekEligible(user)) {
-                        PurpleLastSeenTrade.show(ProfileActivity.this, currentAccount, userId);
+                    if (user != null) {
+                        PurpleLastSeenTrade.show(ProfileActivity.this, currentAccount, user.id);
                     }
                 } else if (id == block_contact) {
                     onBlockContactClicked(false);

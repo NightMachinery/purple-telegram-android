@@ -31,6 +31,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
@@ -110,6 +111,8 @@ public final class PurpleLastSeenTrade {
             return;
         }
         if (running != 0) {
+            FileLog.d("Purple: last seen peek already running for " + running);
+            error(fragment, getString(R.string.PurpleTradeRunning));
             return;
         }
         final PurpleCore.Trade read = PurpleLastSeen.remembered(userId);
@@ -218,6 +221,7 @@ public final class PurpleLastSeenTrade {
 
         final AlertDialog dialog = builder.create();
         if (fragment.showDialog(dialog, d -> stopTicking()) == null) {
+            FileLog.d("Purple: last seen peek dialog rejected for " + user.id);
             return;
         }
         final View button = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
@@ -641,12 +645,18 @@ public final class PurpleLastSeenTrade {
     private static void error(BaseFragment fragment, CharSequence text) {
         if (BulletinFactory.canShowBulletin(fragment)) {
             BulletinFactory.of(fragment).createErrorBulletin(text).show();
+        } else {
+            Toast.makeText(ApplicationLoader.applicationContext,
+                    text, Toast.LENGTH_LONG).show();
         }
     }
 
     private static void info(BaseFragment fragment, CharSequence text) {
         if (BulletinFactory.canShowBulletin(fragment)) {
             BulletinFactory.of(fragment).createSimpleBulletin(R.raw.info, text).show();
+        } else {
+            Toast.makeText(ApplicationLoader.applicationContext,
+                    text, Toast.LENGTH_SHORT).show();
         }
     }
 

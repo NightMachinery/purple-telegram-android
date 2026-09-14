@@ -52,7 +52,7 @@ public final class PurpleLastSeen {
 
     /** Whether a coarse last seen is allowed to say why - {@code reasons_p}. */
     public static boolean reasons() {
-        final PurpleCore.Loaded current = PurpleGate.state();
+        final PurpleCore.Loaded current = loadedState();
         return current != null && current.lastSeenReasons;
     }
 
@@ -64,14 +64,19 @@ public final class PurpleLastSeen {
      * explanation standing and removes the peek action.
      */
     public static boolean peekEnabled() {
-        final PurpleCore.Loaded current = PurpleGate.state();
+        final PurpleCore.Loaded current = loadedState();
         return current != null && current.lastSeenTrade;
     }
 
     /** How long to wait for their exact status - {@code trade_hold}, seconds. */
     public static int holdSeconds() {
-        final PurpleCore.Loaded current = PurpleGate.state();
+        final PurpleCore.Loaded current = loadedState();
         return current == null ? 10 : Math.max(current.lastSeenTradeHold, 0);
+    }
+
+    private static PurpleCore.Loaded loadedState() {
+        PurpleGate.ensureLoaded();
+        return PurpleGate.state();
     }
 
     /**
@@ -227,6 +232,7 @@ public final class PurpleLastSeen {
      * status anybody peeked at, so there is nothing remembered to put over it.
      */
     private static PurpleCore.LastSeenNote note(TLRPC.User user) {
+        PurpleGate.ensureLoaded();
         if (user == null || user.self || user.bot || user.deleted) {
             return PurpleCore.LastSeenNote.PLAIN;
         }
