@@ -10,6 +10,12 @@ own launcher entry, so both apps can be signed in at the same time.
 
 ### Building
 
+The normal build host is the Apple-silicon laptop. Install Android SDK 36 with
+build-tools 36.0.0, Android NDK 27.2.12479018, a compatible JDK/Gradle
+environment, and Qt 6 for Android arm64 before building. Keep enough free disk
+space for the SDK, NDK, Qt, Gradle caches, native intermediates, and APK
+outputs.
+
 Create a `local.properties` at the repository root — it is gitignored and must
 never be committed:
 
@@ -25,7 +31,8 @@ core is the same C++ the desktop fork uses (the `purple-core` submodule under
 `TMessagesProj/jni/purple`) and links Qt Core, which ships inside the APK. The
 official binaries come without an account through
 [aqtinstall](https://github.com/miurahr/aqtinstall):
-`aqt install-qt linux android 6.7.3 android_arm64_v8a -O /path/to/qt`.
+`aqt install-qt mac android 6.7.3 android_arm64_v8a -O /path/to/qt` on macOS
+(use the corresponding host name when preparing an optional Linux worker).
 
 Get the `api_id` / `api_hash` pair from https://my.telegram.org/apps. They are
 injected into `BuildConfig` at build time, so no credential is ever hardcoded in
@@ -33,8 +40,23 @@ the source. A standalone build without them fails immediately with a message
 saying so.
 
 The native tree, jlatexmath and purple-core are git submodules, so after
-cloning run `git submodule update --init --depth 1` (a plain shallow clone leaves them
-empty and Gradle fails resolving `:jlatexmath`).
+cloning run `git submodule update --init --depth 1` (a plain shallow clone
+leaves them empty and Gradle fails resolving `:jlatexmath`). If this checkout
+uses sparse checkout, tracked gitlink directories outside the sparse patterns
+may be absent even after that command. Add every native submodule required by
+the build to the sparse set first, then initialize them. Add the parent paths
+rather than maintaining a partial list of their gitlinks:
+
+```bash
+git sparse-checkout add \
+  TMessagesProj/jni \
+  TMessagesProj/lib/jlatexmath
+git submodule update --init --depth 1
+```
+
+This includes the standalone build's current native dependencies, such as
+ffmpeg, tlottie, xiph, libyuv, and Purple core, without copying generated or
+vendored files into the checkout.
 
 Then build the standalone flavor:
 
@@ -630,51 +652,43 @@ defaults this fork changes.
 
 ### Testing on an emulator
 
-The APK is arm64-only, but an x86_64 system image with Google APIs (API 30 or
-newer) runs it through Android's ARM translation, so a headless emulator on a
-Linux build box with `/dev/kvm` is enough for a smoke test:
+Run acceptance tests on the Apple-silicon laptop with an **Android 36 arm64**
+Google APIs image and the host GPU. This matches the APK architecture and avoids
+the software-renderer failures seen on the shared Linux box:
 
 ```bash
-sdkmanager "emulator" "system-images;android-35;google_apis;x86_64"
-avdmanager create avd -n purple -k "system-images;android-35;google_apis;x86_64" -d pixel_6
-emulator -avd purple -no-window -no-audio -gpu swiftshader_indirect -no-snapshot &
+sdkmanager "emulator" "system-images;android-36;google_apis;arm64-v8a"
+avdmanager create avd -n purple -k "system-images;android-36;google_apis;arm64-v8a" -d pixel_6
+emulator -avd purple -gpu host -no-audio -no-snapshot &
 adb wait-for-device shell 'while [ "$(getprop sys.boot_completed)" != 1 ]; do sleep 2; done'
 adb install -r PurpleTelegram-signed.apk
 adb shell am start -n org.purple.telegram/org.telegram.ui.LaunchActivity
 adb exec-out screencap -p > screen.png
 ```
 
-Boot takes under a minute with KVM. Sign the APK with a throwaway key for this;
-the emulator never needs your release key. The Google APIs image (not the Play
-Store one) allows `adb root`, which is handy for reading the app's files under
-`/data/data/org.purple.telegram/`.
-
-On an Apple silicon Mac, use an **arm64** image instead and give it the real
-GPU:
-
-```bash
-sdkmanager "system-images;android-36;google_apis;arm64-v8a"
-avdmanager create avd -n purple -k "system-images;android-36;google_apis;arm64-v8a" -d pixel_6
-emulator -avd purple -gpu host -no-audio -no-snapshot &
-```
-
 Nothing is translated - the APK's architecture is the host's - and the emulator
 renders through MoltenVK on the Mac's own GPU. That is worth the 4.3 GB image:
-the software renderer below is what makes popups and long-press menus
-unreliable, and on this path they simply work. It costs about 6 GB of RAM while
-running, so shut it down with `adb emu kill` afterwards.
+the Linux box's software renderer makes popups and long-press menus unreliable,
+while the laptop path renders them normally. It costs about 6 GB of RAM while
+running, so shut it down with `adb emu kill` afterwards. Sign a disposable test
+APK with a throwaway key if desired; preserve the signer between upgrades. The
+Google APIs image, unlike a Play Store image, allows `adb root` for controlled
+test-state work under `/data/data/org.purple.telegram/`.
 
-Two settings save a lot of pain. In the AVD's `config.ini` set
-`hw.gpu.enabled=yes` and `hw.gpu.mode=swiftshader_indirect` (or `host`, above);
-a freshly created AVD may have the GPU disabled, and the fallback renderer
-segfaults the whole emulator seconds after the app draws a chat. Then put the app in full
-power-saver mode, which turns off chat blur and animations, by writing
-`<int name="lite_mode" value="0" />` into its `mainconfig.xml` while it is
-stopped. The renderer can still die under heavy drawing; the disk image
-persists, so a crash costs only a restart.
+Check the AVD's `config.ini`: it must have `hw.gpu.enabled=yes` and
+`hw.gpu.mode=host`. A newly created AVD may disable the GPU, silently losing the
+reason for running on the laptop.
+
+An x86_64 Google APIs image under KVM on a Linux build host can run the arm64
+APK through Android's ARM translation, but this is a non-authoritative fallback
+for compile-adjacent diagnostics. On the current `pi` build box, software GPU
+rendering crashes under ordinary UI drawing and cannot supply acceptance
+evidence. Do final UI verification on the laptop emulator or a suitable real
+device.
 
 The desktop fork's repository carries the longer version of this, including how
-to keep an emulator session private on a shared build machine, in
+to use the box as an optional compile worker and keep a legacy diagnostic
+emulator session private on a shared machine, in
 `docs/remote-build-and-test/readme.md`.
 
 Telegram's test data centres (the "Test Backend" checkbox is compiled out of the
