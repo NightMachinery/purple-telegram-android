@@ -452,11 +452,13 @@ app.
 
 The Contacts page's **More** menu has **Show visible or peekable last seen**.
 It is an in-session filter, never a saved preference, and it applies to the
-main list and its local contact search results. It keeps an ordinary exact or
-online status, a remembered exact Peek that the status row currently displays,
-or a coarse `by_me` status that an enabled Last Seen Peek could reveal. It
-leaves out yourself, bots and deleted accounts. Turning `trade_p` off removes
-only the coarse Peek candidates; exact and remembered results remain.
+main list and Contacts search, including server and phone matches. Search keeps
+only Telegram users that meet the same rule; phonebook-only contacts and other
+non-user results are omitted. It keeps an ordinary exact or online status, a
+remembered exact Peek that the status row currently displays, or a coarse
+`by_me` status that an enabled Last Seen Peek could reveal. It leaves out
+yourself, bots and deleted accounts. Turning `trade_p` off removes only the
+coarse Peek candidates; exact and remembered results remain.
 
 Some status lines are deliberately left alone. The chat list writes its own
 subtitles, and a chat list row is the one row in the app whose whole job is to

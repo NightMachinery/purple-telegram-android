@@ -112,6 +112,34 @@ public class SearchAdapter extends RecyclerListView.SelectionAdapter {
         return true;
     }
 
+    protected boolean allowUnregisteredContacts() {
+        return true;
+    }
+
+    protected boolean acceptSearchResult(Object object) {
+        return !(object instanceof TLRPC.User) || acceptUser((TLRPC.User) object);
+    }
+
+    private int getAcceptedSearchCount(ArrayList<?> results) {
+        int count = 0;
+        for (int i = 0; i < results.size(); i++) {
+            if (acceptSearchResult(results.get(i))) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private Object getAcceptedSearchResult(ArrayList<?> results, int index) {
+        for (int i = 0; i < results.size(); i++) {
+            Object result = results.get(i);
+            if (acceptSearchResult(result) && index-- == 0) {
+                return result;
+            }
+        }
+        return null;
+    }
+
     public void searchDialogs(final String query) {
         try {
             if (searchTimer != null) {
@@ -254,7 +282,7 @@ public class SearchAdapter extends RecyclerListView.SelectionAdapter {
                 }
                 searchResult = users;
                 searchResultNames = names;
-                this.unregistredContacts = unregistredContacts;
+                this.unregistredContacts = allowUnregisteredContacts() ? unregistredContacts : new ArrayList<>();
                 searchAdapterHelper.mergeResults(users);
                 searchInProgress = false;
                 notifyDataSetChanged();
@@ -290,11 +318,11 @@ public class SearchAdapter extends RecyclerListView.SelectionAdapter {
             count += unregistredContacts.size() + 1;
         }
 
-        int globalCount = searchAdapterHelper.getGlobalSearch().size();
+        int globalCount = getAcceptedSearchCount(searchAdapterHelper.getGlobalSearch());
         if (globalCount != 0) {
             count += globalCount + 1;
         }
-        int phoneCount = searchAdapterHelper.getPhoneSearch().size();
+        int phoneCount = getAcceptedSearchCount(searchAdapterHelper.getPhoneSearch());
         if (phoneCount != 0) {
             count += phoneCount;
         }
@@ -307,8 +335,8 @@ public class SearchAdapter extends RecyclerListView.SelectionAdapter {
     public boolean isGlobalSearch(int i) {
         int localCount = searchResult.size();
         int unregistredCount = unregistredContacts.size();
-        int globalCount = searchAdapterHelper.getGlobalSearch().size();
-        int phoneCount = searchAdapterHelper.getPhoneSearch().size();
+        int globalCount = getAcceptedSearchCount(searchAdapterHelper.getGlobalSearch());
+        int phoneCount = getAcceptedSearchCount(searchAdapterHelper.getPhoneSearch());
         if (i >= 0 && i < localCount) {
             return false;
         } else if (i > localCount && i < localCount + unregistredCount + 1) {
@@ -324,8 +352,8 @@ public class SearchAdapter extends RecyclerListView.SelectionAdapter {
     public Object getItem(int i) {
         int localCount = searchResult.size();
         int unregistredCount = unregistredContacts.size();
-        int globalCount = searchAdapterHelper.getGlobalSearch().size();
-        int phoneCount = searchAdapterHelper.getPhoneSearch().size();
+        int globalCount = getAcceptedSearchCount(searchAdapterHelper.getGlobalSearch());
+        int phoneCount = getAcceptedSearchCount(searchAdapterHelper.getPhoneSearch());
         if (i >= 0 && i < localCount) {
             return searchResult.get(i);
         } else {
@@ -341,11 +369,11 @@ public class SearchAdapter extends RecyclerListView.SelectionAdapter {
                 }
             }
             if (i >= 0 && i < phoneCount) {
-                return searchAdapterHelper.getPhoneSearch().get(i);
+                return getAcceptedSearchResult(searchAdapterHelper.getPhoneSearch(), i);
             } else {
                 i -= phoneCount;
                 if (i > 0 && i <= globalCount) {
-                    return searchAdapterHelper.getGlobalSearch().get(i - 1);
+                    return getAcceptedSearchResult(searchAdapterHelper.getGlobalSearch(), i - 1);
                 }
             }
         }
