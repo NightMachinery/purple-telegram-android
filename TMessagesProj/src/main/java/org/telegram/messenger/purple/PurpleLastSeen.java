@@ -2,8 +2,7 @@
  * This is the source code of Purple Telegram for Android.
  *
  * The [last_seen] table: why a last seen reads the way it does, and what a
- * finished trade left behind. Mirrors the desktop fork's last-seen reasons - see
- * docs/purple/work_mode.md, "Last seen: reasons and the trade".
+ * finished peek left behind. Mirrors the desktop fork's last-seen reasons.
  *
  * The words, and nothing but the words. Which of the three lines a status gets,
  * whether it can be tapped and how long the cooldown has left are one question
@@ -11,11 +10,11 @@
  * drift apart about it again. What is left here is English and pixels: the
  * catalogue the sentence comes out of, and how much room the caller has for it.
  *
- * The little cache is still in front of state.toml for the trade log and for
+ * The little cache is still in front of state.toml for the peek log and for
  * the sheet, which want the record itself rather than a decision about it. The
  * drawing path does not go through it any more: it asks the gate, which holds
  * the state it was last loaded with, and noteTrade reloads so that it holds the
- * trade that was just written.
+ * peek that was just written.
  */
 
 package org.telegram.messenger.purple;
@@ -35,13 +34,13 @@ import java.util.Map;
 public final class PurpleLastSeen {
 
     /**
-     * The trades read out of state.toml, by peer, or null when nothing has been
+     * The peeks read out of state.toml, by peer, or null when nothing has been
      * read yet.
      *
      * Rebuilt rather than updated, and only when {@link #cachedGeneration}
      * falls behind the gate: state.toml can also be replaced under us - an
      * import, a push from the other machine - and a map that only ever learned
-     * about this device's own trades would keep showing a moment the file no
+     * about this device's own peeks would keep showing a moment the file no
      * longer holds.
      */
     private static volatile Map<Long, PurpleCore.Trade> cached;
@@ -58,13 +57,13 @@ public final class PurpleLastSeen {
     }
 
     /**
-     * Whether the "show mine to see theirs" sheet is offered - {@code trade_p}.
+     * Whether Last Seen Peeks are enabled - {@code trade_p}.
      *
      * The reason line is tappable only while this is on, which is the whole
      * difference between the two switches: turning this off leaves the
-     * explanation standing and takes away the offer.
+     * explanation standing and removes the peek action.
      */
-    public static boolean tradeOffered() {
+    public static boolean peekEnabled() {
         final PurpleCore.Loaded current = PurpleGate.state();
         return current != null && current.lastSeenTrade;
     }
@@ -136,7 +135,7 @@ public final class PurpleLastSeen {
     }
 
     /**
-     * What the last trade with this person read, if it is still inside
+     * What the last peek at this person read, if it is still inside
      * {@code trade_remember}, or null.
      *
      * @param userId the bare user id; a private chat's dialog id is the same
@@ -148,7 +147,7 @@ public final class PurpleLastSeen {
         return snapshot().get(userId);
     }
 
-    /** Every trade still worth showing, newest read first, for the trade log. */
+    /** Every peek still worth showing, newest read first, for the peek log. */
     public static List<PurpleCore.Trade> trades() {
         try {
             return PurpleCore.trades(PurpleState.read(), System.currentTimeMillis() / 1000L);
@@ -158,10 +157,10 @@ public final class PurpleLastSeen {
     }
 
     /**
-     * Writes down a finished trade.
+     * Writes down a finished peek.
      *
      * A {@code wasOnlineUnix} of zero is recorded too, and deliberately: a
-     * trade whose hold ran out with nothing exact ever arriving is still a
+     * peek whose hold ran out with nothing exact ever arriving is still a
      * moment of exposure that happened, and it is what the cooldown counts.
      *
      * @return whether it reached state.toml
@@ -187,12 +186,12 @@ public final class PurpleLastSeen {
         cached = null;
         cachedGeneration = -1;
         // And the gate is told, because the gate is what the status lines now
-        // ask: it holds the state it was last loaded with, and a trade written
+        // ask: it holds the state it was last loaded with, and a peek written
         // only to the file would be invisible to every line until something
         // else happened to reload. The same write-then-reload every other state
         // change here does, and the generation bump it carries is what empties
         // the map above for good measure.
-        PurpleGate.reload("last seen trade");
+        PurpleGate.reload("last seen peek");
         return true;
     }
 
@@ -225,7 +224,7 @@ public final class PurpleLastSeen {
      * that - see {@link #cooldownLeft}, which asks for it by itself.
      *
      * Ourselves, a bot and a deleted account stop here too. None of them has a
-     * status anybody traded for, so there is nothing remembered to put over it.
+     * status anybody peeked at, so there is nothing remembered to put over it.
      */
     private static PurpleCore.LastSeenNote note(TLRPC.User user) {
         if (user == null || user.self || user.bot || user.deleted) {
@@ -242,13 +241,13 @@ public final class PurpleLastSeen {
      * The status line with the fork's part appended, or the line untouched.
      *
      * Three answers and no fourth, and which one is the core's to say. A
-     * remembered trade replaces the text underneath outright - it is a real
+     * remembered peek replaces the text underneath outright - it is a real
      * moment, read on purpose, and saying "last seen recently" over the top of
-     * it would be throwing away the one thing the trade was for. That holds
+     * it would be throwing away the one thing the peek was for. That holds
      * over "a long time ago" as well, for as long as {@code trade_remember}
      * keeps the memory: what gates it is the age of the read, not the shape of
      * the status that has since moved under it. A coarse status the server says
-     * is coarse because of OUR rules gets the offer. Everything else - hidden
+     * is coarse because of OUR rules gets the peek action. Everything else - hidden
      * by them, an exact time, "a long time ago" with no read to put over it -
      * is left exactly as the app wrote it, because there is nothing true to
      * add.
@@ -295,10 +294,10 @@ public final class PurpleLastSeen {
     }
 
     /**
-     * Whether tapping this status line should offer the trade.
+     * Whether tapping this status line should start a Last Seen Peek.
      *
      * Straight from the core, which is the repair: a remembered line is
-     * tappable too, so the first trade no longer replaces the only door into
+     * tappable too, so the first peek no longer replaces the only door into
      * the sheet and leaves the second one unreachable for a whole
      * {@code trade_remember}. Inside the cooldown the sheet counts the wait
      * down rather than refusing - see PurpleLastSeenTrade.
@@ -307,14 +306,14 @@ public final class PurpleLastSeen {
         return note(user).tappable;
     }
 
-    public static boolean offered(TLRPC.User user) {
-        return tradeOffered()
+    public static boolean peekEligible(TLRPC.User user) {
+        return peekEnabled()
                 && shapeFor(user) == PurpleCore.SHAPE_COARSE
                 && reasonFor(user) == PurpleCore.REASON_BY_ME;
     }
 
     /**
-     * How long until a trade with this person would be allowed again, in
+     * How long until a peek at this person would be allowed again, in
      * seconds, or 0 when one is allowed right now.
      *
      * What the sheet counts down. Asked of the core on its own - with no status
@@ -354,7 +353,7 @@ public final class PurpleLastSeen {
                 "PurpleLastSeenAgoHours", (int) (seconds / 3600));
     }
 
-    /** The trades by peer, rebuilt whenever the gate has moved under us. */
+    /** The peeks by peer, rebuilt whenever the gate has moved under us. */
     private static Map<Long, PurpleCore.Trade> snapshot() {
         final int generation = PurpleGate.generation();
         final Map<Long, PurpleCore.Trade> current = cached;

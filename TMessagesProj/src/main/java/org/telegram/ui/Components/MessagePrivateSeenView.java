@@ -196,16 +196,20 @@ public class MessagePrivateSeenView extends FrameLayout {
 
         final boolean premiumLocked = MessagesController.getInstance(currentAccount).premiumFeaturesBlocked();
         // Purple: the first button of the last-seen half of this sheet is the
-        // fork's trade, not the stock request. Stock sends one setPrivacy that
+        // fork's peek, not the stock request. Stock sends one setPrivacy that
         // makes your last seen visible to EVERYBODY, for good, and nothing ever
         // puts it back; PurpleLastSeenTrade shows it to this one person for a
-        // few seconds and restores the rules exactly. With the offer switched
+        // few seconds and restores the rules exactly. With peeks switched
         // off there is no button at all rather than the stock one: this fork
         // does not carry a one-tap way to expose yourself to everybody, and
         // somebody who wants that can still say so in Telegram's own Privacy
         // settings, which is what the description points at. The read-time half
-        // is untouched - there is no trade for read marks.
-        final boolean purpleTrade = lastSeen && PurpleLastSeen.tradeOffered();
+        // is untouched - there is no peek for read marks.
+        final TLRPC.User lastSeenUser = dialogId > 0
+                ? MessagesController.getInstance(currentAccount).getUser(dialogId)
+                : null;
+        final boolean purplePeekEnabled = lastSeen && PurpleLastSeen.peekEnabled();
+        final boolean purplePeek = lastSeen && PurpleLastSeen.peekEligible(lastSeenUser);
 
         LinearLayout layout = new LinearLayout(context);
         layout.setOrientation(LinearLayout.VERTICAL);
@@ -225,7 +229,7 @@ public class MessagePrivateSeenView extends FrameLayout {
         headerView.setTextColor(Theme.getColor(Theme.key_dialogTextBlack, resourcesProvider));
         headerView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 20);
         // Purple: "Show Your Last Seen" promised the stock request, so the
-        // trade's own title stands in its place - one name for one operation.
+        // peek's own title stands in its place - one name for one operation.
         headerView.setText(LocaleController.getString(lastSeen ? R.string.PurpleTradeTitle : R.string.PremiumReadHeader1));
         layout.addView(headerView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL, 12, 0, 12, 0));
 
@@ -234,39 +238,40 @@ public class MessagePrivateSeenView extends FrameLayout {
         descriptionView.setTextColor(Theme.getColor(Theme.key_dialogTextBlack, resourcesProvider));
         descriptionView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
         String username = "";
-        if (dialogId > 0) {
-            TLRPC.User user = MessagesController.getInstance(currentAccount).getUser(dialogId);
-            username = UserObject.getFirstName(user);
+        if (lastSeenUser != null) {
+            username = UserObject.getFirstName(lastSeenUser);
         }
-        // Purple: the last-seen text says what the trade actually does, in the
-        // words the trade's own confirmation sheet uses, or - with the offer
+        // Purple: the last-seen text says what the peek actually does, in the
+        // words the peek's own confirmation sheet uses, or - with peeks
         // off - says that it is off and where the two switches live. Neither
         // depends on premiumLocked any more: the stock pair differed only in
-        // whether they dangled the subscription, and the trade is offered the
+        // whether they dangled the subscription, and the peek is available the
         // same way either way.
         descriptionView.setText(AndroidUtilities.replaceTags(lastSeen
-                ? (purpleTrade
+                ? (purplePeek
                         ? LocaleController.formatString(R.string.PurpleTradeSheetText, username, PurpleLastSeen.holdSeconds())
-                        : LocaleController.formatString(R.string.PurpleTradeSheetOff, username))
+                        : LocaleController.formatString(purplePeekEnabled
+                                ? R.string.PurpleTradeSheetUnavailable
+                                : R.string.PurpleTradeSheetOff, username))
                 : LocaleController.formatString(premiumLocked ? R.string.PremiumReadText1Locked : R.string.PremiumReadText1, username)));
         layout.addView(descriptionView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL, 32, 9, 32, 19));
 
-        // Purple: with the offer off the button is left out rather than left
+        // Purple: with peeks off the button is left out rather than left
         // pointing at the stock request. A sheet that only explains is the
         // honest state here - the Premium half below still stands, and where
         // Premium is blocked too the sheet is the explanation and nothing else.
-        if (!lastSeen || purpleTrade) {
+        if (!lastSeen || purplePeek) {
             ButtonWithCounterView button1 = new ButtonWithCounterView(context, resourcesProvider).setRound();
             button1.setText(LocaleController.getString(lastSeen ? R.string.PurpleTradeShare : R.string.PremiumReadButton1), false);
             layout.addView(button1, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48, Gravity.CENTER_HORIZONTAL));
             button1.setOnClickListener(v -> {
                 if (lastSeen) {
-                    // The trade needs a fragment: it asks with a dialog and
+                    // The peek needs a fragment: it asks with a dialog and
                     // reports with bulletins, and this view only ever has a
                     // Context. getSafeLastFragment is how the rest of the app
                     // finds one from a sheet, and the safe one rather than the
                     // getLastFragment the Premium button below uses, because a
-                    // fragment that is already finishing would take the trade's
+                    // fragment that is already finishing would take the peek's
                     // confirmation down with it.
                     final BaseFragment fragment = LaunchActivity.getSafeLastFragment();
                     if (fragment == null) {
@@ -277,12 +282,12 @@ public class MessagePrivateSeenView extends FrameLayout {
                         // nobody was shown a sheet about.
                         return;
                     }
-                    // The sheet goes first so the trade's confirmation lands on
+                    // The sheet goes first so the peek's confirmation lands on
                     // the fragment underneath rather than on top of a dialog
                     // that is already leaving. No setLoading either: nothing is
                     // sent from here, and this button will not be on screen to
                     // stop spinning. `updated' is left alone for the same
-                    // reason - the trade refreshes the headers itself, out of
+                    // reason - the peek refreshes the headers itself, out of
                     // putUsers, once it has something newer to put in them.
                     sheet.dismiss();
                     if (dismiss != null) {

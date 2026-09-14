@@ -184,6 +184,7 @@ import org.telegram.messenger.Timer;
 import org.telegram.messenger.TranslateController;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.purple.PurpleGate;
+import org.telegram.messenger.purple.PurpleLastSeen;
 import org.telegram.messenger.purple.PurpleScreenTime;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
@@ -1690,6 +1691,7 @@ public class ChatActivity extends BaseFragment implements
     private final static int charge_fee = 72;
 
     private final static int chat_menu_topic_create = 73;
+    private final static int peek_last_seen = 75;
 
     private final static int id_chat_compose_panel = 1000;
 
@@ -3896,6 +3898,10 @@ public class ChatActivity extends BaseFragment implements
                         args.putBoolean("addContact", true);
                         presentFragment(new ContactAddActivity(args));
                     }
+                } else if (id == peek_last_seen) {
+                    if (PurpleLastSeen.peekEligible(currentUser)) {
+                        PurpleLastSeenTrade.show(ChatActivity.this, currentAccount, currentUser.id);
+                    }
                 } else if (id == mute) {
                     toggleMute(false);
                 } else if (id == add_shortcut) {
@@ -4310,6 +4316,10 @@ public class ChatActivity extends BaseFragment implements
                 @Override
                 public void onShowSubMenu() {
                     updateScrimSourceBitmap();
+                    if (headerItem.hasSubItem(peek_last_seen)) {
+                        headerItem.setSubItemShown(
+                                peek_last_seen, PurpleLastSeen.peekEligible(currentUser));
+                    }
                 }
 
                 @Override
@@ -4409,6 +4419,10 @@ public class ChatActivity extends BaseFragment implements
                 headerItem.setSubItemShown(open_direct, ChatObject.isChannel(currentChat) && !ChatObject.isMonoForum(currentChat) && currentChat.linked_monoforum_id != 0 && ChatObject.canManageMonoForum(currentAccount, -currentChat.linked_monoforum_id));
             }
             if (currentUser != null && chatMode != MODE_SAVED) {
+                headerItem.lazilyAddSubItem(peek_last_seen, R.drawable.msg_view_file,
+                        getString(R.string.PurplePeekAction));
+                headerItem.setSubItemShown(
+                        peek_last_seen, PurpleLastSeen.peekEligible(currentUser));
                 headerItem.lazilyAddSubItem(call, R.drawable.msg_callback, LocaleController.getString(R.string.Call));
                 headerItem.lazilyAddSubItem(video_call, R.drawable.msg_videocall, LocaleController.getString(R.string.VideoCall));
                 if (userFull != null && userFull.phone_calls_available) {

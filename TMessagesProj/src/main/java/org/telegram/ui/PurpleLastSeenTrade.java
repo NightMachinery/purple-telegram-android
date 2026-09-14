@@ -1,8 +1,7 @@
 /*
  * This is the source code of Purple Telegram for Android.
  *
- * "Show mine to see theirs": the last-seen trade. See docs/purple/work_mode.md,
- * "Last seen: reasons and the trade".
+ * Last Seen Peek: temporarily show one person ours to read theirs.
  *
  * Telegram's rule is symmetric - hide your last seen and you stop being shown
  * other people's. The server says so, in the `by_me' flag on a coarse status,
@@ -10,13 +9,13 @@
  * that can be DONE about it: show them yours for a few seconds, ask for theirs,
  * put the rules back.
  *
- * Three things this deliberately is not. It is not a toggle - every trade is a
+ * Three things this deliberately is not. It is not a toggle - every peek is a
  * tap, and the cooldown in the core is what stops a tap becoming a
  * subscription. It is not silent - the sheet says what the seconds cost before
  * anything is sent. And the restore is not conditional: it runs after a
  * success, after a timeout and after an error, because a fork that could leave
  * somebody's privacy rules open on a failed request would be worse than one
- * with no trade in it.
+ * with no peek in it.
  */
 
 package org.telegram.ui;
@@ -72,9 +71,9 @@ public final class PurpleLastSeenTrade {
     private static final int RESTORE_TRIES = 3;
 
     /**
-     * The trade in flight, or zero.
+     * The peek in flight, or zero.
      *
-     * One at a time and no queue: two trades running at once would each restore
+     * One at a time and no queue: two peeks running at once would each restore
      * the rules the other had just changed, and the second restore would put
      * back a state that was never the user's.
      */
@@ -84,11 +83,11 @@ public final class PurpleLastSeenTrade {
     }
 
     /**
-     * Offers, or refuses, a trade with this user.
+     * Starts, or refuses, a peek at this user.
      *
      * The refusals that are said out loud are the ones that will not turn into
-     * a yes while the box sits there: the offer switched off, a last seen that
-     * is not coarse because of our own rules, a trade already running. A
+     * a yes while the box sits there: peeks switched off, a last seen that
+     * is not coarse because of our own rules, a peek already running. A
      * cooldown is not one of those - it is a wait - so where there is a
      * remembered read to show it beside, the sheet opens and counts it down
      * rather than firing a toast that vanishes without saying how much is left.
@@ -99,11 +98,11 @@ public final class PurpleLastSeenTrade {
         }
         final TLRPC.User user =
                 MessagesController.getInstance(currentAccount).getUser(userId);
-        if (user == null || !PurpleLastSeen.tradeOffered()) {
+        if (user == null || !PurpleLastSeen.peekEnabled()) {
             return;
         }
         final String name = UserObject.getFirstName(user);
-        if (PurpleLastSeen.reasonFor(user) != PurpleCore.REASON_BY_ME) {
+        if (!PurpleLastSeen.peekEligible(user)) {
             // Their own setting, an exact time already, or "a long time ago",
             // which is not a coarsening of anything: in none of the three is
             // there anything of ours in the way to move.
@@ -114,7 +113,7 @@ public final class PurpleLastSeenTrade {
             return;
         }
         final PurpleCore.Trade read = PurpleLastSeen.remembered(userId);
-        // A trade whose hold ran out with nothing exact arriving left no line
+        // A peek whose hold ran out with nothing exact arriving left no line
         // on screen, so there is nothing for a countdown to stand beside and
         // the cooldown is a refusal again.
         final boolean refresh = read != null && read.wasOnlineUnix > 0;
@@ -124,8 +123,8 @@ public final class PurpleLastSeenTrade {
             return;
         }
         if (cooldownLeft <= 0 && noAsk()) {
-            // The sheet was the consent, and it was given once for good. The tap
-            // is still per trade, which is what keeps this from being a toggle.
+            // The device-wide confirmation choice was already saved. The tap
+            // is still per peek, which is what keeps this from being a toggle.
             start(fragment, currentAccount, user);
             return;
         }
@@ -133,7 +132,7 @@ public final class PurpleLastSeenTrade {
     }
 
     /**
-     * The sheet: what the seconds cost, what the last trade read, how long the
+     * The sheet: what the seconds cost, what the last peek read, how long the
      * wait has left, and the two ways out of it.
      *
      * The countdown is recomputed from the clock on every tick rather than
@@ -151,7 +150,8 @@ public final class PurpleLastSeenTrade {
         final AlertDialog.Builder builder = new AlertDialog.Builder(activity);
         builder.setTitle(getString(R.string.PurpleTradeTitle));
         final CharSequence explanation = formatString(
-                R.string.PurpleTradeText, name, PurpleLastSeen.holdSeconds());
+                R.string.PurpleTradeText, name, PurpleLastSeen.holdSeconds())
+                + "\n\n" + getString(R.string.PurpleTradeDontAskHelp);
         builder.setMessage((read == null)
                 ? explanation
                 : (explanation + "\n\n" + formatString(R.string.PurpleTradeRemembered,
@@ -162,7 +162,7 @@ public final class PurpleLastSeenTrade {
         final LinearLayout wrapper = new LinearLayout(activity);
         wrapper.setOrientation(LinearLayout.VERTICAL);
 
-        // Only where there is a wait to report. A first trade's sheet is
+        // Only where there is a wait to report. A first peek's sheet is
         // exactly the sheet it always was.
         final TextView waiting;
         if (read != null) {
@@ -193,21 +193,19 @@ public final class PurpleLastSeenTrade {
         }
         builder.setView(wrapper);
 
-        // "Refresh now" rather than "Share once" for somebody already traded
-        // with: this is a second look, and the button should say which of the
-        // two it is before it is pressed.
+        // "Peek Again" for somebody already peeked at: this is a second look,
+        // and the button should say which of the two it is before it is pressed.
         builder.setPositiveButton(getString((read == null)
                 ? R.string.PurpleTradeShare
                 : R.string.PurpleTradeRefresh), (box, which) -> {
             // Checked again rather than trusted to the disabled button: the
             // button is the only thing holding the press back, and a wait this
-            // fork got wrong would be a trade the cooldown was supposed to stop.
+            // fork got wrong would be a peek the cooldown was supposed to stop.
             if (PurpleLastSeen.cooldownLeft(user.id) > 0) {
                 return;
             }
-            // Written only on the way through the button. A "don't ask again"
-            // ticked and then cancelled is not an answer to the question that
-            // was asked.
+            // Written only on the way through the button. A device-wide skip
+            // ticked and then cancelled is not an answer to the question asked.
             if (noAsk[0]) {
                 setNoAsk(true);
             }
@@ -303,7 +301,7 @@ public final class PurpleLastSeenTrade {
     private static void start(BaseFragment fragment, int currentAccount, TLRPC.User user) {
         final long userId = user.id;
         running = userId;
-        FileLog.d("Purple: trade starting for " + userId);
+        FileLog.d("Purple: last seen peek starting for " + userId);
         info(fragment, getString(R.string.PurpleTradeWorking));
 
         final TL_account.getPrivacy req = new TL_account.getPrivacy();
@@ -311,7 +309,7 @@ public final class PurpleLastSeenTrade {
         ConnectionsManager.getInstance(currentAccount).sendRequest(req,
                 (response, error) -> AndroidUtilities.runOnUIThread(() -> {
                     if (!(response instanceof TL_account.privacyRules)) {
-                        FileLog.d("Purple: trade could not read the rules");
+                        FileLog.d("Purple: last seen peek could not read the rules");
                         failed(fragment, error);
                         return;
                     }
@@ -332,7 +330,7 @@ public final class PurpleLastSeenTrade {
             // cannot address would come back as inputUserEmpty and the restore
             // would quietly drop them from the user's own exceptions - a
             // privacy setting changed by a feature that promised not to.
-            FileLog.e("Purple: trade refused, a rule names an unaddressable user");
+            FileLog.e("Purple: last seen peek refused, a rule names an unaddressable user");
             running = 0;
             error(fragment, getString(R.string.PurpleTradeUnresolved));
             return;
@@ -340,7 +338,7 @@ public final class PurpleLastSeenTrade {
         final ArrayList<TLRPC.InputPrivacyRule> restore = asInput(currentAccount, current, 0);
         final ArrayList<TLRPC.InputPrivacyRule> opened =
                 asInput(currentAccount, current, user.id);
-        FileLog.d("Purple: trade opening the rules for " + user.id);
+        FileLog.d("Purple: last seen peek opening the rules for " + user.id);
 
         final TL_account.setPrivacy req = new TL_account.setPrivacy();
         req.key = new TLRPC.TL_inputPrivacyKeyStatusTimestamp();
@@ -349,11 +347,11 @@ public final class PurpleLastSeenTrade {
                 (response, error) -> AndroidUtilities.runOnUIThread(() -> {
                     if (!(response instanceof TL_account.privacyRules)) {
                         // Nothing was changed, so there is nothing to put back.
-                        FileLog.d("Purple: trade refused at the open");
+                        FileLog.d("Purple: last seen peek refused at the open");
                         failed(fragment, error);
                         return;
                     }
-                    FileLog.d("Purple: trade open, waiting "
+                    FileLog.d("Purple: last seen peek open, waiting "
                             + PurpleLastSeen.holdSeconds() + "s");
                     poll(fragment, currentAccount, user, restore,
                             System.currentTimeMillis()
@@ -396,20 +394,20 @@ public final class PurpleLastSeenTrade {
                         MessagesController.getInstance(currentAccount).putUsers(users, false);
                     }
                     if (wasOnline > 0) {
-                        FileLog.d("Purple: trade read " + wasOnline + " for " + user.id);
+                        FileLog.d("Purple: last seen peek read " + wasOnline + " for " + user.id);
                         finish(fragment, currentAccount, user, restore, wasOnline);
                     } else if (System.currentTimeMillis() + POLL_MS < deadlineMs) {
                         AndroidUtilities.runOnUIThread(() -> poll(
                                 fragment, currentAccount, user, restore, deadlineMs), POLL_MS);
                     } else {
-                        FileLog.d("Purple: trade hold ran out for " + user.id);
+                        FileLog.d("Purple: last seen peek hold ran out for " + user.id);
                         finish(fragment, currentAccount, user, restore, 0);
                     }
                 }));
     }
 
     /**
-     * Writes the trade down and puts the rules back.
+     * Writes the peek down and puts the rules back.
      *
      * A read of zero is written too: the hold ran out with nothing exact, but
      * the seconds of exposure happened, and the cooldown counts them.
@@ -434,7 +432,7 @@ public final class PurpleLastSeenTrade {
      * Retried where nothing else here is, because this is the step whose failure
      * leaves somebody more exposed than they asked to be. The cached copy is
      * re-fetched afterwards so the Privacy screen agrees with the server rather
-     * than with what it last saw before the trade.
+     * than with what it last saw before the peek.
      */
     private static void restore(BaseFragment fragment, int currentAccount,
             ArrayList<TLRPC.InputPrivacyRule> rules, int triesLeft, CharSequence done) {
@@ -448,18 +446,18 @@ public final class PurpleLastSeenTrade {
                         ContactsController.getInstance(currentAccount).setPrivacyRules(
                                 back.rules, ContactsController.PRIVACY_RULES_TYPE_LASTSEEN);
                         ContactsController.getInstance(currentAccount).loadPrivacySettings(true);
-                        FileLog.d("Purple: trade rules restored");
+                        FileLog.d("Purple: last seen peek rules restored");
                         running = 0;
                         info(fragment, done);
                         return;
                     }
                     if (triesLeft > 1) {
-                        FileLog.d("Purple: trade restore failed, retrying");
+                        FileLog.d("Purple: last seen peek restore failed, retrying");
                         AndroidUtilities.runOnUIThread(() -> restore(
                                 fragment, currentAccount, rules, triesLeft - 1, done), 2000L);
                         return;
                     }
-                    FileLog.e("Purple: trade could not restore the rules");
+                    FileLog.e("Purple: last seen peek could not restore the rules");
                     running = 0;
                     error(fragment, formatString(R.string.PurpleTradeRestoreFailed,
                             (error == null || error.text == null) ? "?" : error.text));
@@ -548,7 +546,7 @@ public final class PurpleLastSeenTrade {
             }
         }
         if (letThrough != 0 && !added) {
-            // No allow-users rule to extend, so the trade brings one with it.
+            // No allow-users rule to extend, so the peek brings one with it.
             final TLRPC.InputUser input = inputOf(currentAccount, letThrough);
             if (input != null) {
                 final TLRPC.TL_inputPrivacyValueAllowUsers allow =
@@ -630,7 +628,7 @@ public final class PurpleLastSeenTrade {
         return 0;
     }
 
-    /** Ends a trade that never opened anything, so nothing has to be put back. */
+    /** Ends a peek that never opened anything, so nothing has to be put back. */
     private static void failed(BaseFragment fragment, TLRPC.TL_error error) {
         running = 0;
         error(fragment, formatString(R.string.PurpleTradeFailed,
