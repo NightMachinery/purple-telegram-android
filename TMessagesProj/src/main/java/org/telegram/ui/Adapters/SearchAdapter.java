@@ -108,6 +108,10 @@ public class SearchAdapter extends RecyclerListView.SelectionAdapter {
         useUserCell = value;
     }
 
+    protected boolean acceptUser(TLRPC.User user) {
+        return true;
+    }
+
     public void searchDialogs(final String query) {
         try {
             if (searchTimer != null) {
@@ -241,6 +245,13 @@ public class SearchAdapter extends RecyclerListView.SelectionAdapter {
     private void updateSearchResults(int searchReqIdFinal, final ArrayList<Object> users, final ArrayList<CharSequence> names, ArrayList<ContactsController.Contact> unregistredContacts) {
         AndroidUtilities.runOnUIThread(() -> {
             if (searchReqIdFinal == searchReqId) {
+                for (int i = users.size() - 1; i >= 0; i--) {
+                    Object user = users.get(i);
+                    if (user instanceof TLRPC.User && !acceptUser((TLRPC.User) user)) {
+                        users.remove(i);
+                        names.remove(i);
+                    }
+                }
                 searchResult = users;
                 searchResultNames = names;
                 this.unregistredContacts = unregistredContacts;
