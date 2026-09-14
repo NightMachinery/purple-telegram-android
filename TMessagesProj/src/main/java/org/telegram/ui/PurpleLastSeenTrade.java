@@ -99,7 +99,12 @@ public final class PurpleLastSeenTrade {
         }
         final TLRPC.User user =
                 MessagesController.getInstance(currentAccount).getUser(userId);
-        if (user == null || !PurpleLastSeen.peekEnabled()) {
+        if (user == null) {
+            return;
+        }
+        if (!PurpleLastSeen.peekEnabled()) {
+            FileLog.d("Purple: last seen peek refused because [last_seen] trade_p is false");
+            error(fragment, getString(R.string.PurpleTradeDisabled));
             return;
         }
         final String name = UserObject.getFirstName(user);

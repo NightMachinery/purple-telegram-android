@@ -532,11 +532,13 @@ should not hide it. Its tap works for the same reason - a dead tap on a line
 you can plainly see would be that switch reaching somewhere it was never about.
 
 The same Last Seen Peek also replaces Telegram's permanent-sharing button in a
-message's *seen by* sheet. With `trade_p = false` there is no button there; the
-sheet explains where to enable Last Seen Peeks and where Telegram's own Privacy
-settings live if the user deliberately wants to share with everybody. This
-button follows `trade_p` independently of `reasons_p`, because the latter only
-controls the explanatory tail.
+message's *seen by* sheet. Its hidden-status row stays clickable for an eligible
+Peek target on every account tier and opens the Peek version of the sheet rather
+than the read-receipt version. With `trade_p = false` there is no button there;
+the sheet explains where to enable Last Seen Peeks and where Telegram's own
+Privacy settings live if the user deliberately wants to share with everybody.
+This button follows `trade_p` independently of `reasons_p`, because the latter
+only controls the explanatory tail.
 
 **Screen time** is `[screen_time]`, and it is off until `enabled_p = true` says
 otherwise - it is a record of what you looked at and for how long, and nothing

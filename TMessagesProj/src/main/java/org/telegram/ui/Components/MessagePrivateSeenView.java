@@ -178,9 +178,14 @@ public class MessagePrivateSeenView extends FrameLayout {
             valueLayout.animate().alpha(1f).setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT).setDuration(320).start();
             loadingView.animate().alpha(0f).setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT).setDuration(320).start();
 
-            if (isPremiumLocked) {
+            final TLRPC.User lastSeenUser = dialogId > 0
+                    ? MessagesController.getInstance(currentAccount).getUser(dialogId)
+                    : null;
+            final boolean purplePeek = PurpleLastSeen.peekEligible(lastSeenUser);
+            if (purplePeek || isPremiumLocked) {
                 setBackground(Theme.createRadSelectorDrawable(Theme.getColor(Theme.key_listSelector, resourcesProvider), 6, 0));
-                setOnClickListener(v -> showSheet(getContext(), currentAccount, dialogId, false, dismiss, this::request, resourcesProvider));
+                setOnClickListener(v -> showSheet(getContext(), currentAccount,
+                        dialogId, purplePeek, dismiss, this::request, resourcesProvider));
             } else {
                 setBackground(null);
                 setOnClickListener(null);
