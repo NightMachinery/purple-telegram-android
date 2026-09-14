@@ -337,16 +337,12 @@ public class SearchAdapter extends RecyclerListView.SelectionAdapter {
         int unregistredCount = unregistredContacts.size();
         int globalCount = getAcceptedSearchCount(searchAdapterHelper.getGlobalSearch());
         int phoneCount = getAcceptedSearchCount(searchAdapterHelper.getPhoneSearch());
-        if (i >= 0 && i < localCount) {
-            return false;
-        } else if (i > localCount && i < localCount + unregistredCount + 1) {
-            return false;
-        } else if (i > localCount + unregistredCount + 1 && i < localCount + phoneCount + unregistredCount + 1) {
-            return false;
-        } else if (i > localCount + phoneCount + unregistredCount + 1 && i <= globalCount + phoneCount + localCount + unregistredCount + 1) {
-            return true;
+        int globalHeader = localCount;
+        if (unregistredCount > 0) {
+            globalHeader += unregistredCount + 1;
         }
-        return false;
+        globalHeader += phoneCount;
+        return i > globalHeader && i <= globalHeader + globalCount;
     }
 
     public Object getItem(int i) {
