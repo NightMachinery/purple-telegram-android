@@ -11419,7 +11419,7 @@
     <string name="PurpleSendAfterSaveInfo">Every change this app makes to settings.toml is posted to Saved Messages, five seconds after the last one, so a run of taps is one document. A file imported from Saved Messages is never sent back, and the same file is never sent twice.</string>
     <string name="PurpleWriteFailed">Could not edit settings.toml: %1$s</string>
     <!-- Purple: why a last seen is coarse, appended to the status line -->
-    <string name="PurpleLastSeenByMe">share yours to see</string>
+    <string name="PurpleLastSeenByMe">Last Seen Peek</string>
     <string name="PurpleLastSeenByMeShort">\uD83D\uDC40</string>
     <string name="PurpleLastSeenAsOf">%1$s \u00b7 as of %2$s</string>
     <string name="PurpleLastSeenAgoNow">just now</string>
@@ -11427,33 +11427,36 @@
     <string name="PurpleLastSeenAgoMinutes_other">%1$d min ago</string>
     <string name="PurpleLastSeenAgoHours_one">%1$d hour ago</string>
     <string name="PurpleLastSeenAgoHours_other">%1$d hours ago</string>
-    <!-- Purple: the last seen trade, and its log on the settings screen -->
-    <string name="PurpleTradeTitle">Show mine to see theirs</string>
-    <string name="PurpleTradeText">%1$s cannot see your last seen, so the server will not show you theirs.\n\nSharing once lets %1$s see your last seen for about %2$d seconds while this app asks for theirs, then puts your privacy settings back exactly as they were. Those seconds are real: if they look during them, they see when you were last online.</string>
-    <string name="PurpleTradeShare">Share once</string>
-    <string name="PurpleTradeDontAsk">Don\'t ask again</string>
-    <string name="PurpleTradeNotNeeded">%1$s is not hidden because of your settings, so there is nothing to trade.</string>
-    <string name="PurpleTradeCooldown">You already traded with %1$s a moment ago.</string>
-    <string name="PurpleTradeRefresh">Refresh now</string>
-    <string name="PurpleTradeRemembered">You traded with %1$s already: %2$s, read %3$s.</string>
-    <string name="PurpleTradeCooldownLeft">You can refresh in %1$s</string>
-    <string name="PurpleTradeCooldownNow">You can refresh now</string>
-    <string name="PurpleTradeWorking">Sharing yours\u2026</string>
+    <!-- Purple: Last Seen Peek, and its recent reads on the settings screen -->
+    <string name="PurpleTradeTitle">Last Seen Peek</string>
+    <string name="PurpleTradeText">%1$s shares their last seen in principle, but Telegram hides it because you do not share yours with them.\n\nA Last Seen Peek temporarily shows your last seen to %1$s - and only %1$s - for about %2$d seconds while this app reads theirs, then restores your privacy settings.</string>
+    <string name="PurpleTradeShare">Start Peek</string>
+    <string name="PurpleTradeDontAsk">Skip confirmation for all future peeks on this device</string>
+    <string name="PurpleTradeDontAskHelp">This saved choice applies to every future Last Seen Peek on this device. Each peek still requires a tap and temporarily shares your last seen with only that person.</string>
+    <string name="PurpleTradeNotNeeded">A Last Seen Peek is unavailable because %1$s\'s status is not hidden by your settings.</string>
+    <string name="PurpleTradeCooldown">You peeked at %1$s\'s last seen a moment ago.</string>
+    <string name="PurpleTradeRefresh">Peek Again</string>
+    <string name="PurpleTradeRemembered">Your last peek at %1$s found %2$s, read %3$s.</string>
+    <string name="PurpleTradeCooldownLeft">You can peek again in %1$s</string>
+    <string name="PurpleTradeCooldownNow">You can peek again now</string>
+    <string name="PurpleTradeWorking">Starting Last Seen Peek\u2026</string>
     <string name="PurpleTradeUnresolved">Some of your Last Seen exceptions name people this app cannot address right now, so nothing was changed. Open Settings \u2192 Privacy and Security \u2192 Last Seen once, then try again.</string>
-    <string name="PurpleTradeFailed">The trade did not go through: %1$s. Your privacy settings are unchanged.</string>
+    <string name="PurpleTradeFailed">The Last Seen Peek did not complete: %1$s. Your privacy settings are unchanged.</string>
     <string name="PurpleTradeRestoreFailed">Could not put your privacy settings back: %1$s. Check Settings \u2192 Privacy and Security \u2192 Last Seen.</string>
     <string name="PurpleTradeTimedOut">Nothing exact arrived in time. Your privacy settings are back as they were.</string>
     <string name="PurpleTradeDone">%1$s. Your privacy settings are back as they were.</string>
-    <!-- Purple: the same trade, offered from a message's seen-by sheet -->
-    <string name="PurpleTradeSheetText">%1$s cannot see your last seen, so the server will not show you theirs.\n\nSharing once lets %1$s - and nobody else - see your last seen for about %2$d seconds while this app asks for theirs, then puts your privacy settings back exactly as they were.</string>
-    <string name="PurpleTradeSheetOff">%1$s cannot see your last seen, so the server will not show you theirs.\n\nThe offer to trade is switched off. Turn it on in Settings \u2192 Purple \u2192 Last seen \u2192 Offer to trade ([last_seen] trade_p), and this button will show %1$s your last seen for a few seconds, read theirs, and put your privacy settings back exactly as they were.\n\nThis app never makes your last seen visible to everybody on one tap. If that is what you want, it is Settings \u2192 Privacy and Security \u2192 Last Seen.</string>
+    <!-- Purple: the same peek, started from a message's seen-by sheet -->
+    <string name="PurpleTradeSheetText">%1$s shares their last seen in principle, but Telegram hides it because you do not share yours with them.\n\nA Last Seen Peek temporarily shows your last seen to %1$s - and nobody else - for about %2$d seconds while this app reads theirs, then restores your privacy settings.</string>
+    <string name="PurpleTradeSheetUnavailable">A Last Seen Peek is unavailable because %1$s\'s status is not hidden by your settings.</string>
+    <string name="PurpleTradeSheetOff">%1$s shares their last seen in principle, but Telegram hides it because you do not share yours with them.\n\nLast Seen Peek is switched off. Turn it on in Settings \u2192 Purple \u2192 Last seen \u2192 Allow Last Seen Peeks ([last_seen] trade_p). A peek temporarily shares your last seen with %1$s alone, reads theirs, and restores your privacy settings.\n\nThis app never makes your last seen visible to everybody on one tap. If that is what you want, use Settings \u2192 Privacy and Security \u2192 Last Seen.</string>
     <string name="PurpleLastSeenHeader">Last seen</string>
     <string name="PurpleLastSeenReasonsRow">Say why a last seen is hidden</string>
-    <string name="PurpleLastSeenTradeRow">Offer to trade</string>
-    <string name="PurpleLastSeenInfo">A last seen the server coarsened because of YOUR privacy settings is marked in the chat header and the profile. Nothing is said about one the other person hid, and nothing at all about \"a long time ago\" - the server does not say whether that is inactivity or a block, and this app does not guess.\n\nWith the offer on, tapping that mark shows them your last seen for a few seconds, reads theirs, and puts your settings back.</string>
-    <string name="PurpleTradesHeader">Trades</string>
-    <string name="PurpleTradesEmpty">Nothing traded recently.</string>
-    <string name="PurpleTradesInfo">What each trade read, and when. A trade is forgotten once it is older than trade_remember.</string>
+    <string name="PurpleLastSeenTradeRow">Allow Last Seen Peeks</string>
+    <string name="PurpleLastSeenInfo">A last seen the server coarsened because of YOUR privacy settings is marked in the chat header and the profile. Nothing is said about one the other person hid, and nothing at all about \"a long time ago\" - the server does not say whether that is inactivity or a block, and this app does not guess.\n\nWhen Last Seen Peeks are allowed, tapping that mark temporarily shares your last seen with only that person, reads theirs, and restores your settings.</string>
+    <string name="PurpleTradesHeader">Last Seen Peeks</string>
+    <string name="PurpleTradesEmpty">No recent Last Seen Peeks.</string>
+    <string name="PurpleTradesInfo">What each Last Seen Peek read, and when. A read is forgotten once it is older than trade_remember.</string>
+    <string name="PurplePeekAction">Peek Last Seen</string>
     <string name="PurpleTradeRowValue">%1$s \u00b7 read %2$s</string>
     <string name="PurpleTradeRowNothing">nothing arrived</string>
     <!-- Purple: screen time - the recorder, the screen and the budgets -->

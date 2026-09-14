@@ -404,11 +404,11 @@ would be lying to code that never asked about a work mode.
 leaves hanging. Hide your own last seen and Telegram stops showing you other
 people's - the server says so, in a `by_me` flag on the coarse status, and this
 fork passes that on instead of printing a bare "last seen recently". With
-`reasons_p` (default true) the chat header and the profile append *share yours
-to see* to a status that is coarse **because of your own privacy settings**,
+`reasons_p` (default true) the chat header and the profile append *Last Seen
+Peek* to a status that is coarse **because of your own privacy settings**,
 collapsing to an eye in a header too narrow for the sentence. Nothing is
 appended when the other person hid theirs - that is their setting, and there is
-nothing to offer about it - and nothing at all to "a long time ago": the server
+no Last Seen Peek to perform - and nothing at all to "a long time ago": the server
 does not say whether that is inactivity or a block, and the fork does not guess.
 
 The words are for the two places with room for them and somewhere to put a
@@ -422,9 +422,10 @@ that sometimes opens a sheet instead would be worse than one that always does
 the one thing. So the mark there says the fork has something to add about this
 last seen, and the header and the profile are where you act on it. A remembered
 read is different: it replaces the phrase underneath in every one of those
-places, because what a trade bought is a fact about that person, and a member
-list still saying "last seen recently" beside a profile saying "last seen 14:32"
-would be the fork disagreeing with itself in two windows of the same app.
+places, because what a Last Seen Peek read is a fact about that person, and a
+member list still saying "last seen recently" beside a profile saying "last
+seen 14:32" would be the fork disagreeing with itself in two windows of the same
+app.
 
 Some status lines are deliberately left alone. The chat list writes its own
 subtitles, and a chat list row is the one row in the app whose whole job is to
@@ -439,18 +440,34 @@ hooking it would reach every one of those places blind. And `ProfileActivity2`
 is unreachable in this build - nothing constructs it - so hooking it would be
 hooking dead code.
 
-Tapping the mark opens **Show mine to see theirs**, unless `trade_p = false`
-turns the offer off and leaves the explanation. The sheet says what it costs
-before anything is sent; Share once then adds that one person to your
-last-seen allow list, asks the server for their status, and puts your privacy
-settings back exactly as they were - after a success, after a timeout
-(`trade_hold`, ten seconds by default) and after an error alike. What came back
-is remembered for `trade_remember` (a day) and shown in place of whatever the
-status says, as "last seen 14:32 · as of 3 min ago". A second trade with the
-same person has to wait out `trade_cooldown` (five minutes), so a tap cannot
-become a standing subscription. Every trade is listed under **Trades** on the
-Purple settings screen: who, what was read, how long ago. A trade that came back
-with nothing is listed too, because the seconds of exposure happened either way.
+Tapping the profile's last-seen text or the chat-header mark opens **Last Seen
+Peek**. **Peek Last Seen** also appears in the chat menu and in the profile's
+**More** menu. The profile text and both menu actions use the central
+eligibility check: Last Seen Peeks are enabled and the server has sent a coarse
+status with `by_me`. The other person therefore shares their last seen in
+principle, but Telegram is withholding it because you do not share yours with
+them. The chat-header mark is display-aware: its own shared-core predicate
+requires either the explanatory tail or a remembered read to be visible, then
+the peek itself rechecks central eligibility before it starts. Actions stay
+absent when the other person hid their own status, when an exact status is
+already visible, for bots and deleted accounts, and when Last Seen Peeks are
+disabled.
+
+Starting a Last Seen Peek adds only that person to your last-seen allow list,
+asks the server for their exact status, and restores your original privacy rules
+after a success, a timeout (`trade_hold`, ten seconds by default), or an error.
+The setting is labeled **Allow Last Seen Peeks**; its existing schema key remains
+`trade_p`. The confirmation checkbox is labeled **Skip confirmation for all
+future peeks on this device**. That one saved choice skips the confirmation for
+every future peek on this device. Every peek still requires a tap, still shares
+with only the selected person, and still ends after the short hold.
+
+What came back is remembered for `trade_remember` (a day) and shown in place of
+whatever the status says, as "last seen 14:32 · as of 3 min ago". Another peek
+with the same person has to wait out `trade_cooldown` (five minutes), so a tap
+cannot become a standing subscription. Every read is listed under **Last Seen
+Peeks** on the Purple settings screen. A peek that returned nothing is listed
+too, because the seconds of exposure happened either way.
 
 That read survives their status going quiet. If they stop being merely coarse
 and become **a long time ago** - they went inactive, or shut you out - the
@@ -459,50 +476,40 @@ is the age of the memory, not the shape of the status underneath, and a read
 does not stop being a real moment that was really read because they moved since.
 If anything that is when it is worth the most, because it is now the only moment
 anybody has. The only thing that takes its place is a fresher one: the server
-handing over a real time again. The line is not tappable there, because there is
-nothing left to trade for - a privacy setting of yours is not what is in the way
-any more - and "a long time ago" is still never *explained*, since the server is
+handing over a real time again. The line is not tappable there, because your
+privacy setting is no longer what hides their status, and "a long time ago" is
+still never *explained*, since the server is
 not withholding a moment and there is nobody to attribute it to.
 
 The remembered line is a link too, and that is a repair rather than a flourish.
-The tail used to be the only door into the sheet, so the first trade replaced
-the door with the read and the second trade was unreachable for a whole
+The tail used to be the only door into the sheet, so the first peek replaced
+the door with the read and the next peek was unreachable for a whole
 `trade_remember` unless the record happened to expire first. Tapping the
 remembered line now opens the same sheet, which says what was last read and
-counts the wait down - *You can refresh in 3:12*, recomputed from the clock
+counts the wait down - *You can peek again in 3:12*, recomputed from the clock
 every second rather than decremented, so a box left open across a suspend does
 not go on counting time that has already been spent. The button beside it is
-held disabled until the wait runs out and then becomes **Refresh now** without
-the box having to be closed and opened again. A first trade's sheet is exactly
-the sheet it always was. The line stops being a link when their last seen is no
-longer coarse because of *your* rules: they have changed their own privacy
-since, and there is nothing left to trade for.
+held disabled until the wait runs out and then becomes **Peek Again** without
+the box having to be closed and opened again. The line stops being a link when
+their last seen is no longer coarse because of *your* rules: they have changed
+their own privacy
+since, and a Last Seen Peek is no longer eligible.
 
-The other refusals are still toasts, because none of them is a wait: the offer
-switched off, a last seen that is not coarse because of your own rules, and a
-trade already running are each a "no" that will not turn into a "yes" while the
-box sits there. And a remembered read is shown whatever `reasons_p` says. That
+The other refusals are still toasts, because none of them is a wait: Last Seen
+Peeks being disabled, a last seen that is not coarse because of your own rules,
+and a peek already running are each a "no" that will not turn into a "yes" while
+the box sits there. And a remembered read is shown whatever `reasons_p` says. That
 switch governs the fork *explaining* a status; a read the user asked for out
 loud is an answer to their own question, and turning the explanations off
 should not hide it. Its tap works for the same reason - a dead tap on a line
 you can plainly see would be that switch reaching somewhere it was never about.
 
-The trade also stands where Telegram's own offer stood. The sheet behind a
-message's *seen by* line used to open with a button that made your last seen
-visible to **everybody**, for good, on one tap; this fork does not carry a
-control like that, so that button is the trade, and with `trade_p = false`
-there is no button at all - only the note that the offer is off, where the
-switch is, and that Telegram's own Privacy settings are still the deliberate
-way to show your last seen to everyone. The profile's own button stands for a
-remembered read as well, and it no longer hides itself from a premium account:
-upstream's button was a promo for a permanent change, and this one is the
-trade.
-
-That button follows `trade_p` and not `reasons_p`: it is drawn beside the
-status rather than in it, so it stands for any last seen that is coarse because
-of your own rules, tail or no tail. With the explanations off it is the only
-way into the sheet - the tail is gone by request, a remembered line needs a
-trade to exist first, and the seen-by sheet's button is reached from this one.
+The same Last Seen Peek also replaces Telegram's permanent-sharing button in a
+message's *seen by* sheet. With `trade_p = false` there is no button there; the
+sheet explains where to enable Last Seen Peeks and where Telegram's own Privacy
+settings live if the user deliberately wants to share with everybody. This
+button follows `trade_p` independently of `reasons_p`, because the latter only
+controls the explanatory tail.
 
 **Screen time** is `[screen_time]`, and it is off until `enabled_p = true` says
 otherwise - it is a record of what you looked at and for how long, and nothing
