@@ -187,7 +187,9 @@ entry claims it, and switching presets never un-silences anything. So every
 Mute/Unmute control still acts on your own mute, while the bell and the grey
 unread counter show the effective one. A chat no entry claims is hidden *and*
 silenced, because a chat you are not looking at has no business interrupting
-you.
+you. While a Work Mode peek is active, the preset's added silencing is
+suspended, so notification status follows Telegram's own per-dialog, topic and
+global settings; it resumes when the peek ends.
 
 A hidden chat does not notify and does not light the app icon: the preset is
 consulted by the same gate a mute goes through, so the message is never
