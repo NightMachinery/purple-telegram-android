@@ -1,5 +1,15 @@
 # Agent Guide for Purple Telegram Android
 
+## Build scheduling
+
+Run full Purple Telegram desktop and Android application builds only between
+01:00 and 07:00 Europe/Berlin. Prepare source changes and lightweight checks at
+other times, then delegate the application build to a worker during that night
+window. Do not leave an active agent waiting for the window to open, and do not
+start a build so late that it is expected to run past 07:00.
+
+Non-building static checks may run outside this window.
+
 ## Release handoff
 
 When an Android behavior change is complete and validated, finish the handoff
