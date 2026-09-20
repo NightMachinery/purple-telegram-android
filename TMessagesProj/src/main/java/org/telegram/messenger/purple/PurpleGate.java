@@ -487,11 +487,12 @@ public final class PurpleGate {
      * Starts a peek: every chat back in the list, no group waiting for a
      * mention, every folder on the strip.
      *
-     * It reveals; it does not un-silence. The two halves of a preset answer
-     * different questions - hiding is about what you can find, silencing is
-     * about what may interrupt you - and a burst of notifications for chats
-     * already on the screen, taken back two minutes later, is not what looking
-     * at the chat list asked for. The engine enforces that, not this method.
+     * It reveals and suspends the preset's added silencing for its duration.
+     * The two halves of a preset answer different questions - hiding is about
+     * what you can find, silencing is about what may interrupt you - and a
+     * peek should leave the latter to Telegram's own notification settings.
+     * The engine enforces the view half, and {@link #silenced} handles the
+     * notification half.
      *
      * Starting one while another is running restarts it at the new length.
      *
@@ -1154,9 +1155,9 @@ public final class PurpleGate {
      * Whether the running preset silences this chat.
      *
      * A preset can only ever <i>add</i> a mute. A chat the user muted by hand
-     * stays muted whichever entry claims it, and switching presets never
-     * un-silences anything - so this answer is combined with the user's own
-     * mute by the callers, never substituted for it. See
+     * stays muted while a peek suspends the preset's own mute, so this answer
+     * is combined with the user's own mute by the callers, never substituted
+     * for it. See
      * docs/purple/work_mode.md and the desktop fork's
      * {@code NotifySettings::purpleSilenced}.
      *
@@ -1182,13 +1183,16 @@ public final class PurpleGate {
         if (!filtering) {
             return false;
         }
+        final PurpleCore.Loaded current = loaded;
+        if (current != null && current.clock.peeking) {
+            return false;
+        }
         // The Archive row is not a chat and has no kind, so it is answered
         // before the core is ever asked about it.
         if (DialogObject.isFolderDialogId(dialogId)) {
             return false;
         }
-        // An "until" decision outranks the preset here too, and no peek test
-        // above it: a peek reveals, it does not un-silence. Notify lifts the
+        // An "until" decision outranks the preset here too. Notify lifts the
         // preset's mute and only the preset's - the caller still combines this
         // with the user's own mute, so a chat muted by hand stays muted, which
         // is the rule this whole path is built on.
