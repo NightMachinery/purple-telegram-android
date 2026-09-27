@@ -11430,7 +11430,7 @@
     <string name="PurpleContactsVisibleLastSeen">Visible or peekable last seen</string>
     <!-- Purple: Last Seen Peek, and its recent reads on the settings screen -->
     <string name="PurpleTradeTitle">Last Seen Peek</string>
-    <string name="PurpleTradeText">%1$s shares their last seen in principle, but Telegram hides it because you do not share yours with them.\n\nA Last Seen Peek temporarily shows your last seen to %1$s - and only %1$s - for about %2$d seconds while this app reads theirs, then restores your privacy settings.</string>
+    <string name="PurpleTradeText">Temporarily share your Last Seen with %1$s only, for up to %2$d seconds, so you can read theirs once. Your privacy settings will then be restored exactly as they were. Nobody is notified. If they hide their Last Seen for another reason, nothing will be read.</string>
     <string name="PurpleTradeShare">Start Peek</string>
     <string name="PurpleTradeDontAsk">Skip confirmation for all future peeks on this device</string>
     <string name="PurpleTradeDontAskHelp">This saved choice applies to every future Last Seen Peek on this device. Each peek still requires a tap and temporarily shares your last seen with only that person.</string>
@@ -11449,9 +11449,9 @@
     <string name="PurpleTradeTimedOut">Nothing exact arrived in time. Your privacy settings are back as they were.</string>
     <string name="PurpleTradeDone">%1$s. Your privacy settings are back as they were.</string>
     <!-- Purple: the same peek, started from a message's seen-by sheet -->
-    <string name="PurpleTradeSheetText">%1$s shares their last seen in principle, but Telegram hides it because you do not share yours with them.\n\nA Last Seen Peek temporarily shows your last seen to %1$s - and nobody else - for about %2$d seconds while this app reads theirs, then restores your privacy settings.</string>
+    <string name="PurpleTradeSheetText">Temporarily share your Last Seen with %1$s only, for up to %2$d seconds, so you can read theirs once. Your privacy settings will then be restored exactly as they were. Nobody is notified. If they hide their Last Seen for another reason, nothing will be read.</string>
     <string name="PurpleTradeSheetUnavailable">A Last Seen Peek is unavailable because %1$s\'s status is not hidden by your settings.</string>
-    <string name="PurpleTradeSheetOff">%1$s shares their last seen in principle, but Telegram hides it because you do not share yours with them.\n\nLast Seen Peek is switched off. Turn it on in Settings \u2192 Purple \u2192 Last seen \u2192 Allow Last Seen Peeks ([last_seen] trade_p). A peek temporarily shares your last seen with %1$s alone, reads theirs, and restores your privacy settings.\n\nThis app never makes your last seen visible to everybody on one tap. If that is what you want, use Settings \u2192 Privacy and Security \u2192 Last Seen.</string>
+    <string name="PurpleTradeSheetOff">Last Seen Peek is switched off. Turn it on in Settings \u2192 Purple \u2192 Last seen \u2192 Allow Last Seen Peeks ([last_seen] trade_p). A peek temporarily shares your Last Seen with %1$s only, so you can read theirs once. Your privacy settings will then be restored exactly as they were. Nobody is notified. If they hide their Last Seen for another reason, nothing will be read.\n\nThis app never makes your last seen visible to everybody on one tap. If that is what you want, use Settings \u2192 Privacy and Security \u2192 Last Seen.</string>
     <string name="PurpleLastSeenHeader">Last seen</string>
     <string name="PurpleLastSeenReasonsRow">Say why a last seen is hidden</string>
     <string name="PurpleLastSeenTradeRow">Allow Last Seen Peeks</string>
