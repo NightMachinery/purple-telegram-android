@@ -67,6 +67,18 @@ Then build the standalone flavor:
 The output APK is **unsigned** and arm64-v8a only — sign it yourself with
 `apksigner` before installing.
 
+### Passcode keyboard layout
+
+When unlocking with a passcode, Purple checks the text exactly as entered
+first. If that fails, it checks one whole candidate converted from Persian
+keyboard positions to their English equivalents by the shared `purple-core`
+mapper. Latin characters and other unmapped characters stay as entered. The
+two checks count as one unlock attempt. A passcode intentionally saved with
+Persian characters still unlocks exactly, and setting or changing a passcode
+stores the characters entered without conversion. The fallback also works for
+older MD5 passcodes; after a successful unlock, migration to salted SHA-256
+hashes the candidate that matched.
+
 ### Work Mode
 
 A preset in `settings.toml` decides which chats are in the chat list and which
