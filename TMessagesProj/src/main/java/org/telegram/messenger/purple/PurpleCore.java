@@ -108,6 +108,13 @@ public final class PurpleCore {
         loaded = true;
     }
 
+    private static native String persianKeyboardToEnglishNative(String candidate);
+
+    public static String persianKeyboardToEnglish(String candidate) {
+        ensureLoaded();
+        return persianKeyboardToEnglishNative(candidate);
+    }
+
     /**
      * Parses settings.toml. Returns the raw JSON the bridge produces:
      * {"ok":true|false,"version":N,"error":"...","warnings":["...",...]}.

@@ -13,6 +13,7 @@ any later version.
 #include <jni.h>
 
 #include "purple/purple_engine.h"
+#include "purple/purple_passcode.h"
 #include "purple/purple_screentime.h"
 #include "purple/purple_settings.h"
 #include "purple/purple_splice.h"
@@ -1007,6 +1008,15 @@ void AppendScopeJson(
 }
 
 } // namespace
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_persianKeyboardToEnglishNative(
+		JNIEnv *env,
+		jclass,
+		jstring candidate) {
+	return ToJava(env, Purple::PersianKeyboardToEnglish(
+		FromJava(env, candidate)));
+}
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_org_telegram_messenger_purple_PurpleCore_parseSettings(
