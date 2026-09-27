@@ -31,6 +31,7 @@ import org.telegram.messenger.MediaDataController;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.NotificationCenter;
+import org.telegram.messenger.NotificationsController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
@@ -2818,6 +2819,7 @@ public final class PurpleGate {
                 // "hide until" takes its chat out of every running total and
                 // a reload is what starts and ends one.
                 MessagesStorage.getInstance(a).updateAllFiltersCountersForPurple();
+                NotificationsController.getInstance(a).updateBadge();
             }
         });
     }

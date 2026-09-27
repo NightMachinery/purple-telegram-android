@@ -201,7 +201,9 @@ unread counter show the effective one. A chat no entry claims is hidden *and*
 silenced, because a chat you are not looking at has no business interrupting
 you. While a Work Mode peek is active, the preset's added silencing is
 suspended, so notification status follows Telegram's own per-dialog, topic and
-global settings; it resumes when the peek ends.
+global settings; it resumes when the peek ends. Starting or ending a peek also
+refreshes the launcher badge for each active account, so its count follows the
+chats currently shown and counted by the preset.
 
 A hidden chat does not notify and does not light the app icon: the preset is
 consulted by the same gate a mute goes through, so the message is never
