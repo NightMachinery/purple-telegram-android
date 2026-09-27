@@ -11455,6 +11455,7 @@
     <string name="PurpleLastSeenHeader">Last seen</string>
     <string name="PurpleLastSeenReasonsRow">Say why a last seen is hidden</string>
     <string name="PurpleLastSeenTradeRow">Allow Last Seen Peeks</string>
+    <string name="PurpleTradeSkipConfirmationRow">Skip Last Seen Peek confirmation</string>
     <string name="PurpleLastSeenInfo">A last seen the server coarsened because of YOUR privacy settings is marked in the chat header and the profile. Nothing is said about one the other person hid, and nothing at all about \"a long time ago\" - the server does not say whether that is inactivity or a block, and this app does not guess.\n\nWhen Last Seen Peeks are allowed, tapping that mark temporarily shares your last seen with only that person, reads theirs, and restores your settings.</string>
     <string name="PurpleTradesHeader">Last Seen Peeks</string>
     <string name="PurpleTradesEmpty">No recent Last Seen Peeks.</string>

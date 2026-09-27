@@ -501,7 +501,9 @@ The setting is labeled **Allow Last Seen Peeks**; its existing schema key remain
 confirmation for all future peeks on this device**. That one saved choice skips
 the confirmation for every future peek on this device. Every peek still requires
 a tap, still shares with only the selected person, and still ends after the short
-hold.
+hold. **Skip Last Seen Peek confirmation** in Purple settings reflects the same
+device choice; turning it off makes the confirmation appear again. This switch
+is independent of `trade_p`: it never enables or disables Last Seen Peeks.
 
 What came back is remembered for `trade_remember` (a day) and shown in place of
 whatever the status says, as "last seen 14:32 · as of 3 min ago". Another peek

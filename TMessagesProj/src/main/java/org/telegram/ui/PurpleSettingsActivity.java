@@ -77,6 +77,7 @@ public class PurpleSettingsActivity extends UniversalFragment
     private static final int ROW_LAST_SEEN_REASONS = 15;
     private static final int ROW_LAST_SEEN_TRADE = 16;
     private static final int ROW_SCREEN_TIME = 17;
+    private static final int ROW_LAST_SEEN_SKIP_CONFIRMATION = 18;
 
     /**
      * Where the trade log's rows start numbering.
@@ -190,6 +191,11 @@ public class PurpleSettingsActivity extends UniversalFragment
                 UItem.asCheck(ROW_LAST_SEEN_TRADE, getString(R.string.PurpleLastSeenTradeRow));
         trade.checked = (state == null || state.lastSeenTrade);
         items.add(trade);
+        final UItem skipConfirmation = UItem.asCheck(
+                ROW_LAST_SEEN_SKIP_CONFIRMATION,
+                getString(R.string.PurpleTradeSkipConfirmationRow));
+        skipConfirmation.checked = PurpleLastSeenTrade.noAsk();
+        items.add(skipConfirmation);
         items.add(UItem.asShadow(getString(R.string.PurpleLastSeenInfo)));
 
         // The log. Read out of state.toml on every rebuild rather than kept in a
@@ -379,6 +385,10 @@ public class PurpleSettingsActivity extends UniversalFragment
         case ROW_LAST_SEEN_TRADE:
             write(PurpleWriter.setTableBool(
                     "last_seen", "trade_p", !item.checked, "last seen trade switch"));
+            break;
+        case ROW_LAST_SEEN_SKIP_CONFIRMATION:
+            PurpleLastSeenTrade.setNoAsk(!item.checked);
+            listView.adapter.update(true);
             break;
         case ROW_CHECK:
             checkSaved();
