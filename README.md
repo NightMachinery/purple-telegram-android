@@ -42,13 +42,17 @@ The chat menu shows how long this chat's cached media is kept, for example
 **Keep Media: 1 week (default)** or **Keep Media: Forever (this chat)**. Tapping
 it offers the same choices as Settings, and sets or deletes an exception for
 this chat alone; the setting for all chats of its type is never changed from
-here. The value shown is what cache cleanup actually applies: cleanup treats a
-supergroup as a channel, so a supergroup follows the Channels setting, and its
-exception is stored in the Channels list even though Settings lists
-supergroups under Groups. The entry is also offered inside forum topics, where
-it still controls the whole chat across all its topics, since Keep Media has no
-per-topic setting. It is not offered in secret chats, channel comment threads,
-scheduled messages, or other special chat modes.
+here. Cache cleanup applies the per-chat choice to files whose download
+recorded this chat as their owner. Older or shared files without that record
+follow general retention instead. The cache size limit can remove files with
+finite retention earlier; an explicit Forever exception protects files
+attributed to that chat from that limit. Cleanup classifies supergroups as
+channels. A supergroup follows the Channels setting, and its exception is
+stored in the Channels list even though Settings lists supergroups under
+Groups. The entry is also offered inside forum topics, where it controls the
+whole chat, including all its topics, since Keep Media has no per-topic
+setting. It is not offered in secret chats, channel comment threads, scheduled
+messages, or other special chat modes.
 
 ### Building
 
