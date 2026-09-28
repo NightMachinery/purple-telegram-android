@@ -405,10 +405,10 @@ top frequent-contacts row already went through the shared one. The **stories
 notification exceptions** on both Notifications screens seed themselves with
 the top five or six peers, and those seeded rows are the frequent strip under
 another name - an exception you made by hand is yours and is left alone. The
-**Contacts tab is deliberately not filtered**, and neither is its search: it is
-the full address book, the same list the desktop's contacts box shows unhooked,
-and the compose button opens exactly that screen with no frequent row of its
-own. The **contacts home-screen widget** is not filtered either: with no chats
+**Contacts tab keeps its full address book by default**; its More menu offers
+the optional, in-session Last Seen visibility filter described below. The
+compose button opens that screen with no frequent row of its own. The **contacts
+home-screen widget** is not filtered either: with no chats
 picked it falls back to the top four read straight out of SQLite on the storage
 thread, before the users and chats are loaded, which is the same place and the
 same reason the push-eligibility mirror is left alone.
@@ -485,7 +485,9 @@ non-user results are omitted. It keeps an ordinary exact or online status, a
 remembered exact Peek that the status row currently displays, or a coarse
 `by_me` status that an enabled Last Seen Peek could reveal. It leaves out
 yourself, bots and deleted accounts. Turning `trade_p` off removes only the
-coarse Peek candidates; exact and remembered results remain.
+coarse Peek candidates; exact and remembered results remain. If no contacts
+match, the list explains that the filter is active and hides the New Contact
+action; turning the filter off restores the ordinary empty-address-book state.
 
 Some status lines are deliberately left alone. The chat list writes its own
 subtitles, and a chat list row is the one row in the app whose whole job is to

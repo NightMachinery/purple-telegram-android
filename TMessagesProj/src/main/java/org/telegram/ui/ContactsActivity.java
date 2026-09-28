@@ -680,7 +680,7 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
                 //}
 
                 if (view instanceof ViewGroup && ((ViewGroup) view).getChildAt(0) instanceof ContactsEmptyView) {
-                    if (floatingButton != null) {
+                    if (!lastSeenFilter && floatingButton != null) {
                         floatingButton.performClick();
                     }
                     return;

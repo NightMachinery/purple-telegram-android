@@ -81,6 +81,16 @@ public class ContactsEmptyView extends LinearLayout {
         addView(button, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 44, Gravity.CENTER_HORIZONTAL | Gravity.TOP));
     }
 
+    public void setFilteredEmptyState(boolean filtered) {
+        titleTextView.setText(LocaleController.getString(filtered
+                ? R.string.PurpleContactsFilterEmptyTitle
+                : R.string.NoContactsYet3));
+        subtitleTextView.setText(LocaleController.getString(filtered
+                ? R.string.PurpleContactsFilterEmptySubtitle
+                : R.string.NoContactsYet3Sub));
+        button.setVisibility(filtered ? GONE : VISIBLE);
+    }
+
     protected void onInviteClick() {
         Activity activity = AndroidUtilities.findActivity(getContext());
         if (activity == null || activity.isFinishing()) return;
