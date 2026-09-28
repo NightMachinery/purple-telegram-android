@@ -17,7 +17,19 @@ album by default. The action searches all pinned messages, including those not
 yet loaded in the chat. In an ordinary migrated group it also searches the old
 group. Repeated songs are queued once, into Telegram's managed cache rather
 than the phone's public Music or Downloads folders. Downloads continue after
-the dialog or chat closes.
+the dialog or chat closes. The download job limits itself to two concurrent
+tracks and retries server rate-limit failures after a cooldown. Its completed
+count reflects files present in the cache, and failed tracks can be retried
+without fetching the completed ones again.
+
+While a job exists for the open chat or topic, a progress row sits in the
+chat's top panel, below the pinned message. It shows the job's state
+(searching, downloading, paused, rate-limited with a countdown, or finished),
+how many songs are downloaded out of those selected, and the active and failed
+counts. Its buttons pause or resume the job (pausing only stops new songs from
+starting), retry failed songs or a failed search, and dismiss a finished job.
+The row reappears when the chat is reopened, for as long as the app process
+keeps the job.
 
 ### Building
 

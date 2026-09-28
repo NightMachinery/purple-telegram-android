@@ -11471,6 +11471,27 @@
     <string name="PurplePinnedMusicNone">No pinned songs found.</string>
     <string name="PurplePinnedMusicQueued">Queued %1$d songs in Telegram’s cache.</string>
     <string name="PurplePinnedMusicFailed">Could not load all pinned songs. Songs already queued will continue downloading.</string>
+    <string name="PurplePinnedMusicCompleted">Downloaded %1$d of %2$d songs to Telegram’s cache.</string>
+    <string name="PurplePinnedMusicAlreadyRunning">Pinned song download is already running.</string>
+    <string name="PurplePinnedMusicBarSearching">Searching pinned songs…</string>
+    <string name="PurplePinnedMusicBarDownloading">Downloading pinned songs</string>
+    <string name="PurplePinnedMusicBarRetrying">Retrying pinned songs</string>
+    <string name="PurplePinnedMusicBarRateLimited">Pinned songs rate-limited</string>
+    <string name="PurplePinnedMusicBarPaused">Pinned songs paused</string>
+    <string name="PurplePinnedMusicBarSearchFailed">Pinned song search failed</string>
+    <string name="PurplePinnedMusicBarDone">Pinned songs downloaded</string>
+    <string name="PurplePinnedMusicBarDoneWithFailures">Pinned songs finished with failures</string>
+    <string name="PurplePinnedMusicBarNone">No pinned songs found</string>
+    <string name="PurplePinnedMusicBarCooldown">Next try in %1$s</string>
+    <string name="PurplePinnedMusicBarPinned">%1$d pinned</string>
+    <string name="PurplePinnedMusicBarProgress">%1$d of %2$d downloaded</string>
+    <string name="PurplePinnedMusicBarActive">%1$d active</string>
+    <string name="PurplePinnedMusicBarFailedCount">%1$d failed</string>
+    <string name="PurplePinnedMusicBarPause">Pause pinned song downloads</string>
+    <string name="PurplePinnedMusicBarResume">Resume pinned song downloads</string>
+    <string name="PurplePinnedMusicBarRetry">Retry failed pinned songs</string>
+    <string name="PurplePinnedMusicBarRetrySearch">Retry pinned song search</string>
+    <string name="PurplePinnedMusicBarDismiss">Dismiss pinned song progress</string>
     <string name="PurpleTradeRowValue">%1$s \u00b7 read %2$s</string>
     <string name="PurpleTradeRowNothing">nothing arrived</string>
     <!-- Purple: screen time - the recorder, the screen and the budgets -->
