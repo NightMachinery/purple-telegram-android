@@ -26,6 +26,7 @@ import static org.telegram.messenger.LocaleController.getString;
 import android.app.Activity;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.util.Base64;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
@@ -41,10 +42,12 @@ import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
+import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.purple.PurpleCore;
 import org.telegram.messenger.purple.PurpleLastSeen;
 import org.telegram.tgnet.ConnectionsManager;
+import org.telegram.tgnet.SerializedData;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.Vector;
 import org.telegram.tgnet.tl.TL_account;
@@ -55,12 +58,22 @@ import org.telegram.ui.Cells.CheckBoxCell;
 import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.LayoutHelper;
 
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Locale;
 
 public final class PurpleLastSeenTrade {
 
     private static final String PREFS = "purple_last_seen";
+    private static final String JOURNAL = "purple_last_seen_restore_";
+    private static final String KEY_RULES = "rules";
+    private static final String KEY_ACCOUNT = "account";
+    private static final String KEY_TARGET = "target";
+    private static final String KEY_EXPECTED = "expected";
+    private static final String KEY_VERSION = "version";
+    private static final int JOURNAL_VERSION = 1;
+    private static final long RETRY_MS = 30000L;
 
     /** The "don't ask again" answer. A device decision, so not in settings.toml. */
     private static final String KEY_NO_ASK = "purple_trade_no_ask";
@@ -79,6 +92,36 @@ public final class PurpleLastSeenTrade {
      * back a state that was never the user's.
      */
     private static volatile long running;
+    private static final Restore[] pending = new Restore[UserConfig.MAX_ACCOUNT_COUNT];
+    private static Runnable retry;
+
+    private static final class Restore {
+        final int account;
+        final long owner;
+        final long target;
+        final ArrayList<TLRPC.InputPrivacyRule> rules;
+        final String expected;
+        final WeakReference<BaseFragment> fragment;
+        CharSequence done;
+        Runnable deadline;
+        boolean restoring;
+        boolean inFlight;
+        boolean openAnswered;
+        boolean reopenAfterRestore;
+        boolean noted;
+        int tries;
+
+        Restore(int account, long owner, long target,
+                ArrayList<TLRPC.InputPrivacyRule> rules, String expected,
+                BaseFragment fragment) {
+            this.account = account;
+            this.owner = owner;
+            this.target = target;
+            this.rules = rules;
+            this.expected = expected;
+            this.fragment = new WeakReference<>(fragment);
+        }
+    }
 
     private PurpleLastSeenTrade() {
     }
@@ -115,7 +158,7 @@ public final class PurpleLastSeenTrade {
             error(fragment, formatString(R.string.PurpleTradeNotNeeded, name));
             return;
         }
-        if (running != 0) {
+        if (running != 0 || journal(currentAccount).contains(KEY_RULES)) {
             FileLog.d("Purple: last seen peek already running for " + running);
             error(fragment, getString(R.string.PurpleTradeRunning));
             return;
@@ -312,6 +355,23 @@ public final class PurpleLastSeenTrade {
      */
     private static void start(BaseFragment fragment, int currentAccount, TLRPC.User user) {
         final long userId = user.id;
+        final long owner = UserConfig.getInstance(currentAccount).getClientUserId();
+        if (owner == 0) {
+            return;
+        }
+        if (!PurpleLastSeen.peekEnabled()) {
+            error(fragment, getString(R.string.PurpleTradeDisabled));
+            return;
+        }
+        if (!PurpleLastSeen.peekEligible(user)) {
+            error(fragment, formatString(R.string.PurpleTradeNotNeeded,
+                    UserObject.getFirstName(user)));
+            return;
+        }
+        if (running != 0 || journal(currentAccount).contains(KEY_RULES)) {
+            error(fragment, getString(R.string.PurpleTradeRunning));
+            return;
+        }
         running = userId;
         FileLog.d("Purple: last seen peek starting for " + userId);
         info(fragment, getString(R.string.PurpleTradeWorking));
@@ -320,6 +380,12 @@ public final class PurpleLastSeenTrade {
         req.key = new TLRPC.TL_inputPrivacyKeyStatusTimestamp();
         ConnectionsManager.getInstance(currentAccount).sendRequest(req,
                 (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+                    if (UserConfig.getInstance(currentAccount).getClientUserId() != owner) {
+                        if (running == userId) {
+                            running = 0;
+                        }
+                        return;
+                    }
                     if (!(response instanceof TL_account.privacyRules)) {
                         FileLog.d("Purple: last seen peek could not read the rules");
                         failed(fragment, error);
@@ -328,13 +394,24 @@ public final class PurpleLastSeenTrade {
                     final TL_account.privacyRules rules = (TL_account.privacyRules) response;
                     MessagesController.getInstance(currentAccount).putUsers(rules.users, false);
                     MessagesController.getInstance(currentAccount).putChats(rules.chats, false);
-                    open(fragment, currentAccount, user, rules.rules);
+                    open(fragment, currentAccount, owner, user, rules.rules);
                 }), ConnectionsManager.RequestFlagFailOnServerErrors);
     }
 
     /** Puts the user through, keeping the rules as they were for the restore. */
-    private static void open(BaseFragment fragment, int currentAccount, TLRPC.User user,
+    private static void open(BaseFragment fragment, int currentAccount, long owner, TLRPC.User user,
             ArrayList<TLRPC.PrivacyRule> current) {
+        if (UserConfig.getInstance(currentAccount).getClientUserId() != owner) {
+            if (running == user.id) {
+                running = 0;
+            }
+            return;
+        }
+        if (!PurpleLastSeen.peekEligible(user)) {
+            running = 0;
+            error(fragment, getString(R.string.PurpleTradeDisabled));
+            return;
+        }
         if (inputOf(currentAccount, user.id) == null
                 || !addressable(currentAccount, current)) {
             // Refused before anything is opened rather than after. setPrivacy
@@ -348,26 +425,53 @@ public final class PurpleLastSeenTrade {
             return;
         }
         final ArrayList<TLRPC.InputPrivacyRule> restore = asInput(currentAccount, current, 0);
+        if (restore.size() != current.size()) {
+            running = 0;
+            error(fragment, getString(R.string.PurpleTradeUnresolved));
+            return;
+        }
         final ArrayList<TLRPC.InputPrivacyRule> opened =
                 asInput(currentAccount, current, user.id);
+        final String expected = fingerprint(current);
+        if (owner == 0 || !saveJournal(currentAccount, owner, user.id, restore, expected)) {
+            running = 0;
+            error(fragment, getString(R.string.PurpleTradeUnresolved));
+            return;
+        }
+        final Restore transaction = new Restore(currentAccount, owner, user.id,
+                restore, expected, fragment);
+        pending[currentAccount] = transaction;
+        scheduleRetry();
         FileLog.d("Purple: last seen peek opening the rules for " + user.id);
 
         final TL_account.setPrivacy req = new TL_account.setPrivacy();
         req.key = new TLRPC.TL_inputPrivacyKeyStatusTimestamp();
         req.rules = opened;
+        final long deadlineMs = System.currentTimeMillis()
+                + PurpleLastSeen.holdSeconds() * 1000L;
+        transaction.deadline = () -> beginRestore(transaction);
+        AndroidUtilities.runOnUIThread(transaction.deadline,
+                Math.max(0L, deadlineMs - System.currentTimeMillis()));
         ConnectionsManager.getInstance(currentAccount).sendRequest(req,
                 (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+                    if (pending[currentAccount] != transaction
+                            || !sameOwner(transaction)) {
+                        return;
+                    }
+                    transaction.openAnswered = true;
+                    if (transaction.restoring) {
+                        transaction.reopenAfterRestore = true;
+                        restore(transaction);
+                        return;
+                    }
                     if (!(response instanceof TL_account.privacyRules)) {
-                        // Nothing was changed, so there is nothing to put back.
                         FileLog.d("Purple: last seen peek refused at the open");
-                        failed(fragment, error);
+                        beginRestore(transaction);
                         return;
                     }
                     FileLog.d("Purple: last seen peek open, waiting "
                             + PurpleLastSeen.holdSeconds() + "s");
-                    poll(fragment, currentAccount, user, restore,
-                            System.currentTimeMillis()
-                                    + PurpleLastSeen.holdSeconds() * 1000L);
+                    poll(fragment, currentAccount, user, restore, deadlineMs);
                 }), ConnectionsManager.RequestFlagFailOnServerErrors);
     }
 
@@ -382,6 +486,11 @@ public final class PurpleLastSeenTrade {
      */
     private static void poll(BaseFragment fragment, int currentAccount, TLRPC.User user,
             ArrayList<TLRPC.InputPrivacyRule> restore, long deadlineMs) {
+        final Restore transaction = pending[currentAccount];
+        if (transaction == null || transaction.target != user.id || transaction.restoring
+                || !sameOwner(transaction)) {
+            return;
+        }
         final TLRPC.InputUser inputUser =
                 MessagesController.getInstance(currentAccount).getInputUser(user);
         if (inputUser == null) {
@@ -392,6 +501,10 @@ public final class PurpleLastSeenTrade {
         req.id.add(inputUser);
         ConnectionsManager.getInstance(currentAccount).sendRequest(req,
                 (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+                    if (pending[currentAccount] != transaction || transaction.restoring
+                            || !sameOwner(transaction)) {
+                        return;
+                    }
                     long wasOnline = 0;
                     if (response instanceof Vector) {
                         final ArrayList<TLRPC.User> users = new ArrayList<>();
@@ -426,16 +539,23 @@ public final class PurpleLastSeenTrade {
      */
     private static void finish(BaseFragment fragment, int currentAccount, TLRPC.User user,
             ArrayList<TLRPC.InputPrivacyRule> restore, long wasOnline) {
+        final Restore transaction = pending[currentAccount];
+        if (transaction == null || transaction.target != user.id || transaction.restoring
+                || !sameOwner(transaction)) {
+            return;
+        }
         PurpleLastSeen.noteTrade(user.id, wasOnline);
+        transaction.noted = true;
         NotificationCenter.getInstance(currentAccount).postNotificationName(
                 NotificationCenter.updateInterfaces, MessagesController.UPDATE_MASK_STATUS);
         // Said by the restore rather than here, so the sentence "your privacy
         // settings are back as they were" is only ever printed by the thing
         // that put them back.
-        restore(fragment, currentAccount, restore, RESTORE_TRIES, (wasOnline > 0)
+        transaction.done = (wasOnline > 0)
                 ? formatString(R.string.PurpleTradeDone,
                         LocaleController.formatDateOnline(wasOnline, null))
-                : getString(R.string.PurpleTradeTimedOut));
+                : getString(R.string.PurpleTradeTimedOut);
+        beginRestore(transaction);
     }
 
     /**
@@ -446,34 +566,238 @@ public final class PurpleLastSeenTrade {
      * re-fetched afterwards so the Privacy screen agrees with the server rather
      * than with what it last saw before the peek.
      */
-    private static void restore(BaseFragment fragment, int currentAccount,
-            ArrayList<TLRPC.InputPrivacyRule> rules, int triesLeft, CharSequence done) {
+    private static void beginRestore(Restore transaction) {
+        if (pending[transaction.account] != transaction || transaction.restoring) {
+            return;
+        }
+        if (!transaction.noted && sameOwner(transaction)) {
+            PurpleLastSeen.noteTrade(transaction.target, 0);
+            transaction.noted = true;
+        }
+        transaction.restoring = true;
+        if (transaction.deadline != null) {
+            AndroidUtilities.cancelRunOnUIThread(transaction.deadline);
+            transaction.deadline = null;
+        }
+        restore(transaction);
+    }
+
+    private static void restore(Restore transaction) {
+        if (pending[transaction.account] != transaction || !transaction.restoring
+                || transaction.inFlight || !sameOwner(transaction)) {
+            return;
+        }
+        transaction.inFlight = true;
         final TL_account.setPrivacy req = new TL_account.setPrivacy();
         req.key = new TLRPC.TL_inputPrivacyKeyStatusTimestamp();
-        req.rules = rules;
-        ConnectionsManager.getInstance(currentAccount).sendRequest(req,
+        req.rules = transaction.rules;
+        ConnectionsManager.getInstance(transaction.account).sendRequest(req,
                 (response, error) -> AndroidUtilities.runOnUIThread(() -> {
-                    if (response instanceof TL_account.privacyRules) {
-                        final TL_account.privacyRules back = (TL_account.privacyRules) response;
-                        ContactsController.getInstance(currentAccount).setPrivacyRules(
-                                back.rules, ContactsController.PRIVACY_RULES_TYPE_LASTSEEN);
-                        ContactsController.getInstance(currentAccount).loadPrivacySettings(true);
-                        FileLog.d("Purple: last seen peek rules restored");
-                        running = 0;
-                        info(fragment, done);
+                    if (pending[transaction.account] != transaction) {
                         return;
                     }
-                    if (triesLeft > 1) {
+                    transaction.inFlight = false;
+                    if (!sameOwner(transaction)) {
+                        return;
+                    }
+                    if (response instanceof TL_account.privacyRules) {
+                        final TL_account.privacyRules back = (TL_account.privacyRules) response;
+                        ContactsController.getInstance(transaction.account).setPrivacyRules(
+                                back.rules, ContactsController.PRIVACY_RULES_TYPE_LASTSEEN);
+                        ContactsController.getInstance(transaction.account).loadPrivacySettings(true);
+                        verify(transaction);
+                        return;
+                    }
+                    if (++transaction.tries < RESTORE_TRIES) {
                         FileLog.d("Purple: last seen peek restore failed, retrying");
-                        AndroidUtilities.runOnUIThread(() -> restore(
-                                fragment, currentAccount, rules, triesLeft - 1, done), 2000L);
+                        AndroidUtilities.runOnUIThread(() -> restore(transaction), 2000L);
                         return;
                     }
                     FileLog.e("Purple: last seen peek could not restore the rules");
                     running = 0;
-                    error(fragment, formatString(R.string.PurpleTradeRestoreFailed,
+                    error(transaction.fragment.get(), formatString(R.string.PurpleTradeRestoreFailed,
                             (error == null || error.text == null) ? "?" : error.text));
+                }), ConnectionsManager.RequestFlagFailOnServerErrors
+                        | (transaction.openAnswered
+                                ? 0 : ConnectionsManager.RequestFlagInvokeAfter));
+    }
+
+    private static void verify(Restore transaction) {
+        if (!sameOwner(transaction)) {
+            return;
+        }
+        transaction.inFlight = true;
+        final TL_account.getPrivacy req = new TL_account.getPrivacy();
+        req.key = new TLRPC.TL_inputPrivacyKeyStatusTimestamp();
+        ConnectionsManager.getInstance(transaction.account).sendRequest(req,
+                (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+                    if (pending[transaction.account] != transaction) {
+                        return;
+                    }
+                    transaction.inFlight = false;
+                    if (!sameOwner(transaction)) {
+                        return;
+                    }
+                    if (transaction.reopenAfterRestore) {
+                        transaction.reopenAfterRestore = false;
+                        restore(transaction);
+                        return;
+                    }
+                    if (response instanceof TL_account.privacyRules
+                            && transaction.expected.equals(fingerprint(
+                                    ((TL_account.privacyRules) response).rules))) {
+                        if (!transaction.openAnswered) {
+                            return;
+                        }
+                        if (!journal(transaction.account).edit().clear().commit()) {
+                            FileLog.e("Purple: last seen peek journal could not be cleared");
+                            return;
+                        }
+                        pending[transaction.account] = null;
+                        if (running == transaction.target) {
+                            running = 0;
+                        }
+                        FileLog.d("Purple: last seen peek rules restored and verified");
+                        if (transaction.done != null) {
+                            info(transaction.fragment.get(), transaction.done);
+                        }
+                        return;
+                    }
+                    FileLog.e("Purple: last seen peek restore verification failed");
+                    if (++transaction.tries < RESTORE_TRIES) {
+                        AndroidUtilities.runOnUIThread(() -> restore(transaction), 2000L);
+                    } else {
+                        running = 0;
+                        error(transaction.fragment.get(), formatString(
+                                R.string.PurpleTradeRestoreFailed, "?"));
+                    }
                 }), ConnectionsManager.RequestFlagFailOnServerErrors);
+    }
+
+    private static SharedPreferences journal(int account) {
+        return ApplicationLoader.applicationContext.getSharedPreferences(
+                JOURNAL + account, Context.MODE_PRIVATE);
+    }
+
+    private static boolean sameOwner(Restore transaction) {
+        return UserConfig.getInstance(transaction.account).getClientUserId()
+                == transaction.owner;
+    }
+
+    private static boolean saveJournal(int account, long owner, long target,
+            ArrayList<TLRPC.InputPrivacyRule> rules, String expected) {
+        try {
+            final SerializedData data = new SerializedData();
+            data.writeInt32(rules.size());
+            for (TLRPC.InputPrivacyRule rule : rules) {
+                rule.serializeToStream(data);
+            }
+            final String encoded = Base64.encodeToString(data.toByteArray(), Base64.NO_WRAP);
+            data.cleanup();
+            return journal(account).edit()
+                    .putInt(KEY_VERSION, JOURNAL_VERSION)
+                    .putLong(KEY_ACCOUNT, owner)
+                    .putLong(KEY_TARGET, target)
+                    .putString(KEY_RULES, encoded)
+                    .putString(KEY_EXPECTED, expected)
+                    .commit();
+        } catch (RuntimeException e) {
+            FileLog.e(e);
+            return false;
+        }
+    }
+
+    public static void recover() {
+        AndroidUtilities.runOnUIThread(() -> {
+            for (int account = 0; account < UserConfig.MAX_ACCOUNT_COUNT; ++account) {
+                final long owner = UserConfig.getInstance(account).getClientUserId();
+                final SharedPreferences prefs = journal(account);
+                if (owner == 0 || !prefs.contains(KEY_RULES)
+                        || owner != prefs.getLong(KEY_ACCOUNT, 0)) {
+                    continue;
+                }
+                if (pending[account] != null) {
+                    if (pending[account].restoring && !pending[account].inFlight) {
+                        restore(pending[account]);
+                    }
+                    continue;
+                }
+                try {
+                    if (prefs.getInt(KEY_VERSION, 0) != JOURNAL_VERSION) {
+                        throw new IllegalStateException("Unknown last seen restore journal version");
+                    }
+                    final byte[] bytes = Base64.decode(prefs.getString(KEY_RULES, ""),
+                            Base64.DEFAULT);
+                    final SerializedData data = new SerializedData(bytes);
+                    final int count = data.readInt32(true);
+                    if (count < 0 || count > 1000) {
+                        throw new IllegalStateException("Invalid privacy rule count");
+                    }
+                    final ArrayList<TLRPC.InputPrivacyRule> rules = new ArrayList<>();
+                    for (int i = 0; i < count; ++i) {
+                        final TLRPC.InputPrivacyRule rule = TLRPC.InputPrivacyRule.TLdeserialize(
+                                data, data.readInt32(true), true);
+                        if (rule == null) {
+                            throw new IllegalStateException("Invalid privacy rule");
+                        }
+                        rules.add(rule);
+                    }
+                    data.cleanup();
+                    final Restore transaction = new Restore(account, owner,
+                            prefs.getLong(KEY_TARGET, 0), rules,
+                            prefs.getString(KEY_EXPECTED, ""), null);
+                    transaction.restoring = true;
+                    transaction.openAnswered = true;
+                    pending[account] = transaction;
+                    restore(transaction);
+                } catch (RuntimeException e) {
+                    FileLog.e(e);
+                }
+            }
+            scheduleRetry();
+        });
+    }
+
+    private static void scheduleRetry() {
+        if (retry != null) {
+            return;
+        }
+        boolean needed = false;
+        for (int account = 0; account < UserConfig.MAX_ACCOUNT_COUNT; ++account) {
+            if (journal(account).contains(KEY_RULES)
+                    && UserConfig.getInstance(account).getClientUserId()
+                            == journal(account).getLong(KEY_ACCOUNT, 0)) {
+                needed = true;
+                break;
+            }
+        }
+        if (needed) {
+            retry = () -> {
+                retry = null;
+                recover();
+            };
+            AndroidUtilities.runOnUIThread(retry, RETRY_MS);
+        }
+    }
+
+    private static String fingerprint(ArrayList<TLRPC.PrivacyRule> rules) {
+        final ArrayList<String> parts = new ArrayList<>();
+        for (TLRPC.PrivacyRule rule : rules) {
+            final ArrayList<Long> ids = new ArrayList<>();
+            if (rule instanceof TLRPC.TL_privacyValueAllowUsers) {
+                ids.addAll(((TLRPC.TL_privacyValueAllowUsers) rule).users);
+            } else if (rule instanceof TLRPC.TL_privacyValueDisallowUsers) {
+                ids.addAll(((TLRPC.TL_privacyValueDisallowUsers) rule).users);
+            } else if (rule instanceof TLRPC.TL_privacyValueAllowChatParticipants) {
+                ids.addAll(((TLRPC.TL_privacyValueAllowChatParticipants) rule).chats);
+            } else if (rule instanceof TLRPC.TL_privacyValueDisallowChatParticipants) {
+                ids.addAll(((TLRPC.TL_privacyValueDisallowChatParticipants) rule).chats);
+            }
+            Collections.sort(ids);
+            parts.add(rule.getClass().getName() + ids);
+        }
+        Collections.sort(parts);
+        return parts.toString();
     }
 
     /**
@@ -606,7 +930,7 @@ public final class PurpleLastSeenTrade {
                 continue;
             }
             for (Long id : ids) {
-                if (id != null && inputOf(currentAccount, id) == null) {
+                if (id == null || inputOf(currentAccount, id) == null) {
                     return false;
                 }
             }

@@ -558,6 +558,19 @@ disabled.
 Starting a Last Seen Peek adds only that person to your last-seen allow list,
 asks the server for their exact status, and restores your original privacy rules
 after a success, a timeout (`trade_hold`, ten seconds by default), or an error.
+Before opening the rule, the app synchronously saves the original server rules
+in a private journal for that account. A deadline starts as soon as the open
+request is sent, so a stalled status reply cannot extend the hold. Restoration
+is checked against the server's rules before the journal is cleared. If the
+app restarts with a pending journal, it retries restoration when that account
+is active; a failed restore remains pending and blocks another Peek on that
+account. While the app is force-stopped or offline it cannot send a restore,
+so the temporary exception may remain open past the hold until it runs online
+again. If the account is logged out and never reactivated on this device, this
+client cannot complete the recovery; check Telegram's Last Seen privacy
+settings from another active client in that case. A different account taking
+the same app slot cannot use Peek while that slot holds the previous account's
+pending journal; the app never applies those old rules to the new account.
 The setting is labeled **Allow Last Seen Peeks**; its existing schema key remains
 `trade_p` and defaults to true. The confirmation checkbox is labeled **Skip
 confirmation for all future peeks on this device**. That one saved choice skips

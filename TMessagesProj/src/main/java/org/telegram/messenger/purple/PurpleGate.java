@@ -446,6 +446,15 @@ public final class PurpleGate {
         }
 
         postRefresh();
+        AndroidUtilities.runOnUIThread(() -> {
+            for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; ++a) {
+                if (UserConfig.getInstance(a).isClientActivated()) {
+                    NotificationCenter.getInstance(a).postNotificationName(
+                            NotificationCenter.updateInterfaces,
+                            MessagesController.UPDATE_MASK_STATUS);
+                }
+            }
+        });
         rebuildShortcuts();
 
         // Either file can change the answer sooner than the next thirty seconds
