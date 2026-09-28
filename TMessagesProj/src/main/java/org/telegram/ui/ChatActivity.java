@@ -1692,6 +1692,7 @@ public class ChatActivity extends BaseFragment implements
 
     private final static int chat_menu_topic_create = 73;
     private final static int peek_last_seen = 75;
+    private final static int download_pinned_music = 76;
 
     private final static int id_chat_compose_panel = 1000;
 
@@ -3903,6 +3904,9 @@ public class ChatActivity extends BaseFragment implements
                     if (user != null) {
                         PurpleLastSeenTrade.show(ChatActivity.this, currentAccount, user.id);
                     }
+                } else if (id == download_pinned_music) {
+                    PurplePinnedMusic.show(ChatActivity.this, currentAccount, dialog_id,
+                            getTopicId(), mergeDialogId);
                 } else if (id == mute) {
                     toggleMute(false);
                 } else if (id == add_shortcut) {
@@ -4331,6 +4335,10 @@ public class ChatActivity extends BaseFragment implements
             });
             otherIcon.addView(headerItem.getIconView());
             headerItem.setContentDescription(LocaleController.getString(R.string.AccDescrMoreOptions));
+            if (currentEncryptedChat == null) {
+                headerItem.lazilyAddSubItem(download_pinned_music, R.drawable.msg_download,
+                        getString(R.string.PurplePinnedMusicAction));
+            }
 
             if (currentUser != null && currentUser.self && chatMode != MODE_SAVED) {
                 savedChatsItem = headerItem.lazilyAddSubItem(view_as_topics, R.drawable.msg_topics, LocaleController.getString(R.string.SavedViewAsChats));

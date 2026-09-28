@@ -11461,6 +11461,14 @@
     <string name="PurpleTradesEmpty">No recent Last Seen Peeks.</string>
     <string name="PurpleTradesInfo">What each Last Seen Peek read, and when. A read is forgotten once it is older than trade_remember.</string>
     <string name="PurplePeekAction">Peek Last Seen</string>
+    <string name="PurplePinnedMusicAction">Download all pinned songs</string>
+    <string name="PurplePinnedMusicDownload">Download</string>
+    <string name="PurplePinnedMusicBefore">Songs before each pinned song (0–20)</string>
+    <string name="PurplePinnedMusicAfter">Songs after each pinned song (0–20)</string>
+    <string name="PurplePinnedMusicAlbum">Include all songs in a pinned album</string>
+    <string name="PurplePinnedMusicNone">No pinned songs found.</string>
+    <string name="PurplePinnedMusicQueued">Queued %1$d songs in Telegram’s cache.</string>
+    <string name="PurplePinnedMusicFailed">Could not load all pinned songs. Songs already queued will continue downloading.</string>
     <string name="PurpleTradeRowValue">%1$s \u00b7 read %2$s</string>
     <string name="PurpleTradeRowNothing">nothing arrived</string>
     <!-- Purple: screen time - the recorder, the screen and the budgets -->

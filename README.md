@@ -8,6 +8,17 @@ Purple Telegram installs **alongside** official Telegram: it ships under its own
 application id, `org.purple.telegram`, with its own contacts account type and its
 own launcher entry, so both apps can be signed in at the same time.
 
+### Pinned music
+
+Open a chat or forum topic's menu and choose **Download all pinned songs**. The
+dialog starts with one music song before and one after each pinned song; each
+number can be set from 0 to 20. It also includes the other songs in a pinned
+album by default. The action searches all pinned messages, including those not
+yet loaded in the chat. In an ordinary migrated group it also searches the old
+group. Repeated songs are queued once, into Telegram's managed cache rather
+than the phone's public Music or Downloads folders. Downloads continue after
+the dialog or chat closes.
+
 ### Building
 
 The normal build host is the Apple-silicon laptop. Install Android SDK 36 with
