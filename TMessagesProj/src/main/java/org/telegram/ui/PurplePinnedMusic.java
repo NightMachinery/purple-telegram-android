@@ -74,7 +74,7 @@ final class PurplePinnedMusic {
                     running++;
                 } else if (transfer.state == Transfer.FAILED) {
                     errors++;
-                    if (!transfer.fileName.startsWith("invalid:")) {
+                    if (transfer.retryable()) {
                         canRetry++;
                     }
                 } else if (transfer.attempts > 0) {
@@ -275,6 +275,10 @@ final class PurplePinnedMusic {
             this.document = document;
             this.message = message;
             this.fileName = fileName;
+        }
+
+        boolean retryable() {
+            return state == FAILED && !fileName.startsWith("invalid:");
         }
     }
 
@@ -631,7 +635,7 @@ final class PurplePinnedMusic {
                 retried = true;
             }
             for (Transfer transfer : transfers.values()) {
-                if (transfer.state == Transfer.FAILED && !transfer.fileName.startsWith("invalid:")) {
+                if (transfer.retryable()) {
                     transfer.state = Transfer.QUEUED;
                     transfer.attempts = 0;
                     transfer.nextAttemptMs = 0;

@@ -30,6 +30,9 @@ chat's top panel, below the pinned message. It shows the job's state
 how many songs are downloaded out of those selected, and the active and failed
 counts. Its buttons pause or resume the job (pausing only stops new songs from
 starting), retry failed songs or a failed search, and dismiss a finished job.
+A song whose message carries no downloadable file counts as failed but cannot
+be retried: Retry appears only while a failed search or at least one failed
+download can be tried again, and leaves such songs failed.
 The row reappears when the chat is reopened, for as long as the app process
 keeps the job.
 

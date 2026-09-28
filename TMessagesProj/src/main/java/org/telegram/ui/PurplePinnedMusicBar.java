@@ -188,7 +188,8 @@ final class PurplePinnedMusicBar extends LinearLayout implements PurplePinnedMus
             setLabel(pauseButton, s.paused ? R.string.PurplePinnedMusicBarResume : R.string.PurplePinnedMusicBarPause);
         }
         retryButton.setVisibility(s.retryable > 0 || s.scanFailed ? VISIBLE : GONE);
-        int label = s.scanFailed ? R.string.PurplePinnedMusicBarRetrySearch : R.string.PurplePinnedMusicBarRetry;
+        int label = !s.scanFailed ? R.string.PurplePinnedMusicBarRetry
+                : s.retryable > 0 ? R.string.PurplePinnedMusicBarRetrySearchAndSongs : R.string.PurplePinnedMusicBarRetrySearch;
         if (label != retryLabel) {
             retryLabel = label;
             setLabel(retryButton, label);

@@ -11491,6 +11491,7 @@
     <string name="PurplePinnedMusicBarResume">Resume pinned song downloads</string>
     <string name="PurplePinnedMusicBarRetry">Retry failed pinned songs</string>
     <string name="PurplePinnedMusicBarRetrySearch">Retry pinned song search</string>
+    <string name="PurplePinnedMusicBarRetrySearchAndSongs">Retry pinned song search and failed songs</string>
     <string name="PurplePinnedMusicBarDismiss">Dismiss pinned song progress</string>
     <string name="PurpleKeepMediaDefault">Keep Media: %1$s (default)</string>
     <string name="PurpleKeepMediaThisChat">Keep Media: %1$s (this chat)</string>
