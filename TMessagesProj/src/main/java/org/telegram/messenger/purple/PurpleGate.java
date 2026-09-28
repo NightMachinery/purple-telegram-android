@@ -734,6 +734,28 @@ public final class PurpleGate {
         return Math.abs(dialogId);
     }
 
+    public static boolean previewAlways(int currentAccount, long dialogId) {
+        if (dialogId == 0 || DialogObject.isEncryptedDialog(dialogId)
+                || DialogObject.isFolderDialogId(dialogId)) {
+            return false;
+        }
+        final MessagesController controller = MessagesController.getInstance(currentAccount);
+        if (DialogObject.isUserDialog(dialogId)) {
+            if (controller.getUser(dialogId) == null) {
+                return false;
+            }
+        } else if (DialogObject.isChatDialog(dialogId)) {
+            if (controller.getChat(-dialogId) == null) {
+                return false;
+            }
+        } else {
+            return false;
+        }
+        ensureLoaded();
+        return PurpleCore.previewAlways(bareIdOf(currentAccount, dialogId),
+                kindOf(currentAccount, dialogId));
+    }
+
     /**
      * Whether the running preset shows this dialog right now.
      *
