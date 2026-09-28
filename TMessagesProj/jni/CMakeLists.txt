@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
+project(TMessagesProj)
 
 set(CMAKE_CXX_FLAGS "-std=c++14 -DANDROID -g")
 set(CMAKE_C_FLAGS "-w -std=c11 -DANDROID -D_LARGEFILE_SOURCE=1 -g -Wno-error=implicit-function-declaration")
