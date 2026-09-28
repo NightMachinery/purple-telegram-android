@@ -15,14 +15,21 @@ dialog starts with one music song before and one after each pinned song; each
 number can be set from 0 to 20. It also includes the other songs in a pinned
 album by default. The action searches all pinned messages, including those not
 yet loaded in the chat. In an ordinary migrated group it also searches the old
-group. Repeated songs are queued once, into Telegram's managed cache rather
-than the phone's public Music or Downloads folders. Downloads continue after
+group. Repeated songs are queued once into Telegram's managed document media
+directory, which the chat player recognizes, rather than the phone's public
+Music or Downloads folders. Complete files left in Telegram's general cache
+by older versions of this action are moved into that media directory safely.
+Downloads continue after
 the dialog or chat closes. The download job limits itself to two concurrent
 tracks and retries server rate-limit failures after a cooldown. Its completed
-count reflects complete files in Telegram's managed media directories,
+count reflects complete files at the path the chat player uses,
 including songs already downloaded by another chat action. Partial transfer
 files do not count. Failed tracks can be retried without fetching completed
-ones again. The progress row and job state last only until the app process ends.
+ones again. Completed tracks are checked again when a job is viewed, so removed
+files become cache-only entries or retryable failures. A download that stops
+without a callback is retried after its loading operation disappears. The
+progress row and job state last only until the app process ends. Starting the
+action again after an app restart searches again and reuses complete cached files.
 
 While a job exists for the open chat or topic, a progress row sits in the
 chat's top panel, below the pinned message. It shows the job's state
@@ -34,7 +41,12 @@ A song whose message carries no downloadable file counts as failed but cannot
 be retried: Retry appears only while a failed search or at least one failed
 download can be tried again, and leaves such songs failed.
 The row reappears when the chat is reopened, for as long as the app process
-keeps the job.
+keeps the job. Files found only in the older general cache count as incomplete
+until moved to the path the chat player uses.
+
+Selection uses Telegram's music classification: non-voice audio document
+attributes and its MIME fallbacks for FLAC, OGG, and Opus. Generic audio
+documents without those attributes can be excluded even when named MP3 or M4A.
 
 ### Keep Media per chat
 
