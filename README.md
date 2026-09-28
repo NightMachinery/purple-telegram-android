@@ -31,6 +31,20 @@ starting), retry failed songs or a failed search, and dismiss a finished job.
 The row reappears when the chat is reopened, for as long as the app process
 keeps the job.
 
+### Keep Media per chat
+
+The chat menu shows how long this chat's cached media is kept, for example
+**Keep Media: 1 week (default)** or **Keep Media: Forever (this chat)**. Tapping
+it offers the same choices as Settings, and sets or deletes an exception for
+this chat alone; the setting for all chats of its type is never changed from
+here. The value shown is what cache cleanup actually applies: cleanup treats a
+supergroup as a channel, so a supergroup follows the Channels setting, and its
+exception is stored in the Channels list even though Settings lists
+supergroups under Groups. The entry is also offered inside forum topics, where
+it still controls the whole chat across all its topics, since Keep Media has no
+per-topic setting. It is not offered in secret chats, channel comment threads,
+scheduled messages, or other special chat modes.
+
 ### Building
 
 The normal build host is the Apple-silicon laptop. Install Android SDK 36 with
