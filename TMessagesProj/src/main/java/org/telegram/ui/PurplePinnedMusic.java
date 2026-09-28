@@ -10,21 +10,27 @@ import android.widget.Toast;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLoader;
-import org.telegram.messenger.ImageLoader;
+import org.telegram.messenger.FilePathDatabase;
+import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
+import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.AlertDialog;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -33,6 +39,9 @@ final class PurplePinnedMusic {
     private static final int ALBUM_WINDOW = 100;
     private static final int MAX_ACTIVE = 2;
     private static final int MAX_AUTO_RETRIES = 3;
+    private static final long STALLED_CHECK_MS = 120000;
+    private static final long STALLED_VISIBLE_MS = 300000;
+    private static final long VERIFY_FILES_MS = 30000;
     private static final long[] RETRY_LIMIT_DELAYS = { 30000, 60000, 120000 };
     private static final Map<String, Job> jobs = new HashMap<>();
     private static final Map<Integer, Cooldown> cooldowns = new HashMap<>();
@@ -106,8 +115,62 @@ final class PurplePinnedMusic {
         return job == null ? null : new Snapshot(job);
     }
 
+    static ArrayList<Item> getItems(int account, long dialogId, long topicId) {
+        Job job = jobs.get(key(account, dialogId, topicId));
+        if (job == null) {
+            return new ArrayList<>();
+        }
+        ArrayList<Item> result = new ArrayList<>(job.transfers.size());
+        for (Transfer transfer : job.transfers.values()) {
+            result.add(new Item(transfer));
+        }
+        return result;
+    }
+
+    static void retryItem(int account, long dialogId, long topicId, String fileName) {
+        Job job = jobs.get(key(account, dialogId, topicId));
+        if (job != null) {
+            job.retryItem(fileName);
+        }
+    }
+
+    static final class Item {
+        final String fileName;
+        final String title;
+        final String artist;
+        final int state;
+        final long downloaded;
+        final long total;
+        final int failureReason;
+        final boolean retryable;
+        final boolean waiting;
+        final int attempts;
+        final boolean promoting;
+
+        Item(Transfer transfer) {
+            fileName = transfer.fileName;
+            title = transfer.document == null ? LocaleController.getString(R.string.AudioUnknownTitle)
+                    : MessageObject.getMusicTitle(transfer.document, true);
+            artist = transfer.document == null ? null
+                    : MessageObject.getMusicAuthor(transfer.document, false);
+            state = transfer.state;
+            downloaded = transfer.downloaded;
+            total = transfer.total;
+            failureReason = transfer.failureReason;
+            retryable = transfer.retryable();
+            attempts = transfer.attempts;
+            promoting = transfer.promoting;
+            waiting = state == Transfer.ACTIVE
+                    && System.currentTimeMillis() - transfer.lastActivityMs >= STALLED_VISIBLE_MS;
+        }
+    }
+
     static void addListener(int account, long dialogId, long topicId, Listener listener) {
         String key = key(account, dialogId, topicId);
+        Job job = jobs.get(key);
+        if (job != null && job.verifyCompleted(true)) {
+            job.pump();
+        }
         ArrayList<WeakReference<Listener>> subscribers = listeners.computeIfAbsent(key,
                 ignored -> new ArrayList<>());
         for (WeakReference<Listener> reference : subscribers) {
@@ -263,18 +326,28 @@ final class PurplePinnedMusic {
         static final int ACTIVE = 1;
         static final int COMPLETE = 2;
         static final int FAILED = 3;
+        static final int CACHE_ONLY = 4;
 
         final TLRPC.Document document;
         final TLRPC.Message message;
         final String fileName;
+        final long peerId;
         int state = QUEUED;
         int attempts;
         long nextAttemptMs;
+        long lastActivityMs;
+        long downloaded;
+        long total;
+        int failureReason;
+        File verifiedFile;
+        boolean promoting;
+        boolean finalizing;
 
-        Transfer(TLRPC.Document document, TLRPC.Message message, String fileName) {
+        Transfer(TLRPC.Document document, TLRPC.Message message, String fileName, long peerId) {
             this.document = document;
             this.message = message;
             this.fileName = fileName;
+            this.peerId = peerId;
         }
 
         boolean retryable() {
@@ -294,8 +367,9 @@ final class PurplePinnedMusic {
         private final ArrayList<Anchor> anchors = new ArrayList<>();
         private final Set<String> pinnedIds = new HashSet<>();
         private final Set<String> selectedMessages = new HashSet<>();
-        private final Map<String, Transfer> transfers = new HashMap<>();
+        private final Map<String, Transfer> transfers = new LinkedHashMap<>();
         private final Runnable wake = this::pump;
+        private long lastFileVerificationMs;
         private long pinnedDialogId;
         private int anchorIndex;
         private boolean scanning = true;
@@ -346,6 +420,7 @@ final class PurplePinnedMusic {
         }
 
         private void emit() {
+            verifyCompleted(false);
             Snapshot snapshot = new Snapshot(this);
             notifyListeners(key(account, dialogId, topicId), snapshot);
             if (scanFailed) {
@@ -507,20 +582,162 @@ final class PurplePinnedMusic {
 
         private boolean expectedFile(Transfer transfer, File file) {
             return validFile(transfer, file)
-                    && (file.equals(cacheFile(transfer)) || file.equals(mediaFile(transfer))
-                            || file.equals(recordedFile(transfer)));
+                    && (file.equals(mediaFile(transfer)) || file.equals(recordedFile(transfer)));
         }
 
-        private boolean cached(Transfer transfer) {
-            File cache = cacheFile(transfer);
-            if (validFile(transfer, cache)) {
+        private boolean usable(Transfer transfer) {
+            File recorded = recordedFile(transfer);
+            File target = recorded != null ? recorded : mediaFile(transfer);
+            if (validFile(transfer, transfer.verifiedFile)
+                    && (transfer.verifiedFile.equals(target)
+                            || transfer.verifiedFile.equals(mediaFile(transfer)))) {
                 return true;
             }
-            File media = mediaFile(transfer);
-            if (validFile(transfer, media)) {
+            if (validFile(transfer, target)) {
+                transfer.verifiedFile = target;
                 return true;
             }
-            return validFile(transfer, recordedFile(transfer));
+            transfer.verifiedFile = null;
+            return false;
+        }
+
+        private boolean cacheOnly(Transfer transfer) {
+            return validFile(transfer, cacheFile(transfer));
+        }
+
+        private void saveMetadata(Transfer transfer, File file) {
+            FilePathDatabase.FileMeta metadata = new FilePathDatabase.FileMeta();
+            metadata.dialogId = transfer.peerId;
+            metadata.messageId = transfer.message.id;
+            metadata.messageType = MessageObject.TYPE_MUSIC;
+            metadata.messageSize = transfer.document.size;
+            FileLoader.getInstance(account).getFileDatabase().saveFileDialogId(file, metadata);
+        }
+
+        private boolean verifyCompleted(boolean force) {
+            long now = System.currentTimeMillis();
+            if (!force && now - lastFileVerificationMs < VERIFY_FILES_MS) {
+                return false;
+            }
+            lastFileVerificationMs = now;
+            boolean changed = false;
+            for (Transfer transfer : transfers.values()) {
+                if (transfer.state == Transfer.COMPLETE && !usable(transfer)) {
+                    transfer.state = cacheOnly(transfer) ? Transfer.CACHE_ONLY : Transfer.FAILED;
+                    transfer.failureReason = transfer.state == Transfer.FAILED ? 3 : 0;
+                    changed = true;
+                }
+            }
+            return changed;
+        }
+
+        private File promotionTarget(Transfer transfer) {
+            File recorded = recordedFile(transfer);
+            if (recorded != null && recorded.getParentFile() != null
+                    && recorded.getParentFile().canWrite()) {
+                return recorded;
+            }
+            return mediaFile(transfer);
+        }
+
+        private boolean promote(Transfer transfer, File source, File target) {
+            if (validFile(transfer, target)) {
+                return true;
+            }
+            if (target.exists() || !validFile(transfer, source)) {
+                return false;
+            }
+            File directory = target.getParentFile();
+            if (directory == null || !directory.isDirectory() && !directory.mkdirs()) {
+                return false;
+            }
+            if (!target.exists() && source.renameTo(target)) {
+                return validFile(transfer, target);
+            }
+            File temporary = new File(directory, target.getName() + ".purple-" + System.nanoTime() + ".tmp");
+            try (FileInputStream input = new FileInputStream(source);
+                    FileOutputStream output = new FileOutputStream(temporary)) {
+                byte[] buffer = new byte[65536];
+                int count;
+                while ((count = input.read(buffer)) != -1) {
+                    output.write(buffer, 0, count);
+                }
+                output.getFD().sync();
+            } catch (IOException e) {
+                temporary.delete();
+                return false;
+            }
+            if (!validFile(transfer, temporary) || target.exists()
+                    || !temporary.renameTo(target)) {
+                temporary.delete();
+                return false;
+            }
+            if (!validFile(transfer, target)) {
+                return false;
+            }
+            source.delete();
+            return true;
+        }
+
+        private void startPromotion(Transfer transfer, long now) {
+            File source = cacheFile(transfer);
+            File target = promotionTarget(transfer);
+            transfer.state = Transfer.ACTIVE;
+            transfer.promoting = true;
+            transfer.lastActivityMs = now;
+            Utilities.globalQueue.postRunnable(() -> {
+                boolean moved = promote(transfer, source, target);
+                AndroidUtilities.runOnUIThread(() -> {
+                    if (jobs.get(key(account, dialogId, topicId)) != this
+                            || transfer.state != Transfer.ACTIVE || !transfer.promoting) {
+                        return;
+                    }
+                    if (!moved) {
+                        transfer.promoting = false;
+                        transfer.state = Transfer.FAILED;
+                        transfer.failureReason = 6;
+                        emit();
+                        pumpAccount(account);
+                        return;
+                    }
+                    completeWithMetadata(transfer, target, true);
+                });
+            });
+        }
+
+        private void completeWithMetadata(Transfer transfer, File file, boolean notifyFileLoaded) {
+            transfer.finalizing = true;
+            FilePathDatabase database = FileLoader.getInstance(account).getFileDatabase();
+            File recorded = recordedFile(transfer);
+            boolean updatePath = recorded != null && !recorded.equals(file);
+            if (updatePath) {
+                database.putPath(transfer.document.id, transfer.document.dc_id,
+                        mediaType(transfer), 0, file.getAbsolutePath());
+            }
+            saveMetadata(transfer, file);
+            database.afterPendingWrites(() -> AndroidUtilities.runOnUIThread(() -> {
+                if (jobs.get(key(account, dialogId, topicId)) != this
+                        || transfer.state != Transfer.ACTIVE) {
+                    return;
+                }
+                transfer.finalizing = false;
+                transfer.promoting = false;
+                if (!validFile(transfer, file)) {
+                    transfer.state = Transfer.FAILED;
+                    transfer.failureReason = 3;
+                } else {
+                    transfer.state = Transfer.COMPLETE;
+                    transfer.verifiedFile = file;
+                    transfer.downloaded = transfer.document.size;
+                    transfer.total = transfer.document.size;
+                    if (notifyFileLoaded || updatePath) {
+                        NotificationCenter.getInstance(account).postNotificationName(
+                                NotificationCenter.fileLoaded, transfer.fileName, file);
+                    }
+                }
+                emit();
+                pumpAccount(account);
+            }));
         }
 
         private void queue(long peerId, TLRPC.Message message) {
@@ -529,8 +746,9 @@ final class PurplePinnedMusic {
             }
             TLRPC.Document document = MessageObject.getDocument(message);
             if (document == null) {
-                Transfer invalid = new Transfer(null, message, "invalid:" + peerId + ":" + message.id);
+                Transfer invalid = new Transfer(null, message, "invalid:" + peerId + ":" + message.id, peerId);
                 invalid.state = Transfer.FAILED;
+                invalid.failureReason = 4;
                 transfers.put(invalid.fileName, invalid);
                 emit();
                 return;
@@ -538,8 +756,9 @@ final class PurplePinnedMusic {
             String fileName = FileLoader.getAttachFileName(document);
             if (fileName == null || fileName.contains(String.valueOf(Integer.MIN_VALUE))
                     || fileName.startsWith("0_0")) {
-                Transfer invalid = new Transfer(document, message, "invalid:" + peerId + ":" + message.id);
+                Transfer invalid = new Transfer(document, message, "invalid:" + peerId + ":" + message.id, peerId);
                 invalid.state = Transfer.FAILED;
+                invalid.failureReason = 4;
                 transfers.put(invalid.fileName, invalid);
                 emit();
                 return;
@@ -547,8 +766,12 @@ final class PurplePinnedMusic {
             if (transfers.containsKey(fileName)) {
                 return;
             }
-            Transfer transfer = new Transfer(document, message, fileName);
-            transfer.state = cached(transfer) ? Transfer.COMPLETE : Transfer.QUEUED;
+            Transfer transfer = new Transfer(document, message, fileName, peerId);
+            transfer.state = usable(transfer) ? Transfer.COMPLETE
+                    : cacheOnly(transfer) ? Transfer.CACHE_ONLY : Transfer.QUEUED;
+            if (transfer.state == Transfer.COMPLETE) {
+                saveMetadata(transfer, transfer.verifiedFile);
+            }
             transfers.put(fileName, transfer);
             emit();
             pump();
@@ -636,9 +859,7 @@ final class PurplePinnedMusic {
             }
             for (Transfer transfer : transfers.values()) {
                 if (transfer.retryable()) {
-                    transfer.state = Transfer.QUEUED;
-                    transfer.attempts = 0;
-                    transfer.nextAttemptMs = 0;
+                    resetForRetry(transfer);
                     retried = true;
                 }
             }
@@ -648,6 +869,26 @@ final class PurplePinnedMusic {
             completionToastShown = false;
             emit();
             pumpAccount(account);
+        }
+
+        private void retryItem(String fileName) {
+            Transfer transfer = transfers.get(fileName);
+            if (transfer == null || !transfer.retryable()) {
+                return;
+            }
+            resetForRetry(transfer);
+            completionToastShown = false;
+            emit();
+            pumpAccount(account);
+        }
+
+        private void resetForRetry(Transfer transfer) {
+            transfer.state = Transfer.QUEUED;
+            transfer.attempts = 0;
+            transfer.nextAttemptMs = 0;
+            transfer.failureReason = 0;
+            transfer.downloaded = 0;
+            transfer.total = 0;
         }
 
         private void retryLimit() {
@@ -660,10 +901,11 @@ final class PurplePinnedMusic {
         }
 
         private void failed(Transfer transfer, int reason) {
+            transfer.failureReason = reason;
             if (reason == 2) {
                 retryLimit();
             }
-            if (transfer.attempts <= MAX_AUTO_RETRIES && reason != -1 && reason != 1) {
+            if (transfer.attempts <= MAX_AUTO_RETRIES && reason != -1 && reason != 1 && reason != 6) {
                 transfer.state = Transfer.QUEUED;
                 transfer.nextAttemptMs = reason == 2 ? cooldown().untilMs
                         : System.currentTimeMillis() + 5000L * transfer.attempts;
@@ -676,32 +918,61 @@ final class PurplePinnedMusic {
 
         private void pump() {
             AndroidUtilities.cancelRunOnUIThread(wake);
+            long now = System.currentTimeMillis();
+            for (Transfer transfer : transfers.values()) {
+                if (transfer.state == Transfer.ACTIVE
+                        && !transfer.promoting
+                        && !transfer.finalizing
+                        && now - transfer.lastActivityMs >= STALLED_CHECK_MS
+                        && !FileLoader.getInstance(account).isLoadingFile(transfer.fileName)) {
+                    failed(transfer, 5);
+                    return;
+                }
+            }
             if (paused) {
                 return;
             }
-            long now = System.currentTimeMillis();
             long nextWake = Long.MAX_VALUE;
             int active = activeTransfers(account);
             for (Transfer transfer : transfers.values()) {
-                if (transfer.state != Transfer.QUEUED) {
+                if (transfer.state != Transfer.QUEUED && transfer.state != Transfer.CACHE_ONLY) {
                     continue;
                 }
                 long availableAt = Math.max(transfer.nextAttemptMs, cooldown().untilMs);
-                if (active >= MAX_ACTIVE || availableAt > now) {
+                if (active >= MAX_ACTIVE) {
+                    continue;
+                }
+                if (availableAt > now) {
                     nextWake = Math.min(nextWake, availableAt);
                     continue;
                 }
-                if (cached(transfer)) {
+                if (usable(transfer)) {
                     transfer.state = Transfer.COMPLETE;
+                    saveMetadata(transfer, transfer.verifiedFile);
+                    continue;
+                }
+                if (cacheOnly(transfer) && !promotionTarget(transfer).exists()) {
+                    if (FileLoader.getInstance(account).isLoadingFile(transfer.fileName)) {
+                        nextWake = Math.min(nextWake, now + 5000);
+                    } else {
+                        startPromotion(transfer, now);
+                        active++;
+                    }
                     continue;
                 }
                 transfer.state = Transfer.ACTIVE;
                 transfer.attempts++;
+                transfer.lastActivityMs = now;
+                transfer.failureReason = 0;
                 active++;
-                FileLoader.getInstance(account).loadFile(transfer.document, transfer.message,
-                        FileLoader.PRIORITY_NORMAL, ImageLoader.CACHE_TYPE_CACHE);
+                FileLoader.getInstance(account).loadFile(transfer.document,
+                        new MessageObject(account, transfer.message, false, false),
+                        FileLoader.PRIORITY_NORMAL, 0);
             }
-            if (nextWake > now && nextWake != Long.MAX_VALUE && active < MAX_ACTIVE) {
+            if (active > 0) {
+                nextWake = Math.min(nextWake, now + STALLED_CHECK_MS);
+            }
+            if (nextWake > now && nextWake != Long.MAX_VALUE) {
                 AndroidUtilities.runOnUIThread(wake, nextWake - now);
             }
             emit();
@@ -713,20 +984,24 @@ final class PurplePinnedMusic {
                 return;
             }
             Transfer transfer = transfers.get(args[0]);
-            if (transfer == null || transfer.state != Transfer.ACTIVE) {
+            if (transfer == null || transfer.state != Transfer.ACTIVE
+                    || transfer.promoting || transfer.finalizing) {
                 return;
             }
             if (id == NotificationCenter.fileLoaded) {
-                if (expectedFile(transfer, (File) args[1]) || cached(transfer)) {
-                    transfer.state = Transfer.COMPLETE;
-                    emit();
-                    pumpAccount(account);
+                File loaded = (File) args[1];
+                boolean expected = expectedFile(transfer, loaded);
+                if (expected || usable(transfer)) {
+                    completeWithMetadata(transfer, expected ? loaded : transfer.verifiedFile, false);
                 } else {
                     failed(transfer, 0);
                 }
             } else if (id == NotificationCenter.fileLoadFailed) {
                 failed(transfer, (Integer) args[1]);
             } else if (id == NotificationCenter.fileLoadProgressChanged) {
+                transfer.downloaded = (Long) args[1];
+                transfer.total = (Long) args[2];
+                transfer.lastActivityMs = System.currentTimeMillis();
                 emit();
             }
         }
