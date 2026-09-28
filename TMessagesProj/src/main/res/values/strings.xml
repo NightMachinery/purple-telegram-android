@@ -11492,6 +11492,8 @@
     <string name="PurplePinnedMusicBarRetry">Retry failed pinned songs</string>
     <string name="PurplePinnedMusicBarRetrySearch">Retry pinned song search</string>
     <string name="PurplePinnedMusicBarDismiss">Dismiss pinned song progress</string>
+    <string name="PurpleKeepMediaDefault">Keep Media: %1$s (default)</string>
+    <string name="PurpleKeepMediaThisChat">Keep Media: %1$s (this chat)</string>
     <string name="PurpleTradeRowValue">%1$s \u00b7 read %2$s</string>
     <string name="PurpleTradeRowNothing">nothing arrived</string>
     <!-- Purple: screen time - the recorder, the screen and the budgets -->

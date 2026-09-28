@@ -142,6 +142,7 @@ import org.telegram.messenger.BotInlineKeyboard;
 import org.telegram.messenger.BotWebViewVibrationEffect;
 import org.telegram.messenger.BuildConfig;
 import org.telegram.messenger.BuildVars;
+import org.telegram.messenger.CacheByChatsController;
 import org.telegram.messenger.ChannelBoostsController;
 import org.telegram.messenger.ChatMessageSharedResources;
 import org.telegram.messenger.ChatMessagesMetadataController;
@@ -1693,6 +1694,7 @@ public class ChatActivity extends BaseFragment implements
     private final static int chat_menu_topic_create = 73;
     private final static int peek_last_seen = 75;
     private final static int download_pinned_music = 76;
+    private final static int purple_keep_media = 77;
 
     private final static int id_chat_compose_panel = 1000;
 
@@ -3910,6 +3912,8 @@ public class ChatActivity extends BaseFragment implements
                 } else if (id == download_pinned_music) {
                     PurplePinnedMusic.show(ChatActivity.this, currentAccount, dialog_id,
                             getTopicId(), mergeDialogId);
+                } else if (id == purple_keep_media) {
+                    purpleShowKeepMedia();
                 } else if (id == mute) {
                     toggleMute(false);
                 } else if (id == add_shortcut) {
@@ -4329,6 +4333,7 @@ public class ChatActivity extends BaseFragment implements
                         headerItem.setSubItemShown(
                                 peek_last_seen, PurpleLastSeen.peekEligible(user));
                     }
+                    purpleUpdateKeepMediaItem();
                 }
 
                 @Override
@@ -4341,6 +4346,11 @@ public class ChatActivity extends BaseFragment implements
             if (currentEncryptedChat == null) {
                 headerItem.lazilyAddSubItem(download_pinned_music, R.drawable.msg_download,
                         getString(R.string.PurplePinnedMusicAction));
+            }
+            final int keepMediaType = purpleKeepMediaType();
+            if (keepMediaType >= 0) {
+                purpleKeepMediaItem = headerItem.lazilyAddSubItem(purple_keep_media,
+                        R.drawable.msg_autodelete, purpleKeepMediaLabel(keepMediaType));
             }
 
             if (currentUser != null && currentUser.self && chatMode != MODE_SAVED) {
@@ -30202,6 +30212,94 @@ public class ChatActivity extends BaseFragment implements
             purplePinnedMusicBar = bar;
         }
         purplePinnedMusicBar.bind(currentAccount, dialog_id, getTopicId(), animated);
+    }
+
+    private ActionBarMenuItem.Item purpleKeepMediaItem;
+
+    private int purpleKeepMediaType() {
+        if (chatMode != MODE_DEFAULT || currentEncryptedChat != null || dialog_id == 0
+                || isThreadChat() && !isTopic) {
+            return -1;
+        }
+        if (dialog_id > 0) {
+            return currentUser != null ? CacheByChatsController.KEEP_MEDIA_TYPE_USER : -1;
+        }
+        if (currentChat == null) {
+            return -1;
+        }
+        return ChatObject.isChannel(currentChat) ? CacheByChatsController.KEEP_MEDIA_TYPE_CHANNEL
+                : CacheByChatsController.KEEP_MEDIA_TYPE_GROUP;
+    }
+
+    private String purpleKeepMediaLabel(int type) {
+        final CacheByChatsController controller = getMessagesController().getCacheByChatsController();
+        final CacheByChatsController.KeepMediaException exception =
+                controller.getKeepMediaExceptionsByDialogs().get(dialog_id);
+        final int keepMedia = exception != null ? exception.keepMedia : controller.getKeepMedia(type);
+        final String duration = CacheByChatsController.getDaysInSeconds(keepMedia) == Long.MAX_VALUE
+                ? getString(R.string.KeepMediaForever)
+                : CacheByChatsController.getKeepMediaString(keepMedia);
+        return formatString(exception != null ? R.string.PurpleKeepMediaThisChat : R.string.PurpleKeepMediaDefault,
+                duration);
+    }
+
+    private void purpleUpdateKeepMediaItem() {
+        final int type = purpleKeepMediaType();
+        if (purpleKeepMediaItem != null && type >= 0) {
+            purpleKeepMediaItem.setText(purpleKeepMediaLabel(type));
+        }
+    }
+
+    private void purpleShowKeepMedia() {
+        final int type = purpleKeepMediaType();
+        if (type < 0 || headerItem == null || getParentActivity() == null) {
+            return;
+        }
+        final boolean hasException = getMessagesController().getCacheByChatsController()
+                .getKeepMediaExceptionsByDialogs().get(dialog_id) != null;
+        final KeepMediaPopupView layout = new KeepMediaPopupView(this, getParentActivity());
+        layout.updateForDialog(!hasException);
+        layout.setCallback((ignored, keepMedia) -> purpleSetKeepMedia(type, keepMedia));
+        layout.measure(View.MeasureSpec.makeMeasureSpec(dp(1000), View.MeasureSpec.AT_MOST),
+                View.MeasureSpec.makeMeasureSpec(dp(1000), View.MeasureSpec.AT_MOST));
+        final ActionBarPopupWindow window = AlertsCreator.createSimplePopup(this, layout, headerItem,
+                headerItem.getWidth() - layout.getMeasuredWidth() / 2f, layout.getMeasuredHeight() / 2f);
+        if (window != null) {
+            layout.setParentWindow(window);
+        }
+    }
+
+    private void purpleSetKeepMedia(int type, int keepMedia) {
+        final CacheByChatsController controller = getMessagesController().getCacheByChatsController();
+        final boolean keep = keepMedia != CacheByChatsController.KEEP_MEDIA_DELETE;
+        for (int bucket = CacheByChatsController.KEEP_MEDIA_TYPE_USER;
+                bucket <= CacheByChatsController.KEEP_MEDIA_TYPE_CHANNEL; bucket++) {
+            final ArrayList<CacheByChatsController.KeepMediaException> exceptions =
+                    controller.getKeepMediaExceptions(bucket);
+            boolean changed = false;
+            boolean kept = false;
+            for (int i = exceptions.size() - 1; i >= 0; i--) {
+                final CacheByChatsController.KeepMediaException exception = exceptions.get(i);
+                if (exception.dialogId != dialog_id) {
+                    continue;
+                }
+                if (bucket == type && keep && !kept) {
+                    exception.keepMedia = keepMedia;
+                    kept = true;
+                } else {
+                    exceptions.remove(i);
+                }
+                changed = true;
+            }
+            if (bucket == type && keep && !kept) {
+                exceptions.add(new CacheByChatsController.KeepMediaException(dialog_id, keepMedia));
+                changed = true;
+            }
+            if (changed) {
+                controller.saveKeepMediaExceptions(bucket, exceptions);
+            }
+        }
+        purpleUpdateKeepMediaItem();
     }
 
     // ---- Purple: the hard budget's cover ------------------------------------
