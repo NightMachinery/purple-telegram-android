@@ -3373,6 +3373,9 @@ public class ChatActivity extends BaseFragment implements
         if (avatarContainer != null) {
             avatarContainer.onDestroy();
         }
+        if (purplePinnedMusicBar != null) {
+            purplePinnedMusicBar.unbind();
+        }
         if (mentionContainer != null && mentionContainer.getAdapter() != null) {
             mentionContainer.getAdapter().onDestroy();
         }
@@ -29102,6 +29105,7 @@ public class ChatActivity extends BaseFragment implements
         if (chatMode != 0 && chatMode != MODE_SUGGESTIONS || topPanelLayout == null) {
             return;
         }
+        purpleBindPinnedMusicBar(animated);
         SharedPreferences preferences = MessagesController.getNotificationsSettings(currentAccount);
         boolean show;
         long did = dialog_id;
@@ -30175,6 +30179,30 @@ public class ChatActivity extends BaseFragment implements
         }
     }
 
+
+    private PurplePinnedMusicBar purplePinnedMusicBar;
+
+    private void purpleBindPinnedMusicBar(boolean animated) {
+        if (headerItem == null || !headerItem.hasSubItem(download_pinned_music) || getContext() == null) {
+            return;
+        }
+        if (purplePinnedMusicBar == null || purplePinnedMusicBar.getParent() != topPanelLayout) {
+            if (purplePinnedMusicBar != null) {
+                purplePinnedMusicBar.unbind();
+            }
+            final PurplePinnedMusicBar bar = new PurplePinnedMusicBar(getContext(), themeDelegate);
+            topPanelLayout.addView(bar, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+            topPanelLayout.setPriority(bar, 9);
+            topPanelLayout.setDebugName(bar, "purple pinned music");
+            bar.setOnShownChanged((shown, shownAnimated) -> {
+                if (topPanelLayout != null && bar.getParent() == topPanelLayout) {
+                    topPanelLayout.setViewVisible(bar, shown, shownAnimated);
+                }
+            });
+            purplePinnedMusicBar = bar;
+        }
+        purplePinnedMusicBar.bind(currentAccount, dialog_id, getTopicId(), animated);
+    }
 
     // ---- Purple: the hard budget's cover ------------------------------------
 
@@ -42759,6 +42787,9 @@ public class ChatActivity extends BaseFragment implements
             }
             if (topPanelLayout != null) {
                 topPanelLayout.updateColors();
+            }
+            if (purplePinnedMusicBar != null) {
+                purplePinnedMusicBar.updateColors();
             }
             if (suggestEmojiPanel != null) {
                 suggestEmojiPanel.updateColors();
