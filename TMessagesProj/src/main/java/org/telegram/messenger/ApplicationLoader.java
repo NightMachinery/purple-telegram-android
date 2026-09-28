@@ -37,6 +37,7 @@ import com.google.android.gms.common.GooglePlayServicesUtil;
 
 import org.json.JSONObject;
 import org.telegram.messenger.purple.PurpleDefaults;
+import org.telegram.ui.PurpleLastSeenTrade;
 import org.telegram.messenger.voip.VideoCapturerDevice;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
@@ -260,6 +261,7 @@ public class ApplicationLoader extends Application {
                 SendMessagesHelper.getInstance(a).checkUnsentMessages();
             }
         }
+        PurpleLastSeenTrade.recover();
 
         ApplicationLoader app = (ApplicationLoader) ApplicationLoader.applicationContext;
         app.initPushServices();

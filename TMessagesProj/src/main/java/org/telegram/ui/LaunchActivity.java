@@ -6974,6 +6974,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     @Override
     protected void onResume() {
         super.onResume();
+        PurpleLastSeenTrade.recover();
         isResumed = true;
         pipActivityHandler.onResume();
         if (onResumeStaticCallback != null) {
@@ -7187,6 +7188,10 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 finish();
             }
         } else if (id == NotificationCenter.didUpdateConnectionState) {
+            if (ConnectionsManager.getInstance(account).getConnectionState()
+                    == ConnectionsManager.ConnectionStateConnected) {
+                PurpleLastSeenTrade.recover();
+            }
             int state = ConnectionsManager.getInstance(account).getConnectionState();
             if (currentConnectionState != state) {
                 if (BuildVars.LOGS_ENABLED) {
