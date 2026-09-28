@@ -473,10 +473,50 @@ final class PurplePinnedMusic {
             return new MessageObject(account, message, false, false).isMusic();
         }
 
-        private boolean cached(Transfer transfer) {
-            File file = new File(FileLoader.getDirectory(FileLoader.MEDIA_DIR_CACHE), transfer.fileName);
-            return file.isFile() && file.length() > 0
+        private int mediaType(Transfer transfer) {
+            if (MessageObject.isVoiceDocument(transfer.document)) {
+                return FileLoader.MEDIA_DIR_AUDIO;
+            }
+            return MessageObject.isVideoDocument(transfer.document)
+                    ? FileLoader.MEDIA_DIR_VIDEO : FileLoader.MEDIA_DIR_DOCUMENT;
+        }
+
+        private File cacheFile(Transfer transfer) {
+            return new File(FileLoader.getDirectory(FileLoader.MEDIA_DIR_CACHE), transfer.fileName);
+        }
+
+        private File mediaFile(Transfer transfer) {
+            return new File(FileLoader.getDirectory(mediaType(transfer)), transfer.fileName);
+        }
+
+        private File recordedFile(Transfer transfer) {
+            String path = FileLoader.getInstance(account).getFileDatabase().getPath(
+                    transfer.document.id, transfer.document.dc_id, mediaType(transfer), true);
+            return path == null ? null : new File(path);
+        }
+
+        private boolean validFile(Transfer transfer, File file) {
+            return file != null && file.isFile() && file.length() > 0
+                    && !file.getName().endsWith(".temp") && !file.getName().endsWith(".temp.enc")
                     && (transfer.document.size <= 0 || file.length() == transfer.document.size);
+        }
+
+        private boolean expectedFile(Transfer transfer, File file) {
+            return validFile(transfer, file)
+                    && (file.equals(cacheFile(transfer)) || file.equals(mediaFile(transfer))
+                            || file.equals(recordedFile(transfer)));
+        }
+
+        private boolean cached(Transfer transfer) {
+            File cache = cacheFile(transfer);
+            if (validFile(transfer, cache)) {
+                return true;
+            }
+            File media = mediaFile(transfer);
+            if (validFile(transfer, media)) {
+                return true;
+            }
+            return validFile(transfer, recordedFile(transfer));
         }
 
         private void queue(long peerId, TLRPC.Message message) {
@@ -673,7 +713,7 @@ final class PurplePinnedMusic {
                 return;
             }
             if (id == NotificationCenter.fileLoaded) {
-                if (cached(transfer)) {
+                if (expectedFile(transfer, (File) args[1]) || cached(transfer)) {
                     transfer.state = Transfer.COMPLETE;
                     emit();
                     pumpAccount(account);
