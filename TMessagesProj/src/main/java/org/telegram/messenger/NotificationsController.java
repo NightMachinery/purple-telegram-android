@@ -2205,14 +2205,14 @@ public class NotificationsController extends BaseController implements Notificat
                                 if (object.isMusic()) {
                                     return LocaleController.formatString(R.string.NotificationActionPinnedMusic, name, getTitle(chat));
                                 } else if (object.isVideo()) {
-                                    if (Build.VERSION.SDK_INT >= 19 && !TextUtils.isEmpty(object.messageOwner.message)) {
+                                    if (Build.VERSION.SDK_INT >= 19 && !object.isSecretMedia() && !TextUtils.isEmpty(object.messageOwner.message)) {
                                         String message = "\uD83D\uDCF9 " + object.messageOwner.message;
                                         return LocaleController.formatString(R.string.NotificationActionPinnedText, name, message, getTitle(chat));
                                     } else {
                                         return LocaleController.formatString(R.string.NotificationActionPinnedVideo, name, getTitle(chat));
                                     }
                                 } else if (object.isGif()) {
-                                    if (Build.VERSION.SDK_INT >= 19 && !TextUtils.isEmpty(object.messageOwner.message)) {
+                                    if (Build.VERSION.SDK_INT >= 19 && !object.isSecretMedia() && !TextUtils.isEmpty(object.messageOwner.message)) {
                                         String message = "\uD83C\uDFAC " + object.messageOwner.message;
                                         return LocaleController.formatString(R.string.NotificationActionPinnedText, name, message, getTitle(chat));
                                     } else {
@@ -2230,7 +2230,7 @@ public class NotificationsController extends BaseController implements Notificat
                                         return LocaleController.formatString(R.string.NotificationActionPinnedSticker, name, getTitle(chat));
                                     }
                                 } else if (object.messageOwner.media instanceof TLRPC.TL_messageMediaDocument) {
-                                    if (Build.VERSION.SDK_INT >= 19 && !TextUtils.isEmpty(object.messageOwner.message)) {
+                                    if (Build.VERSION.SDK_INT >= 19 && !object.isSecretMedia() && !TextUtils.isEmpty(object.messageOwner.message)) {
                                         String message = "\uD83D\uDCCE " + object.messageOwner.message;
                                         return LocaleController.formatString(R.string.NotificationActionPinnedText, name, message, getTitle(chat));
                                     } else {
@@ -2254,7 +2254,7 @@ public class NotificationsController extends BaseController implements Notificat
                                     TLRPC.TL_messageMediaToDo mediaPoll = (TLRPC.TL_messageMediaToDo) object.messageOwner.media;
                                     return LocaleController.formatString(R.string.NotificationActionPinnedTodo2, name, getTitle(chat), mediaPoll.todo.title.text);
                                 } else if (object.messageOwner.media instanceof TLRPC.TL_messageMediaPhoto) {
-                                    if (Build.VERSION.SDK_INT >= 19 && !TextUtils.isEmpty(object.messageOwner.message)) {
+                                    if (Build.VERSION.SDK_INT >= 19 && !object.isSecretMedia() && !TextUtils.isEmpty(object.messageOwner.message)) {
                                         String message = "\uD83D\uDDBC " + object.messageOwner.message;
                                         return LocaleController.formatString(R.string.NotificationActionPinnedText, name, message, getTitle(chat));
                                     } else {
@@ -2280,14 +2280,14 @@ public class NotificationsController extends BaseController implements Notificat
                                 if (object.isMusic()) {
                                     return LocaleController.formatString(R.string.NotificationActionPinnedMusicChannel, getTitle(chat));
                                 } else if (object.isVideo()) {
-                                    if (Build.VERSION.SDK_INT >= 19 && !TextUtils.isEmpty(object.messageOwner.message)) {
+                                    if (Build.VERSION.SDK_INT >= 19 && !object.isSecretMedia() && !TextUtils.isEmpty(object.messageOwner.message)) {
                                         String message = "\uD83D\uDCF9 " + object.messageOwner.message;
                                         return LocaleController.formatString(R.string.NotificationActionPinnedTextChannel, getTitle(chat), message);
                                     } else {
                                         return LocaleController.formatString(R.string.NotificationActionPinnedVideoChannel, getTitle(chat));
                                     }
                                 } else if (object.isGif()) {
-                                    if (Build.VERSION.SDK_INT >= 19 && !TextUtils.isEmpty(object.messageOwner.message)) {
+                                    if (Build.VERSION.SDK_INT >= 19 && !object.isSecretMedia() && !TextUtils.isEmpty(object.messageOwner.message)) {
                                         String message = "\uD83C\uDFAC " + object.messageOwner.message;
                                         return LocaleController.formatString(R.string.NotificationActionPinnedTextChannel, getTitle(chat), message);
                                     } else {
@@ -2305,7 +2305,7 @@ public class NotificationsController extends BaseController implements Notificat
                                         return LocaleController.formatString(R.string.NotificationActionPinnedStickerChannel, getTitle(chat));
                                     }
                                 } else if (object.messageOwner.media instanceof TLRPC.TL_messageMediaDocument) {
-                                    if (Build.VERSION.SDK_INT >= 19 && !TextUtils.isEmpty(object.messageOwner.message)) {
+                                    if (Build.VERSION.SDK_INT >= 19 && !object.isSecretMedia() && !TextUtils.isEmpty(object.messageOwner.message)) {
                                         String message = "\uD83D\uDCCE " + object.messageOwner.message;
                                         return LocaleController.formatString(R.string.NotificationActionPinnedTextChannel, getTitle(chat), message);
                                     } else {
@@ -2329,7 +2329,7 @@ public class NotificationsController extends BaseController implements Notificat
                                     TLRPC.TL_messageMediaToDo mediaPoll = (TLRPC.TL_messageMediaToDo) object.messageOwner.media;
                                     return LocaleController.formatString(R.string.NotificationActionPinnedTodoChannel2, getTitle(chat), mediaPoll.todo.title.text);
                                 } else if (object.messageOwner.media instanceof TLRPC.TL_messageMediaPhoto) {
-                                    if (Build.VERSION.SDK_INT >= 19 && !TextUtils.isEmpty(object.messageOwner.message)) {
+                                    if (Build.VERSION.SDK_INT >= 19 && !object.isSecretMedia() && !TextUtils.isEmpty(object.messageOwner.message)) {
                                         String message = "\uD83D\uDDBC " + object.messageOwner.message;
                                         return LocaleController.formatString(R.string.NotificationActionPinnedTextChannel, getTitle(chat), message);
                                     } else {
@@ -2355,14 +2355,14 @@ public class NotificationsController extends BaseController implements Notificat
                                 if (object.isMusic()) {
                                     return LocaleController.formatString(R.string.NotificationActionPinnedMusicUser, name);
                                 } else if (object.isVideo()) {
-                                    if (Build.VERSION.SDK_INT >= 19 && !TextUtils.isEmpty(object.messageOwner.message)) {
+                                    if (Build.VERSION.SDK_INT >= 19 && !object.isSecretMedia() && !TextUtils.isEmpty(object.messageOwner.message)) {
                                         String message = "\uD83D\uDCF9 " + object.messageOwner.message;
                                         return LocaleController.formatString(R.string.NotificationActionPinnedTextUser, name, message);
                                     } else {
                                         return LocaleController.formatString(R.string.NotificationActionPinnedVideoUser, name);
                                     }
                                 } else if (object.isGif()) {
-                                    if (Build.VERSION.SDK_INT >= 19 && !TextUtils.isEmpty(object.messageOwner.message)) {
+                                    if (Build.VERSION.SDK_INT >= 19 && !object.isSecretMedia() && !TextUtils.isEmpty(object.messageOwner.message)) {
                                         String message = "\uD83C\uDFAC " + object.messageOwner.message;
                                         return LocaleController.formatString(R.string.NotificationActionPinnedTextUser, name, message);
                                     } else {
@@ -2380,7 +2380,7 @@ public class NotificationsController extends BaseController implements Notificat
                                         return LocaleController.formatString(R.string.NotificationActionPinnedStickerUser, name);
                                     }
                                 } else if (object.messageOwner.media instanceof TLRPC.TL_messageMediaDocument) {
-                                    if (Build.VERSION.SDK_INT >= 19 && !TextUtils.isEmpty(object.messageOwner.message)) {
+                                    if (Build.VERSION.SDK_INT >= 19 && !object.isSecretMedia() && !TextUtils.isEmpty(object.messageOwner.message)) {
                                         String message = "\uD83D\uDCCE " + object.messageOwner.message;
                                         return LocaleController.formatString(R.string.NotificationActionPinnedTextUser, name, message);
                                     } else {
@@ -2404,7 +2404,7 @@ public class NotificationsController extends BaseController implements Notificat
                                     TLRPC.TL_messageMediaToDo mediaPoll = (TLRPC.TL_messageMediaToDo) object.messageOwner.media;
                                     return LocaleController.formatString(R.string.NotificationActionPinnedTodoUser, name, mediaPoll.todo.title.text);
                                 } else if (object.messageOwner.media instanceof TLRPC.TL_messageMediaPhoto) {
-                                    if (Build.VERSION.SDK_INT >= 19 && !TextUtils.isEmpty(object.messageOwner.message)) {
+                                    if (Build.VERSION.SDK_INT >= 19 && !object.isSecretMedia() && !TextUtils.isEmpty(object.messageOwner.message)) {
                                         String message = "\uD83D\uDDBC " + object.messageOwner.message;
                                         return LocaleController.formatString(R.string.NotificationActionPinnedTextUser, name, message);
                                     } else {
@@ -2482,7 +2482,7 @@ public class NotificationsController extends BaseController implements Notificat
                     } else if (messageObject.isRoundOnce()) {
                         return LocaleController.getString(R.string.AttachOnceRound);
                     } else if (messageObject.messageOwner.media instanceof TLRPC.TL_messageMediaPhoto) {
-                        if (Build.VERSION.SDK_INT >= 19 && !TextUtils.isEmpty(messageObject.messageOwner.message)) {
+                        if (Build.VERSION.SDK_INT >= 19 && !messageObject.isSecretMedia() && !TextUtils.isEmpty(messageObject.messageOwner.message)) {
                             return "\uD83D\uDDBC " + replaceSpoilers(messageObject);
                         } else if (messageObject.messageOwner.media.ttl_seconds != 0) {
                             return LocaleController.getString(R.string.AttachDestructingPhoto);
@@ -2490,7 +2490,7 @@ public class NotificationsController extends BaseController implements Notificat
                             return LocaleController.getString(R.string.AttachPhoto);
                         }
                     } else if (messageObject.isVideo()) {
-                        if (Build.VERSION.SDK_INT >= 19 && !TextUtils.isEmpty(messageObject.messageOwner.message)) {
+                        if (Build.VERSION.SDK_INT >= 19 && !messageObject.isSecretMedia() && !TextUtils.isEmpty(messageObject.messageOwner.message)) {
                             return "\uD83D\uDCF9 " + replaceSpoilers(messageObject);
                         } else if (messageObject.messageOwner.media.ttl_seconds != 0) {
                             return LocaleController.getString(R.string.AttachDestructingVideo);
@@ -2532,13 +2532,13 @@ public class NotificationsController extends BaseController implements Notificat
                                 return LocaleController.getString(R.string.AttachSticker);
                             }
                         } else if (messageObject.isGif()) {
-                            if (Build.VERSION.SDK_INT >= 19 && !TextUtils.isEmpty(messageObject.messageOwner.message)) {
+                            if (Build.VERSION.SDK_INT >= 19 && !messageObject.isSecretMedia() && !TextUtils.isEmpty(messageObject.messageOwner.message)) {
                                 return "\uD83C\uDFAC " + replaceSpoilers(messageObject);
                             } else {
                                 return LocaleController.getString(R.string.AttachGif);
                             }
                         } else {
-                            if (Build.VERSION.SDK_INT >= 19 && !TextUtils.isEmpty(messageObject.messageOwner.message)) {
+                            if (Build.VERSION.SDK_INT >= 19 && !messageObject.isSecretMedia() && !TextUtils.isEmpty(messageObject.messageOwner.message)) {
                                 return "\uD83D\uDCCE " + replaceSpoilers(messageObject);
                             } else {
                                 return LocaleController.getString(R.string.AttachDocument);
@@ -2767,7 +2767,7 @@ public class NotificationsController extends BaseController implements Notificat
                                 msg = LocaleController.formatString(R.string.NotificationMessageNoText, name);
                             }
                         } else if (messageObject.messageOwner.media instanceof TLRPC.TL_messageMediaPhoto) {
-                            if (!shortMessage && Build.VERSION.SDK_INT >= 19 && !TextUtils.isEmpty(messageObject.messageOwner.message)) {
+                            if (!shortMessage && Build.VERSION.SDK_INT >= 19 && !messageObject.isSecretMedia() && !TextUtils.isEmpty(messageObject.messageOwner.message)) {
                                 msg = LocaleController.formatString(R.string.NotificationMessageText, name, "\uD83D\uDDBC " + messageObject.messageOwner.message);
                                 text[0] = true;
                             } else {
@@ -2778,7 +2778,7 @@ public class NotificationsController extends BaseController implements Notificat
                                 }
                             }
                         } else if (messageObject.isVideo()) {
-                            if (!shortMessage && Build.VERSION.SDK_INT >= 19 && !TextUtils.isEmpty(messageObject.messageOwner.message)) {
+                            if (!shortMessage && Build.VERSION.SDK_INT >= 19 && !messageObject.isSecretMedia() && !TextUtils.isEmpty(messageObject.messageOwner.message)) {
                                 msg = LocaleController.formatString(R.string.NotificationMessageText, name, "\uD83D\uDCF9 " + messageObject.messageOwner.message);
                                 text[0] = true;
                             } else {
@@ -2827,14 +2827,14 @@ public class NotificationsController extends BaseController implements Notificat
                                     msg = LocaleController.formatString(R.string.NotificationMessageSticker, name);
                                 }
                             } else if (messageObject.isGif()) {
-                                if (!shortMessage && Build.VERSION.SDK_INT >= 19 && !TextUtils.isEmpty(messageObject.messageOwner.message)) {
+                                if (!shortMessage && Build.VERSION.SDK_INT >= 19 && !messageObject.isSecretMedia() && !TextUtils.isEmpty(messageObject.messageOwner.message)) {
                                     msg = LocaleController.formatString(R.string.NotificationMessageText, name, "\uD83C\uDFAC " + messageObject.messageOwner.message);
                                     text[0] = true;
                                 } else {
                                     msg = LocaleController.formatString(R.string.NotificationMessageGif, name);
                                 }
                             } else {
-                                if (!shortMessage && Build.VERSION.SDK_INT >= 19 && !TextUtils.isEmpty(messageObject.messageOwner.message)) {
+                                if (!shortMessage && Build.VERSION.SDK_INT >= 19 && !messageObject.isSecretMedia() && !TextUtils.isEmpty(messageObject.messageOwner.message)) {
                                     msg = LocaleController.formatString(R.string.NotificationMessageText, name, "\uD83D\uDCCE " + messageObject.messageOwner.message);
                                     text[0] = true;
                                 } else {
@@ -3000,14 +3000,14 @@ public class NotificationsController extends BaseController implements Notificat
                                     if (object.isMusic()) {
                                         msg = LocaleController.formatString(R.string.NotificationActionPinnedMusic, name, getTitle(chat));
                                     } else if (object.isVideo()) {
-                                        if (Build.VERSION.SDK_INT >= 19 && !TextUtils.isEmpty(object.messageOwner.message)) {
+                                        if (Build.VERSION.SDK_INT >= 19 && !object.isSecretMedia() && !TextUtils.isEmpty(object.messageOwner.message)) {
                                             String message = "\uD83D\uDCF9 " + object.messageOwner.message;
                                             msg = LocaleController.formatString(R.string.NotificationActionPinnedText, name, message, getTitle(chat));
                                         } else {
                                             msg = LocaleController.formatString(R.string.NotificationActionPinnedVideo, name, getTitle(chat));
                                         }
                                     } else if (object.isGif()) {
-                                        if (Build.VERSION.SDK_INT >= 19 && !TextUtils.isEmpty(object.messageOwner.message)) {
+                                        if (Build.VERSION.SDK_INT >= 19 && !object.isSecretMedia() && !TextUtils.isEmpty(object.messageOwner.message)) {
                                             String message = "\uD83C\uDFAC " + object.messageOwner.message;
                                             msg = LocaleController.formatString(R.string.NotificationActionPinnedText, name, message, getTitle(chat));
                                         } else {
@@ -3025,7 +3025,7 @@ public class NotificationsController extends BaseController implements Notificat
                                             msg = LocaleController.formatString(R.string.NotificationActionPinnedSticker, name, getTitle(chat));
                                         }
                                     } else if (object.messageOwner.media instanceof TLRPC.TL_messageMediaDocument) {
-                                        if (Build.VERSION.SDK_INT >= 19 && !TextUtils.isEmpty(object.messageOwner.message)) {
+                                        if (Build.VERSION.SDK_INT >= 19 && !object.isSecretMedia() && !TextUtils.isEmpty(object.messageOwner.message)) {
                                             String message = "\uD83D\uDCCE " + object.messageOwner.message;
                                             msg = LocaleController.formatString(R.string.NotificationActionPinnedText, name, message, getTitle(chat));
                                         } else {
@@ -3049,7 +3049,7 @@ public class NotificationsController extends BaseController implements Notificat
                                         TLRPC.TL_messageMediaToDo mediaPoll = (TLRPC.TL_messageMediaToDo) object.messageOwner.media;
                                         msg = LocaleController.formatString(R.string.NotificationActionPinnedTodo2, name, getTitle(chat), mediaPoll.todo.title.text);
                                     } else if (object.messageOwner.media instanceof TLRPC.TL_messageMediaPhoto) {
-                                        if (Build.VERSION.SDK_INT >= 19 && !TextUtils.isEmpty(object.messageOwner.message)) {
+                                        if (Build.VERSION.SDK_INT >= 19 && !object.isSecretMedia() && !TextUtils.isEmpty(object.messageOwner.message)) {
                                             String message = "\uD83D\uDDBC " + object.messageOwner.message;
                                             msg = LocaleController.formatString(R.string.NotificationActionPinnedText, name, message, getTitle(chat));
                                         } else {
@@ -3075,14 +3075,14 @@ public class NotificationsController extends BaseController implements Notificat
                                     if (object.isMusic()) {
                                         msg = LocaleController.formatString(R.string.NotificationActionPinnedMusicChannel, getTitle(chat));
                                     } else if (object.isVideo()) {
-                                        if (Build.VERSION.SDK_INT >= 19 && !TextUtils.isEmpty(object.messageOwner.message)) {
+                                        if (Build.VERSION.SDK_INT >= 19 && !object.isSecretMedia() && !TextUtils.isEmpty(object.messageOwner.message)) {
                                             String message = "\uD83D\uDCF9 " + object.messageOwner.message;
                                             msg = LocaleController.formatString(R.string.NotificationActionPinnedTextChannel, getTitle(chat), message);
                                         } else {
                                             msg = LocaleController.formatString(R.string.NotificationActionPinnedVideoChannel, getTitle(chat));
                                         }
                                     } else if (object.isGif()) {
-                                        if (Build.VERSION.SDK_INT >= 19 && !TextUtils.isEmpty(object.messageOwner.message)) {
+                                        if (Build.VERSION.SDK_INT >= 19 && !object.isSecretMedia() && !TextUtils.isEmpty(object.messageOwner.message)) {
                                             String message = "\uD83C\uDFAC " + object.messageOwner.message;
                                             msg = LocaleController.formatString(R.string.NotificationActionPinnedTextChannel, getTitle(chat), message);
                                         } else {
@@ -3100,7 +3100,7 @@ public class NotificationsController extends BaseController implements Notificat
                                             msg = LocaleController.formatString(R.string.NotificationActionPinnedStickerChannel, getTitle(chat));
                                         }
                                     } else if (object.messageOwner.media instanceof TLRPC.TL_messageMediaDocument) {
-                                        if (Build.VERSION.SDK_INT >= 19 && !TextUtils.isEmpty(object.messageOwner.message)) {
+                                        if (Build.VERSION.SDK_INT >= 19 && !object.isSecretMedia() && !TextUtils.isEmpty(object.messageOwner.message)) {
                                             String message = "\uD83D\uDCCE " + object.messageOwner.message;
                                             msg = LocaleController.formatString(R.string.NotificationActionPinnedTextChannel, getTitle(chat), message);
                                         } else {
@@ -3124,7 +3124,7 @@ public class NotificationsController extends BaseController implements Notificat
                                         TLRPC.TL_messageMediaToDo mediaPoll = (TLRPC.TL_messageMediaToDo) object.messageOwner.media;
                                         msg = LocaleController.formatString(R.string.NotificationActionPinnedTodoChannel2, getTitle(chat), mediaPoll.todo.title.text);
                                     } else if (object.messageOwner.media instanceof TLRPC.TL_messageMediaPhoto) {
-                                        if (Build.VERSION.SDK_INT >= 19 && !TextUtils.isEmpty(object.messageOwner.message)) {
+                                        if (Build.VERSION.SDK_INT >= 19 && !object.isSecretMedia() && !TextUtils.isEmpty(object.messageOwner.message)) {
                                             String message = "\uD83D\uDDBC " + object.messageOwner.message;
                                             msg = LocaleController.formatString(R.string.NotificationActionPinnedTextChannel, getTitle(chat), message);
                                         } else {
@@ -3171,14 +3171,14 @@ public class NotificationsController extends BaseController implements Notificat
                             TLRPC.TL_messageMediaPaidMedia paidMedia = (TLRPC.TL_messageMediaPaidMedia) MessageObject.getMedia(messageObject);
                             msg = LocaleController.formatPluralString("NotificationChannelMessagePaidMedia", (int) paidMedia.stars_amount, getTitle(chat));
                         } else if (messageObject.messageOwner.media instanceof TLRPC.TL_messageMediaPhoto) {
-                            if (!shortMessage && Build.VERSION.SDK_INT >= 19 && !TextUtils.isEmpty(messageObject.messageOwner.message)) {
+                            if (!shortMessage && Build.VERSION.SDK_INT >= 19 && !messageObject.isSecretMedia() && !TextUtils.isEmpty(messageObject.messageOwner.message)) {
                                 msg = LocaleController.formatString(R.string.NotificationMessageText, name, "\uD83D\uDDBC " + messageObject.messageOwner.message);
                                 text[0] = true;
                             } else {
                                 msg = LocaleController.formatString(R.string.ChannelMessagePhoto, name);
                             }
                         } else if (messageObject.isVideo()) {
-                            if (!shortMessage && Build.VERSION.SDK_INT >= 19 && !TextUtils.isEmpty(messageObject.messageOwner.message)) {
+                            if (!shortMessage && Build.VERSION.SDK_INT >= 19 && !messageObject.isSecretMedia() && !TextUtils.isEmpty(messageObject.messageOwner.message)) {
                                 msg = LocaleController.formatString(R.string.NotificationMessageText, name, "\uD83D\uDCF9 " + messageObject.messageOwner.message);
                                 text[0] = true;
                             } else {
@@ -3219,14 +3219,14 @@ public class NotificationsController extends BaseController implements Notificat
                                     msg = LocaleController.formatString(R.string.ChannelMessageSticker, name);
                                 }
                             } else if (messageObject.isGif()) {
-                                if (!shortMessage && Build.VERSION.SDK_INT >= 19 && !TextUtils.isEmpty(messageObject.messageOwner.message)) {
+                                if (!shortMessage && Build.VERSION.SDK_INT >= 19 && !messageObject.isSecretMedia() && !TextUtils.isEmpty(messageObject.messageOwner.message)) {
                                     msg = LocaleController.formatString(R.string.NotificationMessageText, name, "\uD83C\uDFAC " + messageObject.messageOwner.message);
                                     text[0] = true;
                                 } else {
                                     msg = LocaleController.formatString(R.string.ChannelMessageGIF, name);
                                 }
                             } else {
-                                if (!shortMessage && Build.VERSION.SDK_INT >= 19 && !TextUtils.isEmpty(messageObject.messageOwner.message)) {
+                                if (!shortMessage && Build.VERSION.SDK_INT >= 19 && !messageObject.isSecretMedia() && !TextUtils.isEmpty(messageObject.messageOwner.message)) {
                                     msg = LocaleController.formatString(R.string.NotificationMessageText, name, "\uD83D\uDCCE " + messageObject.messageOwner.message);
                                     text[0] = true;
                                 } else {
@@ -3252,13 +3252,13 @@ public class NotificationsController extends BaseController implements Notificat
                             TLRPC.TL_messageMediaPaidMedia paidMedia = (TLRPC.TL_messageMediaPaidMedia) MessageObject.getMedia(messageObject);
                             msg = LocaleController.formatPluralString("NotificationChatMessagePaidMedia", (int) paidMedia.stars_amount, name, getTitle(chat));
                         } else if (messageObject.messageOwner.media instanceof TLRPC.TL_messageMediaPhoto) {
-                            if (!shortMessage && Build.VERSION.SDK_INT >= 19 && !TextUtils.isEmpty(messageObject.messageOwner.message)) {
+                            if (!shortMessage && Build.VERSION.SDK_INT >= 19 && !messageObject.isSecretMedia() && !TextUtils.isEmpty(messageObject.messageOwner.message)) {
                                 msg = LocaleController.formatString(R.string.NotificationMessageGroupText, name, getTitle(chat), "\uD83D\uDDBC " + messageObject.messageOwner.message);
                             } else {
                                 msg = LocaleController.formatString(R.string.NotificationMessageGroupPhoto, name, getTitle(chat));
                             }
                         } else if (messageObject.isVideo()) {
-                            if (!shortMessage && Build.VERSION.SDK_INT >= 19 && !TextUtils.isEmpty(messageObject.messageOwner.message)) {
+                            if (!shortMessage && Build.VERSION.SDK_INT >= 19 && !messageObject.isSecretMedia() && !TextUtils.isEmpty(messageObject.messageOwner.message)) {
                                 msg = LocaleController.formatString(R.string.NotificationMessageGroupText, name, getTitle(chat), "\uD83D\uDCF9 " + messageObject.messageOwner.message);
                             } else {
                                 msg = LocaleController.formatString(R.string.NotificationMessageGroupVideo, name, getTitle(chat));
@@ -3302,13 +3302,13 @@ public class NotificationsController extends BaseController implements Notificat
                                     msg = LocaleController.formatString(R.string.NotificationMessageGroupSticker, name, getTitle(chat));
                                 }
                             } else if (messageObject.isGif()) {
-                                if (!shortMessage && Build.VERSION.SDK_INT >= 19 && !TextUtils.isEmpty(messageObject.messageOwner.message)) {
+                                if (!shortMessage && Build.VERSION.SDK_INT >= 19 && !messageObject.isSecretMedia() && !TextUtils.isEmpty(messageObject.messageOwner.message)) {
                                     msg = LocaleController.formatString(R.string.NotificationMessageGroupText, name, getTitle(chat), "\uD83C\uDFAC " + messageObject.messageOwner.message);
                                 } else {
                                     msg = LocaleController.formatString(R.string.NotificationMessageGroupGif, name, getTitle(chat));
                                 }
                             } else {
-                                if (!shortMessage && Build.VERSION.SDK_INT >= 19 && !TextUtils.isEmpty(messageObject.messageOwner.message)) {
+                                if (!shortMessage && Build.VERSION.SDK_INT >= 19 && !messageObject.isSecretMedia() && !TextUtils.isEmpty(messageObject.messageOwner.message)) {
                                     msg = LocaleController.formatString(R.string.NotificationMessageGroupText, name, getTitle(chat), "\uD83D\uDCCE " + messageObject.messageOwner.message);
                                 } else {
                                     msg = LocaleController.formatString(R.string.NotificationMessageGroupDocument, name, getTitle(chat));
