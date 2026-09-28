@@ -44,6 +44,11 @@ The row reappears when the chat is reopened, for as long as the app process
 keeps the job. Files found only in the older general cache count as incomplete
 until moved to the path the chat player uses.
 
+Tap the progress row to see a scrollable list of every selected song, with a
+title or filename, artist when available, transfer state, progress when
+available, and a failure reason. Each retryable failed song has its own Retry
+button; the row's Retry button still retries all failed songs.
+
 Selection uses Telegram's music classification: non-voice audio document
 attributes and its MIME fallbacks for FLAC, OGG, and Opus. Generic audio
 documents without those attributes can be excluded even when named MP3 or M4A.

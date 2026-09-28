@@ -73,6 +73,12 @@ final class PurplePinnedMusicBar extends LinearLayout implements PurplePinnedMus
         texts.addView(titleView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
         detailView = text(context, 13);
         texts.addView(detailView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 1, 0, 0));
+        setOnClickListener(view -> {
+            if (bound && snapshot != null) {
+                PurplePinnedMusicList.show(getContext(), resourcesProvider, account, dialogId, topicId);
+            }
+        });
+        setContentDescription(getString(R.string.PurplePinnedMusicFiles));
         addView(texts, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f, Gravity.CENTER_VERTICAL, 16, 6, 4, 8));
 
         pauseButton = button(context, R.drawable.msg_round_pause_m, R.string.PurplePinnedMusicBarPause);
