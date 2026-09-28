@@ -11428,6 +11428,8 @@
     <string name="PurpleLastSeenAgoHours_one">%1$d hour ago</string>
     <string name="PurpleLastSeenAgoHours_other">%1$d hours ago</string>
     <string name="PurpleContactsVisibleLastSeen">Visible or peekable last seen</string>
+    <string name="PurpleContactsFilterEmptyTitle">No contacts match this filter</string>
+    <string name="PurpleContactsFilterEmptySubtitle">No contacts have a visible or peekable Last Seen. Turn off the filter to see all contacts.</string>
     <!-- Purple: Last Seen Peek, and its recent reads on the settings screen -->
     <string name="PurpleTradeTitle">Last Seen Peek</string>
     <string name="PurpleTradeText">Temporarily share your Last Seen with %1$s only, for up to %2$d seconds, so you can read theirs once. Your privacy settings will then be restored exactly as they were. Nobody is notified. If they hide their Last Seen for another reason, nothing will be read.</string>

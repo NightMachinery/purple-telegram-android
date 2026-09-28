@@ -603,6 +603,11 @@ public class ContactsAdapter extends RecyclerListView.SectionsAdapter {
         switch (holder.getItemViewType()) {
             case EMPTY_CELL:
                 holder.itemView.setPadding(0, dp(!hasPhonebook ? 96 : 25), 0, dp(18));
+                if (holder.itemView instanceof ViewGroup
+                        && ((ViewGroup) holder.itemView).getChildAt(0) instanceof ContactsEmptyView) {
+                    ((ContactsEmptyView) ((ViewGroup) holder.itemView).getChildAt(0))
+                            .setFilteredEmptyState(filteringUsers());
+                }
                 break;
             case INVITE_CELL:
                 InviteUserCell inviteUserCell = (InviteUserCell) holder.itemView;
