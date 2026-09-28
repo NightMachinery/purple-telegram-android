@@ -5419,7 +5419,7 @@ public class NotificationsController extends BaseController implements Notificat
                     String message = getShortStringForMessage(messageObject, senderName, preview);
                     if (dialogId == UserObject.OAUTH) {
                         senderName[0] = LocaleController.getString(R.string.BotAuthNotificationTitle);
-                    } else if (dialogId == UserObject.VERIFY && messageObject.getForwardedFromId() != null) {
+                    } else if (dialogId == UserObject.VERIFY && messageObject.getForwardedFromId() != null && (!waitingForPasscode || previewAlways)) {
                         senderName[0] = getMessagesController().getPeerName(messageObject.getForwardedFromId());
                     } else if (dialogId == selfUserId) {
                         senderName[0] = name;
