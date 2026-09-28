@@ -19,8 +19,10 @@ group. Repeated songs are queued once, into Telegram's managed cache rather
 than the phone's public Music or Downloads folders. Downloads continue after
 the dialog or chat closes. The download job limits itself to two concurrent
 tracks and retries server rate-limit failures after a cooldown. Its completed
-count reflects files present in the cache, and failed tracks can be retried
-without fetching the completed ones again.
+count reflects complete files in Telegram's managed media directories,
+including songs already downloaded by another chat action. Partial transfer
+files do not count. Failed tracks can be retried without fetching completed
+ones again. The progress row and job state last only until the app process ends.
 
 While a job exists for the open chat or topic, a progress row sits in the
 chat's top panel, below the pinned message. It shows the job's state
