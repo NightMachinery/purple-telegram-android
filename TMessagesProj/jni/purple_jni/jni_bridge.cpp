@@ -1629,6 +1629,24 @@ Java_org_telegram_messenger_purple_PurpleCore_visibleNative(
 		| (views << kViewShift);
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_previewAlwaysNative(
+		JNIEnv *,
+		jclass,
+		jlong bareId,
+		jint kind) {
+	if (bareId <= 0 || kind < int(Purple::ChatKind::Private)
+		|| kind > int(Purple::ChatKind::Bot)) {
+		return JNI_FALSE;
+	}
+	auto &gate = TheGate();
+	const auto lock = std::lock_guard(gate.mutex);
+	return gate.loaded && Purple::PreviewAlways(
+		gate.settings,
+		Purple::PeerIdValue(bareId),
+		Purple::ChatKind(kind));
+}
+
 // Turns a preset on, as a pure function of the state text: the caller writes
 // what comes back and calls load() again, which is what makes the file and the
 // resolution move together. It touches nothing shared, so it takes no lock -

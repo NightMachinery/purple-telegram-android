@@ -136,6 +136,8 @@ public final class PurpleCore {
      */
     private static native int visibleNative(long bareId, int kind);
 
+    private static native boolean previewAlwaysNative(long bareId, int kind);
+
     /**
      * Returns the state.toml text that turns {@code preset} on, without
      * touching the gate. Prefer {@link #setPreset(byte[], String)}.
@@ -1568,6 +1570,13 @@ public final class PurpleCore {
             ensureLoaded();
         }
         return visibleNative(bareId, kind);
+    }
+
+    public static boolean previewAlways(long bareId, int kind) {
+        if (!loaded) {
+            ensureLoaded();
+        }
+        return previewAlwaysNative(bareId, kind);
     }
 
     /**

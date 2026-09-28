@@ -1905,7 +1905,11 @@ public class NotificationsController extends BaseController implements Notificat
     }
 
     public String getShortStringForMessage(MessageObject messageObject, String[] userName, boolean[] preview) {
-        if (AndroidUtilities.needShowPasscode() || SharedConfig.isWaitingForPasscodeEnter) {
+        boolean previewAlways = !messageObject.isStoryPush
+                && !messageObject.isStoryMentionPush
+                && !messageObject.isStoryReactionPush
+                && PurpleGate.previewAlways(currentAccount, messageObject.getDialogId());
+        if (!previewAlways && (AndroidUtilities.needShowPasscode() || SharedConfig.isWaitingForPasscodeEnter)) {
             return LocaleController.getString(R.string.NotificationHiddenMessage);
         }
         long dialogId = messageObject.messageOwner.dialog_id;
@@ -1921,7 +1925,7 @@ public class NotificationsController extends BaseController implements Notificat
                 if (Build.VERSION.SDK_INT > Build.VERSION_CODES.O_MR1) {
                     userName[0] = messageObject.localName;
                 }
-                if (!dialogPreviewEnabled || !preferences.getBoolean("EnablePreviewAll", true)) {
+                if (!previewAlways && (!dialogPreviewEnabled || !preferences.getBoolean("EnablePreviewAll", true))) {
                     if (preview != null) {
                         preview[0] = false;
                     }
@@ -1933,7 +1937,7 @@ public class NotificationsController extends BaseController implements Notificat
                 } else if (Build.VERSION.SDK_INT > Build.VERSION_CODES.O_MR1) {
                     userName[0] = messageObject.localName;
                 }
-                if (!dialogPreviewEnabled || !messageObject.localChannel && !preferences.getBoolean("EnablePreviewGroup", true) || messageObject.localChannel && !preferences.getBoolean("EnablePreviewChannel", true)) {
+                if (!previewAlways && (!dialogPreviewEnabled || !messageObject.localChannel && !preferences.getBoolean("EnablePreviewGroup", true) || messageObject.localChannel && !preferences.getBoolean("EnablePreviewChannel", true))) {
                     if (preview != null) {
                         preview[0] = false;
                     }
@@ -2026,7 +2030,7 @@ public class NotificationsController extends BaseController implements Notificat
             if (messageObject.messageOwner != null && messageObject.messageOwner.rich_message != null) {
                 return messageObject.messageText.toString();
             }
-            if (dialogPreviewEnabled && (chat_id == 0 && fromId != 0 && preferences.getBoolean("EnablePreviewAll", true) || chat_id != 0 && (!isChannel && preferences.getBoolean("EnablePreviewGroup", true) || isChannel && preferences.getBoolean("EnablePreviewChannel", true)))) {
+            if (previewAlways || dialogPreviewEnabled && (chat_id == 0 && fromId != 0 && preferences.getBoolean("EnablePreviewAll", true) || chat_id != 0 && (!isChannel && preferences.getBoolean("EnablePreviewGroup", true) || isChannel && preferences.getBoolean("EnablePreviewChannel", true)))) {
                 if (messageObject.messageOwner instanceof TLRPC.TL_messageService) {
                     userName[0] = null;
                     if (messageObject.messageOwner.action instanceof TLRPC.TL_messageActionSetSameChatWallPaper) {
@@ -2591,7 +2595,11 @@ public class NotificationsController extends BaseController implements Notificat
     }
 
     private String getStringForMessage(MessageObject messageObject, boolean shortMessage, boolean[] text, boolean[] preview) {
-        if (AndroidUtilities.needShowPasscode() || SharedConfig.isWaitingForPasscodeEnter) {
+        boolean previewAlways = !messageObject.isStoryPush
+                && !messageObject.isStoryMentionPush
+                && !messageObject.isStoryReactionPush
+                && PurpleGate.previewAlways(currentAccount, messageObject.getDialogId());
+        if (!previewAlways && (AndroidUtilities.needShowPasscode() || SharedConfig.isWaitingForPasscodeEnter)) {
             return LocaleController.getString(R.string.YouHaveNewMessage);
         }
         if (messageObject.isStoryPush || messageObject.isStoryMentionPush) {
@@ -2611,14 +2619,14 @@ public class NotificationsController extends BaseController implements Notificat
         boolean dialogPreviewEnabled = preferences.getBoolean("content_preview_" + dialogId, true);
         if (messageObject.isFcmMessage()) {
             if (chatId == 0 && fromId != 0) {
-                if (!dialogPreviewEnabled || !preferences.getBoolean("EnablePreviewAll", true)) {
+                if (!previewAlways && (!dialogPreviewEnabled || !preferences.getBoolean("EnablePreviewAll", true))) {
                     if (preview != null) {
                         preview[0] = false;
                     }
                     return LocaleController.formatString(R.string.NotificationMessageNoText, messageObject.localName);
                 }
             } else if (chatId != 0) {
-                if (!dialogPreviewEnabled || !messageObject.localChannel && !preferences.getBoolean("EnablePreviewGroup", true) || messageObject.localChannel && !preferences.getBoolean("EnablePreviewChannel", true)) {
+                if (!previewAlways && (!dialogPreviewEnabled || !messageObject.localChannel && !preferences.getBoolean("EnablePreviewGroup", true) || messageObject.localChannel && !preferences.getBoolean("EnablePreviewChannel", true))) {
                     if (preview != null) {
                         preview[0] = false;
                     }
@@ -2689,7 +2697,7 @@ public class NotificationsController extends BaseController implements Notificat
             msg = LocaleController.getString(R.string.YouHaveNewMessage);
         } else {
             if (chatId == 0 && fromId != 0) {
-                if (dialogPreviewEnabled && preferences.getBoolean("EnablePreviewAll", true)) {
+                if (previewAlways || dialogPreviewEnabled && preferences.getBoolean("EnablePreviewAll", true)) {
                     if (messageObject.messageOwner instanceof TLRPC.TL_messageService) {
                         if (messageObject.messageOwner.action instanceof TLRPC.TL_messageActionChangeCreator ||
                             messageObject.messageOwner.action instanceof TLRPC.TL_messageActionNewCreatorPending) {
@@ -2850,7 +2858,7 @@ public class NotificationsController extends BaseController implements Notificat
                 }
             } else if (chatId != 0) {
                 boolean isChannel = ChatObject.isChannel(chat) && !chat.megagroup;
-                if (dialogPreviewEnabled && (!isChannel && preferences.getBoolean("EnablePreviewGroup", true) || isChannel && preferences.getBoolean("EnablePreviewChannel", true))) {
+                if (previewAlways || dialogPreviewEnabled && (!isChannel && preferences.getBoolean("EnablePreviewGroup", true) || isChannel && preferences.getBoolean("EnablePreviewChannel", true))) {
                     if (messageObject.messageOwner instanceof TLRPC.TL_messageService) {
                         if (messageObject.messageOwner.action instanceof TLRPC.TL_messageActionChatAddUser) {
                             long singleUserId = messageObject.messageOwner.action.user_id;
@@ -4374,9 +4382,14 @@ public class NotificationsController extends BaseController implements Notificat
                 chatName = UserObject.getUserName(user);
             }
             boolean passcode = AndroidUtilities.needShowPasscode() || SharedConfig.isWaitingForPasscodeEnter;
+            boolean previewAlways = pushDialogs.size() == 1
+                    && !lastMessageObject.isStoryPush
+                    && !lastMessageObject.isStoryMentionPush
+                    && !lastMessageObject.isStoryReactionPush
+                    && PurpleGate.previewAlways(currentAccount, dialog_id);
             final boolean allowSummary = !"samsung".equalsIgnoreCase(Build.MANUFACTURER);
-            if (DialogObject.isEncryptedDialog(dialog_id) || allowSummary && pushDialogs.size() > 1 || passcode) {
-                if (passcode) {
+            if (DialogObject.isEncryptedDialog(dialog_id) || allowSummary && pushDialogs.size() > 1 || passcode && !previewAlways) {
+                if (passcode && !previewAlways) {
                     if (chatId != 0) {
                         name = LocaleController.getString(R.string.NotificationHiddenChatName);
                     } else {
@@ -4389,7 +4402,7 @@ public class NotificationsController extends BaseController implements Notificat
             } else {
                 name = chatName;
             }
-            if (lastMessageObject != null && (lastMessageObject.isReactionPush || lastMessageObject.isStoryReactionPush) && !preferences.getBoolean("EnableReactionsPreview", true)) {
+            if (lastMessageObject != null && (lastMessageObject.isReactionPush && !previewAlways || lastMessageObject.isStoryReactionPush) && !preferences.getBoolean("EnableReactionsPreview", true)) {
                 name = LocaleController.getString(R.string.NotificationHiddenName);
             }
 
@@ -4687,7 +4700,7 @@ public class NotificationsController extends BaseController implements Notificat
                         intent.putExtra("userId", userId);
                     }
                 }
-                if (AndroidUtilities.needShowPasscode() || SharedConfig.isWaitingForPasscodeEnter) {
+                if (passcode && !previewAlways) {
                     photoPath = null;
                 } else {
                     if (pushDialogs.size() == 1 && Build.VERSION.SDK_INT < 28) {
@@ -5223,13 +5236,18 @@ public class NotificationsController extends BaseController implements Notificat
                 photoPath = null;
             }
 
+            boolean previewAlways = !dialogKey.story
+                    && !lastMessageObject.isStoryReactionPush
+                    && PurpleGate.previewAlways(currentAccount, dialogId);
             if (waitingForPasscode) {
-                if (DialogObject.isChatDialog(dialogId)) {
-                    name = LocaleController.getString(R.string.NotificationHiddenChatName);
-                } else {
-                    name = LocaleController.getString(R.string.NotificationHiddenName);
+                if (!previewAlways) {
+                    if (DialogObject.isChatDialog(dialogId)) {
+                        name = LocaleController.getString(R.string.NotificationHiddenChatName);
+                    } else {
+                        name = LocaleController.getString(R.string.NotificationHiddenName);
+                    }
+                    photoPath = null;
                 }
-                photoPath = null;
                 canReply = false;
             }
 
@@ -5443,7 +5461,7 @@ public class NotificationsController extends BaseController implements Notificat
                     Person person = personCache.get(uid + ((long) topicId << 16));
                     CharSequence personName = "";
                     if (senderName[0] == null) {
-                        if (waitingForPasscode) {
+                        if (waitingForPasscode && !previewAlways) {
                             if (DialogObject.isChatDialog(dialogId)) {
                                 if (isChannel) {
                                     if (Build.VERSION.SDK_INT > Build.VERSION_CODES.O_MR1) {
@@ -5502,7 +5520,7 @@ public class NotificationsController extends BaseController implements Notificat
                     if (!DialogObject.isEncryptedDialog(dialogId)) {
                         boolean setPhoto = false;
                         if (preview[0] && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && !((ActivityManager) ApplicationLoader.applicationContext.getSystemService(Context.ACTIVITY_SERVICE)).isLowRamDevice()) {
-                            if (!waitingForPasscode && !messageObject.isSecretMedia() && (messageObject.type == MessageObject.TYPE_PHOTO || messageObject.isSticker())) {
+                            if ((!waitingForPasscode || previewAlways) && !messageObject.isSecretMedia() && (messageObject.type == MessageObject.TYPE_PHOTO || messageObject.isSticker())) {
                                 File attach = getFileLoader().getPathToMessage(messageObject.messageOwner);
                                 File blurredAttach;
                                 if (attach.exists() && messageObject.hasMediaSpoilers()) {
@@ -5590,7 +5608,7 @@ public class NotificationsController extends BaseController implements Notificat
                         if (!setPhoto) {
                             messagingStyle.addMessage(message, ((long) messageObject.messageOwner.date) * 1000, person);
                         }
-                        if (preview[0] && !waitingForPasscode && messageObject.isVoice()) {
+                        if (preview[0] && (!waitingForPasscode || previewAlways && !messageObject.isSecretMedia()) && messageObject.isVoice()) {
                             List<NotificationCompat.MessagingStyle.Message> messages = messagingStyle.getMessages();
                             if (!messages.isEmpty()) {
                                 File f = getFileLoader().getPathToMessage(messageObject.messageOwner);

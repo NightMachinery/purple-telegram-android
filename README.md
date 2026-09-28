@@ -656,6 +656,17 @@ view, a folder decides its own tab.
 
 ### Push notifications
 
+`[notifications].preview_always` in `settings.toml` lets messages and reactions
+from selected chats show their title, sender, content, and available media even
+when Purple Telegram's preview settings or passcode screen would otherwise hide
+them. Bots and channels are included by default. Set `preview_always = []` to
+remove those defaults, or use typed entries such as `"private:123"` and
+`"group:456"`. The full syntax is in
+`TMessagesProj/jni/purple/docs/notifications.md`. This affects displayed
+content only: Work Mode still controls delivery, passcode-locked replies stay
+disabled, secret chats and unresolved peers stay hidden, and Android's
+notification privacy settings still apply.
+
 There is no FCM push in this fork, and no Firebase project of your own will
 bring it back. Telegram's servers deliver pushes through Telegram's own Firebase
 project only, so a token from any other project is unusable to them — and the
