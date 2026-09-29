@@ -257,6 +257,7 @@ set_target_properties(qt6core PROPERTIES
 
 add_library(purplecore SHARED
         purple_jni/jni_bridge.cpp
+        purple_jni/account_sync_bridge.cpp
         purple/purple/purple_passcode.cpp
         purple/purple/purple_settings.cpp
         purple/purple/purple_splice.cpp
