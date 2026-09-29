@@ -52,6 +52,9 @@ public final class PurpleAccountSyncCore {
             byte[] state, int messageId, byte[] freshCanonicalServerRecord);
     private static native RawReply removeAbsentOwnConfigMessageNative(
             byte[] state, int messageId, int presenceKind);
+    private static native RawReply formatTimeOrderedSpaceIdNative(
+            long serverMillis, byte[] randomTail10);
+    private static native RawReply compareSpaceIdsNative(String a, String b);
 
     private static void expect(RawReply reply, String status, String error) {
         if (reply == null || !reply.metadataJson.contains("\"status\":\"" + status + "\"")
@@ -167,6 +170,7 @@ public final class PurpleAccountSyncCore {
 
     public static void main(String[] args) throws Exception {
         System.load(args[0]);
+        testTimeOrderedSpaceIds();
         final RawReply root = buildConfigRecordNative(ROOT, new byte[0][],
                 SPACE, INSTALL_A, "phone", "android", "Purple", 1, 0);
         expect(root, "Valid", "None");
@@ -504,5 +508,58 @@ public final class PurpleAccountSyncCore {
         expect(checkOwnConfigMessageDeletionNative(edited.state,
                 102, root.record), "Valid", "None");
         System.out.println("account sync JNI smoke passed");
+    }
+
+    private static void testTimeOrderedSpaceIds() {
+        final byte[] vectorTail = { 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
+        final RawReply vector = formatTimeOrderedSpaceIdNative(
+                0x000102030405L, vectorTail);
+        expect(vector, "Valid", "None");
+        if (!"sp-aaaqeayeaudaocajbifqydiob4".equals(field(vector, "id"))) {
+            throw new AssertionError(vector.metadataJson);
+        }
+        final RawReply earlier = formatTimeOrderedSpaceIdNative(
+                1, new byte[] { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 });
+        final RawReply later = formatTimeOrderedSpaceIdNative(
+                2, new byte[10]);
+        final String earlierId = field(earlier, "id");
+        final String laterId = field(later, "id");
+        expectComparison(earlierId, laterId, -1);
+        expectComparison(laterId, earlierId, 1);
+        expectComparison(earlierId, earlierId, 0);
+        final String lowEntropy = field(formatTimeOrderedSpaceIdNative(
+                2, new byte[10]), "id");
+        final String highEntropy = field(formatTimeOrderedSpaceIdNative(
+                2, new byte[] { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 }),
+                "id");
+        expectComparison(lowEntropy, highEntropy, -1);
+        expect(formatTimeOrderedSpaceIdNative(0, vectorTail),
+                "Invalid", "InvalidServerTime");
+        expect(formatTimeOrderedSpaceIdNative(-1, vectorTail),
+                "Invalid", "InvalidServerTime");
+        expect(formatTimeOrderedSpaceIdNative(1L << 48, vectorTail),
+                "Invalid", "InvalidServerTime");
+        expect(formatTimeOrderedSpaceIdNative(Long.MAX_VALUE, vectorTail),
+                "Invalid", "InvalidServerTime");
+        expect(formatTimeOrderedSpaceIdNative(1, null),
+                "Invalid", "NullInput");
+        expect(formatTimeOrderedSpaceIdNative(1, new byte[9]),
+                "Invalid", "InvalidEntropyLength");
+        expect(formatTimeOrderedSpaceIdNative(1, new byte[11]),
+                "Invalid", "InvalidEntropyLength");
+        expect(compareSpaceIdsNative(null, earlierId),
+                "Invalid", "NullInput");
+        expect(compareSpaceIdsNative("invalid", earlierId),
+                "Invalid", "InvalidId");
+        expect(compareSpaceIdsNative(earlierId, INSTALL_A),
+                "Invalid", "InvalidId");
+    }
+
+    private static void expectComparison(String a, String b, int expected) {
+        final RawReply reply = compareSpaceIdsNative(a, b);
+        expect(reply, "Valid", "None");
+        if (!reply.metadataJson.contains("\"comparison\":" + expected)) {
+            throw new AssertionError(reply.metadataJson);
+        }
     }
 }

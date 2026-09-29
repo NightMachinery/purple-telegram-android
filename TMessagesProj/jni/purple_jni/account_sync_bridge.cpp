@@ -1005,3 +1005,54 @@ Java_org_telegram_messenger_purple_PurpleAccountSyncCore_formatSpaceIdNative(
 		{ u"id"_q, *id },
 	});
 }
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_org_telegram_messenger_purple_PurpleAccountSyncCore_formatTimeOrderedSpaceIdNative(
+		JNIEnv *env, jclass, jlong serverMillis, jbyteArray randomTail) {
+	if (serverMillis <= 0 || uint64_t(serverMillis) >= (uint64_t(1) << 48)) {
+		return Invalid(env, u"InvalidServerTime"_q);
+	}
+	if (!randomTail) {
+		return Invalid(env, u"NullInput"_q);
+	}
+	if (env->GetArrayLength(randomTail) != 10) {
+		return Invalid(env, u"InvalidEntropyLength"_q);
+	}
+	auto bytes = QByteArray();
+	auto error = QString();
+	if (!ReadBytes(env, randomTail, bytes, error)) {
+		return Invalid(env, error);
+	}
+	const auto id = Purple::FormatTimeOrderedSyncSpaceId(
+		uint64_t(serverMillis), bytes);
+	if (!id) {
+		return Invalid(env, u"InvalidServerTime"_q);
+	}
+	return Reply(env, {
+		{ u"status"_q, u"Valid"_q },
+		{ u"error"_q, u"None"_q },
+		{ u"id"_q, *id },
+	});
+}
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_org_telegram_messenger_purple_PurpleAccountSyncCore_compareSpaceIdsNative(
+		JNIEnv *env, jclass, jstring a, jstring b) {
+	auto left = QString();
+	auto right = QString();
+	if (!a || !b) {
+		return Invalid(env, u"NullInput"_q);
+	}
+	if (!ReadString(env, a, left) || !ReadString(env, b, right)) {
+		return Invalid(env, u"JavaException"_q);
+	}
+	const auto comparison = Purple::CompareSyncSpaceIds(left, right);
+	if (!comparison) {
+		return Invalid(env, u"InvalidId"_q);
+	}
+	return Reply(env, {
+		{ u"status"_q, u"Valid"_q },
+		{ u"error"_q, u"None"_q },
+		{ u"comparison"_q, *comparison },
+	});
+}
