@@ -401,8 +401,9 @@ from it, so a refused write leaves the switch where the file is.
 The shared core now includes config version and remote-head classification,
 strict JSON canonicalization, validated uncompressed sync envelopes, and
 config payload inspection that checks ancestry, fingerprints, and TOML schema.
-It also validates device-local sync state and checks for cloned or rewound
-install state. These are foundations for account sync: the Android app has no
+The core can build canonical config records, though Android does not expose
+the builder through JNI or UI yet. It also validates device-local sync state
+and checks for cloned or rewound install state. These are foundations for account sync: the Android app has no
 account sync transport or user interface yet. Compressed envelopes remain
 future work.
 
