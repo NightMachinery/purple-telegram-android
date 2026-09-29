@@ -398,8 +398,11 @@ Share the file, and the path with a tap to copy. Every switch on it is written
 into `settings.toml` through the same splice the desktop uses and read back
 from it, so a refused write leaves the switch where the file is.
 
-The shared core now includes config version and remote-head classification for
-future account sync; this has no user-facing behavior yet.
+The shared core now includes config version and remote-head classification plus
+strict JSON canonicalization for future account sync. The JSON primitive
+preserves unknown fields, rejects duplicate keys and invalid Unicode, and
+accepts only exact safe integers. This foundation has no user-facing sync
+behavior yet.
 
 **Send to Saved Messages after every save** on the same screen is `[sync]
 send_after_save_p`, off until you turn it on because sending is a message in a
