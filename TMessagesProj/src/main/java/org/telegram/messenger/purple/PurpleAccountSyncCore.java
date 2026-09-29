@@ -168,6 +168,7 @@ public final class PurpleAccountSyncCore {
 
     private static native RawReply inspectConfigRecordNative(byte[] record);
     private static native RawReply inspectStateNative(byte[] state);
+    private static native RawReply checkLocalStageNative(byte[] state, byte[] record);
     private static native RawReply buildConfigRecordNative(byte[] text,
             byte[][] parentRecords, String space, String install,
             String device, String platform, String app, long seq, long at);
@@ -219,6 +220,15 @@ public final class PurpleAccountSyncCore {
         try {
             PurpleCore.ensureLoaded();
             return result(inspectStateNative(state));
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            return new Result("NativeUnavailable");
+        }
+    }
+
+    public static Result checkLocalStage(byte[] state, byte[] record) {
+        try {
+            PurpleCore.ensureLoaded();
+            return result(checkLocalStageNative(state, record));
         } catch (UnsatisfiedLinkError | RuntimeException e) {
             return new Result("NativeUnavailable");
         }

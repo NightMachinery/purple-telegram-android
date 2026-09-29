@@ -476,7 +476,11 @@ invalid IDs return an invalid result. No account runtime path calls these
 helpers yet. The core also validates
 device-local sync state and checks for cloned or
 rewound installs. These are foundations for account sync: the Android app has
-no account sync transport or user interface yet. Compressed envelopes remain
+no account sync transport or user interface yet. The uncalled
+`PurpleAccountSyncStore` now keeps bound state and canonical pending config
+records under the app-private `purple/sync` directory, with exclusive ownership
+and fail-closed crash recovery. Its exact operations and recovery verdicts are
+documented in `docs/account-sync-store.md`. Compressed envelopes remain
 future work.
 
 **Send to Saved Messages after every save** on the same screen is `[sync]

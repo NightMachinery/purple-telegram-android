@@ -47,6 +47,7 @@ public final class PurpleAccountSyncCore {
             byte[] remoteRecord, String space, String install, String device,
             String platform, String app, long seq, long at);
     private static native RawReply inspectConfigRecordNative(byte[] record);
+    private static native RawReply checkLocalStageNative(byte[] state, byte[] record);
     private static native RawReply initializeLocalStateNative(
             String installId, String createdDeviceId, String spaceId);
     private static native RawReply initializeBoundLocalStateNative(
@@ -276,9 +277,24 @@ public final class PurpleAccountSyncCore {
 
         final byte[] firstState = state(1, 1, 0, field(root, "payloadHash"),
                 "", key(root), "[]", "[]");
+        final RawReply pendingStage = checkLocalStageNative(firstState, root.record);
+        expect(pendingStage, "Valid", "None");
+        if (!"Pending".equals(field(pendingStage, "verdict"))) {
+            throw new AssertionError(pendingStage.metadataJson);
+        }
+        expect(checkLocalStageNative(firstState, remote.record),
+                "Invalid", "StageMismatch");
         final RawReply firstConfirmed = confirmConfigReadBackNative(firstState,
                 root.record, "phone", 2, root.record, 101);
         expectConfirmation(firstConfirmed, true, "NoClone", key(root), "[]", "[]");
+        final RawReply confirmedStage = checkLocalStageNative(
+                firstConfirmed.state, root.record);
+        expect(confirmedStage, "Valid", "None");
+        if (!"Confirmed".equals(field(confirmedStage, "verdict"))) {
+            throw new AssertionError(confirmedStage.metadataJson);
+        }
+        expect(checkLocalStageNative(firstConfirmed.state, remote.record),
+                "Invalid", "StageMismatch");
         final String firstConfirmedJson = new String(firstConfirmed.state,
                 StandardCharsets.UTF_8);
         if (!firstConfirmedJson.contains("\"pending_seq\":0")
