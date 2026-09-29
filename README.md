@@ -438,7 +438,13 @@ its reserved state and uploading it. The bridge formats install and space IDs
 from exactly 16 caller-supplied bytes; platform code supplies randomness.
 Shared core now also constructs time-ordered space IDs from a server-time
 estimate and 10 secure random bytes, and compares valid IDs by decoded bytes.
-Android does not expose or call those new helpers yet. The core also validates
+Android exposes these through `PurpleAccountSyncCore.formatTimeOrderedSpaceId`
+and `compareSpaceIds`. The formatter takes an explicit Telegram server-time
+estimate in milliseconds, draws 10 bytes with Java `SecureRandom`, and
+rejects zero or values outside the core's 48-bit range. It never substitutes
+the device clock. The comparison result reports -1, 0 or 1 in `comparison`;
+invalid IDs return an invalid result. No account runtime path calls these
+helpers yet. The core also validates
 device-local sync state and checks for cloned or
 rewound installs. These are foundations for account sync: the Android app has
 no account sync transport or user interface yet. Compressed envelopes remain

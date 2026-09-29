@@ -8,6 +8,7 @@ package org.telegram.messenger.purple;
 
 import org.json.JSONException;
 import org.json.JSONObject;
+import java.security.SecureRandom;
 
 public final class PurpleAccountSyncCore {
     public static final int OBSERVATION_UNRESOLVED = 0;
@@ -15,6 +16,7 @@ public final class PurpleAccountSyncCore {
     public static final int OBSERVATION_PRESENT = 2;
     public static final int PRESENCE_PRESENT = 0;
     public static final int PRESENCE_ABSENT = 1;
+    private static final SecureRandom SPACE_ID_RANDOM = new SecureRandom();
 
     private PurpleAccountSyncCore() {
     }
@@ -48,6 +50,7 @@ public final class PurpleAccountSyncCore {
         public final String device;
         public final String key;
         public final String id;
+        public final int comparison;
         public final String payloadHash;
         public final long seq;
         public final long at;
@@ -75,6 +78,7 @@ public final class PurpleAccountSyncCore {
             device = metadata.optString("device", "");
             key = metadata.optString("key", "");
             id = metadata.optString("id", "");
+            comparison = metadata.optInt("comparison", 0);
             payloadHash = metadata.optString("payloadHash", "");
             seq = decimal(metadata, "seq");
             at = decimal(metadata, "at");
@@ -102,6 +106,7 @@ public final class PurpleAccountSyncCore {
             device = "";
             key = "";
             id = "";
+            comparison = 0;
             payloadHash = "";
             seq = 0;
             at = 0;
@@ -174,6 +179,9 @@ public final class PurpleAccountSyncCore {
             byte[] state, int messageId, int presenceKind);
     private static native RawReply formatInstallIdNative(byte[] entropy16);
     private static native RawReply formatSpaceIdNative(byte[] entropy16);
+    private static native RawReply formatTimeOrderedSpaceIdNative(
+            long serverMillis, byte[] randomTail10);
+    private static native RawReply compareSpaceIdsNative(String a, String b);
 
     public static Result inspectConfigRecord(byte[] record) {
         try {
@@ -317,6 +325,27 @@ public final class PurpleAccountSyncCore {
         try {
             PurpleCore.ensureLoaded();
             return result(formatSpaceIdNative(entropy16));
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            return new Result("NativeUnavailable");
+        }
+    }
+
+    public static Result formatTimeOrderedSpaceId(long serverMillis) {
+        final byte[] randomTail = new byte[10];
+        SPACE_ID_RANDOM.nextBytes(randomTail);
+        try {
+            PurpleCore.ensureLoaded();
+            return result(formatTimeOrderedSpaceIdNative(
+                    serverMillis, randomTail));
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            return new Result("NativeUnavailable");
+        }
+    }
+
+    public static Result compareSpaceIds(String a, String b) {
+        try {
+            PurpleCore.ensureLoaded();
+            return result(compareSpaceIdsNative(a, b));
         } catch (UnsatisfiedLinkError | RuntimeException e) {
             return new Result("NativeUnavailable");
         }
