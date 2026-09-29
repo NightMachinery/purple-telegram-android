@@ -502,7 +502,8 @@ tap. Each attempt stages its own `settings.toml`, keeping the filename intact ev
 sends overlap. A failed local message can still need that file for Telegram's
 Retry action, so failed attempts stay in the cache for up to 30 days. A
 confirmed send also keeps its staged file when Telegram still uses that path as
-the local attachment. Old staging directories are pruned on the next send.
+the local attachment. Old staging directories, including ones left empty,
+are pruned on the next send.
 Telegram's Retry action also records server confirmation for a failed
 Purple settings send. So does Telegram's automatic resend, at the next app
 start, of a send the app was closed during. Either one counts only for an
