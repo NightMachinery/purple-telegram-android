@@ -423,7 +423,10 @@ macOS to exercise that JNI path with Qt Core and a host JVM. The platform must
 stage a built record before persisting
 its reserved state and uploading it. The bridge formats install and space IDs
 from exactly 16 caller-supplied bytes; platform code supplies randomness.
-The core also validates device-local sync state and checks for cloned or
+Shared core now also constructs time-ordered space IDs from a server-time
+estimate and 10 secure random bytes, and compares valid IDs by decoded bytes.
+Android does not expose or call those new helpers yet. The core also validates
+device-local sync state and checks for cloned or
 rewound installs. These are foundations for account sync: the Android app has
 no account sync transport or user interface yet. Compressed envelopes remain
 future work.
