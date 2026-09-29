@@ -46,8 +46,11 @@ public final class PurpleAccountSyncCore {
         public final String stateError;
         public final String verdict;
         public final String space;
+        public final String stream;
         public final String install;
         public final String device;
+        public final String platform;
+        public final String app;
         public final String key;
         public final String id;
         public final int comparison;
@@ -74,8 +77,11 @@ public final class PurpleAccountSyncCore {
             stateError = metadata.optString("stateError", "");
             verdict = metadata.optString("verdict", "");
             space = metadata.optString("space", "");
+            stream = metadata.optString("stream", "");
             install = metadata.optString("install", "");
             device = metadata.optString("device", "");
+            platform = metadata.optString("platform", "");
+            app = metadata.optString("app", "");
             key = metadata.optString("key", "");
             id = metadata.optString("id", "");
             comparison = metadata.optInt("comparison", 0);

@@ -174,6 +174,30 @@ public final class PurpleAccountSyncCore {
         final RawReply root = buildConfigRecordNative(ROOT, new byte[0][],
                 SPACE, INSTALL_A, "phone", "android", "Purple", 1, 0);
         expect(root, "Valid", "None");
+        final String rootJson = new String(root.record, StandardCharsets.UTF_8);
+        if (!rootJson.contains("\"stream\":\"config\"")) {
+            throw new AssertionError(rootJson);
+        }
+        final RawReply future = inspectConfigRecordNative(rootJson.replace(
+                "\"stream\":\"config\"", "\"stream\":\"library.0\"")
+                .getBytes(StandardCharsets.UTF_8));
+        expect(future, "UnsupportedStream", "None");
+        if (!SPACE.equals(field(future, "space"))
+                || !INSTALL_A.equals(field(future, "install"))
+                || !"library.0".equals(field(future, "stream"))
+                || !"1".equals(field(future, "seq"))
+                || future.configText != null) {
+            throw new AssertionError(future.metadataJson);
+        }
+        final RawReply encoded = inspectConfigRecordNative(rootJson.replace(
+                "\"stream\":\"config\"",
+                "\"stream\":\"config\",\"encoding\":\"gzip+base64\"")
+                .getBytes(StandardCharsets.UTF_8));
+        expect(encoded, "UnsupportedEncoding", "None");
+        if (!SPACE.equals(field(encoded, "space"))
+                || !"config".equals(field(encoded, "stream"))) {
+            throw new AssertionError(encoded.metadataJson);
+        }
         final RawReply remote = buildConfigRecordNative(CHILD,
                 new byte[][] { root.record }, SPACE, INSTALL_A,
                 "phone", "android", "Purple", 2, 0);
