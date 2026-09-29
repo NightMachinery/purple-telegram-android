@@ -206,7 +206,9 @@ public final class PurpleSync {
                     (serverId, preparationFailed) -> {
                         clearPending(pendingSend);
                         if (serverId > 0) {
-                            noteSent(sentBytes);
+                            if (Arrays.equals(PurpleGate.settingsBytes(), sentBytes)) {
+                                noteSent(sentBytes);
+                            }
                             PurpleSyncOffer.noteSentMessage(account, serverId);
                             if (!staged.exists()) {
                                 stagingDir.delete();

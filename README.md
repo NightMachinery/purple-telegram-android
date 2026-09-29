@@ -405,10 +405,12 @@ file five seconds after the last one, so a run of checkbox taps is one document
 rather than six. A file that arrived from Saved Messages is never sent back.
 `state.toml` remembers fingerprints for the last imported file and the last
 confirmed send, suppressing repeated sends of the same bytes. The manual Send
-button reports when the upload is queued; the send fingerprint and the account's
-last-offered message ID advance only after the server confirms delivery. Failed
-uploads can therefore be sent again after another save or a manual tap. Each
-attempt stages its own `settings.toml`, keeping the filename intact even when
+button reports when the upload is queued. After server confirmation, the send
+fingerprint advances only if those sent bytes still match the local file; this
+keeps an older send that finishes last from marking a newer snapshot as sent.
+The account's last-offered message ID advances for every confirmed own send.
+Failed uploads can therefore be sent again after another save or a manual
+tap. Each attempt stages its own `settings.toml`, keeping the filename intact even when
 sends overlap. A failed local message can still need that file for Telegram's
 Retry action, so failed attempts stay in the cache for up to 30 days. A
 confirmed send also keeps its staged file when Telegram still uses that path as
