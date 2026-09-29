@@ -16,6 +16,8 @@ namespace {
 	switch (value) {
 	case Purple::SyncEnvelopeStatus::Valid: return u"Valid"_q;
 	case Purple::SyncEnvelopeStatus::NewerMajor: return u"NewerMajor"_q;
+	case Purple::SyncEnvelopeStatus::UnsupportedStream:
+		return u"UnsupportedStream"_q;
 	case Purple::SyncEnvelopeStatus::UnsupportedEncoding:
 		return u"UnsupportedEncoding"_q;
 	case Purple::SyncEnvelopeStatus::Invalid: return u"Invalid"_q;
@@ -292,6 +294,16 @@ struct CheckedRecord {
 		{ u"envelopeStatus"_q, Name(record.envelope.status) },
 		{ u"envelopeError"_q, Name(record.envelope.error) },
 	};
+	if (const auto &header = record.envelope.header; header) {
+		result.insert(u"space"_q, header->space);
+		result.insert(u"stream"_q, header->stream);
+		result.insert(u"install"_q, header->writerInstall);
+		result.insert(u"device"_q, header->writerDevice);
+		result.insert(u"platform"_q, header->writerPlatform);
+		result.insert(u"app"_q, header->writerApp);
+		result.insert(u"seq"_q, QString::number(header->seq));
+		result.insert(u"at"_q, QString::number(header->at));
+	}
 	if (!record.envelope) {
 		result.insert(u"status"_q, Name(record.envelope.status));
 		result.insert(u"error"_q, Name(record.envelope.error));
@@ -302,13 +314,6 @@ struct CheckedRecord {
 	result.insert(u"status"_q, Name(record.payload.status));
 	result.insert(u"error"_q, Name(record.payload.error));
 	const auto document = record.envelope.envelope.document;
-	result.insert(u"space"_q, document.value(u"space"_q));
-	result.insert(u"install"_q,
-		document.value(u"writer"_q).toObject().value(u"install"_q));
-	result.insert(u"seq"_q,
-		QString::number(uint64_t(document.value(u"seq"_q).toDouble())));
-	result.insert(u"at"_q,
-		QString::number(uint64_t(document.value(u"at"_q).toDouble())));
 	result.insert(u"payloadHash"_q,
 		document.value(u"payload_sha256"_q));
 	if (record.payload) {

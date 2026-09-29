@@ -404,6 +404,9 @@ config payload inspection that checks ancestry, fingerprints, and TOML schema.
 The shared core also derives sync status, attention tier, and recovery action
 from engine facts; Android does not yet feed it runtime facts or show account
 sync status.
+The bridge now returns validated space, stream, writer, sequence, and time
+for future-stream or unsupported-encoding records without treating their
+payloads as usable config. Such records remain non-valid inspection outcomes.
 Android exposes config record inspection and construction, local-state parsing
 and sequence reservation, own-record clone checks, and version-aware config
 confirmation through a raw-byte JNI bridge. Confirmation requires canonical
