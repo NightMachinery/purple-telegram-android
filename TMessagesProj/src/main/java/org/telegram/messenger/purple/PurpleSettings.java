@@ -29,14 +29,14 @@ public final class PurpleSettings {
 
     public static final String FILE_NAME = "settings.toml";
     public static final String BACKUP_NAME = "settings.toml.bak";
+    public static final String IMPORT_BACKUP_NAME = "settings.toml.import.bak";
 
     /**
      * The last settings.toml that parsed and resolved.
      *
-     * Distinct from the backup above, which is whatever stood before the most
-     * recent import and may never have worked. This one is only ever written
-     * after the core has accepted the file, so it is the thing to fall back to
-     * when the real one is missing or broken.
+     * Distinct from the backups above, which may never have worked. This one
+     * is only written after the core has accepted the file, so it is the thing
+     * to fall back to when the real one is missing or broken.
      */
     public static final String LAST_GOOD_NAME = "settings.toml.good";
 
@@ -60,6 +60,10 @@ public final class PurpleSettings {
 
     public static File backupFile() {
         return new File(dir(), BACKUP_NAME);
+    }
+
+    public static File importBackupFile() {
+        return new File(dir(), IMPORT_BACKUP_NAME);
     }
 
     public static File lastGoodFile() {
@@ -165,6 +169,9 @@ public final class PurpleSettings {
         try {
             if (target.exists()) {
                 copy(target, backupFile());
+                if (fromImport) {
+                    copyAtomic(target, importBackupFile());
+                }
             }
         } catch (IOException e) {
             FileLog.e(e);
@@ -230,6 +237,18 @@ public final class PurpleSettings {
             }
         } finally {
             in.close();
+        }
+    }
+
+    private static void copyAtomic(File from, File to) throws IOException {
+        final File temp = new File(to.getParentFile(), to.getName() + ".tmp");
+        try {
+            copy(from, temp);
+            if (!temp.renameTo(to)) {
+                throw new IOException("Could not replace " + to);
+            }
+        } finally {
+            temp.delete();
         }
     }
 
