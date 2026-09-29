@@ -405,15 +405,28 @@ Android exposes config record inspection and construction, local-state parsing
 and sequence reservation, own-record clone checks, and version-aware config
 confirmation through a raw-byte JNI bridge. Confirmation requires canonical
 staged bytes matching the pending state and a validated own server read-back;
-it advances the config base and lineage only for the exact pending sequence and
-payload hash. The bridge returns a new state but does not persist it or call
+the read-back bytes must equal the staged canonical record exactly. It advances
+the config base and lineage only for that record. A successful present
+confirmation takes a positive server message ID and records it in the same
+returned state. Clone verdicts remain available when a read-back differs.
+The bridge returns a new state but does not persist it or call
 the account transport. `initializeLocalState` creates validated canonical
 state bytes from install, device and space identifiers. `reserveConfigRecord`
 validates a canonical own config record against the current state, reserves its
 sequence and payload hash, and stores its version key as pending in the returned
 state bytes. The older `reserveConfigSeq` helper only reserves a counter and
 hash; it does not set the pending version key. None of these bridge calls writes
-files or sends messages. `PurpleAccountSyncCore.buildConfigAcknowledgement` takes
+files or sends messages.
+`recordConfirmedOwnConfigMessage` also stores validated duplicate posts and
+in-place edits of an own server record in the returned state.
+`checkOwnConfigMessageDeletion`
+requires a fresh canonical server read-back for that same ID and permits
+deletion only after a newer sequence is confirmed. Duplicate posts at the
+current confirmed sequence stay protected. `removeAbsentOwnConfigMessage`
+removes an older ledger entry only when the caller supplies
+`PRESENCE_ABSENT` after an authoritative absence check. These calls return
+state bytes for the platform to persist; none performs Telegram I/O.
+`PurpleAccountSyncCore.buildConfigAcknowledgement` takes
 an inspected remote record's canonical bytes and the exact local settings bytes.
 JNI validates the remote envelope, config payload, space, and text again, then
 publishes the same version key, parents, and lineage under this install's writer

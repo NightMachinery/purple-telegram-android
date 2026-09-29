@@ -118,6 +118,8 @@ namespace {
 		return u"InvalidCounters"_q;
 	case Purple::SyncLocalError::InvalidHash: return u"InvalidHash"_q;
 	case Purple::SyncLocalError::InvalidConfig: return u"InvalidConfig"_q;
+	case Purple::SyncLocalError::InvalidOwnMessages:
+		return u"InvalidOwnMessages"_q;
 	}
 	return u"InvalidValue"_q;
 }
@@ -131,6 +133,27 @@ namespace {
 		return u"InvalidHash"_q;
 	case Purple::SyncReservationError::SequenceExhausted:
 		return u"SequenceExhausted"_q;
+	}
+	return u"InvalidState"_q;
+}
+
+[[nodiscard]] QString Name(Purple::SyncOwnMessageError value) {
+	switch (value) {
+	case Purple::SyncOwnMessageError::None: return u"None"_q;
+	case Purple::SyncOwnMessageError::InvalidState: return u"InvalidState"_q;
+	case Purple::SyncOwnMessageError::InvalidMessageId:
+		return u"InvalidMessageId"_q;
+	case Purple::SyncOwnMessageError::InvalidRecord: return u"InvalidRecord"_q;
+	case Purple::SyncOwnMessageError::RecordMismatch:
+		return u"RecordMismatch"_q;
+	case Purple::SyncOwnMessageError::SequenceRegression:
+		return u"SequenceRegression"_q;
+	case Purple::SyncOwnMessageError::IdConflict: return u"IdConflict"_q;
+	case Purple::SyncOwnMessageError::CapacityExceeded:
+		return u"CapacityExceeded"_q;
+	case Purple::SyncOwnMessageError::NotFound: return u"NotFound"_q;
+	case Purple::SyncOwnMessageError::NotOlder: return u"NotOlder"_q;
+	case Purple::SyncOwnMessageError::NotAbsent: return u"NotAbsent"_q;
 	}
 	return u"InvalidState"_q;
 }
@@ -729,7 +752,8 @@ Java_org_telegram_messenger_purple_PurpleAccountSyncCore_checkOwnRecordNative(
 extern "C" JNIEXPORT jobject JNICALL
 Java_org_telegram_messenger_purple_PurpleAccountSyncCore_confirmConfigReadBackNative(
 		JNIEnv *env, jclass, jbyteArray state, jbyteArray staged,
-		jstring currentDevice, jint kind, jbyteArray observed) {
+		jstring currentDevice, jint kind, jbyteArray observed,
+		jint messageId) {
 	auto bytes = QByteArray();
 	auto stagedBytes = QByteArray();
 	auto device = QString();
@@ -782,8 +806,41 @@ Java_org_telegram_messenger_purple_PurpleAccountSyncCore_confirmConfigReadBackNa
 	if (!observation) {
 		return Invalid(env, error);
 	}
+	if ((kind == 2 && messageId <= 0)
+		|| (kind != 2 && messageId != 0)) {
+		return Invalid(env, u"InvalidMessageId"_q);
+	}
 	const auto confirmed = Purple::ConfirmConfigReadBack(parsed.state, device,
 		*observation, stagedRecord.payload.version);
+	if (confirmed.verdict == Purple::SyncCloneVerdict::NoClone
+		&& confirmed.changed && kind == 2) {
+		auto observedBytes = QByteArray();
+		if (!ReadBytes(env, observed, observedBytes, error)) {
+			return Invalid(env, error);
+		}
+		if (observedBytes != stagedBytes) {
+			return Invalid(env, u"ReadBackMismatch"_q);
+		}
+		const auto recorded = Purple::RecordConfirmedOwnConfigMessage(
+			confirmed.state, messageId, observedBytes);
+		if (!recorded) {
+			return Invalid(env, Name(recorded.error));
+		}
+		const auto serialized = Purple::SerializeSyncLocalState(recorded.state);
+		if (!serialized) {
+			return Invalid(env, u"StateSerialize"_q);
+		}
+		return Reply(env, {
+			{ u"status"_q, u"Valid"_q }, { u"error"_q, u"None"_q },
+			{ u"verdict"_q, Name(confirmed.verdict) },
+			{ u"changed"_q, confirmed.changed },
+			{ u"seq"_q, QString::number(recorded.state.config.seq) },
+			{ u"pendingSeq"_q,
+				QString::number(recorded.state.config.pendingSeq) },
+			{ u"confirmedSeq"_q,
+				QString::number(recorded.state.config.confirmedSeq) },
+		}, std::nullopt, serialized.canonical);
+	}
 	const auto serialized = Purple::SerializeSyncLocalState(confirmed.state);
 	if (!serialized) {
 		return Invalid(env, u"StateSerialize"_q);
@@ -797,6 +854,105 @@ Java_org_telegram_messenger_purple_PurpleAccountSyncCore_confirmConfigReadBackNa
 			QString::number(confirmed.state.config.pendingSeq) },
 		{ u"confirmedSeq"_q,
 			QString::number(confirmed.state.config.confirmedSeq) },
+	}, std::nullopt, serialized.canonical);
+}
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_org_telegram_messenger_purple_PurpleAccountSyncCore_recordConfirmedOwnConfigMessageNative(
+		JNIEnv *env, jclass, jbyteArray state, jint messageId,
+		jbyteArray serverRecord) {
+	auto stateBytes = QByteArray();
+	auto recordBytes = QByteArray();
+	auto error = QString();
+	if (!ReadBytes(env, state, stateBytes, error)
+		|| !ReadBytes(env, serverRecord, recordBytes, error)) {
+		return Invalid(env, error);
+	}
+	const auto parsed = Purple::ParseSyncLocalState(stateBytes);
+	if (!parsed) {
+		return Reply(env, {
+			{ u"status"_q, Name(parsed.status) },
+			{ u"error"_q, u"State"_q },
+			{ u"stateError"_q, Name(parsed.error) },
+		});
+	}
+	const auto recorded = Purple::RecordConfirmedOwnConfigMessage(
+		parsed.state, messageId, recordBytes);
+	if (!recorded) {
+		return Invalid(env, Name(recorded.error));
+	}
+	const auto serialized = Purple::SerializeSyncLocalState(recorded.state);
+	if (!serialized) {
+		return Invalid(env, u"StateSerialize"_q);
+	}
+	return Reply(env, {
+		{ u"status"_q, u"Valid"_q }, { u"error"_q, u"None"_q },
+		{ u"changed"_q, recorded.changed },
+	}, std::nullopt, serialized.canonical);
+}
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_org_telegram_messenger_purple_PurpleAccountSyncCore_checkOwnConfigMessageDeletionNative(
+		JNIEnv *env, jclass, jbyteArray state, jint messageId,
+		jbyteArray freshServerRecord) {
+	auto stateBytes = QByteArray();
+	auto recordBytes = QByteArray();
+	auto error = QString();
+	if (!ReadBytes(env, state, stateBytes, error)
+		|| !ReadBytes(env, freshServerRecord, recordBytes, error)) {
+		return Invalid(env, error);
+	}
+	const auto parsed = Purple::ParseSyncLocalState(stateBytes);
+	if (!parsed) {
+		return Reply(env, {
+			{ u"status"_q, Name(parsed.status) },
+			{ u"error"_q, u"State"_q },
+			{ u"stateError"_q, Name(parsed.error) },
+		});
+	}
+	const auto checked = Purple::CheckOwnConfigMessageDeletion(
+		parsed.state, messageId, recordBytes);
+	return Reply(env, {
+		{ u"status"_q, checked ? u"Valid"_q : u"Invalid"_q },
+		{ u"error"_q, Name(checked.error) },
+	});
+}
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_org_telegram_messenger_purple_PurpleAccountSyncCore_removeAbsentOwnConfigMessageNative(
+		JNIEnv *env, jclass, jbyteArray state, jint messageId,
+		jint presenceKind) {
+	auto stateBytes = QByteArray();
+	auto error = QString();
+	if (!ReadBytes(env, state, stateBytes, error)) {
+		return Invalid(env, error);
+	}
+	if (presenceKind != 0 && presenceKind != 1) {
+		return Invalid(env, u"InvalidPresenceKind"_q);
+	}
+	const auto parsed = Purple::ParseSyncLocalState(stateBytes);
+	if (!parsed) {
+		return Reply(env, {
+			{ u"status"_q, Name(parsed.status) },
+			{ u"error"_q, u"State"_q },
+			{ u"stateError"_q, Name(parsed.error) },
+		});
+	}
+	const auto removed = Purple::RemoveAbsentOwnConfigMessage(
+		parsed.state, messageId,
+		presenceKind == 1
+			? Purple::SyncOwnMessagePresence::Absent
+			: Purple::SyncOwnMessagePresence::Present);
+	if (!removed) {
+		return Invalid(env, Name(removed.error));
+	}
+	const auto serialized = Purple::SerializeSyncLocalState(removed.state);
+	if (!serialized) {
+		return Invalid(env, u"StateSerialize"_q);
+	}
+	return Reply(env, {
+		{ u"status"_q, u"Valid"_q }, { u"error"_q, u"None"_q },
+		{ u"changed"_q, removed.changed },
 	}, std::nullopt, serialized.canonical);
 }
 
