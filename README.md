@@ -473,12 +473,13 @@ estimate in milliseconds, draws 10 bytes with Java `SecureRandom`, and
 rejects zero or values outside the core's 48-bit range. It never substitutes
 the device clock. The comparison result reports -1, 0 or 1 in `comparison`;
 invalid IDs return an invalid result. No account runtime path calls these
-helpers yet. The core also validates
-device-local sync state and checks for cloned or
-rewound installs. Its pure publish planner now selects the next action only
-after account binding, complete discovery, and own-record reconciliation.
-Android does not call that planner yet; it has no account sync transport or
-user interface. The uncalled
+helpers yet. The core also validates device-local sync state and checks for
+cloned or rewound installs. Its pure directory resolver groups candidates by
+space, stream and install, and marks duplicate or ambiguous heads without
+Telegram I/O. The pure publish planner selects the next action only after
+account binding, complete discovery, and own-record reconciliation. Android
+does not call either one yet; it has no account sync transport or user
+interface. The uncalled
 `PurpleAccountSyncStore` now keeps bound state and canonical pending config
 records under the app-private `purple/sync` directory, with exclusive ownership
 and fail-closed crash recovery. Its exact operations and recovery verdicts are
