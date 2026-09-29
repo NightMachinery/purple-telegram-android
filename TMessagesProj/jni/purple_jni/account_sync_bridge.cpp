@@ -193,6 +193,22 @@ namespace {
 	return u"InvalidObservation"_q;
 }
 
+[[nodiscard]] QString Name(Purple::SyncAccountBindingVerdict value) {
+	switch (value) {
+	case Purple::SyncAccountBindingVerdict::Bound: return u"Bound"_q;
+	case Purple::SyncAccountBindingVerdict::MissingStateToken:
+		return u"MissingStateToken"_q;
+	case Purple::SyncAccountBindingVerdict::MissingAccountToken:
+		return u"MissingAccountToken"_q;
+	case Purple::SyncAccountBindingVerdict::InvalidAccountToken:
+		return u"InvalidAccountToken"_q;
+	case Purple::SyncAccountBindingVerdict::Mismatch: return u"Mismatch"_q;
+	case Purple::SyncAccountBindingVerdict::InvalidState:
+		return u"InvalidState"_q;
+	}
+	return u"InvalidState"_q;
+}
+
 [[nodiscard]] bool ReadBytes(
 		JNIEnv *env, jbyteArray input, QByteArray &bytes, QString &error) {
 	if (!input) {
@@ -620,13 +636,87 @@ Java_org_telegram_messenger_purple_PurpleAccountSyncCore_initializeLocalStateNat
 }
 
 extern "C" JNIEXPORT jobject JNICALL
-Java_org_telegram_messenger_purple_PurpleAccountSyncCore_reserveConfigRecordNative(
-		JNIEnv *env, jclass, jbyteArray state, jbyteArray ownRecord) {
+Java_org_telegram_messenger_purple_PurpleAccountSyncCore_initializeBoundLocalStateNative(
+		JNIEnv *env, jclass, jstring installId, jstring createdDeviceId,
+		jstring spaceId, jbyteArray entropy) {
+	if (!entropy) {
+		return Invalid(env, u"NullInput"_q);
+	}
+	if (env->GetArrayLength(entropy) != 16) {
+		return Invalid(env, u"InvalidEntropyLength"_q);
+	}
+	auto bytes = QByteArray();
+	auto error = QString();
+	if (!ReadBytes(env, entropy, bytes, error)) {
+		return Invalid(env, error);
+	}
+	auto state = Purple::SyncLocalState();
+	if (!ReadString(env, installId, state.install)
+		|| !ReadString(env, createdDeviceId, state.createdDevice)
+		|| !ReadString(env, spaceId, state.space)) {
+		return Invalid(env, u"NullInput"_q);
+	}
+	if (!Purple::IsSyncInstallId(state.install)
+		|| !Purple::IsSyncSpaceId(state.space)) {
+		return Invalid(env, u"InvalidId"_q);
+	}
+	const auto deviceBytes = state.createdDevice.toUtf8();
+	if (deviceBytes.isEmpty() || deviceBytes.size() > 256
+		|| QString::fromUtf8(deviceBytes) != state.createdDevice) {
+		return Invalid(env, u"InvalidDevice"_q);
+	}
+	const auto bindingToken = Purple::FormatSyncBindingToken(bytes);
+	if (!bindingToken) {
+		return Invalid(env, u"InvalidEntropyLength"_q);
+	}
+	state.bindingToken = *bindingToken;
+	const auto serialized = Purple::SerializeSyncLocalState(state);
+	if (!serialized) {
+		return Reply(env, {
+			{ u"status"_q, Name(serialized.status) },
+			{ u"error"_q, u"State"_q },
+			{ u"stateError"_q, Name(serialized.error) },
+		});
+	}
+	auto metadata = StateMetadata(state);
+	metadata.insert(u"status"_q, u"Valid"_q);
+	metadata.insert(u"error"_q, u"None"_q);
+	metadata.insert(u"bindingToken"_q, *bindingToken);
+	return Reply(env, metadata, std::nullopt, serialized.canonical);
+}
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_org_telegram_messenger_purple_PurpleAccountSyncCore_checkAccountBindingNative(
+		JNIEnv *env, jclass, jbyteArray state, jbyteArray accountToken) {
 	auto stateBytes = QByteArray();
-	auto recordBytes = QByteArray();
+	auto tokenBytes = QByteArray();
 	auto error = QString();
 	if (!ReadBytes(env, state, stateBytes, error)
-		|| !ReadBytes(env, ownRecord, recordBytes, error)) {
+		|| (accountToken && !ReadBytes(env, accountToken, tokenBytes, error))) {
+		return Invalid(env, error);
+	}
+	const auto parsed = Purple::ParseSyncLocalState(stateBytes);
+	const auto verdict = parsed
+		? Purple::CheckSyncAccountBinding(parsed.state, tokenBytes)
+		: Purple::SyncAccountBindingVerdict::InvalidState;
+	return Reply(env, {
+		{ u"status"_q, u"Valid"_q },
+		{ u"error"_q, u"None"_q },
+		{ u"verdict"_q, Name(verdict) },
+	});
+}
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_org_telegram_messenger_purple_PurpleAccountSyncCore_reserveConfigRecordNative(
+		JNIEnv *env, jclass, jbyteArray state, jbyteArray ownRecord,
+		jbyteArray accountToken) {
+	auto stateBytes = QByteArray();
+	auto recordBytes = QByteArray();
+	auto tokenBytes = QByteArray();
+	auto error = QString();
+	if (!ReadBytes(env, state, stateBytes, error)
+		|| !ReadBytes(env, ownRecord, recordBytes, error)
+		|| (accountToken && !ReadBytes(env, accountToken, tokenBytes, error))) {
 		return Invalid(env, error);
 	}
 	const auto parsed = Purple::ParseSyncLocalState(stateBytes);
@@ -635,6 +725,15 @@ Java_org_telegram_messenger_purple_PurpleAccountSyncCore_reserveConfigRecordNati
 			{ u"status"_q, Name(parsed.status) },
 			{ u"error"_q, u"State"_q },
 			{ u"stateError"_q, Name(parsed.error) },
+		});
+	}
+	const auto binding = Purple::CheckSyncAccountBinding(
+		parsed.state, tokenBytes);
+	if (binding != Purple::SyncAccountBindingVerdict::Bound) {
+		return Reply(env, {
+			{ u"status"_q, u"Invalid"_q },
+			{ u"error"_q, Name(binding) },
+			{ u"verdict"_q, Name(binding) },
 		});
 	}
 	if (parsed.state.createdDevice.isEmpty()) {
@@ -734,11 +833,14 @@ Java_org_telegram_messenger_purple_PurpleAccountSyncCore_appendIssuedConfigRecor
 
 extern "C" JNIEXPORT jobject JNICALL
 Java_org_telegram_messenger_purple_PurpleAccountSyncCore_reserveConfigSeqNative(
-		JNIEnv *env, jclass, jbyteArray state, jstring payloadHash) {
+		JNIEnv *env, jclass, jbyteArray state, jstring payloadHash,
+		jbyteArray accountToken) {
 	auto bytes = QByteArray();
+	auto tokenBytes = QByteArray();
 	auto hash = QString();
 	auto error = QString();
-	if (!ReadBytes(env, state, bytes, error)) {
+	if (!ReadBytes(env, state, bytes, error)
+		|| (accountToken && !ReadBytes(env, accountToken, tokenBytes, error))) {
 		return Invalid(env, error);
 	}
 	if (!ReadString(env, payloadHash, hash)) {
@@ -750,6 +852,15 @@ Java_org_telegram_messenger_purple_PurpleAccountSyncCore_reserveConfigSeqNative(
 			{ u"status"_q, Name(parsed.status) },
 			{ u"error"_q, u"State"_q },
 			{ u"stateError"_q, Name(parsed.error) },
+		});
+	}
+	const auto binding = Purple::CheckSyncAccountBinding(
+		parsed.state, tokenBytes);
+	if (binding != Purple::SyncAccountBindingVerdict::Bound) {
+		return Reply(env, {
+			{ u"status"_q, u"Invalid"_q },
+			{ u"error"_q, Name(binding) },
+			{ u"verdict"_q, Name(binding) },
 		});
 	}
 	const auto reserved = Purple::ReserveSyncSeq(parsed.state,

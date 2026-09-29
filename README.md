@@ -416,17 +416,32 @@ the config base and lineage only for that record. A successful present
 confirmation takes a positive server message ID and records it in the same
 returned state. Clone verdicts remain available when a read-back differs.
 The bridge returns a new state but does not persist it or call
-the account transport. `initializeLocalState` creates validated canonical
-state bytes from install, device and space identifiers. `reserveConfigRecord`
-validates a canonical own config record against the current state, reserves its
-sequence and payload hash, and stores its version key as pending in the returned
-state bytes and appends the exact canonical record hash to the issued log in
-that same returned state. The platform stages the exact record and durably
-persists the returned state before uploading. `appendIssuedConfigRecord` is
+the account transport. `initializeBoundLocalState` creates validated canonical
+state bytes from install, device and space identifiers and binds them to the
+currently active Telegram account. Java generates 16 secure random bytes for
+a new binding and stores the returned token synchronously in that account's
+private preferences under a key derived from its positive user ID. If that
+user already has a valid token, initialization reuses it so a crash after the
+preference write can be retried.
+It refuses a malformed or differing stored token and discards the returned
+state if the account changes or the token cannot be stored. The user ID is not
+written into the state. `checkAccountBinding` reports the core's named binding
+verdict for the active account and state, including missing and malformed
+preference tokens. The older unbound `initializeLocalState` remains only for
+legacy bridge tests.
+`reserveConfigRecord` requires the current account number, reads its binding
+token, and verifies that the same positive user remains active before and after
+the native call. Native code validates that token along with the canonical own
+config record and current state, reserves its sequence and payload hash, stores
+its version key as pending in the returned state bytes, and appends the exact
+canonical record hash to the issued log in that same returned state. The
+platform stages the exact record and durably persists the returned state before
+uploading. `appendIssuedConfigRecord` is
 also exposed for an already reserved sequence and its canonical staged record.
-The older `reserveConfigSeq` helper only reserves a counter and
-hash; it does not set the pending version key. None of these bridge calls writes
-files or sends messages.
+The older account-bound `reserveConfigSeq` helper only reserves a counter and
+hash; it does not set the pending version key. It uses the same preference
+token and active-account checks. None of these bridge calls writes files or
+sends messages.
 `recordConfirmedOwnConfigMessage` also stores validated duplicate posts and
 in-place edits of an own server record in the returned state.
 `adoptIssuedOwnConfigMessage` adds a late duplicate post after confirmation
