@@ -401,8 +401,10 @@ from it, so a refused write leaves the switch where the file is.
 The shared core now includes config version and remote-head classification,
 strict JSON canonicalization, validated uncompressed sync envelopes, and
 config payload inspection that checks ancestry, fingerprints, and TOML schema.
-These are foundations for account sync: the Android app has no account sync
-transport or user interface yet. Compressed envelopes remain future work.
+It also validates device-local sync state and checks for cloned or rewound
+install state. These are foundations for account sync: the Android app has no
+account sync transport or user interface yet. Compressed envelopes remain
+future work.
 
 **Send to Saved Messages after every save** on the same screen is `[sync]
 send_after_save_p`, off until you turn it on because sending is a message in a
