@@ -43,6 +43,7 @@ final class PurplePinnedMusicBar extends LinearLayout implements PurplePinnedMus
     private final Runnable countdownTick = this::render;
 
     private Utilities.Callback2<Boolean, Boolean> onShownChanged;
+    private Runnable onOpenList;
 
     private boolean bound;
     private int account;
@@ -74,8 +75,8 @@ final class PurplePinnedMusicBar extends LinearLayout implements PurplePinnedMus
         detailView = text(context, 13);
         texts.addView(detailView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 1, 0, 0));
         setOnClickListener(view -> {
-            if (bound && snapshot != null) {
-                PurplePinnedMusicList.show(getContext(), resourcesProvider, account, dialogId, topicId);
+            if (bound && snapshot != null && onOpenList != null) {
+                onOpenList.run();
             }
         });
         setContentDescription(getString(R.string.PurplePinnedMusicFiles));
@@ -104,6 +105,10 @@ final class PurplePinnedMusicBar extends LinearLayout implements PurplePinnedMus
 
     void setOnShownChanged(Utilities.Callback2<Boolean, Boolean> onShownChanged) {
         this.onShownChanged = onShownChanged;
+    }
+
+    void setOnOpenList(Runnable onOpenList) {
+        this.onOpenList = onOpenList;
     }
 
     void bind(int account, long dialogId, long topicId, boolean animated) {

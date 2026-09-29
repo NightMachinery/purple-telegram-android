@@ -136,6 +136,9 @@ final class PurplePinnedMusic {
 
     static final class Item {
         final String fileName;
+        final long peerId;
+        final int messageId;
+        final TLRPC.Message message;
         final String title;
         final String artist;
         final int state;
@@ -149,6 +152,9 @@ final class PurplePinnedMusic {
 
         Item(Transfer transfer) {
             fileName = transfer.fileName;
+            peerId = transfer.peerId;
+            messageId = transfer.message.id;
+            message = transfer.message;
             title = transfer.document == null ? LocaleController.getString(R.string.AudioUnknownTitle)
                     : MessageObject.getMusicTitle(transfer.document, true);
             artist = transfer.document == null ? null
