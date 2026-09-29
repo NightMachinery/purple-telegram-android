@@ -475,8 +475,10 @@ the device clock. The comparison result reports -1, 0 or 1 in `comparison`;
 invalid IDs return an invalid result. No account runtime path calls these
 helpers yet. The core also validates
 device-local sync state and checks for cloned or
-rewound installs. These are foundations for account sync: the Android app has
-no account sync transport or user interface yet. The uncalled
+rewound installs. Its pure publish planner now selects the next action only
+after account binding, complete discovery, and own-record reconciliation.
+Android does not call that planner yet; it has no account sync transport or
+user interface. The uncalled
 `PurpleAccountSyncStore` now keeps bound state and canonical pending config
 records under the app-private `purple/sync` directory, with exclusive ownership
 and fail-closed crash recovery. Its exact operations and recovery verdicts are
