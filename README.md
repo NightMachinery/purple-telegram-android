@@ -402,15 +402,18 @@ from it, so a refused write leaves the switch where the file is.
 send_after_save_p`, off until you turn it on because sending is a message in a
 real chat: with it on, every change the app makes to `settings.toml` posts the
 file five seconds after the last one, so a run of checkbox taps is one document
-rather than six. A file that arrived from Saved Messages is never sent back and
-the same bytes are never sent twice - `state.toml` remembers the fingerprint of
-the last file this device sent and the last one it imported, which is what
-keeps two machines that already agree from bouncing the file between them.
+rather than six. A file that arrived from Saved Messages is never sent back.
+`state.toml` remembers fingerprints for the last imported file and the last
+send attempt, suppressing repeated sends of the same bytes. The send fingerprint
+is written when the upload is queued, before the server confirms delivery, so
+an upload failure can suppress a retry; confirmed-send handling is still
+planned. The Saved Messages check searches up to 100 recent documents. An
+import tapped from its offer waits up to five minutes for the download.
 
 The **editor** is the only way to change a line on a phone without root: a
 monospace field parsed as you type, with a status line that says OK, how many
 warnings, or the line and column of a syntax error - tap it to go there. Save
-refuses a file that does not parse or is over 64 KB, refuses when the file on
+refuses a file that does not parse or is over 4 MiB, refuses when the file on
 disk moved since it was opened, backs up to `settings.toml.bak` and reloads
 once. Warnings are listed after a save; the import path only counts them.
 

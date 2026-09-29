@@ -51,6 +51,7 @@ import androidx.core.graphics.ColorUtils;
 
 import org.telegram.PhoneFormat.PhoneFormat;
 import org.telegram.messenger.browser.Browser;
+import org.telegram.messenger.purple.PurpleSettings;
 import org.telegram.messenger.ringtone.RingtoneDataStore;
 import org.telegram.messenger.utils.tlutils.AmountUtils;
 import org.telegram.messenger.utils.tlutils.TLKeyboardHelper;
@@ -11897,7 +11898,7 @@ public class MessageObject {
      */
     public boolean isPurpleSettings() {
         TLRPC.Document document = getDocument();
-        if (document == null || document.size > 64 * 1024) {
+        if (document == null || document.size > PurpleSettings.MAX_SIZE) {
             return false;
         }
         String name = getDocumentName();
