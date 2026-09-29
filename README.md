@@ -276,7 +276,7 @@ with `*` and one already taken, and says which. The app's own writes to `setting
 through the file watcher as a second reload: the watcher compares the file
 against the bytes the app is already running on, the way the desktop does.
 
-Three files live in the app's private storage, at
+The settings and state files live in the app's private storage, at
 `/data/data/org.purple.telegram/files/purple/`. `settings.toml` is yours,
 imported from Saved Messages. `state.toml` is the app's: the active preset,
 and the last resolution that worked, so a `settings.toml` broken halfway
@@ -286,8 +286,14 @@ accepted, used when the real one is missing or unreadable - the resolution in
 `state.toml` remembers the order a preset resolved to but not what its lists
 contained, so without the copy a vanished `settings.toml` would leave every
 chat unclaimed and therefore hidden. The preset picker says when it is running
-from the copy. A fourth, `screentime.log`, is there only once `[screen_time]`
-is switched on - see **Screen time** below.
+from the copy. In the same directory, `settings.toml.bak` keeps the file from
+before the latest whole-file write, including an editor save, while
+`settings.toml.import.bak` keeps the file from before the latest import that
+replaced an existing settings file. Each backup has one slot: another import
+replaces the import backup when a current file exists, but local saves leave it
+alone. An import stops without replacing `settings.toml` if it cannot write
+that required import backup. `screentime.log` appears there only once
+`[screen_time]` is switched on - see **Screen time** below.
 
 A preset only ever *adds* a mute: a chat you muted by hand stays muted whichever
 entry claims it, and switching presets never un-silences anything. So every
