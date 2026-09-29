@@ -39,6 +39,10 @@ public final class PurpleAccountSyncCore {
             byte[] remoteRecord, String space, String install, String device,
             String platform, String app, long seq, long at);
     private static native RawReply inspectConfigRecordNative(byte[] record);
+    private static native RawReply initializeLocalStateNative(
+            String installId, String createdDeviceId, String spaceId);
+    private static native RawReply reserveConfigRecordNative(
+            byte[] state, byte[] canonicalOwnRecord);
     private static native RawReply confirmConfigReadBackNative(byte[] state,
             byte[] stagedRecord, String currentDevice, int observationKind,
             byte[] observedRecord);
@@ -123,6 +127,24 @@ public final class PurpleAccountSyncCore {
                 .replace("\"schema\":1", "\"schema\":2")
                 .replace("version = 1", "version = 2")
                 .replace(key(remote), "2." + fingerprint);
+        final int payloadStart = json.indexOf("\"payload\":") + 10;
+        final int payloadEnd = json.indexOf(",\"payload_sha256\"");
+        if (payloadStart < 10 || payloadEnd < payloadStart) {
+            throw new AssertionError(json);
+        }
+        final String hash = HexFormat.of().formatHex(
+                MessageDigest.getInstance("SHA-256").digest(
+                        json.substring(payloadStart, payloadEnd)
+                                .getBytes(StandardCharsets.UTF_8)));
+        json = json.replaceFirst("\"payload_sha256\":\"[0-9a-f]{64}\"",
+                "\"payload_sha256\":\"" + hash + "\"");
+        return json.getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static byte[] changedKeyRecord(RawReply record, String replacement)
+            throws Exception {
+        String json = new String(record.record, StandardCharsets.UTF_8)
+                .replace(key(record), replacement);
         final int payloadStart = json.indexOf("\"payload\":") + 10;
         final int payloadEnd = json.indexOf(",\"payload_sha256\"");
         if (payloadStart < 10 || payloadEnd < payloadStart) {
@@ -284,6 +306,89 @@ public final class PurpleAccountSyncCore {
         expectConfirmation(confirmConfigReadBackNative(changedState,
                 remote.record, "phone", 1, null), false, "NoClone",
                 key(root), "[]", oldEquiv);
+
+        final RawReply initialized = initializeLocalStateNative(
+                INSTALL_A, "phone", SPACE);
+        expect(initialized, "Valid", "None");
+        if (initialized.state == null
+                || !initialized.metadataJson.contains("\"install\":\"" + INSTALL_A + "\"")
+                || !initialized.metadataJson.contains("\"seq\":\"0\"")
+                || !new String(initialized.state, StandardCharsets.UTF_8)
+                        .contains("\"confirmed_seq\":0")) {
+            throw new AssertionError(initialized.metadataJson);
+        }
+        final RawReply reserved = reserveConfigRecordNative(
+                initialized.state, root.record);
+        expect(reserved, "Valid", "None");
+        final String reservedState = new String(reserved.state, StandardCharsets.UTF_8);
+        if (!reserved.metadataJson.contains("\"seq\":\"1\"")
+                || !reserved.metadataJson.contains("\"payloadHash\":\""
+                        + field(root, "payloadHash") + "\"")
+                || !reserved.metadataJson.contains("\"key\":\"" + key(root) + "\"")
+                || !reservedState.contains("\"pending_seq\":1")
+                || !reservedState.contains("\"pending\":\"" + key(root) + "\"")
+                || !reservedState.contains("\"own_hash\":\""
+                        + field(root, "payloadHash") + "\"")) {
+            throw new AssertionError(reserved.metadataJson + " " + reservedState);
+        }
+        final RawReply superseded = reserveConfigRecordNative(reserved.state,
+                remote.record);
+        expect(superseded, "Valid", "None");
+        if (!new String(superseded.state, StandardCharsets.UTF_8)
+                .contains("\"pending\":\"" + key(remote) + "\"")) {
+            throw new AssertionError("new pending key was not stored");
+        }
+        expect(initializeLocalStateNative("bad", "phone", SPACE),
+                "Invalid", "InvalidId");
+        expect(initializeLocalStateNative(INSTALL_A, "phone", "bad"),
+                "Invalid", "InvalidId");
+        expect(initializeLocalStateNative(INSTALL_A, "", SPACE),
+                "Invalid", "InvalidDevice");
+        expect(initializeLocalStateNative(INSTALL_A, "x".repeat(257), SPACE),
+                "Invalid", "InvalidDevice");
+        expect(initializeLocalStateNative(null, "phone", SPACE),
+                "Invalid", "NullInput");
+        final byte[] unboundState = new String(initialized.state,
+                StandardCharsets.UTF_8)
+                .replace("\"created_device\":\"phone\"",
+                        "\"created_device\":\"\"")
+                .getBytes(StandardCharsets.UTF_8);
+        expect(reserveConfigRecordNative(unboundState, root.record),
+                "Invalid", "InvalidDevice");
+        expect(reserveConfigRecordNative(initialized.state, acknowledged.record),
+                "Invalid", "RecordIdentity");
+        final RawReply foreignSpace = buildConfigRecordNative(ROOT,
+                new byte[0][], OTHER_SPACE, INSTALL_A,
+                "phone", "android", "Purple", 1, 0);
+        expect(foreignSpace, "Valid", "None");
+        expect(reserveConfigRecordNative(initialized.state, foreignSpace.record),
+                "Invalid", "RecordIdentity");
+        final RawReply foreignDevice = buildConfigRecordNative(ROOT,
+                new byte[0][], SPACE, INSTALL_A,
+                "other-phone", "android", "Purple", 1, 0);
+        expect(foreignDevice, "Valid", "None");
+        expect(reserveConfigRecordNative(initialized.state, foreignDevice.record),
+                "Invalid", "RecordIdentity");
+        expect(reserveConfigRecordNative(initialized.state, remote.record),
+                "Invalid", "RecordSequence");
+        expect(reserveConfigRecordNative(initialized.state, noncanonical),
+                "Invalid", "RecordCanonical");
+        expect(reserveConfigRecordNative(initialized.state, new byte[] { 1 }),
+                "Invalid", "RecordEnvelope");
+        expect(reserveConfigRecordNative(initialized.state, wrongStream),
+                "Invalid", "RecordPayload");
+        final byte[] badHash = new String(root.record, StandardCharsets.UTF_8)
+                .replace(field(root, "payloadHash"), "0".repeat(64))
+                .getBytes(StandardCharsets.UTF_8);
+        expect(reserveConfigRecordNative(initialized.state, badHash),
+                "Invalid", "RecordEnvelope");
+        expect(reserveConfigRecordNative(initialized.state,
+                changedKeyRecord(root, key(remote))), "Invalid", "RecordPayload");
+        final byte[] exhausted = state(9007199254740991L, 0,
+                9007199254740991L, field(root, "payloadHash"),
+                "", "", "[]", "[]");
+        expect(reserveConfigRecordNative(exhausted, root.record),
+                "Invalid", "SequenceExhausted");
         System.out.println("account sync JNI smoke passed");
     }
 }

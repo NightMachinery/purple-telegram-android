@@ -543,6 +543,115 @@ Java_org_telegram_messenger_purple_PurpleAccountSyncCore_buildConfigAcknowledgem
 }
 
 extern "C" JNIEXPORT jobject JNICALL
+Java_org_telegram_messenger_purple_PurpleAccountSyncCore_initializeLocalStateNative(
+		JNIEnv *env, jclass, jstring installId, jstring createdDeviceId,
+		jstring spaceId) {
+	auto state = Purple::SyncLocalState();
+	if (!ReadString(env, installId, state.install)
+		|| !ReadString(env, createdDeviceId, state.createdDevice)
+		|| !ReadString(env, spaceId, state.space)) {
+		return Invalid(env, u"NullInput"_q);
+	}
+	if (!Purple::IsSyncInstallId(state.install)
+		|| !Purple::IsSyncSpaceId(state.space)) {
+		return Invalid(env, u"InvalidId"_q);
+	}
+	const auto deviceBytes = state.createdDevice.toUtf8();
+	if (deviceBytes.isEmpty() || deviceBytes.size() > 256
+		|| QString::fromUtf8(deviceBytes) != state.createdDevice) {
+		return Invalid(env, u"InvalidDevice"_q);
+	}
+	const auto serialized = Purple::SerializeSyncLocalState(state);
+	if (!serialized) {
+		return Reply(env, {
+			{ u"status"_q, Name(serialized.status) },
+			{ u"error"_q, u"State"_q },
+			{ u"stateError"_q, Name(serialized.error) },
+		});
+	}
+	auto metadata = StateMetadata(state);
+	metadata.insert(u"status"_q, u"Valid"_q);
+	metadata.insert(u"error"_q, u"None"_q);
+	return Reply(env, metadata, std::nullopt, serialized.canonical);
+}
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_org_telegram_messenger_purple_PurpleAccountSyncCore_reserveConfigRecordNative(
+		JNIEnv *env, jclass, jbyteArray state, jbyteArray ownRecord) {
+	auto stateBytes = QByteArray();
+	auto recordBytes = QByteArray();
+	auto error = QString();
+	if (!ReadBytes(env, state, stateBytes, error)
+		|| !ReadBytes(env, ownRecord, recordBytes, error)) {
+		return Invalid(env, error);
+	}
+	const auto parsed = Purple::ParseSyncLocalState(stateBytes);
+	if (!parsed) {
+		return Reply(env, {
+			{ u"status"_q, Name(parsed.status) },
+			{ u"error"_q, u"State"_q },
+			{ u"stateError"_q, Name(parsed.error) },
+		});
+	}
+	if (parsed.state.createdDevice.isEmpty()) {
+		return Invalid(env, u"InvalidDevice"_q);
+	}
+	const auto checked = CheckRecord(recordBytes);
+	if (!checked.envelope) {
+		return Reply(env, {
+			{ u"status"_q, u"Invalid"_q },
+			{ u"error"_q, u"RecordEnvelope"_q },
+			{ u"envelopeStatus"_q, Name(checked.envelope.status) },
+			{ u"envelopeError"_q, Name(checked.envelope.error) },
+		});
+	}
+	if (checked.payload.status != Purple::ConfigPayloadStatus::Valid) {
+		return Reply(env, {
+			{ u"status"_q, u"Invalid"_q },
+			{ u"error"_q, u"RecordPayload"_q },
+			{ u"payloadStatus"_q, Name(checked.payload.status) },
+			{ u"payloadError"_q, Name(checked.payload.error) },
+		});
+	}
+	const auto canonical = Purple::SerializeSyncEnvelope(
+		checked.envelope.envelope);
+	if (!canonical || canonical.canonical != recordBytes) {
+		return Invalid(env, u"RecordCanonical"_q);
+	}
+	const auto document = checked.envelope.envelope.document;
+	const auto writer = document.value(u"writer"_q).toObject();
+	if (document.value(u"space"_q).toString() != parsed.state.space
+		|| writer.value(u"install"_q).toString() != parsed.state.install
+		|| writer.value(u"device"_q).toString()
+			!= parsed.state.createdDevice) {
+		return Invalid(env, u"RecordIdentity"_q);
+	}
+	const auto hash = document.value(u"payload_sha256"_q).toString();
+	const auto reserved = Purple::ReserveSyncSeq(parsed.state,
+		Purple::SyncLocalStream::Config, hash);
+	if (!reserved) {
+		return Invalid(env, Name(reserved.error));
+	}
+	if (uint64_t(document.value(u"seq"_q).toDouble()) != reserved.seq) {
+		return Invalid(env, u"RecordSequence"_q);
+	}
+	auto next = reserved.state;
+	next.configData.pending = checked.payload.version.key;
+	const auto serialized = Purple::SerializeSyncLocalState(next);
+	if (!serialized) {
+		return Invalid(env, u"StateSerialize"_q);
+	}
+	return Reply(env, {
+		{ u"status"_q, u"Valid"_q },
+		{ u"error"_q, u"None"_q },
+		{ u"seq"_q, QString::number(reserved.seq) },
+		{ u"pendingSeq"_q, QString::number(next.config.pendingSeq) },
+		{ u"payloadHash"_q, hash },
+		{ u"key"_q, checked.payload.version.key },
+	}, std::nullopt, serialized.canonical);
+}
+
+extern "C" JNIEXPORT jobject JNICALL
 Java_org_telegram_messenger_purple_PurpleAccountSyncCore_reserveConfigSeqNative(
 		JNIEnv *env, jclass, jbyteArray state, jstring payloadHash) {
 	auto bytes = QByteArray();

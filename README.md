@@ -407,7 +407,13 @@ confirmation through a raw-byte JNI bridge. Confirmation requires canonical
 staged bytes matching the pending state and a validated own server read-back;
 it advances the config base and lineage only for the exact pending sequence and
 payload hash. The bridge returns a new state but does not persist it or call
-the account transport. `PurpleAccountSyncCore.buildConfigAcknowledgement` takes
+the account transport. `initializeLocalState` creates validated canonical
+state bytes from install, device and space identifiers. `reserveConfigRecord`
+validates a canonical own config record against the current state, reserves its
+sequence and payload hash, and stores its version key as pending in the returned
+state bytes. The older `reserveConfigSeq` helper only reserves a counter and
+hash; it does not set the pending version key. None of these bridge calls writes
+files or sends messages. `PurpleAccountSyncCore.buildConfigAcknowledgement` takes
 an inspected remote record's canonical bytes and the exact local settings bytes.
 JNI validates the remote envelope, config payload, space, and text again, then
 publishes the same version key, parents, and lineage under this install's writer
