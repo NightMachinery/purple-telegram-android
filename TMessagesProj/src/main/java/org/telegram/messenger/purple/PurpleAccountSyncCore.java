@@ -13,6 +13,8 @@ public final class PurpleAccountSyncCore {
     public static final int OBSERVATION_UNRESOLVED = 0;
     public static final int OBSERVATION_ABSENT = 1;
     public static final int OBSERVATION_PRESENT = 2;
+    public static final int PRESENCE_PRESENT = 0;
+    public static final int PRESENCE_ABSENT = 1;
 
     private PurpleAccountSyncCore() {
     }
@@ -163,7 +165,13 @@ public final class PurpleAccountSyncCore {
             String currentDevice, int observationKind, byte[] observedRecord);
     private static native RawReply confirmConfigReadBackNative(byte[] state,
             byte[] stagedRecord, String currentDevice, int observationKind,
-            byte[] observedRecord);
+            byte[] observedRecord, int messageId);
+    private static native RawReply recordConfirmedOwnConfigMessageNative(
+            byte[] state, int messageId, byte[] canonicalServerRecord);
+    private static native RawReply checkOwnConfigMessageDeletionNative(
+            byte[] state, int messageId, byte[] freshCanonicalServerRecord);
+    private static native RawReply removeAbsentOwnConfigMessageNative(
+            byte[] state, int messageId, int presenceKind);
     private static native RawReply formatInstallIdNative(byte[] entropy16);
     private static native RawReply formatSpaceIdNative(byte[] entropy16);
 
@@ -253,11 +261,44 @@ public final class PurpleAccountSyncCore {
 
     public static Result confirmConfigReadBack(byte[] state,
             byte[] stagedRecord, String currentDevice, int observationKind,
-            byte[] observedRecord) {
+            byte[] observedRecord, int messageId) {
         try {
             PurpleCore.ensureLoaded();
             return result(confirmConfigReadBackNative(state, stagedRecord,
-                    currentDevice, observationKind, observedRecord));
+                    currentDevice, observationKind, observedRecord, messageId));
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            return new Result("NativeUnavailable");
+        }
+    }
+
+    public static Result recordConfirmedOwnConfigMessage(byte[] state,
+            int messageId, byte[] canonicalServerRecord) {
+        try {
+            PurpleCore.ensureLoaded();
+            return result(recordConfirmedOwnConfigMessageNative(
+                    state, messageId, canonicalServerRecord));
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            return new Result("NativeUnavailable");
+        }
+    }
+
+    public static Result checkOwnConfigMessageDeletion(byte[] state,
+            int messageId, byte[] freshCanonicalServerRecord) {
+        try {
+            PurpleCore.ensureLoaded();
+            return result(checkOwnConfigMessageDeletionNative(
+                    state, messageId, freshCanonicalServerRecord));
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            return new Result("NativeUnavailable");
+        }
+    }
+
+    public static Result removeAbsentOwnConfigMessage(byte[] state,
+            int messageId, int presenceKind) {
+        try {
+            PurpleCore.ensureLoaded();
+            return result(removeAbsentOwnConfigMessageNative(
+                    state, messageId, presenceKind));
         } catch (UnsatisfiedLinkError | RuntimeException e) {
             return new Result("NativeUnavailable");
         }
