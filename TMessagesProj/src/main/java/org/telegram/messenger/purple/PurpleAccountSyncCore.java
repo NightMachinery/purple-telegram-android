@@ -45,6 +45,7 @@ public final class PurpleAccountSyncCore {
         public final String install;
         public final String device;
         public final String key;
+        public final String id;
         public final String payloadHash;
         public final long seq;
         public final long at;
@@ -71,6 +72,7 @@ public final class PurpleAccountSyncCore {
             install = metadata.optString("install", "");
             device = metadata.optString("device", "");
             key = metadata.optString("key", "");
+            id = metadata.optString("id", "");
             payloadHash = metadata.optString("payloadHash", "");
             seq = decimal(metadata, "seq");
             at = decimal(metadata, "at");
@@ -97,6 +99,7 @@ public final class PurpleAccountSyncCore {
             install = "";
             device = "";
             key = "";
+            id = "";
             payloadHash = "";
             seq = 0;
             at = 0;
@@ -153,6 +156,8 @@ public final class PurpleAccountSyncCore {
             String currentDevice, int observationKind, byte[] observedRecord);
     private static native RawReply confirmOwnReadBackNative(byte[] state,
             String currentDevice, int observationKind, byte[] observedRecord);
+    private static native RawReply formatInstallIdNative(byte[] entropy16);
+    private static native RawReply formatSpaceIdNative(byte[] entropy16);
 
     public static Result inspectConfigRecord(byte[] record) {
         try {
@@ -210,6 +215,24 @@ public final class PurpleAccountSyncCore {
             PurpleCore.ensureLoaded();
             return result(confirmOwnReadBackNative(
                     state, currentDevice, observationKind, observedRecord));
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            return new Result("NativeUnavailable");
+        }
+    }
+
+    public static Result formatInstallId(byte[] entropy16) {
+        try {
+            PurpleCore.ensureLoaded();
+            return result(formatInstallIdNative(entropy16));
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            return new Result("NativeUnavailable");
+        }
+    }
+
+    public static Result formatSpaceId(byte[] entropy16) {
+        try {
+            PurpleCore.ensureLoaded();
+            return result(formatSpaceIdNative(entropy16));
         } catch (UnsatisfiedLinkError | RuntimeException e) {
             return new Result("NativeUnavailable");
         }
