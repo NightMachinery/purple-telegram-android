@@ -12,6 +12,14 @@ public final class PurpleAccountSyncCore {
     private static final String OTHER_SPACE = "sp-" + "e".repeat(26);
     private static final String INSTALL_A = "in-" + "a".repeat(26);
     private static final String INSTALL_B = "in-" + "a".repeat(25) + "e";
+    private static final byte[] TOKEN_ENTROPY = HexFormat.of().parseHex(
+            "000102030405060708090a0b0c0d0e0f");
+    private static final byte[] ACCOUNT_TOKEN =
+            "000102030405060708090a0b0c0d0e0f"
+                    .getBytes(StandardCharsets.UTF_8);
+    private static final byte[] OTHER_TOKEN =
+            "f00102030405060708090a0b0c0d0e0f"
+                    .getBytes(StandardCharsets.UTF_8);
     private static final byte[] ROOT = "version = 1\nname = 'root'\n"
             .getBytes(StandardCharsets.UTF_8);
     private static final byte[] CHILD = "version = 1\nname = 'child'\n"
@@ -41,8 +49,15 @@ public final class PurpleAccountSyncCore {
     private static native RawReply inspectConfigRecordNative(byte[] record);
     private static native RawReply initializeLocalStateNative(
             String installId, String createdDeviceId, String spaceId);
+    private static native RawReply initializeBoundLocalStateNative(
+            String installId, String createdDeviceId, String spaceId,
+            byte[] entropy16);
+    private static native RawReply checkAccountBindingNative(
+            byte[] state, byte[] accountToken);
     private static native RawReply reserveConfigRecordNative(
-            byte[] state, byte[] canonicalOwnRecord);
+            byte[] state, byte[] canonicalOwnRecord, byte[] accountToken);
+    private static native RawReply reserveConfigSeqNative(
+            byte[] state, String payloadHash, byte[] accountToken);
     private static native RawReply appendIssuedConfigRecordNative(
             byte[] state, byte[] canonicalOwnRecord);
     private static native RawReply adoptIssuedOwnConfigMessageNative(
@@ -89,6 +104,7 @@ public final class PurpleAccountSyncCore {
             String ownHash, String base, String pending, String lineage,
             String equiv) {
         return ("{\"version\":1,\"install\":\"" + INSTALL_A
+                + "\",\"binding_token\":\"000102030405060708090a0b0c0d0e0f"
                 + "\",\"created_device\":\"phone\",\"space\":\"" + SPACE
                 + "\",\"streams\":{\"config\":{\"seq\":" + seq
                 + ",\"pending_seq\":" + pendingSeq
@@ -366,8 +382,8 @@ public final class PurpleAccountSyncCore {
                 "phone", "android", "Other", 1, 0);
         expect(alteredRoot, "Valid", "None");
 
-        final RawReply initialized = initializeLocalStateNative(
-                INSTALL_A, "phone", SPACE);
+        final RawReply initialized = initializeBoundLocalStateNative(
+                INSTALL_A, "phone", SPACE, TOKEN_ENTROPY);
         expect(initialized, "Valid", "None");
         if (initialized.state == null
                 || !initialized.metadataJson.contains("\"install\":\"" + INSTALL_A + "\"")
@@ -376,8 +392,66 @@ public final class PurpleAccountSyncCore {
                         .contains("\"confirmed_seq\":0")) {
             throw new AssertionError(initialized.metadataJson);
         }
+        if (!field(initialized, "bindingToken").equals(
+                new String(ACCOUNT_TOKEN, StandardCharsets.UTF_8))) {
+            throw new AssertionError("binding token formatting");
+        }
+        expect(checkAccountBindingNative(initialized.state, ACCOUNT_TOKEN),
+                "Valid", "None");
+        if (!"Bound".equals(field(checkAccountBindingNative(
+                initialized.state, ACCOUNT_TOKEN), "verdict"))) {
+            throw new AssertionError("bound state verdict");
+        }
+        final RawReply unbound = initializeLocalStateNative(
+                INSTALL_A, "phone", SPACE);
+        expect(unbound, "Valid", "None");
+        if (!"MissingStateToken".equals(field(checkAccountBindingNative(
+                unbound.state, ACCOUNT_TOKEN), "verdict"))) {
+            throw new AssertionError("legacy state was treated as bound");
+        }
+        expect(reserveConfigRecordNative(unbound.state, root.record,
+                ACCOUNT_TOKEN), "Invalid", "MissingStateToken");
+        expect(reserveConfigSeqNative(unbound.state,
+                field(root, "payloadHash"), ACCOUNT_TOKEN),
+                "Invalid", "MissingStateToken");
+        for (byte[] token : new byte[][] { null, new byte[0] }) {
+            if (!"MissingAccountToken".equals(field(checkAccountBindingNative(
+                    initialized.state, token), "verdict"))) {
+                throw new AssertionError("missing account token verdict");
+            }
+            expect(reserveConfigRecordNative(initialized.state, root.record,
+                    token), "Invalid", "MissingAccountToken");
+        }
+        if (!"Mismatch".equals(field(checkAccountBindingNative(
+                initialized.state, OTHER_TOKEN), "verdict"))) {
+            throw new AssertionError("mismatched account token verdict");
+        }
+        expect(reserveConfigRecordNative(initialized.state, root.record,
+                OTHER_TOKEN), "Invalid", "Mismatch");
+        expect(reserveConfigSeqNative(initialized.state,
+                field(root, "payloadHash"), OTHER_TOKEN),
+                "Invalid", "Mismatch");
+        expect(reserveConfigSeqNative(initialized.state,
+                field(root, "payloadHash"), ACCOUNT_TOKEN),
+                "Valid", "None");
+        final byte[] invalidToken = "NOT_A_BINDING_TOKEN"
+                .getBytes(StandardCharsets.UTF_8);
+        if (!"InvalidAccountToken".equals(field(checkAccountBindingNative(
+                initialized.state, invalidToken), "verdict"))) {
+            throw new AssertionError("invalid account token verdict");
+        }
+        expect(reserveConfigRecordNative(initialized.state, root.record,
+                invalidToken), "Invalid", "InvalidAccountToken");
+        if (!"InvalidState".equals(field(checkAccountBindingNative(
+                new byte[] { 1 }, ACCOUNT_TOKEN), "verdict"))) {
+            throw new AssertionError("invalid state verdict");
+        }
+        expect(initializeBoundLocalStateNative(INSTALL_A, "phone", SPACE,
+                new byte[15]), "Invalid", "InvalidEntropyLength");
+        expect(initializeBoundLocalStateNative(INSTALL_A, "phone", SPACE,
+                null), "Invalid", "NullInput");
         final RawReply reserved = reserveConfigRecordNative(
-                initialized.state, root.record);
+                initialized.state, root.record, ACCOUNT_TOKEN);
         expect(reserved, "Valid", "None");
         final String reservedState = new String(reserved.state, StandardCharsets.UTF_8);
         if (!reserved.metadataJson.contains("\"seq\":\"1\"")
@@ -443,7 +517,7 @@ public final class PurpleAccountSyncCore {
                 "phone", "android", "Purple", 2, 0);
         expect(newSpaceRecord, "Valid", "None");
         final RawReply newSpaceReserved = reserveConfigRecordNative(
-                lateAdoption.state, newSpaceRecord.record);
+                lateAdoption.state, newSpaceRecord.record, ACCOUNT_TOKEN);
         expect(newSpaceReserved, "Valid", "None");
         final RawReply newSpaceConfirmed = confirmConfigReadBackNative(
                 newSpaceReserved.state, newSpaceRecord.record, "phone", 2,
@@ -454,7 +528,7 @@ public final class PurpleAccountSyncCore {
         expect(checkOwnConfigMessageDeletionNative(newSpaceConfirmed.state,
                 404, alteredRoot.record), "Invalid", "RecordMismatch");
         final RawReply superseded = reserveConfigRecordNative(reserved.state,
-                remote.record);
+                remote.record, ACCOUNT_TOKEN);
         expect(superseded, "Valid", "None");
         if (!new String(superseded.state, StandardCharsets.UTF_8)
                 .contains("\"pending\":\"" + key(remote) + "\"")) {
@@ -475,41 +549,41 @@ public final class PurpleAccountSyncCore {
                 .replace("\"created_device\":\"phone\"",
                         "\"created_device\":\"\"")
                 .getBytes(StandardCharsets.UTF_8);
-        expect(reserveConfigRecordNative(unboundState, root.record),
+        expect(reserveConfigRecordNative(unboundState, root.record, ACCOUNT_TOKEN),
                 "Invalid", "InvalidDevice");
-        expect(reserveConfigRecordNative(initialized.state, acknowledged.record),
+        expect(reserveConfigRecordNative(initialized.state, acknowledged.record, ACCOUNT_TOKEN),
                 "Invalid", "RecordIdentity");
         final RawReply foreignSpace = buildConfigRecordNative(ROOT,
                 new byte[0][], OTHER_SPACE, INSTALL_A,
                 "phone", "android", "Purple", 1, 0);
         expect(foreignSpace, "Valid", "None");
-        expect(reserveConfigRecordNative(initialized.state, foreignSpace.record),
+        expect(reserveConfigRecordNative(initialized.state, foreignSpace.record, ACCOUNT_TOKEN),
                 "Invalid", "RecordIdentity");
         final RawReply foreignDevice = buildConfigRecordNative(ROOT,
                 new byte[0][], SPACE, INSTALL_A,
                 "other-phone", "android", "Purple", 1, 0);
         expect(foreignDevice, "Valid", "None");
-        expect(reserveConfigRecordNative(initialized.state, foreignDevice.record),
+        expect(reserveConfigRecordNative(initialized.state, foreignDevice.record, ACCOUNT_TOKEN),
                 "Invalid", "RecordIdentity");
-        expect(reserveConfigRecordNative(initialized.state, remote.record),
+        expect(reserveConfigRecordNative(initialized.state, remote.record, ACCOUNT_TOKEN),
                 "Invalid", "RecordSequence");
-        expect(reserveConfigRecordNative(initialized.state, noncanonical),
+        expect(reserveConfigRecordNative(initialized.state, noncanonical, ACCOUNT_TOKEN),
                 "Invalid", "RecordCanonical");
-        expect(reserveConfigRecordNative(initialized.state, new byte[] { 1 }),
+        expect(reserveConfigRecordNative(initialized.state, new byte[] { 1 }, ACCOUNT_TOKEN),
                 "Invalid", "RecordEnvelope");
-        expect(reserveConfigRecordNative(initialized.state, wrongStream),
+        expect(reserveConfigRecordNative(initialized.state, wrongStream, ACCOUNT_TOKEN),
                 "Invalid", "RecordPayload");
         final byte[] badHash = new String(root.record, StandardCharsets.UTF_8)
                 .replace(field(root, "payloadHash"), "0".repeat(64))
                 .getBytes(StandardCharsets.UTF_8);
-        expect(reserveConfigRecordNative(initialized.state, badHash),
+        expect(reserveConfigRecordNative(initialized.state, badHash, ACCOUNT_TOKEN),
                 "Invalid", "RecordEnvelope");
         expect(reserveConfigRecordNative(initialized.state,
-                changedKeyRecord(root, key(remote))), "Invalid", "RecordPayload");
+                changedKeyRecord(root, key(remote)), ACCOUNT_TOKEN), "Invalid", "RecordPayload");
         final byte[] exhausted = state(9007199254740991L, 0,
                 9007199254740991L, field(root, "payloadHash"),
                 "", "", "[]", "[]");
-        expect(reserveConfigRecordNative(exhausted, root.record),
+        expect(reserveConfigRecordNative(exhausted, root.record, ACCOUNT_TOKEN),
                 "Invalid", "SequenceExhausted");
 
         final RawReply recorded = recordConfirmedOwnConfigMessageNative(

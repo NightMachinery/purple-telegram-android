@@ -8,6 +8,7 @@ package org.telegram.messenger.purple;
 
 import org.json.JSONException;
 import org.json.JSONObject;
+import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 
 public final class PurpleAccountSyncCore {
@@ -17,6 +18,7 @@ public final class PurpleAccountSyncCore {
     public static final int PRESENCE_PRESENT = 0;
     public static final int PRESENCE_ABSENT = 1;
     private static final SecureRandom SPACE_ID_RANDOM = new SecureRandom();
+    private static final SecureRandom BINDING_RANDOM = new SecureRandom();
 
     private PurpleAccountSyncCore() {
     }
@@ -53,6 +55,7 @@ public final class PurpleAccountSyncCore {
         public final String app;
         public final String key;
         public final String id;
+        public final String bindingToken;
         public final int comparison;
         public final String payloadHash;
         public final long seq;
@@ -84,6 +87,7 @@ public final class PurpleAccountSyncCore {
             app = metadata.optString("app", "");
             key = metadata.optString("key", "");
             id = metadata.optString("id", "");
+            bindingToken = metadata.optString("bindingToken", "");
             comparison = metadata.optInt("comparison", 0);
             payloadHash = metadata.optString("payloadHash", "");
             seq = decimal(metadata, "seq");
@@ -115,6 +119,7 @@ public final class PurpleAccountSyncCore {
             app = "";
             key = "";
             id = "";
+            bindingToken = "";
             comparison = 0;
             payloadHash = "";
             seq = 0;
@@ -170,11 +175,16 @@ public final class PurpleAccountSyncCore {
             byte[] remoteRecord, String space, String install,
             String device, String platform, String app, long seq, long at);
     private static native RawReply reserveConfigSeqNative(
-            byte[] state, String payloadHash);
+            byte[] state, String payloadHash, byte[] accountToken);
     private static native RawReply initializeLocalStateNative(
             String installId, String createdDeviceId, String spaceId);
+    private static native RawReply initializeBoundLocalStateNative(
+            String installId, String createdDeviceId, String spaceId,
+            byte[] entropy16);
+    private static native RawReply checkAccountBindingNative(
+            byte[] state, byte[] accountToken);
     private static native RawReply reserveConfigRecordNative(
-            byte[] state, byte[] canonicalOwnRecord);
+            byte[] state, byte[] canonicalOwnRecord, byte[] accountToken);
     private static native RawReply appendIssuedConfigRecordNative(
             byte[] state, byte[] canonicalOwnRecord);
     private static native RawReply adoptIssuedOwnConfigMessageNative(
@@ -238,13 +248,25 @@ public final class PurpleAccountSyncCore {
         }
     }
 
-    public static Result reserveConfigSeq(byte[] state, String payloadHash) {
+    public static Result reserveConfigSeq(int currentAccount, byte[] state,
+            String payloadHash) {
+        final PurpleAccountBinding.Binding binding =
+                PurpleAccountBinding.read(currentAccount);
+        if (!binding.isValid()) {
+            return new Result(binding.error);
+        }
+        final Result reserved;
         try {
             PurpleCore.ensureLoaded();
-            return result(reserveConfigSeqNative(state, payloadHash));
+            reserved = result(reserveConfigSeqNative(
+                    state, payloadHash, tokenBytes(binding.token)));
         } catch (UnsatisfiedLinkError | RuntimeException e) {
             return new Result("NativeUnavailable");
         }
+        return PurpleAccountBinding.isSameActiveUser(
+                currentAccount, binding.userId)
+                ? reserved
+                : new Result("AccountChanged");
     }
 
     public static Result initializeLocalState(String installId,
@@ -258,15 +280,72 @@ public final class PurpleAccountSyncCore {
         }
     }
 
-    public static Result reserveConfigRecord(byte[] state,
-            byte[] canonicalOwnRecord) {
+    public static Result initializeBoundLocalState(int currentAccount,
+            String installId, String createdDeviceId, String spaceId) {
+        final PurpleAccountBinding.Initialization preparation =
+                PurpleAccountBinding.prepareInitialization(
+                        currentAccount, BINDING_RANDOM);
+        if (!preparation.isValid()) {
+            return new Result(preparation.error);
+        }
+        final Result initialized;
         try {
             PurpleCore.ensureLoaded();
-            return result(reserveConfigRecordNative(
-                    state, canonicalOwnRecord));
+            initialized = result(initializeBoundLocalStateNative(
+                    installId, createdDeviceId, spaceId, preparation.entropy));
         } catch (UnsatisfiedLinkError | RuntimeException e) {
             return new Result("NativeUnavailable");
         }
+        if (!initialized.isValid()) {
+            return initialized;
+        }
+        final PurpleAccountBinding.Binding binding = PurpleAccountBinding.persist(
+                currentAccount, preparation.userId, initialized.bindingToken);
+        if (!binding.isValid()) {
+            return new Result(binding.error);
+        }
+        return initialized;
+    }
+
+    public static Result checkAccountBinding(int currentAccount, byte[] state) {
+        final PurpleAccountBinding.Binding binding =
+                PurpleAccountBinding.readForCheck(currentAccount);
+        if (!binding.isValid()) {
+            return new Result(binding.error);
+        }
+        final Result checked;
+        try {
+            PurpleCore.ensureLoaded();
+            checked = result(checkAccountBindingNative(
+                    state, tokenBytes(binding.token)));
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            return new Result("NativeUnavailable");
+        }
+        return PurpleAccountBinding.isSameActiveUser(
+                currentAccount, binding.userId)
+                ? checked
+                : new Result("AccountChanged");
+    }
+
+    public static Result reserveConfigRecord(int currentAccount, byte[] state,
+            byte[] canonicalOwnRecord) {
+        final PurpleAccountBinding.Binding binding =
+                PurpleAccountBinding.read(currentAccount);
+        if (!binding.isValid()) {
+            return new Result(binding.error);
+        }
+        final Result reserved;
+        try {
+            PurpleCore.ensureLoaded();
+            reserved = result(reserveConfigRecordNative(
+                    state, canonicalOwnRecord, tokenBytes(binding.token)));
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            return new Result("NativeUnavailable");
+        }
+        return PurpleAccountBinding.isSameActiveUser(
+                currentAccount, binding.userId)
+                ? reserved
+                : new Result("AccountChanged");
     }
 
     public static Result appendIssuedConfigRecord(byte[] state,
@@ -384,5 +463,9 @@ public final class PurpleAccountSyncCore {
         } catch (UnsatisfiedLinkError | RuntimeException e) {
             return new Result("NativeUnavailable");
         }
+    }
+
+    private static byte[] tokenBytes(String token) {
+        return token.getBytes(StandardCharsets.UTF_8);
     }
 }
