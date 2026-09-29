@@ -11511,6 +11511,12 @@
     <string name="PurplePinnedMusicFilePromotionFailed">Could not move cached song to chat media</string>
     <string name="PurpleKeepMediaDefault">Keep Media: %1$s (default)</string>
     <string name="PurpleKeepMediaThisChat">Keep Media: %1$s (this chat)</string>
+    <string name="PurplePinnedMusicListSearch">Search titles, artists, file names</string>
+    <string name="PurplePinnedMusicListNoMatch">No pinned songs match this search. It looks at titles, artists and file names.</string>
+    <string name="PurplePinnedMusicListGone">This pinned song download is no longer running.</string>
+    <string name="PurplePinnedMusicListMissing">This song is no longer on the device.</string>
+    <string name="PurpleChatStorage">Storage used by this chat</string>
+    <string name="PurpleChatStorageEmpty">No files in Telegram’s storage are attributed to this chat. Telegram records a file’s chat when it downloads the file, so older files may not be counted here.</string>
     <string name="PurpleTradeRowValue">%1$s \u00b7 read %2$s</string>
     <string name="PurpleTradeRowNothing">nothing arrived</string>
     <!-- Purple: screen time - the recorder, the screen and the budgets -->

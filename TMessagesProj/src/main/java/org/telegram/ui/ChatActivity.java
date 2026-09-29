@@ -1695,6 +1695,7 @@ public class ChatActivity extends BaseFragment implements
     private final static int peek_last_seen = 75;
     private final static int download_pinned_music = 76;
     private final static int purple_keep_media = 77;
+    private final static int purple_chat_storage = 78;
 
     private final static int id_chat_compose_panel = 1000;
 
@@ -3914,6 +3915,8 @@ public class ChatActivity extends BaseFragment implements
                             getTopicId(), mergeDialogId);
                 } else if (id == purple_keep_media) {
                     purpleShowKeepMedia();
+                } else if (id == purple_chat_storage) {
+                    purpleOpenChatStorage();
                 } else if (id == mute) {
                     toggleMute(false);
                 } else if (id == add_shortcut) {
@@ -4351,6 +4354,8 @@ public class ChatActivity extends BaseFragment implements
             if (keepMediaType >= 0) {
                 purpleKeepMediaItem = headerItem.lazilyAddSubItem(purple_keep_media,
                         R.drawable.msg_autodelete, purpleKeepMediaLabel(keepMediaType));
+                headerItem.lazilyAddSubItem(purple_chat_storage, R.drawable.msg2_data,
+                        getString(R.string.PurpleChatStorage));
             }
 
             if (currentUser != null && currentUser.self && chatMode != MODE_SAVED) {
@@ -30209,9 +30214,25 @@ public class ChatActivity extends BaseFragment implements
                     topPanelLayout.setViewVisible(bar, shown, shownAnimated);
                 }
             });
+            bar.setOnOpenList(this::purpleOpenPinnedMusicList);
             purplePinnedMusicBar = bar;
         }
         purplePinnedMusicBar.bind(currentAccount, dialog_id, getTopicId(), animated);
+    }
+
+    private void purpleOpenPinnedMusicList() {
+        final long topicId = getTopicId();
+        presentFragment(new PurplePinnedMusicList(this, dialog_id, topicId, topicId == 0 ? mergeDialogId : 0));
+    }
+
+    private void purpleOpenChatStorage() {
+        if (purpleKeepMediaType() < 0) {
+            return;
+        }
+        final Bundle args = new Bundle();
+        args.putLong("dialog_id", dialog_id);
+        args.putLong("merge_dialog_id", mergeDialogId);
+        presentFragment(new CacheControlActivity(args));
     }
 
     private ActionBarMenuItem.Item purpleKeepMediaItem;

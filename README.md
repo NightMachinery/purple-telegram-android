@@ -44,10 +44,20 @@ The row reappears when the chat is reopened, for as long as the app process
 keeps the job. Files found only in the older general cache count as incomplete
 until moved to the path the chat player uses.
 
-Tap the progress row to see a scrollable list of every selected song, with a
-title or filename, artist when available, transfer state, progress when
-available, and a failure reason. Each retryable failed song has its own Retry
-button; the row's Retry button still retries all failed songs.
+Tap the progress row to open **Pinned song files**, a page listing every
+selected song with its title (or filename), artist, and either its duration
+once downloaded or its transfer state, progress and failure reason. The search
+button filters by title, artist and original file name; clearing or closing
+the search shows every song again, and live download updates keep the query
+and scroll position. Tapping a song closes the page and scrolls the chat to
+that song's message, in the old group's history for a migrated group; it
+never starts playback. The round button plays or pauses a downloaded song
+through Telegram's normal player, and the next and previous controls then move
+through the downloaded songs the page showed when playback started, in the
+chat's message order rather than the page's order. Songs that are queued,
+downloading, failed or only in the older cache show a progress ring instead
+and cannot be played. Each retryable failed song has its own Retry button; the
+row's Retry button still retries all failed songs.
 
 Selection uses Telegram's music classification: non-voice audio document
 attributes and its MIME fallbacks for FLAC, OGG, and Opus. Generic audio
@@ -71,13 +81,33 @@ whole chat, including all its topics, since Keep Media has no per-topic
 setting. It is not offered in secret chats, channel comment threads, scheduled
 messages, or other special chat modes.
 
+### Storage used by a chat
+
+**Storage used by this chat**, next to Keep Media in the chat menu, opens
+Telegram's Storage Usage screen and, once its scan finishes, the existing
+per-chat sheet with this chat's files by type and its cleanup controls. In a
+group migrated to a supergroup, the sheet also includes files attributed to
+the old group, and clearing them updates both chats' rows on the Storage Usage
+screen. Only files whose download recorded one of these chats as their owner
+are counted, so older files and files shared with other chats may be missing.
+When no files are attributed to the chat, a message says so instead of showing
+an empty sheet. The screen behind the sheet still shows storage for all chats.
+The entry appears in the same chats as Keep Media.
+
 ### Building
 
-The normal build host is the Apple-silicon laptop. Install Android SDK 36 with
-build-tools 36.0.0, Android NDK 27.2.12479018, a compatible JDK/Gradle
-environment, and Qt 6 for Android arm64 before building. Keep enough free disk
-space for the SDK, NDK, Qt, Gradle caches, native intermediates, and APK
-outputs.
+Compile on any machine where the setup below is complete. That can be the
+Apple-silicon laptop, once its checkout has `local.properties`, the native
+submodules and the sparse patterns described below, or the shared Linux build
+box as an optional compile worker, working in an isolated checkout so it never
+disturbs another checkout's work in progress. Acceptance testing runs on the
+laptop's emulator (see **Testing on an emulator**), and release signing stays
+on the Mac: the release keystore never goes to a build worker.
+
+Install Android SDK 36 with build-tools 36.0.0, Android NDK 27.2.12479018, a
+compatible JDK/Gradle environment, and Qt 6 for Android arm64 before building.
+Keep enough free disk space for the SDK, NDK, Qt, Gradle caches, native
+intermediates, and APK outputs.
 
 Create a `local.properties` at the repository root — it is gitignored and must
 never be committed:
@@ -94,8 +124,10 @@ core is the same C++ the desktop fork uses (the `purple-core` submodule under
 `TMessagesProj/jni/purple`) and links Qt Core, which ships inside the APK. The
 official binaries come without an account through
 [aqtinstall](https://github.com/miurahr/aqtinstall):
-`aqt install-qt mac android 6.7.3 android_arm64_v8a -O /path/to/qt` on macOS
-(use the corresponding host name when preparing an optional Linux worker).
+`aqt install-qt mac android 6.7.3 android_arm64_v8a -O /path/to/qt` on macOS.
+On an optional Linux worker, use the `all_os` host instead, because the `linux`
+host lists no Android archive for 6.7.3:
+`aqt install-qt all_os android 6.7.3 android_arm64_v8a -O /path/to/qt`.
 
 Get the `api_id` / `api_hash` pair from https://my.telegram.org/apps. They are
 injected into `BuildConfig` at build time, so no credential is ever hardcoded in
