@@ -155,6 +155,10 @@ public final class PurpleAccountSyncCore {
             String device, String platform, String app, long seq, long at);
     private static native RawReply reserveConfigSeqNative(
             byte[] state, String payloadHash);
+    private static native RawReply initializeLocalStateNative(
+            String installId, String createdDeviceId, String spaceId);
+    private static native RawReply reserveConfigRecordNative(
+            byte[] state, byte[] canonicalOwnRecord);
     private static native RawReply checkOwnRecordNative(byte[] state,
             String currentDevice, int observationKind, byte[] observedRecord);
     private static native RawReply confirmConfigReadBackNative(byte[] state,
@@ -209,6 +213,28 @@ public final class PurpleAccountSyncCore {
         try {
             PurpleCore.ensureLoaded();
             return result(reserveConfigSeqNative(state, payloadHash));
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            return new Result("NativeUnavailable");
+        }
+    }
+
+    public static Result initializeLocalState(String installId,
+            String createdDeviceId, String spaceId) {
+        try {
+            PurpleCore.ensureLoaded();
+            return result(initializeLocalStateNative(
+                    installId, createdDeviceId, spaceId));
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            return new Result("NativeUnavailable");
+        }
+    }
+
+    public static Result reserveConfigRecord(byte[] state,
+            byte[] canonicalOwnRecord) {
+        try {
+            PurpleCore.ensureLoaded();
+            return result(reserveConfigRecordNative(
+                    state, canonicalOwnRecord));
         } catch (UnsatisfiedLinkError | RuntimeException e) {
             return new Result("NativeUnavailable");
         }
