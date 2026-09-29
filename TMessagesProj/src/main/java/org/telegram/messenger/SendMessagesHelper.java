@@ -53,6 +53,7 @@ import androidx.core.view.inputmethod.InputContentInfoCompat;
 
 import org.json.JSONObject;
 import org.telegram.messenger.audioinfo.AudioInfo;
+import org.telegram.messenger.purple.PurpleSync;
 import org.telegram.messenger.support.SparseLongArray;
 import org.telegram.messenger.utils.EphemeralMessagesHelper;
 import org.telegram.messenger.utils.tlutils.AmountUtils;
@@ -1763,6 +1764,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         }
         SendMessagesHelper.SendMessageParams params = SendMessagesHelper.SendMessageParams.of(messageObject);
         params.payStars = payStars;
+        params.sendReceipt = PurpleSync.receiptForRetry(currentAccount, messageObject);
         sendMessage(params);
         return true;
     }

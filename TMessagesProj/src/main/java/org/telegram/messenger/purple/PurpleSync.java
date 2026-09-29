@@ -20,12 +20,17 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLoader;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LocaleController;
+import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SendMessagesHelper;
 import org.telegram.messenger.UserConfig;
+import org.telegram.tgnet.TLRPC;
 
+import java.io.DataInputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.Charset;
 import java.text.SimpleDateFormat;
@@ -206,10 +211,7 @@ public final class PurpleSync {
                     (serverId, preparationFailed) -> {
                         clearPending(pendingSend);
                         if (serverId > 0) {
-                            if (Arrays.equals(PurpleGate.settingsBytes(), sentBytes)) {
-                                noteSent(sentBytes);
-                            }
-                            PurpleSyncOffer.noteSentMessage(account, serverId);
+                            noteConfirmedSend(account, sentBytes, serverId);
                             if (!staged.exists()) {
                                 stagingDir.delete();
                             }
@@ -224,6 +226,72 @@ public final class PurpleSync {
             return LocaleController.getString(R.string.PurpleImportFailed);
         }
         return null;
+    }
+
+    public static SendMessagesHelper.SendReceipt receiptForRetry(int account, MessageObject messageObject) {
+        if (messageObject == null
+                || messageObject.currentAccount != account
+                || messageObject.messageOwner == null
+                || !messageObject.messageOwner.out
+                || messageObject.messageOwner.send_state != MessageObject.MESSAGE_SEND_STATE_SEND_ERROR
+                || messageObject.getDialogId() != UserConfig.getInstance(account).getClientUserId()
+                || !UserConfig.getInstance(account).isClientActivated()
+                || !(messageObject.messageOwner.media instanceof TLRPC.TL_messageMediaDocument)
+                || messageObject.messageOwner.media.document == null
+                || !PurpleSettings.FILE_NAME.equals(
+                        FileLoader.getDocumentFileName(messageObject.messageOwner.media.document))) {
+            return null;
+        }
+        final String path = messageObject.messageOwner.attachPath;
+        if (path == null) {
+            return null;
+        }
+        final File staged = new File(path);
+        final File stagingRoot = new File(
+                FileLoader.getDirectory(FileLoader.MEDIA_DIR_CACHE), "purple-sync");
+        final File stagingDir = staged.getParentFile();
+        if (stagingDir == null
+                || !PurpleSettings.FILE_NAME.equals(staged.getName())
+                || !stagingRoot.equals(stagingDir.getParentFile())) {
+            return null;
+        }
+        try {
+            final String uuid = stagingDir.getName();
+            if (!UUID.fromString(uuid).toString().equals(uuid)
+                    || !staged.getCanonicalFile().equals(new File(
+                            new File(stagingRoot.getCanonicalFile(), uuid),
+                            PurpleSettings.FILE_NAME))
+                    || !staged.isFile()
+                    || staged.length() == 0
+                    || staged.length() > PurpleSettings.MAX_SIZE) {
+                return null;
+            }
+            final byte[] sentBytes = new byte[(int) staged.length()];
+            try (DataInputStream input = new DataInputStream(new FileInputStream(staged))) {
+                input.readFully(sentBytes);
+                if (input.read() != -1) {
+                    return null;
+                }
+            }
+            if (!PurpleCore.parse(sentBytes).ok) {
+                return null;
+            }
+            return (serverId, preparationFailed) -> {
+                if (serverId > 0) {
+                    noteConfirmedSend(account, sentBytes, serverId);
+                }
+            };
+        } catch (IOException | RuntimeException | UnsatisfiedLinkError e) {
+            FileLog.e(e);
+            return null;
+        }
+    }
+
+    private static void noteConfirmedSend(int account, byte[] sentBytes, int serverId) {
+        if (Arrays.equals(PurpleGate.settingsBytes(), sentBytes)) {
+            noteSent(sentBytes);
+        }
+        PurpleSyncOffer.noteSentMessage(account, serverId);
     }
 
     /** Remembers the file this device just sent. */
