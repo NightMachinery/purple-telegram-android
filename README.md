@@ -420,11 +420,19 @@ the account transport. `initializeLocalState` creates validated canonical
 state bytes from install, device and space identifiers. `reserveConfigRecord`
 validates a canonical own config record against the current state, reserves its
 sequence and payload hash, and stores its version key as pending in the returned
-state bytes. The older `reserveConfigSeq` helper only reserves a counter and
+state bytes and appends the exact canonical record hash to the issued log in
+that same returned state. The platform stages the exact record and durably
+persists the returned state before uploading. `appendIssuedConfigRecord` is
+also exposed for an already reserved sequence and its canonical staged record.
+The older `reserveConfigSeq` helper only reserves a counter and
 hash; it does not set the pending version key. None of these bridge calls writes
 files or sends messages.
 `recordConfirmedOwnConfigMessage` also stores validated duplicate posts and
 in-place edits of an own server record in the returned state.
+`adoptIssuedOwnConfigMessage` adds a late duplicate post after confirmation
+only when its fresh canonical read-back exactly matches an issued record. It
+accepts records from an earlier space after a space move. The caller persists
+the returned ledger state; adoption does not delete Telegram messages.
 `checkOwnConfigMessageDeletion`
 requires a fresh canonical server read-back for that same ID and permits
 deletion only after a newer sequence is confirmed. Duplicate posts at the
