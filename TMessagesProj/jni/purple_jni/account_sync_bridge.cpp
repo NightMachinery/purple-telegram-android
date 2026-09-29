@@ -303,7 +303,8 @@ struct CheckedRecord {
 		int kind,
 		jbyteArray observed,
 		const Purple::SyncLocalState &state,
-		QString &error) {
+		QString &error,
+		bool requireCanonical = false) {
 	if (kind == 0 || kind == 1) {
 		if (observed) {
 			error = u"UnexpectedObservationBytes"_q;
@@ -330,9 +331,19 @@ struct CheckedRecord {
 		error = u"ObservationEnvelope"_q;
 		return std::nullopt;
 	}
-	if (!record.payload) {
+	if (!record.payload
+		|| (requireCanonical
+			&& record.payload.status != Purple::ConfigPayloadStatus::Valid)) {
 		error = u"ObservationPayload"_q;
 		return std::nullopt;
+	}
+	if (requireCanonical) {
+		const auto canonical = Purple::SerializeSyncEnvelope(
+			record.envelope.envelope);
+		if (!canonical || canonical.canonical != bytes) {
+			error = u"ObservationCanonical"_q;
+			return std::nullopt;
+		}
 	}
 	const auto document = record.envelope.envelope.document;
 	if (document.value(u"space"_q).toString() != state.space
@@ -607,13 +618,15 @@ Java_org_telegram_messenger_purple_PurpleAccountSyncCore_checkOwnRecordNative(
 }
 
 extern "C" JNIEXPORT jobject JNICALL
-Java_org_telegram_messenger_purple_PurpleAccountSyncCore_confirmOwnReadBackNative(
-		JNIEnv *env, jclass, jbyteArray state, jstring currentDevice,
-		jint kind, jbyteArray observed) {
+Java_org_telegram_messenger_purple_PurpleAccountSyncCore_confirmConfigReadBackNative(
+		JNIEnv *env, jclass, jbyteArray state, jbyteArray staged,
+		jstring currentDevice, jint kind, jbyteArray observed) {
 	auto bytes = QByteArray();
+	auto stagedBytes = QByteArray();
 	auto device = QString();
 	auto readError = QString();
-	if (!ReadBytes(env, state, bytes, readError)) {
+	if (!ReadBytes(env, state, bytes, readError)
+		|| !ReadBytes(env, staged, stagedBytes, readError)) {
 		return Invalid(env, readError);
 	}
 	if (!ReadString(env, currentDevice, device)) {
@@ -627,14 +640,41 @@ Java_org_telegram_messenger_purple_PurpleAccountSyncCore_confirmOwnReadBackNativ
 			{ u"stateError"_q, Name(parsed.error) },
 		});
 	}
+	if (parsed.state.config.pendingSeq == 0) {
+		return Invalid(env, u"NoPending"_q);
+	}
+	const auto stagedRecord = CheckRecord(stagedBytes);
+	if (!stagedRecord.envelope) {
+		return Invalid(env, u"StagedEnvelope"_q);
+	}
+	if (stagedRecord.payload.status != Purple::ConfigPayloadStatus::Valid) {
+		return Invalid(env, u"StagedPayload"_q);
+	}
+	const auto canonical = Purple::SerializeSyncEnvelope(
+		stagedRecord.envelope.envelope);
+	if (!canonical || canonical.canonical != stagedBytes) {
+		return Invalid(env, u"StagedCanonical"_q);
+	}
+	const auto stagedDocument = stagedRecord.envelope.envelope.document;
+	if (stagedDocument.value(u"space"_q).toString() != parsed.state.space
+		|| stagedDocument.value(u"writer"_q).toObject()
+			.value(u"install"_q).toString() != parsed.state.install
+		|| uint64_t(stagedDocument.value(u"seq"_q).toDouble())
+			!= parsed.state.config.pendingSeq
+		|| stagedDocument.value(u"payload_sha256"_q).toString()
+			!= parsed.state.config.ownHash
+		|| stagedRecord.payload.version.key
+			!= parsed.state.configData.pending) {
+		return Invalid(env, u"StagedMismatch"_q);
+	}
 	auto error = QString();
 	const auto observation = Observation(
-		env, kind, observed, parsed.state, error);
+		env, kind, observed, parsed.state, error, true);
 	if (!observation) {
 		return Invalid(env, error);
 	}
-	const auto confirmed = Purple::ConfirmSyncReadBack(parsed.state, device,
-		Purple::SyncLocalStream::Config, *observation);
+	const auto confirmed = Purple::ConfirmConfigReadBack(parsed.state, device,
+		*observation, stagedRecord.payload.version);
 	const auto serialized = Purple::SerializeSyncLocalState(confirmed.state);
 	if (!serialized) {
 		return Invalid(env, u"StateSerialize"_q);

@@ -157,8 +157,9 @@ public final class PurpleAccountSyncCore {
             byte[] state, String payloadHash);
     private static native RawReply checkOwnRecordNative(byte[] state,
             String currentDevice, int observationKind, byte[] observedRecord);
-    private static native RawReply confirmOwnReadBackNative(byte[] state,
-            String currentDevice, int observationKind, byte[] observedRecord);
+    private static native RawReply confirmConfigReadBackNative(byte[] state,
+            byte[] stagedRecord, String currentDevice, int observationKind,
+            byte[] observedRecord);
     private static native RawReply formatInstallIdNative(byte[] entropy16);
     private static native RawReply formatSpaceIdNative(byte[] entropy16);
 
@@ -224,12 +225,13 @@ public final class PurpleAccountSyncCore {
         }
     }
 
-    public static Result confirmOwnReadBack(byte[] state, String currentDevice,
-            int observationKind, byte[] observedRecord) {
+    public static Result confirmConfigReadBack(byte[] state,
+            byte[] stagedRecord, String currentDevice, int observationKind,
+            byte[] observedRecord) {
         try {
             PurpleCore.ensureLoaded();
-            return result(confirmOwnReadBackNative(
-                    state, currentDevice, observationKind, observedRecord));
+            return result(confirmConfigReadBackNative(state, stagedRecord,
+                    currentDevice, observationKind, observedRecord));
         } catch (UnsatisfiedLinkError | RuntimeException e) {
             return new Result("NativeUnavailable");
         }

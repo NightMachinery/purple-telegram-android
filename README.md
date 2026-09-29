@@ -402,8 +402,12 @@ The shared core now includes config version and remote-head classification,
 strict JSON canonicalization, validated uncompressed sync envelopes, and
 config payload inspection that checks ancestry, fingerprints, and TOML schema.
 Android exposes config record inspection and construction, local-state parsing
-and sequence reservation, and own-record clone/read-back checks through a
-raw-byte JNI bridge. `PurpleAccountSyncCore.buildConfigAcknowledgement` takes
+and sequence reservation, own-record clone checks, and version-aware config
+confirmation through a raw-byte JNI bridge. Confirmation requires canonical
+staged bytes matching the pending state and a validated own server read-back;
+it advances the config base and lineage only for the exact pending sequence and
+payload hash. The bridge returns a new state but does not persist it or call
+the account transport. `PurpleAccountSyncCore.buildConfigAcknowledgement` takes
 an inspected remote record's canonical bytes and the exact local settings bytes.
 JNI validates the remote envelope, config payload, space, and text again, then
 publishes the same version key, parents, and lineage under this install's writer

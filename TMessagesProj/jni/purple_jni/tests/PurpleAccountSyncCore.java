@@ -39,6 +39,9 @@ public final class PurpleAccountSyncCore {
             byte[] remoteRecord, String space, String install, String device,
             String platform, String app, long seq, long at);
     private static native RawReply inspectConfigRecordNative(byte[] record);
+    private static native RawReply confirmConfigReadBackNative(byte[] state,
+            byte[] stagedRecord, String currentDevice, int observationKind,
+            byte[] observedRecord);
 
     private static void expect(RawReply reply, String status, String error) {
         if (reply == null || !reply.metadataJson.contains("\"status\":\"" + status + "\"")
@@ -54,6 +57,51 @@ public final class PurpleAccountSyncCore {
             throw new AssertionError(reply.metadataJson);
         }
         return matcher.group(1);
+    }
+
+    private static String field(RawReply reply, String name) {
+        final Matcher matcher = Pattern.compile("\\\"" + name
+                + "\\\":\\\"([^\\\"]*)\\\"").matcher(reply.metadataJson);
+        if (!matcher.find()) {
+            throw new AssertionError(reply.metadataJson);
+        }
+        return matcher.group(1);
+    }
+
+    private static byte[] state(long seq, long pendingSeq, long confirmedSeq,
+            String ownHash, String base, String pending, String lineage,
+            String equiv) {
+        return ("{\"version\":1,\"install\":\"" + INSTALL_A
+                + "\",\"created_device\":\"phone\",\"space\":\"" + SPACE
+                + "\",\"streams\":{\"config\":{\"seq\":" + seq
+                + ",\"pending_seq\":" + pendingSeq
+                + ",\"confirmed_seq\":" + confirmedSeq
+                + ",\"own_hash\":\"" + ownHash
+                + "\",\"base\":\"" + base
+                + "\",\"base_lineage\":" + lineage
+                + ",\"equiv\":" + equiv
+                + ",\"pending\":\"" + pending
+                + "\",\"seen_seq\":{\"" + INSTALL_B + "\":7}},"
+                + "\"library\":{\"seq\":0,\"pending_seq\":0,"
+                + "\"confirmed_seq\":0,\"own_hash\":\"\"}}}")
+                .getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static void expectConfirmation(RawReply reply, boolean changed,
+            String verdict, String base, String lineage, String equiv) {
+        expect(reply, "Valid", "None");
+        if (!reply.metadataJson.contains("\"changed\":" + changed)
+                || !reply.metadataJson.contains("\"verdict\":\"" + verdict + "\"")
+                || reply.state == null) {
+            throw new AssertionError(reply.metadataJson);
+        }
+        final String saved = new String(reply.state, StandardCharsets.UTF_8);
+        if (!saved.contains("\"base\":\"" + base + "\"")
+                || !saved.contains("\"base_lineage\":" + lineage)
+                || !saved.contains("\"equiv\":" + equiv)
+                || !saved.contains("\"" + INSTALL_B + "\":7")) {
+            throw new AssertionError(saved);
+        }
     }
 
     private static String arrayField(RawReply reply, String name) {
@@ -149,6 +197,93 @@ public final class PurpleAccountSyncCore {
         expect(buildConfigAcknowledgementNative(CHILD, remote.record, SPACE,
                 INSTALL_B, "desktop", "macos", "Purple", 0, 0),
                 "Invalid", "Envelope");
-        System.out.println("account sync acknowledgement JNI smoke passed");
+
+        final byte[] firstState = state(1, 1, 0, field(root, "payloadHash"),
+                "", key(root), "[]", "[]");
+        final RawReply firstConfirmed = confirmConfigReadBackNative(firstState,
+                root.record, "phone", 2, root.record);
+        expectConfirmation(firstConfirmed, true, "NoClone", key(root), "[]", "[]");
+        if (!new String(firstConfirmed.state, StandardCharsets.UTF_8)
+                .contains("\"pending_seq\":0")) {
+            throw new AssertionError("first pending sequence survived");
+        }
+
+        final RawReply oldEquivalent = buildConfigRecordNative(ROOT,
+                new byte[][] { root.record }, SPACE, INSTALL_A,
+                "phone", "android", "Purple", 77, 0);
+        expect(oldEquivalent, "Valid", "None");
+        final String oldEquiv = "[\"" + key(oldEquivalent) + "\"]";
+        final byte[] changedState = state(2, 2, 1, field(remote, "payloadHash"),
+                key(root), key(remote), "[]", oldEquiv);
+        final RawReply changedConfirmed = confirmConfigReadBackNative(
+                changedState, remote.record, "phone", 2, remote.record);
+        expectConfirmation(changedConfirmed, true, "NoClone", key(remote),
+                arrayField(remote, "lineage"), "[]");
+        final RawReply sameFingerprint = buildConfigRecordNative(CHILD,
+                new byte[][] { remote.record }, SPACE, INSTALL_A,
+                "phone", "android", "Purple", 77, 0);
+        expect(sameFingerprint, "Valid", "None");
+        final RawReply sameVersion = buildConfigAcknowledgementNative(CHILD,
+                remote.record, SPACE, INSTALL_A, "phone", "android", "Purple", 3, 0);
+        expect(sameVersion, "Valid", "None");
+        final String retainedEquiv = "[\"" + key(sameFingerprint) + "\"]";
+        final byte[] sameState = state(3, 3, 2, field(sameVersion, "payloadHash"),
+                key(remote), key(remote), arrayField(remote, "lineage"),
+                retainedEquiv);
+        expectConfirmation(confirmConfigReadBackNative(sameState,
+                sameVersion.record, "phone", 2, sameVersion.record),
+                true, "NoClone", key(remote), arrayField(remote, "lineage"),
+                retainedEquiv);
+
+        expectConfirmation(confirmConfigReadBackNative(changedState,
+                remote.record, "phone", 2, root.record), false, "NoClone",
+                key(root), "[]", oldEquiv);
+        final RawReply wrongHash = buildConfigRecordNative(ROOT,
+                new byte[0][], SPACE, INSTALL_A, "phone", "android", "Purple", 2, 0);
+        expect(wrongHash, "Valid", "None");
+        expectConfirmation(confirmConfigReadBackNative(changedState,
+                remote.record, "phone", 2, wrongHash.record), false,
+                "HashMismatch", key(root), "[]", oldEquiv);
+        final RawReply higher = buildConfigRecordNative(ROOT,
+                new byte[0][], SPACE, INSTALL_A, "phone", "android", "Purple", 3, 0);
+        expect(higher, "Valid", "None");
+        expectConfirmation(confirmConfigReadBackNative(changedState,
+                remote.record, "phone", 2, higher.record), false,
+                "RemoteAhead", key(root), "[]", oldEquiv);
+        expectConfirmation(confirmConfigReadBackNative(changedState,
+                remote.record, "", 2, remote.record), false,
+                "DeviceMismatch", key(root), "[]", oldEquiv);
+        expectConfirmation(confirmConfigReadBackNative(changedState,
+                remote.record, "other-phone", 2, remote.record), false,
+                "DeviceMismatch", key(root), "[]", oldEquiv);
+
+        expect(confirmConfigReadBackNative(changedState, null,
+                "phone", 2, remote.record), "Invalid", "NullInput");
+        expect(confirmConfigReadBackNative(changedState, new byte[] { 1 },
+                "phone", 2, remote.record), "Invalid", "StagedEnvelope");
+        expect(confirmConfigReadBackNative(changedState, wrongStream,
+                "phone", 2, remote.record), "Invalid", "StagedPayload");
+        expect(confirmConfigReadBackNative(changedState, noncanonical,
+                "phone", 2, remote.record), "Invalid", "StagedCanonical");
+        expect(confirmConfigReadBackNative(changedState, root.record,
+                "phone", 2, remote.record), "Invalid", "StagedMismatch");
+        expect(confirmConfigReadBackNative(changedState, acknowledged.record,
+                "phone", 2, remote.record), "Invalid", "StagedMismatch");
+        final byte[] wrongStagedHash = state(2, 2, 1,
+                field(root, "payloadHash"), key(root), key(remote), "[]", "[]");
+        expect(confirmConfigReadBackNative(wrongStagedHash, remote.record,
+                "phone", 2, remote.record), "Invalid", "StagedMismatch");
+        final byte[] wrongPendingKey = state(2, 2, 1,
+                field(remote, "payloadHash"), key(root), key(root), "[]", "[]");
+        expect(confirmConfigReadBackNative(wrongPendingKey, remote.record,
+                "phone", 2, remote.record), "Invalid", "StagedMismatch");
+        expect(confirmConfigReadBackNative(changedState, remote.record,
+                "phone", 2, noncanonical), "Invalid", "ObservationCanonical");
+        expect(confirmConfigReadBackNative(changedState, remote.record,
+                "phone", 2, acknowledged.record), "Invalid", "ObservationIdentity");
+        expectConfirmation(confirmConfigReadBackNative(changedState,
+                remote.record, "phone", 1, null), false, "NoClone",
+                key(root), "[]", oldEquiv);
+        System.out.println("account sync JNI smoke passed");
     }
 }
