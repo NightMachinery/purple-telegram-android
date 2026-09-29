@@ -334,11 +334,8 @@ public class PurpleSettingsEditorActivity extends BaseFragment {
             error(getString(R.string.PurpleEditorTooBig));
             return;
         }
-        // Parsed here rather than trusting the status line, which is debounced
-        // and may still be describing the text as it was a keystroke ago. A
-        // parse of at most 64 KB is a few milliseconds and this is a button
-        // press, so doing it on this thread costs nothing and removes the race
-        // outright.
+        // The status line is debounced and may describe older text. Parse the
+        // exact bytes being saved, though a large file can pause this thread.
         final PurpleCore.ParseResult result;
         try {
             result = PurpleCore.parse(bytes);

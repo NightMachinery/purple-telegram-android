@@ -11244,7 +11244,7 @@
     <string name="PurpleEditorChecking">Checking\u2026</string>
     <string name="PurpleEditorRevert">Revert</string>
     <string name="PurpleEditorSaveBroken">Fix the error before saving; nothing was written.</string>
-    <string name="PurpleEditorTooBig">That is over 64 KB, so it was not saved.</string>
+    <string name="PurpleEditorTooBig">That is over 4 MiB, so it was not saved.</string>
     <string name="PurpleEditorSaveFailed">Could not write settings.toml, so nothing was changed.</string>
     <string name="PurpleEditorMovedTitle">The file changed</string>
     <string name="PurpleEditorMoved">settings.toml has been written by something else since you opened it. Reload it, or overwrite it with what is on screen?</string>

@@ -45,10 +45,10 @@ public final class PurpleSyncOffer {
     private static final String OFFERED_KEY = "purple_sync_offered_id";
 
     /** How many of the chat's newest documents we are willing to look through. */
-    private static final int SEARCH_LIMIT = 20;
+    private static final int SEARCH_LIMIT = 100;
 
-    /** How long a tapped Import waits for the 64 KB to arrive before giving up. */
-    private static final long DOWNLOAD_TIMEOUT = 60 * 1000L;
+    /** How long a tapped Import waits for a document before giving up. */
+    private static final long DOWNLOAD_TIMEOUT = 5 * 60 * 1000L;
 
     /** Accounts already looked at in this process. */
     private static final Set<Integer> checked = new HashSet<>();
@@ -59,7 +59,7 @@ public final class PurpleSyncOffer {
     /**
      * Looks Saved Messages up once, on the first chat list this process builds.
      *
-     * Costs one small request per account per process and nothing at all after
+     * Costs at most two searches per account per process and nothing after
      * that, which is why it is safe to hang off the chat list rather than off
      * some deliberate "check for settings" action nobody would ever press.
      */
@@ -299,7 +299,7 @@ public final class PurpleSyncOffer {
             PurpleSettings.importFrom(activity, cached, message.date);
             return;
         }
-        // Not downloaded yet. 64 KB at most, over the connection the search has
+        // Not downloaded yet. Up to 4 MiB over the connection the search has
         // just used, so waiting for it here is friendlier than the chat menu's
         // "tap again once it has arrived".
         new Download(fragment, account, message).start(document);

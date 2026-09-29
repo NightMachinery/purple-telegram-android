@@ -41,7 +41,7 @@ public final class PurpleSettings {
     public static final String LAST_GOOD_NAME = "settings.toml.good";
 
     /** Largest settings.toml we are willing to look at. */
-    public static final long MAX_SIZE = 64 * 1024;
+    public static final long MAX_SIZE = 4 * 1024 * 1024;
 
     private PurpleSettings() {
     }
