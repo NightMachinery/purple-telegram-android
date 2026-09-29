@@ -345,6 +345,8 @@ public final class PurpleSync {
             final File staged = new File(dir, PurpleSettings.FILE_NAME);
             if (staged.isFile() && staged.lastModified() < oldest) {
                 removeStaging(staged);
+            } else if (!staged.exists()) {
+                dir.delete();
             }
         }
     }
