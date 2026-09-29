@@ -490,6 +490,67 @@ Java_org_telegram_messenger_purple_PurpleAccountSyncCore_inspectStateNative(
 }
 
 extern "C" JNIEXPORT jobject JNICALL
+Java_org_telegram_messenger_purple_PurpleAccountSyncCore_checkLocalStageNative(
+		JNIEnv *env, jclass, jbyteArray state, jbyteArray record) {
+	auto stateBytes = QByteArray();
+	auto recordBytes = QByteArray();
+	auto error = QString();
+	if (!ReadBytes(env, state, stateBytes, error)
+		|| !ReadBytes(env, record, recordBytes, error)) {
+		return Invalid(env, error);
+	}
+	const auto parsed = Purple::ParseSyncLocalState(stateBytes);
+	if (!parsed) {
+		return Reply(env, {
+			{ u"status"_q, Name(parsed.status) },
+			{ u"error"_q, Name(parsed.error) },
+		});
+	}
+	const auto checked = CheckRecord(recordBytes);
+	if (!checked.envelope
+		|| checked.payload.status != Purple::ConfigPayloadStatus::Valid) {
+		return Invalid(env, u"InvalidStage"_q);
+	}
+	const auto canonical = Purple::SerializeSyncEnvelope(
+		checked.envelope.envelope);
+	if (!canonical || canonical.canonical != recordBytes) {
+		return Invalid(env, u"NoncanonicalStage"_q);
+	}
+	const auto &local = parsed.state;
+	const auto document = checked.envelope.envelope.document;
+	const auto writer = document.value(u"writer"_q).toObject();
+	const auto seq = uint64_t(document.value(u"seq"_q).toDouble());
+	if (document.value(u"space"_q).toString() != local.space
+		|| writer.value(u"install"_q).toString() != local.install
+		|| writer.value(u"device"_q).toString() != local.createdDevice
+		|| document.value(u"payload_sha256"_q).toString()
+			!= local.config.ownHash || seq != local.config.seq) {
+		return Invalid(env, u"StageMismatch"_q);
+	}
+	if (seq == local.config.pendingSeq
+		&& checked.payload.version.key == local.configData.pending) {
+		return Reply(env, {
+			{ u"status"_q, u"Valid"_q },
+			{ u"error"_q, u"None"_q },
+			{ u"verdict"_q, u"Pending"_q },
+			{ u"seq"_q, QString::number(seq) },
+		});
+	}
+	if (local.config.pendingSeq == 0
+		&& seq == local.config.confirmedSeq
+		&& checked.payload.version.key == local.configData.base
+		&& checked.payload.version.lineage == local.configData.baseLineage) {
+		return Reply(env, {
+			{ u"status"_q, u"Valid"_q },
+			{ u"error"_q, u"None"_q },
+			{ u"verdict"_q, u"Confirmed"_q },
+			{ u"seq"_q, QString::number(seq) },
+		});
+	}
+	return Invalid(env, u"StageMismatch"_q);
+}
+
+extern "C" JNIEXPORT jobject JNICALL
 Java_org_telegram_messenger_purple_PurpleAccountSyncCore_buildConfigRecordNative(
 		JNIEnv *env, jclass, jbyteArray text, jobjectArray parents,
 		jstring space, jstring install, jstring device, jstring platform,
