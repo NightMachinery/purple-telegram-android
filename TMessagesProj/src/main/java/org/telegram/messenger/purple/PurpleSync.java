@@ -29,8 +29,11 @@ import java.io.FileOutputStream;
 import java.io.OutputStream;
 import java.nio.charset.Charset;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.Locale;
+import java.util.UUID;
 
 public final class PurpleSync {
 
@@ -44,6 +47,18 @@ public final class PurpleSync {
     private static final long DEBOUNCE_MS = 5000L;
 
     private static final Charset UTF_8 = Charset.forName("UTF-8");
+    private static final long STAGING_MAX_AGE_MS = 30L * 24 * 60 * 60 * 1000;
+    private static final ArrayList<PendingSend> pendingSends = new ArrayList<>();
+
+    private static final class PendingSend {
+        final int account;
+        final byte[] bytes;
+
+        PendingSend(int account, byte[] bytes) {
+            this.account = account;
+            this.bytes = bytes;
+        }
+    }
 
     private PurpleSync() {
     }
@@ -145,9 +160,10 @@ public final class PurpleSync {
         if (bytes == null) {
             return LocaleController.getString(R.string.PurpleFileMissing);
         }
+        final byte[] sentBytes = bytes.clone();
         final PurpleCore.ParseResult parsed;
         try {
-            parsed = PurpleCore.parse(bytes);
+            parsed = PurpleCore.parse(sentBytes);
         } catch (UnsatisfiedLinkError | RuntimeException e) {
             FileLog.e(e);
             return LocaleController.getString(R.string.PurpleCoreUnavailable);
@@ -155,43 +171,56 @@ public final class PurpleSync {
         if (!parsed.ok) {
             return LocaleController.getString(R.string.PurpleSendRefused);
         }
-        // Staged under the exact name, because the name is what the launch
-        // offer and the chat's own menu item match on. Sending the real file
-        // would work too, but it would hand an uploader a path the gate is
-        // writing to.
-        final File staged = new File(
-                FileLoader.getDirectory(FileLoader.MEDIA_DIR_CACHE),
-                PurpleSettings.FILE_NAME);
-        if (!writeBytes(staged, bytes)) {
+        final PendingSend pendingSend = new PendingSend(account, sentBytes);
+        synchronized (pendingSends) {
+            for (PendingSend pending : pendingSends) {
+                if (pending.account == account && Arrays.equals(pending.bytes, sentBytes)) {
+                    return null;
+                }
+            }
+            pendingSends.add(pendingSend);
+        }
+        final File stagingRoot = new File(
+                FileLoader.getDirectory(FileLoader.MEDIA_DIR_CACHE), "purple-sync");
+        pruneStaging(stagingRoot);
+        final File stagingDir = new File(stagingRoot, UUID.randomUUID().toString());
+        if (!stagingDir.mkdirs()) {
+            clearPending(pendingSend);
+            return LocaleController.getString(R.string.PurpleImportFailed);
+        }
+        final File staged = new File(stagingDir, PurpleSettings.FILE_NAME);
+        if (!writeBytes(staged, sentBytes)) {
+            clearPending(pendingSend);
+            removeStaging(staged);
             return LocaleController.getString(R.string.PurpleImportFailed);
         }
         final String caption = "Purple settings · schema v" + parsed.version + " · "
                 + new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(new Date())
                 + " · Android";
-        SendMessagesHelper.prepareSendingDocument(
-                AccountInstance.getInstance(account),
-                staged.getAbsolutePath(),
-                staged.getAbsolutePath(),
-                null,
-                caption,
-                "text/plain",
-                UserConfig.getInstance(account).getClientUserId(),
-                null,
-                null,
-                null,
-                null,
-                null,
-                true,
-                0,
-                null,
-                null,
-                false);
-        // Written down here rather than by the callers, so the manual button
-        // and the debounce cannot disagree about it: a file sent by hand is
-        // just as much "these bytes are already over there" as one sent by the
-        // timer, and the next save of the same bytes should be quiet either
-        // way.
-        noteSent(bytes);
+        try {
+            SendMessagesHelper.prepareSendingPurpleDocument(
+                    AccountInstance.getInstance(account),
+                    staged.getAbsolutePath(),
+                    caption,
+                    UserConfig.getInstance(account).getClientUserId(),
+                    (serverId, preparationFailed) -> {
+                        clearPending(pendingSend);
+                        if (serverId > 0) {
+                            noteSent(sentBytes);
+                            PurpleSyncOffer.noteSentMessage(account, serverId);
+                            if (!staged.exists()) {
+                                stagingDir.delete();
+                            }
+                        } else if (preparationFailed) {
+                            removeStaging(staged);
+                        }
+                    });
+        } catch (RuntimeException e) {
+            FileLog.e(e);
+            clearPending(pendingSend);
+            removeStaging(staged);
+            return LocaleController.getString(R.string.PurpleImportFailed);
+        }
         return null;
     }
 
@@ -215,6 +244,35 @@ public final class PurpleSync {
     private static void write(String text) {
         if (text != null) {
             PurpleState.write(text.getBytes(UTF_8));
+        }
+    }
+
+    private static void clearPending(PendingSend pendingSend) {
+        synchronized (pendingSends) {
+            pendingSends.remove(pendingSend);
+        }
+    }
+
+    private static void removeStaging(File staged) {
+        if (staged.delete()) {
+            staged.getParentFile().delete();
+        }
+    }
+
+    private static void pruneStaging(File root) {
+        final File[] dirs = root.listFiles();
+        if (dirs == null) {
+            return;
+        }
+        final long oldest = System.currentTimeMillis() - STAGING_MAX_AGE_MS;
+        for (File dir : dirs) {
+            if (!dir.isDirectory() || dir.lastModified() >= oldest) {
+                continue;
+            }
+            final File staged = new File(dir, PurpleSettings.FILE_NAME);
+            if (staged.isFile() && staged.lastModified() < oldest) {
+                removeStaging(staged);
+            }
         }
     }
 

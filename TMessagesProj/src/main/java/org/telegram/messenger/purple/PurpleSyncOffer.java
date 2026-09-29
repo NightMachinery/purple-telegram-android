@@ -56,6 +56,16 @@ public final class PurpleSyncOffer {
     private PurpleSyncOffer() {
     }
 
+    public static void noteSentMessage(int account, int serverId) {
+        if (serverId <= 0) {
+            return;
+        }
+        final SharedPreferences prefs = MessagesController.getMainSettings(account);
+        if (serverId > prefs.getInt(OFFERED_KEY, 0)) {
+            prefs.edit().putInt(OFFERED_KEY, serverId).apply();
+        }
+    }
+
     /**
      * Looks Saved Messages up once, on the first chat list this process builds.
      *
@@ -142,14 +152,14 @@ public final class PurpleSyncOffer {
             // Not newer, so nothing to offer. The id still moves on for the
             // same reason the launch check moves it: this message will not
             // become worth offering later either.
-            MessagesController.getMainSettings(account).edit().putInt(OFFERED_KEY, message.id).apply();
+            noteSentMessage(account, message.id);
             FileLog.d("Purple: sync check: msg " + message.id + " is not newer than the local file.");
             return false;
         }
         if (!BulletinFactory.canShowBulletin(fragment)) {
             return false;
         }
-        MessagesController.getMainSettings(account).edit().putInt(OFFERED_KEY, message.id).apply();
+        noteSentMessage(account, message.id);
         BulletinFactory.of(fragment)
                 .createSimpleBulletin(
                         R.raw.info,
@@ -258,7 +268,7 @@ public final class PurpleSyncOffer {
             // Older than what is already on disk, so not worth offering now -
             // and it will not become worth offering later either, which is why
             // the id moves on rather than being left to come back tomorrow.
-            prefs.edit().putInt(OFFERED_KEY, message.id).apply();
+            noteSentMessage(account, message.id);
             FileLog.d(head + "skipped (older than the local file).");
             return;
         }
@@ -270,7 +280,7 @@ public final class PurpleSyncOffer {
         // Written before the line is drawn. That covers the crash, and it also
         // covers both ways of saying no - swiping the bulletin away and letting
         // it time out - neither of which then needs a listener of its own.
-        prefs.edit().putInt(OFFERED_KEY, message.id).apply();
+        noteSentMessage(account, message.id);
         FileLog.d(head + "offering.");
 
         BulletinFactory.of(fragment)
@@ -287,7 +297,7 @@ public final class PurpleSyncOffer {
         // Again after the choice. The id is already down from the line above;
         // repeating it here keeps the record beside the decision it records,
         // so neither half can be moved without the other being noticed.
-        MessagesController.getMainSettings(account).edit().putInt(OFFERED_KEY, message.id).apply();
+        noteSentMessage(account, message.id);
 
         final Activity activity = fragment.getParentActivity();
         final TLRPC.Document document = documentOf(message);
