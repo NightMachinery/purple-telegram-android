@@ -150,6 +150,9 @@ public final class PurpleAccountSyncCore {
     private static native RawReply buildConfigRecordNative(byte[] text,
             byte[][] parentRecords, String space, String install,
             String device, String platform, String app, long seq, long at);
+    private static native RawReply buildConfigAcknowledgementNative(byte[] text,
+            byte[] remoteRecord, String space, String install,
+            String device, String platform, String app, long seq, long at);
     private static native RawReply reserveConfigSeqNative(
             byte[] state, String payloadHash);
     private static native RawReply checkOwnRecordNative(byte[] state,
@@ -183,6 +186,18 @@ public final class PurpleAccountSyncCore {
         try {
             PurpleCore.ensureLoaded();
             return result(buildConfigRecordNative(text, parentRecords,
+                    space, install, device, platform, app, seq, at));
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            return new Result("NativeUnavailable");
+        }
+    }
+
+    public static Result buildConfigAcknowledgement(byte[] text,
+            byte[] remoteRecord, String space, String install,
+            String device, String platform, String app, long seq, long at) {
+        try {
+            PurpleCore.ensureLoaded();
+            return result(buildConfigAcknowledgementNative(text, remoteRecord,
                     space, install, device, platform, app, seq, at));
         } catch (UnsatisfiedLinkError | RuntimeException e) {
             return new Result("NativeUnavailable");
