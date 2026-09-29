@@ -403,7 +403,14 @@ strict JSON canonicalization, validated uncompressed sync envelopes, and
 config payload inspection that checks ancestry, fingerprints, and TOML schema.
 Android exposes config record inspection and construction, local-state parsing
 and sequence reservation, and own-record clone/read-back checks through a
-raw-byte JNI bridge. The platform must stage a built record before persisting
+raw-byte JNI bridge. `PurpleAccountSyncCore.buildConfigAcknowledgement` takes
+an inspected remote record's canonical bytes and the exact local settings bytes.
+JNI validates the remote envelope, config payload, space, and text again, then
+publishes the same version key, parents, and lineage under this install's writer
+metadata and sequence. It does not send or persist the record. Run
+`TMessagesProj/jni/purple_jni/tests/run_account_sync_acknowledgement.sh` on
+macOS to exercise that JNI path with Qt Core and a host JVM. The platform must
+stage a built record before persisting
 its reserved state and uploading it. The bridge formats install and space IDs
 from exactly 16 caller-supplied bytes; platform code supplies randomness.
 The core also validates device-local sync state and checks for cloned or

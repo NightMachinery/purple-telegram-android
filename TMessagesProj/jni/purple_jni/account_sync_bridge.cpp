@@ -87,6 +87,8 @@ namespace {
 		return u"TomlSyntax"_q;
 	case Purple::ConfigRecordBuildError::InvalidParents:
 		return u"InvalidParents"_q;
+	case Purple::ConfigRecordBuildError::InvalidVersion:
+		return u"InvalidVersion"_q;
 	case Purple::ConfigRecordBuildError::Envelope: return u"Envelope"_q;
 	case Purple::ConfigRecordBuildError::SelfInspection:
 		return u"SelfInspection"_q;
@@ -346,6 +348,26 @@ struct CheckedRecord {
 	};
 }
 
+[[nodiscard]] jobject BuildRecordReply(
+		JNIEnv *env, const Purple::ConfigRecordBuildInput &input) {
+	const auto built = Purple::BuildConfigRecord(input);
+	auto metadata = QJsonObject{
+		{ u"status"_q, Name(built.status) },
+		{ u"error"_q, Name(built.error) },
+		{ u"envelopeError"_q, Name(built.envelopeError) },
+		{ u"payloadError"_q, Name(built.payloadError) },
+	};
+	if (built) {
+		metadata.insert(u"key"_q, built.version.key);
+		metadata.insert(u"payloadHash"_q, built.payloadHash);
+		metadata.insert(u"seq"_q, QString::number(input.seq));
+		metadata.insert(u"localWarnings"_q,
+			QString::number(built.localWarnings.size()));
+		return Reply(env, metadata, built.canonical);
+	}
+	return Reply(env, metadata);
+}
+
 } // namespace
 
 extern "C" JNIEXPORT jobject JNICALL
@@ -452,22 +474,61 @@ Java_org_telegram_messenger_purple_PurpleAccountSyncCore_buildConfigRecordNative
 	}
 	input.seq = uint64_t(seq);
 	input.at = uint64_t(at);
-	const auto built = Purple::BuildConfigRecord(input);
-	auto metadata = QJsonObject{
-		{ u"status"_q, Name(built.status) },
-		{ u"error"_q, Name(built.error) },
-		{ u"envelopeError"_q, Name(built.envelopeError) },
-		{ u"payloadError"_q, Name(built.payloadError) },
-	};
-	if (built) {
-		metadata.insert(u"key"_q, built.version.key);
-		metadata.insert(u"payloadHash"_q, built.payloadHash);
-		metadata.insert(u"seq"_q, QString::number(input.seq));
-		metadata.insert(u"localWarnings"_q,
-			QString::number(built.localWarnings.size()));
-		return Reply(env, metadata, built.canonical);
+	return BuildRecordReply(env, input);
+}
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_org_telegram_messenger_purple_PurpleAccountSyncCore_buildConfigAcknowledgementNative(
+		JNIEnv *env, jclass, jbyteArray text, jbyteArray remoteRecord,
+		jstring space, jstring install, jstring device, jstring platform,
+		jstring app, jlong seq, jlong at) {
+	auto input = Purple::ConfigRecordBuildInput();
+	auto remoteBytes = QByteArray();
+	auto error = QString();
+	if (!ReadBytes(env, text, input.text, error)
+		|| !ReadBytes(env, remoteRecord, remoteBytes, error)) {
+		return Invalid(env, error);
 	}
-	return Reply(env, metadata);
+	if (!ReadString(env, space, input.space)
+		|| !ReadString(env, install, input.install)
+		|| !ReadString(env, device, input.device)
+		|| !ReadString(env, platform, input.platform)
+		|| !ReadString(env, app, input.app)) {
+		return Invalid(env, u"NullInput"_q);
+	}
+	const auto checked = CheckRecord(remoteBytes);
+	if (!checked.envelope) {
+		return Reply(env, {
+			{ u"status"_q, u"Invalid"_q },
+			{ u"error"_q, u"RemoteEnvelope"_q },
+			{ u"envelopeStatus"_q, Name(checked.envelope.status) },
+			{ u"envelopeError"_q, Name(checked.envelope.error) },
+		});
+	}
+	if (checked.payload.status != Purple::ConfigPayloadStatus::Valid) {
+		return Reply(env, {
+			{ u"status"_q, u"Invalid"_q },
+			{ u"error"_q, u"RemotePayload"_q },
+			{ u"payloadStatus"_q, Name(checked.payload.status) },
+			{ u"payloadError"_q, Name(checked.payload.error) },
+		});
+	}
+	if (checked.envelope.envelope.document
+			.value(u"space"_q).toString() != input.space) {
+		return Invalid(env, u"RemoteSpace"_q);
+	}
+	const auto canonical = Purple::SerializeSyncEnvelope(
+		checked.envelope.envelope);
+	if (!canonical || canonical.canonical != remoteBytes) {
+		return Invalid(env, u"RemoteCanonical"_q);
+	}
+	if (checked.payload.text != input.text) {
+		return Invalid(env, u"TextMismatch"_q);
+	}
+	input.version = checked.payload.version;
+	input.seq = uint64_t(seq);
+	input.at = uint64_t(at);
+	return BuildRecordReply(env, input);
 }
 
 extern "C" JNIEXPORT jobject JNICALL
