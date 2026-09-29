@@ -43,6 +43,10 @@ public final class PurpleAccountSyncCore {
             String installId, String createdDeviceId, String spaceId);
     private static native RawReply reserveConfigRecordNative(
             byte[] state, byte[] canonicalOwnRecord);
+    private static native RawReply appendIssuedConfigRecordNative(
+            byte[] state, byte[] canonicalOwnRecord);
+    private static native RawReply adoptIssuedOwnConfigMessageNative(
+            byte[] state, int messageId, byte[] canonicalServerRecord);
     private static native RawReply confirmConfigReadBackNative(byte[] state,
             byte[] stagedRecord, String currentDevice, int observationKind,
             byte[] observedRecord, int messageId);
@@ -386,6 +390,69 @@ public final class PurpleAccountSyncCore {
                         + field(root, "payloadHash") + "\"")) {
             throw new AssertionError(reserved.metadataJson + " " + reservedState);
         }
+        if (!reservedState.contains("\"issued_records\":[{")) {
+            throw new AssertionError("reservation did not issue the record: "
+                    + reservedState);
+        }
+        final RawReply repeatedIssue = appendIssuedConfigRecordNative(
+                reserved.state, root.record);
+        expect(repeatedIssue, "Valid", "None");
+        if (!repeatedIssue.metadataJson.contains("\"changed\":false")
+                || !Arrays.equals(repeatedIssue.state, reserved.state)) {
+            throw new AssertionError("duplicate issue changed state");
+        }
+        expect(appendIssuedConfigRecordNative(initialized.state,
+                root.record), "Invalid", "RecordMismatch");
+        expect(appendIssuedConfigRecordNative(reserved.state,
+                alteredRoot.record), "Invalid", "RecordMismatch");
+        final RawReply issuedConfirmed = confirmConfigReadBackNative(
+                reserved.state, root.record, "phone", 2, root.record, 401);
+        expect(issuedConfirmed, "Valid", "None");
+        final RawReply adoptedDuplicate = adoptIssuedOwnConfigMessageNative(
+                issuedConfirmed.state, 402, root.record);
+        expect(adoptedDuplicate, "Valid", "None");
+        if (!adoptedDuplicate.metadataJson.contains("\"changed\":true")
+                || !new String(adoptedDuplicate.state, StandardCharsets.UTF_8)
+                        .contains("\"message_id\":402")) {
+            throw new AssertionError(adoptedDuplicate.metadataJson);
+        }
+        final RawReply adoptedAgain = adoptIssuedOwnConfigMessageNative(
+                adoptedDuplicate.state, 402, root.record);
+        expect(adoptedAgain, "Valid", "None");
+        if (!adoptedAgain.metadataJson.contains("\"changed\":false")) {
+            throw new AssertionError(adoptedAgain.metadataJson);
+        }
+        expect(adoptIssuedOwnConfigMessageNative(issuedConfirmed.state,
+                403, alteredRoot.record), "Invalid", "UnissuedRecord");
+        final RawReply foreignWriter = buildConfigRecordNative(ROOT,
+                new byte[0][], SPACE, INSTALL_B,
+                "phone", "android", "Purple", 1, 0);
+        expect(foreignWriter, "Valid", "None");
+        expect(adoptIssuedOwnConfigMessageNative(issuedConfirmed.state,
+                403, foreignWriter.record), "Invalid", "RecordMismatch");
+        final byte[] movedState = new String(issuedConfirmed.state,
+                StandardCharsets.UTF_8).replace(
+                        "\"space\":\"" + SPACE + "\",\"streams\":",
+                        "\"space\":\"" + OTHER_SPACE + "\",\"streams\":")
+                .getBytes(StandardCharsets.UTF_8);
+        final RawReply lateAdoption = adoptIssuedOwnConfigMessageNative(
+                movedState, 404, root.record);
+        expect(lateAdoption, "Valid", "None");
+        final RawReply newSpaceRecord = buildConfigRecordNative(ROOT,
+                new byte[0][], OTHER_SPACE, INSTALL_A,
+                "phone", "android", "Purple", 2, 0);
+        expect(newSpaceRecord, "Valid", "None");
+        final RawReply newSpaceReserved = reserveConfigRecordNative(
+                lateAdoption.state, newSpaceRecord.record);
+        expect(newSpaceReserved, "Valid", "None");
+        final RawReply newSpaceConfirmed = confirmConfigReadBackNative(
+                newSpaceReserved.state, newSpaceRecord.record, "phone", 2,
+                newSpaceRecord.record, 405);
+        expect(newSpaceConfirmed, "Valid", "None");
+        expect(checkOwnConfigMessageDeletionNative(newSpaceConfirmed.state,
+                404, root.record), "Valid", "None");
+        expect(checkOwnConfigMessageDeletionNative(newSpaceConfirmed.state,
+                404, alteredRoot.record), "Invalid", "RecordMismatch");
         final RawReply superseded = reserveConfigRecordNative(reserved.state,
                 remote.record);
         expect(superseded, "Valid", "None");

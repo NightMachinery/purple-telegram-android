@@ -122,6 +122,10 @@ namespace {
 	case Purple::SyncLocalError::InvalidConfig: return u"InvalidConfig"_q;
 	case Purple::SyncLocalError::InvalidOwnMessages:
 		return u"InvalidOwnMessages"_q;
+	case Purple::SyncLocalError::InvalidIssuedRecords:
+		return u"InvalidIssuedRecords"_q;
+	case Purple::SyncLocalError::InvalidBindingToken:
+		return u"InvalidBindingToken"_q;
 	}
 	return u"InvalidValue"_q;
 }
@@ -156,6 +160,18 @@ namespace {
 	case Purple::SyncOwnMessageError::NotFound: return u"NotFound"_q;
 	case Purple::SyncOwnMessageError::NotOlder: return u"NotOlder"_q;
 	case Purple::SyncOwnMessageError::NotAbsent: return u"NotAbsent"_q;
+	case Purple::SyncOwnMessageError::UnissuedRecord:
+		return u"UnissuedRecord"_q;
+	}
+	return u"InvalidState"_q;
+}
+
+[[nodiscard]] QString Name(Purple::SyncIssueError value) {
+	switch (value) {
+	case Purple::SyncIssueError::None: return u"None"_q;
+	case Purple::SyncIssueError::InvalidState: return u"InvalidState"_q;
+	case Purple::SyncIssueError::InvalidRecord: return u"InvalidRecord"_q;
+	case Purple::SyncIssueError::RecordMismatch: return u"RecordMismatch"_q;
 	}
 	return u"InvalidState"_q;
 }
@@ -665,7 +681,11 @@ Java_org_telegram_messenger_purple_PurpleAccountSyncCore_reserveConfigRecordNati
 	}
 	auto next = reserved.state;
 	next.configData.pending = checked.payload.version.key;
-	const auto serialized = Purple::SerializeSyncLocalState(next);
+	const auto issued = Purple::AppendIssuedConfigRecord(next, recordBytes);
+	if (!issued) {
+		return Invalid(env, Name(issued.error));
+	}
+	const auto serialized = Purple::SerializeSyncLocalState(issued.state);
 	if (!serialized) {
 		return Invalid(env, u"StateSerialize"_q);
 	}
@@ -676,6 +696,39 @@ Java_org_telegram_messenger_purple_PurpleAccountSyncCore_reserveConfigRecordNati
 		{ u"pendingSeq"_q, QString::number(next.config.pendingSeq) },
 		{ u"payloadHash"_q, hash },
 		{ u"key"_q, checked.payload.version.key },
+	}, std::nullopt, serialized.canonical);
+}
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_org_telegram_messenger_purple_PurpleAccountSyncCore_appendIssuedConfigRecordNative(
+		JNIEnv *env, jclass, jbyteArray state, jbyteArray canonicalRecord) {
+	auto stateBytes = QByteArray();
+	auto recordBytes = QByteArray();
+	auto error = QString();
+	if (!ReadBytes(env, state, stateBytes, error)
+		|| !ReadBytes(env, canonicalRecord, recordBytes, error)) {
+		return Invalid(env, error);
+	}
+	const auto parsed = Purple::ParseSyncLocalState(stateBytes);
+	if (!parsed) {
+		return Reply(env, {
+			{ u"status"_q, Name(parsed.status) },
+			{ u"error"_q, u"State"_q },
+			{ u"stateError"_q, Name(parsed.error) },
+		});
+	}
+	const auto issued = Purple::AppendIssuedConfigRecord(
+		parsed.state, recordBytes);
+	if (!issued) {
+		return Invalid(env, Name(issued.error));
+	}
+	const auto serialized = Purple::SerializeSyncLocalState(issued.state);
+	if (!serialized) {
+		return Invalid(env, u"StateSerialize"_q);
+	}
+	return Reply(env, {
+		{ u"status"_q, u"Valid"_q }, { u"error"_q, u"None"_q },
+		{ u"changed"_q, issued.changed },
 	}, std::nullopt, serialized.canonical);
 }
 
@@ -859,6 +912,40 @@ Java_org_telegram_messenger_purple_PurpleAccountSyncCore_confirmConfigReadBackNa
 			QString::number(confirmed.state.config.pendingSeq) },
 		{ u"confirmedSeq"_q,
 			QString::number(confirmed.state.config.confirmedSeq) },
+	}, std::nullopt, serialized.canonical);
+}
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_org_telegram_messenger_purple_PurpleAccountSyncCore_adoptIssuedOwnConfigMessageNative(
+		JNIEnv *env, jclass, jbyteArray state, jint messageId,
+		jbyteArray canonicalServerRecord) {
+	auto stateBytes = QByteArray();
+	auto recordBytes = QByteArray();
+	auto error = QString();
+	if (!ReadBytes(env, state, stateBytes, error)
+		|| !ReadBytes(env, canonicalServerRecord, recordBytes, error)) {
+		return Invalid(env, error);
+	}
+	const auto parsed = Purple::ParseSyncLocalState(stateBytes);
+	if (!parsed) {
+		return Reply(env, {
+			{ u"status"_q, Name(parsed.status) },
+			{ u"error"_q, u"State"_q },
+			{ u"stateError"_q, Name(parsed.error) },
+		});
+	}
+	const auto adopted = Purple::AdoptIssuedOwnConfigMessage(
+		parsed.state, messageId, recordBytes);
+	if (!adopted) {
+		return Invalid(env, Name(adopted.error));
+	}
+	const auto serialized = Purple::SerializeSyncLocalState(adopted.state);
+	if (!serialized) {
+		return Invalid(env, u"StateSerialize"_q);
+	}
+	return Reply(env, {
+		{ u"status"_q, u"Valid"_q }, { u"error"_q, u"None"_q },
+		{ u"changed"_q, adopted.changed },
 	}, std::nullopt, serialized.canonical);
 }
 

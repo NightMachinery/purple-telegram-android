@@ -108,8 +108,11 @@ public final class PurpleAccountSyncCore {
             stateError = "";
             verdict = "";
             space = "";
+            stream = "";
             install = "";
             device = "";
+            platform = "";
+            app = "";
             key = "";
             id = "";
             comparison = 0;
@@ -172,6 +175,10 @@ public final class PurpleAccountSyncCore {
             String installId, String createdDeviceId, String spaceId);
     private static native RawReply reserveConfigRecordNative(
             byte[] state, byte[] canonicalOwnRecord);
+    private static native RawReply appendIssuedConfigRecordNative(
+            byte[] state, byte[] canonicalOwnRecord);
+    private static native RawReply adoptIssuedOwnConfigMessageNative(
+            byte[] state, int messageId, byte[] canonicalServerRecord);
     private static native RawReply checkOwnRecordNative(byte[] state,
             String currentDevice, int observationKind, byte[] observedRecord);
     private static native RawReply confirmConfigReadBackNative(byte[] state,
@@ -257,6 +264,28 @@ public final class PurpleAccountSyncCore {
             PurpleCore.ensureLoaded();
             return result(reserveConfigRecordNative(
                     state, canonicalOwnRecord));
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            return new Result("NativeUnavailable");
+        }
+    }
+
+    public static Result appendIssuedConfigRecord(byte[] state,
+            byte[] canonicalOwnRecord) {
+        try {
+            PurpleCore.ensureLoaded();
+            return result(appendIssuedConfigRecordNative(
+                    state, canonicalOwnRecord));
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            return new Result("NativeUnavailable");
+        }
+    }
+
+    public static Result adoptIssuedOwnConfigMessage(byte[] state,
+            int messageId, byte[] canonicalServerRecord) {
+        try {
+            PurpleCore.ensureLoaded();
+            return result(adoptIssuedOwnConfigMessageNative(
+                    state, messageId, canonicalServerRecord));
         } catch (UnsatisfiedLinkError | RuntimeException e) {
             return new Result("NativeUnavailable");
         }
