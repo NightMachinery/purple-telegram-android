@@ -589,3 +589,53 @@ Java_org_telegram_messenger_purple_PurpleAccountSyncCore_confirmOwnReadBackNativ
 			QString::number(confirmed.state.config.confirmedSeq) },
 	}, std::nullopt, serialized.canonical);
 }
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_org_telegram_messenger_purple_PurpleAccountSyncCore_formatInstallIdNative(
+		JNIEnv *env, jclass, jbyteArray entropy) {
+	if (!entropy) {
+		return Invalid(env, u"NullInput"_q);
+	}
+	if (env->GetArrayLength(entropy) != 16) {
+		return Invalid(env, u"InvalidEntropyLength"_q);
+	}
+	auto bytes = QByteArray();
+	auto error = QString();
+	if (!ReadBytes(env, entropy, bytes, error)) {
+		return Invalid(env, error);
+	}
+	const auto id = Purple::FormatSyncInstallId(bytes);
+	if (!id) {
+		return Invalid(env, u"InvalidEntropyLength"_q);
+	}
+	return Reply(env, {
+		{ u"status"_q, u"Valid"_q },
+		{ u"error"_q, u"None"_q },
+		{ u"id"_q, *id },
+	});
+}
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_org_telegram_messenger_purple_PurpleAccountSyncCore_formatSpaceIdNative(
+		JNIEnv *env, jclass, jbyteArray entropy) {
+	if (!entropy) {
+		return Invalid(env, u"NullInput"_q);
+	}
+	if (env->GetArrayLength(entropy) != 16) {
+		return Invalid(env, u"InvalidEntropyLength"_q);
+	}
+	auto bytes = QByteArray();
+	auto error = QString();
+	if (!ReadBytes(env, entropy, bytes, error)) {
+		return Invalid(env, error);
+	}
+	const auto id = Purple::FormatSyncSpaceId(bytes);
+	if (!id) {
+		return Invalid(env, u"InvalidEntropyLength"_q);
+	}
+	return Reply(env, {
+		{ u"status"_q, u"Valid"_q },
+		{ u"error"_q, u"None"_q },
+		{ u"id"_q, *id },
+	});
+}

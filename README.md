@@ -404,10 +404,12 @@ config payload inspection that checks ancestry, fingerprints, and TOML schema.
 Android exposes config record inspection and construction, local-state parsing
 and sequence reservation, and own-record clone/read-back checks through a
 raw-byte JNI bridge. The platform must stage a built record before persisting
-its reserved state and uploading it. The core also validates device-local sync
-state and checks for cloned or rewound installs. These are foundations for
-account sync: the Android app has no account sync transport or user interface
-yet. Compressed envelopes remain future work.
+its reserved state and uploading it. The bridge formats install and space IDs
+from exactly 16 caller-supplied bytes; platform code supplies randomness.
+The core also validates device-local sync state and checks for cloned or
+rewound installs. These are foundations for account sync: the Android app has
+no account sync transport or user interface yet. Compressed envelopes remain
+future work.
 
 **Send to Saved Messages after every save** on the same screen is `[sync]
 send_after_save_p`, off until you turn it on because sending is a message in a
