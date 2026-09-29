@@ -228,12 +228,15 @@ public final class PurpleSync {
         return null;
     }
 
-    public static SendMessagesHelper.SendReceipt receiptForRetry(int account, MessageObject messageObject) {
+    public static SendMessagesHelper.SendReceipt receiptForRetry(
+            int account, MessageObject messageObject, boolean unsent) {
         if (messageObject == null
                 || messageObject.currentAccount != account
                 || messageObject.messageOwner == null
                 || !messageObject.messageOwner.out
-                || messageObject.messageOwner.send_state != MessageObject.MESSAGE_SEND_STATE_SEND_ERROR
+                || !(messageObject.messageOwner.send_state == MessageObject.MESSAGE_SEND_STATE_SEND_ERROR
+                        || (unsent && messageObject.messageOwner.send_state
+                                == MessageObject.MESSAGE_SEND_STATE_SENDING))
                 || messageObject.getDialogId() != UserConfig.getInstance(account).getClientUserId()
                 || !UserConfig.getInstance(account).isClientActivated()
                 || !(messageObject.messageOwner.media instanceof TLRPC.TL_messageMediaDocument)

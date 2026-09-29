@@ -504,14 +504,16 @@ Retry action, so failed attempts stay in the cache for up to 30 days. A
 confirmed send also keeps its staged file when Telegram still uses that path as
 the local attachment. Old staging directories are pruned on the next send.
 Telegram's Retry action also records server confirmation for a failed
-Purple settings send. It does so only for an outgoing document in that
+Purple settings send. So does Telegram's automatic resend, at the next app
+start, of a send the app was closed during. Either one counts only for an
+outgoing document in that
 account's own Saved Messages whose attachment is a valid `settings.toml`
 under the cache's `purple-sync/<UUID>/` staging directory, without a symlink
 inside that directory. After confirmation, the sent fingerprint advances only
 when the current settings file still matches the staged bytes; the offered
-message ID advances for every confirmed retry. Another failed attempt leaves
-both unchanged. A process exit between server acceptance and its callback can
-also leave them unchanged. The Saved Messages check searches up to
+message ID advances for every confirmed retry or resend. Another failed
+attempt leaves both unchanged. A process exit between server acceptance and
+its callback can also leave them unchanged. The Saved Messages check searches up to
 100 recent documents. An import tapped from its
 offer waits up to five minutes for the download.
 
