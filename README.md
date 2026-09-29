@@ -404,11 +404,22 @@ real chat: with it on, every change the app makes to `settings.toml` posts the
 file five seconds after the last one, so a run of checkbox taps is one document
 rather than six. A file that arrived from Saved Messages is never sent back.
 `state.toml` remembers fingerprints for the last imported file and the last
-send attempt, suppressing repeated sends of the same bytes. The send fingerprint
-is written when the upload is queued, before the server confirms delivery, so
-an upload failure can suppress a retry; confirmed-send handling is still
-planned. The Saved Messages check searches up to 100 recent documents. An
-import tapped from its offer waits up to five minutes for the download.
+confirmed send, suppressing repeated sends of the same bytes. The manual Send
+button reports when the upload is queued; the send fingerprint and the account's
+last-offered message ID advance only after the server confirms delivery. Failed
+uploads can therefore be sent again after another save or a manual tap. Each
+attempt stages its own `settings.toml`, keeping the filename intact even when
+sends overlap. A failed local message can still need that file for Telegram's
+Retry action, so failed attempts stay in the cache for up to 30 days. A
+confirmed send also keeps its staged file when Telegram still uses that path as
+the local attachment. Old staging directories are pruned on the next send.
+If a failed Purple send is later delivered through Telegram's own Retry
+action, that retry does not update Purple's fingerprint or offered-message
+watermark; a later save can send the same bytes again or offer that message
+back for import. A process exit between server acceptance and its callback can
+also leave the fingerprint unchanged. The Saved Messages check searches up to
+100 recent documents. An import tapped from its
+offer waits up to five minutes for the download.
 
 The **editor** is the only way to change a line on a phone without root: a
 monospace field parsed as you type, with a status line that says OK, how many

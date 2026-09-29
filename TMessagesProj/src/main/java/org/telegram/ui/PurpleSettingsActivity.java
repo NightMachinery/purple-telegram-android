@@ -502,7 +502,7 @@ public class PurpleSettingsActivity extends UniversalFragment
         }
         if (BulletinFactory.canShowBulletin(this)) {
             BulletinFactory.of(this)
-                    .createSimpleBulletin(R.raw.contact_check, getString(R.string.PurpleSentToSaved))
+                    .createSimpleBulletin(R.raw.info, getString(R.string.PurpleQueuedForSaved))
                     .show();
         }
     }
