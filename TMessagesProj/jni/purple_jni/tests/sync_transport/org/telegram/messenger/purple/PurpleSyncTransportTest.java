@@ -124,15 +124,20 @@ public final class PurpleSyncTransportTest {
         int queueQueries;
         final List<Sent> sent = new ArrayList<>();
         final List<String> logs = new ArrayList<>();
+        final File external;
+        final File cache;
         final File root;
-        final File files;
+        final File former;
+        boolean noFilesDirectory;
         long now = 1_800_000_000_000L;
 
         Fake() throws IOException {
             final File base = Files.createTempDirectory(scratch.toPath(), "fake").toFile();
-            root = new File(base, PurpleSyncPost.STAGING_DIRECTORY);
-            files = new File(base, "files");
-            check(files.mkdirs());
+            external = new File(base, "files");
+            cache = new File(base, "cache");
+            check(external.mkdirs() && cache.mkdirs());
+            root = new File(external, PurpleSyncPost.STAGING_DIRECTORY);
+            former = new File(cache, PurpleSyncPost.STAGING_DIRECTORY);
         }
 
         void post(String name, Runnable run) {
@@ -294,7 +299,7 @@ public final class PurpleSyncTransportTest {
                     return;
                 }
                 try {
-                    final File file = new File(files, document + ".json");
+                    final File file = new File(cache, document + ".json");
                     Files.write(file.toPath(), bytes);
                     reply.onReply(file);
                 } catch (IOException e) {
@@ -317,8 +322,13 @@ public final class PurpleSyncTransportTest {
         }
 
         @Override
-        public File stagingRoot() {
-            return root;
+        public File filesDirectory() {
+            return noFilesDirectory ? null : external;
+        }
+
+        @Override
+        public File cacheDirectory() {
+            return cache;
         }
 
         @Override
@@ -957,7 +967,6 @@ public final class PurpleSyncTransportTest {
     private static void testPostConfirmed() throws IOException {
         begin("post confirmed");
         final Fake fake = new Fake();
-        fake.moveOnReceipt = true;
         final byte[] staged = record("version = 1\n# staged\n", 1);
         final Recorder recorder = new Recorder(fake);
         final PurpleSyncTelegramTransport transport = new PurpleSyncTelegramTransport(fake);
@@ -968,6 +977,10 @@ public final class PurpleSyncTransportTest {
         check(NAME.equals(sent.file.getName()));
         final File directory = sent.file.getParentFile();
         check(directory.getParentFile().equals(fake.root));
+        check(fake.root.getParentFile().equals(fake.external));
+        check(!sent.file.toPath().startsWith(fake.cache.toPath()));
+        check(!fake.former.exists());
+        check(new File(fake.root, PurpleSyncPost.NO_MEDIA).isFile());
         check(UUID.fromString(directory.getName()).toString().equals(directory.getName()));
         check(Arrays.equals(sent.bytes, staged));
         fake.pump();
@@ -981,17 +994,31 @@ public final class PurpleSyncTransportTest {
         check(Arrays.equals(result.readBack, staged));
         check(fake.lookedUp.equals(Arrays.asList(id)));
         check(fake.downloaded.equals(Arrays.asList(id)));
-        check(!directory.exists());
+        check(sent.file.isFile());
 
-        begin("post confirmed with the copy kept");
-        final Fake keeping = new Fake();
-        final Recorder keeper = new Recorder(keeping);
-        final Sent kept = startPost(keeping, keeper,
-                new PurpleSyncTelegramTransport(keeping), staged);
-        keeping.accept(kept);
-        keeping.pump();
-        check(keeper.post().status == PurpleSyncTransport.PostStatus.Confirmed);
-        check(kept.file.isFile());
+        begin("post confirmed after the staged file went away");
+        final Fake moving = new Fake();
+        moving.moveOnReceipt = true;
+        final Recorder mover = new Recorder(moving);
+        final Sent moved = startPost(moving, mover,
+                new PurpleSyncTelegramTransport(moving), staged);
+        moving.accept(moved);
+        moving.pump();
+        check(mover.post().status == PurpleSyncTransport.PostStatus.Confirmed);
+        check(!moved.file.getParentFile().exists());
+
+        begin("post without an external files directory");
+        final Fake bare = new Fake();
+        bare.noFilesDirectory = true;
+        final Recorder refused = new Recorder(bare);
+        new PurpleSyncTelegramTransport(bare).post(staged, refused);
+        check(refused.dones() == 0);
+        bare.pump();
+        check(refused.posts.size() == 1 && !refused.offMain);
+        check(refused.post().status == PurpleSyncTransport.PostStatus.OutcomeUnknown);
+        check(bare.sent.isEmpty());
+        final String[] cacheLeft = bare.cache.list();
+        check(cacheLeft != null && cacheLeft.length == 0);
     }
 
     private static void testPostInvalid() throws IOException {
@@ -1067,7 +1094,7 @@ public final class PurpleSyncTransportTest {
         throwing.pump();
         check(recorder.posts.size() == 1 && !recorder.offMain);
         check(recorder.post().status == PurpleSyncTransport.PostStatus.OutcomeUnknown);
-        final File[] throwingLeft = throwing.root.listFiles();
+        final File[] throwingLeft = throwing.root.listFiles(File::isDirectory);
         check(throwingLeft != null && throwingLeft.length == 0);
 
         begin("post read-back mismatch");
@@ -1130,7 +1157,7 @@ public final class PurpleSyncTransportTest {
         check(recorder.posts.size() == 1);
         check(recorder.post().status == PurpleSyncTransport.PostStatus.Cancelled);
         check(early.sent.isEmpty());
-        final File[] left = early.root.listFiles();
+        final File[] left = early.root.listFiles(File::isDirectory);
         check(left != null && left.length == 0);
 
         begin("post cancelled before start");
@@ -1180,35 +1207,62 @@ public final class PurpleSyncTransportTest {
         check(reading.cancelledTokens.equals(Arrays.asList(reading.lookupTokens.get(0))));
     }
 
-    private static void testPrune() throws IOException {
-        begin("prune");
-        final Fake fake = new Fake();
-        final long old = fake.now - PurpleSyncPost.STAGING_MAX_AGE_MS - 1000;
-        final long recent = fake.now - 1000;
-        check(fake.root.mkdirs());
-        final File stale = new File(fake.root, UUID.randomUUID().toString());
-        final File empty = new File(fake.root, UUID.randomUUID().toString());
-        final File fresh = new File(fake.root, UUID.randomUUID().toString());
-        final File touched = new File(fake.root, UUID.randomUUID().toString());
-        for (File directory : new File[] { stale, empty, fresh, touched }) {
+    private static File[] seedStaging(File root, long now, boolean young)
+            throws IOException {
+        final long old = now - PurpleSyncPost.STAGING_MAX_AGE_MS - 1000;
+        final long recent = now - 1000;
+        check(root.mkdirs());
+        final File stale = new File(root, UUID.randomUUID().toString());
+        final File empty = new File(root, UUID.randomUUID().toString());
+        final File fresh = new File(root, UUID.randomUUID().toString());
+        final File touched = new File(root, UUID.randomUUID().toString());
+        final File[] directories = young
+                ? new File[] { stale, empty, fresh, touched }
+                : new File[] { stale, empty };
+        for (File directory : directories) {
             check(directory.mkdirs());
         }
         final File staleFile = new File(stale, NAME);
-        final File freshFile = new File(fresh, NAME);
-        final File touchedFile = new File(touched, NAME);
-        for (File file : new File[] { staleFile, freshFile, touchedFile }) {
-            Files.write(file.toPath(), utf8("{}"));
-        }
+        Files.write(staleFile.toPath(), utf8("{}"));
         check(staleFile.setLastModified(old) && stale.setLastModified(old));
         check(empty.setLastModified(old));
+        if (!young) {
+            return new File[] { stale, empty, null, null };
+        }
+        final File freshFile = new File(fresh, NAME);
+        final File touchedFile = new File(touched, NAME);
+        for (File file : new File[] { freshFile, touchedFile }) {
+            Files.write(file.toPath(), utf8("{}"));
+        }
         check(freshFile.setLastModified(recent) && fresh.setLastModified(recent));
         check(touchedFile.setLastModified(recent) && touched.setLastModified(old));
-        final Recorder recorder = new Recorder(fake);
+        return new File[] { stale, empty, freshFile, touchedFile };
+    }
+
+    private static void testPrune() throws IOException {
         final byte[] staged = record("version = 1\n# staged\n", 1);
-        startPost(fake, recorder, new PurpleSyncTelegramTransport(fake), staged);
-        check(!stale.exists() && !empty.exists());
-        check(freshFile.isFile() && touchedFile.isFile());
+
+        begin("prune");
+        final Fake fake = new Fake();
+        final File[] current = seedStaging(fake.root, fake.now, true);
+        final File[] former = seedStaging(fake.former, fake.now, true);
+        startPost(fake, new Recorder(fake), new PurpleSyncTelegramTransport(fake), staged);
+        for (File[] seeded : new File[][] { current, former }) {
+            check(!seeded[0].exists() && !seeded[1].exists());
+            check(seeded[2].isFile() && seeded[3].isFile());
+        }
+        check(fake.former.isDirectory());
         check(PurpleSyncReader.readAtMost(fake.root, 10) == null);
+
+        begin("prune removes the emptied cache staging directory");
+        final Fake emptied = new Fake();
+        seedStaging(emptied.former, emptied.now, false);
+        final Sent sent = startPost(emptied, new Recorder(emptied),
+                new PurpleSyncTelegramTransport(emptied), staged);
+        check(!emptied.former.exists());
+        check(sent.file.getParentFile().getParentFile().equals(emptied.root));
+        final String[] cacheLeft = emptied.cache.list();
+        check(cacheLeft != null && cacheLeft.length == 0);
     }
 
     private static void testReplacement() throws IOException {

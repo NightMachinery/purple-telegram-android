@@ -20,6 +20,7 @@ final class PurpleSyncPost implements PurpleSyncTelegramTransport.Task,
     static final String CAPTION = "#purplesync";
     static final String MIME = "application/json";
     static final String STAGING_DIRECTORY = "purple-sync-records";
+    static final String NO_MEDIA = ".nomedia";
     static final int MAX_STAGED_BYTES = 256 * 1024;
     static final long STAGING_MAX_AGE_MS = 30L * 24 * 60 * 60 * 1000;
     static final int SEND_STATE_SENDING = 1;
@@ -124,15 +125,24 @@ final class PurpleSyncPost implements PurpleSyncTelegramTransport.Task,
     }
 
     private File stage() {
-        final File root = operation.client.stagingRoot();
-        if (root == null) {
+        final long now = operation.client.nowMillis();
+        final File cache = operation.client.cacheDirectory();
+        if (cache != null) {
+            final File former = new File(cache, STAGING_DIRECTORY);
+            prune(former, now);
+            former.delete();
+        }
+        final File files = operation.client.filesDirectory();
+        if (files == null) {
             return null;
         }
-        prune(root, operation.client.nowMillis());
+        final File root = new File(files, STAGING_DIRECTORY);
+        prune(root, now);
         final File directory = new File(root, UUID.randomUUID().toString());
         if (!directory.mkdirs()) {
             return null;
         }
+        hideFromMediaScanner(root);
         final File file = new File(directory, RECORD_FILE_NAME);
         if (!write(file, staged) || !Arrays.equals(
                 PurpleSyncReader.readAtMost(file, MAX_STAGED_BYTES + 1), staged)) {
@@ -252,6 +262,13 @@ final class PurpleSyncPost implements PurpleSyncTelegramTransport.Task,
         operation.client.log("generation " + operation.generation
                 + ": post finished with " + result.status);
         operation.client.runOnMain(() -> done.onPostDone(result));
+    }
+
+    private static void hideFromMediaScanner(File root) {
+        try {
+            new File(root, NO_MEDIA).createNewFile();
+        } catch (IOException | SecurityException ignored) {
+        }
     }
 
     private static boolean write(File file, byte[] bytes) {
