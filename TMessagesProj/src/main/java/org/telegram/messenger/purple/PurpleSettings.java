@@ -179,12 +179,7 @@ public final class PurpleSettings {
     private static boolean store(byte[] bytes, String reason, boolean fromImport) {
         final File target = settingsFile();
         try {
-            if (target.exists()) {
-                copy(target, backupFile());
-                if (fromImport) {
-                    copyAtomic(target, importBackupFile());
-                }
-            }
+            PurpleSettingsBackups.take(target, backupFile(), importBackupFile(), fromImport);
         } catch (IOException e) {
             FileLog.e(e);
             return false;
@@ -230,37 +225,6 @@ public final class PurpleSettings {
             FileLog.e(e);
             temp.delete();
             return false;
-        }
-    }
-
-    private static void copy(File from, File to) throws IOException {
-        InputStream in = new FileInputStream(from);
-        try {
-            OutputStream out = new FileOutputStream(to);
-            try {
-                byte[] buffer = new byte[8192];
-                int read;
-                while ((read = in.read(buffer)) > 0) {
-                    out.write(buffer, 0, read);
-                }
-                out.flush();
-            } finally {
-                out.close();
-            }
-        } finally {
-            in.close();
-        }
-    }
-
-    private static void copyAtomic(File from, File to) throws IOException {
-        final File temp = new File(to.getParentFile(), to.getName() + ".tmp");
-        try {
-            copy(from, temp);
-            if (!temp.renameTo(to)) {
-                throw new IOException("Could not replace " + to);
-            }
-        } finally {
-            temp.delete();
         }
     }
 

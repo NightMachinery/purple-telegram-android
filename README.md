@@ -291,9 +291,13 @@ before the latest whole-file write, including an editor save, while
 `settings.toml.import.bak` keeps the file from before the latest import that
 replaced an existing settings file. Each backup has one slot: another import
 replaces the import backup when a current file exists, but local saves leave it
-alone. An import stops without replacing `settings.toml` if it cannot write
-that required import backup. `screentime.log` appears there only once
-`[screen_time]` is switched on - see **Screen time** below.
+alone. An import writes that required import backup before the ordinary one,
+and stops without replacing `settings.toml` or touching `settings.toml.bak` if
+it cannot. If the ordinary backup then fails, the import stops as well, with
+the import backup already holding the current file.
+`TMessagesProj/jni/purple_jni/tests/run_settings_backups.sh` tests this order.
+`screentime.log` appears there only once `[screen_time]` is switched on - see
+**Screen time** below.
 
 A preset only ever *adds* a mute: a chat you muted by hand stays muted whichever
 entry claims it, and switching presets never un-silences anything. So every
