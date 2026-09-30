@@ -11414,6 +11414,7 @@
     <string name="PurpleSentToSaved">Sent to Saved Messages</string>
     <string name="PurpleQueuedForSaved">Queued for Saved Messages</string>
     <string name="PurpleSendRefused">settings.toml does not parse, so nothing was sent.</string>
+    <string name="PurpleSendFailed">Could not stage settings.toml, so nothing was sent.</string>
     <string name="PurpleNothingNewer">Nothing newer in Saved Messages.</string>
     <string name="PurpleCheckingSaved">Looking in Saved Messages\u2026</string>
     <string name="PurpleSendAfterSave">Send to Saved Messages after every save</string>

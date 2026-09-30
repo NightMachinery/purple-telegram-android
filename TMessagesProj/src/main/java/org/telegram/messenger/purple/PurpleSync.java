@@ -187,13 +187,13 @@ public final class PurpleSync {
         final File stagingDir = staging().newDirectory(System.currentTimeMillis());
         if (stagingDir == null) {
             clearPending(pendingSend);
-            return LocaleController.getString(R.string.PurpleImportFailed);
+            return LocaleController.getString(R.string.PurpleSendFailed);
         }
         final File staged = new File(stagingDir, PurpleSettings.FILE_NAME);
         if (!writeBytes(staged, sentBytes)) {
             clearPending(pendingSend);
             PurpleSettingsStaging.remove(staged);
-            return LocaleController.getString(R.string.PurpleImportFailed);
+            return LocaleController.getString(R.string.PurpleSendFailed);
         }
         final String caption = "Purple settings · schema v" + parsed.version + " · "
                 + new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(new Date())
@@ -220,7 +220,7 @@ public final class PurpleSync {
             FileLog.e(e);
             clearPending(pendingSend);
             PurpleSettingsStaging.remove(staged);
-            return LocaleController.getString(R.string.PurpleImportFailed);
+            return LocaleController.getString(R.string.PurpleSendFailed);
         }
         return null;
     }
