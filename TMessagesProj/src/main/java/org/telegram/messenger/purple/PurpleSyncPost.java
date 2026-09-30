@@ -29,7 +29,7 @@ final class PurpleSyncPost implements PurpleSyncTelegramTransport.Task,
 
     private final PurpleSyncClient.Operation operation;
     private final byte[] staged;
-    private final PurpleSyncTransport.PostDone done;
+    private PurpleSyncTransport.PostDone done;
     private File copy;
     private PurpleSyncReader reader;
     private int messageId;
@@ -260,9 +260,11 @@ final class PurpleSyncPost implements PurpleSyncTelegramTransport.Task,
     }
 
     private void deliver(PurpleSyncTransport.PostResult result) {
+        final PurpleSyncTransport.PostDone finished = done;
+        done = null;
         operation.client.log("generation " + operation.generation
                 + ": post finished with " + result.status);
-        operation.client.runOnMain(() -> done.onPostDone(result));
+        operation.client.runOnMain(() -> finished.onPostDone(result));
     }
 
     private static void hideFromMediaScanner(File root) {
