@@ -288,7 +288,10 @@ generation counter forward. A `Check` can be applied or published only while
 it is the runner's `current()`; an older one returns `Stale`. A callback the
 generation has moved past, because the user cancelled, started something
 newer or closed the screen, is dropped without calling the listener.
-`cancel()` stops a running check only. `close()` cancels the transport,
+`cancel()` stops a running check only. A check counts as running, and
+`checking()` stays true, until its listener runs, including while its review
+runs on the queue, so a cancel there drops the review and a Share that would
+have followed it never posts. `close()` cancels the transport,
 abandons a publisher that has not posted yet (it ends `Cancelled` with no
 post; a record it already staged stays, so the next check offers Finish
 sending), and drops every later callback.
@@ -357,7 +360,8 @@ harness; set `PURPLE_SYNC_DYLIB` to reuse a built library. It walks every
 verdict, and covers a crash after the file write followed by adopt, History
 failure, stale stamps, join failures, Finish sending and StillSending, lost
 receipts, two devices interleaving, the Undo rules, account changes mid-flow,
-stale callbacks and the main-thread write handoff.
+stale callbacks, a cancel while the review runs and the main-thread write
+handoff.
 
 ## Sync across devices screen
 

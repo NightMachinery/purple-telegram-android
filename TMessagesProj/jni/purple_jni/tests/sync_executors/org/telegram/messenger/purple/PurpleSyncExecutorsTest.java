@@ -1602,6 +1602,37 @@ public final class PurpleSyncExecutorsTest {
         close(fifth);
     }
 
+    private static void testCancelDuringReview() throws Exception {
+        final Cloud cloud = new Cloud();
+        final FakeTransport transport = new FakeTransport(cloud);
+        final Phone a = new Phone("review-cancel", 20);
+        a.use();
+        a.write(T0);
+        final PurpleSyncRunner runner = a.runner(transport);
+
+        final CompletableFuture<Void> reviewing = new CompletableFuture<>();
+        final CompletableFuture<Void> gate = new CompletableFuture<>();
+        PurpleSettings.onSettingsFile = () -> {
+            reviewing.complete(null);
+            gate.join();
+        };
+        final Waiter<PurpleSyncRunner.CheckOutcome> reviewed = new Waiter<>();
+        check(onUi(() -> runner.check(null, reviewed)) == PurpleSyncRunner.Start.Started);
+        reviewing.get(WAIT_MS, TimeUnit.MILLISECONDS);
+        check(onUi(runner::checking) && onUi(runner::busy));
+        check(onUi(runner::cancel));
+        check(!onUi(runner::checking) && !onUi(runner::busy));
+        PurpleSettings.onSettingsFile = null;
+        gate.complete(null);
+        settle();
+        check(reviewed.calls() == 0);
+        check(onUi(runner::current) == null);
+        final PurpleSyncRunner.Check after = fresh(runner);
+        check(after.review.verdict == PurpleSyncCore.Verdict.Empty);
+        check(onUi(runner::current) == after);
+        close(runner);
+    }
+
     private static void testHandoff() throws Exception {
         final PurpleSyncRunner.Poster drop = task -> {
         };
@@ -1704,6 +1735,7 @@ public final class PurpleSyncExecutorsTest {
         run("restore", PurpleSyncExecutorsTest::testRestore);
         run("account changes", PurpleSyncExecutorsTest::testAccountChanges);
         run("stale callbacks", PurpleSyncExecutorsTest::testStaleCallbacks);
+        run("cancel during review", PurpleSyncExecutorsTest::testCancelDuringReview);
         run("ui handoff", PurpleSyncExecutorsTest::testHandoff);
         System.out.println("PurpleSyncExecutorsTest: " + checks + " checks, "
                 + failures + " failures");
