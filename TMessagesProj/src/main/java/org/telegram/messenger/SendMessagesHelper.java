@@ -9446,6 +9446,9 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             } else {
                 document.mime_type = "application/octet-stream";
             }
+            if (sendReceipt != null && mime != null) {
+                document.mime_type = mime;
+            }
             if (!forceDocument && document.mime_type.equals("image/gif") && (editingMessageObject == null || editingMessageObject.getGroupIdForUse() == 0)) {
                 try {
                     Bitmap bitmap = ImageLoader.loadBitmap(f.getAbsolutePath(), null, 90, 90, true);
@@ -9783,11 +9786,11 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
     }
 
     @UiThread
-    public static void prepareSendingPurpleDocument(AccountInstance accountInstance, String path, String caption, long dialogId, SendReceipt sendReceipt) {
+    public static void prepareSendingPurpleDocument(AccountInstance accountInstance, String path, String caption, long dialogId, String mime, SendReceipt sendReceipt) {
         Utilities.globalQueue.postRunnable(() -> {
             int error;
             try {
-                error = prepareSendingDocumentInternal(accountInstance, path, path, null, "text/plain", dialogId, null, null, null, null, null, null, new long[1], true, caption, true, 0, 0, new Integer[1], true, null, 0, false, 0, 0, null, null, -1, sendReceipt);
+                error = prepareSendingDocumentInternal(accountInstance, path, path, null, mime, dialogId, null, null, null, null, null, null, new long[1], true, caption, true, 0, 0, new Integer[1], true, null, 0, false, 0, 0, null, null, -1, sendReceipt);
             } catch (RuntimeException e) {
                 FileLog.e(e);
                 error = ERROR_TYPE_UNSUPPORTED;

@@ -208,6 +208,7 @@ public final class PurpleSync {
                     staged.getAbsolutePath(),
                     caption,
                     UserConfig.getInstance(account).getClientUserId(),
+                    null,
                     (serverId, preparationFailed) -> {
                         clearPending(pendingSend);
                         if (serverId > 0) {
