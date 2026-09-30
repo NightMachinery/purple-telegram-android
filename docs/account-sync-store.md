@@ -102,11 +102,11 @@ names as `keepId` (a restore passes its target, so a failed restore cannot
 prune what it was restoring). When the store is full, id-shaped leftovers
 older than the oldest kept entry are removed; other names are left alone.
 
-The fingerprint is the core's `SettingsFingerprint`, read from the state text
-the existing `PurpleCore.noteImported` bridge returns for the bytes, so no hash
-is recomputed in Java. The core's version key check has no bridge yet; until
-one is added, a save with a version key and an entry recording one are
-refused. Without the native library every save is refused.
+The fingerprint is the core's `SettingsFingerprint` and the version key check
+is the core's `IsConfigVersionKey`, both through `PurpleSyncCore`, so no hash
+or key rule is reimplemented in Java. A save with an invalid version key, or
+an entry recording one, is refused. Without the native library every save is
+refused.
 
 ## Settings sync flow bridge
 
