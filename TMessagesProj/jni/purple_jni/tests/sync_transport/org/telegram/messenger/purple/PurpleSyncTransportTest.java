@@ -542,7 +542,7 @@ public final class PurpleSyncTransportTest {
         check(fake.historyOffsets.get(3).equals(fake.cloud.firstKey()));
         check(fake.lookedUp.equals(Arrays.asList(b, a)));
         check(fake.downloaded.equals(Arrays.asList(b, a)));
-        check(fake.queueQueries == 1);
+        check(fake.queueQueries == 2);
         check(fake.cancelledTokens.isEmpty());
         check(recorder.progress.contains("Scanning 100/215"));
         check(recorder.progress.contains("Scanning 215/215"));
@@ -770,7 +770,7 @@ public final class PurpleSyncTransportTest {
         check(recorder.check().inventory == null);
         check(fake.cancelledTokens.equals(Arrays.asList(fake.historyTokens.get(1))));
         check(fake.historyOffsets.size() == 2);
-        check(fake.lookedUp.isEmpty() && fake.queueQueries == 0);
+        check(fake.lookedUp.isEmpty() && fake.queueQueries == 1);
         check(!recorder.offMain && !recorder.progressAfterDone);
         transport.cancel();
         fake.pump();
@@ -790,7 +790,7 @@ public final class PurpleSyncTransportTest {
         check(recorder.check().status == PurpleSyncTransport.CheckStatus.Cancelled);
         check(fake.cancelledTokens.equals(Arrays.asList(fake.lookupTokens.get(1))));
         check(fake.lookedUp.size() == 2 && fake.downloaded.size() == 1);
-        check(fake.queueQueries == 0);
+        check(fake.queueQueries == 1);
 
         begin("cancel mid-download");
         final Fake second = cloudWith(10, 3);
@@ -850,7 +850,7 @@ public final class PurpleSyncTransportTest {
         final Fake queue = cloudWith(1, 1);
         final Recorder queueRecorder = new Recorder(queue);
         new PurpleSyncTelegramTransport(queue).check(queueRecorder, queueRecorder);
-        queue.runUntil(() -> queue.queueQueries == 1);
+        queue.runUntil(() -> queue.queueQueries == 2);
         queue.active = false;
         queue.pump();
         check(queueRecorder.check().status
@@ -941,8 +941,72 @@ public final class PurpleSyncTransportTest {
             check(result.status == PurpleSyncTransport.CheckStatus.Finished);
             check(result.sendQueued == expected[i]);
             check(result.inventory.count() == 1);
-            check(fake.queueQueries == 1);
+            check(fake.queueQueries == 2);
         }
+    }
+
+    private static void testSendQueueAroundScan() throws IOException {
+        begin("queued copy leaves the queue during the check");
+        final Fake leaving = cloudWith(3, 1);
+        leaving.copies.add(new PurpleSyncClient.LocalCopy(-200, USER, 1,
+                Arrays.asList(NAME)));
+        Recorder recorder = new Recorder(leaving);
+        new PurpleSyncTelegramTransport(leaving).check(recorder, recorder);
+        leaving.runUntil(() -> leaving.historyReplies == 1);
+        check(leaving.queueQueries == 1);
+        leaving.copies.clear();
+        leaving.pump();
+        check(recorder.check().status == PurpleSyncTransport.CheckStatus.Finished);
+        check(recorder.check().sendQueued);
+        check(recorder.check().inventory.count() == 1);
+        check(leaving.queueQueries == 2);
+        check(leaving.logs.stream().anyMatch(line -> line.contains("sendQueued=true")
+                && line.contains("left the queue during the check")));
+
+        begin("copy joins the queue during the check");
+        final Fake joining = cloudWith(3, 1);
+        recorder = new Recorder(joining);
+        new PurpleSyncTelegramTransport(joining).check(recorder, recorder);
+        joining.runUntil(() -> joining.historyReplies == 1);
+        joining.copies.add(new PurpleSyncClient.LocalCopy(-201, USER, 1,
+                Arrays.asList(NAME)));
+        joining.pump();
+        check(recorder.check().sendQueued);
+        check(joining.logs.stream().noneMatch(line
+                -> line.contains("left the queue during the check")));
+
+        begin("queue unreadable only at the start");
+        final Fake unreadable = cloudWith(3, 1);
+        unreadable.copiesUnreadable = true;
+        recorder = new Recorder(unreadable);
+        new PurpleSyncTelegramTransport(unreadable).check(recorder, recorder);
+        unreadable.runUntil(() -> unreadable.historyReplies == 1);
+        unreadable.copiesUnreadable = false;
+        unreadable.pump();
+        check(recorder.check().sendQueued);
+
+        begin("cancel before the first queue answer");
+        final Fake early = cloudWith(3, 1);
+        recorder = new Recorder(early);
+        final PurpleSyncTelegramTransport transport = new PurpleSyncTelegramTransport(early);
+        transport.check(recorder, recorder);
+        early.runUntil(() -> early.queueQueries == 1);
+        transport.cancel();
+        early.pump();
+        check(recorder.checks.size() == 1);
+        check(recorder.check().status == PurpleSyncTransport.CheckStatus.Cancelled);
+        check(early.historyOffsets.isEmpty() && early.queueQueries == 1);
+
+        begin("account changed before the first queue answer");
+        final Fake lost = cloudWith(3, 1);
+        recorder = new Recorder(lost);
+        new PurpleSyncTelegramTransport(lost).check(recorder, recorder);
+        lost.runUntil(() -> lost.queueQueries == 1);
+        lost.active = false;
+        lost.pump();
+        check(recorder.check().status
+                == PurpleSyncTransport.CheckStatus.AccountChanged);
+        check(lost.historyOffsets.isEmpty());
     }
 
     private static void testCheckFailure() throws IOException {
@@ -1306,6 +1370,7 @@ public final class PurpleSyncTransportTest {
         testStaleGeneration();
         testSendQueueRule();
         testSendQueueThroughCheck();
+        testSendQueueAroundScan();
         testCheckFailure();
         testPostConfirmed();
         testPostInvalid();

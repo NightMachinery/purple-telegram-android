@@ -48,17 +48,19 @@ inventory (the review then says Incomplete) and a post as `OutcomeUnknown`.
 
 ## Check
 
-1. Scan. `messages.getHistory` on `inputPeerSelf`, pages of 100 newest
-   first, starting at offset 0 and continuing from the offset
-   `PurpleSyncCore.classifyHistoryPage` returns. Every returned message goes
-   into the page in the server's order with whether it is a message, whether
-   it has a forward header, whether its media is a document, its caption and
-   its first file name attribute. The candidate rule and the page rule are
-   the core's. An empty page completes the scan. A stalled page, a failed or
-   unreadable page, or a page the core cannot classify ends the scan
-   unfinished, and the check then reads nothing and reports an inventory
-   built with `scanComplete` false, as the desktop does. Progress is
-   `Scanning` with the messages scanned and the server's history count.
+1. Scan. First the check asks whether the send queue holds a sync record
+   (below) and keeps that answer. Then `messages.getHistory` on
+   `inputPeerSelf`, pages of 100 newest first, starting at offset 0 and
+   continuing from the offset `PurpleSyncCore.classifyHistoryPage` returns.
+   Every returned message goes into the page in the server's order with
+   whether it is a message, whether it has a forward header, whether its
+   media is a document, its caption and its first file name attribute. The
+   candidate rule and the page rule are the core's. An empty page completes
+   the scan. A stalled page, a failed or unreadable page, or a page the core
+   cannot classify ends the scan unfinished, and the check then reads
+   nothing and reports an inventory built with `scanComplete` false, as the
+   desktop does. Progress is `Scanning` with the messages scanned and the
+   server's history count.
 2. Read. One `messages.getMessages` per candidate id, in scan order. Each
    candidate gets exactly one row:
    - request failed: `REQUEST_FAILED`;
@@ -75,10 +77,15 @@ inventory (the review then says Incomplete) and a post as `OutcomeUnknown`.
    Rows past the candidate check keep the document's real id and the edit
    date (0 when the message was never edited). Progress is `Reading` with
    rows done and candidates total.
-3. Queue. After the reads the check asks whether the send queue holds a sync
-   record (below) and reports it as `sendQueued`. It logs
-   `inventory.summary()` (records and bytes) with that answer; there is no
-   byte cap.
+3. Queue. After the reads the check asks the send queue again, and
+   `sendQueued` is true when either answer is. Asking only at the end misses
+   a copy that Telegram sends while the scan is under way: the new message
+   lands above pages the scan has already read, so the inventory lacks it,
+   and by the end it has also left the queue. The emulator showed this when
+   a queued post resent as the check began. The check logs
+   `inventory.summary()` (records and bytes) with `sendQueued`, and notes
+   when a queued copy left the queue during the check; there is no byte
+   cap.
 
 ## Record privacy
 
@@ -212,15 +219,17 @@ result; an empty history; a stalled page; a failed first or second page;
 every reader outcome, including oversized before and after the download and
 exactly 4 MiB; cancel during a page, a message request and a download;
 account changes at each step; a stale generation; the send queue rule for
-sending, unsent, failed, sent, other names and an unreadable queue; a step
-that throws; and posts that confirm, are invalid, lose their receipt, fail,
-fail to prepare, throw at the hand-off, read back other bytes, vanish, fail
-the read-back request or download, are cancelled before start, before the
-hand-off or during the read-back, lose the account before or after the
+sending, unsent, failed, sent, other names and an unreadable queue; a copy
+that leaves or joins the queue during the check, a queue unreadable only at
+the start, and a cancel or account change before the first queue answer; a
+step that throws; and posts that confirm, are invalid, lose their receipt,
+fail, fail to prepare, throw at the hand-off, read back other bytes, vanish,
+fail the read-back request or download, are cancelled before start, before
+the hand-off or during the read-back, lose the account before or after the
 hand-off, prune old staging directories, and replace a running check. It
 also checks where the record is staged: under the external files directory
-next to a `.nomedia` file, never under the cache, with nothing sent when there
-is no external files directory, and old copies pruned from both roots.
+next to a `.nomedia` file, never under the cache, with nothing sent when
+there is no external files directory, and old copies pruned from both roots.
 `PURPLE_SYNC_TRANSPORT_SOURCES` points the build at another copy of the
 transport sources, for mutation runs.
 
