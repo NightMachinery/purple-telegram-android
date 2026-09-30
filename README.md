@@ -502,14 +502,28 @@ sync update, choice, restore or undo replaces the file. It follows the
 desktop's rules: each entry is the exact bytes plus JSON metadata, named by
 creation milliseconds and a random suffix; an entry is valid only while both
 files are owner-only regular files and the bytes still match the recorded
-size and the core's settings fingerprint; the newest 30 are kept, plus one
-entry a restore asks to keep. The fingerprint and the config version key
+size and the core's settings fingerprint; at most 30 are kept, and the entry
+a restore names is always among them. The fingerprint and the config version key
 check come from the core through the settings sync flow bridge. The equally
 uncalled `PurpleSyncSettingsFile` reads `settings.toml` the way sync must: present only
 as a regular file of at most 256 KiB, never through a symlink, and invalid
 rather than absent when it breaks either rule. It writes through the same
 replacement as an import (or, for a restore, an editor save), so the backup,
 reload and auto-send bookkeeping stay as they are, then reads the file back.
+
+The uncalled `PurpleSyncRunner` drives manual settings sync for one account
+over any `PurpleSyncTransport`. It runs one step at a time, drops callbacks
+from a cancelled or superseded step, and checks before every write that the
+account still has the user it started with. `PurpleSyncApply` joins, applies,
+adopts, restores and undoes with the desktop's rules, writing History first,
+then `settings.toml` on the main thread only if the file still holds the bytes
+the user reviewed, then the account's sync state. `PurpleSyncPublisher` posts
+only when the user asks, confirms a record Saved Messages already holds
+instead of posting it again, and does not post while an earlier sync post is
+still in Telegram's send queue. The threading, write order and Undo rules are
+in `docs/account-sync-store.md`, and
+`TMessagesProj/jni/purple_jni/tests/run_sync_executors.sh` tests all three on
+macOS against the real core and a fake transport.
 
 **Send to Saved Messages after every save** on the same screen is `[sync]
 send_after_save_p`, off until you turn it on because sending is a message in a
