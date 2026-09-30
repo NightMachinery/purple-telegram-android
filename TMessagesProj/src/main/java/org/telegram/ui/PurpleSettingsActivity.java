@@ -31,7 +31,6 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LocaleController;
-import org.telegram.messenger.MediaController;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
@@ -53,8 +52,11 @@ import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalAdapter;
 import org.telegram.ui.Components.UniversalFragment;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -557,45 +559,50 @@ public class PurpleSettingsActivity extends UniversalFragment
         if (activity == null) {
             return;
         }
-        File copy = null;
+        // The date names the file in the question importFrom asks, and a file
+        // off the disk has only now.
+        final int date = (int) (System.currentTimeMillis() / 1000L);
         try {
-            String path = AndroidUtilities.getPath(data.getData());
-            if (path == null || path.startsWith("content://") || !canOpen(path)) {
-                // Not a real path - a document provider's handle - or a real
-                // one this app may not open: a file another app put in
-                // Download, picked through the device's storage root, resolves
-                // to its path, but scoped storage lets only the picker's grant
-                // read it. Copying through that grant is the only way to hand
-                // the parser a file. A file more than one byte over the size
-                // limit is not copied at all; one byte over is enough for
-                // importFrom to refuse it by size.
-                path = MediaController.copyFileToCache(data.getData(), "toml",
-                        PurpleSettings.MAX_SIZE + 1);
-                if (path != null) {
-                    copy = new File(path);
-                }
-            }
-            if (path == null) {
-                error(getString(R.string.PurpleImportFailed));
+            final String path = AndroidUtilities.getPath(data.getData());
+            if (path != null && !path.startsWith("content://") && canOpen(path)) {
+                // importFrom validates, shows the confirmation, keeps a backup and
+                // refuses a file that does not parse - all of which this screen
+                // would otherwise be repeating.
+                PurpleSettings.importFrom(activity, new File(path), date);
                 return;
             }
-            // importFrom validates, shows the confirmation, keeps a backup and
-            // refuses a file that does not parse - all of which this screen
-            // would otherwise be repeating. The date names the file in the
-            // question it asks, and a file off the disk has only now.
-            PurpleSettings.importFrom(activity, new File(path),
-                    (int) (System.currentTimeMillis() / 1000L));
+            // Not a real path - a document provider's handle - or a real one
+            // this app may not open: a file another app put in Download, picked
+            // through the device's storage root, resolves to its path, but
+            // scoped storage lets only the picker's grant read it. The bytes
+            // come through that grant straight into memory, so a read that
+            // fails partway leaves no copy of a file that may name chats. One
+            // byte over the size limit is enough for importFrom to refuse it.
+            final byte[] bytes;
+            try (InputStream in = activity.getContentResolver().openInputStream(data.getData())) {
+                bytes = readAtMost(in, PurpleSettings.MAX_SIZE + 1);
+            }
+            PurpleSettings.importFrom(activity, bytes, date);
         } catch (Exception e) {
             FileLog.e(e);
             error(getString(R.string.PurpleImportFailed));
-        } finally {
-            // importFrom has read the bytes before it asks anything, so the
-            // copy has done its job. It may name chats, and it sits in the
-            // external cache, which is shared storage on Android 10 and lower.
-            if (copy != null) {
-                copy.delete();
-            }
         }
+    }
+
+    private static byte[] readAtMost(InputStream in, long limit) throws IOException {
+        if (in == null) {
+            throw new IOException("The picked file has no stream");
+        }
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        final byte[] buffer = new byte[8192];
+        while (out.size() < limit) {
+            final int read = in.read(buffer, 0, (int) Math.min(buffer.length, limit - out.size()));
+            if (read < 0) {
+                break;
+            }
+            out.write(buffer, 0, read);
+        }
+        return out.toByteArray();
     }
 
     /** Whether this app may read {@code path} itself, without the picker's grant. */
