@@ -546,18 +546,27 @@ keeps an older send that finishes last from marking a newer snapshot as sent.
 The account's last-offered message ID advances for every confirmed own send.
 Failed uploads can therefore be sent again after another save or a manual
 tap. Each attempt stages its own `settings.toml`, keeping the filename intact even when
-sends overlap. A failed local message can still need that file for Telegram's
-Retry action, so failed attempts stay in the cache for up to 30 days. A
-confirmed send also keeps its staged file when Telegram still uses that path as
-the local attachment. Old staging directories, including ones left empty,
-are pruned on the next send.
+sends overlap. It is staged in the app's own external files directory
+(`Android/data/org.purple.telegram/files/purple-sync/<UUID>/`, next to a
+`.nomedia` file) rather than in Telegram's cache, because Telegram moves a sent
+attachment out of its cache into Telegram Documents, which is shared storage on
+Android 10 and lower. Without that directory (external storage not mounted)
+the send is refused with the same error as any other staging failure; it never
+falls back to the cache. A failed local message can still need that file for
+Telegram's Retry action, so failed attempts stay there for up to 30 days. A
+confirmed send keeps its staged file too, since Telegram keeps using that path
+as the local attachment. Old staging directories, including ones left empty,
+are pruned on the next send, both there and in the cache's `purple-sync/`,
+where earlier builds staged; that cache directory is removed once it is empty.
 Telegram's Retry action also records server confirmation for a failed
 Purple settings send. So does Telegram's automatic resend, at the next app
 start, of a send the app was closed during. Either one counts only for an
 outgoing document in that
-account's own Saved Messages whose attachment is a valid `settings.toml`
-under the cache's `purple-sync/<UUID>/` staging directory, without a symlink
-inside that directory. After confirmation, the sent fingerprint advances only
+account's own Saved Messages whose attachment is a valid `settings.toml` in a
+`purple-sync/<UUID>/` staging directory, under the external files directory
+or, for a send an earlier build staged, under the cache, without a symlink
+inside that directory. `TMessagesProj/jni/purple_jni/tests/run_settings_staging.sh`
+tests these path rules. After confirmation, the sent fingerprint advances only
 when the current settings file still matches the staged bytes; the offered
 message ID advances for every confirmed retry or resend. Another failed
 attempt leaves both unchanged. A process exit between server acceptance and

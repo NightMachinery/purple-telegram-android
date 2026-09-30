@@ -114,8 +114,8 @@ A staged record is never under `MEDIA_DIR_CACHE`, so Telegram leaves it where
 it is and the sent message keeps it as its local attachment. The staging
 root gets a `.nomedia` file, as the cache and Telegram's own media
 directories do, so the media scanner skips it. The manual
-`settings.toml` send still stages in the cache, so Telegram still moves that
-file after its send.
+`settings.toml` send stages the same way, in `<external files>/purple-sync`
+(see the README).
 
 ## Send queue
 
