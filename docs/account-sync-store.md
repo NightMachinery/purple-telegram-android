@@ -393,10 +393,10 @@ What each action does:
   the sync screen is in front: when History or another screen covers it, or
   the app is in the background, the review shows its action row instead, to
   be tapped again. Otherwise the status says that Saved Messages or this
-  device changed and nothing was sent. Confirming Publish or Publish changes applies with no remote choice,
-  which joins a device that has no sync state yet, and publishes the returned
-  post ticket on that fresh check. Confirming Finish sending publishes
-  `PostRequest.finishSending()` on it.
+  device changed and nothing was sent. Confirming Publish or Publish changes
+  applies with no remote choice, which joins a device that has no sync state
+  yet, and publishes the returned post ticket on that fresh check. Confirming
+  Finish sending publishes `PostRequest.finishSending()` on it.
 - **Join sync** (Adopt on a device with no sync state) asks with the
   disclosure, then applies with no remote choice. Nothing is posted.
 - Adopt on a joined device happens inside the runner's review, without a
