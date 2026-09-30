@@ -100,6 +100,7 @@ public final class PurpleSyncHistoryTest {
             historyRefusals();
             historyPrune();
             historyKeepId();
+            historyClockBack();
             historyTamper();
             historyPermissions();
             historyDiscard();
@@ -270,6 +271,37 @@ public final class PurpleSyncHistoryTest {
         final PurpleSyncHistory.Entry bogusKeep = history.save(utf8("k = bogus\n"),
                 PurpleSyncHistory.Reason.BeforeUpdate, "", "", "0000000000000001-0000000000000000");
         check(bogusKeep != null && history.list().size() == 30, "keepId of no valid entry changes nothing");
+    }
+
+    static void historyClockBack() throws Exception {
+        final File root = fresh("clock-back");
+        final TestClock clock = new TestClock();
+        final PurpleSyncHistory history = new PurpleSyncHistory(historyDir(root), new FakeCore(), clock);
+        final long ahead = 1790000000000L;
+        clock.now = ahead;
+        for (int i = 0; i != PurpleSyncHistory.LIMIT; ++i) {
+            check(history.save(utf8("ahead = " + i + "\n"), PurpleSyncHistory.Reason.BeforeUpdate, "", "", null) != null,
+                    "save " + i + " while the clock runs ahead");
+        }
+        clock.now = 1759200000000L;
+        final PurpleSyncHistory.Entry first = history.save(utf8("back = 1\n"),
+                PurpleSyncHistory.Reason.BeforeUpdate, "", "", null);
+        final PurpleSyncHistory.Entry second = history.save(utf8("back = 2\n"),
+                PurpleSyncHistory.Reason.BeforeUpdate, "", "", null);
+        check(first != null && second != null, "saves after the clock went back");
+        if (first == null || second == null) {
+            return;
+        }
+        check(first.createdMs > ahead && second.createdMs > first.createdMs,
+                "a save after the clock went back still sorts after every entry");
+        check(history.read(first.id) != null, "the entry saved just before the newest survives the prune");
+        final List<PurpleSyncHistory.Entry> listed = history.list();
+        check(listed.size() == PurpleSyncHistory.LIMIT, "still 30 after the clock went back: " + listed.size());
+        check(listed.get(0).id.equals(second.id) && listed.get(1).id.equals(first.id),
+                "newest first in save order");
+        check(history.read(listed.get(listed.size() - 1).id) != null
+                && Arrays.equals(history.read(listed.get(listed.size() - 1).id), utf8("ahead = 2\n")),
+                "the two oldest saves went first");
     }
 
     interface Mutation {

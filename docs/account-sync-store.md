@@ -140,6 +140,14 @@ then takes one of the 30 places, as on the desktop). When the store is full,
 id-shaped leftovers older than the oldest kept entry are removed; other names
 are left alone.
 
+An entry's id time is the save's clock time, or one millisecond after the
+newest valid entry's when that is later, so ids always follow save order.
+Without this, a save after the clock was set back (for example, after entries
+were saved while the phone's clock ran months ahead) would sort as the oldest
+entry, and the next save's prune would remove it. The cost is that such an
+entry shows a time just after the newest one until the real time catches up.
+The desktop does not do this yet.
+
 The fingerprint is the core's `SettingsFingerprint` and the version key check
 is the core's `IsConfigVersionKey`, both through `PurpleSyncCore`, so no hash
 or key rule is reimplemented in Java. A save with an invalid version key, or
