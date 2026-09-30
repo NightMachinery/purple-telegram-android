@@ -16,6 +16,7 @@ final class PurpleSyncCheck implements PurpleSyncTelegramTransport.Task,
     private PurpleSyncScanner scanner;
     private PurpleSyncReader reader;
     private PurpleSyncInventory inventory;
+    private boolean queuedAtStart;
 
     PurpleSyncCheck(PurpleSyncClient.Operation operation,
             PurpleSyncTransport.Progress progress,
@@ -28,10 +29,23 @@ final class PurpleSyncCheck implements PurpleSyncTelegramTransport.Task,
 
     @Override
     public void start() {
-        operation.run(() -> {
-            scanner = new PurpleSyncScanner(operation, progress, this::onScanned);
-            scanner.start();
-        });
+        operation.run(() -> operation.client.localCopies(
+                operation.guard(this::onQueueAtStart)));
+    }
+
+    private void onQueueAtStart(List<PurpleSyncClient.LocalCopy> copies) {
+        if (!operation.proceed()) {
+            return;
+        }
+        queuedAtStart = holds(copies);
+        scanner = new PurpleSyncScanner(operation, progress, this::onScanned);
+        scanner.start();
+    }
+
+    private boolean holds(List<PurpleSyncClient.LocalCopy> copies) {
+        return copies == null
+                || PurpleSyncPost.holdsSyncRecord(operation.client.userId(),
+                        copies);
     }
 
     @Override
@@ -97,15 +111,17 @@ final class PurpleSyncCheck implements PurpleSyncTelegramTransport.Task,
     }
 
     private void onQueue(List<PurpleSyncClient.LocalCopy> copies) {
-        final boolean queued = copies == null
-                || PurpleSyncPost.holdsSyncRecord(operation.client.userId(),
-                        copies);
+        final boolean queuedAtEnd = holds(copies);
+        final boolean queued = queuedAtStart || queuedAtEnd;
         if (!operation.proceed()) {
             return;
         }
         operation.client.log("generation " + operation.generation + ": "
                 + inventory.summary() + " sendQueued=" + queued
-                + (copies == null ? " (queue unreadable)" : ""));
+                + (copies == null ? " (queue unreadable)" : "")
+                + (queuedAtStart && !queuedAtEnd
+                        ? " (a queued copy left the queue during the check)"
+                        : ""));
         finish(new PurpleSyncTransport.CheckResult(
                 PurpleSyncTransport.CheckStatus.Finished, inventory, queued));
     }

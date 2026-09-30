@@ -234,7 +234,8 @@ way:
 - `check(progress, done)` scans Saved Messages, reads every candidate, and
   finishes with `Finished` and an inventory, `Cancelled`, or
   `AccountChanged`. Its result also says whether the account's send queue
-  held an unsent or failed sync record post when the check ended.
+  held an unsent or failed sync record post when the check began or when it
+  ended.
 - `post(staged, done)` sends the exact staged bytes and finishes with
   `Confirmed` (a positive message id and the server's read-back bytes),
   `OutcomeUnknown`, `NeedsReview`, `Cancelled` or `InvalidRecord`.
