@@ -538,8 +538,8 @@ public final class PurpleSyncRunner {
         if (!live(started)) {
             return;
         }
-        checking = false;
         if (result.status != PurpleSyncTransport.CheckStatus.Finished) {
+            checking = false;
             busy = false;
             done.onResult(new CheckOutcome(
                     result.status == PurpleSyncTransport.CheckStatus.AccountChanged
@@ -559,6 +559,7 @@ public final class PurpleSyncRunner {
                 if (!live(started)) {
                     return;
                 }
+                checking = false;
                 busy = false;
                 done.onResult(new CheckOutcome(CheckStatus.Finished,
                         issue(reviewed, inventory, sendQueued)));
