@@ -258,9 +258,16 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
                 if (data == null) {
                     continue;
                 }
-                final TLRPC.Message message = TLRPC.Message.TLdeserialize(
-                        data, data.readInt32(false), false);
-                data.reuse();
+                TLRPC.Message message;
+                try {
+                    message = TLRPC.Message.TLdeserialize(
+                            data, data.readInt32(false), false);
+                } catch (RuntimeException e) {
+                    FileLog.e(e);
+                    message = null;
+                } finally {
+                    data.reuse();
+                }
                 if (message == null) {
                     continue;
                 }
