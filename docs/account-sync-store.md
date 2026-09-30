@@ -54,3 +54,34 @@ confirmation, two handles, replayed stages, missing stages, account and device
 mismatches, malformed state, and temporary artifacts. JNI syntax can be checked
 with the macOS Qt Core and JDK headers used by the existing account sync
 acknowledgement test.
+
+## Settings History
+
+`PurpleSyncHistory` is a separate, equally uncalled store for copies of
+`settings.toml` that sync will keep before it replaces the file. It lives in
+`ApplicationLoader.getFilesDirFixed()/purple/sync-history`, a sibling of the
+store root, because the store refuses any name in its root other than its own
+three. The directory is created owner-only (0700) and every file is written
+owner-only (0600) through a temporary sibling and a rename, then read back.
+
+An entry is `<id>.toml`, the exact bytes (at most 256 KiB, not necessarily
+UTF-8), plus `<id>.json`, the metadata: version 1, id, creation milliseconds,
+reason (`before_update`, `before_choice`, `before_restore` or `before_undo`),
+a label of at most 256 UTF-16 units, the config version key when known, the
+fingerprint, the size, and whether the file existed. The id is sixteen decimal
+digits of the creation time, a dash, and sixteen lowercase hex digits. Reading
+refuses an entry whose files are not owner-only regular files, whose metadata
+is not exactly one JSON object in strict UTF-8 of at most 16 KiB with those
+fields and types, or whose bytes no longer match the recorded size and
+fingerprint. A list skips such entries; a read returns nothing for them.
+
+After each save the newest 30 valid entries stay, plus the entry the caller
+names as `keepId` (a restore passes its target, so a failed restore cannot
+prune what it was restoring). When the store is full, id-shaped leftovers
+older than the oldest kept entry are removed; other names are left alone.
+
+The fingerprint is the core's `SettingsFingerprint`, read from the state text
+the existing `PurpleCore.noteImported` bridge returns for the bytes, so no hash
+is recomputed in Java. The core's version key check has no bridge yet; until
+one is added, a save with a version key and an entry recording one are
+refused. Without the native library every save is refused.

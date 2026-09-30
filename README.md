@@ -486,6 +486,17 @@ and fail-closed crash recovery. Its exact operations and recovery verdicts are
 documented in `docs/account-sync-store.md`. Compressed envelopes remain
 future work.
 
+Beside that store sits the uncalled `PurpleSyncHistory`, which keeps copies of
+`settings.toml` in the app-private `purple/sync-history` directory before a
+sync update, choice, restore or undo replaces the file. It follows the
+desktop's rules: each entry is the exact bytes plus JSON metadata, named by
+creation milliseconds and a random suffix; an entry is valid only while both
+files are owner-only regular files and the bytes still match the recorded
+size and the core's settings fingerprint; the newest 30 are kept, plus one
+entry a restore asks to keep. The fingerprint comes from the core through the
+existing auto-send bridge. Until the core's version key check is exposed, it
+accepts only entries without a config version key.
+
 **Send to Saved Messages after every save** on the same screen is `[sync]
 send_after_save_p`, off until you turn it on because sending is a message in a
 real chat: with it on, every change the app makes to `settings.toml` posts the
