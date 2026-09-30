@@ -270,6 +270,7 @@ public final class PurpleAccountSyncStoreTest {
         }
         testCommitAndHasState(base, core);
         testKilledWrites(base, core);
+        testUnsentStageOnWriteFailure(base, core);
         System.out.println("PurpleAccountSyncStore host test passed");
     }
 
@@ -391,6 +392,48 @@ public final class PurpleAccountSyncStoreTest {
                 break;
             }
         }
+    }
+
+    private static void testUnsentStageOnWriteFailure(File base, FakeCore core)
+            throws Exception {
+        for (boolean legacy : new boolean[] { false, true }) {
+            AtomicFile.legacy = legacy;
+            for (String full : new String[] { "state.json", "config.json" }) {
+                final String what = (legacy ? "legacy " : "") + "no space for " + full;
+                final File root = freshRoot(base, "full-" + (legacy ? "legacy-" : "") + full);
+                final File state = new File(root, "state.json");
+                final File stage = new File(root, "pending/config.json");
+                try (PurpleAccountSyncStore store = new PurpleAccountSyncStore(root, core)) {
+                    expect(store.open(true, 0, "device"), PurpleAccountSyncStore.Status.Uninitialized);
+                    expect(store.initialize(INITIAL), PurpleAccountSyncStore.Status.Ready);
+                    final int failed = AtomicFile.failWriteCalls;
+                    AtomicFile.fullName = full;
+                    expect(store.stageConfig(RECORD, RESERVED), PurpleAccountSyncStore.Status.IoError);
+                    if (AtomicFile.fullName != null || AtomicFile.failWriteCalls != failed + 1) {
+                        throw new AssertionError(what + ": write did not fail before commit");
+                    }
+                    if (stage.exists()) throw new AssertionError(what + ": unsent stage kept");
+                    same(state, INITIAL, what + ": state moved");
+                    noArtifacts(root, what);
+                }
+                try (PurpleAccountSyncStore store = new PurpleAccountSyncStore(root, core)) {
+                    expect(store.open(true, 0, "device"), PurpleAccountSyncStore.Status.Ready);
+                    expect(store.readPendingConfig(), PurpleAccountSyncStore.Status.NoPending);
+                }
+            }
+            final String what = (legacy ? "legacy " : "") + "state changed by a failed write";
+            final File root = freshRoot(base, "corrupt-reserve" + (legacy ? "-legacy" : ""));
+            final File stage = new File(root, "pending/config.json");
+            try (PurpleAccountSyncStore store = new PurpleAccountSyncStore(root, core)) {
+                expect(store.open(true, 0, "device"), PurpleAccountSyncStore.Status.Uninitialized);
+                expect(store.initialize(INITIAL), PurpleAccountSyncStore.Status.Ready);
+                AtomicFile.corruptName = "state.json";
+                expect(store.stageConfig(RECORD, RESERVED), PurpleAccountSyncStore.Status.IoError);
+                if (AtomicFile.corruptName != null) throw new AssertionError(what + ": not reached");
+                if (!stage.exists()) throw new AssertionError(what + ": stage removed");
+            }
+        }
+        AtomicFile.legacy = false;
     }
 
     private static void testCommitAndHasState(File base, FakeCore core)

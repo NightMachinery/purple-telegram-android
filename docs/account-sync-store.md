@@ -67,7 +67,10 @@ Crash boundaries:
   and the stage is exactly the record the core would reserve next for the
   state on disk, `open` removes it and reports `Ready`. Any other stage with
   nothing pending pauses with `OrphanStage` and is preserved, as is a stage
-  with no state at all.
+  with no state at all. When `stageConfig` itself sees the reserved state
+  write fail and `state.json` still holds the old state, it removes its stage
+  before it reports `IoError`; when the state file changed or cannot be read,
+  it leaves both for `open` to judge.
 - After reserved state commits, a matching stage is readable. A missing or
   mismatched stage pauses rather than inventing bytes or advancing a sequence.
 - During confirmation, a crash before confirmed state commits leaves the
@@ -102,8 +105,10 @@ store write that way (initialize, the stage and the reserved state in
 `stageConfig`, the confirmation, and a config data commit) on both
 behaviours, then reopens and checks that the store is usable and holds the
 version from before the write. It also checks that unknown names and a
-directory where a `.new` would be still pause, and that a stage other than
-the next record still pauses as `OrphanStage`. The flow bridge
+directory where a `.new` would be still pause, that a stage other than the
+next record still pauses as `OrphanStage`, and that `stageConfig` removes its
+stage when the reserved state write runs out of space but keeps it when the
+state file changed. The flow bridge
 harness below repeats the commit cases against the real core. JNI syntax can be checked
 with the macOS Qt Core and JDK headers used by the existing account sync
 acknowledgement test.

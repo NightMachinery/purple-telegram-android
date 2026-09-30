@@ -14,11 +14,13 @@ public final class AtomicFile {
     }
 
     public static boolean corruptAfterFinish;
+    public static String corruptName;
     public static int failWriteCalls;
     public static int finishWriteCalls;
     public static boolean legacy;
     public static String killName;
     public static Point killPoint;
+    public static String fullName;
     private final File base;
     private final File temporary;
     private final File backup;
@@ -38,7 +40,19 @@ public final class AtomicFile {
             }
         }
         kill(Point.BeforeStream, null);
-        final FileOutputStream stream = new FileOutputStream(legacy ? base : temporary);
+        final boolean full = base.getName().equals(fullName);
+        if (full) {
+            fullName = null;
+        }
+        final FileOutputStream stream = new FileOutputStream(legacy ? base : temporary) {
+            @Override
+            public void write(byte[] bytes) throws IOException {
+                if (full) {
+                    throw new IOException("No space left on device");
+                }
+                super.write(bytes);
+            }
+        };
         kill(Point.Empty, stream);
         return stream;
     }
@@ -54,8 +68,9 @@ public final class AtomicFile {
             Files.move(temporary.toPath(), base.toPath(),
                     StandardCopyOption.REPLACE_EXISTING);
         }
-        if (corruptAfterFinish) {
+        if (corruptAfterFinish || base.getName().equals(corruptName)) {
             corruptAfterFinish = false;
+            corruptName = null;
             Files.write(base.toPath(), new byte[] { 1 });
         }
     }
