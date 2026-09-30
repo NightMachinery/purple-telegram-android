@@ -778,7 +778,7 @@ public final class PurpleSyncCore {
         try {
             PurpleCore.ensureLoaded();
             raw = call.call();
-        } catch (UnsatisfiedLinkError | RuntimeException e) {
+        } catch (LinkageError | RuntimeException e) {
             return failure.failure("NativeUnavailable");
         }
         if (raw == null || raw.metadataJson == null) {
@@ -816,7 +816,7 @@ public final class PurpleSyncCore {
             final String fingerprint = settingsFingerprintNative(bytes);
             return (fingerprint != null && !fingerprint.isEmpty())
                     ? fingerprint : null;
-        } catch (UnsatisfiedLinkError | RuntimeException e) {
+        } catch (LinkageError | RuntimeException e) {
             return null;
         }
     }
@@ -828,7 +828,7 @@ public final class PurpleSyncCore {
         try {
             PurpleCore.ensureLoaded();
             return isConfigVersionKeyNative(key);
-        } catch (UnsatisfiedLinkError | RuntimeException e) {
+        } catch (LinkageError | RuntimeException e) {
             return false;
         }
     }
@@ -840,7 +840,7 @@ public final class PurpleSyncCore {
         try {
             PurpleCore.ensureLoaded();
             return settingsTextWritableNative(bytes);
-        } catch (UnsatisfiedLinkError | RuntimeException e) {
+        } catch (LinkageError | RuntimeException e) {
             return false;
         }
     }

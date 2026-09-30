@@ -6,6 +6,9 @@ import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.UserConfig;
 
 import java.io.File;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.security.MessageDigest;
@@ -2328,10 +2331,135 @@ public final class PurpleSyncCoreTest {
         }
     }
 
+
+    private static Throwable nativeFailure(Class<?> owner, String name,
+            Class<?>[] types, Object... arguments) throws Exception {
+        final Method method = owner.getDeclaredMethod(name, types);
+        method.setAccessible(true);
+        try {
+            method.invoke(null, arguments);
+            return null;
+        } catch (InvocationTargetException e) {
+            return e.getCause();
+        }
+    }
+
+    private static void unavailable(PurpleSyncCore.Answer answer) {
+        check(answer != null && !answer.isValid()
+                && "NativeUnavailable".equals(answer.error));
+    }
+
+    private static void unavailable(PurpleAccountSyncCore.Result result) {
+        check(result != null && !result.isValid()
+                && "BridgeError".equals(result.status)
+                && "NativeUnavailable".equals(result.error));
+    }
+
+    private static void testStrippedReplies() throws Exception {
+        begin("stripped replies");
+        PurpleCore.ensureLoaded();
+        check(Modifier.isAbstract(Class.forName(
+                "org.telegram.messenger.purple.PurpleSyncCore$RawReply")
+                .getModifiers()));
+        check(Modifier.isAbstract(Class.forName(
+                "org.telegram.messenger.purple.PurpleAccountSyncCore$RawReply")
+                .getModifiers()));
+        check(nativeFailure(PurpleSyncCore.class, "undoFinishedNative",
+                new Class<?>[] { String.class }, "Restored")
+                instanceof NoSuchMethodError);
+        check(nativeFailure(PurpleAccountSyncCore.class,
+                "compareSpaceIdsNative",
+                new Class<?>[] { String.class, String.class }, "a", "b")
+                instanceof NoSuchMethodError);
+
+        check(fingerprint(T0).equals(PurpleSyncCore.settingsFingerprint(T0)));
+        check(PurpleSyncCore.isSettingsTextWritable(T0));
+        check(!PurpleSyncCore.isConfigVersionKey("not a key"));
+
+        final PurpleSyncInventory inventory = new PurpleSyncInventory(USER,
+                true, new int[0], new int[0], new long[0], new long[0],
+                new byte[0][]);
+        unavailable(PurpleSyncCore.classifyHistoryPage(0, new int[] { 5 },
+                new boolean[] { true }, new boolean[] { false },
+                new boolean[] { true }, new String[] { "#purplesync" },
+                new String[] { "Purple settings sync.json" }));
+        final PurpleSyncCore.Review review = PurpleSyncCore.review(inventory,
+                null, null, present(T0), "android-stripped");
+        unavailable(review);
+        check(review.status == PurpleSyncCore.ReviewStatus.StoreError
+                && review.message == PurpleSyncCore.Message.StoreError);
+        unavailable(PurpleSyncCore.diff(T0, T1));
+        final PurpleSyncCore.ApplyRequest request = PurpleSyncCore
+                .ApplyRequest.unbound(inventory, present(T0), "stamp", null);
+        unavailable(PurpleSyncCore.planApply(request));
+        unavailable(PurpleSyncCore.completeApply(request, present(T0)));
+        unavailable(PurpleSyncCore.checkCommit(utf8("{}"), utf8("{}")));
+        unavailable(PurpleSyncCore.planPostEntry(
+                PurpleSyncCore.PostRequest.finishSending(), true));
+        check(PurpleAccountBinding.persist(ACCOUNT, USER,
+                "0123456789abcdef0123456789abcdef").isValid());
+        unavailable(PurpleSyncCore.planPost(ACCOUNT, inventory, utf8("{}"),
+                null, present(T0), PurpleSyncCore.PostRequest.finishSending(),
+                1, false));
+        unavailable(PurpleSyncCore.checkStagedPost(ACCOUNT, inventory,
+                utf8("{}"), utf8("{}")));
+        unavailable(PurpleSyncCore.describeApplyFailure(
+                PurpleSyncCore.ApplyStatus.WriteError, false, true, true,
+                true, false));
+        unavailable(PurpleSyncCore.undoFinished(
+                PurpleSyncCore.RestoreStatus.Restored));
+
+        final byte[] entropy = fill(16, 's');
+        unavailable(PurpleAccountSyncCore.inspectConfigRecord(utf8("{}")));
+        unavailable(PurpleAccountSyncCore.inspectState(utf8("{}")));
+        unavailable(PurpleAccountSyncCore.checkLocalStage(utf8("{}"),
+                utf8("{}")));
+        unavailable(PurpleAccountSyncCore.buildConfigRecord(T0, new byte[0][],
+                "space", "install", "android-stripped", "Android", "app", 1,
+                1));
+        unavailable(PurpleAccountSyncCore.buildConfigAcknowledgement(T0,
+                utf8("{}"), "space", "install", "android-stripped", "Android",
+                "app", 1, 1));
+        unavailable(PurpleAccountSyncCore.reserveConfigSeq(ACCOUNT,
+                utf8("{}"), "hash"));
+        unavailable(PurpleAccountSyncCore.initializeLocalState("install",
+                "android-stripped", "space"));
+        unavailable(PurpleAccountSyncCore.initializeBoundLocalState(ACCOUNT,
+                "install", "android-stripped", "space"));
+        unavailable(PurpleAccountSyncCore.checkAccountBinding(ACCOUNT,
+                utf8("{}")));
+        unavailable(PurpleAccountSyncCore.reserveConfigRecord(ACCOUNT,
+                utf8("{}"), utf8("{}")));
+        unavailable(PurpleAccountSyncCore.appendIssuedConfigRecord(
+                utf8("{}"), utf8("{}")));
+        unavailable(PurpleAccountSyncCore.adoptIssuedOwnConfigMessage(
+                utf8("{}"), 5, utf8("{}")));
+        unavailable(PurpleAccountSyncCore.checkOwnRecord(utf8("{}"),
+                "android-stripped", 0, utf8("{}")));
+        unavailable(PurpleAccountSyncCore.confirmConfigReadBack(utf8("{}"),
+                utf8("{}"), "android-stripped", 0, utf8("{}"), 5));
+        unavailable(PurpleAccountSyncCore.recordConfirmedOwnConfigMessage(
+                utf8("{}"), 5, utf8("{}")));
+        unavailable(PurpleAccountSyncCore.checkOwnConfigMessageDeletion(
+                utf8("{}"), 5, utf8("{}")));
+        unavailable(PurpleAccountSyncCore.removeAbsentOwnConfigMessage(
+                utf8("{}"), 5, 0));
+        unavailable(PurpleAccountSyncCore.formatInstallId(entropy));
+        unavailable(PurpleAccountSyncCore.formatSpaceId(entropy));
+        unavailable(PurpleAccountSyncCore.formatTimeOrderedSpaceId(
+                1790000000000L));
+        unavailable(PurpleAccountSyncCore.compareSpaceIds("a", "b"));
+    }
+
     public static void main(String[] args) throws Exception {
         UserConfig.activated = true;
         UserConfig.userId = USER;
         MessagesController.VALUES.clear();
+        if (args.length == 1 && args[0].equals("stripped")) {
+            testStrippedReplies();
+            finish();
+            return;
+        }
         testBasics();
         testHeads();
         testEmptyJoinAndLocalChanges();
@@ -2347,6 +2475,10 @@ public final class PurpleSyncCoreTest {
         testDiff();
         testNativeUnavailable();
         testStore();
+        finish();
+    }
+
+    private static void finish() {
         System.out.println(checks + " checks, " + failures + " failures");
         if (failures != 0) {
             System.exit(1);

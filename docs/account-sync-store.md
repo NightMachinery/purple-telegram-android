@@ -137,7 +137,14 @@ config data or sync JSON itself. Native code builds that `RawReply`, and
 signature. No Java code calls either constructor, so
 `TMessagesProj/proguard-rules.pro` keeps both; without that rule the release
 build strips them and the first bridge call throws `NoSuchMethodError`, which
-the host tests cannot show because they run without R8. An answer whose
+the host tests cannot show because they run without R8. Every wrapper in both
+classes catches `LinkageError` (which covers `UnsatisfiedLinkError`,
+`NoSuchMethodError` and `NoClassDefFoundError`) as well as
+`RuntimeException`, so a future shrinker regression ends that call with
+`NativeUnavailable` instead of crashing the thread. A check then ends on a
+failure status, normally StoreError ("This device's sync state could not be
+opened. Nothing was changed."), the log names `NativeUnavailable`, and
+nothing is written or posted. An answer whose
 `error` is not null carries the bridge's reason (`NullInput`, `State` for
 unreadable state bytes, `InvalidTransport`, `NativeUnavailable`,
 `MalformedNativeReply`, and for the account-bound calls the binding errors
@@ -253,7 +260,12 @@ stateless cases of the core's `tests/test_sync_flow.cpp`: every review
 verdict and failure status, apply and complete for every choice kind, the
 join variants and the joined-stamp rule, stale stamps, the publish truth
 table with ConfirmFound, Finish sending and StillSending, the commit check
-refusals, diff hunks and truncation, and history page classification.
+refusals, diff hunks and truncation, and history page classification. A
+second pass puts stand-ins for both `RawReply` classes first on the class
+path, abstract and without members as R8 left them in the `2af13dd5` build,
+so every reply the bridges build fails with `NoSuchMethodError`; each wrapper
+must then answer `NativeUnavailable` without throwing, while the natives that
+build no reply keep working.
 
 ## Settings sync executors
 
