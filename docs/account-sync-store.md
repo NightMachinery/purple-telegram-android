@@ -39,8 +39,18 @@ or a disallowed change reports `InvalidTransition`, a malformed state
 lost binding pauses the store with `AccountUnbound`.
 
 The root admits only `lock`, `state.json`, and `pending`; the pending directory
-admits only `config.json`. AtomicFile temporary or backup artifacts and unknown
-files produce `AmbiguousFiles`. The store preserves them for inspection. It
+admits only `config.json`. Before it checks names, `open` finishes or undoes
+any write a process death interrupted, for `state.json` and
+`pending/config.json`, the way `AtomicFile.openRead` does: a `.bak` (left by
+AtomicFile on Android 10 and lower, which writes in place beside a backup)
+replaces the file, a `.new` (left by Android 11 and later, which writes a new
+file and renames it) is removed, and an empty file with no backup, the first
+write Android 10 and lower started but never filled, is removed. What remains
+is the version from before the interrupted write, which the caller never got
+`Ready` for; only a first write on Android 10 and lower that wrote every byte
+stays, because it left no backup and the file is complete. A failed repair is
+`IoError`. Any other name, or a `.new` or `.bak` that is not a plain regular
+file, gives `AmbiguousFiles`, and the store preserves it for inspection. It
 refuses symlink leaves and bounds state to 4 MiB and the staged record to
 256 KiB. The JNI core checks canonical state and the exact canonical record,
 including space, install, creating device, sequence, hash, and config version.
@@ -50,10 +60,14 @@ sequence. The Java store never parses either JSON document.
 Crash boundaries:
 
 - Before a stage write, the old state remains usable.
-- During an AtomicFile write, a leftover `.new` or `.bak` pauses recovery as
-  `AmbiguousFiles`. The store does not choose among artifacts.
-- After a stage write but before the reserved state write, reopening reports
-  `OrphanStage` and preserves the stage. It cannot be sent until reconciled.
+- During any write, the next `open` puts back the version before it, as above.
+- After a stage write but before the reserved state write commits, the stage
+  was never sent: the publisher posts only after `stageConfig` returns
+  `Ready`, which needs the reserved state on disk. So when nothing is pending
+  and the stage is exactly the record the core would reserve next for the
+  state on disk, `open` removes it and reports `Ready`. Any other stage with
+  nothing pending pauses with `OrphanStage` and is preserved, as is a stage
+  with no state at all.
 - After reserved state commits, a matching stage is readable. A missing or
   mismatched stage pauses rather than inventing bytes or advancing a sequence.
 - During confirmation, a crash before confirmed state commits leaves the
@@ -64,17 +78,32 @@ Crash boundaries:
 
 AtomicFile and stream syncing protect ordinary process-crash boundaries, but
 this does not promise power-loss durability or parent-directory syncing. The
-store has no automatic repair of an orphan, missing stage, or ambiguous file.
-The sync screen reports those verdicts as a store error that changes nothing;
-a user-visible recovery route for them is still future work.
+store repairs only the interrupted writes and never-sent stages above. It has
+no automatic repair of any other orphan, of a missing or mismatched stage, or
+of an unknown file. The sync screen reports those verdicts as a store error
+that changes nothing; a user-visible recovery route for them is still future
+work. One interrupted write is still not repaired: on Android 10 and lower
+the stage's first write goes straight to `pending/config.json` with no backup,
+so a death partway through a large record leaves a truncated stage, which
+pauses with `OrphanStage`. The first state write is a few hundred bytes, so a
+death there leaves an empty file, which is removed.
 
 Run `TMessagesProj/jni/purple_jni/tests/run_account_sync_store.sh` for the
 host Java state-machine test. It compiles the production store against small
 Android stubs and tests off-state creation, successful reservation and
 confirmation, two handles, replayed stages, missing stages, account and device
-mismatches, malformed state, temporary artifacts, config data commits (ready,
-unchanged without a write, pending, seen sequence regression, device mismatch
-and lost binding), and `hasState` without creating anything. The flow bridge
+mismatches, malformed state, config data commits (ready, unchanged without a
+write, pending, seen sequence regression, device mismatch and lost binding),
+and `hasState` without creating anything. Its AtomicFile stub follows either
+Android 11 and later or Android 10 and lower, and can stop a write as a
+process death would: before the stream opens, with the file created but
+empty, or with every byte written but not committed. The test stops each
+store write that way (initialize, the stage and the reserved state in
+`stageConfig`, the confirmation, and a config data commit) on both
+behaviours, then reopens and checks that the store is usable and holds the
+version from before the write. It also checks that unknown names and a
+directory where a `.new` would be still pause, and that a stage other than
+the next record still pauses as `OrphanStage`. The flow bridge
 harness below repeats the commit cases against the real core. JNI syntax can be checked
 with the macOS Qt Core and JDK headers used by the existing account sync
 acknowledgement test.

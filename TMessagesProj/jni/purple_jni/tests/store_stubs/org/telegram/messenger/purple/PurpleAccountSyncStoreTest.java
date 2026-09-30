@@ -161,6 +161,12 @@ public final class PurpleAccountSyncStoreTest {
         Files.write(stage.toPath(), record);
         Files.write(state.toPath(), initial);
         try (PurpleAccountSyncStore store = new PurpleAccountSyncStore(root, core)) {
+            expect(store.open(true, 0, "device"), PurpleAccountSyncStore.Status.Ready);
+            expect(store.readPendingConfig(), PurpleAccountSyncStore.Status.NoPending);
+        }
+        if (stage.exists()) throw new AssertionError("unreserved next record was kept");
+        Files.write(stage.toPath(), "record:5".getBytes(StandardCharsets.UTF_8));
+        try (PurpleAccountSyncStore store = new PurpleAccountSyncStore(root, core)) {
             expect(store.open(true, 0, "device"), PurpleAccountSyncStore.Status.OrphanStage);
         }
         if (!stage.exists()) throw new AssertionError("orphan was deleted");
@@ -198,7 +204,30 @@ public final class PurpleAccountSyncStoreTest {
         Files.write(state.toPath(), reserved);
         Files.write(new File(root, "state.json.new").toPath(), initial);
         try (PurpleAccountSyncStore store = new PurpleAccountSyncStore(root, core)) {
+            expect(store.open(true, 0, "device"), PurpleAccountSyncStore.Status.Ready);
+            expect(store.readPendingConfig(), PurpleAccountSyncStore.Status.Ready);
+        }
+        if (new File(root, "state.json.new").exists()) {
+            throw new AssertionError("uncommitted write kept");
+        }
+        for (String name : new String[] { "state.json.tmp", "pending/config.json.tmp", "other" }) {
+            final File stray = new File(root, name);
+            Files.write(stray.toPath(), initial);
+            try (PurpleAccountSyncStore store = new PurpleAccountSyncStore(root, core)) {
+                expect(store.open(true, 0, "device"), PurpleAccountSyncStore.Status.AmbiguousFiles);
+            }
+            if (!stray.exists()) throw new AssertionError("unknown name " + name + " removed");
+            stray.delete();
+        }
+        final File oddArtifact = new File(root, "state.json.new");
+        oddArtifact.mkdir();
+        try (PurpleAccountSyncStore store = new PurpleAccountSyncStore(root, core)) {
             expect(store.open(true, 0, "device"), PurpleAccountSyncStore.Status.AmbiguousFiles);
+        }
+        if (!oddArtifact.isDirectory()) throw new AssertionError("directory artifact removed");
+        oddArtifact.delete();
+        try (PurpleAccountSyncStore store = new PurpleAccountSyncStore(root, core)) {
+            expect(store.open(true, 0, "device"), PurpleAccountSyncStore.Status.Ready);
         }
         final File raceRoot = new File(base, "race/purple/sync");
         new File(base, "race").mkdir();
@@ -240,7 +269,128 @@ public final class PurpleAccountSyncStoreTest {
             }
         }
         testCommitAndHasState(base, core);
+        testKilledWrites(base, core);
         System.out.println("PurpleAccountSyncStore host test passed");
+    }
+
+    private enum Site { Initialize, Stage, Reserve, Confirm, Commit }
+
+    private static final byte[] INITIAL = "v1:0:0:device".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] SEEN = "v1:0:0:device:3".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] RECORD = "record:1".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] RESERVED = "v1:1:1:device".getBytes(StandardCharsets.UTF_8);
+
+    private static File freshRoot(File base, String name) {
+        final File parent = new File(base, name);
+        parent.mkdirs();
+        return new File(parent, "purple/sync");
+    }
+
+    private static void noArtifacts(File root, String what) {
+        for (String name : new String[] { "state.json.new", "state.json.bak",
+                "pending/config.json.new", "pending/config.json.bak" }) {
+            if (new File(root, name).exists()) {
+                throw new AssertionError(what + ": " + name + " left behind");
+            }
+        }
+    }
+
+    private static void same(File file, byte[] expected, String what) throws Exception {
+        if (!Arrays.equals(Files.readAllBytes(file.toPath()), expected)) {
+            throw new AssertionError(what);
+        }
+    }
+
+    private static void testKilledWrites(File base, FakeCore core) throws Exception {
+        for (boolean legacy : new boolean[] { false, true }) {
+            for (Site site : Site.values()) {
+                for (AtomicFile.Point point : AtomicFile.Point.values()) {
+                    killedWrite(base, core, legacy, site, point);
+                }
+            }
+        }
+        AtomicFile.legacy = false;
+    }
+
+    private static void killedWrite(File base, FakeCore core, boolean legacy,
+            Site site, AtomicFile.Point point) throws Exception {
+        final String what = (legacy ? "legacy " : "") + site + " killed at " + point;
+        final File root = freshRoot(base, "kill-" + (legacy ? "legacy-" : "") + site + "-" + point);
+        final File state = new File(root, "state.json");
+        final File stage = new File(root, "pending/config.json");
+        AtomicFile.legacy = legacy;
+        try (PurpleAccountSyncStore store = new PurpleAccountSyncStore(root, core)) {
+            expect(store.open(true, 0, "device"), PurpleAccountSyncStore.Status.Uninitialized);
+            if (site != Site.Initialize) {
+                expect(store.initialize(INITIAL), PurpleAccountSyncStore.Status.Ready);
+            }
+            if (site == Site.Confirm) {
+                expect(store.stageConfig(RECORD, RESERVED), PurpleAccountSyncStore.Status.Ready);
+            }
+            AtomicFile.killName = (site == Site.Stage) ? "config.json" : "state.json";
+            AtomicFile.killPoint = point;
+            try {
+                switch (site) {
+                case Initialize:
+                    store.initialize(INITIAL);
+                    break;
+                case Stage:
+                case Reserve:
+                    store.stageConfig(RECORD, RESERVED);
+                    break;
+                case Confirm:
+                    store.confirmConfigReadBack(RECORD, 5);
+                    break;
+                case Commit:
+                    store.commitConfigState(SEEN);
+                    break;
+                }
+                throw new AssertionError(what + ": the write was not killed");
+            } catch (AtomicFile.Killed expected) {
+            }
+        }
+        if (AtomicFile.killName != null) {
+            throw new AssertionError(what + ": kill not reached");
+        }
+        try (PurpleAccountSyncStore store = new PurpleAccountSyncStore(root, core)) {
+            final PurpleAccountSyncStore.Result opened = store.open(true, 0, "device");
+            noArtifacts(root, what);
+            switch (site) {
+            case Initialize:
+                if (legacy && point == AtomicFile.Point.Written) {
+                    expect(opened, PurpleAccountSyncStore.Status.Ready);
+                    same(state, INITIAL, what + ": first write landed");
+                    break;
+                }
+                expect(opened, PurpleAccountSyncStore.Status.Uninitialized);
+                if (state.exists()) throw new AssertionError(what + ": state left");
+                expect(store.initialize(INITIAL), PurpleAccountSyncStore.Status.Ready);
+                break;
+            case Stage:
+            case Reserve:
+                expect(opened, PurpleAccountSyncStore.Status.Ready);
+                expect(store.readPendingConfig(), PurpleAccountSyncStore.Status.NoPending);
+                if (stage.exists()) throw new AssertionError(what + ": unsent stage kept");
+                same(state, INITIAL, what + ": state moved");
+                expect(store.stageConfig(RECORD, RESERVED), PurpleAccountSyncStore.Status.Ready);
+                break;
+            case Confirm:
+                expect(opened, PurpleAccountSyncStore.Status.Ready);
+                final PurpleAccountSyncStore.Result pending = store.readPendingConfig();
+                expect(pending, PurpleAccountSyncStore.Status.Ready);
+                if (!Arrays.equals(pending.staged, RECORD)) {
+                    throw new AssertionError(what + ": pending record lost");
+                }
+                same(state, RESERVED, what + ": reserved state lost");
+                expect(store.confirmConfigReadBack(RECORD, 5), PurpleAccountSyncStore.Status.Ready);
+                break;
+            case Commit:
+                expect(opened, PurpleAccountSyncStore.Status.Ready);
+                same(state, INITIAL, what + ": uncommitted state kept");
+                expect(store.commitConfigState(SEEN), PurpleAccountSyncStore.Status.Ready);
+                break;
+            }
+        }
     }
 
     private static void testCommitAndHasState(File base, FakeCore core)

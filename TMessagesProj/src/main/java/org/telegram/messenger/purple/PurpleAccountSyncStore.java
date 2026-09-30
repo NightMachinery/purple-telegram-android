@@ -203,11 +203,11 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
             if (!privateDirectory(pending, true)) {
                 return fail(Status.IoError);
             }
+            if (!recover(stateFile) || !recover(stageFile)) {
+                return fail(Status.IoError);
+            }
             if (!knownFiles(root, "lock", "state.json", "pending")
                     || !knownFiles(pending, "config.json")) {
-                return fail(Status.AmbiguousFiles);
-            }
-            if (hasAtomicArtifacts(stateFile) || hasAtomicArtifacts(stageFile)) {
                 return fail(Status.AmbiguousFiles);
             }
             if (!stateFile.exists()) {
@@ -232,10 +232,16 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
                 final byte[] bytes = read(stageFile, RECORD_LIMIT);
                 final Reply checked = core.checkStage(state, bytes);
                 if (!checked.valid()) {
-                    return fail(inspected.pendingSeq == 0
-                            ? Status.OrphanStage : Status.PendingMismatch);
-                }
-                if ("Confirmed".equals(checked.verdict)) {
+                    if (inspected.pendingSeq != 0) {
+                        return fail(Status.PendingMismatch);
+                    }
+                    if (!core.reserve(account, state, bytes).valid()) {
+                        return fail(Status.OrphanStage);
+                    }
+                    if (!stageFile.delete()) {
+                        return fail(Status.IoError);
+                    }
+                } else if ("Confirmed".equals(checked.verdict)) {
                     if (!stageFile.delete()) {
                         return fail(Status.IoError);
                     }
@@ -560,9 +566,20 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
                 file.getParentFile().getCanonicalFile(), file.getName()));
     }
 
-    private static boolean hasAtomicArtifacts(File file) {
-        return new File(file.getPath() + ".new").exists()
-                || new File(file.getPath() + ".bak").exists();
+    private static boolean recover(File file) throws IOException {
+        final File backup = new File(file.getPath() + ".bak");
+        final File temporary = new File(file.getPath() + ".new");
+        if (plainFile(backup) && !backup.renameTo(file)) {
+            return false;
+        }
+        if (plainFile(temporary) && !temporary.delete()) {
+            return false;
+        }
+        return !plainFile(file) || file.length() != 0 || file.delete();
+    }
+
+    private static boolean plainFile(File file) throws IOException {
+        return file.isFile() && !isLink(file);
     }
 
     private static byte[] read(File file, int limit) throws IOException {
