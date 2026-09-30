@@ -17,6 +17,7 @@ package org.telegram.messenger.purple;
 
 import org.telegram.messenger.AccountInstance;
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.FileLoader;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LocaleController;
@@ -38,7 +39,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.Locale;
-import java.util.UUID;
 
 public final class PurpleSync {
 
@@ -52,7 +52,6 @@ public final class PurpleSync {
     private static final long DEBOUNCE_MS = 5000L;
 
     private static final Charset UTF_8 = Charset.forName("UTF-8");
-    private static final long STAGING_MAX_AGE_MS = 30L * 24 * 60 * 60 * 1000;
     private static final ArrayList<PendingSend> pendingSends = new ArrayList<>();
 
     private static final class PendingSend {
@@ -185,18 +184,15 @@ public final class PurpleSync {
             }
             pendingSends.add(pendingSend);
         }
-        final File stagingRoot = new File(
-                FileLoader.getDirectory(FileLoader.MEDIA_DIR_CACHE), "purple-sync");
-        pruneStaging(stagingRoot);
-        final File stagingDir = new File(stagingRoot, UUID.randomUUID().toString());
-        if (!stagingDir.mkdirs()) {
+        final File stagingDir = staging().newDirectory(System.currentTimeMillis());
+        if (stagingDir == null) {
             clearPending(pendingSend);
             return LocaleController.getString(R.string.PurpleImportFailed);
         }
         final File staged = new File(stagingDir, PurpleSettings.FILE_NAME);
         if (!writeBytes(staged, sentBytes)) {
             clearPending(pendingSend);
-            removeStaging(staged);
+            PurpleSettingsStaging.remove(staged);
             return LocaleController.getString(R.string.PurpleImportFailed);
         }
         final String caption = "Purple settings · schema v" + parsed.version + " · "
@@ -217,13 +213,13 @@ public final class PurpleSync {
                                 stagingDir.delete();
                             }
                         } else if (preparationFailed) {
-                            removeStaging(staged);
+                            PurpleSettingsStaging.remove(staged);
                         }
                     });
         } catch (RuntimeException e) {
             FileLog.e(e);
             clearPending(pendingSend);
-            removeStaging(staged);
+            PurpleSettingsStaging.remove(staged);
             return LocaleController.getString(R.string.PurpleImportFailed);
         }
         return null;
@@ -251,20 +247,13 @@ public final class PurpleSync {
             return null;
         }
         final File staged = new File(path);
-        final File stagingRoot = new File(
-                FileLoader.getDirectory(FileLoader.MEDIA_DIR_CACHE), "purple-sync");
-        final File stagingDir = staged.getParentFile();
-        if (stagingDir == null
-                || !PurpleSettings.FILE_NAME.equals(staged.getName())
-                || !stagingRoot.equals(stagingDir.getParentFile())) {
+        final PurpleSettingsStaging staging = staging();
+        final File stagingRoot = staging.rootOf(staged);
+        if (stagingRoot == null) {
             return null;
         }
         try {
-            final String uuid = stagingDir.getName();
-            if (!UUID.fromString(uuid).toString().equals(uuid)
-                    || !staged.getCanonicalFile().equals(new File(
-                            new File(stagingRoot.getCanonicalFile(), uuid),
-                            PurpleSettings.FILE_NAME))
+            if (!staging.isCanonical(staged, stagingRoot)
                     || !staged.isFile()
                     || staged.length() == 0
                     || staged.length() > PurpleSettings.MAX_SIZE) {
@@ -327,28 +316,18 @@ public final class PurpleSync {
         }
     }
 
-    private static void removeStaging(File staged) {
-        if (staged.delete()) {
-            staged.getParentFile().delete();
-        }
+    private static PurpleSettingsStaging staging() {
+        return new PurpleSettingsStaging(PurpleSettings.FILE_NAME,
+                externalFilesDirectory(),
+                FileLoader.getDirectory(FileLoader.MEDIA_DIR_CACHE));
     }
 
-    private static void pruneStaging(File root) {
-        final File[] dirs = root.listFiles();
-        if (dirs == null) {
-            return;
-        }
-        final long oldest = System.currentTimeMillis() - STAGING_MAX_AGE_MS;
-        for (File dir : dirs) {
-            if (!dir.isDirectory() || dir.lastModified() >= oldest) {
-                continue;
-            }
-            final File staged = new File(dir, PurpleSettings.FILE_NAME);
-            if (staged.isFile() && staged.lastModified() < oldest) {
-                removeStaging(staged);
-            } else if (!staged.exists()) {
-                dir.delete();
-            }
+    private static File externalFilesDirectory() {
+        try {
+            return ApplicationLoader.applicationContext.getExternalFilesDir(null);
+        } catch (RuntimeException e) {
+            FileLog.e(e);
+            return null;
         }
     }
 
