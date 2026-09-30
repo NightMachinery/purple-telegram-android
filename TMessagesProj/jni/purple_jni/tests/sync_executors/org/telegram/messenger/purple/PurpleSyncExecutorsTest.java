@@ -117,6 +117,7 @@ public final class PurpleSyncExecutorsTest {
         PurpleSettings.writeInstead = null;
         PurpleSettings.afterWrite = null;
         PurpleSettings.onSettingsFile = null;
+        PurpleGate.lastGood = false;
     }
 
     private static final class Waiter<T> implements PurpleSyncRunner.Listener<T> {
@@ -1602,6 +1603,55 @@ public final class PurpleSyncExecutorsTest {
         close(fifth);
     }
 
+    private static void testUsingLastGood() throws Exception {
+        final Cloud cloud = new Cloud();
+        final FakeTransport transport = new FakeTransport(cloud);
+        final Phone a = new Phone("last-good", 21);
+        a.use();
+        a.write(T0);
+        final PurpleSyncRunner runner = a.runner(transport);
+        check(publishAction(runner).status == PurpleSyncCore.PublishStatus.Confirmed);
+        final Version v1 = versionOf(cloud.last());
+        final Remote b = remote('b', "Android");
+        final Version b1 = post(cloud, b, space(a), TB, v1);
+        final PurpleSyncRunner.Check update = fresh(runner);
+        check(update.review.verdict == PurpleSyncCore.Verdict.UpdateReady);
+        final PurpleSyncRunner.ApplyOutcome updated = apply(runner, update, b1.key);
+        check(updated.result.status == PurpleSyncCore.ApplyStatus.Applied);
+        check(Arrays.equals(a.text(), TB) && updated.result.historyKept());
+        final Version b2 = post(cloud, b, space(a), TB2, b1);
+
+        PurpleGate.lastGood = true;
+        final PurpleSyncRunner.Check refused = fresh(runner);
+        check(refused.local.usingLastGood);
+        check(refused.review.status == PurpleSyncCore.ReviewStatus.UsingLastGood);
+        check(refused.review.message == PurpleSyncCore.Message.UsingLastGood);
+        check(refused.review.action == PurpleSyncCore.Action.None);
+        check(refused.review.choices.isEmpty());
+        final int writes = PurpleSettings.calls;
+        final PurpleSyncRunner.ApplyOutcome stopped = apply(runner, refused, b2.key);
+        check(stopped.result.status == PurpleSyncCore.ApplyStatus.NeedsReview);
+        check(!stopped.result.wroteFile && Arrays.equals(a.text(), TB));
+        check(PurpleSettings.calls == writes && a.history().size() == 1);
+        final int posts = transport.posts.get();
+        final PurpleSyncPublisher.Result blocked = publish(runner, fresh(runner),
+                PurpleSyncCore.PostRequest.newContent(fingerprint(TB),
+                        List.of(b1.key)));
+        check(blocked.status == PurpleSyncCore.PublishStatus.InvalidSettings);
+        check(blocked.posts == 0 && transport.posts.get() == posts);
+        check(a.stage() == null);
+
+        final PurpleSyncRunner.RestoreOutcome restored =
+                restore(runner, updated.result.historyId);
+        check(restored.result.status == PurpleSyncCore.RestoreStatus.Restored);
+        check(Arrays.equals(a.text(), T0));
+        PurpleGate.lastGood = false;
+        final PurpleSyncRunner.Check recovered = fresh(runner);
+        check(recovered.review.status == PurpleSyncCore.ReviewStatus.Ready);
+        check(!recovered.local.usingLastGood);
+        close(runner);
+    }
+
     private static void testCancelDuringReview() throws Exception {
         final Cloud cloud = new Cloud();
         final FakeTransport transport = new FakeTransport(cloud);
@@ -1736,6 +1786,7 @@ public final class PurpleSyncExecutorsTest {
         run("account changes", PurpleSyncExecutorsTest::testAccountChanges);
         run("stale callbacks", PurpleSyncExecutorsTest::testStaleCallbacks);
         run("cancel during review", PurpleSyncExecutorsTest::testCancelDuringReview);
+        run("using last good", PurpleSyncExecutorsTest::testUsingLastGood);
         run("ui handoff", PurpleSyncExecutorsTest::testHandoff);
         System.out.println("PurpleSyncExecutorsTest: " + checks + " checks, "
                 + failures + " failures");

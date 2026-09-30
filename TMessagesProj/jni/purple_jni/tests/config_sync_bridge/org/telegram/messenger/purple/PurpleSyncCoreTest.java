@@ -2120,6 +2120,90 @@ public final class PurpleSyncCoreTest {
         check(refused.status == PurpleSyncCore.ReviewStatus.StoreError);
     }
 
+    private static PurpleSyncSettingsFile.Contents lastGood(
+            PurpleSyncSettingsFile.Contents file) {
+        return new PurpleSyncSettingsFile.Contents(file.status, file.bytes, true);
+    }
+
+    private static void testUsingLastGood() throws Exception {
+        begin("using last good");
+        final Cloud cloud = new Cloud();
+        final Device device = new Device('g');
+        device.setLocal(T0);
+        final PurpleSyncCore.Review shown = review(device, cloud);
+        check(shown.status == PurpleSyncCore.ReviewStatus.Ready);
+        check(shown.action == PurpleSyncCore.Action.Publish);
+
+        device.local = lastGood(present(T0));
+        final PurpleSyncCore.Review unbound = review(device, cloud);
+        check(unbound.status == PurpleSyncCore.ReviewStatus.UsingLastGood);
+        check(unbound.message == PurpleSyncCore.Message.UsingLastGood);
+        check(unbound.action == PurpleSyncCore.Action.None);
+        check(!unbound.bound && !unbound.localPublishable);
+        check(unbound.choices.isEmpty());
+        check(!unbound.stamp.equals(shown.stamp));
+        check(apply(device, cloud, shown, null).status
+                == PurpleSyncCore.ApplyStatus.NeedsRecheck);
+        check(apply(device, cloud, unbound, null).status
+                == PurpleSyncCore.ApplyStatus.NeedsReview);
+        check(device.state == null);
+        device.local = lastGood(absent());
+        check(review(device, cloud).status
+                == PurpleSyncCore.ReviewStatus.UsingLastGood);
+
+        device.setLocal(T0);
+        final Device joined = device.copy();
+        check(join(joined, ""));
+        final PurpleSyncCore.ApplyPlan fallenBack = PurpleSyncCore.planApply(
+                PurpleSyncCore.ApplyRequest.afterJoin(cloud.inventory(),
+                        joined.state, present(T0), shown.stamp, null,
+                        lastGood(present(T0))));
+        check(fallenBack.isValid());
+        check(fallenBack.status == PurpleSyncCore.ApplyPlanStatus.NeedsRecheck);
+        final PurpleSyncCore.ApplyPlan steady = PurpleSyncCore.planApply(
+                PurpleSyncCore.ApplyRequest.afterJoin(cloud.inventory(),
+                        joined.state, present(T0), shown.stamp, null,
+                        present(T0)));
+        check(steady.isValid());
+        check(steady.status == PurpleSyncCore.ApplyPlanStatus.Ready);
+
+        final ApplyRun joinedRun = apply(device, cloud, shown, null);
+        check(joinedRun.status == PurpleSyncCore.ApplyStatus.Applied);
+        final PublishRun first = publish(device, cloud,
+                request(joinedRun.fingerprint, joinedRun.expectedParents));
+        check(first.status == PurpleSyncCore.PublishStatus.Confirmed);
+        device.setLocal(T1);
+        final PurpleSyncCore.Review changed = review(device, cloud);
+        check(changed.verdict == PurpleSyncCore.Verdict.LocalChanges);
+        device.local = lastGood(present(T1));
+        final PurpleSyncCore.Review bound = review(device, cloud);
+        check(bound.status == PurpleSyncCore.ReviewStatus.UsingLastGood);
+        check(bound.message == PurpleSyncCore.Message.UsingLastGood);
+        check(bound.action == PurpleSyncCore.Action.None);
+        check(bound.bound && bound.space.equals(device.space()));
+        check(apply(device, cloud, changed, null).status
+                == PurpleSyncCore.ApplyStatus.NeedsRecheck);
+        check(publish(device, cloud, request(fingerprint(T1),
+                List.of(first.version.key))).status
+                == PurpleSyncCore.PublishStatus.InvalidSettings);
+        check(cloud.size() == 1 && device.pendingSeq() == 0);
+
+        device.setLocal(T1);
+        final ApplyRun keep = apply(device, cloud, review(device, cloud), null);
+        check(keep.status == PurpleSyncCore.ApplyStatus.Applied && keep.publishNeeded);
+        final PublishRun lost = publish(device, cloud,
+                request(keep.fingerprint, keep.expectedParents), PostMode.Fail);
+        check(lost.status == PurpleSyncCore.PublishStatus.OutcomeUnknown);
+        check(device.pendingSeq() != 0);
+        device.local = lastGood(present(T1));
+        final PurpleSyncCore.Review pending = review(device, cloud);
+        check(pending.status == PurpleSyncCore.ReviewStatus.UsingLastGood);
+        check(pending.pending && pending.action == PurpleSyncCore.Action.None);
+        final PublishRun finished = publish(device, cloud, pendingOnly());
+        check(finished.status == PurpleSyncCore.PublishStatus.Confirmed);
+        check(finished.posts == 1 && cloud.size() == 2);
+    }
+
     private static void testDiff() {
         begin("diff");
         final PurpleSyncCore.Diff same = PurpleSyncCore.diff(utf8("a\nb\n"),
@@ -2472,6 +2556,7 @@ public final class PurpleSyncCoreTest {
         testCommitCheck();
         testDescribe();
         testReviewStatuses();
+        testUsingLastGood();
         testDiff();
         testNativeUnavailable();
         testStore();

@@ -39,10 +39,16 @@ public final class PurpleSyncSettingsFile {
         public final Status status;
         /** The exact bytes when Present; empty otherwise. */
         public final byte[] bytes;
+        public final boolean usingLastGood;
 
         Contents(Status status, byte[] bytes) {
+            this(status, bytes, false);
+        }
+
+        Contents(Status status, byte[] bytes, boolean usingLastGood) {
             this.status = status;
             this.bytes = bytes;
+            this.usingLastGood = usingLastGood;
         }
 
         /** Both describe the same usable file, or both say it is absent. */
@@ -87,7 +93,8 @@ public final class PurpleSyncSettingsFile {
     }
 
     public static Contents read() {
-        return read(PurpleSettings.settingsFile());
+        final Contents file = read(PurpleSettings.settingsFile());
+        return new Contents(file.status, file.bytes, PurpleGate.usedLastGood());
     }
 
     /**

@@ -32,7 +32,7 @@ public final class PurpleSyncCore {
 
     public enum ReviewStatus {
         Ready, NeedsReview, Incomplete, CloneDetected, AccountUnavailable,
-        AccountUnbound, StoreError, InvalidSettings
+        AccountUnbound, StoreError, InvalidSettings, UsingLastGood
     }
 
     public enum Verdict {
@@ -47,7 +47,8 @@ public final class PurpleSyncCore {
         ConflictConcurrent, ConflictSplitBound, ConflictSplitUnbound,
         UpdateReady, UpdateMissing, AdoptBound, AdoptUnbound,
         NotPublishableAbsent, NotPublishableInvalid, EmptyBound, EmptyUnbound,
-        LocalChangesEdited, LocalChangesOwnStale, UpToDateAlone, UpToDateWith
+        LocalChangesEdited, LocalChangesOwnStale, UpToDateAlone, UpToDateWith,
+        UsingLastGood
     }
 
     public enum Action {
@@ -725,21 +726,22 @@ public final class PurpleSyncCore {
             boolean scanComplete, int[] ids, int[] transport,
             long[] documentIds, long[] editDates, byte[][] records,
             byte[] state, byte[] staged, int localStatus, byte[] localText,
-            String device, String platform, String app);
+            boolean localLastGood, String device, String platform, String app);
     private static native RawReply diffConfigNative(byte[] before, byte[] after);
     private static native RawReply planConfigApplyNative(long accountUserId,
             boolean scanComplete, int[] ids, int[] transport,
             long[] documentIds, long[] editDates, byte[][] records,
             byte[] state, byte[] staged, int localStatus, byte[] localText,
-            String stamp, String chosenKey, boolean afterJoin,
-            int preJoinStatus, byte[] preJoinText);
+            boolean localLastGood, String stamp, String chosenKey,
+            boolean afterJoin, int preJoinStatus, byte[] preJoinText,
+            boolean preJoinLastGood);
     private static native RawReply completeConfigApplyNative(long accountUserId,
             boolean scanComplete, int[] ids, int[] transport,
             long[] documentIds, long[] editDates, byte[][] records,
             byte[] state, byte[] staged, int localStatus, byte[] localText,
-            String stamp, String chosenKey, boolean afterJoin,
-            int preJoinStatus, byte[] preJoinText, int readBackStatus,
-            byte[] readBackText);
+            boolean localLastGood, String stamp, String chosenKey,
+            boolean afterJoin, int preJoinStatus, byte[] preJoinText,
+            boolean preJoinLastGood, int readBackStatus, byte[] readBackText);
     private static native RawReply checkConfigCommitNative(byte[] current,
             byte[] next);
     private static native RawReply planPostEntryNative(boolean pendingOnly,
@@ -749,7 +751,7 @@ public final class PurpleSyncCore {
             boolean scanComplete, int[] ids, int[] transport,
             long[] documentIds, long[] editDates, byte[][] records,
             byte[] state, byte[] staged, int localStatus, byte[] localText,
-            boolean pendingOnly, String expectedFingerprint,
+            boolean localLastGood, boolean pendingOnly, String expectedFingerprint,
             String[] expectedParents, byte[] accountToken, long now,
             String platform, String app, boolean sendQueued);
     private static native RawReply checkStagedPostNative(long accountUserId,
@@ -862,8 +864,8 @@ public final class PurpleSyncCore {
                         inventory.scanComplete, inventory.ids,
                         inventory.transport, inventory.documentIds,
                         inventory.editDates, inventory.bytes, state, staged,
-                        localStatus(local), localText(local), device,
-                        platform, app),
+                        localStatus(local), localText(local), lastGood(local),
+                        device, platform, app),
                 (raw, json) -> new Review(json, raw.texts), Review::failure);
     }
 
@@ -879,10 +881,10 @@ public final class PurpleSyncCore {
                         inventory.transport, inventory.documentIds,
                         inventory.editDates, inventory.bytes, request.state,
                         request.staged, localStatus(request.local),
-                        localText(request.local), request.stamp,
-                        request.chosenKey, request.afterJoin,
+                        localText(request.local), lastGood(request.local),
+                        request.stamp, request.chosenKey, request.afterJoin,
                         localStatus(request.preJoin),
-                        localText(request.preJoin)),
+                        localText(request.preJoin), lastGood(request.preJoin)),
                 (raw, json) -> new ApplyPlan(json, raw.text), ApplyPlan::new);
     }
 
@@ -897,11 +899,11 @@ public final class PurpleSyncCore {
                         inventory.transport, inventory.documentIds,
                         inventory.editDates, inventory.bytes, request.state,
                         request.staged, localStatus(request.local),
-                        localText(request.local), request.stamp,
-                        request.chosenKey, request.afterJoin,
+                        localText(request.local), lastGood(request.local),
+                        request.stamp, request.chosenKey, request.afterJoin,
                         localStatus(request.preJoin),
-                        localText(request.preJoin), localStatus(readBack),
-                        localText(readBack)),
+                        localText(request.preJoin), lastGood(request.preJoin),
+                        localStatus(readBack), localText(readBack)),
                 (raw, json) -> new ApplyCompletion(json, raw.state),
                 ApplyCompletion::new);
     }
@@ -947,7 +949,7 @@ public final class PurpleSyncCore {
                         inventory.ids, inventory.transport,
                         inventory.documentIds, inventory.editDates,
                         inventory.bytes, state, staged, localStatus(local),
-                        localText(local), request.pendingOnly,
+                        localText(local), lastGood(local), request.pendingOnly,
                         request.expectedFingerprint, request.parents(), token,
                         nowSeconds, platform, app, sendQueued),
                 (raw, json) -> new PostPlan(json, raw.record), PostPlan::new);
@@ -1017,6 +1019,10 @@ public final class PurpleSyncCore {
         return (local != null
                 && local.status == PurpleSyncSettingsFile.Status.Present)
                 ? local.bytes : null;
+    }
+
+    private static boolean lastGood(PurpleSyncSettingsFile.Contents local) {
+        return local != null && local.usingLastGood;
     }
 
     private static byte[] tokenBytes(String token) {

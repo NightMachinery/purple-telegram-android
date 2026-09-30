@@ -63,6 +63,7 @@ javac --release 8 -Xlint:all,-options,-restricted -Werror \
     "$Tests/sync_executors/org/telegram/tgnet/ConnectionsManager.java" \
     "$Tests/config_sync_bridge/org/telegram/messenger/purple/PurpleCore.java" \
     "$Tests/sync_executors/org/telegram/messenger/purple/PurpleDevice.java" \
+    "$Tests/sync_executors/org/telegram/messenger/purple/PurpleGate.java" \
     "$Tests/sync_executors/org/telegram/messenger/purple/PurpleSettings.java" \
     "$Java/PurpleAccountBinding.java" \
     "$Java/PurpleAccountSyncCore.java" \

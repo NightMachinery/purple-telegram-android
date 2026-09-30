@@ -11661,6 +11661,7 @@
     <string name="PurpleSyncAccountUnbound">This device\'s sync state belongs to another account, or its link to this account was lost. Nothing was changed.</string>
     <string name="PurpleSyncStoreError">This device\'s sync state could not be opened. Nothing was changed.</string>
     <string name="PurpleSyncInvalidSettings">settings.toml is not a regular file or is larger than 256 KB, so sync cannot use it.</string>
+    <string name="PurpleSyncUsingLastGood">settings.toml is missing or does not load, so this device is running its last working copy. Sync changes nothing until settings.toml is fixed or restored.</string>
     <string name="PurpleSyncInvalidRecords">A sync record in Saved Messages or this device\'s sync state is not valid, so nothing was changed. Check again later; if this stays, the records need manual attention.</string>
     <string name="PurpleSyncPending">A settings post may not have finished. Finish sending checks Saved Messages again and completes it without sending twice.</string>
     <string name="PurpleSyncChooseBound">Settings from %1$s are not related to this device\'s.</string>

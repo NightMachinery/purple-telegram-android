@@ -428,7 +428,10 @@ signed-in session can read. Before sync replaces `settings.toml`, the old file
 goes to **History**. An update that wrote the file offers Undo, both in the
 notice that says so and as an **Undo last update** row, after a confirmation,
 and History restores any kept copy after a confirmation. Undo and restore stay
-on this device until you publish them. Leaving the screen cancels a running
+on this device until you publish them. While the app runs from
+`settings.toml.good` because `settings.toml` is missing or does not load, a
+check says so and offers nothing: sync changes nothing until you fix the file
+or restore a version from History. Leaving the screen cancels a running
 check; a post already handed to Telegram stays in Telegram's queue, and a
 later check offers Finish sending, which confirms that post rather than
 sending it again. The older Send, Check and Import
