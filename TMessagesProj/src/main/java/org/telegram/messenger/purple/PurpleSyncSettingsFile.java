@@ -25,8 +25,8 @@ import java.util.Arrays;
  * never a symlink, at most 256 KiB (the editor allows 4 MiB). A file that
  * breaks a rule is Invalid, which sync treats as "cannot use", never as
  * absent. Writes go through {@link PurpleSettings}'s own replacement, so the
- * usual backup, gate reload and auto-send bookkeeping happen, and are then
- * read back under the same rules.
+ * usual backup and gate reload happen, and are then read back under the same
+ * rules. An import is recorded for the auto-send; a restore never arms it.
  *
  * Nothing calls this yet.
  */
