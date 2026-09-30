@@ -293,8 +293,12 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
         private final Remote remote;
         private final Reply<File> reply;
         private final String name;
-        private final Runnable timeout = () -> finish(null);
+        private final Runnable timeout = () -> {
+            cancelLoad();
+            finish(null);
+        };
         private boolean observing;
+        private boolean ownsLoad;
         private boolean finished;
 
         Download(Remote remote, Reply<File> reply) {
@@ -319,6 +323,7 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
                 center.addObserver(this, NotificationCenter.fileLoadFailed);
                 observing = true;
                 AndroidUtilities.runOnUIThread(timeout, DOWNLOAD_TIMEOUT_MS);
+                ownsLoad = !loader.isLoadingFile(name);
                 loader.loadFile(remote.document,
                         new MessageObject(account, remote.message, false, false),
                         FileLoader.PRIORITY_NORMAL_UP, ImageLoader.CACHE_TYPE_CACHE);
@@ -329,6 +334,9 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
         }
 
         void stop() {
+            if (!finished) {
+                cancelLoad();
+            }
             finished = true;
             release();
         }
@@ -354,6 +362,13 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
             finished = true;
             release();
             reply.onReply(file);
+        }
+
+        private void cancelLoad() {
+            if (ownsLoad) {
+                ownsLoad = false;
+                FileLoader.getInstance(account).cancelLoadFile(remote.document);
+            }
         }
 
         private void release() {
