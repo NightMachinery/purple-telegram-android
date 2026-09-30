@@ -47,13 +47,14 @@ import java.util.Set;
  * creation milliseconds, a dash and sixteen lowercase hex digits; an entry is
  * valid only when both files are private regular files and the bytes still
  * match the recorded size and fingerprint; the newest 30 valid entries are
- * kept, plus one the caller asks to keep for the length of a save.
+ * kept, plus one the caller asks to keep for the length of a save. Unlike the
+ * desktop so far, a save takes a time after the newest valid entry's even when
+ * the clock has gone back, so ids follow save order and the prune never takes
+ * the entry saved just before.
  *
  * The fingerprint and the version key check belong to the shared core and
  * come through the settings sync flow bridge; without the native library
  * every save is refused and no entry reads as valid.
- *
- * Nothing calls this yet.
  */
 public final class PurpleSyncHistory {
     public static final int LIMIT = 30;
@@ -201,8 +202,8 @@ public final class PurpleSyncHistory {
             FileLog.e("Purple: refused an invalid settings history entry.");
             return null;
         }
-        final long createdMs = clock.nowMs();
-        if (createdMs <= 0 || createdMs > MAX_SAFE_INTEGER) {
+        final long nowMs = clock.nowMs();
+        if (nowMs <= 0 || nowMs > MAX_SAFE_INTEGER) {
             FileLog.e("Purple: settings history has no usable clock.");
             return null;
         }
@@ -213,6 +214,11 @@ public final class PurpleSyncHistory {
         }
         synchronized (LOCK) {
             if (!prepareDirectories()) {
+                return null;
+            }
+            final long createdMs = Math.max(nowMs, newestTime() + 1);
+            if (createdMs > MAX_SAFE_INTEGER) {
+                FileLog.e("Purple: settings history has no usable clock.");
                 return null;
             }
             final String id = unusedId(createdMs);
@@ -415,6 +421,16 @@ public final class PurpleSyncHistory {
         } catch (ErrnoException e) {
             return null;
         }
+    }
+
+    private long newestTime() {
+        final List<String> ids = entryIds(entryNames());
+        for (int i = ids.size() - 1; i >= 0; --i) {
+            if (load(ids.get(i)) != null) {
+                return idTime(ids.get(i));
+            }
+        }
+        return 0;
     }
 
     private String unusedId(long createdMs) {
