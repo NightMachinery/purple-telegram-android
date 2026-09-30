@@ -7,27 +7,53 @@ import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 
 public final class AtomicFile {
+    public enum Point { BeforeStream, Empty, Written }
+
+    public static final class Killed extends Error {
+        private static final long serialVersionUID = 1L;
+    }
+
     public static boolean corruptAfterFinish;
     public static int failWriteCalls;
     public static int finishWriteCalls;
+    public static boolean legacy;
+    public static String killName;
+    public static Point killPoint;
     private final File base;
     private final File temporary;
+    private final File backup;
 
     public AtomicFile(File base) {
         this.base = base;
         temporary = new File(base.getPath() + ".new");
+        backup = new File(base.getPath() + ".bak");
     }
 
     public FileOutputStream startWrite() throws IOException {
-        return new FileOutputStream(temporary);
+        if (legacy && base.exists()) {
+            if (!backup.exists()) {
+                base.renameTo(backup);
+            } else {
+                base.delete();
+            }
+        }
+        kill(Point.BeforeStream, null);
+        final FileOutputStream stream = new FileOutputStream(legacy ? base : temporary);
+        kill(Point.Empty, stream);
+        return stream;
     }
 
     public void finishWrite(FileOutputStream stream) throws IOException {
         finishWriteCalls++;
+        kill(Point.Written, stream);
         stream.getFD().sync();
         stream.close();
-        Files.move(temporary.toPath(), base.toPath(),
-                StandardCopyOption.REPLACE_EXISTING);
+        if (legacy) {
+            backup.delete();
+        } else {
+            Files.move(temporary.toPath(), base.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING);
+        }
         if (corruptAfterFinish) {
             corruptAfterFinish = false;
             Files.write(base.toPath(), new byte[] { 1 });
@@ -40,6 +66,23 @@ public final class AtomicFile {
             stream.close();
         } catch (IOException ignored) {
         }
-        temporary.delete();
+        if (legacy) {
+            base.delete();
+            backup.renameTo(base);
+        } else {
+            temporary.delete();
+        }
+    }
+
+    private void kill(Point point, FileOutputStream stream) throws IOException {
+        if (point != killPoint || !base.getName().equals(killName)) {
+            return;
+        }
+        killName = null;
+        killPoint = null;
+        if (stream != null) {
+            stream.close();
+        }
+        throw new Killed();
     }
 }
