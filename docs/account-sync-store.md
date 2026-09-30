@@ -319,8 +319,10 @@ History page that ends Restored also clears it. Restore and undo keep their
 target entry through the History prune and need no account. An apply labels
 its History entry with the source device's platform and short id; a restore
 or undo labels it with the restored entry's id. The screen words the label
-together with the entry's reason, which is `sync apply`, `sync restore` or
-`sync undo`.
+together with the entry's History reason: `before_update` or `before_choice`
+for an apply, `before_restore` and `before_undo` for the others. The settings
+write itself carries `sync apply`, `sync restore` or `sync undo`, which only
+the reload and auto-send log lines show.
 
 Run `TMessagesProj/jni/purple_jni/tests/run_sync_executors.sh` on macOS to
 drive the runner, apply and publisher through their production constructor
