@@ -54,6 +54,7 @@ import org.telegram.ui.Components.UniversalAdapter;
 import org.telegram.ui.Components.UniversalFragment;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -556,12 +557,23 @@ public class PurpleSettingsActivity extends UniversalFragment
         if (activity == null) {
             return;
         }
+        File copy = null;
         try {
             String path = AndroidUtilities.getPath(data.getData());
-            if (path == null || path.startsWith("content://")) {
-                // Not a real path - a document provider's handle. Copying it
-                // out is the only way to hand the parser a file.
-                path = MediaController.copyFileToCache(data.getData(), "toml");
+            if (path == null || path.startsWith("content://") || !canOpen(path)) {
+                // Not a real path - a document provider's handle - or a real
+                // one this app may not open: a file another app put in
+                // Download, picked through the device's storage root, resolves
+                // to its path, but scoped storage lets only the picker's grant
+                // read it. Copying through that grant is the only way to hand
+                // the parser a file. A file more than one byte over the size
+                // limit is not copied at all; one byte over is enough for
+                // importFrom to refuse it by size.
+                path = MediaController.copyFileToCache(data.getData(), "toml",
+                        PurpleSettings.MAX_SIZE + 1);
+                if (path != null) {
+                    copy = new File(path);
+                }
             }
             if (path == null) {
                 error(getString(R.string.PurpleImportFailed));
@@ -576,6 +588,23 @@ public class PurpleSettingsActivity extends UniversalFragment
         } catch (Exception e) {
             FileLog.e(e);
             error(getString(R.string.PurpleImportFailed));
+        } finally {
+            // importFrom has read the bytes before it asks anything, so the
+            // copy has done its job. It may name chats, and it sits in the
+            // external cache, which is shared storage on Android 10 and lower.
+            if (copy != null) {
+                copy.delete();
+            }
+        }
+    }
+
+    /** Whether this app may read {@code path} itself, without the picker's grant. */
+    private static boolean canOpen(String path) {
+        try {
+            new FileInputStream(path).close();
+            return true;
+        } catch (Exception e) {
+            return false;
         }
     }
 
