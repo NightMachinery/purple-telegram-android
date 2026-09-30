@@ -266,14 +266,6 @@ The calls, in the order a check, apply or publish uses them:
 - `describeApplyFailure` and `undoFinished` give the core's wording choices for
   a failed apply and whether an undo finished.
 
-`settingsFingerprint`, `isConfigVersionKey` and `isSettingsTextWritable`
-answer the core's plain questions about bytes and keys.
-
-## Sync transport contract
-
-`PurpleSyncTransport` is the interface between the flow and Telegram. The
-Telegram implementation and the fake used by flow tests must behave the same
-way:
 Every settings file these calls take, including the pre-join file of an
 `afterJoin` request, carries `usingLastGood`. `PurpleSyncSettingsFile.read()`
 sets it from `PurpleGate.usedLastGood()`, which is true while the gate runs
@@ -288,6 +280,14 @@ becomes the new last good copy, so the copy the app was running is not kept.
 `run_sync_executors.sh` covers a check, an apply, a publish and a restore
 while the app runs from the copy.
 
+`settingsFingerprint`, `isConfigVersionKey` and `isSettingsTextWritable`
+answer the core's plain questions about bytes and keys.
+
+## Sync transport contract
+
+`PurpleSyncTransport` is the interface between the flow and Telegram. The
+Telegram implementation and the fake used by flow tests must behave the same
+way:
 
 - `check(progress, done)` scans Saved Messages, reads every candidate, and
   finishes with `Finished` and an inventory, `Cancelled`, or
