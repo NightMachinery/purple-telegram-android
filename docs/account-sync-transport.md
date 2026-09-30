@@ -123,7 +123,9 @@ sending and for the rows it resends at start
 and 2 after a failure (`markMessageAsSendError`). A sent message gets its
 positive server id. `PurpleSyncPost.holdsSyncRecord` then requires a
 negative id, the own dialog, state 1 or 2 and a file name attribute equal
-to `Purple settings sync.json`. A query that fails counts as held.
+to `Purple settings sync.json`. A query that fails counts as held; a single
+row that Telegram's message decoder cannot read is skipped, as Telegram's own
+loaders skip it, so one damaged row cannot hold Finish sending forever.
 
 It matches the file name, as the desktop does, rather than the staging
 directory: a failed copy whose staged file was pruned or cleared from the
