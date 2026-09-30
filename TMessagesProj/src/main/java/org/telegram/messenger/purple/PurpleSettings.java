@@ -158,6 +158,18 @@ public final class PurpleSettings {
     }
 
     /**
+     * The same replacement for account sync, which checks the result itself
+     * through {@link PurpleSyncSettingsFile}.
+     *
+     * @param fromImport true for another device's settings, which the
+     *                   auto-send must not post back; false for a restore of
+     *                   this device's own copy, which counts as a local save
+     */
+    static boolean storeForSync(byte[] bytes, String reason, boolean fromImport) {
+        return store(bytes, reason, fromImport);
+    }
+
+    /**
      * @param fromImport whether these bytes came from the other device rather
      *                   than from something done on this one. It is the whole
      *                   difference the auto-send cares about: an import is
