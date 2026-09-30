@@ -162,11 +162,12 @@ public final class PurpleSettings {
      * through {@link PurpleSyncSettingsFile}.
      *
      * @param fromImport true for another device's settings, which the
-     *                   auto-send must not post back; false for a restore of
-     *                   this device's own copy, which counts as a local save
+     *                   auto-send must not post back; false for a restore or
+     *                   undo, which stays on this device and never arms the
+     *                   auto-send, as on desktop
      */
     static boolean storeForSync(byte[] bytes, String reason, boolean fromImport) {
-        return store(bytes, reason, fromImport);
+        return fromImport ? store(bytes, reason, true) : replace(bytes, reason, false);
     }
 
     /**
@@ -177,6 +178,14 @@ public final class PurpleSettings {
      *                   fingerprint that keeps it from being.
      */
     private static boolean store(byte[] bytes, String reason, boolean fromImport) {
+        if (!replace(bytes, reason, fromImport)) {
+            return false;
+        }
+        PurpleSync.afterWrite(reason, fromImport);
+        return true;
+    }
+
+    private static boolean replace(byte[] bytes, String reason, boolean fromImport) {
         final File target = settingsFile();
         try {
             PurpleSettingsBackups.take(target, backupFile(), importBackupFile(), fromImport);
@@ -190,7 +199,6 @@ public final class PurpleSettings {
         // The file the gate reads has just changed under it, so resolve again
         // rather than leave the new settings waiting for the next restart.
         PurpleGate.reload(reason);
-        PurpleSync.afterWrite(reason, fromImport);
         return true;
     }
 

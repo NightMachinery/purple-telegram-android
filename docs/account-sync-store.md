@@ -312,8 +312,10 @@ and reported as failed, and it never runs later. `replace` reads the file
 first and refuses with `Changed` when its bytes differ from the ones the step
 reviewed, which an apply reports as `NeedsRecheck`. An apply writes another
 device's settings, so it stores them as an import that the auto-send never
-posts back; a restore or undo puts back this device's own copy and counts as
-a local save.
+posts back. A restore or undo skips the auto-send bookkeeping entirely, as
+the desktop's restore does: it is not recorded as an import and does not arm
+the legacy send after save, so it stays on this device until the user
+publishes it, as the Restore and Undo dialogs say.
 
 After an apply the runner reviews again, as the desktop's ReviewAgain does,
 unless the apply needs a publish. A keep-local choice (Publish or
@@ -343,7 +345,7 @@ or undo labels it with the restored entry's id. The screen words the label
 together with the entry's History reason: `before_update` or `before_choice`
 for an apply, `before_restore` and `before_undo` for the others. The settings
 write itself carries `sync apply`, `sync restore` or `sync undo`, which only
-the reload and auto-send log lines show.
+the reload log line shows.
 
 Run `TMessagesProj/jni/purple_jni/tests/run_sync_executors.sh` on macOS to
 drive the runner, apply and publisher through their production constructor
