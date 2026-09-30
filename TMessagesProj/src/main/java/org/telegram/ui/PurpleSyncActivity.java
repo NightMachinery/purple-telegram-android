@@ -529,7 +529,7 @@ public class PurpleSyncActivity extends UniversalFragment {
             }
             String prefix = result.joined ? getString(R.string.PurpleSyncJoined) : "";
             if (result.wroteFile) {
-                showUpdated(device, result.undoAvailable);
+                showUpdated(device, result.undoAvailable && outcome.post == null);
                 prefix = PurpleSyncText.joined(prefix, formatString(result.undoAvailable
                         ? R.string.PurpleSyncUpdatedUndo
                         : hadNoFile
@@ -584,8 +584,14 @@ public class PurpleSyncActivity extends UniversalFragment {
 
     private void confirmUndo() {
         final Activity activity = getParentActivity();
-        final PurpleSyncRunner.UndoOffer offer = (runner != null) ? runner.undoOffer() : null;
-        if (activity == null || offer == null) {
+        if (activity == null || runner() == null) {
+            return;
+        } else if (runner.busy()) {
+            bulletin(getString(R.string.PurpleSyncWait));
+            return;
+        }
+        final PurpleSyncRunner.UndoOffer offer = runner.undoOffer();
+        if (offer == null) {
             return;
         }
         final AlertDialog.Builder builder = new AlertDialog.Builder(activity);
