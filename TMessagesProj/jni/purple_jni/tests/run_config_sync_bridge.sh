@@ -60,3 +60,11 @@ java --enable-native-access=ALL-UNNAMED -cp "$BuildPath:$Json" \
     -Djava.io.tmpdir="$BuildPath" \
     -Dpurple.core.dylib="$BuildPath/libpurplecore_sync.dylib" \
     org.telegram.messenger.purple.PurpleSyncCoreTest
+mkdir -p "$BuildPath/stripped"
+javac -Xlint:all,-options -Werror -d "$BuildPath/stripped" \
+    "$Tests/stripped_replies/org/telegram/messenger/purple/StrippedReplies.java"
+java --enable-native-access=ALL-UNNAMED \
+    -cp "$BuildPath/stripped:$BuildPath:$Json" \
+    -Djava.io.tmpdir="$BuildPath" \
+    -Dpurple.core.dylib="$BuildPath/libpurplecore_sync.dylib" \
+    org.telegram.messenger.purple.PurpleSyncCoreTest stripped

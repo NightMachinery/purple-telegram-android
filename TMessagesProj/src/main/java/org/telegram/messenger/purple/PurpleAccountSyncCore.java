@@ -211,7 +211,7 @@ public final class PurpleAccountSyncCore {
         try {
             PurpleCore.ensureLoaded();
             return result(inspectConfigRecordNative(record));
-        } catch (UnsatisfiedLinkError | RuntimeException e) {
+        } catch (LinkageError | RuntimeException e) {
             return new Result("NativeUnavailable");
         }
     }
@@ -220,7 +220,7 @@ public final class PurpleAccountSyncCore {
         try {
             PurpleCore.ensureLoaded();
             return result(inspectStateNative(state));
-        } catch (UnsatisfiedLinkError | RuntimeException e) {
+        } catch (LinkageError | RuntimeException e) {
             return new Result("NativeUnavailable");
         }
     }
@@ -229,7 +229,7 @@ public final class PurpleAccountSyncCore {
         try {
             PurpleCore.ensureLoaded();
             return result(checkLocalStageNative(state, record));
-        } catch (UnsatisfiedLinkError | RuntimeException e) {
+        } catch (LinkageError | RuntimeException e) {
             return new Result("NativeUnavailable");
         }
     }
@@ -241,7 +241,7 @@ public final class PurpleAccountSyncCore {
             PurpleCore.ensureLoaded();
             return result(buildConfigRecordNative(text, parentRecords,
                     space, install, device, platform, app, seq, at));
-        } catch (UnsatisfiedLinkError | RuntimeException e) {
+        } catch (LinkageError | RuntimeException e) {
             return new Result("NativeUnavailable");
         }
     }
@@ -253,7 +253,7 @@ public final class PurpleAccountSyncCore {
             PurpleCore.ensureLoaded();
             return result(buildConfigAcknowledgementNative(text, remoteRecord,
                     space, install, device, platform, app, seq, at));
-        } catch (UnsatisfiedLinkError | RuntimeException e) {
+        } catch (LinkageError | RuntimeException e) {
             return new Result("NativeUnavailable");
         }
     }
@@ -270,7 +270,7 @@ public final class PurpleAccountSyncCore {
             PurpleCore.ensureLoaded();
             reserved = result(reserveConfigSeqNative(
                     state, payloadHash, tokenBytes(binding.token)));
-        } catch (UnsatisfiedLinkError | RuntimeException e) {
+        } catch (LinkageError | RuntimeException e) {
             return new Result("NativeUnavailable");
         }
         return PurpleAccountBinding.isSameActiveUser(
@@ -285,7 +285,7 @@ public final class PurpleAccountSyncCore {
             PurpleCore.ensureLoaded();
             return result(initializeLocalStateNative(
                     installId, createdDeviceId, spaceId));
-        } catch (UnsatisfiedLinkError | RuntimeException e) {
+        } catch (LinkageError | RuntimeException e) {
             return new Result("NativeUnavailable");
         }
     }
@@ -303,7 +303,7 @@ public final class PurpleAccountSyncCore {
             PurpleCore.ensureLoaded();
             initialized = result(initializeBoundLocalStateNative(
                     installId, createdDeviceId, spaceId, preparation.entropy));
-        } catch (UnsatisfiedLinkError | RuntimeException e) {
+        } catch (LinkageError | RuntimeException e) {
             return new Result("NativeUnavailable");
         }
         if (!initialized.isValid()) {
@@ -328,7 +328,7 @@ public final class PurpleAccountSyncCore {
             PurpleCore.ensureLoaded();
             checked = result(checkAccountBindingNative(
                     state, tokenBytes(binding.token)));
-        } catch (UnsatisfiedLinkError | RuntimeException e) {
+        } catch (LinkageError | RuntimeException e) {
             return new Result("NativeUnavailable");
         }
         return PurpleAccountBinding.isSameActiveUser(
@@ -349,7 +349,7 @@ public final class PurpleAccountSyncCore {
             PurpleCore.ensureLoaded();
             reserved = result(reserveConfigRecordNative(
                     state, canonicalOwnRecord, tokenBytes(binding.token)));
-        } catch (UnsatisfiedLinkError | RuntimeException e) {
+        } catch (LinkageError | RuntimeException e) {
             return new Result("NativeUnavailable");
         }
         return PurpleAccountBinding.isSameActiveUser(
@@ -364,7 +364,7 @@ public final class PurpleAccountSyncCore {
             PurpleCore.ensureLoaded();
             return result(appendIssuedConfigRecordNative(
                     state, canonicalOwnRecord));
-        } catch (UnsatisfiedLinkError | RuntimeException e) {
+        } catch (LinkageError | RuntimeException e) {
             return new Result("NativeUnavailable");
         }
     }
@@ -375,7 +375,7 @@ public final class PurpleAccountSyncCore {
             PurpleCore.ensureLoaded();
             return result(adoptIssuedOwnConfigMessageNative(
                     state, messageId, canonicalServerRecord));
-        } catch (UnsatisfiedLinkError | RuntimeException e) {
+        } catch (LinkageError | RuntimeException e) {
             return new Result("NativeUnavailable");
         }
     }
@@ -386,7 +386,7 @@ public final class PurpleAccountSyncCore {
             PurpleCore.ensureLoaded();
             return result(checkOwnRecordNative(
                     state, currentDevice, observationKind, observedRecord));
-        } catch (UnsatisfiedLinkError | RuntimeException e) {
+        } catch (LinkageError | RuntimeException e) {
             return new Result("NativeUnavailable");
         }
     }
@@ -398,7 +398,7 @@ public final class PurpleAccountSyncCore {
             PurpleCore.ensureLoaded();
             return result(confirmConfigReadBackNative(state, stagedRecord,
                     currentDevice, observationKind, observedRecord, messageId));
-        } catch (UnsatisfiedLinkError | RuntimeException e) {
+        } catch (LinkageError | RuntimeException e) {
             return new Result("NativeUnavailable");
         }
     }
@@ -409,7 +409,7 @@ public final class PurpleAccountSyncCore {
             PurpleCore.ensureLoaded();
             return result(recordConfirmedOwnConfigMessageNative(
                     state, messageId, canonicalServerRecord));
-        } catch (UnsatisfiedLinkError | RuntimeException e) {
+        } catch (LinkageError | RuntimeException e) {
             return new Result("NativeUnavailable");
         }
     }
@@ -420,7 +420,7 @@ public final class PurpleAccountSyncCore {
             PurpleCore.ensureLoaded();
             return result(checkOwnConfigMessageDeletionNative(
                     state, messageId, freshCanonicalServerRecord));
-        } catch (UnsatisfiedLinkError | RuntimeException e) {
+        } catch (LinkageError | RuntimeException e) {
             return new Result("NativeUnavailable");
         }
     }
@@ -431,7 +431,7 @@ public final class PurpleAccountSyncCore {
             PurpleCore.ensureLoaded();
             return result(removeAbsentOwnConfigMessageNative(
                     state, messageId, presenceKind));
-        } catch (UnsatisfiedLinkError | RuntimeException e) {
+        } catch (LinkageError | RuntimeException e) {
             return new Result("NativeUnavailable");
         }
     }
@@ -440,7 +440,7 @@ public final class PurpleAccountSyncCore {
         try {
             PurpleCore.ensureLoaded();
             return result(formatInstallIdNative(entropy16));
-        } catch (UnsatisfiedLinkError | RuntimeException e) {
+        } catch (LinkageError | RuntimeException e) {
             return new Result("NativeUnavailable");
         }
     }
@@ -449,7 +449,7 @@ public final class PurpleAccountSyncCore {
         try {
             PurpleCore.ensureLoaded();
             return result(formatSpaceIdNative(entropy16));
-        } catch (UnsatisfiedLinkError | RuntimeException e) {
+        } catch (LinkageError | RuntimeException e) {
             return new Result("NativeUnavailable");
         }
     }
@@ -461,7 +461,7 @@ public final class PurpleAccountSyncCore {
             PurpleCore.ensureLoaded();
             return result(formatTimeOrderedSpaceIdNative(
                     serverMillis, randomTail));
-        } catch (UnsatisfiedLinkError | RuntimeException e) {
+        } catch (LinkageError | RuntimeException e) {
             return new Result("NativeUnavailable");
         }
     }
@@ -470,7 +470,7 @@ public final class PurpleAccountSyncCore {
         try {
             PurpleCore.ensureLoaded();
             return result(compareSpaceIdsNative(a, b));
-        } catch (UnsatisfiedLinkError | RuntimeException e) {
+        } catch (LinkageError | RuntimeException e) {
             return new Result("NativeUnavailable");
         }
     }
