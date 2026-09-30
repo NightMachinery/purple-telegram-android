@@ -477,9 +477,17 @@ helpers yet. The core also validates device-local sync state and checks for
 cloned or rewound installs. Its pure directory resolver groups candidates by
 space, stream and install, and marks duplicate or ambiguous heads without
 Telegram I/O. The pure publish planner selects the next action only after
-account binding, complete discovery, and own-record reconciliation. Android
-does not call either one yet; it has no account sync transport or user
-interface. The uncalled
+account binding, complete discovery, and own-record reconciliation. The
+uncalled `PurpleSyncCore` reaches the core's whole settings sync flow through
+a stateless JNI bridge: history page classification, review with its wording
+and choices, diff, apply planning and completion, the config data commit
+check, and publish planning with the send-queue check. `PurpleSyncInventory`
+carries one check's candidates to it, and `PurpleSyncTransport` defines the
+Telegram side (scan, read, post, cancel) and its main-thread callback
+contract. Nothing implements that transport or shows the flow yet; both are
+described in `docs/account-sync-store.md`, and
+`TMessagesProj/jni/purple_jni/tests/run_config_sync_bridge.sh` holds the
+bridge to the core's flow tests on macOS. The uncalled
 `PurpleAccountSyncStore` now keeps bound state and canonical pending config
 records under the app-private `purple/sync` directory, with exclusive ownership
 and fail-closed crash recovery. Its exact operations and recovery verdicts are
