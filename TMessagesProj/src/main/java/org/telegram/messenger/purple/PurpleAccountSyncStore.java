@@ -30,7 +30,8 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
         Disabled, Uninitialized, Ready, NoPending, InvalidTransition,
         InvalidState, NewerState, InvalidRecord, AccountUnbound,
         DeviceMismatch, CloneDetected, PendingMissing, PendingMismatch,
-        OrphanStage, AmbiguousFiles, LockBusy, IoError, Unconfirmed
+        OrphanStage, AmbiguousFiles, LockBusy, IoError, Unconfirmed,
+        Unchanged
     }
 
     public static final class Result {
@@ -54,6 +55,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
         Reply checkStage(byte[] state, byte[] record);
         Reply confirm(byte[] state, byte[] staged, String device,
                 byte[] serverRecord, int messageId);
+        Reply checkCommit(byte[] state, byte[] next);
     }
 
     static final class Reply {
@@ -84,12 +86,18 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
                     value.changed, value.state);
         }
 
+        static Reply from(PurpleSyncCore.CommitCheck value) {
+            return new Reply(value.isValid() ? "Valid" : "BridgeError",
+                    value.isValid() ? "None" : value.error,
+                    value.status.name(), "", 0, 0, false, value.state);
+        }
+
         boolean valid() {
             return "Valid".equals(status);
         }
     }
 
-    private static final Core NATIVE = new Core() {
+    static final Core NATIVE = new Core() {
         @Override
         public Reply inspectState(byte[] state) {
             return Reply.from(PurpleAccountSyncCore.inspectState(state));
@@ -119,6 +127,11 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
                     PurpleAccountSyncCore.OBSERVATION_PRESENT,
                     serverRecord, messageId));
         }
+
+        @Override
+        public Reply checkCommit(byte[] state, byte[] next) {
+            return Reply.from(PurpleSyncCore.checkCommit(state, next));
+        }
     };
 
     private final File root;
@@ -136,8 +149,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
     private boolean opened;
 
     public PurpleAccountSyncStore() {
-        this(new File(new File(ApplicationLoader.getFilesDirFixed(),
-                "purple"), "sync"), NATIVE);
+        this(defaultRoot(), NATIVE);
     }
 
     PurpleAccountSyncStore(File root, Core core) {
@@ -386,8 +398,87 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
         }
     }
 
+    public synchronized Result commitConfigState(byte[] next) {
+        if (status != Status.Ready || next == null
+                || next.length > STATE_LIMIT) {
+            return result(Status.InvalidTransition);
+        }
+        if (!bound()) {
+            return fail(Status.AccountUnbound);
+        }
+        final Reply inspected = core.inspectState(next);
+        if (!inspected.valid() || inspected.state == null
+                || !Arrays.equals(next, inspected.state)) {
+            return result(Status.InvalidState);
+        }
+        if (!device.equals(inspected.device)) {
+            return result(Status.DeviceMismatch);
+        }
+        final Reply checked = core.checkCommit(state, next);
+        if (!checked.valid()) {
+            return result(Status.InvalidState);
+        }
+        if ("Unchanged".equals(checked.verdict)) {
+            return result(Status.Unchanged);
+        }
+        if (!"Ready".equals(checked.verdict)) {
+            return result("InvalidTransition".equals(checked.verdict)
+                    ? Status.InvalidTransition : Status.InvalidState);
+        }
+        if (checked.state == null || !Arrays.equals(checked.state, next)) {
+            return result(Status.InvalidState);
+        }
+        try {
+            write(stateFile, next);
+            state = next.clone();
+            if (!bound()) {
+                return fail(Status.AccountUnbound);
+            }
+            return result(Status.Ready);
+        } catch (IOException e) {
+            return fail(Status.IoError);
+        }
+    }
+
+    public synchronized byte[] stateBytes() {
+        return (status == Status.Ready && state != null) ? state.clone() : null;
+    }
+
     public synchronized Status status() {
         return status;
+    }
+
+    public static boolean hasState() {
+        return hasState(defaultRoot());
+    }
+
+    static boolean hasState(File root) {
+        try {
+            if (!root.exists()) {
+                return false;
+            }
+            final File[] files = root.listFiles();
+            if (files == null) {
+                return true;
+            }
+            for (File file : files) {
+                if (file.getName().equals("lock") && file.isFile()
+                        && !isLink(file)) {
+                    continue;
+                }
+                if (file.getName().equals("pending") && file.isDirectory()
+                        && !isLink(file)) {
+                    final String[] staged = file.list();
+                    if (staged != null && staged.length == 0) {
+                        continue;
+                    }
+                }
+                return true;
+            }
+            return false;
+        } catch (IOException | SecurityException e) {
+            return true;
+        }
     }
 
     @Override
@@ -415,6 +506,11 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
         state = null;
         status = Status.Disabled;
         opened = false;
+    }
+
+    private static File defaultRoot() {
+        return new File(new File(ApplicationLoader.getFilesDirFixed(),
+                "purple"), "sync");
     }
 
     private boolean bound() {

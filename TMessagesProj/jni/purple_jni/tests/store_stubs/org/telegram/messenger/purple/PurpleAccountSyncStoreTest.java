@@ -13,6 +13,7 @@ public final class PurpleAccountSyncStoreTest {
         boolean cloneDetected;
         boolean unbindAfterReserve;
         boolean invalidStageStatus;
+        int commitChecks;
         private byte[] bytes(String value) {
             return value.getBytes(StandardCharsets.UTF_8);
         }
@@ -27,16 +28,47 @@ public final class PurpleAccountSyncStoreTest {
         @Override
         public PurpleAccountSyncStore.Reply inspectState(byte[] state) {
             final String[] parts = text(state).split(":");
-            if (parts.length != 4 || !parts[0].equals("v1")) {
+            if ((parts.length != 4 && parts.length != 5)
+                    || !parts[0].equals("v1")) {
                 return reply(parts[0].equals("v2") ? "NewerVersion" : "Invalid",
                         "", 0, 0, false, null);
             }
             try {
-                return reply("Valid", "", Long.parseLong(parts[1]),
+                if (parts.length == 5) {
+                    Long.parseLong(parts[4]);
+                }
+                return new PurpleAccountSyncStore.Reply("Valid", "", "",
+                        parts[3], Long.parseLong(parts[1]),
                         Long.parseLong(parts[2]), false, state);
             } catch (NumberFormatException e) {
                 return reply("Invalid", "", 0, 0, false, null);
             }
+        }
+        private long seen(byte[] state) {
+            final String[] parts = text(state).split(":");
+            return parts.length == 5 ? Long.parseLong(parts[4]) : 0;
+        }
+        private String head(byte[] state) {
+            final String[] parts = text(state).split(":");
+            return parts[0] + ":" + parts[1] + ":" + parts[3];
+        }
+        @Override
+        public PurpleAccountSyncStore.Reply checkCommit(byte[] state,
+                byte[] next) {
+            ++commitChecks;
+            final PurpleAccountSyncStore.Reply current = inspectState(state);
+            final PurpleAccountSyncStore.Reply proposed = inspectState(next);
+            if (!current.valid() || !proposed.valid()) {
+                return reply("Valid", "InvalidState", 0, 0, false, null);
+            }
+            if (current.pendingSeq != 0 || proposed.pendingSeq != 0
+                    || seen(next) < seen(state)
+                    || !head(state).equals(head(next))) {
+                return reply("Valid", "InvalidTransition", 0, 0, false, null);
+            }
+            return seen(next) == seen(state)
+                    ? reply("Valid", "Unchanged", 0, 0, false, null)
+                    : reply("Valid", "Ready", 0, 0, false, next);
         }
         @Override
         public PurpleAccountSyncStore.Reply checkBinding(int account,
@@ -207,7 +239,111 @@ public final class PurpleAccountSyncStoreTest {
                 throw new AssertionError("committed file disappeared");
             }
         }
+        testCommitAndHasState(base, core);
         System.out.println("PurpleAccountSyncStore host test passed");
+    }
+
+    private static void testCommitAndHasState(File base, FakeCore core)
+            throws Exception {
+        final File parent = new File(base, "commit");
+        final File root = new File(parent, "purple/sync");
+        final File state = new File(root, "state.json");
+        if (PurpleAccountSyncStore.hasState(root) || parent.exists()) {
+            throw new AssertionError("hasState created or found files");
+        }
+        parent.mkdir();
+        if (PurpleAccountSyncStore.hasState(root) || root.getParentFile().exists()) {
+            throw new AssertionError("hasState created or found files");
+        }
+        final byte[] initial = "v1:0:0:device".getBytes(StandardCharsets.UTF_8);
+        final byte[] seen = "v1:0:0:device:3".getBytes(StandardCharsets.UTF_8);
+        try (PurpleAccountSyncStore store = new PurpleAccountSyncStore(root, core)) {
+            expect(store.open(true, 0, "device"), PurpleAccountSyncStore.Status.Uninitialized);
+            if (PurpleAccountSyncStore.hasState(root)) {
+                throw new AssertionError("a lock and an empty pending directory are no state");
+            }
+            if (store.stateBytes() != null) {
+                throw new AssertionError("state bytes before initialization");
+            }
+            expect(store.commitConfigState(seen), PurpleAccountSyncStore.Status.InvalidTransition);
+            expect(store.initialize(initial), PurpleAccountSyncStore.Status.Ready);
+            if (!PurpleAccountSyncStore.hasState(root)
+                    || !Arrays.equals(store.stateBytes(), initial)) {
+                throw new AssertionError("initialized state not reported");
+            }
+            store.stateBytes()[0] = 'x';
+            if (!Arrays.equals(store.stateBytes(), initial)) {
+                throw new AssertionError("state bytes are not a copy");
+            }
+            expect(store.commitConfigState(seen), PurpleAccountSyncStore.Status.Ready);
+            if (!Arrays.equals(Files.readAllBytes(state.toPath()), seen)
+                    || !Arrays.equals(store.stateBytes(), seen)) {
+                throw new AssertionError("committed state not written");
+            }
+            final int writes = AtomicFile.finishWriteCalls;
+            final int checks = core.commitChecks;
+            expect(store.commitConfigState(seen), PurpleAccountSyncStore.Status.Unchanged);
+            if (AtomicFile.finishWriteCalls != writes || core.commitChecks != checks + 1) {
+                throw new AssertionError("unchanged state was written");
+            }
+            expect(store.commitConfigState("v1:0:0:device:2".getBytes(StandardCharsets.UTF_8)),
+                    PurpleAccountSyncStore.Status.InvalidTransition);
+            expect(store.commitConfigState("v1:0:0:other:4".getBytes(StandardCharsets.UTF_8)),
+                    PurpleAccountSyncStore.Status.DeviceMismatch);
+            expect(store.commitConfigState("garbage".getBytes(StandardCharsets.UTF_8)),
+                    PurpleAccountSyncStore.Status.InvalidState);
+            expect(store.commitConfigState(null), PurpleAccountSyncStore.Status.InvalidTransition);
+            if (!Arrays.equals(Files.readAllBytes(state.toPath()), seen)
+                    || AtomicFile.finishWriteCalls != writes) {
+                throw new AssertionError("refused commit wrote state");
+            }
+            expect(store.stageConfig("record:1".getBytes(StandardCharsets.UTF_8),
+                    "v1:1:1:device".getBytes(StandardCharsets.UTF_8)),
+                    PurpleAccountSyncStore.Status.Ready);
+            final byte[] staged = Files.readAllBytes(state.toPath());
+            expect(store.commitConfigState("v1:1:1:device:5".getBytes(StandardCharsets.UTF_8)),
+                    PurpleAccountSyncStore.Status.InvalidTransition);
+            expect(store.commitConfigState("v1:1:0:device:5".getBytes(StandardCharsets.UTF_8)),
+                    PurpleAccountSyncStore.Status.InvalidTransition);
+            if (!Arrays.equals(Files.readAllBytes(state.toPath()), staged)) {
+                throw new AssertionError("commit over a pending record wrote state");
+            }
+            if (!PurpleAccountSyncStore.hasState(root)) {
+                throw new AssertionError("staged state not reported");
+            }
+        }
+
+        final File lostRoot = new File(base, "lost/purple/sync");
+        new File(base, "lost").mkdir();
+        try (PurpleAccountSyncStore store = new PurpleAccountSyncStore(lostRoot, core)) {
+            expect(store.open(true, 0, "device"), PurpleAccountSyncStore.Status.Uninitialized);
+            expect(store.initialize(initial), PurpleAccountSyncStore.Status.Ready);
+            core.bound = false;
+            expect(store.commitConfigState(seen), PurpleAccountSyncStore.Status.AccountUnbound);
+            core.bound = true;
+            expect(store.commitConfigState(seen), PurpleAccountSyncStore.Status.InvalidTransition);
+            if (store.stateBytes() != null || !Arrays.equals(
+                    Files.readAllBytes(new File(lostRoot, "state.json").toPath()), initial)) {
+                throw new AssertionError("unbound commit wrote state");
+            }
+        }
+
+        final File orphanRoot = new File(base, "orphan/purple/sync");
+        new File(orphanRoot, "pending").mkdirs();
+        if (PurpleAccountSyncStore.hasState(orphanRoot)) {
+            throw new AssertionError("an empty pending directory is no state");
+        }
+        Files.write(new File(orphanRoot, "pending/config.json").toPath(),
+                "record:1".getBytes(StandardCharsets.UTF_8));
+        if (!PurpleAccountSyncStore.hasState(orphanRoot)) {
+            throw new AssertionError("an orphan stage is state");
+        }
+        final File strayRoot = new File(base, "stray/purple/sync");
+        strayRoot.mkdirs();
+        Files.write(new File(strayRoot, "state.json.new").toPath(), initial);
+        if (!PurpleAccountSyncStore.hasState(strayRoot)) {
+            throw new AssertionError("an atomic artifact is state");
+        }
     }
 
     private static void expect(PurpleAccountSyncStore.Result result,

@@ -43,16 +43,20 @@ clang++ -std=c++20 -g -O1 -dynamiclib \
 
 javac -Xlint:all,-options,-restricted -Werror -d "$BuildPath" -cp "$Json" \
     "$Tests/java_binding/android/content/SharedPreferences.java" \
+    "$Tests/store_stubs/android/util/AtomicFile.java" \
+    "$Tests/store_stubs/org/telegram/messenger/ApplicationLoader.java" \
     "$Tests/config_sync_bridge/org/telegram/messenger/MessagesController.java" \
     "$Tests/config_sync_bridge/org/telegram/messenger/UserConfig.java" \
     "$Tests/config_sync_bridge/org/telegram/messenger/purple/PurpleCore.java" \
     "$Tests/config_sync_bridge/org/telegram/messenger/purple/PurpleSyncSettingsFile.java" \
     "$Java/PurpleAccountBinding.java" \
     "$Java/PurpleAccountSyncCore.java" \
+    "$Java/PurpleAccountSyncStore.java" \
     "$Java/PurpleSyncCore.java" \
     "$Java/PurpleSyncInventory.java" \
     "$Java/PurpleSyncTransport.java" \
     "$Tests/config_sync_bridge/org/telegram/messenger/purple/PurpleSyncCoreTest.java"
 java --enable-native-access=ALL-UNNAMED -cp "$BuildPath:$Json" \
+    -Djava.io.tmpdir="$BuildPath" \
     -Dpurple.core.dylib="$BuildPath/libpurplecore_sync.dylib" \
     org.telegram.messenger.purple.PurpleSyncCoreTest

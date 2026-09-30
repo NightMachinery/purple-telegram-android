@@ -5,7 +5,9 @@ import org.json.JSONObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.UserConfig;
 
+import java.io.File;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -2212,6 +2214,120 @@ public final class PurpleSyncCoreTest {
         check(!mismatched.isValid() && mismatched.error.equals("State"));
     }
 
+    private static byte[] withSeen(byte[] state, String install, long seq) {
+        final JSONObject edited = new JSONObject(new String(state,
+                StandardCharsets.UTF_8));
+        edited.getJSONObject("streams").getJSONObject("config")
+                .getJSONObject("seen_seq").put(install, seq);
+        return canonical(edited);
+    }
+
+    private static void testStore() throws Exception {
+        begin("store");
+        final File parent = Files.createTempDirectory("purple-sync-store")
+                .toFile();
+        final File root = new File(parent, "purple/sync");
+        final File stateFile = new File(root, "state.json");
+        final Cloud cloud = new Cloud();
+        final String space = id(PurpleAccountSyncCore.formatSpaceId(
+                fill(16, 't')));
+        final Remote b = remote('b', "Android");
+        final Version b1 = post(cloud, b, space, TB);
+        final Device device = new Device('s');
+        device.setLocal(T0);
+        check(!PurpleAccountSyncStore.hasState(root));
+        check(!new File(parent, "purple").exists());
+        try (PurpleAccountSyncStore store = new PurpleAccountSyncStore(root,
+                PurpleAccountSyncStore.NATIVE)) {
+            check(store.open(true, ACCOUNT, device.device).status
+                    == PurpleAccountSyncStore.Status.Uninitialized);
+            check(!PurpleAccountSyncStore.hasState(root));
+            check(join(device, space));
+            check(store.initialize(device.state).status
+                    == PurpleAccountSyncStore.Status.Ready);
+            check(PurpleAccountSyncStore.hasState(root));
+            check(Arrays.equals(store.stateBytes(), device.state));
+
+            final PurpleSyncCore.Review shown = review(device, cloud);
+            check(shown.bound && shown.offered.equals(List.of(b1.key)));
+            final PurpleSyncCore.ApplyRequest request = PurpleSyncCore
+                    .ApplyRequest.bound(cloud.inventory(), store.stateBytes(),
+                            null, device.local, shown.stamp, b1.key);
+            final PurpleSyncCore.ApplyPlan plan = PurpleSyncCore.planApply(
+                    request);
+            check(plan.status == PurpleSyncCore.ApplyPlanStatus.Ready
+                    && plan.writeRemote);
+            device.setLocal(plan.source.text);
+            final PurpleSyncCore.ApplyCompletion completion =
+                    PurpleSyncCore.completeApply(request, device.local);
+            check(completion.status == PurpleSyncCore.CompletionStatus.Ready);
+            check(completion.adopted
+                    && completion.commit == PurpleSyncCore.CommitStatus.Ready);
+            final byte[] next = completion.nextState;
+            check(store.commitConfigState(next).status
+                    == PurpleAccountSyncStore.Status.Ready);
+            check(Arrays.equals(store.stateBytes(), next));
+            check(Arrays.equals(Files.readAllBytes(stateFile.toPath()), next));
+            check(inspect(next).key.equals(b1.key));
+            check(seenSeq(next, b.install) == 1);
+            device.state = next;
+            check(review(device, cloud).verdict
+                    == PurpleSyncCore.Verdict.UpToDate);
+            final long modified = stateFile.lastModified();
+            check(store.commitConfigState(next).status
+                    == PurpleAccountSyncStore.Status.Unchanged);
+            check(stateFile.lastModified() == modified);
+
+            check(store.commitConfigState(withSeen(next, b.install, 0)).status
+                    == PurpleAccountSyncStore.Status.InvalidTransition);
+            final JSONObject otherDevice = new JSONObject(new String(
+                    withSeen(next, b.install, 4), StandardCharsets.UTF_8));
+            otherDevice.put("created_device", "android-elsewhere");
+            check(store.commitConfigState(canonical(otherDevice)).status
+                    == PurpleAccountSyncStore.Status.DeviceMismatch);
+            final JSONObject moved = new JSONObject(new String(
+                    withSeen(next, b.install, 4), StandardCharsets.UTF_8));
+            moved.put("space", id(PurpleAccountSyncCore.formatSpaceId(
+                    fill(16, 'w'))));
+            check(store.commitConfigState(canonical(moved)).status
+                    == PurpleAccountSyncStore.Status.InvalidTransition);
+            check(Arrays.equals(Files.readAllBytes(stateFile.toPath()), next));
+
+            device.setLocal(T1);
+            final PurpleSyncCore.PostRequest changes = localRequest(device,
+                    cloud);
+            final PurpleSyncCore.PostPlan stage = PurpleSyncCore.planPost(
+                    ACCOUNT, cloud.inventory(), store.stateBytes(), null,
+                    device.local, changes, device.now, false);
+            check(stage.step == PurpleSyncCore.PostStep.Stage);
+            final PurpleAccountSyncCore.Result reserved =
+                    PurpleAccountSyncCore.reserveConfigRecord(ACCOUNT,
+                            store.stateBytes(), stage.record);
+            check(reserved.isValid() && reserved.key.equals(stage.key));
+            final PurpleAccountSyncStore.Result staged = store.stageConfig(
+                    stage.record, reserved.state);
+            check(staged.status == PurpleAccountSyncStore.Status.Ready);
+            final PurpleSyncCore.PostPlan post = PurpleSyncCore.checkStagedPost(
+                    ACCOUNT, cloud.inventory(), store.stateBytes(),
+                    staged.staged);
+            check(post.step == PurpleSyncCore.PostStep.Post);
+            check(Arrays.equals(post.record, stage.record));
+            final byte[] pendingState = store.stateBytes();
+            check(store.commitConfigState(withSeen(pendingState, b.install, 7))
+                    .status == PurpleAccountSyncStore.Status.InvalidTransition);
+            check(Arrays.equals(Files.readAllBytes(stateFile.toPath()),
+                    pendingState));
+
+            UserConfig.userId = USER + 1;
+            check(store.commitConfigState(next).status
+                    == PurpleAccountSyncStore.Status.AccountUnbound);
+            UserConfig.userId = USER;
+            check(store.stateBytes() == null);
+            check(Arrays.equals(Files.readAllBytes(stateFile.toPath()),
+                    pendingState));
+        }
+    }
+
     public static void main(String[] args) throws Exception {
         UserConfig.activated = true;
         UserConfig.userId = USER;
@@ -2230,6 +2346,7 @@ public final class PurpleSyncCoreTest {
         testReviewStatuses();
         testDiff();
         testNativeUnavailable();
+        testStore();
         System.out.println(checks + " checks, " + failures + " failures");
         if (failures != 0) {
             System.exit(1);
