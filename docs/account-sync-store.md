@@ -422,17 +422,20 @@ After an apply that wrote the file, a bulletin says "Settings updated from
 button; the Undo last update row appears too. Both ask for confirmation,
 then call `runner.undo`, and the runner decides when the offer ends.
 
-`PurpleSyncHistoryActivity` lists History newest first as
-"<date time> · <label>". The label is worded from the entry's reason and its
-stored label: the source device for an apply, and the restored entry's time,
-read from its id, for a restore or undo. Entries recorded when settings.toml
-did not exist end in "no file" and cannot be restored. Tapping an entry
-previews it against the current file with the same summary and diff, and
-offers Restore when the copy is valid UTF-8 text and the current file is
-readable. Restore asks for confirmation in a second dialog shown with
-`show()` over the preview, because `BaseFragment.showDialog` dismisses the
-dialog already on screen. A restore closes History, and the sync screen says
-the change stays on this device until it is published.
+`PurpleSyncHistoryActivity` lists History newest first and opens at the
+newest entry. Each row shows the entry's date and time, with its label on a
+second line that wraps instead of being cut off; the preview dialog names
+the entry as "<date time> · <label>". The label is worded from the entry's
+reason and its stored label: the source device for an apply, and the
+restored entry's time, read from its id, for a restore or undo. Entries
+recorded when settings.toml did not exist end in "no file" and cannot be
+restored. Tapping an entry previews it against the current file with the
+same summary and diff, and offers Restore when the copy is valid UTF-8 text
+and the current file is readable. Restore asks for confirmation in a second
+dialog shown with `show()` over the preview, because
+`BaseFragment.showDialog` dismisses the dialog already on screen. A restore
+closes History, and the sync screen says the change stays on this device
+until it is published.
 
 Every action first checks that the account still has the user the screen was
 built for, and so does the screen when it resumes. When the user is gone the

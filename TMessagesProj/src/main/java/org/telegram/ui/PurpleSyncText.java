@@ -133,10 +133,14 @@ final class PurpleSyncText {
     }
 
     static String historyRow(PurpleSyncHistory.Entry entry) {
-        final String row = moment(entry.createdMs) + " · " + historyLabel(entry);
+        return moment(entry.createdMs) + " · " + historyDetail(entry);
+    }
+
+    static String historyDetail(PurpleSyncHistory.Entry entry) {
+        final String label = historyLabel(entry);
         return entry.existed
-                ? row
-                : row + " · " + getString(R.string.PurpleSyncHistoryNoFile);
+                ? label
+                : label + " · " + getString(R.string.PurpleSyncHistoryNoFile);
     }
 
     static String actionText(PurpleSyncCore.Action action) {

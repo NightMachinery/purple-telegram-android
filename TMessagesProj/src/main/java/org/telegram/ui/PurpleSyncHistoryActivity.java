@@ -11,6 +11,7 @@ import static org.telegram.messenger.LocaleController.formatString;
 import static org.telegram.messenger.LocaleController.getString;
 
 import android.app.Activity;
+import android.content.Context;
 import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.Toast;
@@ -21,9 +22,13 @@ import org.telegram.messenger.purple.PurpleSyncHistory;
 import org.telegram.messenger.purple.PurpleSyncRunner;
 import org.telegram.messenger.purple.PurpleSyncSettingsFile;
 import org.telegram.ui.ActionBar.AlertDialog;
+import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Cells.TextDetailSettingsCell;
+import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalAdapter;
 import org.telegram.ui.Components.UniversalFragment;
+import org.telegram.ui.Components.UniversalRecyclerView;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -48,7 +53,8 @@ public class PurpleSyncHistoryActivity extends UniversalFragment {
             entries = list;
             loaded = true;
             if (listView != null) {
-                listView.adapter.update(true);
+                listView.adapter.update(false);
+                listView.scrollToPosition(0);
             }
         })) {
             loaded = true;
@@ -64,8 +70,9 @@ public class PurpleSyncHistoryActivity extends UniversalFragment {
     @Override
     protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
         for (int i = 0; i != entries.size(); ++i) {
-            items.add(UItem.asButton(ROW_ENTRY_FIRST + i,
-                    PurpleSyncText.historyRow(entries.get(i))));
+            final PurpleSyncHistory.Entry entry = entries.get(i);
+            items.add(EntryRow.of(ROW_ENTRY_FIRST + i, PurpleSyncText.moment(entry.createdMs),
+                    PurpleSyncText.historyDetail(entry)));
         }
         final String intro = getString(R.string.PurpleSyncHistoryIntro);
         items.add(UItem.asShadow(loaded && entries.isEmpty()
@@ -159,5 +166,33 @@ public class PurpleSyncHistoryActivity extends UniversalFragment {
         });
         builder.setNegativeButton(getString(R.string.Cancel), null);
         builder.create().show();
+    }
+
+    static final class EntryRow extends UItem.UItemFactory<TextDetailSettingsCell> {
+        static {
+            setup(new EntryRow());
+        }
+
+        static UItem of(int id, String time, String detail) {
+            final UItem item = UItem.ofFactory(EntryRow.class);
+            item.id = id;
+            item.text = time;
+            item.subtext = detail;
+            return item;
+        }
+
+        @Override
+        public TextDetailSettingsCell createView(Context context, RecyclerListView listView,
+                int currentAccount, int classGuid, Theme.ResourcesProvider resourcesProvider) {
+            final TextDetailSettingsCell cell = new TextDetailSettingsCell(context);
+            cell.setMultilineDetail(true);
+            return cell;
+        }
+
+        @Override
+        public void bindView(View view, UItem item, boolean divider, UniversalAdapter adapter,
+                UniversalRecyclerView listView) {
+            ((TextDetailSettingsCell) view).setTextAndValue(item.text, item.subtext, divider);
+        }
     }
 }
