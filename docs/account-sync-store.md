@@ -195,9 +195,11 @@ The calls, in the order a check, apply or publish uses them:
   shown stamp and then expects the joined review's stamp. When the plan
   writes a remote version, its `source` head carries the text, which the
   caller checks with `isSettingsTextWritable` and writes before completing.
-  An adopting completion returns the next state bytes with commit Ready, or
-  commit Unchanged and no bytes; the caller persists them with the store's
-  `commitConfigState`. The completion also gives the next verdict, whether a
+  A completion that adopts heads, or records as seen the heads a choice
+  replaced, returns the next state bytes with commit Ready, or commit
+  Unchanged and no bytes; the caller persists them with the store's
+  `commitConfigState`. An update or a pick can therefore commit state while
+  adopting nothing. The completion also gives the next verdict, whether a
   publish is needed, the expected parents and whether the promise shown to
   the user was kept.
 - `checkCommit(current, next)` checks that only the config data changed, that

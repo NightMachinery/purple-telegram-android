@@ -993,7 +993,7 @@ Java_org_telegram_messenger_purple_PurpleSyncCore_reviewConfigNative(
 		stagedBytes,
 		*local);
 	const auto publishable = Purple::SyncSettingsPublishable(
-		review.local,
+		review,
 		deviceId,
 		writer);
 	const auto description = Purple::DescribeSyncConfigReview(
