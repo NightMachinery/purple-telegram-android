@@ -78,6 +78,7 @@ public class PurpleSettingsActivity extends UniversalFragment
     private static final int ROW_LAST_SEEN_TRADE = 16;
     private static final int ROW_SCREEN_TIME = 17;
     private static final int ROW_LAST_SEEN_SKIP_CONFIRMATION = 18;
+    private static final int ROW_SYNC = 19;
 
     /**
      * Where the trade log's rows start numbering.
@@ -217,6 +218,7 @@ public class PurpleSettingsActivity extends UniversalFragment
 
         items.add(UItem.asHeader(getString(R.string.PurpleSettingsFileHeader)));
         items.add(UItem.asButton(ROW_EDIT, getString(R.string.PurpleEditSettings)));
+        items.add(UItem.asButton(ROW_SYNC, getString(R.string.PurpleSyncTitle)));
         items.add(UItem.asButton(ROW_SEND, getString(R.string.PurpleSendToSaved)));
         items.add(UItem.asButton(ROW_CHECK, getString(R.string.PurpleCheckSaved)));
         items.add(UItem.asButton(ROW_IMPORT, getString(R.string.PurpleImportFromFile)));
@@ -370,6 +372,9 @@ public class PurpleSettingsActivity extends UniversalFragment
             break;
         case ROW_EDIT:
             presentFragment(new PurpleSettingsEditorActivity());
+            break;
+        case ROW_SYNC:
+            presentFragment(new PurpleSyncActivity(currentAccount));
             break;
         case ROW_SEND:
             sendToSaved();
