@@ -108,6 +108,16 @@ or key rule is reimplemented in Java. A save with an invalid version key, or
 an entry recording one, is refused. Without the native library every save is
 refused.
 
+Run `TMessagesProj/jni/purple_jni/tests/run_sync_history.sh` on macOS for the
+host test of History and of the settings file helper. It compiles both
+production classes with the flow bridge wrappers against small Android stubs,
+builds the flow bridge as a host dylib against Qt Core, and runs three passes:
+the History and file rules with a fake core (save, list, read, prune with and
+without `keepId`, owner-only modes, symlinked directories, every metadata
+tamper case, settings reads and writes), the same store with the real core's
+fingerprint and version key check, and a pass without the library, where
+every save must be refused and nothing created.
+
 ## Settings sync flow bridge
 
 `PurpleSyncCore` wraps `purple_jni/config_sync_bridge.cpp`, the JNI side of
