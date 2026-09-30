@@ -10,6 +10,7 @@ import org.telegram.SQLite.SQLiteCursor;
 import org.telegram.SQLite.SQLiteDatabase;
 import org.telegram.messenger.AccountInstance;
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.DispatchQueue;
 import org.telegram.messenger.FileLoader;
 import org.telegram.messenger.FileLog;
@@ -147,10 +148,13 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
     }
 
     @Override
-    public File stagingRoot() {
-        final File cache = FileLoader.getDirectory(FileLoader.MEDIA_DIR_CACHE);
-        return cache != null
-                ? new File(cache, PurpleSyncPost.STAGING_DIRECTORY) : null;
+    public File filesDirectory() {
+        return ApplicationLoader.applicationContext.getExternalFilesDir(null);
+    }
+
+    @Override
+    public File cacheDirectory() {
+        return FileLoader.getDirectory(FileLoader.MEDIA_DIR_CACHE);
     }
 
     @Override

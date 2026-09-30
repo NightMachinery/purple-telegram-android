@@ -141,7 +141,9 @@ interface PurpleSyncClient {
 
     void localCopies(Reply<List<LocalCopy>> reply);
 
-    File stagingRoot();
+    File filesDirectory();
+
+    File cacheDirectory();
 
     long nowMillis();
 

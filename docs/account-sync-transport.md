@@ -10,7 +10,8 @@ The work is split so that everything except Telegram's own calls runs in a
 host test:
 
 - `PurpleSyncClient` is the seam: history and message requests, request
-  cancellation, downloads, the local copy query, the send, the staging root,
+  cancellation, downloads, the local copy query, the send, the external
+  files and cache directories,
   the clock, the active-user check and the two threads.
 - `PurpleSyncTelegramClient` is the only implementation that touches
   Telegram (`ConnectionsManager`, `FileLoader`, `NotificationCenter`,
@@ -102,12 +103,19 @@ cache type 0 (for example the chat's auto-download), FileLoader joins that
 operation and the file lands where that operation stores it; the reader then
 reads the file named in the `fileLoaded` notification.
 
-Sending is different: after a confirmed send, Telegram moves an attachment
-that lives under `MEDIA_DIR_CACHE` to the sent document's normal path
-(`getPathToAttach(document, false)`, the Telegram Documents directory), as it
-already does for the manual `settings.toml` send. On Android 11 and later
-that directory is app-specific external storage; on Android 10 and lower it
-is `Telegram/Telegram Documents` in shared storage.
+The post stages its record outside the cache, in the app's own external files
+directory (`getExternalFilesDir(null)`, that is
+`Android/data/org.purple.telegram/files`), because of what Telegram does after
+a send. After a confirmed send, Telegram moves an attachment whose path
+starts with the `MEDIA_DIR_CACHE` path to the sent document's normal path
+(`getPathToAttach(document, false)`, the Telegram Documents directory). On
+Android 10 and lower that is `Telegram/Telegram Documents` in shared storage.
+A staged record is never under `MEDIA_DIR_CACHE`, so Telegram leaves it where
+it is and the sent message keeps it as its local attachment. The staging
+root gets a `.nomedia` file, as the cache and Telegram's own media
+directories do, so the media scanner skips it. The manual
+`settings.toml` send still stages in the cache, so Telegram still moves that
+file after its send.
 
 ## Send queue
 
@@ -128,8 +136,8 @@ row that Telegram's message decoder cannot read is skipped, as Telegram's own
 loaders skip it, so one damaged row cannot hold Finish sending forever.
 
 It matches the file name, as the desktop does, rather than the staging
-directory: a failed copy whose staged file was pruned or cleared from the
-cache still sits in Saved Messages with a Retry action, and matching the name
+directory: a failed copy whose staged file was pruned or deleted still
+sits in Saved Messages with a Retry action, and matching the name
 keeps both clients' refusals the same. A file of that name sent by hand is
 also counted; that only delays Finish sending. The post names its file with
 the same constant, so what is sent and what is matched cannot drift apart,
@@ -146,18 +154,28 @@ window would be byte identical, which the core accepts as a duplicate.
 1. Validate: 1 byte to 256 KiB, and `inspectConfigRecord` must call it a
    valid config record whose canonical bytes are the staged bytes. Otherwise
    `InvalidRecord`.
-2. Stage: prune staging directories older than 30 days (as the manual send
-   does for its own), then write
-   `<MEDIA_DIR_CACHE>/purple-sync-records/<UUID>/Purple settings sync.json`
-   and read it back. The staging copy must be outside the app's internal
-   data directory, which Telegram refuses to send from. A staging failure is
-   `OutcomeUnknown` and sends nothing.
+2. Stage: write
+   `<external files>/purple-sync-records/<UUID>/Purple settings sync.json`
+   and read it back. First, staging directories older than 30 days are
+   pruned (as the manual send does for its own) in that root and in
+   `<MEDIA_DIR_CACHE>/purple-sync-records`, where builds up to `5b4c6038`
+   staged. The cache root is removed once it is empty. The young copies
+   there stay until they are 30 days old, since a failed send from such a
+   build still needs its file for Retry. The staging copy must be outside
+   the app's internal data directory, which Telegram refuses to send from
+   (`AndroidUtilities.isInternalUri` refuses paths under `/data/data/<package>`).
+   Without an external files directory (external storage not mounted) the
+   post sends nothing and never falls back to the cache. That, like any
+   staging failure, is `OutcomeUnknown`.
 3. Hand off on the main thread:
    `SendMessagesHelper.prepareSendingPurpleDocument(account, path, "#purplesync", ownUserId, "application/json", receipt)`.
 4. Receipt. A preparation failure removes the staging copy; it and a failed
    send (no server id) are `OutcomeUnknown`, and a failed copy keeps its
-   staged file for Telegram's Retry. With a server id, the staging directory
-   is removed if Telegram moved the file away, then that one message is read
+   staged file for Telegram's Retry, which uploads it again from the path
+   stored with the local message, as does the resend at the next start. With
+   a server id, the staged file stays as the sent message's local attachment
+   until the prune, and its directory is removed only if the file is already
+   gone. Then that one message is read
    back through the reader (so through the private cache download). Exactly
    the staged bytes give `Confirmed` with the id and the read-back bytes. A
    failed request or download is `OutcomeUnknown`; any other read-back
@@ -198,12 +216,17 @@ that throws; and posts that confirm, are invalid, lose their receipt, fail,
 fail to prepare, throw at the hand-off, read back other bytes, vanish, fail
 the read-back request or download, are cancelled before start, before the
 hand-off or during the read-back, lose the account before or after the
-hand-off, prune old staging directories, and replace a running check.
+hand-off, prune old staging directories, and replace a running check. It
+also checks where the record is staged: under the external files directory
+next to a `.nomedia` file, never under the cache, with nothing sent when there
+is no external files directory, and old copies pruned from both roots.
 `PURPLE_SYNC_TRANSPORT_SOURCES` points the build at another copy of the
 transport sources, for mutation runs.
 
 Only an APK and a live account prove `PurpleSyncTelegramClient`: that the
 history and message requests return what the scan and reader expect, that
 the download lands in the external cache, that a sending, failed and
-restart-pending copy each show up in the `messages_v2` query, and that the
-posted document carries `application/json`.
+restart-pending copy each show up in the `messages_v2` query, that the
+posted document carries `application/json`, and that the staged record stays
+in `Android/data/org.purple.telegram/files/purple-sync-records` after the
+send instead of moving to Telegram Documents.
