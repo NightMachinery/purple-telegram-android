@@ -18,6 +18,25 @@ because the user may switch accounts after the store returns. A later transport
 must reconcile its own remote record before publishing; this store's device and
 binding checks do not prove remote ownership. Binding preferences are managed by `PurpleAccountBinding`.
 
+`hasState()` tells an unjoined check whether the device has any sync state
+without opening the store: it creates nothing, answers false when the root
+is missing or holds only the lock file and an empty `pending` directory, and
+answers true for anything else (state, a stage, an artifact, or a root it
+cannot list), so a check that finds something opens the store and reports
+its verdict. `stateBytes()` returns a copy of the current state while the
+store is `Ready`, for the flow calls that take state bytes.
+
+`commitConfigState(next)` persists the state an adopting apply returns. It
+needs a `Ready` store and at most 4 MiB, then checks the account binding,
+that `next` is canonical and was created by this device, and the core's
+config data commit check: only the config data may differ from the current
+state, nothing may be pending before or after, and no seen sequence may go
+backwards. A ready check writes `next` atomically and rechecks the binding.
+An unchanged check reports `Unchanged` and writes nothing. A pending record
+or a disallowed change reports `InvalidTransition`, a malformed state
+`InvalidState`, another device `DeviceMismatch`, and none of them writes. A
+lost binding pauses the store with `AccountUnbound`.
+
 The root admits only `lock`, `state.json`, and `pending`; the pending directory
 admits only `config.json`. AtomicFile temporary or backup artifacts and unknown
 files produce `AmbiguousFiles`. The store preserves them for inspection. It
@@ -51,7 +70,10 @@ Run `TMessagesProj/jni/purple_jni/tests/run_account_sync_store.sh` for the
 host Java state-machine test. It compiles the production store against small
 Android stubs and tests off-state creation, successful reservation and
 confirmation, two handles, replayed stages, missing stages, account and device
-mismatches, malformed state, and temporary artifacts. JNI syntax can be checked
+mismatches, malformed state, temporary artifacts, config data commits (ready,
+unchanged without a write, pending, seen sequence regression, device mismatch
+and lost binding), and `hasState` without creating anything. The flow bridge
+harness below repeats the commit cases against the real core. JNI syntax can be checked
 with the macOS Qt Core and JDK headers used by the existing account sync
 acknowledgement test.
 

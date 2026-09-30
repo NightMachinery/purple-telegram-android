@@ -9,6 +9,7 @@ import java.nio.file.StandardCopyOption;
 public final class AtomicFile {
     public static boolean corruptAfterFinish;
     public static int failWriteCalls;
+    public static int finishWriteCalls;
     private final File base;
     private final File temporary;
 
@@ -22,6 +23,7 @@ public final class AtomicFile {
     }
 
     public void finishWrite(FileOutputStream stream) throws IOException {
+        finishWriteCalls++;
         stream.getFD().sync();
         stream.close();
         Files.move(temporary.toPath(), base.toPath(),

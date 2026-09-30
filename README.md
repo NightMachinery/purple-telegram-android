@@ -490,8 +490,10 @@ described in `docs/account-sync-store.md`, and
 bridge to the core's flow tests on macOS. The uncalled
 `PurpleAccountSyncStore` now keeps bound state and canonical pending config
 records under the app-private `purple/sync` directory, with exclusive ownership
-and fail-closed crash recovery. Its exact operations and recovery verdicts are
-documented in `docs/account-sync-store.md`. Compressed envelopes remain
+and fail-closed crash recovery. It also commits the config data an apply
+adopts, after the core's commit check, and tells an unjoined check whether any
+sync state exists without creating the directory. Its exact operations and
+recovery verdicts are documented in `docs/account-sync-store.md`. Compressed envelopes remain
 future work.
 
 Beside that store sits the uncalled `PurpleSyncHistory`, which keeps copies of

@@ -10,5 +10,6 @@ javac -d "$Scratch" \
     "$Root/TMessagesProj/jni/purple_jni/tests/store_stubs/android/util/AtomicFile.java" \
     "$Root/TMessagesProj/jni/purple_jni/tests/store_stubs/org/telegram/messenger/ApplicationLoader.java" \
     "$Root/TMessagesProj/jni/purple_jni/tests/store_stubs/org/telegram/messenger/purple/PurpleAccountSyncCore.java" \
+    "$Root/TMessagesProj/jni/purple_jni/tests/store_stubs/org/telegram/messenger/purple/PurpleSyncCore.java" \
     "$Root/TMessagesProj/jni/purple_jni/tests/store_stubs/org/telegram/messenger/purple/PurpleAccountSyncStoreTest.java"
 java -cp "$Scratch" org.telegram.messenger.purple.PurpleAccountSyncStoreTest
