@@ -387,9 +387,14 @@ public class PurpleSyncActivity extends UniversalFragment {
                                 ? R.string.PurpleSyncChangedNothingSent
                                 : R.string.PurpleSyncNothingSent), failure);
         showReview(check, prefix);
-        if (matches) {
+        if (matches && inFront()) {
             confirmAction(expected);
         }
+    }
+
+    private boolean inFront() {
+        return !isPaused() && parentLayout != null
+                && parentLayout.getLastFragment() == this;
     }
 
     private void startPublish(String prefix, String progress, Starter starter) {
