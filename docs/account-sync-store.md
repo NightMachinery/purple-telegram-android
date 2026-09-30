@@ -85,3 +85,125 @@ the existing `PurpleCore.noteImported` bridge returns for the bytes, so no hash
 is recomputed in Java. The core's version key check has no bridge yet; until
 one is added, a save with a version key and an entry recording one are
 refused. Without the native library every save is refused.
+
+## Settings sync flow bridge
+
+`PurpleSyncCore` wraps `purple_jni/config_sync_bridge.cpp`, the JNI side of
+the shared core's settings sync flow (`purple_sync_inventory`,
+`purple_sync_config_flow`, `purple_sync_config_describe` and
+`purple_config_diff`). The bridge is stateless: no native object survives a
+call, so every call receives the full inventory, the local state bytes, the
+staged record and the settings file again, and rebuilds what it needs. Each
+reply is a `RawReply` of record, state and text bytes plus JSON metadata that
+`PurpleSyncCore` parses into typed, immutable answers; Java never parses
+config data or sync JSON itself. An answer whose `error` is not null carries
+the bridge's reason (`NullInput`, `State` for unreadable state bytes,
+`InvalidTransport`, `NativeUnavailable`, `MalformedNativeReply`, and for the
+account-bound calls the binding errors plus `AccountChanged`).
+
+An inventory is a `PurpleSyncInventory`: the account's positive user id,
+whether the Saved Messages scan finished, and one row per candidate message
+with its id, a transport outcome, the document id, the edit date, and the
+downloaded bytes when fetched. The outcomes are `FETCHED` 0, `VANISHED` 1,
+`CHANGED` 2, `OVERSIZED` 3, `INACCESSIBLE` 4, `REQUEST_FAILED` 5,
+`CANCELLED` 6 and `INVALID` 7 (a document whose size is not positive). Only a
+fetched row carries bytes; the core classifies them itself, and bytes over
+4 MiB count as oversized without being copied. A record needs its real
+document id: a fetched row with document id 0 is unreadable and makes the
+check need review. A download that cannot finish is `INACCESSIBLE`, never a
+fetched row with empty bytes. Vanished, changed, oversized and invalid rows
+make the review NeedsReview; inaccessible, failed and cancelled rows, or an
+unfinished scan, make it Incomplete. The inventory reports its row count and
+total fetched bytes for logging; there is no total size cap.
+
+Candidate selection is `classifyHistoryPage`: one page of Saved Messages
+history (ids newest first, whether each is a message, forwarded, a document,
+its caption and file name) gives More with the next offset, Complete on an
+empty page, or Stalled when the page does not move strictly downward (an id
+at or above a nonzero offset, a repeated or rising id, or an id that is not
+positive). A candidate is an unforwarded document whose caption holds
+`#purplesync` or whose file name is a desktop sync file name.
+
+The calls, in the order a check, apply or publish uses them:
+
+- `review(inventory, state, staged, local, device)` gives the review: status,
+  whether the device is bound, space, install, the local file's status,
+  fingerprint and publishability, the verdict, the heads (each with its
+  record's text), offered and same keys, the own head, the describe message,
+  action, device name parts, time, count, the choices and the stamp. It is
+  not account-bound, so the caller compares `accountUserId` with the account
+  it checked. `Review.clientFailure` builds the AccountUnavailable,
+  AccountUnbound and StoreError reviews the platform reports without the core.
+- `diff(before, after)` gives line hunks (with a truncation flag past 1000
+  changed lines) and the per-table summary when both sides parse.
+- `planApply(request)` and `completeApply(request, readBack)` apply a choice.
+  An `ApplyRequest` is immutable: `unbound` before joining, `bound` for a
+  joined device, and `afterJoin` right after a join, which also carries the
+  settings file as it was before the join. Complete recomputes the plan from
+  the same request, so the caller keeps one request for both calls. A plan
+  asks to join (`join`, with `space` empty when a new space must be created);
+  after the join, `afterJoin` checks that the pre-join review still has the
+  shown stamp and then expects the joined review's stamp. When the plan
+  writes a remote version, its `source` head carries the text, which the
+  caller checks with `isSettingsTextWritable` and writes before completing.
+  An adopting completion returns the next state bytes with commit Ready, or
+  commit Unchanged and no bytes; the caller persists them with the store's
+  `commitConfigState`. The completion also gives the next verdict, whether a
+  publish is needed, the expected parents and whether the promise shown to
+  the user was kept.
+- `checkCommit(current, next)` checks that only the config data changed, that
+  nothing is pending before or after, that no seen sequence went backwards,
+  and that `next` is exactly the canonical result. Unchanged returns no bytes.
+- `planPostEntry(request, staged)` is the entry rule a publish checks first:
+  Finish sending (`PostRequest.finishSending()`) needs a staged record, new
+  content (`PostRequest.newContent(fingerprint, parents)`) needs none.
+- `planPost(account, inventory, state, staged, local, request, nowSeconds,
+  sendQueued)` gives Finish with a publish status, ConfirmFound with the
+  message id and record already on the server, Stage with a new record and
+  its key, or Post with the staged record. The writer is Android, Purple
+  Telegram Android. `sendQueued` says the account's Telegram send queue still
+  holds an unsent or failed sync record post; Finish sending then stops with
+  StillSending instead of posting again. For Stage, the caller reserves the
+  record with `PurpleAccountSyncCore.reserveConfigRecord`, stages it with the
+  store's `stageConfig`, and calls `checkStagedPost(account, inventory,
+  stateBytes, staged)` before posting. Both account-bound calls read the
+  binding token with `PurpleAccountBinding.read`, refuse an inventory taken
+  for another user, and answer `AccountChanged` if the active user changed
+  during the call.
+- `describeApplyFailure` and `undoFinished` give the core's wording choices for
+  a failed apply and whether an undo finished.
+
+`settingsFingerprint`, `isConfigVersionKey` and `isSettingsTextWritable`
+answer the core's plain questions about bytes and keys.
+
+## Sync transport contract
+
+`PurpleSyncTransport` is the interface between the flow and Telegram. The
+Telegram implementation and the fake used by flow tests must behave the same
+way:
+
+- `check(progress, done)` scans Saved Messages, reads every candidate, and
+  finishes with `Finished` and an inventory, `Cancelled`, or
+  `AccountChanged`. Its result also says whether the account's send queue
+  held an unsent or failed sync record post when the check ended.
+- `post(staged, done)` sends the exact staged bytes and finishes with
+  `Confirmed` (a positive message id and the server's read-back bytes),
+  `OutcomeUnknown`, `NeedsReview`, `Cancelled` or `InvalidRecord`.
+- `cancel()` stops the running call.
+
+Every method may be called from any thread; the implementation moves work to
+its own threads. `done` is called exactly once per call, on the main thread,
+and never synchronously inside `check` or `post`. `progress` is called zero or
+more times before `done`, also on the main thread, with the phase (Scanning
+or Reading) and counts. After `cancel()`, `done` still arrives once, with
+`Cancelled`, unless it had already been delivered.
+
+Run `TMessagesProj/jni/purple_jni/tests/run_config_sync_bridge.sh` on macOS
+to build both bridges and the flow sources against Qt Core and exercise
+`PurpleSyncCore` from a host JVM. It needs an org.json jar (the Gradle cache
+copy is found automatically, or set `ORG_JSON_JAR`). The harness ports the
+stateless cases of the core's `tests/test_sync_flow.cpp`: every review
+verdict and failure status, apply and complete for every choice kind, the
+join variants and the joined-stamp rule, stale stamps, the publish truth
+table with ConfirmFound, Finish sending and StillSending, the commit check
+refusals, diff hunks and truncation, and history page classification.
