@@ -64,6 +64,7 @@ constexpr auto kLocalInvalid = 2;
 	case Status::AccountUnbound: return u"AccountUnbound"_q;
 	case Status::StoreError: return u"StoreError"_q;
 	case Status::InvalidSettings: return u"InvalidSettings"_q;
+	case Status::UsingLastGood: return u"UsingLastGood"_q;
 	}
 	return u"NeedsReview"_q;
 }
@@ -114,6 +115,7 @@ constexpr auto kLocalInvalid = 2;
 	case Message::LocalChangesOwnStale: return u"LocalChangesOwnStale"_q;
 	case Message::UpToDateAlone: return u"UpToDateAlone"_q;
 	case Message::UpToDateWith: return u"UpToDateWith"_q;
+	case Message::UsingLastGood: return u"UsingLastGood"_q;
 	}
 	return u"InvalidRecords"_q;
 }
@@ -572,8 +574,10 @@ constexpr auto kLocalInvalid = 2;
 		JNIEnv *env,
 		jint status,
 		jbyteArray text,
+		jboolean usingLastGood,
 		QString &error) {
 	using Status = Purple::SyncSettingsFileStatus;
+	const auto lastGood = (usingLastGood == JNI_TRUE);
 	switch (status) {
 	case kLocalPresent: {
 		if (!text) {
@@ -581,18 +585,18 @@ constexpr auto kLocalInvalid = 2;
 			return std::nullopt;
 		}
 		if (env->GetArrayLength(text) > Purple::kSyncSettingsMaximumBytes) {
-			return Purple::MakeSyncSettingsFile(Status::Invalid);
+			return Purple::MakeSyncSettingsFile(Status::Invalid, {}, lastGood);
 		}
 		auto bytes = QByteArray();
 		if (!ReadBytes(env, text, bytes, error)) {
 			return std::nullopt;
 		}
-		return Purple::MakeSyncSettingsFile(Status::Present, bytes);
+		return Purple::MakeSyncSettingsFile(Status::Present, bytes, lastGood);
 	}
 	case kLocalAbsent:
-		return Purple::MakeSyncSettingsFile(Status::Absent);
+		return Purple::MakeSyncSettingsFile(Status::Absent, {}, lastGood);
 	case kLocalInvalid:
-		return Purple::MakeSyncSettingsFile(Status::Invalid);
+		return Purple::MakeSyncSettingsFile(Status::Invalid, {}, lastGood);
 	}
 	error = u"InvalidLocalStatus"_q;
 	return std::nullopt;
@@ -747,11 +751,13 @@ struct ApplyInput {
 		jbyteArray staged,
 		jint localStatus,
 		jbyteArray localText,
+		jboolean localLastGood,
 		jstring stamp,
 		jstring chosenKey,
 		jboolean afterJoin,
 		jint preJoinStatus,
 		jbyteArray preJoinText,
+		jboolean preJoinLastGood,
 		ApplyInput &input,
 		QString &error) {
 	auto inventory = ReadInventory(env, accountUserId, scanComplete, ids,
@@ -764,7 +770,8 @@ struct ApplyInput {
 		|| !ReadOptionalBytes(env, staged, input.staged, error)) {
 		return false;
 	}
-	const auto local = ReadLocal(env, localStatus, localText, error);
+	const auto local = ReadLocal(env, localStatus, localText, localLastGood,
+		error);
 	if (!local) {
 		return false;
 	}
@@ -780,7 +787,8 @@ struct ApplyInput {
 			error = u"NullInput"_q;
 			return false;
 		}
-		const auto preJoin = ReadLocal(env, preJoinStatus, preJoinText, error);
+		const auto preJoin = ReadLocal(env, preJoinStatus, preJoinText,
+			preJoinLastGood, error);
 		if (!preJoin) {
 			return false;
 		}
@@ -963,7 +971,8 @@ Java_org_telegram_messenger_purple_PurpleSyncCore_reviewConfigNative(
 		jintArray ids, jintArray transport, jlongArray documentIds,
 		jlongArray editDates, jobjectArray records, jbyteArray state,
 		jbyteArray staged, jint localStatus, jbyteArray localText,
-		jstring device, jstring platform, jstring app) {
+		jboolean localLastGood, jstring device, jstring platform,
+		jstring app) {
 	auto error = QString();
 	const auto inventory = ReadInventory(env, accountUserId, scanComplete,
 		ids, transport, documentIds, editDates, records, error);
@@ -976,7 +985,8 @@ Java_org_telegram_messenger_purple_PurpleSyncCore_reviewConfigNative(
 		|| !ReadOptionalBytes(env, staged, stagedBytes, error)) {
 		return Invalid(env, error);
 	}
-	const auto local = ReadLocal(env, localStatus, localText, error);
+	const auto local = ReadLocal(env, localStatus, localText, localLastGood,
+		error);
 	if (!local) {
 		return Invalid(env, error);
 	}
@@ -1103,14 +1113,15 @@ Java_org_telegram_messenger_purple_PurpleSyncCore_planConfigApplyNative(
 		jintArray ids, jintArray transport, jlongArray documentIds,
 		jlongArray editDates, jobjectArray records, jbyteArray state,
 		jbyteArray staged, jint localStatus, jbyteArray localText,
-		jstring stamp, jstring chosenKey, jboolean afterJoin,
-		jint preJoinStatus, jbyteArray preJoinText) {
+		jboolean localLastGood, jstring stamp, jstring chosenKey,
+		jboolean afterJoin, jint preJoinStatus, jbyteArray preJoinText,
+		jboolean preJoinLastGood) {
 	auto input = ApplyInput();
 	auto error = QString();
 	if (!ReadApplyInput(env, accountUserId, scanComplete, ids, transport,
 			documentIds, editDates, records, state, staged, localStatus,
-			localText, stamp, chosenKey, afterJoin, preJoinStatus,
-			preJoinText, input, error)) {
+			localText, localLastGood, stamp, chosenKey, afterJoin,
+			preJoinStatus, preJoinText, preJoinLastGood, input, error)) {
 		return Invalid(env, error);
 	}
 	const auto planned = PlanApply(input);
@@ -1142,18 +1153,20 @@ Java_org_telegram_messenger_purple_PurpleSyncCore_completeConfigApplyNative(
 		jintArray ids, jintArray transport, jlongArray documentIds,
 		jlongArray editDates, jobjectArray records, jbyteArray state,
 		jbyteArray staged, jint localStatus, jbyteArray localText,
-		jstring stamp, jstring chosenKey, jboolean afterJoin,
-		jint preJoinStatus, jbyteArray preJoinText, jint readBackStatus,
+		jboolean localLastGood, jstring stamp, jstring chosenKey,
+		jboolean afterJoin, jint preJoinStatus, jbyteArray preJoinText,
+		jboolean preJoinLastGood, jint readBackStatus,
 		jbyteArray readBackText) {
 	auto input = ApplyInput();
 	auto error = QString();
 	if (!ReadApplyInput(env, accountUserId, scanComplete, ids, transport,
 			documentIds, editDates, records, state, staged, localStatus,
-			localText, stamp, chosenKey, afterJoin, preJoinStatus,
-			preJoinText, input, error)) {
+			localText, localLastGood, stamp, chosenKey, afterJoin,
+			preJoinStatus, preJoinText, preJoinLastGood, input, error)) {
 		return Invalid(env, error);
 	}
-	const auto readBack = ReadLocal(env, readBackStatus, readBackText, error);
+	const auto readBack = ReadLocal(env, readBackStatus, readBackText,
+		JNI_FALSE, error);
 	if (!readBack) {
 		return Invalid(env, error);
 	}
@@ -1247,7 +1260,8 @@ Java_org_telegram_messenger_purple_PurpleSyncCore_planConfigPostNative(
 		jintArray ids, jintArray transport, jlongArray documentIds,
 		jlongArray editDates, jobjectArray records, jbyteArray state,
 		jbyteArray staged, jint localStatus, jbyteArray localText,
-		jboolean pendingOnly, jstring expectedFingerprint,
+		jboolean localLastGood, jboolean pendingOnly,
+		jstring expectedFingerprint,
 		jobjectArray expectedParents, jbyteArray accountToken, jlong now,
 		jstring platform, jstring app, jboolean sendQueued) {
 	auto error = QString();
@@ -1267,7 +1281,8 @@ Java_org_telegram_messenger_purple_PurpleSyncCore_planConfigPostNative(
 	if (!parsed) {
 		return Invalid(env, u"NullInput"_q);
 	}
-	const auto local = ReadLocal(env, localStatus, localText, error);
+	const auto local = ReadLocal(env, localStatus, localText, localLastGood,
+		error);
 	if (!local) {
 		return Invalid(env, error);
 	}

@@ -53,6 +53,7 @@ javac -Xlint:all,-options,-restricted -Werror -d "$BuildPath/classes" -cp "$Json
     "$Tests/config_sync_bridge/org/telegram/messenger/UserConfig.java" \
     "$Tests/config_sync_bridge/org/telegram/messenger/purple/PurpleCore.java" \
     "$Tests/sync_history/org/telegram/messenger/purple/PurpleSettings.java" \
+    "$Tests/sync_executors/org/telegram/messenger/purple/PurpleGate.java" \
     "$Java/PurpleAccountBinding.java" \
     "$Java/PurpleSyncCore.java" \
     "$Java/PurpleSyncHistory.java" \
