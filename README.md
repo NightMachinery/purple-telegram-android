@@ -495,7 +495,12 @@ files are owner-only regular files and the bytes still match the recorded
 size and the core's settings fingerprint; the newest 30 are kept, plus one
 entry a restore asks to keep. The fingerprint comes from the core through the
 existing auto-send bridge. Until the core's version key check is exposed, it
-accepts only entries without a config version key.
+accepts only entries without a config version key. The equally uncalled
+`PurpleSyncSettingsFile` reads `settings.toml` the way sync must: present only
+as a regular file of at most 256 KiB, never through a symlink, and invalid
+rather than absent when it breaks either rule. It writes through the same
+replacement as an import (or, for a restore, an editor save), so the backup,
+reload and auto-send bookkeeping stay as they are, then reads the file back.
 
 **Send to Saved Messages after every save** on the same screen is `[sync]
 send_after_save_p`, off until you turn it on because sending is a message in a
