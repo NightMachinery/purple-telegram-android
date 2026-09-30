@@ -17,6 +17,7 @@ import java.util.UUID;
 final class PurpleSyncPost implements PurpleSyncTelegramTransport.Task,
         PurpleSyncClient.Operation.Owner {
     static final String RECORD_FILE_NAME = "Purple settings sync.json";
+    static final String PLAYLISTS_RECORD_FILE_NAME = "Purple playlists sync.json";
     static final String CAPTION = "#purplesync";
     static final String MIME = "application/json";
     static final String STAGING_DIRECTORY = "purple-sync-records";

@@ -22,6 +22,7 @@ import androidx.collection.LongSparseArray;
 
 import org.telegram.SQLite.SQLiteCursor;
 import org.telegram.SQLite.SQLitePreparedStatement;
+import org.telegram.messenger.purple.PurpleSyncAutoDownload;
 import org.telegram.tgnet.NativeByteBuffer;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_account;
@@ -700,6 +701,9 @@ public class DownloadController extends BaseController implements NotificationCe
         } else if (MessageObject.isPhoto(msg) || MessageObject.isStickerMessage(msg) || MessageObject.isAnimatedStickerMessage(msg)) {
             type = AUTODOWNLOAD_TYPE_PHOTO;
         } else if (MessageObject.getDocument(msg) != null) {
+            if (PurpleSyncAutoDownload.excludes(MessageObject.getDocument(msg))) {
+                return 0;
+            }
             type = AUTODOWNLOAD_TYPE_DOCUMENT;
         } else {
             return 0;
@@ -790,6 +794,9 @@ public class DownloadController extends BaseController implements NotificationCe
         } else if (MessageObject.isPhoto(msg) || MessageObject.isStickerMessage(msg) || MessageObject.isAnimatedStickerMessage(msg)) {
             type = AUTODOWNLOAD_TYPE_PHOTO;
         } else if (MessageObject.getDocument(msg) != null) {
+            if (PurpleSyncAutoDownload.excludes(MessageObject.getDocument(msg))) {
+                return 0;
+            }
             type = AUTODOWNLOAD_TYPE_DOCUMENT;
         } else {
             return 0;
@@ -871,6 +878,9 @@ public class DownloadController extends BaseController implements NotificationCe
         } else if (MessageObject.isPhoto(message) || MessageObject.isStickerMessage(message) || MessageObject.isAnimatedStickerMessage(message)) {
             type = AUTODOWNLOAD_TYPE_PHOTO;
         } else if (MessageObject.getDocument(message) != null) {
+            if (PurpleSyncAutoDownload.excludes(MessageObject.getDocument(message))) {
+                return 0;
+            }
             type = AUTODOWNLOAD_TYPE_DOCUMENT;
         } else {
             return 0;
@@ -953,6 +963,9 @@ public class DownloadController extends BaseController implements NotificationCe
         } else if (media instanceof TLRPC.TL_messageMediaPhoto) {
             type = AUTODOWNLOAD_TYPE_PHOTO;
         } else if (media.document != null) {
+            if (PurpleSyncAutoDownload.excludes(media.document)) {
+                return 0;
+            }
             type = AUTODOWNLOAD_TYPE_DOCUMENT;
         } else {
             return 0;

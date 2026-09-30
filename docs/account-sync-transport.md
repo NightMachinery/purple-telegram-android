@@ -107,16 +107,37 @@ the storage permission can read the external cache, as they can every
 other Telegram cache file.
 
 If another part of the app is already downloading the same document with
-cache type 0 (for example the chat's auto-download), FileLoader joins that
+cache type 0 (for example a manual tap in the chat), FileLoader joins that
 operation and the file lands where that operation stores it; the reader then
 reads the file named in the `fileLoaded` notification.
 
-The chat's own auto-download is unchanged. Opening Saved Messages with
-document auto-download on saves the visible sync records and legacy
-`settings.toml` documents to Telegram Files, as it does for any document. The
-emulator acceptance saw four records and two legacy documents land there when
-the Saved Messages chat was opened. Keeping them out would take a change in
-`DownloadController`.
+Telegram's own auto-download never saves a sync record. Before this rule,
+opening Saved Messages with document auto-download on saved the visible
+records to Telegram Files, as it does for any document. The emulator
+acceptance saw four records land there. `PurpleSyncAutoDownload.excludes`
+is true for a document with a file name attribute exactly equal to
+`Purple settings sync.json` or `Purple playlists sync.json`, the two names the
+core's candidate rule accepts (`PurpleSyncPost.RECORD_FILE_NAME` and
+`PLAYLISTS_RECORD_FILE_NAME`). `DownloadController` checks it in the document
+branch of each of its four per-message auto-download decisions and answers
+"no auto-download":
+
+- `canDownloadMediaInternal(MessageObject)`, behind
+  `canDownloadMedia(MessageObject)` and `canDownloadMediaType(MessageObject)`.
+  `ChatMessageCell.fileAttach` starts a document's auto-download from it;
+- `canDownloadMediaInternal(MessageObject, long)`;
+- `canDownloadMedia(TLRPC.Message)`, which `MessagesStorage.putMessages`
+  consults before it queues a new message's media for background download;
+- `canDownloadMedia(TLRPC.Message, TLRPC.MessageMedia)`.
+
+`FileLoader` is untouched, so every explicit load works as before: the
+reader's private cache load and a manual tap on a record, which downloads it
+to Telegram Files and opens it. The
+`canDownloadMedia(int type, long size)` overload has no message, and its
+callers are video autoplay and photo thumbnails. Legacy `settings.toml`
+documents and every other document keep upstream's behaviour. Media already
+in the background download queue before this rule shipped still downloads
+once.
 
 The post stages its record outside the cache, in the app's own external files
 directory (`getExternalFilesDir(null)`, that is
@@ -239,6 +260,25 @@ next to a `.nomedia` file, never under the cache, with nothing sent when
 there is no external files directory, and old copies pruned from both roots.
 `PURPLE_SYNC_TRANSPORT_SOURCES` points the build at another copy of the
 transport sources, for mutation runs.
+
+The same runner then runs `PurpleSyncAutoDownloadTest` over a minimal
+`TLRPC` stub. It checks four things:
+
+- the core calls both record names candidates, and does not call
+  `settings.toml` one;
+- both names are excluded, including when the name is in a later attribute;
+- near misses are not excluded: `settings.toml`, other names, other case,
+  suffixes, a name in a non-file-name attribute, and empty or missing
+  attributes;
+- the `DownloadController` source (`PURPLE_DOWNLOAD_CONTROLLER` for mutation
+  runs) has exactly four `type = AUTODOWNLOAD_TYPE_DOCUMENT` branches, each
+  guarded by the check on that branch's own document.
+
+Each of these mutations fails a check:
+
+- removing one guard;
+- making the check never exclude;
+- matching only one of the two names.
 
 Only an APK and a live account prove `PurpleSyncTelegramClient`: that the
 history and message requests return what the scan and reader expect, that
