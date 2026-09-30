@@ -132,10 +132,16 @@ call, so every call receives the full inventory, the local state bytes, the
 staged record and the settings file again, and rebuilds what it needs. Each
 reply is a `RawReply` of record, state and text bytes plus JSON metadata that
 `PurpleSyncCore` parses into typed, immutable answers; Java never parses
-config data or sync JSON itself. An answer whose `error` is not null carries
-the bridge's reason (`NullInput`, `State` for unreadable state bytes,
-`InvalidTransport`, `NativeUnavailable`, `MalformedNativeReply`, and for the
-account-bound calls the binding errors plus `AccountChanged`).
+config data or sync JSON itself. Native code builds that `RawReply`, and
+`PurpleAccountSyncCore`'s, through JNI by class name and constructor
+signature. No Java code calls either constructor, so
+`TMessagesProj/proguard-rules.pro` keeps both; without that rule the release
+build strips them and the first bridge call throws `NoSuchMethodError`, which
+the host tests cannot show because they run without R8. An answer whose
+`error` is not null carries the bridge's reason (`NullInput`, `State` for
+unreadable state bytes, `InvalidTransport`, `NativeUnavailable`,
+`MalformedNativeReply`, and for the account-bound calls the binding errors
+plus `AccountChanged`).
 
 An inventory is a `PurpleSyncInventory`: the account's positive user id,
 whether the Saved Messages scan finished, and one row per candidate message
