@@ -325,6 +325,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
             return new Result(Status.Ready, canonicalRecord.clone(),
                     reserved.seq, "");
         } catch (IOException e) {
+            dropUnreservedStage();
             return fail(Status.IoError);
         }
     }
@@ -564,6 +565,15 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
     private static boolean isLink(File file) throws IOException {
         return !file.getCanonicalFile().equals(new File(
                 file.getParentFile().getCanonicalFile(), file.getName()));
+    }
+
+    private void dropUnreservedStage() {
+        try {
+            if (Arrays.equals(read(stateFile, STATE_LIMIT), state)) {
+                stageFile.delete();
+            }
+        } catch (IOException | SecurityException ignored) {
+        }
     }
 
     private static boolean recover(File file) throws IOException {
