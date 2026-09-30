@@ -97,10 +97,12 @@ is not exactly one JSON object in strict UTF-8 of at most 16 KiB with those
 fields and types, or whose bytes no longer match the recorded size and
 fingerprint. A list skips such entries; a read returns nothing for them.
 
-After each save the newest 30 valid entries stay, plus the entry the caller
-names as `keepId` (a restore passes its target, so a failed restore cannot
-prune what it was restoring). When the store is full, id-shaped leftovers
-older than the oldest kept entry are removed; other names are left alone.
+After each save at most 30 valid entries stay: the entry the caller names as
+`keepId`, when it is valid, and the newest of the others (a restore passes its
+target, so a failed restore cannot prune what it was restoring; the target
+then takes one of the 30 places, as on the desktop). When the store is full,
+id-shaped leftovers older than the oldest kept entry are removed; other names
+are left alone.
 
 The fingerprint is the core's `SettingsFingerprint` and the version key check
 is the core's `IsConfigVersionKey`, both through `PurpleSyncCore`, so no hash
@@ -239,3 +241,88 @@ verdict and failure status, apply and complete for every choice kind, the
 join variants and the joined-stamp rule, stale stamps, the publish truth
 table with ConfirmFound, Finish sending and StillSending, the commit check
 refusals, diff hunks and truncation, and history page classification.
+
+## Settings sync executors
+
+`PurpleSyncRunner` runs the manual settings sync for one account, and the
+sync screen holds one. Construct it with `new PurpleSyncRunner(account,
+transport)` and call every method on the main thread; every listener is
+called on the main thread too. The runner captures the account's user id when
+it is built, and every step checks again, right before each write, that the
+same user is still active on that account. When the user is gone the step
+stops with an account status and writes nothing more.
+
+The runner does one thing at a time. `busy()` is true from the start of a
+check, apply, publish, undo or restore until its listener runs; another start
+meanwhile returns `Busy`, and a start after `close()` returns `Closed`. Every
+start and every issued `Check` (the reviewed result of a check) moves a
+generation counter forward. A `Check` can be applied or published only while
+it is the runner's `current()`; an older one returns `Stale`. A callback the
+generation has moved past, because the user cancelled, started something
+newer or closed the screen, is dropped without calling the listener.
+`cancel()` stops a running check only. `close()` cancels the transport,
+abandons a publisher that has not posted yet (it ends `Cancelled` with no
+post; a record it already staged stays, so the next check offers Finish
+sending), and drops every later callback.
+
+The core work runs on one shared background queue. `PurpleSyncApply` holds
+the join, apply, adopt, restore and undo steps and follows the desktop's
+`ApplySyncConfigChoice`, `RestoreSyncConfigHistory`,
+`WriteSettingsWithHistory` and `InitializeSyncAccountLocally`. Writes happen
+in one order: History, then `settings.toml`, then the account's sync state.
+A failed History save writes nothing, and a crash after the file write leaves
+a device that the next check silently adopts. A device with no sync state is
+reviewed without opening the store, so looking creates nothing; its first
+apply joins it, with a fresh install id and, for a new space, a time-ordered
+space id from the server clock.
+
+The file write itself runs on the main thread, where every other writer of
+`settings.toml` runs (`PurpleSettings.save`, the `PurpleWriter` callers and
+imports). They all share one `settings.toml.tmp` sibling, and the gate reload
+after a write is not synchronized, so a write from the queue could race them.
+The queue therefore posts `PurpleSyncSettingsFile.replace` to the main thread
+and waits for it. A write that has not started within 30 seconds is abandoned
+and reported as failed, and it never runs later. `replace` reads the file
+first and refuses with `Changed` when its bytes differ from the ones the step
+reviewed, which an apply reports as `NeedsRecheck`. An apply writes another
+device's settings, so it stores them as an import that the auto-send never
+posts back; a restore or undo puts back this device's own copy and counts as
+a local save.
+
+After an apply the runner reviews again, as the desktop's ReviewAgain does,
+unless the apply needs a publish. A keep-local choice (Publish or
+PublishChanges) then returns a `PostTicket` that posts on the inventory the
+user reviewed. A share after Choose or Conflict returns a ticket marked
+`freshCheckFirst`, so the screen runs a new check and publishes that `Check`.
+`PurpleSyncPublisher` does the posting and starts only from a publish call.
+It holds the store open for the whole post. It confirms a record already in
+Saved Messages without posting (ConfirmFound); otherwise it reserves, stages
+and re-checks the staged record before posting it, and it confirms the
+server's read-back through `confirmConfigReadBack`. It passes the check's
+`sendQueued` to `planPost`, so a record still in Telegram's send queue gives
+`StillSending` instead of a second post. Finish sending posts the staged
+bytes and never new content.
+
+Undo follows the desktop. An apply that wrote the file replaces the Undo
+offer: with a new one when the History copy of the replaced file exists and
+is writable settings text, and with none otherwise. An apply that did not
+write the file keeps the old offer. An undo that finishes clears the offer;
+by the core's `SyncConfigUndoFinished` that is Restored, Unchanged, NotFound,
+FileDidNotExist, NotText or InvalidReason. An undo that ends InvalidSettings,
+HistoryError or WriteError keeps the offer for a retry. A restore from the
+History page that ends Restored also clears it. Restore and undo keep their
+target entry through the History prune and need no account. An apply labels
+its History entry with the source device's platform and short id; a restore
+or undo labels it with the restored entry's id. The screen words the label
+together with the entry's reason, which is `sync apply`, `sync restore` or
+`sync undo`.
+
+Run `TMessagesProj/jni/purple_jni/tests/run_sync_executors.sh` on macOS to
+drive the runner, apply and publisher through their production constructor
+against the real core, with Android stubs and a fake transport over an
+in-memory Saved Messages. It needs the same Qt and org.json as the bridge
+harness; set `PURPLE_SYNC_DYLIB` to reuse a built library. It walks every
+verdict, and covers a crash after the file write followed by adopt, History
+failure, stale stamps, join failures, Finish sending and StillSending, lost
+receipts, two devices interleaving, the Undo rules, account changes mid-flow,
+stale callbacks and the main-thread write handoff.

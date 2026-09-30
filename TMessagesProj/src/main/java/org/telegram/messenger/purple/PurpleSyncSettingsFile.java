@@ -61,6 +61,7 @@ public final class PurpleSyncSettingsFile {
         WriteFailed,
         /** The replacement ran but the file did not read back as written. */
         ReadBackMismatch,
+        Changed,
     }
 
     public static final class WriteResult {
@@ -73,7 +74,8 @@ public final class PurpleSyncSettingsFile {
         }
 
         public boolean wrote() {
-            return status != WriteStatus.WriteFailed;
+            return status == WriteStatus.Written
+                    || status == WriteStatus.ReadBackMismatch;
         }
     }
 
@@ -99,6 +101,20 @@ public final class PurpleSyncSettingsFile {
             boolean fromImport) {
         return write(PurpleSettings.settingsFile(), bytes, reason, fromImport,
                 PurpleSettings::storeForSync);
+    }
+
+    public static WriteResult replace(Contents expected, byte[] bytes,
+            String reason, boolean fromImport) {
+        return replace(PurpleSettings.settingsFile(), expected, bytes, reason,
+                fromImport, PurpleSettings::storeForSync);
+    }
+
+    static WriteResult replace(File file, Contents expected, byte[] bytes,
+            String reason, boolean fromImport, Writer writer) {
+        if (expected == null || !read(file).sameAs(expected)) {
+            return new WriteResult(WriteStatus.Changed, null);
+        }
+        return write(file, bytes, reason, fromImport, writer);
     }
 
     static Contents read(File file) {
