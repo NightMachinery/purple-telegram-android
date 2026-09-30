@@ -111,6 +111,13 @@ cache type 0 (for example the chat's auto-download), FileLoader joins that
 operation and the file lands where that operation stores it; the reader then
 reads the file named in the `fileLoaded` notification.
 
+The chat's own auto-download is unchanged. Opening Saved Messages with
+document auto-download on saves the visible sync records and legacy
+`settings.toml` documents to Telegram Files, as it does for any document. The
+emulator acceptance saw four records and two legacy documents land there when
+the Saved Messages chat was opened. Keeping them out would take a change in
+`DownloadController`.
+
 The post stages its record outside the cache, in the app's own external files
 directory (`getExternalFilesDir(null)`, that is
 `Android/data/org.purple.telegram/files`), because of what Telegram does after
