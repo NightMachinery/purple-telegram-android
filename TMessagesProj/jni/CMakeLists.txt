@@ -263,10 +263,14 @@ add_library(purplecore SHARED
         purple/purple/purple_splice.cpp
         purple/purple/purple_state.cpp
         purple/purple/purple_config_sync.cpp
+        purple/purple/purple_config_diff.cpp
         purple/purple/purple_config_payload.cpp
         purple/purple/purple_sync_json.cpp
         purple/purple/purple_sync_envelope.cpp
         purple/purple/purple_sync_directory.cpp
+        purple/purple/purple_sync_inventory.cpp
+        purple/purple/purple_sync_config_flow.cpp
+        purple/purple/purple_sync_config_describe.cpp
         purple/purple/purple_sync_local_state.cpp
         purple/purple/purple_sync_status.cpp
         purple/purple/purple_screentime.cpp
