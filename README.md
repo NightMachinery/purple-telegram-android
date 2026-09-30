@@ -401,8 +401,9 @@ caption, so either client can import it), a check of Saved Messages for a newer
 file, Import from a file, Share the file, and the path with a tap to copy.
 Import from a file reads the picked file through the picker's grant whenever
 the app may not open its path itself, such as a file another app saved in
-Download and picked through the device's storage root, and deletes that
-temporary copy once the import has read it.
+Download and picked through the device's storage root. It reads the bytes
+straight into memory, so no copy of the file is written anywhere, even when
+the read fails partway.
 Every switch on it is written into `settings.toml` through the same splice the
 desktop uses and read back from it, so a refused write leaves the switch where
 the file is.

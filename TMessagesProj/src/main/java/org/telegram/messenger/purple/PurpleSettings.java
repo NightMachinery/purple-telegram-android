@@ -87,6 +87,17 @@ public final class PurpleSettings {
             showError(context, LocaleController.getString(R.string.PurpleImportFailed));
             return;
         }
+        importFrom(context, bytes, messageDate);
+    }
+
+    public static void importFrom(Context context, byte[] bytes, int messageDate) {
+        if (context == null || bytes == null) {
+            return;
+        }
+        if (bytes.length > MAX_SIZE) {
+            showError(context, LocaleController.getString(R.string.PurpleImportFailed));
+            return;
+        }
 
         final PurpleCore.ParseResult parsed;
         try {
