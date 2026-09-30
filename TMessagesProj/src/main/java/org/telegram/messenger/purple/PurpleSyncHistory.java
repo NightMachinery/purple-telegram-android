@@ -49,10 +49,9 @@ import java.util.Set;
  * match the recorded size and fingerprint; the newest 30 valid entries are
  * kept, plus one the caller asks to keep for the length of a save.
  *
- * The fingerprint and the version key check belong to the shared core. The
- * fingerprint comes from the core's own settings fingerprint through the
- * existing auto-send bridge; the version key check has no bridge yet, so until
- * one exists only entries without a version key are accepted.
+ * The fingerprint and the version key check belong to the shared core and
+ * come through the settings sync flow bridge; without the native library
+ * every save is refused and no entry reads as valid.
  *
  * Nothing calls this yet.
  */
@@ -144,19 +143,12 @@ public final class PurpleSyncHistory {
     static final Core NATIVE = new Core() {
         @Override
         public String fingerprint(byte[] bytes) {
-            final String state;
-            try {
-                state = PurpleCore.noteImported(new byte[0], bytes);
-            } catch (UnsatisfiedLinkError | RuntimeException e) {
-                FileLog.e(e);
-                return null;
-            }
-            return importedFingerprint(state);
+            return PurpleSyncCore.settingsFingerprint(bytes);
         }
 
         @Override
         public boolean isVersionKey(String key) {
-            return false;
+            return PurpleSyncCore.isConfigVersionKey(key);
         }
     };
 
@@ -310,35 +302,6 @@ public final class PurpleSyncHistory {
             }
         }
         return true;
-    }
-
-    /**
-     * The fingerprint the core wrote into a state.toml it produced for these
-     * bytes, or null when that text has no single plain value for it.
-     */
-    static String importedFingerprint(String stateText) {
-        if (stateText == null) {
-            return null;
-        }
-        String found = null;
-        for (String line : stateText.split("\n", -1)) {
-            final int equals = line.indexOf('=');
-            if (equals < 0 || !"last_imported_fingerprint".equals(
-                    line.substring(0, equals).trim())) {
-                continue;
-            }
-            final String value = line.substring(equals + 1).trim();
-            if (found != null || value.length() < 3
-                    || value.charAt(0) != '"'
-                    || value.charAt(value.length() - 1) != '"') {
-                return null;
-            }
-            found = value.substring(1, value.length() - 1);
-            if (found.indexOf('"') >= 0 || found.indexOf('\\') >= 0) {
-                return null;
-            }
-        }
-        return found;
     }
 
     private static long idTime(String id) {
