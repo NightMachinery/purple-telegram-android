@@ -1,0 +1,207 @@
+# Android settings sync transport
+
+`PurpleSyncTelegramTransport` implements `PurpleSyncTransport` (the contract
+is in `docs/account-sync-store.md`, "Sync transport contract") against
+Telegram for one account slot and one user id:
+`new PurpleSyncTelegramTransport(account, userId)`. Nothing calls it yet; the
+sync screen will.
+
+The work is split so that everything except Telegram's own calls runs in a
+host test:
+
+- `PurpleSyncClient` is the seam: history and message requests, request
+  cancellation, downloads, the local copy query, the send, the staging root,
+  the clock, the active-user check and the two threads.
+- `PurpleSyncTelegramClient` is the only implementation that touches
+  Telegram (`ConnectionsManager`, `FileLoader`, `NotificationCenter`,
+  `MessagesStorage`, `SendMessagesHelper`). Only the Android build compiles
+  it.
+- `PurpleSyncScanner`, `PurpleSyncReader`, `PurpleSyncCheck`,
+  `PurpleSyncPost` and the transport itself hold the rules and run against
+  any client.
+
+## Threads, generations and the account
+
+All transport state lives on one `DispatchQueue`, shared by every transport
+instance. Request, download, storage and receipt callbacks arrive on
+Telegram's threads and are posted to that queue before anything reads them.
+Each `check` or `post` is an operation with a generation number. A new call
+or `cancel()` moves the transport to a new generation at once, so a callback
+from an older operation is dropped when it reaches the queue, even before
+the older operation has been told it was cancelled. A call replaces the one
+still running: the older call's `done` reports `Cancelled` (or
+`OutcomeUnknown` for a post already handed to Telegram).
+
+Before every request, download, queue query, hand-off and confirmation the
+operation checks that the account slot is still signed in to the same user
+(`PurpleAccountBinding.isSameActiveUser`). A check then ends with
+`AccountChanged`. A post ends with `Cancelled` when nothing was handed to
+Telegram yet, and with `OutcomeUnknown` after the hand-off.
+
+`done` and `progress` are posted to the main thread from the transport
+queue, so they are never called inside `check` or `post`, and every
+`progress` of an operation arrives before its `done`. An unexpected
+exception inside a step ends a check as `Finished` with an unfinished, empty
+inventory (the review then says Incomplete) and a post as `OutcomeUnknown`.
+
+## Check
+
+1. Scan. `messages.getHistory` on `inputPeerSelf`, pages of 100 newest
+   first, starting at offset 0 and continuing from the offset
+   `PurpleSyncCore.classifyHistoryPage` returns. Every returned message goes
+   into the page in the server's order with whether it is a message, whether
+   it has a forward header, whether its media is a document, its caption and
+   its first file name attribute. The candidate rule and the page rule are
+   the core's. An empty page completes the scan. A stalled page, a failed or
+   unreadable page, or a page the core cannot classify ends the scan
+   unfinished, and the check then reads nothing and reports an inventory
+   built with `scanComplete` false, as the desktop does. Progress is
+   `Scanning` with the messages scanned and the server's history count.
+2. Read. One `messages.getMessages` per candidate id, in scan order. Each
+   candidate gets exactly one row:
+   - request failed: `REQUEST_FAILED`;
+   - no message, or an empty (deleted) message: `VANISHED`;
+   - another id, a service message, a message outside Saved Messages, or a
+     message that is no longer a candidate by the core's rule: `CHANGED`;
+   - declared document size 0 or less: `INVALID`, without a download;
+   - declared size over 4 MiB: `OVERSIZED`, without a download;
+   - download failed, timed out after five minutes, or the file on disk does
+     not have the declared size: `INACCESSIBLE`, never a fetched row;
+   - more than 4 MiB read from the file (at most 4 MiB + 1 bytes are read):
+     `OVERSIZED`;
+   - otherwise `FETCHED` with the bytes.
+   Rows past the candidate check keep the document's real id and the edit
+   date (0 when the message was never edited). Progress is `Reading` with
+   rows done and candidates total.
+3. Queue. After the reads the check asks whether the send queue holds a sync
+   record (below) and reports it as `sendQueued`. It logs
+   `inventory.summary()` (records and bytes) with that answer; there is no
+   byte cap.
+
+## Record privacy
+
+Every sync record download is
+`FileLoader.loadFile(document, parent, PRIORITY_NORMAL_UP, ImageLoader.CACHE_TYPE_CACHE)`,
+cache type 1, with a `MessageObject` parent that is not put in the
+Downloads list. For that cache type `FileLoader.loadFileInternal` keeps the
+store directory at `getDirectory(MEDIA_DIR_CACHE)` under the attach name
+(`<dc>_<document id>.json`); only cache type 0, 10 or a story can pick the
+Telegram Documents or Telegram Files directories. `MEDIA_DIR_CACHE` is
+`AndroidUtilities.getCacheDir()`: the app's external cache
+(`Android/data/org.purple.telegram/cache`) when external storage is
+mounted, else the internal cache, with a `.nomedia` file so the media
+scanner skips it. Before downloading, the reader looks only at that same
+cache path (`getPathToAttach(document, true)`) and uses a file there only
+when its size matches the document. The gallery copy in `ImageLoader`
+applies only to `.mp4` and `.jpg` files. On Android 10 and lower, apps with
+the storage permission can read the external cache, as they can every
+other Telegram cache file.
+
+If another part of the app is already downloading the same document with
+cache type 0 (for example the chat's auto-download), FileLoader joins that
+operation and the file lands where that operation stores it; the reader then
+reads the file named in the `fileLoaded` notification.
+
+Sending is different: after a confirmed send, Telegram moves an attachment
+that lives under `MEDIA_DIR_CACHE` to the sent document's normal path
+(`getPathToAttach(document, false)`, the Telegram Documents directory), as it
+already does for the manual `settings.toml` send. On Android 11 and later
+that directory is app-specific external storage; on Android 10 and lower it
+is `Telegram/Telegram Documents` in shared storage.
+
+## Send queue
+
+`sendQueued` is true while Saved Messages holds a local copy of a sync
+record that Telegram is still sending, will resend at the next start, or
+failed to send and shows with a Retry action. The client reads
+`messages_v2` rows of the account's own dialog with a negative (local)
+message id, on `MessagesStorage`'s own queue through its public
+`getDatabase()` and `getStorageQueue()`, so no upstream code changes for
+it. Telegram keeps every unsent local message there: `send_state` 1 while
+sending and for the rows it resends at start
+(`MessagesStorage.getUnsentMessages` selects `mid < 0 AND send_state = 1`),
+and 2 after a failure (`markMessageAsSendError`). A sent message gets its
+positive server id. `PurpleSyncPost.holdsSyncRecord` then requires a
+negative id, the own dialog, state 1 or 2 and a file name attribute equal
+to `Purple settings sync.json`. A query that fails counts as held.
+
+It matches the file name, as the desktop does, rather than the staging
+directory: a failed copy whose staged file was pruned or cleared from the
+cache still sits in Saved Messages with a Retry action, and matching the name
+keeps both clients' refusals the same. A file of that name sent by hand is
+also counted; that only delays Finish sending. The post names its file with
+the same constant, so what is sent and what is matched cannot drift apart,
+and the host test checks that the name and the caption are candidates under
+the core's rule.
+
+The one gap is the preparation step: between the hand-off and the local
+message (Telegram prepares the document on its global queue first), the copy
+is not in the table yet. That is normally milliseconds. A second post in that
+window would be byte identical, which the core accepts as a duplicate.
+
+## Post
+
+1. Validate: 1 byte to 256 KiB, and `inspectConfigRecord` must call it a
+   valid config record whose canonical bytes are the staged bytes. Otherwise
+   `InvalidRecord`.
+2. Stage: prune staging directories older than 30 days (as the manual send
+   does for its own), then write
+   `<MEDIA_DIR_CACHE>/purple-sync-records/<UUID>/Purple settings sync.json`
+   and read it back. The staging copy must be outside the app's internal
+   data directory, which Telegram refuses to send from. A staging failure is
+   `OutcomeUnknown` and sends nothing.
+3. Hand off on the main thread:
+   `SendMessagesHelper.prepareSendingPurpleDocument(account, path, "#purplesync", ownUserId, "application/json", receipt)`.
+4. Receipt. A preparation failure removes the staging copy; it and a failed
+   send (no server id) are `OutcomeUnknown`, and a failed copy keeps its
+   staged file for Telegram's Retry. With a server id, the staging directory
+   is removed if Telegram moved the file away, then that one message is read
+   back through the reader (so through the private cache download). Exactly
+   the staged bytes give `Confirmed` with the id and the read-back bytes. A
+   failed request or download is `OutcomeUnknown`; any other read-back
+   (different bytes, vanished, changed) is `NeedsReview`. Both carry the
+   message id.
+5. `cancel()` before the hand-off is `Cancelled` and removes the staging
+   copy; after it, `OutcomeUnknown`, and a late receipt is ignored. The
+   next check finds the record (PendingFound) or Finish sending posts it
+   again.
+
+The legacy `PurpleSync.receiptForRetry` keeps ignoring records: it needs the
+file name `settings.toml` and the `purple-sync` staging directory.
+
+## Upstream edit
+
+`SendMessagesHelper.prepareSendingPurpleDocument` (a Purple method) gained a
+`mime` parameter and passes it on in place of the fixed `"text/plain"`. In
+`prepareSendingDocumentInternal` that argument was read only for a content
+URI without a path, so the manual `settings.toml` send, which now passes
+`null`, builds exactly the same document as before. One upstream
+addition sets the new document's `mime_type` to the given value when the
+call carries a send receipt (only the Purple sender passes one) and a mime,
+right after the extension-based mime is chosen.
+
+## Tests
+
+`TMessagesProj/jni/purple_jni/tests/run_sync_transport.sh` builds the core
+bridges as a host library (the same recipe as `run_config_sync_bridge.sh`)
+and runs `PurpleSyncTransportTest` against a scripted client with one
+deterministic queue for the main, transport, network and storage threads. It
+covers the happy check with paging offsets, progress and review of the
+result; an empty history; a stalled page; a failed first or second page;
+every reader outcome, including oversized before and after the download and
+exactly 4 MiB; cancel during a page, a message request and a download;
+account changes at each step; a stale generation; the send queue rule for
+sending, unsent, failed, sent, other names and an unreadable queue; a step
+that throws; and posts that confirm, are invalid, lose their receipt, fail,
+fail to prepare, throw at the hand-off, read back other bytes, vanish, fail
+the read-back request or download, are cancelled before start, before the
+hand-off or during the read-back, lose the account before or after the
+hand-off, prune old staging directories, and replace a running check.
+`PURPLE_SYNC_TRANSPORT_SOURCES` points the build at another copy of the
+transport sources, for mutation runs.
+
+Only an APK and a live account prove `PurpleSyncTelegramClient`: that the
+history and message requests return what the scan and reader expect, that
+the download lands in the external cache, that a sending, failed and
+restart-pending copy each show up in the `messages_v2` query, and that the
+posted document carries `application/json`.
