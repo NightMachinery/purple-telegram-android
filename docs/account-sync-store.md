@@ -1,11 +1,12 @@
 # Android account sync local store
 
-`PurpleAccountSyncStore` is an uncalled, device-local foundation for one
-opted-in account sync owner. Its default root is
+`PurpleAccountSyncStore` is the device-local store for one opted-in account
+sync owner. Its default root is
 `ApplicationLoader.getFilesDirFixed()/purple/sync`. An off-state `open` does not
 create `purple` or `sync`. The store does no Telegram I/O and is not an
-account-sync runtime. A future owner must provide the selected account, current
-device identity, a core-initialized bound state, and records built by the core.
+account-sync runtime. Its owners, `PurpleSyncApply` and `PurpleSyncPublisher`
+under the manual sync screen, provide the selected account, current device
+identity, a core-initialized bound state, and records built by the core.
 
 The owner must keep one store handle open while using it, close it on logout or
 shutdown, and treat every status other than `Ready` or an expected `NoPending`
@@ -64,7 +65,8 @@ Crash boundaries:
 AtomicFile and stream syncing protect ordinary process-crash boundaries, but
 this does not promise power-loss durability or parent-directory syncing. The
 store has no automatic repair of an orphan, missing stage, or ambiguous file.
-The future runtime needs a user-visible recovery route for those verdicts.
+The sync screen reports those verdicts as a store error that changes nothing;
+a user-visible recovery route for them is still future work.
 
 Run `TMessagesProj/jni/purple_jni/tests/run_account_sync_store.sh` for the
 host Java state-machine test. It compiles the production store against small
@@ -79,7 +81,7 @@ acknowledgement test.
 
 ## Settings History
 
-`PurpleSyncHistory` is a separate, equally uncalled store for copies of
+`PurpleSyncHistory` is a separate store for copies of
 `settings.toml` that sync will keep before it replaces the file. It lives in
 `ApplicationLoader.getFilesDirFixed()/purple/sync-history`, a sibling of the
 store root, because the store refuses any name in its root other than its own
@@ -333,3 +335,87 @@ verdict, and covers a crash after the file write followed by adopt, History
 failure, stale stamps, join failures, Finish sending and StillSending, lost
 receipts, two devices interleaving, the Undo rules, account changes mid-flow,
 stale callbacks and the main-thread write handoff.
+
+## Sync across devices screen
+
+`PurpleSyncActivity` is Settings → Purple → Sync across devices. It is built
+with the settings screen's `currentAccount` and names that account's user in
+its header. There is no account list: to sync another account, switch to it
+with Telegram's account switcher first. The screen builds one
+`PurpleSyncTelegramTransport` for that account and user, and one
+`PurpleSyncRunner` over it, when it is created, and closes the runner when it
+is destroyed. Closing cancels a running check and abandons a publisher that
+has not posted yet; a post already handed to Telegram keeps going in
+Telegram's queue, and a later check offers Finish sending for it.
+
+The screen shows, in order: the status line; the action row, when the current
+review offers an action and nothing is running; **Undo last update**, while
+the runner holds an Undo offer; **Check Saved Messages**, disabled while
+something runs or when the account no longer has the screen's user;
+**Cancel check**, while a check runs; the intro with the cloud disclosure; and
+**History**. `PurpleSyncText` words every status: the review's message comes
+from the core, the sentence from `strings.xml` (`PurpleSync*` resources), in
+the desktop's English except where Android has no account list.
+
+What each action does:
+
+- **Publish settings** (Empty), **Publish changes** (LocalChanges) and
+  **Finish sending** (Pending) first run a new check, reported as "Checking
+  Saved Messages again before sending". If the fresh review offers the same
+  action, a confirmation with the cloud disclosure follows; otherwise the
+  status says that Saved Messages or this device changed and nothing was
+  sent. Confirming Publish or Publish changes applies with no remote choice,
+  which joins a device that has no sync state yet, and publishes the returned
+  post ticket on that fresh check. Confirming Finish sending publishes
+  `PostRequest.finishSending()` on it.
+- **Join sync** (Adopt on a device with no sync state) asks with the
+  disclosure, then applies with no remote choice. Nothing is posted.
+- Adopt on a joined device happens inside the runner's review, without a
+  button; if recording it fails, the failure is worded above the status.
+- **Review update** (UpdateReady) and **Choose settings** (Choose and
+  Conflict) open `PurpleSyncReviewDialog`: the source device and time, a
+  summary of the change against this device's text (at most six entries, then
+  "and N more", or line counts when either side is not valid TOML), a
+  **Show lines** toggle over a monospace diff of at most 400 lines with any
+  truncation noted, the newer-schema warning when the chosen record carries
+  it, and, when the choice posts or the device has not joined yet, the
+  disclosure. Choose and Conflict offer each version as a radio row
+  ("<device> · changed <time>", and "This device's settings" when the local
+  file can be kept). The positive button says Apply, Use this version, Use
+  and share, Join with this version or Join and share. The diff is computed
+  on the runner's queue.
+- A choice that also posts (the runner's `freshCheckFirst` ticket) writes the
+  file, runs a new check and publishes the ticket's request on that check.
+  Cancelling that check says the chosen settings are on this device but were
+  not sent.
+- A publish ends in the publisher's result, and the action row disappears
+  until the next check.
+
+A confirmation or a review choice that arrives after the check the screen
+showed stopped being the runner's `current()` (another check, an apply, a
+restore) does nothing and says that the check result changed. The runner
+also refuses such a Check with `Stale`.
+
+After an apply that wrote the file, a bulletin says "Settings updated from
+<device>." and, when the History copy can be put back, carries an Undo
+button; the Undo last update row appears too. Both ask for confirmation,
+then call `runner.undo`, and the runner decides when the offer ends.
+
+`PurpleSyncHistoryActivity` lists History newest first as
+"<date time> · <label>". The label is worded from the entry's reason and its
+stored label: the source device for an apply, and the restored entry's time,
+read from its id, for a restore or undo. Entries recorded when settings.toml
+did not exist end in "no file" and cannot be restored. Tapping an entry
+previews it against the current file with the same summary and diff, and
+offers Restore when the copy is valid UTF-8 text and the current file is
+readable. Restore asks for confirmation in a second dialog shown with
+`show()` over the preview, because `BaseFragment.showDialog` dismisses the
+dialog already on screen. A restore closes History, and the sync screen says
+the change stays on this device until it is published.
+
+Every action first checks that the account still has the user the screen was
+built for, and so does the screen when it resumes. When the user is gone the
+status says the account is unavailable and a running check is cancelled.
+
+The screen is Android-only code and has no host test; the APK build compiles
+it and the emulator smoke run drives it.

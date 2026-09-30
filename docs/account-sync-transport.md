@@ -3,8 +3,9 @@
 `PurpleSyncTelegramTransport` implements `PurpleSyncTransport` (the contract
 is in `docs/account-sync-store.md`, "Sync transport contract") against
 Telegram for one account slot and one user id:
-`new PurpleSyncTelegramTransport(account, userId)`. Nothing calls it yet; the
-sync screen will.
+`new PurpleSyncTelegramTransport(account, userId)`. The Sync across devices
+screen builds one per visit for its account and user and hands it to its
+`PurpleSyncRunner`.
 
 The work is split so that everything except Telegram's own calls runs in a
 host test:

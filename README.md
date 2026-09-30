@@ -392,11 +392,39 @@ rather than jumping them to the top of the main list.
 preset as its subtitle, the schedule, the Local Premium switch, the
 hide-from-suggestions switch, this device's name and id, and a section for the
 settings file - an editor,
-Send to Saved Messages (the desktop's shape and caption, so either client can
-import it), a check of Saved Messages for a newer file, Import from a file,
-Share the file, and the path with a tap to copy. Every switch on it is written
-into `settings.toml` through the same splice the desktop uses and read back
-from it, so a refused write leaves the switch where the file is.
+Sync across devices (below), Send to Saved Messages (the desktop's shape and
+caption, so either client can import it), a check of Saved Messages for a newer
+file, Import from a file, Share the file, and the path with a tap to copy.
+Every switch on it is written into `settings.toml` through the same splice the
+desktop uses and read back from it, so a refused write leaves the switch where
+the file is.
+
+**Sync across devices** is manual settings sync for the account the settings
+screen belongs to. It names that account at the top; to sync another account,
+switch to it with Telegram's own account switcher first. **Check Saved
+Messages** reads every sync record in that account's Saved Messages and ends
+in one status line and at most one action, decided by the same shared core as
+the desktop's Sync across devices box: **Publish settings** when the account
+has no settings records yet, **Join sync** when another device already has
+exactly these settings, **Review update** when a newer version from another
+device is ready, **Choose settings** when devices disagree or their histories
+are unrelated, **Publish changes** after this device's settings changed, and
+**Finish sending** when an earlier post from this device may not have
+finished. A device that already syncs records a matching version silently.
+Nothing changes on the phone without a review that names the source device
+and its time, summarizes the change by TOML table and, on request, shows the
+line diff (up to 400 lines). Nothing is sent without a check taken on that tap
+and a confirmation that repeats the cloud disclosure: the file may contain
+chat IDs and names, and Saved Messages is a Telegram cloud chat that every
+signed-in session can read. Before sync replaces `settings.toml`, the old file
+goes to **History**. An update that wrote the file offers Undo, both in the
+notice that says so and as an **Undo last update** row, after a confirmation,
+and History restores any kept copy after a confirmation. Undo and restore stay
+on this device until you publish them. Leaving the screen cancels a running
+check; a post already handed to Telegram stays in Telegram's queue, and a
+later check offers Finish sending, which confirms that post rather than
+sending it again. The older Send, Check and Import
+rows and the auto-send switch below work as before.
 
 The shared core now includes config version and remote-head classification,
 strict JSON canonicalization, validated uncompressed sync envelopes, and
@@ -472,31 +500,31 @@ and `compareSpaceIds`. The formatter takes an explicit Telegram server-time
 estimate in milliseconds, draws 10 bytes with Java `SecureRandom`, and
 rejects zero or values outside the core's 48-bit range. It never substitutes
 the device clock. The comparison result reports -1, 0 or 1 in `comparison`;
-invalid IDs return an invalid result. No account runtime path calls these
-helpers yet. The core also validates device-local sync state and checks for
+invalid IDs return an invalid result. Joining sync from the sync screen
+calls the formatter when it starts a new space; nothing calls the comparison
+yet. The core also validates device-local sync state and checks for
 cloned or rewound installs. Its pure directory resolver groups candidates by
 space, stream and install, and marks duplicate or ambiguous heads without
 Telegram I/O. The pure publish planner selects the next action only after
-account binding, complete discovery, and own-record reconciliation. The
-uncalled `PurpleSyncCore` reaches the core's whole settings sync flow through
+account binding, complete discovery, and own-record reconciliation.
+`PurpleSyncCore` reaches the core's whole settings sync flow through
 a stateless JNI bridge: history page classification, review with its wording
 and choices, diff, apply planning and completion, the config data commit
 check, and publish planning with the send-queue check. `PurpleSyncInventory`
 carries one check's candidates to it, and `PurpleSyncTransport` defines the
 Telegram side (scan, read, post, cancel) and its main-thread callback
-contract. The equally uncalled `PurpleSyncTelegramTransport` implements it:
+contract. `PurpleSyncTelegramTransport` implements it:
 it scans Saved Messages with the core's candidate rule, reads every
 candidate again, downloads records only into Telegram's private cache,
 reports whether an unsent or failed record post still sits in Saved
 Messages, and posts a record as `Purple settings sync.json` with
 `#purplesync` and `application/json`, then reads that message back. It is
 described in `docs/account-sync-transport.md` and tested by
-`TMessagesProj/jni/purple_jni/tests/run_sync_transport.sh`. Nothing shows the
-flow yet; the bridge and the contract are described in
+`TMessagesProj/jni/purple_jni/tests/run_sync_transport.sh`. The bridge and
+the contract are described in
 `docs/account-sync-store.md`, and
 `TMessagesProj/jni/purple_jni/tests/run_config_sync_bridge.sh` holds the
-bridge to the core's flow tests on macOS. The uncalled
-`PurpleAccountSyncStore` now keeps bound state and canonical pending config
+bridge to the core's flow tests on macOS. `PurpleAccountSyncStore` keeps bound state and canonical pending config
 records under the app-private `purple/sync` directory, with exclusive ownership
 and fail-closed crash recovery. It also commits the config data an apply
 adopts, after the core's commit check, and tells an unjoined check whether any
@@ -504,7 +532,7 @@ sync state exists without creating the directory. Its exact operations and
 recovery verdicts are documented in `docs/account-sync-store.md`. Compressed envelopes remain
 future work.
 
-Beside that store sits the uncalled `PurpleSyncHistory`, which keeps copies of
+Beside that store sits `PurpleSyncHistory`, which keeps copies of
 `settings.toml` in the app-private `purple/sync-history` directory before a
 sync update, choice, restore or undo replaces the file. It follows the
 desktop's rules: each entry is the exact bytes plus JSON metadata, named by
@@ -512,14 +540,14 @@ creation milliseconds and a random suffix; an entry is valid only while both
 files are owner-only regular files and the bytes still match the recorded
 size and the core's settings fingerprint; at most 30 are kept, and the entry
 a restore names is always among them. The fingerprint and the config version key
-check come from the core through the settings sync flow bridge. The equally
-uncalled `PurpleSyncSettingsFile` reads `settings.toml` the way sync must: present only
+check come from the core through the settings sync flow bridge.
+`PurpleSyncSettingsFile` reads `settings.toml` the way sync must: present only
 as a regular file of at most 256 KiB, never through a symlink, and invalid
 rather than absent when it breaks either rule. It writes through the same
 replacement as an import (or, for a restore, an editor save), so the backup,
 reload and auto-send bookkeeping stay as they are, then reads the file back.
 
-The uncalled `PurpleSyncRunner` drives manual settings sync for one account
+`PurpleSyncRunner` drives manual settings sync for one account
 over any `PurpleSyncTransport`. It runs one step at a time, drops callbacks
 from a cancelled or superseded step, and checks before every write that the
 account still has the user it started with. `PurpleSyncApply` joins, applies,
@@ -531,7 +559,12 @@ instead of posting it again, and does not post while an earlier sync post is
 still in Telegram's send queue. The threading, write order and Undo rules are
 in `docs/account-sync-store.md`, and
 `TMessagesProj/jni/purple_jni/tests/run_sync_executors.sh` tests all three on
-macOS against the real core and a fake transport.
+macOS against the real core and a fake transport. The Sync across devices
+screen (`PurpleSyncActivity`, with `PurpleSyncReviewDialog` and
+`PurpleSyncHistoryActivity`) holds one runner and one Telegram transport per
+visit and closes both when it closes. Which sentence it shows comes from the
+core; the wording is in `strings.xml`, through `PurpleSyncText`. The screen is
+described in `docs/account-sync-store.md`.
 
 **Send to Saved Messages after every save** on the same screen is `[sync]
 send_after_save_p`, off until you turn it on because sending is a message in a
