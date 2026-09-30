@@ -223,14 +223,19 @@ way:
 - `post(staged, done)` sends the exact staged bytes and finishes with
   `Confirmed` (a positive message id and the server's read-back bytes),
   `OutcomeUnknown`, `NeedsReview`, `Cancelled` or `InvalidRecord`.
-- `cancel()` stops the running call.
+  `Cancelled` means nothing was handed to Telegram.
+- `cancel()` stops the running call. A new `check` or `post` replaces the
+  one still running, which then ends as if cancelled.
 
 Every method may be called from any thread; the implementation moves work to
 its own threads. `done` is called exactly once per call, on the main thread,
 and never synchronously inside `check` or `post`. `progress` is called zero or
 more times before `done`, also on the main thread, with the phase (Scanning
 or Reading) and counts. After `cancel()`, `done` still arrives once, with
-`Cancelled`, unless it had already been delivered.
+`Cancelled`, unless it had already been delivered; a post already handed to
+Telegram reports `OutcomeUnknown` instead, since the message may still
+arrive. The Telegram implementation, `PurpleSyncTelegramTransport`, is
+described in `docs/account-sync-transport.md`.
 
 Run `TMessagesProj/jni/purple_jni/tests/run_config_sync_bridge.sh` on macOS
 to build both bridges and the flow sources against Qt Core and exercise

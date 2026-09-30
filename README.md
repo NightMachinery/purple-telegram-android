@@ -484,8 +484,16 @@ and choices, diff, apply planning and completion, the config data commit
 check, and publish planning with the send-queue check. `PurpleSyncInventory`
 carries one check's candidates to it, and `PurpleSyncTransport` defines the
 Telegram side (scan, read, post, cancel) and its main-thread callback
-contract. Nothing implements that transport or shows the flow yet; both are
-described in `docs/account-sync-store.md`, and
+contract. The equally uncalled `PurpleSyncTelegramTransport` implements it:
+it scans Saved Messages with the core's candidate rule, reads every
+candidate again, downloads records only into Telegram's private cache,
+reports whether an unsent or failed record post still sits in Saved
+Messages, and posts a record as `Purple settings sync.json` with
+`#purplesync` and `application/json`, then reads that message back. It is
+described in `docs/account-sync-transport.md` and tested by
+`TMessagesProj/jni/purple_jni/tests/run_sync_transport.sh`. Nothing shows the
+flow yet; the bridge and the contract are described in
+`docs/account-sync-store.md`, and
 `TMessagesProj/jni/purple_jni/tests/run_config_sync_bridge.sh` holds the
 bridge to the core's flow tests on macOS. The uncalled
 `PurpleAccountSyncStore` now keeps bound state and canonical pending config
