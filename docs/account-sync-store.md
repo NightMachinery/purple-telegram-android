@@ -389,9 +389,11 @@ What each action does:
 - **Publish settings** (Empty), **Publish changes** (LocalChanges) and
   **Finish sending** (Pending) first run a new check, reported as "Checking
   Saved Messages again before sending". If the fresh review offers the same
-  action, a confirmation with the cloud disclosure follows; otherwise the
-  status says that Saved Messages or this device changed and nothing was
-  sent. Confirming Publish or Publish changes applies with no remote choice,
+  action, a confirmation with the cloud disclosure follows, but only while
+  the sync screen is in front: when History or another screen covers it, or
+  the app is in the background, the review shows its action row instead, to
+  be tapped again. Otherwise the status says that Saved Messages or this
+  device changed and nothing was sent. Confirming Publish or Publish changes applies with no remote choice,
   which joins a device that has no sync state yet, and publishes the returned
   post ticket on that fresh check. Confirming Finish sending publishes
   `PostRequest.finishSending()` on it.
