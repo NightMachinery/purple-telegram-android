@@ -20,6 +20,7 @@ BuildPath="$(mktemp -d "${TMPDIR:-/tmp}/purple-sync-transport.XXXXXX")"
 trap 'command rm -rf "$BuildPath"' EXIT
 
 JavaSources="${PURPLE_SYNC_TRANSPORT_SOURCES:-$Java}"
+DownloadController="${PURPLE_DOWNLOAD_CONTROLLER:-$Root/TMessagesProj/src/main/java/org/telegram/messenger/DownloadController.java}"
 
 clang++ -std=c++20 -g -O1 -dynamiclib \
     -o "$BuildPath/libpurplecore_sync.dylib" \
@@ -50,6 +51,7 @@ javac -Xlint:all,-options,-restricted -Werror -d "$BuildPath" -cp "$Json" \
     "$Tests/config_sync_bridge/org/telegram/messenger/purple/PurpleCore.java" \
     "$Tests/config_sync_bridge/org/telegram/messenger/purple/PurpleSyncSettingsFile.java" \
     "$Tests/sync_transport/org/telegram/messenger/purple/PurpleSyncTelegramClient.java" \
+    "$Tests/sync_transport/org/telegram/tgnet/TLRPC.java" \
     "$Java/PurpleAccountBinding.java" \
     "$Java/PurpleAccountSyncCore.java" \
     "$Java/PurpleSyncCore.java" \
@@ -61,8 +63,14 @@ javac -Xlint:all,-options,-restricted -Werror -d "$BuildPath" -cp "$Json" \
     "$JavaSources/PurpleSyncCheck.java" \
     "$JavaSources/PurpleSyncPost.java" \
     "$JavaSources/PurpleSyncTelegramTransport.java" \
-    "$Tests/sync_transport/org/telegram/messenger/purple/PurpleSyncTransportTest.java"
+    "$JavaSources/PurpleSyncAutoDownload.java" \
+    "$Tests/sync_transport/org/telegram/messenger/purple/PurpleSyncTransportTest.java" \
+    "$Tests/sync_transport/org/telegram/messenger/purple/PurpleSyncAutoDownloadTest.java"
 java --enable-native-access=ALL-UNNAMED -cp "$BuildPath:$Json" \
     -Djava.io.tmpdir="$BuildPath" \
     -Dpurple.core.dylib="$BuildPath/libpurplecore_sync.dylib" \
     org.telegram.messenger.purple.PurpleSyncTransportTest
+java --enable-native-access=ALL-UNNAMED -cp "$BuildPath:$Json" \
+    -Dpurple.core.dylib="$BuildPath/libpurplecore_sync.dylib" \
+    -Dpurple.download.controller="$DownloadController" \
+    org.telegram.messenger.purple.PurpleSyncAutoDownloadTest

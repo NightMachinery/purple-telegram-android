@@ -515,7 +515,10 @@ carries one check's candidates to it, and `PurpleSyncTransport` defines the
 Telegram side (scan, read, post, cancel) and its main-thread callback
 contract. `PurpleSyncTelegramTransport` implements it:
 it scans Saved Messages with the core's candidate rule, reads every
-candidate again, downloads records only into Telegram's private cache,
+candidate again, downloads records only into Telegram's private cache
+(Telegram's own auto-download skips any document named
+`Purple settings sync.json` or `Purple playlists sync.json`, so opening Saved
+Messages does not copy records into Telegram Files; a tap still downloads one),
 reports whether an unsent or failed record post still sits in Saved
 Messages, and posts a record as `Purple settings sync.json` with
 `#purplesync` and `application/json`, then reads that message back. It is
