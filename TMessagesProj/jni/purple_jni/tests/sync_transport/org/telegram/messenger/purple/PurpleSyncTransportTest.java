@@ -2,6 +2,8 @@ package org.telegram.messenger.purple;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.ref.Reference;
+import java.lang.ref.WeakReference;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayDeque;
@@ -1269,6 +1271,38 @@ public final class PurpleSyncTransportTest {
         check(recorder.posts.size() == 1);
         check(recorder.post().status == PurpleSyncTransport.PostStatus.OutcomeUnknown);
         check(reading.cancelledTokens.equals(Arrays.asList(reading.lookupTokens.get(0))));
+
+        begin("post cancelled after hand-off lets go of its callback");
+        final Fake held = new Fake();
+        final WeakReference<Recorder> released = cancelAfterHandOff(held, staged);
+        check(held.sent.size() == 1);
+        check(collected(released));
+        Reference.reachabilityFence(held);
+    }
+
+    private static WeakReference<Recorder> cancelAfterHandOff(Fake fake,
+            byte[] staged) {
+        final Recorder recorder = new Recorder(fake);
+        final PurpleSyncTelegramTransport transport = new PurpleSyncTelegramTransport(fake);
+        startPost(fake, recorder, transport, staged);
+        transport.cancel();
+        fake.pump();
+        check(recorder.posts.size() == 1);
+        check(recorder.post().status == PurpleSyncTransport.PostStatus.OutcomeUnknown);
+        return new WeakReference<>(recorder);
+    }
+
+    private static boolean collected(WeakReference<?> reference) {
+        for (int i = 0; i != 100 && reference.get() != null; ++i) {
+            System.gc();
+            try {
+                Thread.sleep(10);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        return reference.get() == null;
     }
 
     private static File[] seedStaging(File root, long now, boolean young)

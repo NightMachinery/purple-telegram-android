@@ -220,7 +220,9 @@ window would be byte identical, which the core accepts as a duplicate.
 5. `cancel()` before the hand-off is `Cancelled` and removes the staging
    copy; after it, `OutcomeUnknown`, and a late receipt is ignored. The
    next check finds the record (PendingFound) or Finish sending posts it
-   again.
+   again. A post drops its `done` callback once it has reported, so the
+   receipt Telegram holds until the message is sent or fails keeps only the
+   post itself, not the publisher, runner and sync screen behind it.
 
 The legacy `PurpleSync.receiptForRetry` keeps ignoring records: it needs the
 file name `settings.toml` and the `purple-sync` staging directory.
@@ -254,7 +256,9 @@ step that throws; and posts that confirm, are invalid, lose their receipt,
 fail, fail to prepare, throw at the hand-off, read back other bytes, vanish,
 fail the read-back request or download, are cancelled before start, before
 the hand-off or during the read-back, lose the account before or after the
-hand-off, prune old staging directories, and replace a running check. It
+hand-off, prune old staging directories, and replace a running check. A post
+cancelled after the hand-off must leave its caller's callback collectable
+while the client still holds the receipt. It
 also checks where the record is staged: under the external files directory
 next to a `.nomedia` file, never under the cache, with nothing sent when
 there is no external files directory, and old copies pruned from both roots.
