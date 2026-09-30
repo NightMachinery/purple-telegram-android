@@ -11722,6 +11722,7 @@
     <string name="PurpleSyncChooseIntro">Nothing changes until you choose. If you pick another device\'s version, this device\'s current file is kept in History; the other devices keep their own records.</string>
     <string name="PurpleSyncOptionDevice">%1$s · changed %2$s</string>
     <string name="PurpleSyncOptionThisDevice">This device\'s settings</string>
+    <string name="PurpleSyncOptionChanged">changed %1$s</string>
     <string name="PurpleSyncNothingToChoose">Nothing can be chosen from this check. Check again.</string>
     <string name="PurpleSyncCompareApply">Applying changes this device\'s settings like this:</string>
     <string name="PurpleSyncCompareUse">If you use this version, this device\'s settings change like this:</string>

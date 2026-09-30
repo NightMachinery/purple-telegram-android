@@ -398,11 +398,13 @@ What each action does:
   **Show lines** toggle over a monospace diff of at most 400 lines with any
   truncation noted, the newer-schema warning when the chosen record carries
   it, and, when the choice posts or the device has not joined yet, the
-  disclosure. Choose and Conflict offer each version as a radio row
-  ("<device> · changed <time>", and "This device's settings" when the local
-  file can be kept). The positive button says Apply, Use this version, Use
-  and share, Join with this version or Join and share. The diff is computed
-  on the runner's queue.
+  disclosure. Choose and Conflict offer each version as a radio row: the
+  device name with "changed <time>" on a second line, so a long name cannot
+  push the time out of view, and "This device's settings" when the local
+  file can be kept. An update names its one version on a single line,
+  "<device> · changed <time>". The positive button says Apply, Use this
+  version, Use and share, Join with this version or Join and share. The diff
+  is computed on the runner's queue.
 - A choice that also posts (the runner's `freshCheckFirst` ticket) writes the
   file, runs a new check and publishes the ticket's request on that check.
   Cancelling that check says the chosen settings are on this device but were

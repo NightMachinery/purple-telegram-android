@@ -189,7 +189,15 @@ final class PurpleSyncReviewDialog {
                 cell.setPadding(dp(4), 0, dp(4), 0);
                 cell.setCheckColor(Theme.getColor(Theme.key_radioBackground),
                         Theme.getColor(Theme.key_dialogRadioBackgroundChecked));
-                cell.setTextAndValue(optionLabel(review, choices.get(i)), i == 0);
+                final PurpleSyncCore.Choice choice = choices.get(i);
+                if (choice.key == null) {
+                    cell.setTextAndValue(getString(R.string.PurpleSyncOptionThisDevice), i == 0);
+                } else {
+                    final PurpleSyncCore.Head head = review.heads.get(choice.head);
+                    cell.setTextAndText2AndValue(PurpleSyncText.deviceName(head.name),
+                            formatString(R.string.PurpleSyncOptionChanged,
+                                    PurpleSyncText.recordTime(head.at)), i == 0);
+                }
                 cell.setBackground(Theme.getSelectorDrawable(false));
                 cell.setOnClickListener(v -> {
                     if (selected[0] == index) {
@@ -202,7 +210,8 @@ final class PurpleSyncReviewDialog {
                     select[0].run();
                 });
                 radios.add(cell);
-                layout.addView(cell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 50));
+                layout.addView(cell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT,
+                        LayoutHelper.WRAP_CONTENT));
             }
         }
         final TextView compare = label(context, layout, "", false);
