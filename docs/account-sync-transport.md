@@ -111,6 +111,14 @@ cache type 0 (for example a manual tap in the chat), FileLoader joins that
 operation and the file lands where that operation stores it; the reader then
 reads the file named in the `fileLoaded` notification.
 
+A cancel, leaving the sync screen, or the five-minute timeout also stops the
+network read: when FileLoader was not already loading that file as the
+reader asked for it, the reader started the load, so it calls
+`FileLoader.cancelLoadFile(document)`. A load that another part of the app
+started first, such as that manual tap, is left running. No host harness
+reaches this, because the transport tests replace the Telegram client with a
+fake.
+
 Telegram's own auto-download never saves a sync record. Before this rule,
 opening Saved Messages with document auto-download on saved the visible
 records to Telegram Files, as it does for any document. The emulator
