@@ -161,7 +161,7 @@ entry's time keeps save order, but then every entry saved before the real time
 passes the jump shows, for good, a time just after it. With the sequence, the
 prune follows save order in both cases and each entry still shows the time the
 clock had when it was saved, so after a clock change the list can show times
-out of order. The desktop does not do this yet.
+out of order.
 
 The fingerprint is the core's `SettingsFingerprint` and the version key check
 is the core's `IsConfigVersionKey`, both through `PurpleSyncCore`, so no hash

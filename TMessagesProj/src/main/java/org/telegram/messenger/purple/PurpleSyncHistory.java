@@ -47,11 +47,11 @@ import java.util.Set;
  * creation milliseconds, a dash and sixteen lowercase hex digits; an entry is
  * valid only when both files are private regular files and the bytes still
  * match the recorded size and fingerprint; the 30 valid entries saved last are
- * kept, plus one the caller asks to keep for the length of a save. Unlike the
- * desktop so far, the metadata records a save sequence number, one more than
- * the highest valid entry's, and list order and the prune follow it rather
- * than the clock time in the id, so a save after the clock went back is still
- * the newest while every entry keeps its true clock time.
+ * kept, plus one the caller asks to keep for the length of a save. The
+ * metadata records a save sequence number, one more than the highest valid
+ * entry's, and list order and the prune follow it rather than the clock time
+ * in the id, so a save after the clock went back is still the newest while
+ * every entry keeps its true clock time.
  *
  * The fingerprint and the version key check belong to the shared core and
  * come through the settings sync flow bridge; without the native library
