@@ -49,11 +49,15 @@ public final class PurpleSyncSettingsFile {
             this.usingLastGood = usingLastGood;
         }
 
-        /** Both describe the same usable file, or both say it is absent. */
+        /**
+         * Both describe the same usable file, or both say it is absent, and
+         * agree on whether the app runs from the last good copy.
+         */
         public boolean sameAs(Contents other) {
             return other != null
                     && status == other.status
                     && status != Status.Invalid
+                    && usingLastGood == other.usingLastGood
                     && Arrays.equals(bytes, other.bytes);
         }
     }
@@ -91,8 +95,21 @@ public final class PurpleSyncSettingsFile {
     }
 
     public static Contents read() {
-        final Contents file = read(PurpleSettings.settingsFile());
-        return new Contents(file.status, file.bytes, PurpleGate.usedLastGood());
+        return read(PurpleSettings.settingsFile(), PurpleSettings.lastGoodFile());
+    }
+
+    static Contents read(File file, File lastGood) {
+        final Contents read = read(file);
+        return new Contents(read.status, read.bytes,
+                PurpleGate.usedLastGood() || gateWouldFallBack(read, lastGood));
+    }
+
+    private static boolean gateWouldFallBack(Contents read, File lastGood) {
+        if (read.status == Status.Invalid
+                || (read.status == Status.Present && loads(read.bytes))) {
+            return false;
+        }
+        return loads(readLastGood(lastGood));
     }
 
     /**
@@ -110,13 +127,14 @@ public final class PurpleSyncSettingsFile {
 
     public static WriteResult replace(Contents expected, byte[] bytes,
             String reason, boolean fromImport) {
-        return replace(PurpleSettings.settingsFile(), expected, bytes, reason,
+        return replace(PurpleSettings.settingsFile(),
+                PurpleSettings.lastGoodFile(), expected, bytes, reason,
                 fromImport, PurpleSettings::storeForSync);
     }
 
-    static WriteResult replace(File file, Contents expected, byte[] bytes,
-            String reason, boolean fromImport, Writer writer) {
-        if (expected == null || !read(file).sameAs(expected)) {
+    static WriteResult replace(File file, File lastGood, Contents expected,
+            byte[] bytes, String reason, boolean fromImport, Writer writer) {
+        if (expected == null || !read(file, lastGood).sameAs(expected)) {
             return new WriteResult(WriteStatus.Changed, null);
         }
         return write(file, bytes, reason, fromImport, writer);
@@ -180,5 +198,28 @@ public final class PurpleSyncSettingsFile {
 
     private static Contents invalid() {
         return new Contents(Status.Invalid, new byte[0]);
+    }
+
+    private static boolean loads(byte[] text) {
+        if (text == null) {
+            return false;
+        }
+        try {
+            return PurpleCore.parse(text).ok;
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return false;
+        }
+    }
+
+    private static byte[] readLastGood(File file) {
+        if (!file.exists() || file.length() > PurpleSettings.MAX_SIZE) {
+            return null;
+        }
+        try {
+            return PurpleSettings.readAll(file);
+        } catch (IOException e) {
+            return null;
+        }
     }
 }

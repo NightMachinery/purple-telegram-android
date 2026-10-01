@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 
 public final class PurpleSettings {
+    public static final long MAX_SIZE = 4 * 1024 * 1024;
     static File file;
     static int calls;
     static String lastReason;
@@ -15,6 +16,14 @@ public final class PurpleSettings {
 
     public static File settingsFile() {
         return file;
+    }
+
+    public static File lastGoodFile() {
+        return new File(file.getParentFile(), "settings.toml.good");
+    }
+
+    static byte[] readAll(File file) throws IOException {
+        return Files.readAllBytes(file.toPath());
     }
 
     static boolean storeForSync(byte[] bytes, String reason, boolean fromImport) {

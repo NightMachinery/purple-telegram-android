@@ -284,15 +284,15 @@ The calls, in the order a check, apply or publish uses them:
 
 Every settings file these calls take, including the pre-join file of an
 `afterJoin` request, carries `usingLastGood`. `PurpleSyncSettingsFile.read()`
-sets it from `PurpleGate.usedLastGood()`, which is true while the gate runs
-from `settings.toml.good` because `settings.toml` is missing or does not
-load. The core then refuses to sync: the review has status UsingLastGood and
-no choices, an apply of it is NeedsReview (and of a review shown before the
-fallback, NeedsRecheck), and a new-content post finishes with InvalidSettings
-(or NeedsReview while a record is staged). The one thing still allowed is
-finishing a record staged before the fallback, because posting it reads
-nothing from the file. The review offers Finish sending for it (message
-UsingLastGoodWithPending, verdict Pending) exactly when a working
+sets it when the app runs, or is about to run, from `settings.toml.good`
+because `settings.toml` is missing or does not load (the next paragraph says
+how it decides). The core then refuses to sync: the review has status
+UsingLastGood and no choices, an apply of it is NeedsReview (and of a review
+shown before the fallback, NeedsRecheck), and a new-content post finishes
+with InvalidSettings (or NeedsReview while a record is staged). The one thing
+still allowed is finishing a record staged before the fallback, because
+posting it reads nothing from the file. The review offers Finish sending for
+it (message UsingLastGoodWithPending, verdict Pending) exactly when a working
 `settings.toml` would offer it, and the screen completes it the usual way: a
 fresh check that again offers Finish sending, then a pending-only post.
 Otherwise (an incomplete check, records that need review, an Invalid file) the
@@ -300,9 +300,33 @@ screen shows plain UsingLastGood with no action, and the staged record waits
 until `settings.toml` loads again. History restore and Undo stay available as
 the way out. A restore that loads becomes the new last good copy, so the copy
 the app was running is not kept.
+
+`read()` sets the flag when `PurpleGate.usedLastGood()` is true, and also when
+the bytes this same read returned would make the gate fall back: the file is
+absent, or present but rejected by `PurpleCore.parse` (the same
+`ParseSettings` the gate's load uses), while `settings.toml.good` reads and
+parses. The second rule covers the gap between a bad save and the gate's
+reload. `PurpleWatcher` reloads 400 ms after the last close, rename, create or
+delete it sees and does not watch in-place writes at all, so until then the
+gate's flag still says the app runs from `settings.toml`. Without the second
+rule a check in that gap saw the broken or missing file with the flag clear
+and offered the usual choices; joining then wrote the synced version, and the
+reload parsed it and replaced `settings.toml.good`, so the settings the device
+had been running were lost (reproduced on the emulator). An Invalid file (a
+symlink, not a regular file, over 256 KiB, or unreadable) keeps only the
+gate's flag: the core refuses an Invalid file anyway, and the gate loads a
+symlinked file normally, so calling it a fallback would be wrong. The write of
+an apply, restore or Undo re-reads the file the same way on the UI thread just
+before replacing it, and `Contents.sameAs` compares the flag as well as the
+bytes, so a fallback that starts after the check stops the write with Changed
+(an apply then reports NeedsRecheck).
+
 `run_config_sync_bridge.sh` covers the flag on every call, and
 `run_sync_executors.sh` covers a check, an apply, a publish, a restore and a
-Finish sending while the app runs from the copy.
+Finish sending while the app runs from the copy, plus a check and a join on a
+broken or missing file before the gate's flag is set and a fallback that
+starts during an update's write. `run_sync_history.sh` covers how `read()`
+decides the flag and the write's re-read.
 
 `settingsFingerprint`, `isConfigVersionKey` and `isSettingsTextWritable`
 answer the core's plain questions about bytes and keys.
@@ -394,8 +418,9 @@ after a write is not synchronized, so a write from the queue could race them.
 The queue therefore posts `PurpleSyncSettingsFile.replace` to the main thread
 and waits for it. A write that has not started within 30 seconds is abandoned
 and reported as failed, and it never runs later. `replace` reads the file
-first and refuses with `Changed` when its bytes differ from the ones the step
-reviewed, which an apply reports as `NeedsRecheck`. An apply writes another
+first and refuses with `Changed` when its bytes, or whether the app runs from
+`settings.toml.good`, differ from what the step reviewed, which an apply
+reports as `NeedsRecheck`. An apply writes another
 device's settings, so it stores them as an import that the auto-send never
 posts back. A restore or undo skips the auto-send bookkeeping entirely, as
 the desktop's restore does: it is not recorded as an import and does not arm

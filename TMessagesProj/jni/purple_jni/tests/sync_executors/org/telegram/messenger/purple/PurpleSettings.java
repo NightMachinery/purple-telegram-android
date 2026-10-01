@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 
 public final class PurpleSettings {
+    public static final long MAX_SIZE = 4 * 1024 * 1024;
     static volatile int calls;
     static volatile String lastReason;
     static volatile boolean lastFromImport;
@@ -26,6 +27,14 @@ public final class PurpleSettings {
             hook.run();
         }
         return path();
+    }
+
+    public static File lastGoodFile() {
+        return new File(path().getParentFile(), "settings.toml.good");
+    }
+
+    static byte[] readAll(File file) throws IOException {
+        return Files.readAllBytes(file.toPath());
     }
 
     static File path() {

@@ -41,6 +41,7 @@ public final class PurpleSyncExecutorsTest {
     private static final byte[] TB3 = utf8("version = 1\n# from b, third\n");
     private static final byte[] TL = utf8("version = 1\n# local conflict\n");
     private static final byte[] TC = utf8("version = 1\n# from c\n");
+    private static final byte[] BROKEN = utf8("version = [\n");
     private static final byte[] NOT_UTF8 = { 'a', ' ', '=', ' ', '1', '\n',
         '#', ' ', (byte) 0xff, (byte) 0xfe, '\n' };
 
@@ -118,6 +119,7 @@ public final class PurpleSyncExecutorsTest {
         PurpleSettings.afterWrite = null;
         PurpleSettings.onSettingsFile = null;
         PurpleGate.lastGood = false;
+        PurpleCore.parses = text -> true;
     }
 
     private static final class Waiter<T> implements PurpleSyncRunner.Listener<T> {
@@ -386,6 +388,23 @@ public final class PurpleSyncExecutorsTest {
 
         File syncRoot() {
             return new File(purple(), "sync");
+        }
+
+        void writeLastGood(byte[] text) {
+            try {
+                Files.write(new File(purple(), "settings.toml.good").toPath(), text);
+            } catch (IOException e) {
+                throw new AssertionError(e);
+            }
+        }
+
+        byte[] lastGood() {
+            try {
+                return Files.readAllBytes(
+                        new File(purple(), "settings.toml.good").toPath());
+            } catch (IOException e) {
+                throw new AssertionError(e);
+            }
         }
 
         File historyDir() {
@@ -1697,6 +1716,75 @@ public final class PurpleSyncExecutorsTest {
         close(runner);
     }
 
+    private static void testBrokenBeforeTheGateReloads() throws Exception {
+        final Cloud cloud = new Cloud();
+        final FakeTransport transport = new FakeTransport(cloud);
+        final Phone a = new Phone("stale-flag-a", 23);
+        a.use();
+        a.write(T0);
+        final PurpleSyncRunner first = a.runner(transport);
+        check(publishAction(first).status == PurpleSyncCore.PublishStatus.Confirmed);
+        close(first);
+        final Version v1 = versionOf(cloud.last());
+
+        final Phone picker = new Phone("stale-flag-pick", 24);
+        picker.use();
+        picker.write(TL);
+        picker.writeLastGood(TL);
+        PurpleCore.parses = text -> !Arrays.equals(text, BROKEN);
+        final PurpleSyncRunner runner = picker.runner(transport);
+        final PurpleSyncRunner.Check shown = fresh(runner);
+        check(shown.review.verdict == PurpleSyncCore.Verdict.Choose);
+        check(!shown.local.usingLastGood);
+
+        picker.write(BROKEN);
+        check(!PurpleGate.usedLastGood());
+        final int writes = PurpleSettings.calls;
+        final PurpleSyncRunner.ApplyOutcome stale = apply(runner, shown, v1.key);
+        check(stale.result.status == PurpleSyncCore.ApplyStatus.NeedsRecheck);
+        final PurpleSyncRunner.Check refused = fresh(runner);
+        check(refused.local.usingLastGood);
+        check(refused.review.status == PurpleSyncCore.ReviewStatus.UsingLastGood);
+        check(refused.review.message == PurpleSyncCore.Message.UsingLastGood);
+        check(refused.review.choices.isEmpty());
+        final PurpleSyncRunner.ApplyOutcome stopped = apply(runner, refused, v1.key);
+        check(stopped.result.status == PurpleSyncCore.ApplyStatus.NeedsReview);
+        for (PurpleSyncRunner.ApplyOutcome outcome : List.of(stale, stopped)) {
+            check(!outcome.result.joined && !outcome.result.wroteFile);
+        }
+        check(PurpleSettings.calls == writes);
+        check(Arrays.equals(picker.text(), BROKEN));
+        check(Arrays.equals(picker.lastGood(), TL));
+        check(picker.state() == null && picker.history().isEmpty());
+
+        Files.delete(picker.settings().toPath());
+        final PurpleSyncRunner.Check missing = fresh(runner);
+        check(missing.local.status == PurpleSyncSettingsFile.Status.Absent);
+        check(missing.local.usingLastGood);
+        check(missing.review.status == PurpleSyncCore.ReviewStatus.UsingLastGood);
+        close(runner);
+
+        a.use();
+        a.writeLastGood(T0);
+        final PurpleSyncRunner bound = a.runner(transport);
+        final Version b1 = post(cloud, remote('b', "Android"), space(a), TB, v1);
+        final PurpleSyncRunner.Check update = fresh(bound);
+        check(update.review.verdict == PurpleSyncCore.Verdict.UpdateReady);
+        check(!update.local.usingLastGood);
+        PurpleSettings.onSettingsFile = () -> {
+            if (AndroidUtilities.UI_THREAD.equals(Thread.currentThread().getName())) {
+                PurpleGate.lastGood = true;
+            }
+        };
+        final int boundWrites = PurpleSettings.calls;
+        final PurpleSyncRunner.ApplyOutcome raced = apply(bound, update, b1.key);
+        PurpleSettings.onSettingsFile = null;
+        check(raced.result.status == PurpleSyncCore.ApplyStatus.NeedsRecheck);
+        check(!raced.result.wroteFile && PurpleSettings.calls == boundWrites);
+        check(Arrays.equals(a.text(), T0) && Arrays.equals(a.lastGood(), T0));
+        close(bound);
+    }
+
     private static void testCancelDuringReview() throws Exception {
         final Cloud cloud = new Cloud();
         final FakeTransport transport = new FakeTransport(cloud);
@@ -1833,6 +1921,7 @@ public final class PurpleSyncExecutorsTest {
         run("cancel during review", PurpleSyncExecutorsTest::testCancelDuringReview);
         run("using last good", PurpleSyncExecutorsTest::testUsingLastGood);
         run("finish sending on the last good copy", PurpleSyncExecutorsTest::testUsingLastGoodFinishSending);
+        run("broken file before the gate reloads", PurpleSyncExecutorsTest::testBrokenBeforeTheGateReloads);
         run("ui handoff", PurpleSyncExecutorsTest::testHandoff);
         System.out.println("PurpleSyncExecutorsTest: " + checks + " checks, "
                 + failures + " failures");
