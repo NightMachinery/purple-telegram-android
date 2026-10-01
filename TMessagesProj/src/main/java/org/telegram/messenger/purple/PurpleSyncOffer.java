@@ -12,6 +12,12 @@
  * the account's preferences *before* the offer is drawn, so a machine you never
  * sync sees each posted file exactly once and then never again - and a crash
  * between drawing the line and answering it cannot turn into a loop.
+ *
+ * Only the active account's Saved Messages are offered, and the offer names
+ * that account and the message's date. A file in another signed-in account,
+ * a test account say, is not this one's settings: an answer that arrives after
+ * the user switched away is dropped without being remembered, so the account
+ * is looked at again once it is back in front.
  */
 
 package org.telegram.messenger.purple;
@@ -32,7 +38,6 @@ import org.telegram.messenger.UserConfig;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.BaseFragment;
-import org.telegram.ui.Components.Bulletin;
 import org.telegram.ui.Components.BulletinFactory;
 
 import java.io.File;
@@ -83,7 +88,8 @@ public final class PurpleSyncOffer {
             // both, and an offer on top of a share sheet would be nonsense.
             return;
         }
-        if (!UserConfig.getInstance(currentAccount).isClientActivated()) {
+        if (!UserConfig.getInstance(currentAccount).isClientActivated()
+                || currentAccount != UserConfig.selectedAccount) {
             return;
         }
         synchronized (checked) {
@@ -119,7 +125,8 @@ public final class PurpleSyncOffer {
      */
     public static void checkNow(BaseFragment fragment, int currentAccount, Answer done) {
         if (fragment == null || currentAccount < 0
-                || !UserConfig.getInstance(currentAccount).isClientActivated()) {
+                || !UserConfig.getInstance(currentAccount).isClientActivated()
+                || currentAccount != UserConfig.selectedAccount) {
             done.run(false);
             return;
         }
@@ -146,9 +153,15 @@ public final class PurpleSyncOffer {
         if (message == null) {
             return false;
         }
-        final File local = PurpleSettings.settingsFile();
-        final long localStamp = local.exists() ? local.lastModified() / 1000L : 0L;
-        if (message.date <= localStamp) {
+        final PurpleSyncOfferRules.Verdict verdict = PurpleSyncOfferRules.judge(
+                account, UserConfig.selectedAccount, true,
+                message.id, message.date, 0, localStamp());
+        if (verdict == PurpleSyncOfferRules.Verdict.INACTIVE_ACCOUNT) {
+            forget(account);
+            FileLog.d("Purple: sync check: account " + account + " is no longer the active one.");
+            return false;
+        }
+        if (verdict == PurpleSyncOfferRules.Verdict.NOT_NEWER) {
             // Not newer, so nothing to offer. The id still moves on for the
             // same reason the launch check moves it: this message will not
             // become worth offering later either.
@@ -156,19 +169,39 @@ public final class PurpleSyncOffer {
             FileLog.d("Purple: sync check: msg " + message.id + " is not newer than the local file.");
             return false;
         }
-        if (!BulletinFactory.canShowBulletin(fragment)) {
+        return show(fragment, account, message);
+    }
+
+    private static boolean show(BaseFragment fragment, int account, TLRPC.Message message) {
+        final String from = PurpleSettings.accountLabel(account);
+        if (from == null || !BulletinFactory.canShowBulletin(fragment)) {
             return false;
         }
+        // Written before the line is drawn. That covers the crash, and it also
+        // covers both ways of saying no - swiping the bulletin away and letting
+        // it time out - neither of which then needs a listener of its own.
         noteSentMessage(account, message.id);
         BulletinFactory.of(fragment)
                 .createSimpleBulletin(
                         R.raw.info,
                         LocaleController.getString(R.string.PurpleSyncOffer),
+                        LocaleController.formatString(R.string.PurpleSyncOfferFrom,
+                                from, LocaleController.formatDateTime(message.date, true)),
                         LocaleController.getString(R.string.Import),
-                        Bulletin.DURATION_PROLONG,
                         () -> startImport(fragment, account, message))
                 .show();
         return true;
+    }
+
+    private static void forget(int account) {
+        synchronized (checked) {
+            checked.remove(account);
+        }
+    }
+
+    private static long localStamp() {
+        final File local = PurpleSettings.settingsFile();
+        return local.exists() ? local.lastModified() / 1000L : 0L;
     }
 
     /** What a Saved Messages lookup came back with, or null. */
@@ -251,8 +284,7 @@ public final class PurpleSyncOffer {
         // mtime is the whole of what we know about how fresh the local copy is.
         // That is enough: the write happens after the message was sent, so an
         // imported file always stamps later than the message it came from.
-        final File local = PurpleSettings.settingsFile();
-        final long localStamp = local.exists() ? local.lastModified() / 1000L : 0L;
+        final long localStamp = localStamp();
         final SharedPreferences prefs = MessagesController.getMainSettings(account);
         final int lastOffered = prefs.getInt(OFFERED_KEY, 0);
 
@@ -260,37 +292,27 @@ public final class PurpleSyncOffer {
                 + " (date " + message.date + "), local stamp " + localStamp
                 + ", last offered " + lastOffered + " -> ";
 
-        if (message.id <= lastOffered) {
-            FileLog.d(head + "skipped (already offered).");
-            return;
+        switch (PurpleSyncOfferRules.judge(account, UserConfig.selectedAccount, false,
+                message.id, message.date, lastOffered, localStamp)) {
+            case INACTIVE_ACCOUNT:
+                forget(account);
+                FileLog.d(head + "skipped (account " + account + " is no longer the active one).");
+                return;
+            case ALREADY_OFFERED:
+                FileLog.d(head + "skipped (already offered).");
+                return;
+            case NOT_NEWER:
+                // Older than what is already on disk, so not worth offering now -
+                // and it will not become worth offering later either, which is why
+                // the id moves on rather than being left to come back tomorrow.
+                noteSentMessage(account, message.id);
+                FileLog.d(head + "skipped (older than the local file).");
+                return;
+            case OFFER:
+            default:
+                FileLog.d(head + (show(fragment, account, message)
+                        ? "offering." : "skipped (no window to show it in, or no account name)."));
         }
-        if (message.date <= localStamp) {
-            // Older than what is already on disk, so not worth offering now -
-            // and it will not become worth offering later either, which is why
-            // the id moves on rather than being left to come back tomorrow.
-            noteSentMessage(account, message.id);
-            FileLog.d(head + "skipped (older than the local file).");
-            return;
-        }
-        if (!BulletinFactory.canShowBulletin(fragment)) {
-            FileLog.d(head + "skipped (no window to show it in).");
-            return;
-        }
-
-        // Written before the line is drawn. That covers the crash, and it also
-        // covers both ways of saying no - swiping the bulletin away and letting
-        // it time out - neither of which then needs a listener of its own.
-        noteSentMessage(account, message.id);
-        FileLog.d(head + "offering.");
-
-        BulletinFactory.of(fragment)
-                .createSimpleBulletin(
-                        R.raw.info,
-                        LocaleController.getString(R.string.PurpleSyncOffer),
-                        LocaleController.getString(R.string.Import),
-                        Bulletin.DURATION_PROLONG,
-                        () -> startImport(fragment, account, message))
-                .show();
     }
 
     private static void startImport(BaseFragment fragment, int account, TLRPC.Message message) {
@@ -299,6 +321,11 @@ public final class PurpleSyncOffer {
         // so neither half can be moved without the other being noticed.
         noteSentMessage(account, message.id);
 
+        if (!PurpleSyncOfferRules.mayImport(account, UserConfig.selectedAccount)) {
+            FileLog.d("Purple: sync offer: account " + account + " is no longer the active one, so msg "
+                    + message.id + " was not imported.");
+            return;
+        }
         final Activity activity = fragment.getParentActivity();
         final TLRPC.Document document = documentOf(message);
         if (activity == null || document == null) {
@@ -306,7 +333,7 @@ public final class PurpleSyncOffer {
         }
         final File cached = FileLoader.getInstance(account).getPathToMessage(message);
         if (cached != null && cached.exists()) {
-            PurpleSettings.importFrom(activity, cached, message.date);
+            PurpleSettings.importFrom(activity, cached, message.date, account);
             return;
         }
         // Not downloaded yet. Up to 4 MiB over the connection the search has
@@ -374,7 +401,7 @@ public final class PurpleSyncOffer {
             }
             final Activity activity = fragment.getParentActivity();
             if (file != null && file.exists() && activity != null) {
-                PurpleSettings.importFrom(activity, file, message.date);
+                PurpleSettings.importFrom(activity, file, message.date, account);
                 return;
             }
             FileLog.d("Purple: sync offer: could not download the settings.toml behind msg " + message.id + ".");
