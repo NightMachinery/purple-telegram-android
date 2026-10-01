@@ -485,11 +485,14 @@ also refuses such a Check with `Stale`.
 
 After an apply that wrote the file, a bulletin says "Settings updated from
 <device>." and, when the History copy can be put back and no share or
-publish follows the apply, carries an Undo button, as on the desktop; the
-Undo last update row appears too. Both ask for confirmation, then call
-`runner.undo`, and the runner decides when the offer ends. Undo while
-something runs, such as the share that follows a choice, says to wait
-instead of doing nothing.
+publish follows the apply, carries an Undo button; the Undo last update row
+appears too. Both ask for confirmation, then call `runner.undo`, and the
+runner decides when the offer ends. The button is Android's own: the
+desktop's notice is a toast without one. When a share or publish follows,
+the bulletin has no button and the row stays hidden until the post ends,
+which matches the desktop, whose Undo row is hidden while something runs.
+Undo while something runs, such as tapping an earlier bulletin's button
+during a check, says to wait instead of doing nothing.
 
 `PurpleSyncHistoryActivity` lists History newest first and opens at the
 newest entry. Each row shows the entry's date and time, with its label on a
