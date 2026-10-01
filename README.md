@@ -427,10 +427,11 @@ and a confirmation that repeats the cloud disclosure: the file may contain
 chat IDs and names, and Saved Messages is a Telegram cloud chat that every
 signed-in session can read. Before sync replaces `settings.toml`, the old file
 goes to **History**. An update that wrote the file offers Undo, both in the
-notice that says so and as an **Undo last update** row, after a confirmation,
-and History restores any kept copy after a confirmation. Undo and restore stay
-on this device until you publish them, even with **Send to Saved Messages
-after every save** on. While the app runs from
+notice that says so and as an **Undo last update** row, after a confirmation;
+when a share follows the update, only the row offers it, once the share ends.
+History restores any kept copy after a confirmation. Undo and restore stay on
+this device until you publish them, even with **Send to Saved Messages after
+every save** on. While the app runs from
 `settings.toml.good` because `settings.toml` is missing or does not load, a
 check says so and offers nothing: sync changes nothing until you fix the file
 or restore a version from History. Leaving the screen cancels a running
