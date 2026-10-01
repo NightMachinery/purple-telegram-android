@@ -429,7 +429,8 @@ signed-in session can read. Before sync replaces `settings.toml`, the old file
 goes to **History**. An update that wrote the file offers Undo, both in the
 notice that says so and as an **Undo last update** row, after a confirmation,
 and History restores any kept copy after a confirmation. Undo and restore stay
-on this device until you publish them. While the app runs from
+on this device until you publish them, even with **Send to Saved Messages
+after every save** on. While the app runs from
 `settings.toml.good` because `settings.toml` is missing or does not load, a
 check says so and offers nothing: sync changes nothing until you fix the file
 or restore a version from History. Leaving the screen cancels a running
@@ -558,9 +559,11 @@ a restore names is always among them. The fingerprint and the config version key
 check come from the core through the settings sync flow bridge.
 `PurpleSyncSettingsFile` reads `settings.toml` the way sync must: present only
 as a regular file of at most 256 KiB, never through a symlink, and invalid
-rather than absent when it breaks either rule. It writes through the same
-replacement as an import (or, for a restore, an editor save), so the backup,
-reload and auto-send bookkeeping stay as they are, then reads the file back.
+rather than absent when it breaks either rule. It writes through the
+editor's own replacement, so the usual backup and reload happen, then reads
+the file back. An apply is stored as an import, which the auto-send never
+posts back; a restore or undo skips the auto-send entirely, as on the
+desktop.
 
 `PurpleSyncRunner` drives manual settings sync for one account
 over any `PurpleSyncTransport`. It runs one step at a time, drops callbacks
@@ -583,9 +586,10 @@ described in `docs/account-sync-store.md`.
 
 **Send to Saved Messages after every save** on the same screen is `[sync]
 send_after_save_p`, off until you turn it on because sending is a message in a
-real chat: with it on, every change the app makes to `settings.toml` posts the
-file five seconds after the last one, so a run of checkbox taps is one document
-rather than six. A file that arrived from Saved Messages is never sent back.
+real chat: with it on, every change the app makes to `settings.toml`, other
+than a sync restore or undo, posts the file five seconds after the last one, so
+a run of checkbox taps is one document rather than six. A file that arrived
+from Saved Messages is never sent back.
 `state.toml` remembers fingerprints for the last imported file and the last
 confirmed send, suppressing repeated sends of the same bytes. The manual Send
 button reports when the upload is queued. After server confirmation, the send

@@ -75,12 +75,14 @@ public final class PurpleSync {
     private static final Runnable pending = PurpleSync::fire;
 
     /**
-     * Called after every write of settings.toml the app itself made.
+     * Called after every write of settings.toml the app itself made, except
+     * an account sync restore or undo, which stays on this device as it does
+     * on desktop.
      *
-     * Every writer funnels through here - the splices in {@link PurpleWriter},
-     * the editor's whole-file save, and the import - because the question the
-     * core answers is about bytes on disk and not about which screen put them
-     * there.
+     * Every other writer funnels through here - the splices in
+     * {@link PurpleWriter}, the editor's whole-file save, and the import -
+     * because the question the core answers is about bytes on disk and not
+     * about which screen put them there.
      *
      * @param reason what asked for the write, for the log line
      * @param wroteFromImport whether this write IS an import installing the
