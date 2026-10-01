@@ -33622,7 +33622,7 @@ public class ChatActivity extends BaseFragment implements
             }
         }
         if (locFile != null) {
-            PurpleSettings.importFrom(getParentActivity(), locFile, message.messageOwner.date);
+            PurpleSettings.importFrom(getParentActivity(), locFile, message);
         } else if (message.getDocument() != null) {
             message.loadingCancelled = false;
             getFileLoader().loadFile(message.getDocument(), message, FileLoader.PRIORITY_NORMAL_UP, 0);
@@ -33792,7 +33792,7 @@ public class ChatActivity extends BaseFragment implements
                 }
                 if (locFile != null) {
                     if (selectedObject.isPurpleSettings()) {
-                        PurpleSettings.importFrom(getParentActivity(), locFile, selectedObject.messageOwner.date);
+                        PurpleSettings.importFrom(getParentActivity(), locFile, selectedObject);
                     } else if (locFile.getName().toLowerCase().endsWith("attheme")) {
                         Theme.ThemeInfo themeInfo = Theme.applyThemeFile(locFile, selectedObject.getDocumentName(), null, true);
                         if (themeInfo != null) {

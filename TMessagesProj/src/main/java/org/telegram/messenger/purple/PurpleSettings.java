@@ -4,9 +4,14 @@ import android.content.Context;
 import android.widget.Toast;
 
 import org.telegram.messenger.ApplicationLoader;
+import org.telegram.messenger.ContactsController;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LocaleController;
+import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.R;
+import org.telegram.messenger.UserConfig;
+import org.telegram.messenger.UserObject;
+import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.AlertDialog;
 
 import java.io.File;
@@ -71,6 +76,21 @@ public final class PurpleSettings {
     }
 
     public static void importFrom(Context context, File source, int messageDate) {
+        importFrom(context, source, messageDate, PurpleSyncOfferRules.NO_ACCOUNT);
+    }
+
+    public static void importFrom(Context context, File source, MessageObject message) {
+        if (message == null || message.messageOwner == null) {
+            return;
+        }
+        importFrom(context, source, message.messageOwner.date, message.currentAccount);
+    }
+
+    /**
+     * @param account whose Saved Messages the file is in, or NO_ACCOUNT; the
+     *                question names it and the import needs it to be active
+     */
+    static void importFrom(Context context, File source, int messageDate, int account) {
         if (context == null || source == null || !source.exists()) {
             return;
         }
@@ -87,11 +107,19 @@ public final class PurpleSettings {
             showError(context, LocaleController.getString(R.string.PurpleImportFailed));
             return;
         }
-        importFrom(context, bytes, messageDate);
+        importFrom(context, bytes, messageDate, account);
     }
 
     public static void importFrom(Context context, byte[] bytes, int messageDate) {
+        importFrom(context, bytes, messageDate, PurpleSyncOfferRules.NO_ACCOUNT);
+    }
+
+    private static void importFrom(Context context, byte[] bytes, int messageDate, int account) {
         if (context == null || bytes == null) {
+            return;
+        }
+        if (!PurpleSyncOfferRules.mayImport(account, UserConfig.selectedAccount)) {
+            showError(context, LocaleController.getString(R.string.PurpleImportAccountChanged));
             return;
         }
         if (bytes.length > MAX_SIZE) {
@@ -116,8 +144,12 @@ public final class PurpleSettings {
             return;
         }
 
+        final String sent = LocaleController.formatDateTime(messageDate, true);
+        final String from = account == PurpleSyncOfferRules.NO_ACCOUNT ? null : accountLabel(account);
         StringBuilder message = new StringBuilder();
-        message.append(LocaleController.formatString(R.string.PurpleImportQuestion, LocaleController.formatDateTime(messageDate, true)));
+        message.append(from == null
+                ? LocaleController.formatString(R.string.PurpleImportQuestion, sent)
+                : LocaleController.formatString(R.string.PurpleImportQuestionFrom, sent, from));
         message.append("\n\n");
         message.append(LocaleController.formatString(R.string.PurpleImportSchema, version));
         if (version > SUPPORTED_SCHEMA_VERSION) {
@@ -139,6 +171,10 @@ public final class PurpleSettings {
         builder.setTitle(LocaleController.getString(R.string.ImportPurpleSettings));
         builder.setMessage(message.toString());
         builder.setPositiveButton(LocaleController.getString(R.string.Import), (dialog, which) -> {
+            if (!PurpleSyncOfferRules.mayImport(account, UserConfig.selectedAccount)) {
+                showError(context, LocaleController.getString(R.string.PurpleImportAccountChanged));
+                return;
+            }
             if (store(bytes)) {
                 Toast.makeText(context, LocaleController.getString(R.string.PurpleSettingsImported), Toast.LENGTH_SHORT).show();
             } else {
@@ -147,6 +183,17 @@ public final class PurpleSettings {
         });
         builder.setNegativeButton(LocaleController.getString(R.string.Cancel), null);
         builder.show();
+    }
+
+    static String accountLabel(int account) {
+        final TLRPC.User user = UserConfig.getInstance(account).getCurrentUser();
+        if (user == null) {
+            return null;
+        }
+        return PurpleSyncOfferRules.accountLabel(
+                ContactsController.formatName(user.first_name, user.last_name),
+                UserObject.getPublicUsername(user),
+                LocaleController.getString(R.string.PurpleSyncAccountWithUsername));
     }
 
     /**

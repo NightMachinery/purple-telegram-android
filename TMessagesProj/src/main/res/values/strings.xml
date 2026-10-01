@@ -11228,6 +11228,8 @@
     <string name="PurpleCoreUnavailable">Purple core is not available in this build</string>
     <string name="PurpleSettingsInvalid">That settings.toml is not valid TOML, so nothing was changed:\n\n%1$s</string>
     <string name="PurpleImportQuestion">Import the settings sent %1$s?</string>
+    <string name="PurpleImportQuestionFrom">Import the settings sent %1$s to Saved Messages of %2$s?</string>
+    <string name="PurpleImportAccountChanged">That settings file is in the Saved Messages of an account that is no longer the active one, so nothing was imported. Switch back to that account to import it.</string>
     <string name="PurpleImportSchema">Schema v%1$d.</string>
     <string name="PurpleImportSchemaNewer">That is newer than this build understands (v1), so keys it has never heard of will be ignored.</string>
     <string name="PurpleImportNoWarnings">No parser warnings.</string>
@@ -11254,6 +11256,7 @@
     <string name="PurpleEditorDiscard">Your edits have not been saved.</string>
     <string name="PurpleEditorWarningsTitle">Saved, with warnings</string>
     <string name="PurpleSyncOffer">A newer Work Mode settings file is in Saved Messages</string>
+    <string name="PurpleSyncOfferFrom">Account %1$s, sent %2$s</string>
     <string name="PurpleWorkMode">Work Mode</string>
     <string name="PurpleWorkModeActive">Work Mode: %1$s</string>
     <string name="PurpleWorkModeInfo">Choose which chats a preset lets through</string>

@@ -635,6 +635,23 @@ its callback can also leave them unchanged. The Saved Messages check searches up
 100 recent documents. An import tapped from its
 offer waits up to five minutes for the download.
 
+The offer to import a newer `settings.toml` from Saved Messages, made once per
+message when an account's chat list first appears after the app starts, or
+again when you tap the check on the settings screen, looks only at the active
+account, the one whose chats are on screen. A file in the Saved Messages of
+another signed-in account, a test account for example, is never offered. If
+you switch accounts while the search runs, its answer is dropped without being
+remembered as offered, so that account is checked again the next time it is
+active. The offer names the account by its name and public username, never its
+phone number, together with the date the file was sent, and the import
+confirmation names both as well, including the confirmation reached from a
+`settings.toml` message's menu in Saved Messages. If that account is no longer
+the active one when the confirmation would appear or when you confirm it, for
+example because the download finished after a switch, nothing is imported and
+the app says why. Before an import replaces `settings.toml`, the previous file
+is kept as `settings.toml.import.bak`, as described above.
+`TMessagesProj/jni/purple_jni/tests/run_sync_offer.sh` tests these rules.
+
 The **editor** is the only way to change a line on a phone without root: a
 monospace field parsed as you type, with a status line that says OK, how many
 warnings, or the line and column of a syntax error - tap it to go there. Save
