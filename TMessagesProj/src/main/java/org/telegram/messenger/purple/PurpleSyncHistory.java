@@ -46,11 +46,12 @@ import java.util.Set;
  * {@code <id>.json} holding the metadata; the id is sixteen decimal digits of
  * creation milliseconds, a dash and sixteen lowercase hex digits; an entry is
  * valid only when both files are private regular files and the bytes still
- * match the recorded size and fingerprint; the newest 30 valid entries are
+ * match the recorded size and fingerprint; the 30 valid entries saved last are
  * kept, plus one the caller asks to keep for the length of a save. Unlike the
- * desktop so far, a save takes a time after the newest valid entry's even when
- * the clock has gone back, so ids follow save order and the prune never takes
- * the entry saved just before.
+ * desktop so far, the metadata records a save sequence number, one more than
+ * the highest valid entry's, and list order and the prune follow it rather
+ * than the clock time in the id, so a save after the clock went back is still
+ * the newest while every entry keeps its true clock time.
  *
  * The fingerprint and the version key check belong to the shared core and
  * come through the settings sync flow bridge; without the native library
@@ -113,12 +114,14 @@ public final class PurpleSyncHistory {
         public final long size;
         /** False when settings.toml did not exist; the copy is then empty. */
         public final boolean existed;
+        final long sequence;
 
-        Entry(String id, long createdMs, Reason reason, String label,
-                String versionKey, String fingerprint, long size,
+        Entry(String id, long createdMs, long sequence, Reason reason,
+                String label, String versionKey, String fingerprint, long size,
                 boolean existed) {
             this.id = id;
             this.createdMs = createdMs;
+            this.sequence = sequence;
             this.reason = reason;
             this.label = label;
             this.versionKey = versionKey;
@@ -202,8 +205,8 @@ public final class PurpleSyncHistory {
             FileLog.e("Purple: refused an invalid settings history entry.");
             return null;
         }
-        final long nowMs = clock.nowMs();
-        if (nowMs <= 0 || nowMs > MAX_SAFE_INTEGER) {
+        final long createdMs = clock.nowMs();
+        if (createdMs <= 0 || createdMs > MAX_SAFE_INTEGER) {
             FileLog.e("Purple: settings history has no usable clock.");
             return null;
         }
@@ -216,9 +219,9 @@ public final class PurpleSyncHistory {
             if (!prepareDirectories()) {
                 return null;
             }
-            final long createdMs = Math.max(nowMs, newestTime() + 1);
-            if (createdMs > MAX_SAFE_INTEGER) {
-                FileLog.e("Purple: settings history has no usable clock.");
+            final long sequence = newestSequence() + 1;
+            if (sequence > MAX_SAFE_INTEGER) {
+                FileLog.e("Purple: settings history has no usable sequence.");
                 return null;
             }
             final String id = unusedId(createdMs);
@@ -226,8 +229,8 @@ public final class PurpleSyncHistory {
                 FileLog.e("Purple: could not choose a settings history id.");
                 return null;
             }
-            final Entry entry = new Entry(id, createdMs, reason, label,
-                    versionKey, fingerprint, bytes.length, text != null);
+            final Entry entry = new Entry(id, createdMs, sequence, reason,
+                    label, versionKey, fingerprint, bytes.length, text != null);
             final byte[] metadata = serialize(entry);
             final boolean written = metadata != null
                     && writePrivate(textFile(id), bytes)
@@ -359,7 +362,9 @@ public final class PurpleSyncHistory {
     }
 
     private static void sortNewestFirst(List<Entry> entries) {
-        Collections.sort(entries, (a, b) -> b.id.compareTo(a.id));
+        Collections.sort(entries, (a, b) -> (a.sequence != b.sequence)
+                ? Long.compare(b.sequence, a.sequence)
+                : b.id.compareTo(a.id));
     }
 
     private boolean prepareDirectories() {
@@ -423,14 +428,15 @@ public final class PurpleSyncHistory {
         }
     }
 
-    private long newestTime() {
-        final List<String> ids = entryIds(entryNames());
-        for (int i = ids.size() - 1; i >= 0; --i) {
-            if (load(ids.get(i)) != null) {
-                return idTime(ids.get(i));
+    private long newestSequence() {
+        long newest = 0;
+        for (String id : entryIds(entryNames())) {
+            final Loaded loaded = load(id);
+            if (loaded != null) {
+                newest = Math.max(newest, loaded.entry.sequence);
             }
         }
-        return 0;
+        return newest;
     }
 
     private String unusedId(long createdMs) {
@@ -509,6 +515,7 @@ public final class PurpleSyncHistory {
             object.put("version", METADATA_VERSION);
             object.put("id", entry.id);
             object.put("created_ms", entry.createdMs);
+            object.put("sequence", entry.sequence);
             object.put("reason", entry.reason.wire);
             object.put("label", entry.label);
             object.put("version_key", entry.versionKey);
@@ -535,6 +542,10 @@ public final class PurpleSyncHistory {
         final Long version = exactInteger(object.opt("version"));
         final Object storedId = object.opt("id");
         final Long created = exactInteger(object.opt("created_ms"));
+        final boolean sequenced = object.has("sequence");
+        final Long sequence = sequenced
+                ? exactInteger(object.opt("sequence"))
+                : Long.valueOf(0);
         final Reason reason = Reason.parse(object.opt("reason"));
         final Object label = object.opt("label");
         final Object versionKey = object.opt("version_key");
@@ -546,6 +557,8 @@ public final class PurpleSyncHistory {
                 || !id.equals(storedId)
                 || created == null || created != time
                 || time <= 0 || time > MAX_SAFE_INTEGER
+                || sequence == null
+                || (sequenced && sequence < 1)
                 || reason == null
                 || !(label instanceof String)
                 || ((String) label).length() > MAX_LABEL_LENGTH
@@ -563,9 +576,9 @@ public final class PurpleSyncHistory {
                 || !fingerprint.equals(core.fingerprint(text))) {
             return null;
         }
-        return new Loaded(new Entry(id, time, reason, (String) label,
-                (String) versionKey, (String) fingerprint, text.length,
-                (Boolean) existed), text);
+        return new Loaded(new Entry(id, time, sequence, reason,
+                (String) label, (String) versionKey, (String) fingerprint,
+                text.length, (Boolean) existed), text);
     }
 
     /** One JSON object and nothing after it, from strict UTF-8. */

@@ -124,29 +124,44 @@ owner-only (0600) through a temporary sibling and a rename, then read back.
 
 An entry is `<id>.toml`, the exact bytes (at most 256 KiB, not necessarily
 UTF-8), plus `<id>.json`, the metadata: version 1, id, creation milliseconds,
-reason (`before_update`, `before_choice`, `before_restore` or `before_undo`),
-a label of at most 256 UTF-16 units, the config version key when known, the
-fingerprint, the size, and whether the file existed. The id is sixteen decimal
-digits of the creation time, a dash, and sixteen lowercase hex digits. Reading
-refuses an entry whose files are not owner-only regular files, whose metadata
-is not exactly one JSON object in strict UTF-8 of at most 16 KiB with those
-fields and types, or whose bytes no longer match the recorded size and
-fingerprint. A list skips such entries; a read returns nothing for them.
+save sequence number, reason (`before_update`, `before_choice`,
+`before_restore` or `before_undo`), a label of at most 256 UTF-16 units, the
+config version key when known, the fingerprint, the size, and whether the file
+existed. The id is sixteen decimal digits of the creation time, a dash, and
+sixteen lowercase hex digits. Reading refuses an entry whose files are not
+owner-only regular files, whose metadata is not exactly one JSON object in
+strict UTF-8 of at most 16 KiB with those fields and types, or whose bytes no
+longer match the recorded size and fingerprint. A list skips such entries; a
+read returns nothing for them.
 
 After each save at most 30 valid entries stay: the entry the caller names as
-`keepId`, when it is valid, and the newest of the others (a restore passes its
-target, so a failed restore cannot prune what it was restoring; the target
-then takes one of the 30 places, as on the desktop). When the store is full,
-id-shaped leftovers older than the oldest kept entry are removed; other names
-are left alone.
+`keepId`, when it is valid, and the most recently saved of the others (a
+restore passes its target, so a failed restore cannot prune what it was
+restoring; the target then takes one of the 30 places, as on the desktop).
+When the store is full, id-shaped leftovers older than the oldest kept entry
+are removed; other names are left alone.
 
-An entry's id time is the save's clock time, or one millisecond after the
-newest valid entry's when that is later, so ids always follow save order.
-Without this, a save after the clock was set back (for example, after entries
-were saved while the phone's clock ran months ahead) would sort as the oldest
-entry, and the next save's prune would remove it. The cost is that such an
-entry shows a time just after the newest one until the real time catches up.
-The desktop does not do this yet.
+"Most recently saved" means save order, not clock time. The id and
+`created_ms` hold the clock at save time, which is what History shows, and the
+metadata's `sequence` is one more than the highest of the valid entries. The
+list (newest first) and the prune order by `sequence`, then by id. An entry
+written before the sequence existed has none, counts as 0 and so sorts below
+every sequenced entry. When `sequence` is present it must be a whole number
+from 1 to 2^53 - 1, or the entry is invalid.
+
+The clock time alone cannot give save order. If entries are saved while the
+phone's clock runs months ahead and the clock is then corrected, every later
+save has an earlier time than they do; ordering by time would make each new
+copy the oldest, and once those entries fill the store the next save would
+remove the copy saved just before it. Treating times later than the current
+clock as old does not help: in a full store, a single copy saved during the
+jump would then be removed by the first save after the correction, although it
+was the copy saved just before that one. Numbering ids after the newest
+entry's time keeps save order, but then every entry saved before the real time
+passes the jump shows, for good, a time just after it. With the sequence, the
+prune follows save order in both cases and each entry still shows the time the
+clock had when it was saved, so after a clock change the list can show times
+out of order. The desktop does not do this yet.
 
 The fingerprint is the core's `SettingsFingerprint` and the version key check
 is the core's `IsConfigVersionKey`, both through `PurpleSyncCore`, so no hash
@@ -159,10 +174,11 @@ host test of History and of the settings file helper. It compiles both
 production classes with the flow bridge wrappers against small Android stubs,
 builds the flow bridge as a host dylib against Qt Core, and runs three passes:
 the History and file rules with a fake core (save, list, read, prune with and
-without `keepId`, owner-only modes, symlinked directories, every metadata
+without `keepId`, save order after the clock jumps ahead or goes back, entries
+without a sequence, owner-only modes, symlinked directories, every metadata
 tamper case, settings reads and writes), the same store with the real core's
-fingerprint and version key check, and a pass without the library, where
-every save must be refused and nothing created.
+fingerprint and version key check, and a pass without the library, where every
+save must be refused and nothing created.
 
 ## Settings sync flow bridge
 

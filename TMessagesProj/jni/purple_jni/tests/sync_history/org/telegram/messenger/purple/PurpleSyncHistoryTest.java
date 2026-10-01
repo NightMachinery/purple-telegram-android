@@ -101,6 +101,8 @@ public final class PurpleSyncHistoryTest {
             historyPrune();
             historyKeepId();
             historyClockBack();
+            historyClockAheadOnce();
+            historyUnsequenced();
             historyTamper();
             historyPermissions();
             historyDiscard();
@@ -146,7 +148,8 @@ public final class PurpleSyncHistoryTest {
         check(mode(new File(historyDir(root), saved.id + ".json")).equals("rw-------"), "metadata owner-only");
         final String json = new String(Files.readAllBytes(new File(historyDir(root), saved.id + ".json").toPath()), StandardCharsets.UTF_8);
         check(json.contains("\"reason\":\"before_update\"") && json.contains("\"version\":1")
-                && json.contains("\"existed\":true") && json.contains("\"version_key\":\"\""),
+                && json.contains("\"existed\":true") && json.contains("\"version_key\":\"\"")
+                && json.contains("\"sequence\":1"),
                 "metadata fields: " + json);
         check(historyDir(root).list().length == 2, "exactly two files, no temporaries");
 
@@ -277,13 +280,13 @@ public final class PurpleSyncHistoryTest {
         final File root = fresh("clock-back");
         final TestClock clock = new TestClock();
         final PurpleSyncHistory history = new PurpleSyncHistory(historyDir(root), new FakeCore(), clock);
-        final long ahead = 1790000000000L;
-        clock.now = ahead;
+        clock.now = 1790000000000L;
         for (int i = 0; i != PurpleSyncHistory.LIMIT; ++i) {
             check(history.save(utf8("ahead = " + i + "\n"), PurpleSyncHistory.Reason.BeforeUpdate, "", "", null) != null,
                     "save " + i + " while the clock runs ahead");
         }
-        clock.now = 1759200000000L;
+        final long back = 1759200000000L;
+        clock.now = back;
         final PurpleSyncHistory.Entry first = history.save(utf8("back = 1\n"),
                 PurpleSyncHistory.Reason.BeforeUpdate, "", "", null);
         final PurpleSyncHistory.Entry second = history.save(utf8("back = 2\n"),
@@ -292,16 +295,115 @@ public final class PurpleSyncHistoryTest {
         if (first == null || second == null) {
             return;
         }
-        check(first.createdMs > ahead && second.createdMs > first.createdMs,
-                "a save after the clock went back still sorts after every entry");
+        check(first.createdMs == back && second.createdMs == back + 1,
+                "saves after the clock went back keep the clock's time: " + first.createdMs + " " + second.createdMs);
         check(history.read(first.id) != null, "the entry saved just before the newest survives the prune");
         final List<PurpleSyncHistory.Entry> listed = history.list();
         check(listed.size() == PurpleSyncHistory.LIMIT, "still 30 after the clock went back: " + listed.size());
         check(listed.get(0).id.equals(second.id) && listed.get(1).id.equals(first.id),
                 "newest first in save order");
-        check(history.read(listed.get(listed.size() - 1).id) != null
+        check(Arrays.equals(history.read(listed.get(2).id), utf8("ahead = 29\n"))
                 && Arrays.equals(history.read(listed.get(listed.size() - 1).id), utf8("ahead = 2\n")),
                 "the two oldest saves went first");
+    }
+
+    static void historyClockAheadOnce() throws Exception {
+        final File root = fresh("clock-ahead-once");
+        final TestClock clock = new TestClock();
+        final PurpleSyncHistory history = new PurpleSyncHistory(historyDir(root), new FakeCore(), clock);
+        final List<String> before = new ArrayList<>();
+        for (int i = 0; i != PurpleSyncHistory.LIMIT; ++i) {
+            before.add(history.save(utf8("before = " + i + "\n"), PurpleSyncHistory.Reason.BeforeUpdate, "", "", null).id);
+        }
+        final long corrected = clock.now + 1000;
+        final long ahead = 1790000000000L;
+        clock.now = ahead;
+        final PurpleSyncHistory.Entry jumped = history.save(utf8("jumped = 1\n"),
+                PurpleSyncHistory.Reason.BeforeUpdate, "", "", null);
+        clock.now = corrected;
+        final PurpleSyncHistory.Entry after = history.save(utf8("after = 1\n"),
+                PurpleSyncHistory.Reason.BeforeUpdate, "", "", null);
+        check(jumped != null && after != null, "saves around one clock jump");
+        if (jumped == null || after == null) {
+            return;
+        }
+        check(jumped.createdMs == ahead && after.createdMs == corrected,
+                "each save keeps the clock's time: " + jumped.createdMs + " " + after.createdMs);
+        check(history.read(jumped.id) != null,
+                "the copy saved during the jump, just before the newest, survives the prune");
+        check(history.read(before.get(0)) == null && history.read(before.get(1)) == null
+                && history.read(before.get(2)) != null, "the two oldest saves went first");
+        final long day = 24L * 60 * 60 * 1000;
+        final List<String> later = new ArrayList<>();
+        for (int i = 1; i <= 5; ++i) {
+            clock.now = corrected + i * day;
+            final PurpleSyncHistory.Entry entry = history.save(utf8("later = " + i + "\n"),
+                    PurpleSyncHistory.Reason.BeforeUpdate, "", "", null);
+            check(entry != null && entry.createdMs == corrected + i * day,
+                    "a save " + i + " days after the correction shows that day: "
+                    + (entry == null ? "none" : String.valueOf(entry.createdMs)));
+            if (entry != null) {
+                later.add(entry.id);
+            }
+        }
+        final List<PurpleSyncHistory.Entry> listed = history.list();
+        check(listed.size() == PurpleSyncHistory.LIMIT, "30 after the later saves: " + listed.size());
+        final List<String> expected = new ArrayList<>();
+        for (int i = later.size() - 1; i >= 0; --i) {
+            expected.add(later.get(i));
+        }
+        expected.add(after.id);
+        expected.add(jumped.id);
+        for (int i = before.size() - 1; expected.size() != PurpleSyncHistory.LIMIT; --i) {
+            expected.add(before.get(i));
+        }
+        final List<String> got = new ArrayList<>();
+        for (PurpleSyncHistory.Entry entry : listed) {
+            got.add(entry.id);
+        }
+        check(got.equals(expected), "list and prune follow save order across the jump");
+    }
+
+    static void historyUnsequenced() throws Exception {
+        final File root = fresh("unsequenced");
+        final TestClock clock = new TestClock();
+        final PurpleSyncHistory history = new PurpleSyncHistory(historyDir(root), new FakeCore(), clock);
+        clock.now = 1790000000000L;
+        final PurpleSyncHistory.Entry older = history.save(utf8("legacy = 1\n"),
+                PurpleSyncHistory.Reason.BeforeUpdate, "", "", null);
+        final PurpleSyncHistory.Entry newer = history.save(utf8("legacy = 2\n"),
+                PurpleSyncHistory.Reason.BeforeUpdate, "", "", null);
+        dropSequence(new File(historyDir(root), older.id + ".json"));
+        dropSequence(new File(historyDir(root), newer.id + ".json"));
+        List<PurpleSyncHistory.Entry> listed = history.list();
+        check(listed.size() == 2 && listed.get(0).id.equals(newer.id) && listed.get(1).id.equals(older.id),
+                "entries without a sequence stay valid, newest id first");
+        clock.now = 1759200000000L;
+        final PurpleSyncHistory.Entry current = history.save(utf8("current = 1\n"),
+                PurpleSyncHistory.Reason.BeforeUpdate, "", "", null);
+        check(current != null, "a save beside entries without a sequence");
+        if (current == null) {
+            return;
+        }
+        final String json = new String(Files.readAllBytes(new File(historyDir(root), current.id + ".json").toPath()),
+                StandardCharsets.UTF_8);
+        check(json.contains("\"sequence\":1"), "the first sequenced save is 1: " + json);
+        listed = history.list();
+        check(listed.size() == 3 && listed.get(0).id.equals(current.id)
+                && listed.get(1).id.equals(newer.id) && listed.get(2).id.equals(older.id),
+                "a sequenced save sorts above entries without one, whatever their clock time");
+    }
+
+    static void dropSequence(File metadata) throws IOException {
+        final String text = new String(Files.readAllBytes(metadata.toPath()), StandardCharsets.UTF_8);
+        String stripped = text.replaceFirst(",\"sequence\":[0-9]+", "");
+        if (stripped.equals(text)) {
+            stripped = text.replaceFirst("\"sequence\":[0-9]+,", "");
+        }
+        if (stripped.equals(text) || stripped.contains("sequence")) {
+            throw new AssertionError("no sequence in " + text);
+        }
+        Files.write(metadata.toPath(), utf8(stripped));
     }
 
     interface Mutation {
@@ -316,6 +418,7 @@ public final class PurpleSyncHistoryTest {
             "non-UTF-8 metadata", "metadata too large", "metadata not an object", "fingerprint",
             "text missing", "metadata missing", "text is a symlink", "text group-readable",
             "metadata world-readable", "text is a directory",
+            "sequence zero", "sequence negative", "sequence fraction", "sequence a string", "sequence null",
         };
         final Mutation[] mutations = {
             (t, m) -> Files.write(t.toPath(), utf8("version = 2\n")),
@@ -348,6 +451,11 @@ public final class PurpleSyncHistoryTest {
             (t, m) -> Files.setPosixFilePermissions(t.toPath(), PosixFilePermissions.fromString("rw-r-----")),
             (t, m) -> Files.setPosixFilePermissions(m.toPath(), PosixFilePermissions.fromString("rw----r--")),
             (t, m) -> { Files.delete(t.toPath()); Files.createDirectory(t.toPath()); },
+            (t, m) -> replace(m, "\"sequence\":2", "\"sequence\":0"),
+            (t, m) -> replace(m, "\"sequence\":2", "\"sequence\":-2"),
+            (t, m) -> replace(m, "\"sequence\":2", "\"sequence\":2.5"),
+            (t, m) -> replace(m, "\"sequence\":2", "\"sequence\":\"2\""),
+            (t, m) -> replace(m, "\"sequence\":2", "\"sequence\":null"),
         };
         for (int i = 0; i != mutations.length; ++i) {
             final File root = fresh("tamper-" + i);
