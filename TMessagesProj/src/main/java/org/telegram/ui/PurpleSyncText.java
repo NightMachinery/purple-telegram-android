@@ -198,6 +198,8 @@ final class PurpleSyncText {
                 return getString(R.string.PurpleSyncInvalidSettings);
             case UsingLastGood:
                 return getString(R.string.PurpleSyncUsingLastGood);
+            case UsingLastGoodWithPending:
+                return getString(R.string.PurpleSyncUsingLastGoodWithPending);
             case InvalidRecords:
                 return getString(R.string.PurpleSyncInvalidRecords);
             case Pending:

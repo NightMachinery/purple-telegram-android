@@ -2198,10 +2198,36 @@ public final class PurpleSyncCoreTest {
         device.local = lastGood(present(T1));
         final PurpleSyncCore.Review pending = review(device, cloud);
         check(pending.status == PurpleSyncCore.ReviewStatus.UsingLastGood);
-        check(pending.pending && pending.action == PurpleSyncCore.Action.None);
+        check(pending.pending && pending.verdict == PurpleSyncCore.Verdict.Pending);
+        check(pending.message == PurpleSyncCore.Message.UsingLastGoodWithPending);
+        check(pending.action == PurpleSyncCore.Action.FinishSending);
+        check(pending.choices.isEmpty());
+        check(apply(device, cloud, pending, null).status
+                == PurpleSyncCore.ApplyStatus.NeedsReview);
+        device.local = lastGood(absent());
+        check(review(device, cloud).message
+                == PurpleSyncCore.Message.UsingLastGoodWithPending);
+        device.local = lastGood(present(utf8("broken = \"\n")));
+        check(review(device, cloud).message
+                == PurpleSyncCore.Message.UsingLastGoodWithPending);
+        device.local = lastGood(invalid());
+        final PurpleSyncCore.Review broken = review(device, cloud);
+        check(broken.status == PurpleSyncCore.ReviewStatus.UsingLastGood);
+        check(broken.message == PurpleSyncCore.Message.UsingLastGood);
+        check(broken.action == PurpleSyncCore.Action.None);
+        device.local = lastGood(present(T1));
+        final PublishRun refused = publish(device, cloud,
+                request(keep.fingerprint, keep.expectedParents));
+        check(refused.status == PurpleSyncCore.PublishStatus.NeedsReview);
+        check(refused.posts == 0 && cloud.size() == 1);
         final PublishRun finished = publish(device, cloud, pendingOnly());
         check(finished.status == PurpleSyncCore.PublishStatus.Confirmed);
         check(finished.posts == 1 && cloud.size() == 2);
+        check(device.pendingSeq() == 0);
+        final PurpleSyncCore.Review after = review(device, cloud);
+        check(after.status == PurpleSyncCore.ReviewStatus.UsingLastGood);
+        check(after.message == PurpleSyncCore.Message.UsingLastGood);
+        check(after.action == PurpleSyncCore.Action.None);
     }
 
     private static void testDiff() {

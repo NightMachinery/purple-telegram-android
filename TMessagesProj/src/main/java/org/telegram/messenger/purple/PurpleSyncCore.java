@@ -48,7 +48,7 @@ public final class PurpleSyncCore {
         UpdateReady, UpdateMissing, AdoptBound, AdoptUnbound,
         NotPublishableAbsent, NotPublishableInvalid, EmptyBound, EmptyUnbound,
         LocalChangesEdited, LocalChangesOwnStale, UpToDateAlone, UpToDateWith,
-        UsingLastGood
+        UsingLastGood, UsingLastGoodWithPending
     }
 
     public enum Action {

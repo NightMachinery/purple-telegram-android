@@ -116,6 +116,7 @@ constexpr auto kLocalInvalid = 2;
 	case Message::UpToDateAlone: return u"UpToDateAlone"_q;
 	case Message::UpToDateWith: return u"UpToDateWith"_q;
 	case Message::UsingLastGood: return u"UsingLastGood"_q;
+	case Message::UsingLastGoodWithPending: return u"UsingLastGoodWithPending"_q;
 	}
 	return u"InvalidRecords"_q;
 }
