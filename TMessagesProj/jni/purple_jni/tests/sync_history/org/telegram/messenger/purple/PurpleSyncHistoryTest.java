@@ -108,6 +108,7 @@ public final class PurpleSyncHistoryTest {
             historyDiscard();
             settingsRead();
             settingsWrite();
+            settingsLastGood();
             break;
         case "native":
             nativeFingerprint();
@@ -620,6 +621,84 @@ public final class PurpleSyncHistoryTest {
                 == PurpleSyncSettingsFile.WriteStatus.WriteFailed, "null write refused");
         check(PurpleSettings.calls == calls, "refused writes never reach PurpleSettings");
         check(PurpleSyncSettingsFile.read().status == PurpleSyncSettingsFile.Status.Present, "production read uses settingsFile()");
+    }
+
+    static void settingsLastGood() throws Exception {
+        final File dir = fresh("settings-last-good");
+        final File file = new File(dir, "settings.toml");
+        final File good = new File(dir, "settings.toml.good");
+        final byte[] working = utf8("version = 1\n");
+        final byte[] broken = utf8("version = [\n");
+        PurpleCore.parses = text -> !Arrays.equals(text, broken);
+        Files.write(file.toPath(), working);
+        check(!PurpleSyncSettingsFile.read(file, good).usingLastGood, "working file, no copy");
+        Files.write(good.toPath(), working);
+        check(!PurpleSyncSettingsFile.read(file, good).usingLastGood, "working file beside a copy");
+        Files.write(file.toPath(), broken);
+        check(PurpleSyncSettingsFile.read(file, good).usingLastGood,
+                "broken file beside a working copy, before the gate notices");
+        Files.delete(file.toPath());
+        PurpleSyncSettingsFile.Contents read = PurpleSyncSettingsFile.read(file, good);
+        check(read.status == PurpleSyncSettingsFile.Status.Absent && read.usingLastGood,
+                "missing file beside a working copy");
+        Files.write(good.toPath(), broken);
+        check(!PurpleSyncSettingsFile.read(file, good).usingLastGood, "a copy that does not load is no fallback");
+        Files.write(file.toPath(), broken);
+        check(!PurpleSyncSettingsFile.read(file, good).usingLastGood, "broken file, broken copy");
+        Files.delete(good.toPath());
+        check(!PurpleSyncSettingsFile.read(file, good).usingLastGood, "broken file, no copy");
+        Files.write(good.toPath(), working);
+        Files.delete(file.toPath());
+        Files.createSymbolicLink(file.toPath(), good.toPath());
+        PurpleCore.parses = text -> text.length > 0 && !Arrays.equals(text, broken);
+        read = PurpleSyncSettingsFile.read(file, good);
+        check(read.status == PurpleSyncSettingsFile.Status.Invalid && !read.usingLastGood,
+                "an invalid file takes only the gate's flag, whatever its empty bytes parse to");
+        PurpleCore.parses = text -> !Arrays.equals(text, broken);
+        PurpleGate.lastGood = true;
+        check(PurpleSyncSettingsFile.read(file, good).usingLastGood, "the gate's flag on an invalid file");
+        Files.delete(file.toPath());
+        Files.write(file.toPath(), working);
+        check(PurpleSyncSettingsFile.read(file, good).usingLastGood, "the gate's flag on a working file");
+        PurpleGate.lastGood = false;
+
+        check(!new PurpleSyncSettingsFile.Contents(PurpleSyncSettingsFile.Status.Present, working)
+                .sameAs(new PurpleSyncSettingsFile.Contents(PurpleSyncSettingsFile.Status.Present, working, true)),
+                "sameAs compares the last-good flag");
+        final int[] stores = { 0 };
+        final PurpleSyncSettingsFile.Writer writer = (bytes, reason, fromImport) -> {
+            ++stores[0];
+            try {
+                Files.write(file.toPath(), bytes);
+            } catch (IOException e) {
+                return false;
+            }
+            return true;
+        };
+        final byte[] record = utf8("version = 1\n# record\n");
+        Files.delete(file.toPath());
+        Files.delete(good.toPath());
+        final PurpleSyncSettingsFile.Contents absent = PurpleSyncSettingsFile.read(file, good);
+        check(!absent.usingLastGood, "missing file, no copy");
+        Files.write(good.toPath(), working);
+        check(PurpleSyncSettingsFile.replace(file, good, absent, record, "sync apply", true, writer).status
+                == PurpleSyncSettingsFile.WriteStatus.Changed && stores[0] == 0 && !file.exists(),
+                "a copy that appears before the write stops it");
+        Files.write(file.toPath(), working);
+        final PurpleSyncSettingsFile.Contents running = PurpleSyncSettingsFile.read(file, good);
+        PurpleGate.lastGood = true;
+        final int beforeFallback = stores[0];
+        check(PurpleSyncSettingsFile.replace(file, good, running, record, "sync apply", true, writer).status
+                == PurpleSyncSettingsFile.WriteStatus.Changed && stores[0] == beforeFallback,
+                "a fallback that starts before the write stops it");
+        PurpleGate.lastGood = false;
+        Files.write(file.toPath(), broken);
+        final PurpleSyncSettingsFile.Contents fallen = PurpleSyncSettingsFile.read(file, good);
+        final int beforeRestore = stores[0];
+        check(PurpleSyncSettingsFile.replace(file, good, fallen, working, "sync restore", false, writer).status
+                == PurpleSyncSettingsFile.WriteStatus.Written && stores[0] == beforeRestore + 1,
+                "a restore still writes while the app runs from the copy");
+        PurpleCore.parses = text -> true;
     }
 
     static void nativeFingerprint() throws Exception {

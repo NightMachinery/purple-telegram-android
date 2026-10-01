@@ -434,10 +434,12 @@ this device until you publish them, even with **Send to Saved Messages after
 every save** on. While the app runs from
 `settings.toml.good` because `settings.toml` is missing or does not load, a
 check says so, and sync changes nothing until you fix the file or restore a
-version from History. The one exception is a post this device had already
-started: the check still offers Finish sending for it, as it would with a
-working file. Leaving the screen cancels a running check; a post already
-handed to Telegram stays in Telegram's queue, and a later check offers
+version from History. The check judges this from the file it has just read as
+well as from the app's state, so a check made in the moment between a bad save
+and the app's reload refuses too. The one exception is a post this device had
+already started: the check still offers Finish sending for it, as it would
+with a working file. Leaving the screen cancels a running check; a post
+already handed to Telegram stays in Telegram's queue, and a later check offers
 Finish sending, which confirms that post rather than sending it again. The
 older Send, Check and Import rows and the auto-send switch below work as
 before.
@@ -562,11 +564,14 @@ a restore names is always among them. The fingerprint and the config version key
 check come from the core through the settings sync flow bridge.
 `PurpleSyncSettingsFile` reads `settings.toml` the way sync must: present only
 as a regular file of at most 256 KiB, never through a symlink, and invalid
-rather than absent when it breaks either rule. It writes through the
-editor's own replacement, so the usual backup and reload happen, then reads
-the file back. An apply is stored as an import, which the auto-send never
-posts back; a restore or undo skips the auto-send entirely, as on the
-desktop.
+rather than absent when it breaks either rule. Each read also says whether the
+app runs from `settings.toml.good`: when the gate says so, and when the file
+just read is missing or does not parse while `settings.toml.good` does, so a
+check made before the gate's reload has noticed a bad save refuses to sync
+too. It writes through the editor's own replacement, so the usual backup and
+reload happen, then reads the file back. An apply is stored as an import,
+which the auto-send never posts back; a restore or undo skips the auto-send
+entirely, as on the desktop.
 
 `PurpleSyncRunner` drives manual settings sync for one account
 over any `PurpleSyncTransport`. It runs one step at a time, drops callbacks
@@ -574,11 +579,12 @@ from a cancelled or superseded step, and checks before every write that the
 account still has the user it started with. `PurpleSyncApply` joins, applies,
 adopts, restores and undoes with the desktop's rules, writing History first,
 then `settings.toml` on the main thread only if the file still holds the bytes
-the user reviewed, then the account's sync state. `PurpleSyncPublisher` posts
-only when the user asks, confirms a record Saved Messages already holds
-instead of posting it again, and does not post while an earlier sync post is
-still in Telegram's send queue. The threading, write order and Undo rules are
-in `docs/account-sync-store.md`, and
+the user reviewed and the app has not fallen back to `settings.toml.good`
+since, then the account's sync state. `PurpleSyncPublisher` posts only when
+the user asks, confirms a record Saved Messages already holds instead of
+posting it again, and does not post while an earlier sync post is still in
+Telegram's send queue. The threading, write order and Undo rules are in
+`docs/account-sync-store.md`, and
 `TMessagesProj/jni/purple_jni/tests/run_sync_executors.sh` tests all three on
 macOS against the real core and a fake transport. The Sync across devices
 screen (`PurpleSyncActivity`, with `PurpleSyncReviewDialog` and
