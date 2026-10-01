@@ -27,8 +27,6 @@ import java.util.Arrays;
  * absent. Writes go through {@link PurpleSettings}'s own replacement, so the
  * usual backup and gate reload happen, and are then read back under the same
  * rules. An import is recorded for the auto-send; a restore never arms it.
- *
- * Nothing calls this yet.
  */
 public final class PurpleSyncSettingsFile {
     public static final int MAX_BYTES = 256 * 1024;
