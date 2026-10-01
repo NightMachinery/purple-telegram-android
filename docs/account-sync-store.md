@@ -289,9 +289,13 @@ from `settings.toml.good` because `settings.toml` is missing or does not
 load. The core then refuses to sync: the review is UsingLastGood with no
 action and no choices, an apply of it is NeedsReview (and of a review shown
 before the fallback, NeedsRecheck), and a new-content post finishes with
-InvalidSettings. Finish sending still posts a record staged earlier, and
-History restore and Undo stay available as the way out. A restore that loads
-becomes the new last good copy, so the copy the app was running is not kept.
+InvalidSettings. The publisher would still finish a pending-only post, since
+that reads nothing from the file, but the screen never starts one: Finish
+sending runs a fresh check first, that review is UsingLastGood with no action,
+and the screen says nothing was sent. A record staged earlier therefore waits
+until `settings.toml` loads again. History restore and Undo stay available as
+the way out. A restore that loads becomes the new last good copy, so the copy
+the app was running is not kept.
 `run_config_sync_bridge.sh` covers the flag on every call, and
 `run_sync_executors.sh` covers a check, an apply, a publish and a restore
 while the app runs from the copy.
