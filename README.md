@@ -433,12 +433,14 @@ History restores any kept copy after a confirmation. Undo and restore stay on
 this device until you publish them, even with **Send to Saved Messages after
 every save** on. While the app runs from
 `settings.toml.good` because `settings.toml` is missing or does not load, a
-check says so and offers nothing: sync changes nothing until you fix the file
-or restore a version from History. Leaving the screen cancels a running
-check; a post already handed to Telegram stays in Telegram's queue, and a
-later check offers Finish sending, which confirms that post rather than
-sending it again. The older Send, Check and Import
-rows and the auto-send switch below work as before.
+check says so, and sync changes nothing until you fix the file or restore a
+version from History. The one exception is a post this device had already
+started: the check still offers Finish sending for it, as it would with a
+working file. Leaving the screen cancels a running check; a post already
+handed to Telegram stays in Telegram's queue, and a later check offers
+Finish sending, which confirms that post rather than sending it again. The
+older Send, Check and Import rows and the auto-send switch below work as
+before.
 
 The shared core now includes config version and remote-head classification,
 strict JSON canonicalization, validated uncompressed sync envelopes, and
