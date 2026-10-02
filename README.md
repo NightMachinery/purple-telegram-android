@@ -169,10 +169,9 @@ Settings shows it on a line under Telegram's version, and the bottom of
 Settings → Purple shows it again, in the form
 `Purple 1.0.0 (10b3b45a7, core 337829e)`: the Purple version, the short commit
 of this repository the APK was built from, and the short commit of the
-purple-core submodule (`TMessagesProj/jni/purple`) it compiled. A long press
-on the Settings version text copies the Purple line; a tap there still counts
-toward Telegram's debug menu. On the Purple screen, a tap or a long press on
-the line copies it.
+purple-core submodule (`TMessagesProj/jni/purple`) it compiled. A tap or a
+long press on the Purple line copies it, in Settings and on the Purple screen.
+Telegram's version line above it keeps its own text and behaviour.
 
 The version is `PurpleVersion.VERSION` in `org.telegram.messenger.purple`,
 starting at 1.0.0. It is bumped when a build is delivered: the minor number

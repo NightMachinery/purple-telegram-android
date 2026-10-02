@@ -547,7 +547,6 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         subtitleView.setText(sb);
 
         versionView.setText(getVersionName());
-        org.telegram.messenger.purple.PurpleVersion.addTo(this, versionView);
     }
 
 
@@ -762,6 +761,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         }
 
         items.add(UItem.asCustomShadow(versionView));
+        items.add(org.telegram.messenger.purple.PurpleVersion.settingsItem(this, versionView));
     }
 
     /**
