@@ -196,32 +196,6 @@ public class TranslateController extends BaseController {
         );
     }
 
-    /**
-     * Purple: says whether whole-chat translation is offered for a chat, and
-     * why, for a chat that has just been opened.
-     *
-     * It lives here rather than on {@link #isDialogTranslatable}, where it
-     * started, because that predicate cannot report the withheld case: with
-     * the feature unavailable upstream never runs language detection, so the
-     * dialog never becomes translatable and the line would only ever appear in
-     * one direction - an absence standing in for evidence, which is the trap
-     * docs/remote-build-and-test/readme.md warns about.
-     */
-    public void purpleLogAvailability(long dialogId) {
-        if (!purpleLoggedTranslatable.add(dialogId)) {
-            return;
-        }
-        final boolean available = isFeatureAvailable(dialogId);
-        FileLog.d("Purple: translate for " + dialogId + ": "
-                + (available
-                    ? (UserConfig.getInstance(currentAccount).isPremium()
-                        ? "available." : "available (local premium).")
-                    : "withheld.")
-                + " chat translate " + (isChatTranslateEnabled() ? "on" : "off") + ".");
-    }
-
-    private final HashSet<Long> purpleLoggedTranslatable = new HashSet<>();
-
     public boolean isDialogTranslatable(long dialogId) {
         return (
             translatableDialogs.contains(dialogId) &&

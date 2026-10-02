@@ -57,7 +57,7 @@ file TMessagesProj/src/main/java/org/telegram/messenger/NotificationsController.
 file TMessagesProj/src/main/java/org/telegram/messenger/ScreenReceiver.java 10 0 2
 file TMessagesProj/src/main/java/org/telegram/messenger/SendMessagesHelper.java 52 5 15
 file TMessagesProj/src/main/java/org/telegram/messenger/SharedConfig.java 11 1 3
-file TMessagesProj/src/main/java/org/telegram/messenger/TranslateController.java 36 2 5
+file TMessagesProj/src/main/java/org/telegram/messenger/TranslateController.java 10 2 4
 file TMessagesProj/src/main/java/org/telegram/messenger/video/VideoAds.java 5 1 2
 file TMessagesProj/src/main/java/org/telegram/tgnet/ConnectionsManager.java 6 1 2
 file TMessagesProj/src/main/java/org/telegram/ui/Adapters/ContactsAdapter.java 112 24 16
@@ -72,7 +72,7 @@ file TMessagesProj/src/main/java/org/telegram/ui/Cells/ManageChatUserCell.java 7
 file TMessagesProj/src/main/java/org/telegram/ui/Cells/ProfileSearchCell.java 7 1 2
 file TMessagesProj/src/main/java/org/telegram/ui/Cells/UserCell.java 7 1 2
 file TMessagesProj/src/main/java/org/telegram/ui/Cells/UserCell2.java 7 1 2
-file TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java 370 11 31
+file TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java 67 10 27
 file TMessagesProj/src/main/java/org/telegram/ui/Components/ChatActivityEnterView.java 36 0 7
 file TMessagesProj/src/main/java/org/telegram/ui/Components/ChatAvatarContainer.java 74 0 5
 file TMessagesProj/src/main/java/org/telegram/ui/Components/ChatNotificationsPopupWrapper.java 7 4 4

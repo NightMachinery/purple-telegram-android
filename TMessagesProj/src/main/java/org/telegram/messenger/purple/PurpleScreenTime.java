@@ -283,7 +283,8 @@ public final class PurpleScreenTime {
     /**
      * A chat came to the front.
      *
-     * Called from {@code ChatActivity.onResume}, which is the pair that tracks
+     * Called from {@code ChatActivity.onResume} (through PurpleChatHooks and
+     * {@code PurpleScreenTimeCover.Host}), which is the pair that tracks
      * the chat actually in front of the user: a fragment deeper in the back
      * stack is paused, a tab switch pauses the one leaving and resumes the one
      * arriving, and the app going to the background pauses whatever was on top.
