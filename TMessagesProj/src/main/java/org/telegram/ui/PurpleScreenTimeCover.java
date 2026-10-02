@@ -29,6 +29,7 @@ import android.content.SharedPreferences;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.MotionEvent;
+import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 
@@ -40,6 +41,7 @@ import org.telegram.messenger.purple.PurpleCore;
 import org.telegram.messenger.purple.PurpleGate;
 import org.telegram.messenger.purple.PurpleScreenTime;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.LayoutHelper;
 
 import java.util.Calendar;
@@ -233,6 +235,142 @@ public class PurpleScreenTimeCover extends FrameLayout {
         calendar.set(Calendar.SECOND, 0);
         calendar.set(Calendar.MILLISECOND, 0);
         return calendar.getTimeInMillis();
+    }
+
+    // ---- the chat it covers -------------------------------------------------
+
+    /**
+     * Screen Time's side of one open chat: the Open and Close events, the
+     * budget check while it sits open, and the cover itself. One per
+     * ChatActivity, owned by its {@link PurpleChatHooks}.
+     *
+     * The chat's account, dialog and content view are read when they are
+     * needed rather than kept, the way ChatActivity read its own fields here
+     * before this moved out of it.
+     */
+    static final class Host {
+
+        private final ChatActivity chat;
+        private final Utilities.Callback0Return<Boolean> finishing;
+
+        /** Re-asks the ledger while the chat sits open, since a budget can run
+         *  out under you. */
+        private final Runnable recheck = this::check;
+
+        /**
+         * The cover a spent hard budget puts over this chat, made the first
+         * time one is needed and kept afterwards. Null in the overwhelming case
+         * of a file with no budgets in it.
+         */
+        private PurpleScreenTimeCover cover;
+
+        /**
+         * @param finishing the chat's own {@code isFinishing()}, which is
+         *     protected in another package. It turns true when the chat starts
+         *     to close. The public {@code isFinished} turns true only once the
+         *     fragment is destroyed, so a verdict that arrived in between would
+         *     still put up a cover or a bulletin on a closing chat, spend the
+         *     day's soft warning and re-arm the recheck that onPause cancelled.
+         */
+        Host(ChatActivity chat, Utilities.Callback0Return<Boolean> finishing) {
+            this.chat = chat;
+            this.finishing = finishing;
+        }
+
+        /**
+         * This chat is now the one in front of the user. onResume and onPause
+         * are the pair that says so - a fragment further down the back stack
+         * is paused, a tab switch pauses the one leaving and resumes the one
+         * arriving - where onFragmentCreate would have counted a chat that is
+         * merely still on the stack. Only a real conversation counts: scheduled
+         * messages and the saved-messages views are the same chat seen another
+         * way, and would double it.
+         */
+        void onResume() {
+            if (chat.getChatMode() == 0) {
+                PurpleScreenTime.openChat(chat.getCurrentAccount(), chat.getDialogId());
+                check();
+            }
+        }
+
+        /**
+         * And the chat is gone from the front. What replaces it is "elsewhere"
+         * - the list, search, settings - unless the app itself went away, in
+         * which case the Background event has already ended the session and
+         * this writes nothing.
+         */
+        void onPause() {
+            if (chat.getChatMode() == 0) {
+                PurpleScreenTime.closeChat(chat.getCurrentAccount(), chat.getDialogId());
+                AndroidUtilities.cancelRunOnUIThread(recheck);
+            }
+        }
+
+        /**
+         * What the day's budgets say about this chat, and what to do about it.
+         *
+         * Asked on every resume and once a minute after that: the allowance is
+         * spent by sitting here, so the moment it runs out is a moment nothing
+         * else would announce. The check itself is off the UI thread - it
+         * derives the ledger from the whole log, like everything else in this
+         * feature, which is what makes a threshold changed this morning apply
+         * to this afternoon.
+         */
+        private void check() {
+            AndroidUtilities.cancelRunOnUIThread(recheck);
+            if (chat.getChatMode() != 0 || chat.contentView == null || !PurpleScreenTime.enabled()) {
+                hide();
+                return;
+            }
+            PurpleScreenTimeCover.check(chat.getCurrentAccount(), chat.getDialogId(), verdict -> {
+                if (chat.contentView == null || finishing.run()) {
+                    return;
+                }
+                if (verdict.cover) {
+                    show(verdict);
+                } else {
+                    hide();
+                    // The soft half: a bulletin at the limit, once per chat per
+                    // day, and nothing else touched. A soft budget is first of
+                    // all a thing you wanted to know about.
+                    if (verdict.soft()
+                            && claimSoftWarning(chat.getDialogId())
+                            && BulletinFactory.canShowBulletin(chat)) {
+                        BulletinFactory.of(chat)
+                                .createSimpleBulletin(R.raw.info, formatString(
+                                        R.string.PurpleScreenTimeSoftReached,
+                                        label(chat.getCurrentAccount(), verdict.budget)))
+                                .show();
+                    }
+                }
+                AndroidUtilities.runOnUIThread(recheck, RECHECK_MS);
+            });
+        }
+
+        private void show(Verdict verdict) {
+            if (cover == null) {
+                cover = new PurpleScreenTimeCover(chat.contentView.getContext());
+                // Added below the action bar in the child order, so the bar
+                // draws over it and keeps its own touches: the way out of a
+                // covered chat has to stay open. Everything else - the message
+                // list, the composer, the pinned bar - is added before the bar
+                // and so ends up underneath this. No top margin: the content
+                // view's own onLayout already drops every child but the action
+                // bar by its height.
+                final int index = chat.contentView.indexOfChild(chat.getActionBar());
+                chat.contentView.addView(cover, index < 0 ? -1 : index,
+                        LayoutHelper.createFrame(
+                                LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+            }
+            cover.set(chat.getCurrentAccount(), verdict, this::check);
+            cover.setVisibility(View.VISIBLE);
+        }
+
+        private void hide() {
+            if (cover != null) {
+                cover.setVisibility(View.GONE);
+            }
+        }
     }
 
     // ---- the view ------------------------------------------------------------

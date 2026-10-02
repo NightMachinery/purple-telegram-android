@@ -142,7 +142,6 @@ import org.telegram.messenger.BotInlineKeyboard;
 import org.telegram.messenger.BotWebViewVibrationEffect;
 import org.telegram.messenger.BuildConfig;
 import org.telegram.messenger.BuildVars;
-import org.telegram.messenger.CacheByChatsController;
 import org.telegram.messenger.ChannelBoostsController;
 import org.telegram.messenger.ChatMessageSharedResources;
 import org.telegram.messenger.ChatMessagesMetadataController;
@@ -184,9 +183,6 @@ import org.telegram.messenger.SvgHelper;
 import org.telegram.messenger.Timer;
 import org.telegram.messenger.TranslateController;
 import org.telegram.messenger.UserConfig;
-import org.telegram.messenger.purple.PurpleGate;
-import org.telegram.messenger.purple.PurpleLastSeen;
-import org.telegram.messenger.purple.PurpleScreenTime;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.VideoEditedInfo;
@@ -401,6 +397,8 @@ public class ChatActivity extends BaseFragment implements
     private boolean userBlocked;
 
     private long chatInviterId;
+
+    private final PurpleChatHooks purple = new PurpleChatHooks(this, this::isFinishing);
 
     //private static final LongSparseArray<ArrayList<ChatMessageCell>> chatMessageCellsCache = new LongSparseArray<ArrayList<ChatMessageCell>>();
 
@@ -1692,10 +1690,6 @@ public class ChatActivity extends BaseFragment implements
     private final static int charge_fee = 72;
 
     private final static int chat_menu_topic_create = 73;
-    private final static int peek_last_seen = 75;
-    private final static int download_pinned_music = 76;
-    private final static int purple_keep_media = 77;
-    private final static int purple_chat_storage = 78;
 
     private final static int id_chat_compose_panel = 1000;
 
@@ -3376,9 +3370,7 @@ public class ChatActivity extends BaseFragment implements
         if (avatarContainer != null) {
             avatarContainer.onDestroy();
         }
-        if (purplePinnedMusicBar != null) {
-            purplePinnedMusicBar.unbind();
-        }
+        purple.onDestroy();
         if (mentionContainer != null && mentionContainer.getAdapter() != null) {
             mentionContainer.getAdapter().onDestroy();
         }
@@ -3905,18 +3897,7 @@ public class ChatActivity extends BaseFragment implements
                         args.putBoolean("addContact", true);
                         presentFragment(new ContactAddActivity(args));
                     }
-                } else if (id == peek_last_seen) {
-                    final TLRPC.User user = getLastSeenPeekUser();
-                    if (user != null) {
-                        PurpleLastSeenTrade.show(ChatActivity.this, currentAccount, user.id);
-                    }
-                } else if (id == download_pinned_music) {
-                    PurplePinnedMusic.show(ChatActivity.this, currentAccount, dialog_id,
-                            getTopicId(), mergeDialogId);
-                } else if (id == purple_keep_media) {
-                    purpleShowKeepMedia();
-                } else if (id == purple_chat_storage) {
-                    purpleOpenChatStorage();
+                } else if (purple.onMenuItem(id)) {
                 } else if (id == mute) {
                     toggleMute(false);
                 } else if (id == add_shortcut) {
@@ -4331,12 +4312,7 @@ public class ChatActivity extends BaseFragment implements
                 @Override
                 public void onShowSubMenu() {
                     updateScrimSourceBitmap();
-                    if (headerItem.hasSubItem(peek_last_seen)) {
-                        final TLRPC.User user = getLastSeenPeekUser();
-                        headerItem.setSubItemShown(
-                                peek_last_seen, PurpleLastSeen.peekEligible(user));
-                    }
-                    purpleUpdateKeepMediaItem();
+                    purple.onShowSubMenu();
                 }
 
                 @Override
@@ -4346,17 +4322,7 @@ public class ChatActivity extends BaseFragment implements
             });
             otherIcon.addView(headerItem.getIconView());
             headerItem.setContentDescription(LocaleController.getString(R.string.AccDescrMoreOptions));
-            if (currentEncryptedChat == null) {
-                headerItem.lazilyAddSubItem(download_pinned_music, R.drawable.msg_download,
-                        getString(R.string.PurplePinnedMusicAction));
-            }
-            final int keepMediaType = purpleKeepMediaType();
-            if (keepMediaType >= 0) {
-                purpleKeepMediaItem = headerItem.lazilyAddSubItem(purple_keep_media,
-                        R.drawable.msg_autodelete, purpleKeepMediaLabel(keepMediaType));
-                headerItem.lazilyAddSubItem(purple_chat_storage, R.drawable.msg2_data,
-                        getString(R.string.PurpleChatStorage));
-            }
+            purple.addHeaderItems(headerItem);
 
             if (currentUser != null && currentUser.self && chatMode != MODE_SAVED) {
                 savedChatsItem = headerItem.lazilyAddSubItem(view_as_topics, R.drawable.msg_topics, LocaleController.getString(R.string.SavedViewAsChats));
@@ -4384,11 +4350,6 @@ public class ChatActivity extends BaseFragment implements
                     @Override
                     public void muteFor(int timeInSeconds) {
                         if (timeInSeconds == 0) {
-                            // Purple: everything in this menu labels or drives the
-                            // Mute/Unmute toggle, so it reads the user's own mute.
-                            // The bell in the title bar, further down, keeps the
-                            // effective answer - that one is about whether the chat
-                            // is quiet, not about what a tap would do.
                             if (getMessagesController().mutedWithoutPreset(dialog_id, getTopicId())) {
                                 ChatActivity.this.toggleMute(true);
                             }
@@ -4447,11 +4408,7 @@ public class ChatActivity extends BaseFragment implements
                 headerItem.setSubItemShown(open_direct, ChatObject.isChannel(currentChat) && !ChatObject.isMonoForum(currentChat) && currentChat.linked_monoforum_id != 0 && ChatObject.canManageMonoForum(currentAccount, -currentChat.linked_monoforum_id));
             }
             if (currentUser != null && chatMode != MODE_SAVED) {
-                headerItem.lazilyAddSubItem(peek_last_seen, R.drawable.msg_view_file,
-                        getString(R.string.PurplePeekAction));
-                final TLRPC.User user = getLastSeenPeekUser();
-                headerItem.setSubItemShown(
-                        peek_last_seen, PurpleLastSeen.peekEligible(user));
+                purple.addPeekItem(headerItem);
                 headerItem.lazilyAddSubItem(call, R.drawable.msg_callback, LocaleController.getString(R.string.Call));
                 headerItem.lazilyAddSubItem(video_call, R.drawable.msg_videocall, LocaleController.getString(R.string.VideoCall));
                 if (userFull != null && userFull.phone_calls_available) {
@@ -6884,10 +6841,7 @@ public class ChatActivity extends BaseFragment implements
             public void onScrolled(RecyclerView recyclerView, int dx, int dy) {
                 final ChatActivity chatToUpdate = parentChatActivity != null ? parentChatActivity : ChatActivity.this;
 
-                // Purple: reading is scrolling, and a long read with no touch
-                // landing on this view would otherwise look like an idle one.
-                PurpleScreenTime.input();
-
+                purple.input();
                 chatListView.invalidate();
                 if (contentView != null) {
                     contentView.updateBlurContent();
@@ -16663,7 +16617,6 @@ public class ChatActivity extends BaseFragment implements
     }
 
     private void toggleMute(boolean instant) {
-        // Purple: which way this toggle goes is decided by the user's own mute.
         boolean muted = getMessagesController().mutedWithoutPreset(dialog_id, getTopicId());
         if (!muted) {
             if (instant) {
@@ -17460,11 +17413,7 @@ public class ChatActivity extends BaseFragment implements
             if (messageMetricsView != null) {
                 messageMetricsView.setIsUserActive();
             }
-            // Purple: a touch is input, and input is what "idle" is the absence
-            // of. Not written down - a line per MotionEvent would drown the
-            // log - it only resets the watchdog, which is the one thing that
-            // sees touches at all. See PurpleScreenTime.input().
-            PurpleScreenTime.input();
+            purple.input();
 
             float expandY;
             if (AndroidUtilities.isInMultiwindow || isInBubbleMode()) {
@@ -24969,26 +24918,10 @@ public class ChatActivity extends BaseFragment implements
     private Pattern sponsoredUrlPattern;
     private MessageObject botSponsoredMessage;
     private void addSponsoredMessages(boolean animated) {
-        if (sponsoredMessagesAdded || chatMode != 0 || !ChatObject.isChannel(currentChat) && !UserObject.isBot(currentUser) || !forwardEndReached[0] || isReport()) {
+        if (sponsoredMessagesAdded || chatMode != 0 || !ChatObject.isChannel(currentChat) && !UserObject.isBot(currentUser) || !forwardEndReached[0] || getUserConfig().isPremium() && getMessagesController().isSponsoredDisabled() || isReport()) {
             return;
         }
-        // Purple: with Local Premium on we simply stop asking. The server hands
-        // these to whoever requests them - there is no Premium check on the
-        // request - so the client is the only thing withholding them, which is
-        // the whole criterion in docs/purple/premium.md.
-        //
-        // Split out of the early return above so the decision can be logged
-        // with its reason: whether the request went out is not otherwise
-        // visible from outside, since the network log names no TL constructors.
-        final boolean settingSaysNo = getUserConfig().isPremium() && getMessagesController().isSponsoredDisabled();
-        if (settingSaysNo || PurpleGate.localPremium()) {
-            FileLog.d("Purple: sponsored for " + dialog_id + ": not requested"
-                    + (settingSaysNo ? " (your setting)." : " (local premium)."));
-            getMessagesController().getTranslateController().purpleLogAvailability(dialog_id);
-            return;
-        }
-        FileLog.d("Purple: sponsored for " + dialog_id + ": requested.");
-        getMessagesController().getTranslateController().purpleLogAvailability(dialog_id);
+        if (purple.withholdSponsored()) return;
         MessagesController.SponsoredMessagesInfo res = getMessagesController().getSponsoredMessages(dialog_id);
         if (res == null || res.messages == null) {
             return;
@@ -29120,7 +29053,7 @@ public class ChatActivity extends BaseFragment implements
         if (chatMode != 0 && chatMode != MODE_SUGGESTIONS || topPanelLayout == null) {
             return;
         }
-        purpleBindPinnedMusicBar(animated);
+        purple.bindPinnedMusicBar(topPanelLayout, animated);
         SharedPreferences preferences = MessagesController.getNotificationsSettings(currentAccount);
         boolean show;
         long did = dialog_id;
@@ -29837,17 +29770,7 @@ public class ChatActivity extends BaseFragment implements
         super.onResume();
         checkShowBlur(false);
         activityResumeTime = System.currentTimeMillis();
-        // Purple: this chat is now the one in front of the user. onResume and
-        // onPause are the pair that says so - a fragment further down the back
-        // stack is paused, a tab switch pauses the one leaving and resumes the
-        // one arriving - where onFragmentCreate would have counted a chat that
-        // is merely still on the stack. Only a real conversation counts:
-        // scheduled messages and the saved-messages views are the same chat
-        // seen another way, and would double it.
-        if (chatMode == 0) {
-            PurpleScreenTime.openChat(currentAccount, dialog_id);
-            purpleCheckBudget();
-        }
+        purple.onResume();
         if (openImport && getSendMessagesHelper().getImportingHistory(dialog_id) != null) {
             ImportingAlert alert = new ImportingAlert(getParentActivity(), null, this, themeDelegate);
             alert.setOnHideListener(dialog -> {
@@ -30059,14 +29982,7 @@ public class ChatActivity extends BaseFragment implements
     public void onPause() {
         super.onPause();
         scrolling = false;
-        // Purple: and the chat is gone from the front. What replaces it is
-        // "elsewhere" - the list, search, settings - unless the app itself
-        // went away, in which case the Background event has already ended the
-        // session and this writes nothing.
-        if (chatMode == 0) {
-            PurpleScreenTime.closeChat(currentAccount, dialog_id);
-            AndroidUtilities.cancelRunOnUIThread(purpleBudgetCheck);
-        }
+        purple.onPause();
         if (scrimPopupWindow != null) {
             scrimPopupWindow.setPauseNotifications(false);
             closeMenu();
@@ -30191,213 +30107,6 @@ public class ChatActivity extends BaseFragment implements
         }
         if (AvatarPreviewer.hasVisibleInstance()) {
             AvatarPreviewer.getInstance().close();
-        }
-    }
-
-
-    private PurplePinnedMusicBar purplePinnedMusicBar;
-
-    private void purpleBindPinnedMusicBar(boolean animated) {
-        if (headerItem == null || !headerItem.hasSubItem(download_pinned_music) || getContext() == null) {
-            return;
-        }
-        if (purplePinnedMusicBar == null || purplePinnedMusicBar.getParent() != topPanelLayout) {
-            if (purplePinnedMusicBar != null) {
-                purplePinnedMusicBar.unbind();
-            }
-            final PurplePinnedMusicBar bar = new PurplePinnedMusicBar(getContext(), themeDelegate);
-            topPanelLayout.addView(bar, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-            topPanelLayout.setPriority(bar, 9);
-            topPanelLayout.setDebugName(bar, "purple pinned music");
-            bar.setOnShownChanged((shown, shownAnimated) -> {
-                if (topPanelLayout != null && bar.getParent() == topPanelLayout) {
-                    topPanelLayout.setViewVisible(bar, shown, shownAnimated);
-                }
-            });
-            bar.setOnOpenList(this::purpleOpenPinnedMusicList);
-            purplePinnedMusicBar = bar;
-        }
-        purplePinnedMusicBar.bind(currentAccount, dialog_id, getTopicId(), animated);
-    }
-
-    private void purpleOpenPinnedMusicList() {
-        final long topicId = getTopicId();
-        presentFragment(new PurplePinnedMusicList(this, dialog_id, topicId, topicId == 0 ? mergeDialogId : 0));
-    }
-
-    private void purpleOpenChatStorage() {
-        if (purpleKeepMediaType() < 0) {
-            return;
-        }
-        final Bundle args = new Bundle();
-        args.putLong("dialog_id", dialog_id);
-        args.putLong("merge_dialog_id", mergeDialogId);
-        presentFragment(new CacheControlActivity(args));
-    }
-
-    private ActionBarMenuItem.Item purpleKeepMediaItem;
-
-    private int purpleKeepMediaType() {
-        if (chatMode != MODE_DEFAULT || currentEncryptedChat != null || dialog_id == 0
-                || isThreadChat() && !isTopic) {
-            return -1;
-        }
-        if (dialog_id > 0) {
-            return currentUser != null ? CacheByChatsController.KEEP_MEDIA_TYPE_USER : -1;
-        }
-        if (currentChat == null) {
-            return -1;
-        }
-        return ChatObject.isChannel(currentChat) ? CacheByChatsController.KEEP_MEDIA_TYPE_CHANNEL
-                : CacheByChatsController.KEEP_MEDIA_TYPE_GROUP;
-    }
-
-    private String purpleKeepMediaLabel(int type) {
-        final CacheByChatsController controller = getMessagesController().getCacheByChatsController();
-        final CacheByChatsController.KeepMediaException exception =
-                controller.getKeepMediaExceptionsByDialogs().get(dialog_id);
-        final int keepMedia = exception != null ? exception.keepMedia : controller.getKeepMedia(type);
-        final String duration = CacheByChatsController.getDaysInSeconds(keepMedia) == Long.MAX_VALUE
-                ? getString(R.string.KeepMediaForever)
-                : CacheByChatsController.getKeepMediaString(keepMedia);
-        return formatString(exception != null ? R.string.PurpleKeepMediaThisChat : R.string.PurpleKeepMediaDefault,
-                duration);
-    }
-
-    private void purpleUpdateKeepMediaItem() {
-        final int type = purpleKeepMediaType();
-        if (purpleKeepMediaItem != null && type >= 0) {
-            purpleKeepMediaItem.setText(purpleKeepMediaLabel(type));
-        }
-    }
-
-    private void purpleShowKeepMedia() {
-        final int type = purpleKeepMediaType();
-        if (type < 0 || headerItem == null || getParentActivity() == null) {
-            return;
-        }
-        final boolean hasException = getMessagesController().getCacheByChatsController()
-                .getKeepMediaExceptionsByDialogs().get(dialog_id) != null;
-        final KeepMediaPopupView layout = new KeepMediaPopupView(this, getParentActivity());
-        layout.updateForDialog(!hasException);
-        layout.setCallback((ignored, keepMedia) -> purpleSetKeepMedia(type, keepMedia));
-        layout.measure(View.MeasureSpec.makeMeasureSpec(dp(1000), View.MeasureSpec.AT_MOST),
-                View.MeasureSpec.makeMeasureSpec(dp(1000), View.MeasureSpec.AT_MOST));
-        final ActionBarPopupWindow window = AlertsCreator.createSimplePopup(this, layout, headerItem,
-                headerItem.getWidth() - layout.getMeasuredWidth() / 2f, layout.getMeasuredHeight() / 2f);
-        if (window != null) {
-            layout.setParentWindow(window);
-        }
-    }
-
-    private void purpleSetKeepMedia(int type, int keepMedia) {
-        final CacheByChatsController controller = getMessagesController().getCacheByChatsController();
-        final boolean keep = keepMedia != CacheByChatsController.KEEP_MEDIA_DELETE;
-        for (int bucket = CacheByChatsController.KEEP_MEDIA_TYPE_USER;
-                bucket <= CacheByChatsController.KEEP_MEDIA_TYPE_CHANNEL; bucket++) {
-            final ArrayList<CacheByChatsController.KeepMediaException> exceptions =
-                    controller.getKeepMediaExceptions(bucket);
-            boolean changed = false;
-            boolean kept = false;
-            for (int i = exceptions.size() - 1; i >= 0; i--) {
-                final CacheByChatsController.KeepMediaException exception = exceptions.get(i);
-                if (exception.dialogId != dialog_id) {
-                    continue;
-                }
-                if (bucket == type && keep && !kept) {
-                    exception.keepMedia = keepMedia;
-                    kept = true;
-                } else {
-                    exceptions.remove(i);
-                }
-                changed = true;
-            }
-            if (bucket == type && keep && !kept) {
-                exceptions.add(new CacheByChatsController.KeepMediaException(dialog_id, keepMedia));
-                changed = true;
-            }
-            if (changed) {
-                controller.saveKeepMediaExceptions(bucket, exceptions);
-            }
-        }
-        purpleUpdateKeepMediaItem();
-    }
-
-    // ---- Purple: the hard budget's cover ------------------------------------
-
-    /**
-     * The cover a spent hard budget puts over this chat, made the first time one
-     * is needed and kept afterwards. Null in the overwhelming case of a file
-     * with no budgets in it.
-     */
-    private PurpleScreenTimeCover purpleCover;
-
-    /** Re-asks the ledger while the chat sits open, since a budget can run out
-     *  under you. */
-    private final Runnable purpleBudgetCheck = this::purpleCheckBudget;
-
-    /**
-     * What the day's budgets say about this chat, and what to do about it.
-     *
-     * Asked on every resume and once a minute after that: the allowance is
-     * spent by sitting here, so the moment it runs out is a moment nothing else
-     * would announce. The check itself is off the UI thread - it derives the
-     * ledger from the whole log, like everything else in this feature, which is
-     * what makes a threshold changed this morning apply to this afternoon.
-     */
-    private void purpleCheckBudget() {
-        AndroidUtilities.cancelRunOnUIThread(purpleBudgetCheck);
-        if (chatMode != 0 || contentView == null || !PurpleScreenTime.enabled()) {
-            purpleHideCover();
-            return;
-        }
-        PurpleScreenTimeCover.check(currentAccount, dialog_id, verdict -> {
-            if (contentView == null || isFinishing()) {
-                return;
-            }
-            if (verdict.cover) {
-                purpleShowCover(verdict);
-            } else {
-                purpleHideCover();
-                // The soft half: a bulletin at the limit, once per chat per
-                // day, and nothing else touched. A soft budget is first of all
-                // a thing you wanted to know about.
-                if (verdict.soft()
-                        && PurpleScreenTimeCover.claimSoftWarning(dialog_id)
-                        && BulletinFactory.canShowBulletin(this)) {
-                    BulletinFactory.of(this)
-                            .createSimpleBulletin(R.raw.info, LocaleController.formatString(
-                                    R.string.PurpleScreenTimeSoftReached,
-                                    PurpleScreenTimeCover.label(currentAccount, verdict.budget)))
-                            .show();
-                }
-            }
-            AndroidUtilities.runOnUIThread(
-                    purpleBudgetCheck, PurpleScreenTimeCover.RECHECK_MS);
-        });
-    }
-
-    private void purpleShowCover(PurpleScreenTimeCover.Verdict verdict) {
-        if (purpleCover == null) {
-            purpleCover = new PurpleScreenTimeCover(contentView.getContext());
-            // Added below the action bar in the child order, so the bar draws
-            // over it and keeps its own touches: the way out of a covered chat
-            // has to stay open. Everything else - the message list, the
-            // composer, the pinned bar - is added before the bar and so ends up
-            // underneath this. No top margin: the content view's own onLayout
-            // already drops every child but the action bar by its height.
-            final int index = contentView.indexOfChild(actionBar);
-            contentView.addView(purpleCover, index < 0 ? -1 : index,
-                    LayoutHelper.createFrame(
-                            LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
-        }
-        purpleCover.set(currentAccount, verdict, this::purpleCheckBudget);
-        purpleCover.setVisibility(View.VISIBLE);
-    }
-
-    private void purpleHideCover() {
-        if (purpleCover != null) {
-            purpleCover.setVisibility(View.GONE);
         }
     }
 
@@ -35757,15 +35466,6 @@ public class ChatActivity extends BaseFragment implements
 
     public TLRPC.User getCurrentUser() {
         return currentUser;
-    }
-
-    private TLRPC.User getLastSeenPeekUser() {
-        final TLRPC.User user = currentUser;
-        if (user == null) {
-            return null;
-        }
-        final TLRPC.User canonical = getMessagesController().getUser(user.id);
-        return canonical != null ? canonical : user;
     }
 
     public long getSendMonoForumPeerId() {
@@ -42907,9 +42607,7 @@ public class ChatActivity extends BaseFragment implements
             if (topPanelLayout != null) {
                 topPanelLayout.updateColors();
             }
-            if (purplePinnedMusicBar != null) {
-                purplePinnedMusicBar.updateColors();
-            }
+            purple.updateColors();
             if (suggestEmojiPanel != null) {
                 suggestEmojiPanel.updateColors();
             }
