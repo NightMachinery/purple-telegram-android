@@ -599,6 +599,19 @@ real chat: with it on, every change the app makes to `settings.toml`, other
 than a sync restore or undo, posts the file five seconds after the last one, so
 a run of checkbox taps is one document rather than six. A file that arrived
 from Saved Messages is never sent back.
+It posts only while the first account is the selected one. The first account
+is the signed-in account in the lowest of the app's four account slots: on a
+phone where no account has signed out it is the account that signed in first,
+which the account switcher also lists first. The two can differ after an
+account signs out and another signs in, because a new sign-in takes the
+highest free slot while the switcher orders accounts by when they signed in.
+When the five seconds run out while another account is selected, that save is
+not posted, and the log says it was skipped because the selected account is
+not the first account; the next save made with the first account selected
+posts as usual. This keeps a test account signed in beside the daily one from
+receiving the daily settings. The manual Send button is unchanged: it posts
+from the account whose settings screen it is on.
+`TMessagesProj/jni/purple_jni/tests/run_auto_send.sh` tests the rule.
 `state.toml` remembers fingerprints for the last imported file and the last
 confirmed send, suppressing repeated sends of the same bytes. The manual Send
 button reports when the upload is queued. After server confirmation, the send
