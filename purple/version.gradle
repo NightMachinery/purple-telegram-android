@@ -1,0 +1,39 @@
+def purpleGit(File dir, List<String> args) {
+    try {
+        def run = providers.exec {
+            workingDir dir
+            commandLine(['git', '--no-optional-locks'] + args)
+            ignoreExitValue = true
+        }
+        return [run.result.get().exitValue, run.standardOutput.asText.get()]
+    } catch (Exception ignored) {
+        return null
+    }
+}
+
+def purpleShortHead(File dir) {
+    def run = purpleGit(dir, ['rev-parse', '--show-toplevel', '--short', 'HEAD'])
+    if (run == null || run[0] != 0) {
+        return 'unknown'
+    }
+    def lines = run[1].readLines()*.trim()
+    if (lines.size() != 2 || new File(lines[0]).canonicalPath != dir.canonicalPath) {
+        return 'unknown'
+    }
+    return lines[1]
+}
+
+def purpleIsDirty(File dir) {
+    def run = purpleGit(dir, ['diff', '--quiet', '--no-renames', '--ignore-submodules=all', 'HEAD', '--'])
+    return run == null || run[0] != 0
+}
+
+def purpleRoot = rootProject.projectDir
+def purpleAppHash = purpleShortHead(purpleRoot)
+if (purpleAppHash != 'unknown' && purpleIsDirty(purpleRoot)) {
+    purpleAppHash += '+dirty'
+}
+def purpleCoreHash = purpleShortHead(new File(purpleRoot, 'TMessagesProj/jni/purple'))
+
+android.defaultConfig.buildConfigField 'String', 'PURPLE_GIT_HASH', "\"${purpleAppHash}\""
+android.defaultConfig.buildConfigField 'String', 'PURPLE_CORE_HASH', "\"${purpleCoreHash}\""

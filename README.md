@@ -162,6 +162,39 @@ Then build the standalone flavor:
 The output APK is **unsigned** and arm64-v8a only — sign it yourself with
 `apksigner` before installing.
 
+### Purple version
+
+Purple has a version of its own, separate from Telegram's. The bottom of
+Settings shows it on a line under Telegram's version, and the bottom of
+Settings → Purple shows it again, in the form
+`Purple 1.0.0 (10b3b45a7, core 337829e)`: the Purple version, the short commit
+of this repository the APK was built from, and the short commit of the
+purple-core submodule (`TMessagesProj/jni/purple`) it compiled. A long press
+on the Settings version text copies the Purple line; a tap there still counts
+toward Telegram's debug menu. On the Purple screen, a tap or a long press on
+the line copies it.
+
+The version is `PurpleVersion.VERSION` in `org.telegram.messenger.purple`,
+starting at 1.0.0. It is bumped when a build is delivered: the minor number
+when the delivery adds a feature, the patch number when it only fixes things.
+
+The two commits are read when Gradle configures the build, by
+`purple/version.gradle`, which `TMessagesProj/build.gradle` applies, and they
+reach the app as `BuildConfig.PURPLE_GIT_HASH` and `BuildConfig.PURPLE_CORE_HASH`.
+The app commit gets `+dirty` when a tracked file of this repository differs
+from that commit, staged or not, so a build made from a commit with a patch
+applied on top says so. Changes inside submodules do not count, since the
+build worker's submodule checkouts are known to differ from their commits, and
+untracked files do not count either, so a patch that only adds new files
+still shows a clean commit. When git is missing or fails, or the directory is
+not the top of a checkout of its own (an uninitialized submodule, or a source
+tree copied into some other repository), that commit shows as `unknown` and
+the build goes on. `TMessagesProj/jni/purple_jni/tests/run_build_version.sh`
+runs the script under Gradle against scratch repositories for each of these
+cases. It needs a Gradle 7.5 or later launcher (`GRADLE`, or the newest
+wrapper distribution under `~/.gradle`) and JDK 21 (`GRADLE_JAVA_HOME`
+overrides it).
+
 ### Passcode keyboard layout
 
 When unlocking with a passcode, Purple checks the text exactly as entered
@@ -399,6 +432,7 @@ settings file - an editor,
 Sync across devices (below), Send to Saved Messages (the desktop's shape and
 caption, so either client can import it), a check of Saved Messages for a newer
 file, Import from a file, Share the file, and the path with a tap to copy.
+Its last line is the Purple version (see **Purple version** above).
 Import from a file reads the picked file through the picker's grant whenever
 the app may not open its path itself, such as a file another app saved in
 Download and picked through the device's storage root. It reads the bytes
