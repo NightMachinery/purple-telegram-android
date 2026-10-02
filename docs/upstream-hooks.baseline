@@ -117,6 +117,5 @@ file TMessagesProj/src/main/res/xml/auth_menu.xml 1 1 1
 file TMessagesProj/src/main/res/xml/provider_paths.xml 2 0 1
 file TMessagesProj/src/main/res/xml/sync_contacts.xml 1 1 1
 file TMessagesProj_App/google-services.json 29 0 1
-file TMessagesProj_AppStandalone/build.gradle 34 6 5
+file TMessagesProj_AppStandalone/build.gradle 1 0 1
 file TMessagesProj_AppStandalone/google-services.json 29 0 1
-file gradle.properties 1 1 1

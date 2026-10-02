@@ -87,6 +87,36 @@ an error instead of starting a download.
   field declared next to `dialogsWithUnread` in MessagesStorage must be named
   in it, so name `start()`'s parameters after those fields.
 
+## Build files
+
+Purple's Gradle settings live in `purple/gradle/`. Each upstream build file
+that needs them carries one hook, an `apply from:` as its last line, so the
+Purple script runs after upstream's `android` block and changes it in place:
+
+- `TMessagesProj_AppStandalone/build.gradle` applies
+  `purple/gradle/standalone.gradle`. That script sets the package id
+  `org.purple.telegram`, drops upstream's `.web` suffix from the `debug` and
+  `standalone` build types, leaves the standalone APK unsigned, and keeps
+  only arm64-v8a in the `afat` flavor.
+
+`gradle.properties` is upstream's, so it merges cleanly although every release
+bumps its version lines next to `APP_PACKAGE`. That includes
+`APP_PACKAGE=org.telegram.messenger`: only the standalone module gets Purple's
+package id. This fork builds only the standalone module
+(`:TMessagesProj_AppStandalone:assembleAfatStandalone`, as README.md says).
+The other app modules (TMessagesProj_App, TMessagesProj_AppHuawei,
+TMessagesProj_AppHockeyApp and TMessagesProj_AppTests) are upstream's as they
+stand, so building one of them makes an APK with Purple code inside that
+claims Telegram's own package id, `org.telegram.messenger`. Do not build or
+hand out those modules.
+
+An upstream change that breaks these scripts fails the Gradle configuration
+instead of building something different:
+
+- If upstream renames the `debug` or `standalone` build type or the `afat`
+  flavor, standalone.gradle's `getByName` fails, where the DSL's `debug { }`
+  form would quietly create an empty one.
+
 ## Work Mode hooks carry the account
 
 Work Mode lists are to become per account, so a Work Mode hook in an upstream
@@ -157,7 +187,10 @@ rather than inventing an account.
      shadows the field, upstream code added later in that if-block reads the
      filtered list;
    - where ChatMessageCell passes private fields to PurpleImportButton, they
-     must still mean what they did.
+     must still mean what they did;
+   - the standalone module's `applicationId`, build types, `afat` flavor and
+     signing, which `purple/gradle/standalone.gradle` overrides (see "Build
+     files").
 7. If upstream adds a counter array next to `dialogsWithUnread` in
    MessagesStorage, Purple's unread counting must cover it: today the
    `purpleBucket` calls in the counting loops, and after A8 PurpleUnreadMirror.

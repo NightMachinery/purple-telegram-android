@@ -1,0 +1,29 @@
+// Purple's settings for the standalone app module, the only module this fork
+// builds (:TMessagesProj_AppStandalone:assembleAfatStandalone). The last line of
+// TMessagesProj_AppStandalone/build.gradle applies this file, so everything here
+// runs after upstream's android block and overrides it. gradle.properties keeps
+// upstream's APP_PACKAGE; see docs/upstream-merge.md for what that means for the
+// other app modules.
+
+// getByName, not the DSL's `debug { }`, so a build type or flavor that upstream
+// renames fails here instead of being created empty.
+android {
+    // Purple's own package id, so it installs next to Telegram.
+    defaultConfig.applicationId = 'org.purple.telegram'
+
+    // Upstream adds ".web" to both build types; Purple's id has no suffix.
+    buildTypes.getByName('debug') {
+        applicationIdSuffix null
+    }
+    buildTypes.getByName('standalone') {
+        applicationIdSuffix null
+        // Ship an unsigned APK, signed by hand after the build.
+        signingConfig null
+    }
+
+    // Only ABI we actually install on.
+    productFlavors.getByName('afat') {
+        ndk.abiFilters.clear()
+        ndk.abiFilters.add('arm64-v8a')
+    }
+}
