@@ -547,6 +547,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         subtitleView.setText(sb);
 
         versionView.setText(getVersionName());
+        org.telegram.messenger.purple.PurpleVersion.addTo(this, versionView);
     }
 
 

@@ -18,6 +18,7 @@ import static org.telegram.messenger.LocaleController.formatString;
 import static org.telegram.messenger.LocaleController.getString;
 
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
@@ -42,6 +43,7 @@ import org.telegram.messenger.purple.PurpleLastSeen;
 import org.telegram.messenger.purple.PurpleSettings;
 import org.telegram.messenger.purple.PurpleSync;
 import org.telegram.messenger.purple.PurpleSyncOffer;
+import org.telegram.messenger.purple.PurpleVersion;
 import org.telegram.messenger.purple.PurpleWriter;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.AlertDialog;
@@ -102,6 +104,7 @@ public class PurpleSettingsActivity extends UniversalFragment
     private static final int REQUEST_IMPORT = 4711;
 
     private boolean checkingSaved;
+    private View versionFooter;
 
 
     // Every reload the gate does ends in this signal, whichever account-wide
@@ -131,6 +134,12 @@ public class PurpleSettingsActivity extends UniversalFragment
     @Override
     protected CharSequence getTitle() {
         return getString(R.string.PurpleSettingsTitle);
+    }
+
+    @Override
+    public View createView(Context context) {
+        versionFooter = PurpleVersion.footer(this, context);
+        return super.createView(context);
     }
 
     @Override
@@ -250,6 +259,7 @@ public class PurpleSettingsActivity extends UniversalFragment
 
         items.add(UItem.asButton(ROW_NOTIFICATIONS, getString(R.string.PurpleNotificationsRow)));
         items.add(UItem.asShadow(getString(R.string.PurpleNotificationsInfo)));
+        items.add(UItem.asCustomShadow(versionFooter));
     }
 
     /**

@@ -322,3 +322,4 @@ gradle.taskGraph.whenReady { graph ->
             "    TELEGRAM_APP_HASH=0123456789abcdef0123456789abcdef")
     }
 }
+apply from: rootProject.file('purple/version.gradle')

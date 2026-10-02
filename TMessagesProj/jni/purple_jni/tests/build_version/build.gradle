@@ -1,0 +1,6 @@
+def fields = [:]
+ext.android = new Expando(defaultConfig: new Expando(buildConfigField: { String type, String name, String value ->
+    fields[name] = type + ' ' + value
+}))
+apply from: providers.gradleProperty('purpleVersionScript').get()
+fields.each { name, value -> println "FIELD ${name} ${value}" }
