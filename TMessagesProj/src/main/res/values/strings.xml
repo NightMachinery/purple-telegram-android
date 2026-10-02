@@ -11421,7 +11421,7 @@
     <string name="PurpleNothingNewer">Nothing newer in Saved Messages.</string>
     <string name="PurpleCheckingSaved">Looking in Saved Messages\u2026</string>
     <string name="PurpleSendAfterSave">Send to Saved Messages after every save</string>
-    <string name="PurpleSendAfterSaveInfo">Every change this app makes to settings.toml, other than a sync restore or undo, is queued for Saved Messages five seconds after the last one, so a run of taps is one document. A file imported from Saved Messages is never sent back, and unchanged files are not automatically sent again after delivery. It sends only while the first account is selected; a save made while another account is selected is not sent.</string>
+    <string name="PurpleSendAfterSaveInfo">Every change this app makes to settings.toml, other than a sync restore or undo, is queued for Saved Messages five seconds after the last one, so a run of taps is one document. A file imported from Saved Messages is never sent back, and unchanged files are not automatically sent again after delivery. It sends only if the first account is selected when those five seconds end; otherwise that save is not sent.</string>
     <string name="PurpleWriteFailed">Could not edit settings.toml: %1$s</string>
     <!-- Purple: why a last seen is coarse, appended to the status line -->
     <string name="PurpleLastSeenByMe">Last Seen Peek</string>
