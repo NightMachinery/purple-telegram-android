@@ -4,6 +4,7 @@
 // runs after upstream's android block and overrides it. gradle.properties keeps
 // upstream's APP_PACKAGE; see docs/upstream-merge.md for what that means for the
 // other app modules.
+apply from: "$rootDir/purple/gradle/common.gradle"
 
 // getByName, not the DSL's `debug { }`, so a build type or flavor that upstream
 // renames fails here instead of being created empty.
@@ -25,5 +26,21 @@ android {
     productFlavors.getByName('afat') {
         ndk.abiFilters.clear()
         ndk.abiFilters.add('arm64-v8a')
+    }
+}
+
+// A standalone build without api credentials compiles fine and then dies at
+// runtime with API_ID_INVALID, so refuse it up front. Other build types stay
+// usable with the 0/"" fallback that purple/gradle/library.gradle sets.
+gradle.taskGraph.whenReady { graph ->
+    def buildsStandaloneApp = graph.allTasks.any {
+        it.path.startsWith(":TMessagesProj_AppStandalone:") && it.name.contains("Standalone")
+    }
+    if (buildsStandaloneApp && !purpleProp("TELEGRAM_APP_ID")) {
+        throw new GradleException(
+            "TELEGRAM_APP_ID is missing from local.properties. Get an api_id/api_hash pair " +
+            "from https://my.telegram.org/apps and add to local.properties (never commit it):\n" +
+            "    TELEGRAM_APP_ID=1234567\n" +
+            "    TELEGRAM_APP_HASH=0123456789abcdef0123456789abcdef")
     }
 }

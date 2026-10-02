@@ -93,11 +93,21 @@ Purple's Gradle settings live in `purple/gradle/`. Each upstream build file
 that needs them carries one hook, an `apply from:` as its last line, so the
 Purple script runs after upstream's `android` block and changes it in place:
 
+- `TMessagesProj/build.gradle` applies `purple/gradle/library.gradle`. That
+  script narrows the native build to arm64-v8a, adds `APP_ID` and `APP_HASH`
+  to BuildConfig from `local.properties`, replaces upstream's
+  `-DANDROID_STL=c++_static` with `c++_shared` in place, adds
+  `-DPURPLE_QT_ANDROID=` and the `purplecore` target, and applies
+  `purple/version.gradle`.
 - `TMessagesProj_AppStandalone/build.gradle` applies
   `purple/gradle/standalone.gradle`. That script sets the package id
   `org.purple.telegram`, drops upstream's `.web` suffix from the `debug` and
-  `standalone` build types, leaves the standalone APK unsigned, and keeps
-  only arm64-v8a in the `afat` flavor.
+  `standalone` build types, leaves the standalone APK unsigned, keeps only
+  arm64-v8a in the `afat` flavor, and refuses a standalone build when
+  `local.properties` has no `TELEGRAM_APP_ID`.
+- `purple/gradle/common.gradle` gives both scripts `purpleProp`, a reader for
+  `local.properties`, because upstream's `getProps` is a method of
+  `TMessagesProj/build.gradle` that an applied script cannot call.
 
 `gradle.properties` is upstream's, so it merges cleanly although every release
 bumps its version lines next to `APP_PACKAGE`. That includes
@@ -113,6 +123,10 @@ hand out those modules.
 An upstream change that breaks these scripts fails the Gradle configuration
 instead of building something different:
 
+- If upstream rewords or drops `-DANDROID_STL=c++_static`, library.gradle
+  stops with a message that lists the CMake arguments it found. Without
+  c++_shared, AGP does not package `libc++_shared.so`, and `libpurplecore.so`
+  would fail to load on the phone.
 - If upstream renames the `debug` or `standalone` build type or the `afat`
   flavor, standalone.gradle's `getByName` fails, where the DSL's `debug { }`
   form would quietly create an empty one.
@@ -188,9 +202,12 @@ rather than inventing an account.
      filtered list;
    - where ChatMessageCell passes private fields to PurpleImportButton, they
      must still mean what they did;
-   - the standalone module's `applicationId`, build types, `afat` flavor and
+   - the CMake arguments and targets in `TMessagesProj/build.gradle`'s
+     `defaultConfig`, which `purple/gradle/library.gradle` edits in place, and
+     the standalone module's `applicationId`, build types, `afat` flavor and
      signing, which `purple/gradle/standalone.gradle` overrides (see "Build
-     files").
+     files"). A CMake argument that upstream adds there reaches Purple's
+     native build too.
 7. If upstream adds a counter array next to `dialogsWithUnread` in
    MessagesStorage, Purple's unread counting must cover it: today the
    `purpleBucket` calls in the counting loops, and after A8 PurpleUnreadMirror.

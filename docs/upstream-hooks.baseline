@@ -39,7 +39,7 @@ caller TMessagesProj/src/main/java/org/telegram/ui/ProfileActivity.java isDialog
 caller TMessagesProj/src/main/java/org/telegram/ui/TopicsFragment.java isDialogMuted 1
 file .gitignore 4 0 1
 file .gitmodules 3 0 1
-file TMessagesProj/build.gradle 48 2 3
+file TMessagesProj/build.gradle 1 0 1
 file TMessagesProj/google-services.json 29 0 1
 file TMessagesProj/jni/CMakeLists.txt 65 0 2
 file TMessagesProj/proguard-rules.pro 10 1 1
