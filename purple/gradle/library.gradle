@@ -1,0 +1,54 @@
+// Purple's settings for the TMessagesProj library module, which holds the
+// native build. The last line of TMessagesProj/build.gradle applies this file,
+// so everything here runs after upstream's android block and changes it in
+// place. See docs/upstream-merge.md.
+apply from: "$rootDir/purple/gradle/common.gradle"
+
+// Where the Qt 6 Android prefix lives on this machine (a path, not a secret, so
+// it sits in the gitignored local.properties next to the api keys).
+// libpurplecore.so cannot be built without it, so a missing value is fatal
+// rather than a silent skip.
+def purpleQtAndroid() {
+    def path = purpleProp("PURPLE_QT_ANDROID")
+    if (!path) {
+        throw new GradleException("PURPLE_QT_ANDROID is not set in local.properties. " +
+                "Point it at a Qt 6 Android prefix, e.g. " +
+                "PURPLE_QT_ANDROID=/path/to/qt/6.7.3/android_arm64_v8a")
+    }
+    return path
+}
+
+// Only ABI we actually install on. The app module filters packaging, but the
+// CMake build lives in this module, so narrow it here as well.
+android.defaultConfig.ndk.abiFilters.add('arm64-v8a')
+
+// api_id/api_hash come from the gitignored local.properties so they never reach
+// git. Absent, they fall back to 0/"" so a plain debug or IDE sync still
+// configures; purple/gradle/standalone.gradle refuses a standalone build
+// without them.
+android.defaultConfig.buildConfigField 'int', 'APP_ID', (purpleProp("TELEGRAM_APP_ID") ?: "0")
+android.defaultConfig.buildConfigField 'String', 'APP_HASH', "\"" + (purpleProp("TELEGRAM_APP_HASH") ?: "") + "\""
+
+// c++_shared, not upstream's c++_static. libpurplecore.so links Qt Core, which
+// links libc++_shared.so, and two libc++ copies in one process is unsupported.
+// AGP packages libc++_shared.so for us. The argument is replaced in place, so
+// the list keeps exactly one ANDROID_STL argument in upstream's position; if
+// upstream rewords it, the check below stops the build here instead of the app
+// failing to load its native code at runtime.
+def purpleCmake = android.defaultConfig.externalNativeBuild.cmake
+def purpleArgs = purpleCmake.arguments
+for (int i = 0; i < purpleArgs.size(); i++) {
+    if (purpleArgs[i] == '-DANDROID_STL=c++_static') {
+        purpleArgs[i] = '-DANDROID_STL=c++_shared'
+    }
+}
+if (!purpleCmake.arguments.contains('-DANDROID_STL=c++_shared')) {
+    throw new GradleException("purple/gradle/library.gradle found no -DANDROID_STL=c++_static " +
+            "argument to turn into c++_shared in TMessagesProj/build.gradle, whose CMake " +
+            "arguments are now " + purpleCmake.arguments + ". libpurplecore.so needs " +
+            "c++_shared; update the swap in purple/gradle/library.gradle.")
+}
+purpleCmake.arguments.add("-DPURPLE_QT_ANDROID=" + purpleQtAndroid())
+purpleCmake.targets.add('purplecore')
+
+apply from: "$rootDir/purple/version.gradle"

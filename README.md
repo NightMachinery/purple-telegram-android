@@ -178,8 +178,9 @@ starting at 1.0.0. It is bumped when a build is delivered: the minor number
 when the delivery adds a feature, the patch number when it only fixes things.
 
 The two commits are read when Gradle configures the build, by
-`purple/version.gradle`, which `TMessagesProj/build.gradle` applies, and they
-reach the app as `BuildConfig.PURPLE_GIT_HASH` and `BuildConfig.PURPLE_CORE_HASH`.
+`purple/version.gradle`, which `purple/gradle/library.gradle` applies to
+`TMessagesProj`, and they reach the app as `BuildConfig.PURPLE_GIT_HASH` and
+`BuildConfig.PURPLE_CORE_HASH`.
 The app commit gets `+dirty` when a tracked file of this repository differs
 from that commit, staged or not, so a build made from a commit with a patch
 applied on top says so. Changes inside submodules do not count, since the

@@ -1,0 +1,16 @@
+// Shared by the Purple build scripts in this directory. Each one applies it to
+// the project it configures.
+//
+// purpleProp(name) reads one value from the gitignored local.properties at the
+// repository root, and returns null when the file or the key is missing.
+// Upstream's own getProps is a method of TMessagesProj/build.gradle, which an
+// applied script cannot call.
+ext.purpleProp = { String name ->
+    def file = rootProject.file('local.properties')
+    if (!file.exists()) {
+        return null
+    }
+    def props = new Properties()
+    file.withInputStream { props.load(it) }
+    return props.getProperty(name)
+}
