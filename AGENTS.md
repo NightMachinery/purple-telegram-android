@@ -30,6 +30,44 @@ same logic.
 - Review your own diff of upstream files before committing; each hunk should
   read as a hook, not as feature code.
 
+Where Purple code goes:
+
+- Logic goes in `org.telegram.messenger.purple`, in new small classes named
+  after their feature, not in `PurpleGate`. The `PurpleGate` methods that
+  hooks already call stay where they are.
+- A helper that needs package-private members of an upstream UI class goes in
+  `org.telegram.ui` with the `Purple` prefix, for example one helper instance
+  per upstream screen.
+- Build logic goes under the repository's `purple/` directory, new Gradle
+  scripts in `purple/gradle/`, each applied by one `apply from:` line. Native
+  build logic goes in `TMessagesProj/jni/purple_jni/`.
+- Once `TMessagesProj/src/main/res/values/purple_strings.xml` exists, new
+  Purple strings go there. Until then, add them to the Purple block at the
+  end of `res/values/strings.xml`.
+
+How a hook looks:
+
+- It carries at most one comment line, `// Purple: see PurpleX#method`. The
+  rationale goes in that method's Javadoc, or in the feature's README section
+  when it is about which upstream files the feature touches and why.
+- Every Purple menu, row or button id lives in the Purple class that handles
+  it and takes a value from the reserved range `0x70750000 + n`, clear of
+  upstream's sequential ids.
+- A UI file that has a per-instance Purple helper routes every hook through
+  that instance and imports nothing. Elsewhere, a file with one or two Purple
+  call sites uses fully qualified names, and a file that calls a Purple class
+  many times imports it once.
+- A Work Mode hook (list membership, folder filtering, notification and
+  unread filtering, chat-list hiding, mute, temporary rows) takes the account
+  it acts for, never a global. If the call site has no account in hand, say
+  so in the commit instead of inventing one.
+
+Before committing a change to an upstream file, run
+`purple/upstream-hooks.sh check` (mark new files with `git add -N` first). If
+the change shrinks or grows an edit, run `purple/upstream-hooks.sh baseline`
+and commit `docs/upstream-hooks.baseline` with it. `docs/upstream-merge.md`
+explains the check and is the checklist for merging an upstream release.
+
 New work follows this from the start. Older Purple code that still sits inside
 upstream files is being moved out.
 
