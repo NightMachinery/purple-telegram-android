@@ -510,10 +510,6 @@ public class FilePathDatabase {
         dispatchQueue.postRunnable(runnable);
     }
 
-    public void afterPendingWrites(Runnable runnable) {
-        postRunnable(runnable);
-    }
-
     private void postToFrontRunnable(Runnable runnable) {
         ensureQueueExist();
         dispatchQueue.postToFrontRunnable(runnable);

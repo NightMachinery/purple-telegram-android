@@ -721,7 +721,7 @@ final class PurplePinnedMusic {
                         mediaType(transfer), 0, file.getAbsolutePath());
             }
             saveMetadata(transfer, file);
-            database.afterPendingWrites(() -> AndroidUtilities.runOnUIThread(() -> {
+            database.getQueue().postRunnable(() -> AndroidUtilities.runOnUIThread(() -> {
                 if (jobs.get(key(account, dialogId, topicId)) != this
                         || transfer.state != Transfer.ACTIVE) {
                     return;
