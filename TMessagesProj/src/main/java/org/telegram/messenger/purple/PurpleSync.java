@@ -139,6 +139,10 @@ public final class PurpleSync {
             // happens on the next save after a login rather than never.
             return;
         }
+        if (!PurpleAutoSendRules.postsFrom(account, activatedAccounts())) {
+            FileLog.d("Purple: auto-send skipped: the selected account is not the first account.");
+            return;
+        }
         final String error = sendToSavedMessages(account, bytes);
         if (error != null) {
             // Said in the log and nowhere else: nobody asked for this one, so a
@@ -146,6 +150,14 @@ public final class PurpleSync {
             // interrupting to report on something it started itself.
             FileLog.e("Purple: auto-send: " + error);
         }
+    }
+
+    private static boolean[] activatedAccounts() {
+        final boolean[] activated = new boolean[UserConfig.MAX_ACCOUNT_COUNT];
+        for (int account = 0; account < activated.length; ++account) {
+            activated[account] = UserConfig.getInstance(account).isClientActivated();
+        }
+        return activated;
     }
 
     /**
