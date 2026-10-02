@@ -190,9 +190,9 @@ not the top of a checkout of its own (an uninitialized submodule, or a source
 tree copied into some other repository), that commit shows as `unknown` and
 the build goes on. `TMessagesProj/jni/purple_jni/tests/run_build_version.sh`
 runs the script under Gradle against scratch repositories for each of these
-cases. It needs a Gradle 7.5 or later launcher (`GRADLE`, or the newest
-wrapper distribution under `~/.gradle`) and JDK 21 (`GRADLE_JAVA_HOME`
-overrides it).
+cases. It needs a Gradle 7.5 or later launcher (`GRADLE`, else `gradle` on
+PATH, else the newest wrapper distribution under `~/.gradle`) and JDK 21
+(`GRADLE_JAVA_HOME` overrides it).
 
 ### Passcode keyboard layout
 
