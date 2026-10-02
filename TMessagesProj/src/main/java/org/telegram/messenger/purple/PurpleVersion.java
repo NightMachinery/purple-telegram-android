@@ -7,7 +7,6 @@
 package org.telegram.messenger.purple;
 
 import android.content.Context;
-import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.widget.TextView;
@@ -19,6 +18,7 @@ import org.telegram.messenger.R;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.BulletinFactory;
+import org.telegram.ui.Components.UItem;
 
 public final class PurpleVersion {
     public static final String VERSION = "1.0.0";
@@ -31,10 +31,19 @@ public final class PurpleVersion {
                 + ", core " + BuildConfig.PURPLE_CORE_HASH + ")";
     }
 
-    public static void addTo(BaseFragment fragment, TextView telegramVersion) {
-        final CharSequence telegram = telegramVersion.getText();
-        telegramVersion.setText(TextUtils.isEmpty(telegram) ? line() : telegram + "\n" + line());
-        telegramVersion.setOnLongClickListener(v -> copy(fragment));
+    public static UItem settingsItem(BaseFragment fragment, TextView telegramVersion) {
+        if (telegramVersion == null) {
+            return UItem.asCustomShadow(null);
+        }
+        final TextView line;
+        if (telegramVersion.getTag() instanceof TextView) {
+            line = (TextView) telegramVersion.getTag();
+        } else {
+            line = footer(fragment, telegramVersion.getContext());
+            line.setPadding(AndroidUtilities.dp(21), 0, AndroidUtilities.dp(21), AndroidUtilities.dp(10));
+            telegramVersion.setTag(line);
+        }
+        return UItem.asCustomShadow(line);
     }
 
     public static TextView footer(BaseFragment fragment, Context context) {
