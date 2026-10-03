@@ -29,15 +29,19 @@ public final class PurpleListMenu {
     /**
      * Whether the menu should appear at all.
      *
-     * It does not, unless a list has been written, so an unconfigured fork's
-     * menus are exactly upstream's.
+     * Live lists offer membership edits; a non-Normal running resolution
+     * offers its verdict and temporary overrides even with no live lists.
+     * Normal with no live lists keeps the unconfigured fork's stock menus.
      */
     public static boolean available() {
         final PurpleCore.Loaded state = PurpleGate.state();
-        return state != null && state.listCount > 0;
+        return state != null && (state.listCount > 0 || !state.normal);
     }
 
-    /** Every list, and whether this chat is in it. Empty if the file is gone. */
+    /**
+     * Live lists and membership only; empty when the primary file defines none
+     * or is unusable.
+     */
     public static List<PurpleCore.ListEntry> listsFor(int currentAccount, long dialogId) {
         return PurpleCore.listsFor(
                 PurpleGate.settingsBytes(),
