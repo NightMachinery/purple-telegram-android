@@ -48,7 +48,7 @@ public final class PurpleListBox {
     /**
      * Shows the box for one chat.
      *
-     * Every list is offered, including one that matches by {@code kinds}:
+     * Every live list is offered, including one that matches by {@code kinds}:
      * adding a chat to a rule-based list writes an explicit member id, which is
      * how you pull one chat out of a rule that would otherwise sweep it up
      * somewhere else.
@@ -56,6 +56,11 @@ public final class PurpleListBox {
      * Membership is global rather than per preset. A chat is in a list or it is
      * not; what changes between presets is what that list <i>does</i>, and
      * whether the preset names it at all.
+     *
+     * A non-Normal resolution can keep filtering from saved list definitions
+     * while the primary file has no live lists. The box still explains the
+     * chat and offers temporary overrides and explicit New list creation;
+     * saved definitions never become editable checkbox rows.
      */
     public static void show(BaseFragment fragment, int currentAccount, long dialogId) {
         if (fragment == null) {
@@ -68,11 +73,10 @@ public final class PurpleListBox {
         final Theme.ResourcesProvider resourcesProvider = fragment.getResourceProvider();
 
         PurpleGate.ensureLoaded();
+        final PurpleCore.Loaded state = PurpleGate.state();
+        final boolean filtering = state != null && !state.normal;
         final List<PurpleCore.ListEntry> lists = PurpleListMenu.listsFor(currentAccount, dialogId);
-        if (lists.isEmpty()) {
-            // Reached when the file has gone missing between the menu being
-            // offered and this opening. Naming the file beats an empty box,
-            // which would read as "your lists are gone".
+        if (lists.isEmpty() && !filtering) {
             final AlertDialog.Builder empty = new AlertDialog.Builder(activity, resourcesProvider);
             empty.setTitle(getString(R.string.PurpleLists));
             empty.setMessage(formatString(R.string.PurplePresetNotConfigured,
@@ -127,7 +131,7 @@ public final class PurpleListBox {
         // standing rule, and these are a thing you are doing this afternoon.
         // Only under a preset, because an override is a statement about one -
         // there would be nothing for it to outrank under Normal.
-        if (PurpleGate.filtering()) {
+        if (filtering) {
             addUntilRow(fragment, activity, layout, resourcesProvider, builder,
                     currentAccount, dialogId, PurpleCore.OVERRIDE_SHOW, R.string.PurpleShowUntil);
             addUntilRow(fragment, activity, layout, resourcesProvider, builder,
@@ -239,14 +243,17 @@ public final class PurpleListBox {
             }
         }
 
-        /** Puts the file's answer back into the box after a tick or a new list. */
+        /**
+         * Puts live membership and the running verdict back after a tick or a
+         * new list. Rechecks the current resolution so filtering can retain a
+         * box with zero editable rows; this is not a general reload observer.
+         */
         void refresh() {
             final List<PurpleCore.ListEntry> fresh =
                     PurpleListMenu.listsFor(currentAccount, dialogId);
-            if (fresh.isEmpty()) {
-                // The file has gone since the box opened. There is nothing left
-                // for these rows to be about, and an empty box would read as
-                // "your lists are gone" rather than "the file is".
+            final PurpleCore.Loaded state = PurpleGate.state();
+            final boolean filtering = state != null && !state.normal;
+            if (fresh.isEmpty() && !filtering) {
                 builder.getDismissRunnable().run();
                 return;
             }

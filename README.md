@@ -294,7 +294,7 @@ be a guess, made twice, on two platforms, and wrong quietly. The keys say it out
 loud instead.
 
 A chat can be filed into a list from the chat list itself: select it, then
-**Work Mode lists** in the overflow. Every list is offered, ticked where the
+**Work Mode lists** in the overflow. Every live list is offered, ticked where the
 chat is already a member, and a tap adds or removes it. The write goes through
 the same splice the desktop uses, so your comments, ordering and blank lines
 survive, and the line carries the chat's name as a trailing comment. This
@@ -308,6 +308,15 @@ to be typed into the file by hand; the core refuses an empty name, one starting
 with `*` and one already taken, and says which. The app's own writes to `settings.toml` do not come back
 through the file watcher as a second reload: the watcher compares the file
 against the bytes the app is already running on, the way the desktop does.
+
+While a non-Normal preset keeps filtering from saved list definitions, **Work
+Mode lists** stays available in the chat preview and single-chat selection
+menus even when the current file defines no lists. The box shows the chat's
+verdict, naming a saved list when it decides the chat, and keeps the temporary
+overrides, **New list…** and **Close**. Checkboxes come only from the current
+file; New list explicitly creates a live definition. The refresh after a tick
+or a new list also keeps zero rows while filtering continues. Opening the box
+does not select Normal. Under Normal with no live lists, the entry is omitted.
 
 The settings and state files live in the app's private storage, at
 `/data/data/org.purple.telegram/files/purple/`. `settings.toml` is yours,
