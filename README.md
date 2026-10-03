@@ -312,14 +312,40 @@ against the bytes the app is already running on, the way the desktop does.
 The settings and state files live in the app's private storage, at
 `/data/data/org.purple.telegram/files/purple/`. `settings.toml` is yours,
 imported from Saved Messages. `state.toml` is the app's: the active preset,
-and the last resolution that worked, so a `settings.toml` broken halfway
-through an edit leaves the chat list exactly as it was rather than unhiding
-everything. `settings.toml.good` is a copy of the last `settings.toml` the app
-accepted, used when the real one is missing or unreadable - the resolution in
-`state.toml` remembers the order a preset resolved to but not what its lists
-contained, so without the copy a vanished `settings.toml` would leave every
-chat unclaimed and therefore hidden. The preset picker says when it is running
-from the copy. In the same directory, `settings.toml.bak` keeps the file from
+and the last resolution that worked, so a `settings.toml` that stops
+describing the running preset leaves the chat list exactly as it was rather
+than falling back to defaults. Defaulting would unhide every chat you had
+hidden, which is the one outcome Work Mode must never produce by accident.
+
+Two mechanisms cover the two ways the lists behind the running preset can
+disappear:
+
+- **The file is missing or does not parse.** `settings.toml.good` is a copy of
+  the last `settings.toml` the app accepted, and the app runs from it instead.
+  Presets and lists both come from the copy, and the preset picker says it is
+  running from it.
+- **The file parses but no longer defines the running preset or its lists.**
+  An import from Saved Messages, a sync Apply, a History restore or a hand
+  edit can each do this. The new file is valid, so it replaces
+  `settings.toml.good` as well, and the preset keeps running on the cached
+  resolution in `state.toml`. That cache also keeps a copy of every list the
+  running preset and its views name (title, members and kinds, as
+  `[[resolved_cache.list_defs]]`). A list the file still defines, or defines
+  again, answers with its live members; the copy answers only for a list the
+  file dropped. Without the copy, the cached order would name lists nothing
+  can look up, and every chat would be hidden and silenced. The preset picker
+  names the lists running from the copy, and choosing Normal, or a preset the
+  new file defines, ends it. A file with no presets at all still opens the
+  picker while the dropped preset runs, with Normal as its only row.
+
+The copy is rewritten on every reload, so a chat added to a list from the
+chat list reaches it. It makes `state.toml` grow with the named lists, about
+16 bytes a member, so the app reads a `state.toml` of up to twice the 4 MiB
+cap on `settings.toml`: a state file refused for its size would read as
+Normal. A `state.toml` written by an older build restores names only, as
+before, and gains the copy at the next reload that can still see the lists.
+
+In the same directory, `settings.toml.bak` keeps the file from
 before the latest whole-file write, including an editor save, while
 `settings.toml.import.bak` keeps the file from before the latest import that
 replaced an existing settings file. Each backup has one slot: another import
