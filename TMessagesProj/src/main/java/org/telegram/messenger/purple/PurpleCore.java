@@ -1824,6 +1824,14 @@ public final class PurpleCore {
         public final boolean activeMissing;
 
         /**
+         * The lists the running preset takes from the cached resolution's copy,
+         * because settings.toml no longer defines them, in order of first
+         * mention. Empty whenever the file defines every list the preset names,
+         * so always empty for a preset the file itself resolves.
+         */
+        public final List<String> snapshotLists;
+
+        /**
          * The preset's folder selection, in strip order. Empty is meaningful:
          * a preset that says nothing about folders shows no folder tabs at all,
          * and {@code "*ALL"} is how you ask for them back.
@@ -2156,7 +2164,8 @@ public final class PurpleCore {
 
         private Loaded(boolean ok, String error, List<String> warnings, int version,
                 boolean normal, String preset, String title, int lists, boolean usedCache,
-                String cacheReason, boolean activeMissing, List<FolderEntry> folders,
+                String cacheReason, boolean activeMissing, List<String> snapshotLists,
+                List<FolderEntry> folders,
                 boolean foldersRestricted, List<String> silencedFolders,
                 List<String> quietFolders, List<ExemptFolder> exemptFolders,
                 int stories, List<StoryFolder> storyFolders,
@@ -2188,6 +2197,7 @@ public final class PurpleCore {
             this.usedCache = usedCache;
             this.cacheReason = cacheReason;
             this.activeMissing = activeMissing;
+            this.snapshotLists = snapshotLists;
             this.folders = folders;
             this.foldersRestricted = foldersRestricted;
             this.silencedFolders = silencedFolders;
@@ -2282,6 +2292,7 @@ public final class PurpleCore {
         private static Loaded failed(String error) {
             return new Loaded(false, error, Collections.<String>emptyList(), 0, true,
                     "normal", "Normal", 0, false, "", false,
+                    Collections.<String>emptyList(),
                     Collections.<FolderEntry>emptyList(), false,
                     Collections.<String>emptyList(),
                     Collections.<String>emptyList(),
@@ -2466,6 +2477,7 @@ public final class PurpleCore {
                         object.optBoolean("usedCache", false),
                         object.optString("cacheReason", ""),
                         object.optBoolean("activeMissing", false),
+                        names(object, "snapshotLists"),
                         folders,
                         object.optBoolean("foldersRestricted", false),
                         silencedFolders,

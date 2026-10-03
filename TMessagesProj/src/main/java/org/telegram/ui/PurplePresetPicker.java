@@ -190,6 +190,18 @@ public final class PurplePresetPicker {
             layout.addView(note(activity, getString(R.string.PurplePresetLastGood),
                     Theme.getColor(Theme.key_text_RedRegular, resourcesProvider)));
         }
+        // The same for lists: a preset running on the cached copy of lists
+        // the file no longer defines is deciding chats by members the user
+        // cannot see anywhere, so it names them and says how to stop it.
+        if (state.snapshotLists != null && !state.snapshotLists.isEmpty()) {
+            final List<String> quoted = new ArrayList<>();
+            for (final String name : state.snapshotLists) {
+                quoted.add("'" + name + "'");
+            }
+            layout.addView(note(activity, formatPluralString("PurplePresetSnapshotLists",
+                            quoted.size(), TextUtils.join(", ", quoted), state.preset),
+                    Theme.getColor(Theme.key_text_RedRegular, resourcesProvider)));
+        }
         if (state.warnings != null && !state.warnings.isEmpty()) {
             final List<String> lines = new ArrayList<>();
             for (final String warning : state.warnings) {

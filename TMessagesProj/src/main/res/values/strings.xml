@@ -11281,6 +11281,8 @@
     <string name="PurplePresetWarning">Warning: %1$s</string>
     <string name="PurplePresetFileNote">Presets are written in %1$s.</string>
     <string name="PurplePresetLastGood">Warning: settings.toml is missing or unreadable, so these presets come from the last copy that worked. Import the file again to replace it.</string>
+    <string name="PurplePresetSnapshotLists_one">Warning: settings.toml no longer defines the list %2$s, so \'%3$s\' runs on a saved copy of it. Choose Normal or another preset, or import a file that defines it.</string>
+    <string name="PurplePresetSnapshotLists_other">Warning: settings.toml no longer defines the lists %2$s, so \'%3$s\' runs on saved copies of them. Choose Normal or another preset, or import a file that defines them.</string>
     <string name="PurplePresetNotConfigured">Work Mode is not configured. Write presets in %1$s, then they will show up here.</string>
     <string name="PurplePeek">Peek - show what the preset hides</string>
     <string name="PurplePeekNormal">Peek - nothing is hidden under Normal</string>
