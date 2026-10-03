@@ -84,7 +84,13 @@ public final class PurplePresetPicker {
         // first thing that asks, on an account whose chat list has not drawn yet.
         PurpleGate.ensureLoaded();
         final PurpleCore.Loaded state = PurpleGate.state();
-        if (state == null || state.presets == null || state.presets.isEmpty()) {
+        // A file with no presets has nothing to pick, unless a preset is still
+        // running: the file dropped it, and the cached resolution keeps it in
+        // force. That is when the box is needed most, for the Normal row that
+        // ends it and the lines that explain it, so it shows with Normal as
+        // its only row instead of saying Work Mode is not configured.
+        if (state == null || state.presets == null
+                || (state.presets.isEmpty() && !state.activeMissing)) {
             showUnconfigured(fragment, activity, resourcesProvider);
             return;
         }
