@@ -1221,8 +1221,16 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 
 	// Only ever widened, never cleared: a resolution we could not compute is
 	// exactly when the cache has to still be there.
+	//
+	// The settings go in too, because the cache keeps a copy of every list
+	// the preset names, members included: a file that later drops the preset
+	// and its lists then leaves the chat list as it was, instead of an order
+	// of names nothing can look up, which hides and silences every chat. A
+	// resolution restored from the cache carries its copy forward this way.
+	// Rewritten on every load, so a chat added to a list reaches the copy
+	// even though it does not change the resolution.
 	if (!gate.resolved.normal) {
-		gate.state.resolvedCache = Purple::ToCache(gate.resolved);
+		gate.state.resolvedCache = Purple::ToCache(gate.resolved, gate.settings);
 	}
 	const auto serialized = Purple::SerializeState(gate.state);
 	const auto rewrite = (serialized != stateText);
@@ -1618,6 +1626,7 @@ Java_org_telegram_messenger_purple_PurpleCore_visibleNative(
 	for (auto i = 0, count = int(gate.resolved.views.size()); i != count; ++i) {
 		if (Purple::ViewHolds(
 				gate.settings,
+				gate.resolved,
 				gate.resolved.views[i],
 				id,
 				Purple::ChatKind(kind))) {
@@ -2117,10 +2126,16 @@ Java_org_telegram_messenger_purple_PurpleCore_deciderNative(
 	if (!effective) {
 		return nullptr;
 	}
-	const auto list = gate.settings.list(effective->list);
+	// Through the snapshot as well as the file, the way MatchList() found it:
+	// a list the file has dropped can still decide a chat while the preset
+	// runs from the cache, and it should be named by its title then too.
+	const auto list = Purple::LookupList(
+		gate.settings,
+		gate.resolved,
+		effective->list);
 	if (!list) {
-		// The resolution named a list the file no longer has, which is what a
-		// half-finished edit looks like. The key is still the honest answer.
+		// Neither the file nor the snapshot knows the name. MatchList() does
+		// not return such an entry, but the key is still the honest answer.
 		return ToJava(env, effective->list);
 	}
 	return ToJava(env, list->title.isEmpty() ? list->name : list->title);
