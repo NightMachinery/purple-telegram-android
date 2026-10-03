@@ -377,17 +377,25 @@ public final class PurpleGate {
             return;
         }
 
-        // The resolution cache in state.toml remembers the order a preset
-        // resolved to, but not what its lists contained - membership lives in
-        // settings.toml and nowhere else. So a settings.toml that has gone
-        // missing leaves every chat unclaimed, and a preset that names what
-        // gets through hides an account it can no longer describe.
+        // Two mechanisms keep a running preset's lists from vanishing under it,
+        // one for each way the file can lose them.
         //
-        // Falling back to the last copy that worked is the fix, and the file
-        // itself is the right thing to keep: it needs no second schema, it
-        // cannot disagree with the real one about what a list means, and it
-        // covers a file broken halfway through an edit the same way it covers
-        // one that vanished.
+        // A settings.toml that is missing or does not parse falls back to the
+        // last copy that worked, here. The whole file comes back, presets as
+        // well as lists, so the picker still offers what the user wrote, and a
+        // file broken halfway through an edit is covered the same way as one
+        // that vanished.
+        //
+        // A settings.toml that parses but no longer defines the running preset
+        // or its lists (an import, a sync apply, a History restore, a hand
+        // edit) is accepted and replaces that copy below, so the copy cannot
+        // help. The core runs the cached resolution from state.toml instead,
+        // and the cache keeps the definitions of the lists the preset names,
+        // members included. A list the new file still defines answers from the
+        // file; only a list it dropped answers from the cache, and the picker
+        // names those lists. Without that copy the cached order would name
+        // lists nothing can look up, and every chat would be hidden and
+        // silenced.
         boolean shadowed = false;
         if (settings == null || !next.ok) {
             final byte[] lastGood = readFile(PurpleSettings.lastGoodFile());
@@ -443,6 +451,10 @@ public final class PurpleGate {
         }
         if (next.usedCache) {
             FileLog.d("Purple: using the cached resolution (" + next.cacheReason + ").");
+        }
+        if (!next.snapshotLists.isEmpty()) {
+            FileLog.d("Purple: lists from the cached copy, because settings.toml no longer"
+                    + " defines them: " + TextUtils.join(", ", next.snapshotLists) + ".");
         }
 
         postRefresh();

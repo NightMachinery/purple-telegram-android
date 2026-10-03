@@ -1269,6 +1269,22 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 	AppendJsonString(json, cacheReason);
 	json += QStringLiteral(",\"activeMissing\":");
 	AppendJsonBool(json, activeMissing);
+	// The lists the running preset takes from the cache's copy because the
+	// file no longer defines them, in order of first mention. Empty whenever
+	// the file describes everything the preset names. The picker says so: a
+	// chat list shaped by definitions the user cannot see in their file must
+	// not be a silent state.
+	const auto snapshotLists = Purple::SnapshotListsInUse(
+		gate.settings,
+		gate.resolved);
+	json += QStringLiteral(",\"snapshotLists\":[");
+	for (auto i = 0, count = int(snapshotLists.size()); i != count; ++i) {
+		if (i) {
+			json += QChar(',');
+		}
+		AppendJsonString(json, snapshotLists[i]);
+	}
+	json += QChar(']');
 	json += QStringLiteral(",\"foldersRestricted\":");
 	AppendJsonBool(json, FoldersRestricted(gate.resolved));
 	json += QStringLiteral(",\"peeking\":");
