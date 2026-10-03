@@ -20,10 +20,20 @@ public final class PurpleState {
     public static final String FILE_NAME = "state.toml";
 
     /**
-     * Largest state.toml we are willing to read. The file is ours and stays
-     * small; anything past this is a corruption we should not try to parse.
+     * Largest state.toml we are willing to read: twice the cap on
+     * settings.toml.
+     *
+     * The file is ours and usually a few KB, but its size follows
+     * settings.toml. The cached resolution keeps a copy of every list the
+     * running preset names, members included, at about 16 bytes a member. So
+     * it must never be capped below settings.toml: a read refused for size
+     * comes back null, the core parses an empty state, which is Normal, and
+     * the next write puts Normal over the running preset and its cache,
+     * unhiding every chat. Twice the settings cap covers the worst case, a
+     * file of one-digit ids that take half as many bytes again here, with
+     * room for the rest of the state.
      */
-    public static final long MAX_SIZE = 256 * 1024;
+    public static final long MAX_SIZE = 2 * PurpleSettings.MAX_SIZE;
 
     private PurpleState() {
     }
