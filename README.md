@@ -8,6 +8,14 @@ Purple Telegram installs **alongside** official Telegram: it ships under its own
 application id, `org.purple.telegram`, with its own contacts account type and its
 own launcher entry, so both apps can be signed in at the same time.
 
+### Test infrastructure
+
+Reusable external harness source and synthetic tests are versioned in the
+private [Purple test infrastructure repository](https://github.com/NightMachinery/purple-test-infrastructure);
+its current capture/controller tooling targets macOS desktop testing. Android
+app-specific adapters and product tests remain here. Read that repository's
+README and component status before reusing a helper.
+
 ### Pinned music
 
 Open a chat or forum topic's menu and choose **Download all pinned songs**. The

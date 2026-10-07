@@ -1,5 +1,15 @@
 # Agent Guide for Purple Telegram Android
 
+## Private test infrastructure
+
+Reusable external harnesses and synthetic tests are maintained in the private
+[Purple test infrastructure repository](https://github.com/NightMachinery/purple-test-infrastructure).
+Its current capture/controller tooling targets macOS desktop testing. Read its
+README and component status before reuse, and commit shared harness changes
+there. Keep Android app-specific adapters and product tests in this fork; keep
+live profiles and run artifacts outside both source repositories. Source review
+and native qualification are separate.
+
 ## Build scheduling
 
 Full Purple Telegram desktop and Android application builds may run whenever
