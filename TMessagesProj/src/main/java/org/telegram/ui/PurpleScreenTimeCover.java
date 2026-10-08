@@ -348,6 +348,10 @@ public class PurpleScreenTimeCover extends FrameLayout {
         }
 
         private void show(Verdict verdict) {
+            if (cover != null && cover.getParent() != chat.contentView) {
+                AndroidUtilities.removeFromParent(cover);
+                cover = null;
+            }
             if (cover == null) {
                 cover = new PurpleScreenTimeCover(chat.contentView.getContext());
                 // Added below the action bar in the child order, so the bar

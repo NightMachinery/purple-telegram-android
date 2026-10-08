@@ -1101,6 +1101,11 @@ target, the allowance, the mode and the two snooze numbers - writing through the
 core's budget splices, so a block keeps its comments and only the keys you
 changed are rewritten.
 
+When a chat's views are rebuilt, for example after changing the interface
+language, its hard-budget cover is recreated in the current content view,
+below the action bar. The new view picks up the current strings and colors;
+the day's used snoozes stay in the existing preferences.
+
 Work Mode is ported, the launch-time offer of a settings import included. The
 contents of a folder tab are deliberately unfiltered: a preset decides its own
 view, a folder decides its own tab.
