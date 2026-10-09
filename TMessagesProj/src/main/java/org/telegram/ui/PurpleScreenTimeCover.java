@@ -354,15 +354,12 @@ public class PurpleScreenTimeCover extends FrameLayout {
             }
             if (cover == null) {
                 cover = new PurpleScreenTimeCover(chat.contentView.getContext());
-                // Added below the action bar in the child order, so the bar
-                // draws over it and keeps its own touches: the way out of a
-                // covered chat has to stay open. Everything else - the message
-                // list, the composer, the pinned bar - is added before the bar
-                // and so ends up underneath this. No top margin: the content
-                // view's own onLayout already drops every child but the action
-                // bar by its height.
-                final int index = chat.contentView.indexOfChild(chat.getActionBar());
-                chat.contentView.addView(cover, index < 0 ? -1 : index,
+                // The composer is added after the action bar, so the cover
+                // must follow all existing children rather than precede the bar.
+                // The content view lays this default TOP child below the visible
+                // action bar, leaving the header and its way out untouched.
+                // No top margin is needed: onLayout supplies the bar's height.
+                chat.contentView.addView(cover,
                         LayoutHelper.createFrame(
                                 LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
             }
@@ -390,9 +387,9 @@ public class PurpleScreenTimeCover extends FrameLayout {
     public PurpleScreenTimeCover(Context context) {
         super(context);
         // Opaque, and it swallows every touch that reaches it - see
-        // onTouchEvent. The action bar is not covered: it is added to the chat's
-        // content view after this one, so it draws on top and takes its own
-        // touches, which is what leaves the way out of the chat open.
+        // onTouchEvent. It follows the composer in the child order, while the
+        // content view's TOP layout places it below the visible action bar.
+        // The header therefore remains outside the cover's touch bounds.
         setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
 
         final FrameLayout middle = new FrameLayout(context);
