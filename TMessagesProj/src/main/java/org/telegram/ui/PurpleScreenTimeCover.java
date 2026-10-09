@@ -26,10 +26,13 @@ import static org.telegram.messenger.LocaleController.getString;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.text.Editable;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 
@@ -42,6 +45,8 @@ import org.telegram.messenger.purple.PurpleGate;
 import org.telegram.messenger.purple.PurpleScreenTime;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.BulletinFactory;
+import org.telegram.ui.Components.ChatActivityEnterView;
+import org.telegram.ui.Components.EditTextCaption;
 import org.telegram.ui.Components.LayoutHelper;
 
 import java.util.Calendar;
@@ -263,6 +268,8 @@ public class PurpleScreenTimeCover extends FrameLayout {
          * of a file with no budgets in it.
          */
         private PurpleScreenTimeCover cover;
+        private ChatActivityEnterView coveredComposer;
+        private int composerDescendantFocusability;
 
         /**
          * @param finishing the chat's own {@code isFinishing()}, which is
@@ -348,6 +355,9 @@ public class PurpleScreenTimeCover extends FrameLayout {
         }
 
         private void show(Verdict verdict) {
+            final boolean wasVisible = cover != null
+                    && cover.getParent() == chat.contentView
+                    && cover.getVisibility() == View.VISIBLE;
             if (cover != null && cover.getParent() != chat.contentView) {
                 AndroidUtilities.removeFromParent(cover);
                 cover = null;
@@ -365,12 +375,73 @@ public class PurpleScreenTimeCover extends FrameLayout {
             }
             cover.set(chat.getCurrentAccount(), verdict, this::check);
             cover.setVisibility(View.VISIBLE);
+            blockComposerInput(!wasVisible);
+        }
+
+        private void blockComposerInput(boolean entering) {
+            final ChatActivityEnterView current = chat.getChatActivityEnterView();
+            if (coveredComposer != current) {
+                restoreComposerFocus();
+                coveredComposer = current;
+                if (coveredComposer != null) {
+                    composerDescendantFocusability = coveredComposer.getDescendantFocusability();
+                }
+                entering = true;
+            }
+            if (coveredComposer == null) {
+                return;
+            }
+            coveredComposer.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+            if (!entering && !coveredComposer.hasFocus()) {
+                return;
+            }
+            final ChatActivityEnterView composer = coveredComposer;
+            final EditTextCaption selectedEditor = composer.getEditField();
+            final Editable selectedText = selectedEditor != null ? selectedEditor.getText() : null;
+            final int selectionStart = selectedEditor != null ? selectedEditor.getSelectionStart() : -1;
+            final int selectionEnd = selectedEditor != null ? selectedEditor.getSelectionEnd() : -1;
+            final boolean validSelection = selectedText != null
+                    && selectionStart >= 0 && selectionEnd >= 0
+                    && selectionStart <= selectedText.length()
+                    && selectionEnd <= selectedText.length();
+            coveredComposer.clearFocus();
+            cover.requestFocus();
+            for (int i = 0; i < 3 && coveredComposer.isPopupShowing(); i++) {
+                coveredComposer.hidePopup(false, false, false);
+            }
+            coveredComposer.closeKeyboard();
+            final View editField = coveredComposer.getEditField();
+            if (editField != null) {
+                final InputMethodManager imm = (InputMethodManager) editField.getContext()
+                        .getSystemService(Context.INPUT_METHOD_SERVICE);
+                if (imm != null) {
+                    imm.restartInput(editField);
+                }
+            }
+            if (validSelection
+                    && coveredComposer == composer
+                    && chat.getChatActivityEnterView() == composer
+                    && composer.getEditField() == selectedEditor
+                    && selectedEditor.getText() == selectedText
+                    && selectionStart <= selectedText.length()
+                    && selectionEnd <= selectedText.length()) {
+                selectedEditor.setSelection(selectionStart, selectionEnd);
+            }
+        }
+
+        private void restoreComposerFocus() {
+            if (coveredComposer != null) {
+                coveredComposer.setDescendantFocusability(composerDescendantFocusability);
+                coveredComposer = null;
+            }
         }
 
         private void hide() {
             if (cover != null) {
+                cover.clearFocus();
                 cover.setVisibility(View.GONE);
             }
+            restoreComposerFocus();
         }
     }
 
@@ -386,6 +457,7 @@ public class PurpleScreenTimeCover extends FrameLayout {
 
     public PurpleScreenTimeCover(Context context) {
         super(context);
+        setFocusableInTouchMode(true);
         // Opaque, and it swallows every touch that reaches it - see
         // onTouchEvent. It follows the composer in the child order, while the
         // content view's TOP layout places it below the visible action bar.

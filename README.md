@@ -1117,6 +1117,18 @@ header's Back action remains outside its bounds. The new view picks up the
 current strings and colors; the day's used snoozes stay in the existing
 preferences.
 
+A hard cover also moves keyboard focus away from the composer and closes its
+keyboard and emoji or bot panel, including a keyboard that was already open.
+The current composer's descendants cannot regain focus while covered. The
+cover reconciles the IME's served view after moving focus, without clearing or
+rewriting the draft. A valid selection range is saved before focus and IME
+reconciliation and restored afterward only to the same current composer,
+editor and editable text buffer while both indices remain valid. Snoozing or
+disabling Screen time restores that exact
+composer's original focus policy; the next normal tap can open the keyboard.
+The header remains accessible, and a repeated cover check leaves header focus
+alone.
+
 Work Mode is ported, the launch-time offer of a settings import included. The
 contents of a folder tab are deliberately unfiltered: a preset decides its own
 view, a folder decides its own tab.
