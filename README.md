@@ -1103,8 +1103,11 @@ changed are rewritten.
 
 When a chat's views are rebuilt, for example after changing the interface
 language, its hard-budget cover is recreated in the current content view,
-below the action bar. The new view picks up the current strings and colors;
-the day's used snoozes stay in the existing preferences.
+below the action bar. It is added after the existing content children so the
+composer, which is added after the header, stays behind the cover too. The
+header's Back action remains outside its bounds. The new view picks up the
+current strings and colors; the day's used snoozes stay in the existing
+preferences.
 
 Work Mode is ported, the launch-time offer of a settings import included. The
 contents of a folder tab are deliberately unfiltered: a preset decides its own
