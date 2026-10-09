@@ -1101,6 +1101,14 @@ target, the allowance, the mode and the two snooze numbers - writing through the
 core's budget splices, so a block keeps its comments and only the keys you
 changed are rewritten.
 
+The live chat's cover checks take an in-memory snapshot through the recorder's
+queue, so queued events are included and a still-foreground open session is
+bounded by the check's current time. This makes ordinary reading and touches
+count toward a running budget without waiting for a later navigation or app
+restart. The snapshot also respects the input idle deadline. Its temporary
+boundary events are never appended to `screentime.log`; persisted history,
+snooze preferences and the shared core's last-known-event rule stay unchanged.
+
 When a chat's views are rebuilt, for example after changing the interface
 language, its hard-budget cover is recreated in the current content view,
 below the action bar. It is added after the existing content children so the

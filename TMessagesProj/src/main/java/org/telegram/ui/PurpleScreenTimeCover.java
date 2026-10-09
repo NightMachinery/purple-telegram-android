@@ -116,12 +116,12 @@ public class PurpleScreenTimeCover extends FrameLayout {
         final int kind = PurpleGate.kindOf(currentAccount, dialogId);
         final long dayStart = startOfToday();
         final String zone = PurpleScreenTime.zoneId();
-        Utilities.globalQueue.postRunnable(() -> {
+        PurpleScreenTime.readCurrent(log -> Utilities.globalQueue.postRunnable(() -> {
             final List<PurpleCore.Budget> ledger = PurpleCore.screenTimeLedger(
-                    PurpleGate.settingsBytes(), PurpleScreenTime.read(), dayStart, zone);
+                    PurpleGate.settingsBytes(), log, dayStart, zone);
             final Verdict verdict = decide(ledger, bare, kind, preset);
             AndroidUtilities.runOnUIThread(() -> whenKnown.run(verdict));
-        });
+        }));
     }
 
     /**

@@ -21,11 +21,13 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.DispatchQueue;
 import org.telegram.messenger.FileLog;
+import org.telegram.messenger.Utilities;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.OutputStream;
 import java.nio.charset.Charset;
+import java.util.Arrays;
 import java.util.TimeZone;
 
 public final class PurpleScreenTime {
@@ -605,6 +607,35 @@ public final class PurpleScreenTime {
             out.append(line).append('\n');
         }
         return out.toString().getBytes(UTF_8);
+    }
+
+    public static void readCurrent(Utilities.Callback<byte[]> whenRead) {
+        if (!isUiThread()) {
+            AndroidUtilities.runOnUIThread(() -> readCurrent(whenRead));
+            return;
+        }
+        final long at = now();
+        final boolean live = enabled() && foreground && sessionOpen;
+        final long after = idleAfterMs();
+        final long idleAt = live && !idle && at - lastInputMs >= after
+                ? lastInputMs + after : 0;
+        queue().postRunnable(() -> {
+            final byte[] log = read();
+            final byte[] result;
+            if (live) {
+                final String separator = log.length > 0 && log[log.length - 1] != '\n'
+                        ? "\n" : "";
+                final String idleLine = idleAt > 0
+                        ? idleAt + "\tidle\t0\telsewhere\t\t\t0\n" : "";
+                final byte[] tail = (separator + idleLine
+                        + at + "\tforeground\t0\telsewhere\t\t\t0\n").getBytes(UTF_8);
+                result = Arrays.copyOf(log, log.length + tail.length);
+                System.arraycopy(tail, 0, result, log.length, tail.length);
+            } else {
+                result = log;
+            }
+            AndroidUtilities.runOnUIThread(() -> whenRead.run(result));
+        });
     }
 
     /** The whole log, or an empty array. Read by the screens, never by a hook. */
