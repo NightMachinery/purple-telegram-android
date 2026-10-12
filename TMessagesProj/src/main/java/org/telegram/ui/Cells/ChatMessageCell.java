@@ -236,6 +236,7 @@ import org.telegram.ui.GradientClip;
 import org.telegram.ui.MultiLayoutTypingAnimator;
 import org.telegram.ui.PhotoViewer;
 import org.telegram.ui.PinchToZoomHelper;
+import org.telegram.ui.PurpleImportButton;
 import org.telegram.ui.SecretMediaViewer;
 import org.telegram.ui.Stars.StarGiftPatterns;
 import org.telegram.ui.Stars.StarGiftSheet;
@@ -1011,7 +1012,6 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     public static final int INSTANT_BUTTON_TYPE_VOTE_MULTISELECT = 83;
     public static final int INSTANT_BUTTON_TYPE_ADD_OPTION = 84;
     public static final int INSTANT_BUTTON_TYPE_AI_STYLE = 85;
-    public static final int INSTANT_BUTTON_TYPE_PURPLE_IMPORT = 90;
 
     private static class InstantViewButton {
         private int type;
@@ -9331,9 +9331,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
 
                 photoImage.setForcePreview(messageObject.needDrawBluredPreview());
                 if (messageObject.type == MessageObject.TYPE_FILE) {
-                    if (messageObject.isPurpleSettings()) {
+                    if (org.telegram.messenger.purple.PurpleSettingsMessage.is(messageObject)) {
                         drawInstantView = true;
-                        drawInstantViewType = INSTANT_BUTTON_TYPE_PURPLE_IMPORT;
+                        drawInstantViewType = PurpleImportButton.INSTANT_BUTTON_TYPE_PURPLE_IMPORT;
                         instantViewButtonText = getString(R.string.ImportPurpleSettings);
                     }
                     if (currentPosition == null) {
@@ -10492,7 +10492,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                     namesOffset += dp(7);
                 }
                 totalHeight = photoHeight + dp(14) + namesOffset + additionHeight;
-                if (drawInstantViewType == INSTANT_BUTTON_TYPE_PURPLE_IMPORT) {
+                if (drawInstantViewType == PurpleImportButton.INSTANT_BUTTON_TYPE_PURPLE_IMPORT) {
                     createInstantViewButton();
                     totalHeight += dp(10);
                 }
@@ -26331,38 +26331,12 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             canvas.restore();
         }
 
-        drawPurpleImportButton(canvas);
-    }
-
-    /**
-     * Draws the "Import Purple settings" button under a document bubble. The document row is
-     * laid out from the top and the caption, reactions and time from the bottom, so the dp(46)
-     * createInstantViewButton() added to totalHeight opens up exactly this gap in between.
-     */
-    private void drawPurpleImportButton(Canvas canvas) {
-        if (currentMessageObject == null || !drawInstantView || drawInstantViewType != INSTANT_BUTTON_TYPE_PURPLE_IMPORT) {
-            return;
-        }
-        final int color = getThemedColor(currentMessageObject.isOutOwner() ? Theme.key_chat_outPreviewInstantText : Theme.key_chat_inPreviewInstantText);
-        Theme.chat_instantViewPaint.setColor(color);
-        Theme.chat_instantViewButtonPaint.setColor(Theme.multAlpha(color, .10f));
-
-        final int instantY = (int) (photoImage.getImageY() + photoImage.getImageHeight()) + dp(6);
-        final int instantX = getCurrentBackgroundLeft() + Math.max(dp(8), (backgroundWidth - instantWidth) / 2);
-        instantButtonRect.set(instantX, instantY, instantX + instantWidth, instantY + dp(36));
-
-        selectorDrawableMaskType[0] = 0;
-        createSelectorDrawable(0);
-        if (selectorDrawable[0] != null) {
-            selectorDrawable[0].setBounds(instantX, instantY, instantX + instantWidth, instantY + dp(36));
-            selectorDrawable[0].draw(canvas);
-        }
-        canvas.drawRoundRect(instantButtonRect, dp(6), dp(6), Theme.chat_instantViewButtonPaint);
-        if (instantViewLayout != null) {
-            canvas.save();
-            canvas.translate(instantX + instantTextX, instantY + dp(10.5f));
-            instantViewLayout.draw(canvas);
-            canvas.restore();
+        if (currentMessageObject != null && drawInstantView && drawInstantViewType == PurpleImportButton.INSTANT_BUTTON_TYPE_PURPLE_IMPORT) {
+            selectorDrawableMaskType[0] = 0;
+            createSelectorDrawable(0);
+            PurpleImportButton.draw(canvas, instantButtonRect, selectorDrawable[0], photoImage,
+                    getCurrentBackgroundLeft(), backgroundWidth, instantWidth, instantTextX, instantViewLayout,
+                    getThemedColor(currentMessageObject.isOutOwner() ? Theme.key_chat_outPreviewInstantText : Theme.key_chat_inPreviewInstantText));
         }
     }
 
