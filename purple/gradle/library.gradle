@@ -36,17 +36,25 @@ android.defaultConfig.buildConfigField 'String', 'APP_HASH', "\"" + (purpleProp(
 // upstream rewords it, the check below stops the build here instead of the app
 // failing to load its native code at runtime.
 def purpleCmake = android.defaultConfig.externalNativeBuild.cmake
-def purpleArgs = purpleCmake.arguments
-for (int i = 0; i < purpleArgs.size(); i++) {
-    if (purpleArgs[i] == '-DANDROID_STL=c++_static') {
-        purpleArgs[i] = '-DANDROID_STL=c++_shared'
+def purpleCmakeOptions = [purpleCmake] +
+        android.buildTypes.collect { it.externalNativeBuild.cmake } +
+        android.productFlavors.collect { it.externalNativeBuild.cmake }
+purpleCmakeOptions.each { cmake ->
+    def args = cmake.arguments
+    for (int i = 0; i < args.size(); i++) {
+        if (args[i] == '-DANDROID_STL=c++_static') {
+            args[i] = '-DANDROID_STL=c++_shared'
+        }
     }
 }
-if (!purpleCmake.arguments.contains('-DANDROID_STL=c++_shared')) {
-    throw new GradleException("purple/gradle/library.gradle found no -DANDROID_STL=c++_static " +
-            "argument to turn into c++_shared in TMessagesProj/build.gradle, whose CMake " +
-            "arguments are now " + purpleCmake.arguments + ". libpurplecore.so needs " +
-            "c++_shared; update the swap in purple/gradle/library.gradle.")
+def purpleStlArgs = purpleCmakeOptions.collectMany { it.arguments }.findAll {
+    it.startsWith('-DANDROID_STL=')
+}
+if (purpleStlArgs.size() != 1 || purpleStlArgs[0] != '-DANDROID_STL=c++_shared') {
+    throw new GradleException("purple/gradle/library.gradle requires exactly one " +
+            "-DANDROID_STL= argument across defaultConfig, buildTypes and productFlavors, " +
+            "equal to c++_shared after the in-place c++_static swap; found " +
+            purpleStlArgs + ". libpurplecore.so needs c++_shared.")
 }
 purpleCmake.arguments.add("-DPURPLE_QT_ANDROID=" + purpleQtAndroid())
 purpleCmake.targets.add('purplecore')

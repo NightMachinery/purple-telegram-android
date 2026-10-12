@@ -43,7 +43,10 @@ an error instead of starting a download.
   shown apart and never ratcheted: its Purple sections sit before upstream's
   text on purpose.
 - `purple/upstream-hooks.sh check [REV]` runs the rules below and exits 1 on
-  any failure. Run it before every commit that touches an upstream file.
+  any failure. With REV, it reads the ratchet from that revision too; without
+  REV, it reads the working-tree ratchet. A nonempty `PURPLE_HOOKS_BASELINE`
+  explicitly overrides the ratchet path in either mode. Run it before every
+  commit that touches an upstream file.
 - `purple/upstream-hooks.sh baseline [REV]` rewrites the ratchet from the tree
   and prints the lines that changed. Commit the ratchet together with the
   change that moved it.
@@ -52,8 +55,9 @@ an error instead of starting a download.
   AppNameBeta in every configuration, the sorted string pool, `lib/`, the
   manifest tree, the generated BuildConfig.java files (credential values shown
   only as a digest), the CMake configure commands and compile_commands.json
-  under `.cxx`, and R8's usage.txt and seeds.txt. Store its output next to the
-  APK and diff it against the build just before the batch.
+  under `.cxx`, and R8's usage.txt and sorted seeds.txt. Each dumped file ends
+  with a newline so the following header stays separate. Store its output next
+  to the APK and diff it against the build just before the batch.
 - `TMessagesProj/jni/purple_jni/tests/run_upstream_hooks.sh` tests the hooks
   script against a scratch repository, one case per rule.
 
@@ -94,7 +98,7 @@ that needs them carries one hook, an `apply from:` as its last line, so the
 Purple script runs after upstream's `android` block and changes it in place:
 
 - `TMessagesProj/build.gradle` applies `purple/gradle/library.gradle`. That
-  script narrows the native build to arm64-v8a, adds `APP_ID` and `APP_HASH`
+  script adds arm64-v8a to the native ABI filters, adds `APP_ID` and `APP_HASH`
   to BuildConfig from `local.properties`, replaces upstream's
   `-DANDROID_STL=c++_static` with `c++_shared` in place, adds
   `-DPURPLE_QT_ANDROID=` and the `purplecore` target, and applies
@@ -118,13 +122,18 @@ The other app modules (TMessagesProj_App, TMessagesProj_AppHuawei,
 TMessagesProj_AppHockeyApp and TMessagesProj_AppTests) are upstream's as they
 stand, so building one of them makes an APK with Purple code inside that
 claims Telegram's own package id, `org.telegram.messenger`. Do not build or
-hand out those modules.
+hand out those modules. The repo-root `Dockerfile` is upstream's and builds
+TMessagesProj_App and TMessagesProj_AppHuawei alongside the standalone module;
+do not use its unchanged build command for Purple.
 
 An upstream change that breaks these scripts fails the Gradle configuration
 instead of building something different:
 
-- If upstream rewords or drops `-DANDROID_STL=c++_static`, library.gradle
-  stops with a message that lists the CMake arguments it found. Without
+- library.gradle replaces `-DANDROID_STL=c++_static` with `c++_shared` in
+  place across defaultConfig, buildTypes and productFlavors. It then requires
+  exactly one `-DANDROID_STL=` argument across those scopes, with the value
+  `c++_shared`, and lists the STL arguments if one is missing, duplicated or
+  conflicting. Other CMake arguments keep their order and values. Without
   c++_shared, AGP does not package `libc++_shared.so`, and `libpurplecore.so`
   would fail to load on the phone.
 - If upstream renames the `debug` or `standalone` build type or the `afat`

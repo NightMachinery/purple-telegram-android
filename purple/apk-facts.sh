@@ -101,6 +101,7 @@ print_files() {
         found=1
         printf -- '--- %s\n' "$(rel "$f")"
         "$@" < "$f"
+        printf '\n'
     done
     [ "$found" -eq 1 ] || printf 'missing: %s\n' "$missing"
 }
@@ -142,7 +143,12 @@ for name in usage.txt seeds.txt; do
     section "R8 $name"
     f="$Root/TMessagesProj_AppStandalone/build/outputs/mapping/$Variant/$name"
     if [ -f "$f" ]; then
-        command cat "$f"
+        if [ "$name" = "seeds.txt" ]; then
+            command sort "$f"
+        else
+            command cat "$f"
+        fi
+        printf '\n'
     else
         printf 'missing: %s\n' "$(rel "$f")"
     fi

@@ -385,6 +385,11 @@ cmd_check() {
     [ $# -le 1 ] || usage
     Rev="${1:-}"
     prepare
+    if [ -n "$Rev" ] && [ -z "${PURPLE_HOOKS_BASELINE:-}" ]; then
+        Baseline="$Work/baseline"
+        g show "$Tree:docs/upstream-hooks.baseline" > "$Baseline" ||
+            die "docs/upstream-hooks.baseline is missing in $Rev"
+    fi
     [ -f "$Baseline" ] || die "docs/upstream-hooks.baseline is missing; run purple/upstream-hooks.sh baseline"
     : > "$Work/fails"
     current > "$Work/current"
