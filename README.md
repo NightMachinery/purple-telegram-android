@@ -742,6 +742,23 @@ the app says why. Before an import replaces `settings.toml`, the previous file
 is kept as `settings.toml.import.bak`, as described above.
 `TMessagesProj/jni/purple_jni/tests/run_sync_offer.sh` tests these rules.
 
+The message-level import affordances use `PurpleSettingsMessage.is`: a
+`settings.toml` document no larger than `PurpleSettings.MAX_SIZE`, in Saved
+Messages for the message's own account. `MessageObject` keeps no Purple
+classification code. `ChatActivity` routes its five classification checks
+through its existing per-chat `PurpleChatHooks`; its import callbacks and
+account-switch guards stay in place. `ChatMessageCell` keeps the two layout
+hooks and a guarded draw hook, passing its private geometry, selector and
+themed text color to `PurpleImportButton`. The selector creation stays in the
+cell because it owns the selector's mask, theme and drawable callback; it
+does not read the helper's paint or button rectangle. The helper preserves
+the selector, rounded background and text paint order and owns the reserved
+import-button id. The button uses the gap `createInstantViewButton` already
+reserves between the document row and the caption, reactions and timestamp.
+These hooks keep the
+feature's classification and painting out of upstream's message and cell
+implementations without changing settings transport.
+
 The **editor** is the only way to change a line on a phone without root: a
 monospace field parsed as you type, with a status line that says OK, how many
 warnings, or the line and column of a syntax error - tap it to go there. Save

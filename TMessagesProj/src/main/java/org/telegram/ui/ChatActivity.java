@@ -18970,7 +18970,7 @@ public class ChatActivity extends BaseFragment implements
                         }
                         if (canSave) {
                             if (messageObject.getDocument() != null && !messageObject.isMusic()) {
-                                if (messageObject.isPurpleSettings()) {
+                                if (purple.isSettings(messageObject)) {
                                     return 10;
                                 }
                                 String mime = messageObject.getDocument().mime_type;
@@ -33500,7 +33500,7 @@ public class ChatActivity extends BaseFragment implements
                     }
                 }
                 if (locFile != null) {
-                    if (selectedObject.isPurpleSettings()) {
+                    if (purple.isSettings(selectedObject)) {
                         PurpleSettings.importFrom(getParentActivity(), locFile, selectedObject);
                     } else if (locFile.getName().toLowerCase().endsWith("attheme")) {
                         Theme.ThemeInfo themeInfo = Theme.applyThemeFile(locFile, selectedObject.getDocumentName(), null, true);
@@ -41611,7 +41611,7 @@ public class ChatActivity extends BaseFragment implements
                     presentFragment(fragment);
                 }
             } else if (message.type == MessageObject.TYPE_FILE || message.type == MessageObject.TYPE_TEXT) {
-                if (message.isPurpleSettings()) {
+                if (purple.isSettings(message)) {
                     openPurpleSettings(message);
                     return;
                 }
@@ -41699,7 +41699,7 @@ public class ChatActivity extends BaseFragment implements
         @Override
         public void didPressInstantButton(ChatMessageCell cell, int type) {
             MessageObject messageObject = cell.getMessageObject();
-            if (type == ChatMessageCell.INSTANT_BUTTON_TYPE_PURPLE_IMPORT) {
+            if (type == PurpleImportButton.INSTANT_BUTTON_TYPE_PURPLE_IMPORT) {
                 openPurpleSettings(messageObject);
                 return;
             }
@@ -46099,7 +46099,7 @@ public class ChatActivity extends BaseFragment implements
                         icons.add(R.drawable.msg_shareout);
                     }
                 } else if (type == 10) {
-                    items.add(LocaleController.getString(selectedObject != null && selectedObject.isPurpleSettings() ? R.string.ImportPurpleSettings : R.string.ApplyThemeFile));
+                    items.add(LocaleController.getString(selectedObject != null && purple.isSettings(selectedObject) ? R.string.ImportPurpleSettings : R.string.ApplyThemeFile));
                     options.add(OPTION_APPLY_LOCALIZATION_OR_THEME);
                     icons.add(R.drawable.msg_theme);
                     if (!noforwardsOrPaidMedia && !selectedObject.isVoiceOnce() && !selectedObject.isRoundOnce()) {
@@ -46310,7 +46310,7 @@ public class ChatActivity extends BaseFragment implements
                     options.add(OPTION_APPLY_LOCALIZATION_OR_THEME);
                     icons.add(R.drawable.msg_language);
                 } else if (type == 10) {
-                    items.add(LocaleController.getString(selectedObject != null && selectedObject.isPurpleSettings() ? R.string.ImportPurpleSettings : R.string.ApplyThemeFile));
+                    items.add(LocaleController.getString(selectedObject != null && purple.isSettings(selectedObject) ? R.string.ImportPurpleSettings : R.string.ApplyThemeFile));
                     options.add(OPTION_APPLY_LOCALIZATION_OR_THEME);
                     icons.add(R.drawable.msg_theme);
                 } else if (type == 7) {

@@ -30,11 +30,13 @@ import android.view.View;
 import org.telegram.messenger.CacheByChatsController;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.FileLog;
+import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.R;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.purple.PurpleGate;
 import org.telegram.messenger.purple.PurpleLastSeen;
 import org.telegram.messenger.purple.PurpleScreenTime;
+import org.telegram.messenger.purple.PurpleSettingsMessage;
 import org.telegram.messenger.purple.PurpleTranslate;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBarMenuItem;
@@ -68,6 +70,10 @@ final class PurpleChatHooks {
     PurpleChatHooks(ChatActivity chat, Utilities.Callback0Return<Boolean> finishing) {
         this.chat = chat;
         this.screenTime = new PurpleScreenTimeCover.Host(chat, finishing);
+    }
+
+    boolean isSettings(MessageObject message) {
+        return PurpleSettingsMessage.is(message);
     }
 
     // ---- the header menu -----------------------------------------------------
