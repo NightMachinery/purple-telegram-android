@@ -12,11 +12,6 @@ account TMessagesProj/src/main/java/org/telegram/ui/Cells/DialogCell.java recent
 account TMessagesProj/src/main/java/org/telegram/ui/Components/DialogsChannelsAdapter.java filtering 1
 account TMessagesProj/src/main/java/org/telegram/ui/Components/DialogsChannelsAdapter.java state 1
 account TMessagesProj/src/main/java/org/telegram/ui/Components/FilterTabsView.java foldersRestricted 3
-account TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java filtering 1
-account TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java foldersRestricted 1
-account TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java hidingArchive 1
-account TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java menuLabel 1
-account TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java state 1
 account TMessagesProj/src/main/java/org/telegram/ui/Stories/DialogStoriesCell.java filteringStories 1
 account TMessagesProj/src/main/java/org/telegram/ui/Stories/StoriesController.java addStoryShown 1
 account TMessagesProj/src/main/java/org/telegram/ui/Stories/StoriesController.java filteringStories 1
@@ -84,7 +79,7 @@ file TMessagesProj/src/main/java/org/telegram/ui/Components/SearchViewPager.java
 file TMessagesProj/src/main/java/org/telegram/ui/Components/ShareAlert.java 21 2 5
 file TMessagesProj/src/main/java/org/telegram/ui/Components/quickforward/QuickShareSelectorOverlayLayout.java 7 2 2
 file TMessagesProj/src/main/java/org/telegram/ui/ContactsActivity.java 58 1 10
-file TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java 234 15 27
+file TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java 58 14 24
 file TMessagesProj/src/main/java/org/telegram/ui/FilterCreateActivity.java 1 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/FiltersSetupActivity.java 5 5 5
 file TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java 18 1 7
