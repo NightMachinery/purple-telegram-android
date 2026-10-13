@@ -25,7 +25,6 @@ import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
-import org.telegram.messenger.purple.PurpleLastSeen;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
@@ -275,12 +274,7 @@ public class UserCell2 extends FrameLayout {
                     statusTextView.setText(LocaleController.getString(R.string.Online));
                 } else {
                     statusTextView.setTextColor(statusColor);
-                    // Purple: the mark, and a remembered read in place of whatever
-                    // the status says. No width is handed over and none is wanted: a row
-                    // carries the eyes rather than the sentence, because a row has
-                    // exactly one click and it belongs to the row.
-                    statusTextView.setText(PurpleLastSeen.decorate(currentUser,
-                            LocaleController.formatUserStatus(currentAccount, currentUser)));
+                    statusTextView.setText(org.telegram.messenger.purple.PurpleLastSeen.decorate(currentUser, LocaleController.formatUserStatus(currentAccount, currentUser)));
                 }
             }
             avatarImageView.setForUserOrChat(currentUser, avatarDrawable);

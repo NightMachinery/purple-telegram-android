@@ -24,6 +24,9 @@ import static org.telegram.messenger.LocaleController.formatString;
 import static org.telegram.messenger.LocaleController.getString;
 
 import android.app.Activity;
+import android.app.Application;
+import android.os.Bundle;
+import android.os.Looper;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.util.Base64;
@@ -52,6 +55,7 @@ import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.Vector;
 import org.telegram.tgnet.tl.TL_account;
 import org.telegram.ui.ActionBar.AlertDialog;
+import org.telegram.ui.ActionBar.ActionBarMenuItem;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.CheckBoxCell;
@@ -64,6 +68,102 @@ import java.util.Collections;
 import java.util.Locale;
 
 public final class PurpleLastSeenTrade {
+
+    public static final int MENU_ID = 0x70750000 + 8;
+    private static boolean started;
+
+    public static boolean onMenu(BaseFragment fragment, int id, long userId) {
+        if (id != MENU_ID) {
+            return false;
+        }
+        final TLRPC.User user = fragment.getMessagesController().getUser(userId);
+        if (user != null) {
+            show(fragment, fragment.getCurrentAccount(), user.id);
+        }
+        return true;
+    }
+
+    public static boolean eligible(TLRPC.User user) {
+        return PurpleLastSeen.peekEligible(user);
+    }
+
+    public static String decorateProfile(TLRPC.User user, String status) {
+        return PurpleLastSeen.decorate(user, status, AndroidUtilities.displaySize.x).toString();
+    }
+
+    public static void addMenu(ActionBarMenuItem menu, TLRPC.User user) {
+        menu.addSubItem(MENU_ID, R.drawable.msg_view_file, getString(R.string.PurplePeekAction));
+        menu.setSubItemShown(MENU_ID, eligible(user));
+    }
+
+    public static void syncMenu(ActionBarMenuItem menu, TLRPC.User user) {
+        if (menu != null && menu.hasSubItem(MENU_ID)) {
+            menu.setSubItemShown(MENU_ID, eligible(user));
+        }
+    }
+
+    public static void syncMenu(ActionBarMenuItem menu, BaseFragment fragment, long userId) {
+        if (menu.hasSubItem(MENU_ID)) {
+            syncMenu(menu, fragment.getMessagesController().getUser(userId));
+        }
+    }
+
+    public static void start() {
+        if (ApplicationLoader.applicationHandler == null) {
+            return;
+        }
+        if (Looper.myLooper() != ApplicationLoader.applicationHandler.getLooper()) {
+            AndroidUtilities.runOnUIThread(PurpleLastSeenTrade::start);
+            return;
+        }
+        if (started) {
+            return;
+        }
+        started = true;
+        recover();
+        final NotificationCenter.NotificationCenterDelegate observer = (id, account, args) -> {
+            if (account == UserConfig.selectedAccount
+                    && ConnectionsManager.getInstance(account).getConnectionState()
+                        == ConnectionsManager.ConnectionStateConnected) {
+                recover();
+            }
+        };
+        for (int account = 0; account < UserConfig.MAX_ACCOUNT_COUNT; ++account) {
+            NotificationCenter.getInstance(account).addObserver(observer, NotificationCenter.didUpdateConnectionState);
+        }
+        ((Application) ApplicationLoader.applicationContext).registerActivityLifecycleCallbacks(new Application.ActivityLifecycleCallbacks() {
+            @Override
+            public void onActivityResumed(Activity activity) {
+                if (activity instanceof LaunchActivity) {
+                    recover();
+                }
+            }
+
+            @Override
+            public void onActivityCreated(Activity activity, Bundle savedInstanceState) {
+            }
+
+            @Override
+            public void onActivityStarted(Activity activity) {
+            }
+
+            @Override
+            public void onActivityPaused(Activity activity) {
+            }
+
+            @Override
+            public void onActivityStopped(Activity activity) {
+            }
+
+            @Override
+            public void onActivitySaveInstanceState(Activity activity, Bundle outState) {
+            }
+
+            @Override
+            public void onActivityDestroyed(Activity activity) {
+            }
+        });
+    }
 
     private static final String PREFS = "purple_last_seen";
     private static final String JOURNAL = "purple_last_seen_restore_";

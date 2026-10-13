@@ -1056,6 +1056,42 @@ Privacy settings live if the user deliberately wants to share with everybody.
 This button requires `trade_p`; the explanatory suffix requires both `trade_p`
 and `reasons_p`.
 
+`PurpleLastSeenSheet` adapts only the last-seen half of the stock sheet. Its
+button guard always consumes that case, including disabled or ineligible peeks,
+so the stock permanent AllowAll request stays unreachable. The read-time branch
+and Premium section remain upstream except the retained empty name for an
+unresolved positive dialog id: the stock lookup keeps its null guard, so
+UserObject.getFirstName(null) cannot replace that empty name with "DELETED". `bindReadRow` runs inside the restored
+request callback and gives an eligible user the Peek sheet without changing the
+read request or its completion. Last-seen labels and button removal stay
+independent of Premium availability; a missing safe fragment never falls back
+to permanent sharing.
+
+`PurpleSubtitleTrade` owns only the drawn target and its touch sequence. It uses
+the header's public subtitle and avatar views for the original hit rectangle
+and available width. The container retains its private pressed, bounce and
+long-press resets and runs them before opening the trade. Clearing the drawn
+target does not reset an in-progress touch; title taps, stock profile navigation
+and long presses follow the same paths. The six user cells keep one decoration
+around the original status expression, avoiding an extra layout or scroll-delay
+reset. The profile's status button and right-drawable tap remain replacements,
+with menu ownership in `PurpleLastSeenTrade` and its reserved id.
+
+`PurpleLastSeenTrade.start` runs once at the existing main-thread application
+initialization point. Calls from an existing off-thread initialization path
+post start to the main looper before touching the started flag or registering
+observers. Main-thread calls retain the original deferred recover dispatch; a
+missing application handler stays a no-op.
+An idempotent startup hook immediately after `LaunchActivity.super.onResume()`
+ensures a handler-ready resume retries recovery registration if early
+initialization reached `start()` before the handler existed. Its per-account
+observers consult the event
+account and the selected account when the event arrives. Only a selected-account
+Connected event recovers pending privacy restoration. Once registered, the
+application lifecycle callback recovers when a LaunchActivity resumes during `super.onResume()`, before
+the rest of that activity's resume body. Existing restore journals, owner checks,
+requests, retries and trade lifetime remain in `recover` unchanged.
+
 The Settings entry stays between Folders and Devices and opens the complete
 Purple settings screen. `PurpleSettingsRow` owns its reserved row id and subtitle;
 `SettingsActivity` passes the row owner's `currentAccount` for the label contract.

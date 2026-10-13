@@ -164,7 +164,6 @@ import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.SvgHelper;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
-import org.telegram.messenger.purple.PurpleLastSeen;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.tgnet.ConnectionsManager;
@@ -251,6 +250,7 @@ import org.telegram.ui.Components.JoinGroupAlert;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.LinkSpanDrawable;
 import org.telegram.ui.Components.MediaActivity;
+import org.telegram.ui.Components.MessagePrivateSeenView;
 import org.telegram.ui.Components.ProfileActionsView;
 import org.telegram.ui.Components.ProfileGalleryBlurView;
 import org.telegram.ui.Components.Paint.PersistColorPalette;
@@ -600,7 +600,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     private final static int delete_group = 45;
     private final static int enable_no_forwards = 46;
     private final static int disable_no_forwards = 47;
-    private final static int peek_last_seen = 48;
 
     private Rect rect = new Rect();
 
@@ -2550,11 +2549,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         return;
                     }
                     finishFragment();
-                } else if (id == peek_last_seen) {
-                    final TLRPC.User user = getMessagesController().getUser(userId);
-                    if (user != null) {
-                        PurpleLastSeenTrade.show(ProfileActivity.this, currentAccount, user.id);
-                    }
+                } else if (PurpleLastSeenTrade.onMenu(ProfileActivity.this, id, userId)) {
                 } else if (id == block_contact) {
                     onBlockContactClicked(false);
                 } else if (id == add_contact) {
@@ -4051,11 +4046,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             @Override
             public void onShowSubMenu() {
                 updateScrimSourceBitmap();
-                if (otherItem.hasSubItem(peek_last_seen)) {
-                    final TLRPC.User user = getMessagesController().getUser(userId);
-                    otherItem.setSubItemShown(
-                            peek_last_seen, PurpleLastSeen.peekEligible(user));
-                }
+                PurpleLastSeenTrade.syncMenu(otherItem, ProfileActivity.this, userId);
             }
 
             @Override
@@ -11402,18 +11393,9 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             } else {
                 isOnline[0] = false;
                 newString2 = LocaleController.formatUserStatus(currentAccount, user, isOnline, shortStatus ? new boolean[1] : null);
-                // Purple: the same reason the chat header appends, in its long
-                // form. The screen width is what is handed over rather than the
-                // measured text view, and deliberately: this line runs the whole
-                // width of the profile less one left inset, where the header's
-                // sits between two 52dp button gutters - so the profile is where
-                // the sentence fits and the header is where the eyes do.
-                newString2 = PurpleLastSeen.decorate(
-                        user, newString2, AndroidUtilities.displaySize.x).toString();
-                hiddenStatusButton = PurpleLastSeen.peekEligible(user);
-                if (otherItem != null && otherItem.hasSubItem(peek_last_seen)) {
-                    otherItem.setSubItemShown(peek_last_seen, hiddenStatusButton);
-                }
+                newString2 = PurpleLastSeenTrade.decorateProfile(user, newString2);
+                hiddenStatusButton = PurpleLastSeenTrade.eligible(user);
+                PurpleLastSeenTrade.syncMenu(otherItem, user);
                 if (onlineTextView[1] != null && !mediaHeaderVisible) {
                     int key = isOnline[0] && peerColor == null ? Theme.key_profile_status : Theme.key_actionBarDefaultSubtitle;
                     onlineTextView[1].setTag(key);
@@ -11468,8 +11450,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 onlineTextView[a].setRightDrawableOnClick(a == 1 && hiddenStatusButton ? v -> {
                     PurpleLastSeenTrade.show(ProfileActivity.this, currentAccount, user.id);
                 } : null);
-                onlineTextView[a].setOnClickListener(a == 1 && hiddenStatusButton ? v ->
-                        PurpleLastSeenTrade.show(ProfileActivity.this, currentAccount, user.id) : null);
+                onlineTextView[a].setOnClickListener(a == 1 && hiddenStatusButton ? v -> PurpleLastSeenTrade.show(ProfileActivity.this, currentAccount, user.id) : null);
                 Drawable leftIcon = currentEncryptedChat != null ? getLockIconDrawable() : null;
                 boolean rightIconIsPremium = false, rightIconIsStatus = false;
                 nameTextView[a].setRightDrawableOutside(a == 0);
@@ -12143,9 +12124,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 }
                 selfUser = true;
             } else {
-                otherItem.addSubItem(peek_last_seen, R.drawable.msg_view_file,
-                        getString(R.string.PurplePeekAction));
-                otherItem.setSubItemShown(peek_last_seen, PurpleLastSeen.peekEligible(user));
+                PurpleLastSeenTrade.addMenu(otherItem, user);
                 if (user.bot && user.bot_can_edit) {
                     editItemVisible = true;
                 }

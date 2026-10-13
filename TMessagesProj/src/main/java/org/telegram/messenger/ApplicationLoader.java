@@ -261,7 +261,7 @@ public class ApplicationLoader extends Application {
                 SendMessagesHelper.getInstance(a).checkUnsentMessages();
             }
         }
-        PurpleLastSeenTrade.recover();
+        PurpleLastSeenTrade.start();
 
         ApplicationLoader app = (ApplicationLoader) ApplicationLoader.applicationContext;
         app.initPushServices();

@@ -40,7 +40,6 @@ import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
-import org.telegram.messenger.purple.PurpleLastSeen;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
@@ -470,12 +469,7 @@ public class GroupCreateUserCell extends FrameLayout {
                         } else {
                             statusTextView.setTag(Theme.key_windowBackgroundWhiteGrayText);
                             statusTextView.setTextColor(Theme.getColor(forceDarkTheme ? Theme.key_voipgroup_lastSeenText : Theme.key_windowBackgroundWhiteGrayText, resourcesProvider));
-                            // Purple: the mark, and a remembered read in place of whatever
-                            // the status says. No width is handed over and none is wanted: a row
-                            // carries the eyes rather than the sentence, because a row has
-                            // exactly one click and it belongs to the row.
-                            statusTextView.setText(PurpleLastSeen.decorate(currentUser,
-                                    LocaleController.formatUserStatus(currentAccount, currentUser)));
+                            statusTextView.setText(org.telegram.messenger.purple.PurpleLastSeen.decorate(currentUser, LocaleController.formatUserStatus(currentAccount, currentUser)));
                         }
                     }
                     statusTextView.setEmojiColor(statusTextView.getTextColor());

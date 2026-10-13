@@ -229,3 +229,28 @@ rather than inventing an account.
 9. Build, and diff `purple/apk-facts.sh` against the build before the merge.
    Expect upstream's own changes, and check that the package id, the AppName
    values and the Purple libraries in `lib/` are unchanged.
+
+## Last Seen Peek UI seams
+
+- ProfileActivity deliberately replaces the stock hidden-status button predicate
+  with PurpleLastSeenTrade.eligible(user). Do not OR the stock predicate back in:
+  it adds the non-Premium by_me button while peeks are off and excludes Premium
+  accounts. The omitted upstream expression is:
+  `hiddenStatusButton = user != null && !isOnline[0] && !getUserConfig().isPremium() && user.status != null && (user.status instanceof TLRPC.TL_userStatusRecently || user.status instanceof TLRPC.TL_userStatusLastMonth || user.status instanceof TLRPC.TL_userStatusLastWeek) && user.status.by_me;`
+- Keep the profile right-drawable click routed directly to the trade, without
+  inserting MessagePrivateSeenView.showSheet in front of its confirmation.
+- MessagePrivateSeenView keeps an empty username when its stock positive-dialog
+  lookup returns null. Preserve the null guard around UserObject.getFirstName:
+  the stock utility returns "DELETED" for null, changing the read-time text.
+- MessagePrivateSeenView's first button must begin with the lastSeen guard calling
+  PurpleLastSeenSheet.onLastSeenButton. That helper always consumes lastSeen,
+  including peeks off, ineligible targets and no safe fragment. Keep it before
+  setLoading and the stock TL_inputPrivacyValueAllowAll request. adapt only
+  relabels/removes the button and is not the privacy barrier.
+- The cell wrappers keep the exact original formatUserStatus arguments and one
+  setText/layout. Subtitle private pressed, bounce and long-press resets remain
+  in ChatAvatarContainer and run before the trade.
+- start keeps its main-looper fast path, posts only off-thread callers before
+  idempotence/registration, and retains recover's deferred dispatch.
+- Recovery connection observers use the event account and late selected account;
+  LaunchActivity resume recovery stays within super.onResume's lifecycle dispatch.
