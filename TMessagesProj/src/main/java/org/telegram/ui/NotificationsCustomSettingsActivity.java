@@ -584,9 +584,6 @@ public class NotificationsCustomSettingsActivity extends BaseFragment implements
                     @Override
                     public void muteFor(int timeInSeconds) {
                         if (timeInSeconds == 0) {
-                            // Purple: this screen is the list of the user's own
-                            // notification exceptions, so every question in it is
-                            // about the user's own mutes.
                             if (getMessagesController().mutedWithoutPreset(did, topicId)) {
                                 toggleMute();
                             }
@@ -1106,13 +1103,6 @@ public class NotificationsCustomSettingsActivity extends BaseFragment implements
         final ArrayList<TLRPC.TL_topPeer> topPeers;
         if (currentType == TYPE_STORIES) {
             MediaDataController.getInstance(currentAccount).loadHints(true);
-            // Purple: the rows below are not exceptions you made - they are up
-            // to six top peers the screen seeds itself with, which is the same
-            // frequent-contact strip under another name, so [suggestions]
-            // applies. An exception you made by hand is read out of the
-            // preferences below and is left alone. Filtered here, on the way
-            // in, because the rest of the walk is on the storage thread and the
-            // gate reads the loaded dialogs.
             topPeers = PurpleGate.visibleTopPeers(
                     currentAccount,
                     MediaDataController.getInstance(currentAccount).hints);

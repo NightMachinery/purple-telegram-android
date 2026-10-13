@@ -1216,6 +1216,36 @@ composer's original focus policy; the next normal tap can open the keyboard.
 The header remains accessible, and a repeated cover check leaves header focus
 alone.
 
+`PurpleFolders` carries the actor account through list and strip hooks while
+preserving the current shared app-wide policy and view definitions. The fixed
+Gate still exposes legacy accountless flag, shown-filter and pin-refill methods;
+the facade delegates those unchanged rather than inventing per-account state.
+MessagesController passes its own currentAccount, including a separate owner
+argument for promo exclusion because its protected account field has no public
+getter. isPromoDialog(id, false) preserves the original promo short circuit.
+The promo row still reaches stock removal and reinsertion exactly once.
+
+Collapsed community rows update the last-message date first, then skip uncounted
+chats before the stock unread-count and mark block. The stock remainder and
+side effects stay in their original order. Nothing follows either enclosing
+collapsed block before the loop ends; future upstream statements there would
+need an explicit decision about the continue.
+
+`PurpleHints.visibleTopPeers` applies the existing shortcut predicates to the
+owning account and preserves peer identity/order, returning the original hints
+list when no filtering applies. The local hints variable is scoped inside the
+passcode block and shadows the field for the restored stock capped loop. A
+hidden target cannot consume a shortcut slot. Notification exceptions retain
+the stock copy and the existing Gate visibility walk, mutating only that new
+caller-owned list before storage-thread seeding. User-created exceptions,
+loadHints timing, notifications defaults and mute toggles stay unchanged.
+
+Mute toggles and notification exception labels ask mutedWithoutPreset, while
+effective delivery and unread state still ask isDialogMuted. Folder membership
+ignores a preset's added mute so Exclude muted cannot create a feedback loop.
+FilterTabsView passes the same late selected account its own save/order requests
+already use; the facade never takes a new global account snapshot.
+
 Work Mode is ported, the launch-time offer of a settings import included. The
 contents of a folder tab are deliberately unfiltered: a preset decides its own
 view, a folder decides its own tab.

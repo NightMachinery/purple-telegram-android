@@ -172,9 +172,6 @@ public class ChatNotificationsPopupWrapper {
             });
             return;
         }
-        // Purple: every mute question in this popup labels or drives the
-        // Mute/Unmute toggle, so all four read the user's own mute rather than
-        // the effective one a work preset contributes to.
         boolean muted = MessagesController.getInstance(currentAccount).mutedWithoutPreset(dialogId, topicId);
 
         int color;
