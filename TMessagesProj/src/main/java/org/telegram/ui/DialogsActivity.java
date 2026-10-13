@@ -130,10 +130,6 @@ import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.XiaomiUtilities;
 import org.telegram.messenger.browser.Browser;
-import org.telegram.messenger.purple.PurpleCore;
-import org.telegram.messenger.purple.PurpleGate;
-import org.telegram.messenger.purple.PurpleListMenu;
-import org.telegram.messenger.purple.PurpleSyncOffer;
 import org.telegram.messenger.utils.FBool;
 import org.telegram.messenger.utils.GradientProtectionDrawable;
 import org.telegram.messenger.utils.SearchTextWatcher;
@@ -586,7 +582,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     private ActionBarMenuSubItem addToFolderItem;
     @Nullable
     private ActionBarMenuSubItem removeFromFolderItem;
-    private ActionBarMenuSubItem workModeItem;
+    private final PurpleDialogsHooks purple = new PurpleDialogsHooks(this);
     @Nullable
     private ActionBarMenuSubItem archiveItem;
     @Nullable
@@ -714,7 +710,6 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     private final static int pin2 = 108;
     private final static int add_to_folder = 109;
     private final static int remove_from_folder = 110;
-    private final static int work_mode = 111;
     private final static int community_ungroup = 111;
 
     private final static int ARCHIVE_ITEM_STATE_PINNED = 0;
@@ -2213,10 +2208,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                                             canReadCount = dialog.unread_count > 0 || dialog.unread_mark ? 1 : 0;
                                             performSelectedDialogsAction(selectedDialogs, read, true, false);
                                         } else if (SharedConfig.getChatSwipeAction(currentAccount) == SwipeGestureSettingsView.SWIPE_GESTURE_MUTE) {
-                                            // Purple: the swipe toggles the user's own mute, so it
-                                            // has to read the user's own mute. A preset silencing a
-                                            // chat must not turn a swipe that mutes into one that
-                                            // unmutes something the user never muted.
+                                            // Purple: see MessagesController#mutedWithoutPreset
                                             if (!getMessagesController().mutedWithoutPreset(dialogId, 0)) {
                                                 NotificationsController.getInstance(UserConfig.selectedAccount).setDialogNotificationsSettings(dialogId, 0, NotificationsController.SETTING_MUTE_FOREVER);
                                                 if (BulletinFactory.canShowBulletin(DialogsActivity.this)) {
@@ -2441,14 +2433,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                     if (!allowMoving || dialog == null || !isDialogPinned(dialog) || DialogObject.isFolderDialogId(dialogId)) {
                         return 0;
                     }
-                    // Purple: no dragging while a preset is hiding rows. The drop
-                    // is turned back into an order by MessagesController.reorderPinnedDialogs,
-                    // which reads the *model* list and sends it with force = true -
-                    // so reordering a truncated list would push a truncated pin
-                    // order to the server and drop the hidden pins from the account
-                    // and from every other device. The desktop fork hit exactly this
-                    // bug; refusing the drag is the same fix it uses.
-                    if (PurpleGate.filtering()) {
+                    // Purple: see PurpleDialogsHooks#filtering
+                    if (purple.filtering(currentAccount)) {
                         return makeMovementFlags(0, 0);
                     }
                     movingView = (DialogCell) viewHolder.itemView;
@@ -2580,13 +2566,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                         }
                         if (folderId == 0) {
                             if (added == 2) {
-                                // Purple: the first thing archived normally
-                                // unhides the archive so you can see where it
-                                // went. Under hide_archive_p there is nowhere
-                                // for it to appear, and flipping the shared
-                                // preference here would pin the row for good -
-                                // outliving the preset that asked for it.
-                                if (SharedConfig.archiveHidden && !PurpleGate.hidingArchive()) {
+                                // Purple: see PurpleDialogsHooks#hidingArchive
+                                if (SharedConfig.archiveHidden && !purple.hidingArchive(currentAccount)) {
                                     SharedConfig.toggleArchiveHidden();
                                 }
                                 parentPage.dialogsItemAnimator.prepareForRemove();
@@ -2859,19 +2840,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     public boolean onFragmentCreate() {
         super.onFragmentCreate();
 
-        // Purple: resolve the active preset before the first list is built, so the
-        // chat list is never drawn unfiltered and then rebuilt. Doing it here
-        // rather than lazily inside getDialogsArray keeps the native load and the
-        // two file reads off the background thread the adapter diffs on.
-        PurpleGate.ensureLoaded();
-
-        // Purple: and once per process per account, ask Saved Messages whether a
-        // newer settings.toml is sitting there. Here rather than in onResume
-        // because this is the first point at which the account is known to be
-        // loaded - the chat list is only ever created for an activated account -
-        // and the offer waits on a network round trip anyway, by which time the
-        // list has a window for the bulletin to land in.
-        PurpleSyncOffer.checkOnLaunch(this, currentAccount);
+        // Purple: see PurpleDialogsHooks#onFragmentCreate
+        purple.onFragmentCreate();
 
         if (arguments != null) {
             onlySelect = arguments.getBoolean("onlySelect", false);
@@ -3686,17 +3656,11 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 
                 @Override
                 public void onPageScrolled(float progress) {
-                    // Purple: no incoming page means there is no swipe to draw,
-                    // whatever the progress. A programmatic scrollToTab onto the
-                    // tab already selected returns early from onPageSelected
-                    // above and so never makes viewPages[1] visible, but the
-                    // indicator animation still runs and still reports progress
-                    // - and translating viewPages[0] by it parks the chat list a
-                    // screen width off to the side, where only a real tab switch
-                    // would ever put it back. Guarding only the last frame was
-                    // worse than not guarding at all: it skipped the very frame
-                    // that resets the translation.
-                    if (viewPages[1].getVisibility() != View.VISIBLE && !searching) {
+                    // Purple: see PurpleDialogsHooks#skipPageScroll
+                    if (purple.skipPageScroll(currentAccount, viewPages[1].getVisibility(), searching)) {
+                        return;
+                    }
+                    if (progress == 1 && viewPages[1].getVisibility() != View.VISIBLE && !searching) {
                         return;
                     }
                     if (animatingForward) {
@@ -3733,11 +3697,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                         return 0;
                     }
                     MessagesController.DialogFilter filter = dialogFilters.get(tabId);
-                    // Purple: an uncounted folder shows no number and an
-                    // invented tab counts itself. The rule lives in the gate
-                    // because the folders popup in the tabs activity draws the
-                    // same pills, and two copies of it drifted apart once.
-                    return PurpleGate.tabCount(currentAccount, filter, filter.unreadCount);
+                    // Purple: see PurpleDialogsHooks#tabCount
+                    return purple.tabCount(currentAccount, filter, filter.unreadCount);
                 }
 
                 @Override
@@ -3803,8 +3764,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                             boolean allAreMuted = true;
                             for (int i = 0; i < dialogs.size(); ++i) {
                                 TLRPC.Dialog dialog = dialogs.get(i);
-                                // Purple: decides whether this folder's item mutes or unmutes,
-                                // so it is about the user's own mutes.
+                                // Purple: see MessagesController#mutedWithoutPreset
                                 if (!getMessagesController().mutedWithoutPreset(dialog.id, 0)) {
                                     allAreMuted = false;
                                     break;
@@ -3854,10 +3814,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                                     return PixelFormat.TRANSPARENT;
                                 }
                             })
-                            // Purple: no reordering while a preset picks the folders - the
-                            // drag is refused in FilterTabsView anyway, and an entry that does
-                            // nothing is worse than one that is not there.
-                            .addIf(!PurpleGate.foldersRestricted() && getMessagesController().getDialogFilters().size() > 1, R.drawable.tabs_reorder, LocaleController.getString(R.string.FilterReorder), () -> {
+                            // Purple: see PurpleDialogsHooks#foldersRestricted
+                            .addIf(!purple.foldersRestricted(currentAccount) && getMessagesController().getDialogFilters().size() > 1, R.drawable.tabs_reorder, LocaleController.getString(R.string.FilterReorder), () -> {
                                 filterTabsView.setIsEditing(true);
                                 showDoneItem(true);
                             })
@@ -3976,12 +3934,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                     fragmentSearchFieldWatcher.toggleSearch(true);
                 } else if (id == 11) {
                     openAccountSelector(switchItem);
-                } else if (id == work_mode) {
-                    if (!selectedDialogs.isEmpty()) {
-                        final long dialogId = selectedDialogs.get(0);
-                        hideActionMode(false);
-                        PurpleListBox.show(DialogsActivity.this, currentAccount, dialogId);
-                    }
+                } else if (id == PurpleDialogsHooks.SELECTION_ID) {
+                    purple.onSelectionItem(selectedDialogs, () -> hideActionMode(false));
                 } else if (id == add_to_folder) {
                     FiltersListBottomSheet sheet = new FiltersListBottomSheet(DialogsActivity.this, selectedDialogs);
                     sheet.setDelegate((filter, checked) -> {
@@ -6816,10 +6770,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         pin2Item = otherItem.addSubItem(pin2, R.drawable.msg_pin, LocaleController.getString(R.string.DialogPin));
         addToFolderItem = otherItem.addSubItem(add_to_folder, R.drawable.msg_addfolder, LocaleController.getString(R.string.FilterAddTo));
         removeFromFolderItem = otherItem.addSubItem(remove_from_folder, R.drawable.msg_removefolder, LocaleController.getString(R.string.FilterRemoveFrom));
-        // Purple: filing one chat into a Work Mode list. Next to the folder
-        // entries because it is the same kind of act, and hidden entirely when
-        // no list has been written, so an unconfigured fork's menu is upstream's.
-        workModeItem = otherItem.addSubItem(work_mode, R.drawable.msg_customize, LocaleController.getString(R.string.PurpleLists));
+        // Purple: see PurpleDialogsHooks#addSelectionItem
+        purple.addSelectionItem(otherItem);
         readItem = otherItem.addSubItem(read, R.drawable.msg_markread, LocaleController.getString(R.string.MarkAsRead));
         clearItem = otherItem.addSubItem(clear, R.drawable.msg_clear, LocaleController.getString(R.string.ClearHistory));
         blockItem = otherItem.addSubItem(block, R.drawable.msg_block, LocaleController.getString(R.string.BlockUser));
@@ -6922,60 +6874,11 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         }
     }
 
-    /**
-     * Purple: what the strip was last built for. The selected tab is an index
-     * into a list whose membership a preset switch changes, so an index that is
-     * still in range afterwards quietly means a different folder.
-     *
-     * A description of the strip rather than {@code PurpleGate.generation()},
-     * which moves on every reload - a peek, a schedule tick, an override
-     * expiring, a list edit, the watcher - none of which changes which tabs
-     * exist. Comparing generations made all of those throw the user back to All
-     * chats. Null until the first build, which is the "never seen" state and is
-     * not itself a change.
-     */
-    private String purpleStripIdentity;
-
-    /**
-     * Purple: the running preset, its invented tabs and its folder selection,
-     * in one string that changes exactly when the strip's membership does.
-     *
-     * Plain fields off one volatile read, on a path that already rebuilds every
-     * tab, so there is nothing to cache. Under Normal the preset name is empty,
-     * which is the same answer for "nothing is running" however it got there.
-     */
-    private static String purpleStripIdentityNow() {
-        final PurpleCore.Loaded state = PurpleGate.state();
-        if (state == null) {
-            return "";
-        }
-        final StringBuilder identity = new StringBuilder();
-        identity.append(state.normal || state.preset == null ? "" : state.preset);
-        for (int a = 0, n = state.views.size(); a < n; ++a) {
-            identity.append('\n').append(state.views.get(a).name);
-        }
-        identity.append('\t');
-        for (int a = 0, n = state.folders.size(); a < n; ++a) {
-            final PurpleCore.FolderEntry folder = state.folders.get(a);
-            // enabled and show as well as the name, because both of them decide
-            // whether the folder's tab is on the strip at all, and a strip that
-            // gained or lost a tab is exactly what this is asking about.
-            identity.append(folder.all ? "*ALL" : folder.name)
-                    .append(folder.enabled ? '+' : '-')
-                    .append(folder.show ? '+' : '-')
-                    .append('\n');
-        }
-        return identity.toString();
-    }
-
     private void updateFilterTabs(boolean force, boolean animated) {
         if (filterTabsView == null || inPreviewMode || searchIsShowed || (rightSlidingDialogContainer != null && rightSlidingDialogContainer.hasFragment())) {
             return;
         }
-        final String purpleIdentity = purpleStripIdentityNow();
-        final boolean purplePresetChanged = purpleStripIdentity != null
-                && !purpleStripIdentity.equals(purpleIdentity);
-        purpleStripIdentity = purpleIdentity;
+        final boolean purplePresetChanged = purple.changed(currentAccount);
         if (filterOptions != null) {
             filterOptions.dismiss();
             filterOptions = null;
@@ -7036,15 +6939,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                     filterTabsView.selectFirstTab();
                 } else if (purplePresetChanged
                         && viewPages[0].selectedType != filterTabsView.getFirstTabId()) {
-                    // Land on All chats rather than on whatever folder now
-                    // happens to sit at the old index. The stable-id walk above
-                    // only rescues a tab that left the strip.
-                    //
-                    // Not when it is already the selected one: selectFirstTab
-                    // has no "already there" check of its own, so asking for the
-                    // tab under the finger runs a page animation with no page in
-                    // flight. scrollToFolder makes the same test for the same
-                    // reason.
+                    // Purple: see PurpleDialogsHooks#changed
                     filterTabsView.selectFirstTab();
                 }
             }
@@ -8411,14 +8306,6 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         updateVisibleRows(MessagesController.UPDATE_MASK_SELECT_DIALOG);
     }
 
-    /**
-     * Purple: how long to wait after {@code finishPreviewFragment()} before a
-     * dialog may be shown. The preview's close animation runs about 200ms;
-     * anything posted before it finishes is attached to a window on its way
-     * out and is never seen.
-     */
-    private static final long PURPLE_PREVIEW_DISMISS_MS = 300;
-
     private boolean onItemLongClick(RecyclerListView listView, View view, int position, float x, float y, int dialogsType, RecyclerListView.Adapter adapter) {
         if (getParentActivity() == null || view instanceof DialogsHintCell) {
             return false;
@@ -8793,37 +8680,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             previewMenu[0].addView(markAsUnreadItem);
         }
 
-        // Purple: the same box the selection mode's overflow opens, reached the
-        // way the desktop reaches it - from the chat itself rather than from a
-        // selection. One entry point's worth of code, because both call
-        // PurpleListBox.show() and both are hidden by the same
-        // PurpleListMenu.available().
-        //
-        // Driven on the GPU-backed emulator. The preview it hangs off opens
-        // only when the long-press lands inside the avatar - isPointInsideAvatar,
-        // in onItemLongClick - which is why two earlier attempts read as "this
-        // emulator has no preview" rather than "the press missed".
-        if (PurpleListMenu.available()) {
-            ActionBarMenuSubItem workModeItem = new ActionBarMenuSubItem(getParentActivity(), true, false);
-            workModeItem.setTextAndIcon(LocaleController.getString(R.string.PurpleLists), R.drawable.msg_customize);
-            workModeItem.setMinimumWidth(160);
-            workModeItem.setOnClickListener(e -> {
-                finishPreviewFragment();
-                // Wait for the preview's dismissal *animation*, not merely for
-                // the next loop iteration. The pin action below posts with no
-                // delay and is right to: it only moves data and needs the
-                // fragment alive. A dialog needs a window that is not still
-                // being torn down, and a zero-delay post gave exactly that -
-                // the preview closed and no box ever appeared, silently, with
-                // nothing in the log. There is no completion callback on
-                // finishPreviewFragment() to hang this on, so it is a delay,
-                // chosen above the close animation and confirmed on a device.
-                AndroidUtilities.runOnUIThread(() ->
-                        PurpleListBox.show(DialogsActivity.this, currentAccount, dialogId),
-                        PURPLE_PREVIEW_DISMISS_MS);
-            });
-            previewMenu[0].addView(workModeItem);
-        }
+        // Purple: see PurpleDialogsHooks#addPreviewItem
+        purple.addPreviewItem(previewMenu[0], dialogId);
 
         final boolean[] hasPinAction = new boolean[1];
         hasPinAction[0] = true;
@@ -8947,9 +8805,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 
         if (!DialogObject.isUserDialog(dialogId) || !UserObject.isUserSelf(getMessagesController().getUser(dialogId))) {
             ActionBarMenuSubItem muteItem = new ActionBarMenuSubItem(getParentActivity(), false, false);
-            // Purple: the label and the action below both read the user's own
-            // mute. Offering "Unmute" on a chat only the preset silenced would
-            // be an offer the app cannot keep.
+            // Purple: see MessagesController#mutedWithoutPreset
             if (!getMessagesController().mutedWithoutPreset(dialogId, 0)) {
                 muteItem.setTextAndIcon(LocaleController.getString(R.string.Mute), R.drawable.msg_mute);
             } else {
@@ -9288,23 +9144,15 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         if (containsFilter) {
             dialogs = getDialogsArray(currentAccount, viewPages[0].dialogsType, folderId, dialogsListFrozen);
         } else {
-            // Purple: this deliberately bypasses getDialogsArray, so it has to
-            // filter for itself - counting pins in the unfiltered model list
-            // would put the pinned divider several rows past where the drawn
-            // list actually stops being pinned. Same rule as there: the main
-            // list only, never the archive.
-            dialogs = folderId == 0
-                    ? PurpleGate.filter(currentAccount, getMessagesController().getDialogs(folderId))
-                    : getMessagesController().getDialogs(folderId);
+            // Purple: see PurpleDialogsHooks#filterMain
+            dialogs = purple.filterMain(currentAccount, folderId, getMessagesController().getDialogs(folderId));
         }
         for (int a = 0, N = dialogs.size(); a < N; a++) {
             TLRPC.Dialog dialog = dialogs.get(a);
             if (dialog instanceof TLRPC.TL_dialogFolder) {
                 continue;
             }
-            // Purple: a chat a folder pulled in from the archive carries a
-            // pinned flag that belongs to the Archive, not to this list, and it
-            // sorts below the real pins - so the divider's run ends here.
+            // Purple: see PurpleDialogsHooks#filterMain
             if (dialog.folder_id != 0) {
                 break;
             }
@@ -9965,8 +9813,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             if (getMessagesController().isForum(selectedDialog)) {
                 forumCount++;
             }
-            // Purple: this tally picks the action-mode icon, mute or unmute,
-            // so it counts the user's own mutes.
+            // Purple: see MessagesController#mutedWithoutPreset
             if (getMessagesController().mutedWithoutPreset(selectedDialog, 0)) {
                 canUnmuteCount++;
             } else {
@@ -10142,13 +9989,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 addToFolderItem.setVisibility(View.GONE);
             }
         }
-        if (workModeItem != null) {
-            // One chat at a time: membership is a property of a chat, and a
-            // tick that meant "some of these" would have no honest answer.
-            workModeItem.setVisibility(count == 1 && PurpleListMenu.available()
-                    ? View.VISIBLE
-                    : View.GONE);
-        }
+        purple.updateSelectionItem(count);
         if (muteItem != null) {
             if (canUnmuteCount != 0) {
                 muteItem.setIcon(R.drawable.msg_unmute);
@@ -11195,13 +11036,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         }
         MessagesController messagesController = AccountInstance.getInstance(currentAccount).getMessagesController();
         if (dialogsType == DIALOGS_TYPE_DEFAULT) {
-            // Purple: the main chat list is the one the preset speaks for. The
-            // archive is folderId 1 and is left whole on purpose - the preset
-            // decides its own view, a folder decides its own tab, and the
-            // archive is where you go to find something you already put away.
-            return folderId == 0
-                    ? PurpleGate.filter(currentAccount, messagesController.getDialogs(folderId))
-                    : messagesController.getDialogs(folderId);
+            // Purple: see PurpleDialogsHooks#filterMain
+            return purple.filterMain(currentAccount, folderId, messagesController.getDialogs(folderId));
         } else if (dialogsType == DIALOGS_TYPE_WIDGET || dialogsType == DIALOGS_TYPE_IMPORT_HISTORY) {
             return messagesController.dialogsServerOnly;
         } else if (dialogsType == DIALOGS_TYPE_ADD_USERS_TO) {
@@ -11240,15 +11076,9 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             return messagesController.dialogsGroupsOnly;
         } else if (dialogsType == 7 || dialogsType == 8) {
             MessagesController.DialogFilter dialogFilter = messagesController.selectedDialogFilter[dialogsType == 7 ? 0 : 1];
-            // Purple: a folder tab is deliberately unfiltered. Opening a folder
-            // is a deliberate act - you went there by name - and a preset that
-            // then second-guessed you inside it would leave nowhere to look at
-            // the thing you went looking for. Which folders a preset shows at
-            // all is a separate question, and not one this build answers yet.
+            // Purple: see PurpleDialogsHooks#filterMain
             if (dialogFilter == null) {
-                return folderId == 0
-                        ? PurpleGate.filter(currentAccount, messagesController.getDialogs(folderId))
-                        : messagesController.getDialogs(folderId);
+                return purple.filterMain(currentAccount, folderId, messagesController.getDialogs(folderId));
             } else {
                 if (initialDialogsType == DIALOGS_TYPE_FORWARD) {
                     return dialogFilter.dialogsForward;
@@ -13934,14 +13764,9 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             });
         });
         io.addGap();
-        // The Work Mode switch sits in the main menu rather than in Settings
-        // because a preset is changed several times a day and settings are not.
-        // The label carries the running preset, so the current mode is legible
-        // without opening anything. Only on the main chat list: the archive and
-        // community menus return above this, and neither is a list a preset
-        // filters.
+        // Purple: see PurpleDialogsHooks#menuLabel
         if (initialDialogsType == DIALOGS_TYPE_DEFAULT) {
-            io.add(R.drawable.msg_customize, PurpleGate.menuLabel(), () -> PurplePresetPicker.show(this));
+            io.add(R.drawable.msg_customize, purple.menuLabel(currentAccount), () -> purple.showPresetPicker());
         }
         io.add(R.drawable.outline_groups_24, getString(R.string.NewGroup), () -> {
             Bundle args = new Bundle();

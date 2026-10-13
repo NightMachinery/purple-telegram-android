@@ -217,6 +217,24 @@ hashes the candidate that matched.
 
 ### Work Mode
 
+`DialogsActivity` keeps its existing Purple hooks at their original action and
+lifecycle points. One `PurpleDialogsHooks` per fragment owns its Lists selection
+row and strip comparison, so main, archive and picker instances do not share menu
+state. The Lists row stays single-selection only; the avatar preview row remains
+above Pin and opens the box after the same 300 ms dismissal delay. The selection
+id is reserved in the helper, separate from upstream's community action id.
+
+`PurpleStripWatch` compares the same preset, view names and folder flags. Preset
+changes can select All chats, while unchanged strip membership across peek,
+schedule and list reloads preserves the selected tab. Private page and tab views
+stay in `DialogsActivity`, including the all-progress no-incoming-page guard.
+`PurpleFolders.filterMain` receives the actual actor account and keeps main-list
+filtering, whole archive lists and caller-owned unfiltered folder tabs. The
+account-bearing facade still uses current shared app-wide policy. Drag, Reorder,
+archive preference, unread tabs and the user's own mute reads keep their existing
+semantics. First-list loading and the sync-offer call stay at fragment creation;
+`PurpleGate`, `PurpleListMenu` and `PurpleSyncOffer` are not changed.
+
 A preset in `settings.toml` decides which chats are in the chat list and which
 may interrupt you. Pick one from the chat list's overflow menu, which is
 labelled with the running preset, or from Settings; both open the same box,
