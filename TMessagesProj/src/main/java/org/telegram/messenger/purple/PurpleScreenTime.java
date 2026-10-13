@@ -21,6 +21,7 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.DispatchQueue;
 import org.telegram.messenger.FileLog;
+import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.Utilities;
 
 import java.io.File;
@@ -253,6 +254,12 @@ public final class PurpleScreenTime {
      * arrives first wins and the second is a no-op, which is why this is one
      * entry point with a flag rather than four.
      *
+     * Screen-on alone says nothing about this app being in front, so the
+     * receiver does not restart recording. Only the activity resume does. Its
+     * foreground call stays after onResumeStaticCallback and before the chat
+     * resumes through actionBarLayout, keeping Foreground before Open.
+     * Activity pause stays distinct from a fragment pausing for a tab switch.
+     *
      * Coming back writes the Foreground event and then re-opens whatever was in
      * front - a chat, or "elsewhere". The core takes nothing from a Foreground
      * on its own: returning to the app does not say which chat you returned to.
@@ -350,6 +357,42 @@ public final class PurpleScreenTime {
     }
 
     /**
+     * Records a composer edit only when the field change is user input.
+     * Draft restoration is excluded by the caller's existing ignore flag;
+     * action() keeps the existing action_span throttle and input watchdog.
+     * Called at the original text-change point before send-by-enter handling.
+     */
+    public static void typing(boolean ignoreTextChange) {
+        if (!ignoreTextChange) {
+            action(ACTION_TYPING);
+        }
+    }
+
+    /**
+     * Records the beginning of a reply before the composer stores its target.
+     * Clearing a reply and rebuilding the panel for the same MessageObject
+     * are excluded by the original null and identity checks. The previous
+     * object is supplied by the caller before any assignment changes it.
+     */
+    public static void reply(MessageObject messageObject, MessageObject replyingMessageObject) {
+        if (messageObject != null && messageObject != replyingMessageObject) {
+            action(ACTION_REPLY);
+        }
+    }
+
+    /**
+     * Records an edit after the composer's existing audio, video and same-object
+     * guard. The caller keeps that guard and invokes this before creating the
+     * editor or assigning the editing object. A null target finishes an edit,
+     * so the original null check excludes it from the action log.
+     */
+    public static void edit(MessageObject messageObject) {
+        if (messageObject != null) {
+            action(ACTION_EDIT);
+        }
+    }
+
+    /**
      * One send action: a composer edit, a send, a voice recording started, an
      * attachment picked, a reply or an edit begun.
      *
@@ -362,6 +405,11 @@ public final class PurpleScreenTime {
      * An action is also input, so it ends an idle pause. The core knows that
      * without being told - it ends the pause at the Action whether or not a
      * Resume was written - but the watchdog here has to be reset too.
+     *
+     * Voice/video is recorded at its start, not its stop; stopping is a send
+     * or cancel. Attachment selection is recorded when its menu opens, even
+     * if abandoned. Send is recorded before refusal, scheduling or Premium
+     * handling, so those attempts retain their original activity semantics.
      */
     public static void action(String what) {
         if (!isUiThread()) {

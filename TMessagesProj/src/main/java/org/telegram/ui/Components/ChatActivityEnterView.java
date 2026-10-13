@@ -153,7 +153,6 @@ import org.telegram.messenger.Utilities;
 import org.telegram.messenger.VideoEditedInfo;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.messenger.camera.CameraController;
-import org.telegram.messenger.purple.PurpleScreenTime;
 import org.telegram.messenger.utils.DrawableUtils;
 import org.telegram.messenger.utils.EphemeralMessagesHelper;
 import org.telegram.messenger.utils.tlutils.TLKeyboardHelper;
@@ -898,10 +897,8 @@ public class ChatActivityEnterView extends FrameLayout implements
                 return;
             }
             delegate.onPreAudioVideoRecord();
-            // Purple: voice or video recording started. One event at the start
-            // and none at the end: the stop is a send or a cancel, and the span
-            // between them is reading time in a chat you were plainly in.
-            PurpleScreenTime.action(PurpleScreenTime.ACTION_VOICE);
+            // Purple: see PurpleScreenTime#action
+            org.telegram.messenger.purple.PurpleScreenTime.action(org.telegram.messenger.purple.PurpleScreenTime.ACTION_VOICE);
             calledRecordRunnable = true;
             recordAudioVideoRunnableStarted = false;
             if (slideText != null) {
@@ -2813,10 +2810,8 @@ public class ChatActivityEnterView extends FrameLayout implements
                 if (adjustPanLayoutHelper != null && adjustPanLayoutHelper.animationInProgress() || attachLayoutPaddingAlpha == 0f) {
                     return;
                 }
-                // Purple: an attachment pick, counted where the menu opens
-                // rather than where a file comes back - opening it is the
-                // action, and a pick abandoned is still a minute spent.
-                PurpleScreenTime.action(PurpleScreenTime.ACTION_ATTACH);
+                // Purple: see PurpleScreenTime#action
+                org.telegram.messenger.purple.PurpleScreenTime.action(org.telegram.messenger.purple.PurpleScreenTime.ACTION_ATTACH);
                 delegate.didPressAttachButton();
             });
             attachButton.setContentDescription(getString(R.string.AccDescrAttachButton));
@@ -5924,15 +5919,8 @@ public class ChatActivityEnterView extends FrameLayout implements
                 if (innerTextChange == 1) {
                     return;
                 }
-                // Purple: a composer edit is a send action, and the strongest
-                // signal there is for "active" rather than "reading". One event
-                // per burst, not one per key: the recorder throttles it to
-                // action_span, which is exactly how long the core counts one
-                // action for anyway. Guarded by ignoreTextChange so a draft
-                // being restored into the field is not typing.
-                if (!ignoreTextChange) {
-                    PurpleScreenTime.action(PurpleScreenTime.ACTION_TYPING);
-                }
+                // Purple: see PurpleScreenTime#typing
+                org.telegram.messenger.purple.PurpleScreenTime.typing(ignoreTextChange);
                 if (sendByEnter && !ctrlPressed && !shiftPressed && !ignoreTextChange && !isPaste && editingMessageObject == null && count > before && charSequence.length() > 0 && charSequence.length() == start + count && charSequence.charAt(charSequence.length() - 1) == '\n') {
                     nextChangeIsSend = true;
                 }
@@ -6890,12 +6878,8 @@ public class ChatActivityEnterView extends FrameLayout implements
 
     public void setReplyingMessageObject(MessageObject messageObject, ChatActivity.ReplyQuote quote, MessageObject replyingTopMessage) {
         boolean animated = parentFragment != null && parentFragment.isForumInViewAsMessagesMode() && this.replyingTopMessage != replyingTopMessage;
-        // Purple: beginning a reply. Only the beginning - this is also called
-        // with null to clear one, and with the same object again as the panel
-        // is rebuilt, neither of which is anything the user just did.
-        if (messageObject != null && messageObject != replyingMessageObject) {
-            PurpleScreenTime.action(PurpleScreenTime.ACTION_REPLY);
-        }
+        // Purple: see PurpleScreenTime#reply
+        org.telegram.messenger.purple.PurpleScreenTime.reply(messageObject, replyingMessageObject);
         if (messageObject != null) {
             if (botMessageObject == null && botButtonsMessageObject != replyingMessageObject) {
                 botMessageObject = botButtonsMessageObject;
@@ -7238,12 +7222,8 @@ public class ChatActivityEnterView extends FrameLayout implements
     }
 
     public boolean sendMessage() {
-        // Purple: the send itself, written before anything can refuse it. A
-        // send that opens a schedule picker or a Premium sheet instead is still
-        // a moment of activity, and the alternative - threading the event
-        // through every one of the dozen paths this fans out into - would miss
-        // more than it caught.
-        PurpleScreenTime.action(PurpleScreenTime.ACTION_SEND);
+        // Purple: see PurpleScreenTime#action
+        org.telegram.messenger.purple.PurpleScreenTime.action(org.telegram.messenger.purple.PurpleScreenTime.ACTION_SEND);
         if (richDraftActive && !UserConfig.getInstance(currentAccount).isPremium()) {
             RichEditor.openConversionSheet(getContext(), this::openRichEditorWithoutFormatting, () -> {
                 if (parentFragment != null) {
@@ -9926,12 +9906,8 @@ public class ChatActivityEnterView extends FrameLayout implements
         if (audioToSend != null || videoToSendMessageObject != null || editingMessageObject == messageObject) {
             return;
         }
-        // Purple: beginning an edit. Past the guard above, so the same message
-        // handed over twice is one action, and null - which is how an edit is
-        // finished - is not one at all.
-        if (messageObject != null) {
-            PurpleScreenTime.action(PurpleScreenTime.ACTION_EDIT);
-        }
+        // Purple: see PurpleScreenTime#edit
+        org.telegram.messenger.purple.PurpleScreenTime.edit(messageObject);
         createMessageEditText();
         boolean hadEditingMessage = editingMessageObject != null;
         editingMessageObject = messageObject;

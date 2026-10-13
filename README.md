@@ -1038,6 +1038,22 @@ Privacy settings live if the user deliberately wants to share with everybody.
 This button requires `trade_p`; the explanatory suffix requires both `trade_p`
 and `reasons_p`.
 
+The Settings entry stays between Folders and Devices and opens the complete
+Purple settings screen. `PurpleSettingsRow` owns its reserved row id and subtitle;
+`SettingsActivity` passes the row owner's `currentAccount` for the label contract.
+The current policy and subtitle still read shared app-wide state. Loading that
+state in the helper preserves the label when Settings is the first screen opened.
+`PurpleSettingsActivity` is unchanged by this extraction.
+
+Screen-time hooks stay in `ChatActivityEnterView` at the original voice,
+attachment, text-change, reply, send and edit points. `PurpleScreenTime` owns the
+three action guards; draft restoration, reply clear and repeated-object edits
+keep their exclusions. `LaunchActivity` keeps the app-lock and foreground hooks:
+foreground resume stays after `onResumeStaticCallback` and before
+`actionBarLayout.onResume()` so Foreground precedes the chat's Open. Activity
+pause differs from fragment pause during navigation. `ScreenReceiver` ends
+foreground time on screen-off; screen-on alone does not restart it.
+
 **Screen time** is `[screen_time]`, and it is off until `enabled_p = true` says
 otherwise - it is a record of what you looked at and for how long, and nothing
 should start keeping one of those because a version number moved. With it on,

@@ -139,7 +139,6 @@ import org.telegram.messenger.Utilities;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.messenger.pip.PipActivityController;
 import org.telegram.messenger.purple.PurpleGate;
-import org.telegram.messenger.purple.PurpleScreenTime;
 import org.telegram.messenger.pip.activity.IPipActivity;
 import org.telegram.messenger.pip.activity.IPipActivityHandler;
 import org.telegram.messenger.pip.activity.IPipActivityListener;
@@ -1428,11 +1427,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             selectAnimatedEmojiDialog = null;
         }
         SharedConfig.appLocked = true;
-        // Purple: the app locked, which may end a running peek. Reported from
-        // the one place the passcode item and the auto-lock timer both come
-        // through, because the rule is a key in settings.toml and not a guess
-        // at which of them it was - and on a phone that key is off by default,
-        // so this ordinarily does nothing at all.
+        // Purple: see PurpleGate#locked
         PurpleGate.locked();
         if (SecretMediaViewer.hasInstance() && SecretMediaViewer.getInstance().isVisible()) {
             SecretMediaViewer.getInstance().closePhoto(false, false);
@@ -6737,12 +6732,8 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         pipActivityHandler.onPause();
         NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.stopAllHeavyOperations, 4096);
         ApplicationLoader.mainInterfacePaused = true;
-        // Purple: the app left the front, so whatever chat was in it stops
-        // being screen time. Written here rather than from the fragment because
-        // this is the transition - a fragment's own onPause fires for a tab
-        // switch too, and that is a different chat starting, not the app
-        // stopping. See PurpleScreenTime.foreground().
-        PurpleScreenTime.foreground(false);
+        // Purple: see PurpleScreenTime#foreground
+        org.telegram.messenger.purple.PurpleScreenTime.foreground(false);
         int account = currentAccount;
         Utilities.stageQueue.postRunnable(() -> {
             ApplicationLoader.mainInterfacePausedStageQueue = true;
@@ -6989,10 +6980,8 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.startAllHeavyOperations, 4096);
         MediaController.getInstance().setFeedbackView(feedbackView = actionBarLayout.getView(), true);
         ApplicationLoader.mainInterfacePaused = false;
-        // Purple: and back. This runs before actionBarLayout.onResume() below,
-        // so the Foreground event is in the log before the chat's own Open,
-        // which is the order the core reads them in.
-        PurpleScreenTime.foreground(true);
+        // Purple: see PurpleScreenTime#foreground
+        org.telegram.messenger.purple.PurpleScreenTime.foreground(true);
         MessagesController.getInstance(currentAccount).sortDialogs(null);
         showLanguageAlert(false);
         Utilities.stageQueue.postRunnable(() -> {
