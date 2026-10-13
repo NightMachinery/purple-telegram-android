@@ -57,6 +57,7 @@ import org.telegram.SQLite.SQLiteException;
 import org.telegram.SQLite.SQLitePreparedStatement;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.messenger.purple.PurpleGate;
+import org.telegram.messenger.purple.PurpleFolders;
 import org.telegram.messenger.support.LongSparseIntArray;
 import org.telegram.messenger.support.LongSparseLongArray;
 import org.telegram.messenger.utils.EphemeralMessagesHelper;
@@ -413,18 +414,9 @@ public class MessagesController extends BaseController implements NotificationCe
 
     private UserNameResolver userNameResolver;
 
-    /**
-     * The folders the tab strip shows.
-     *
-     * Purple: while a preset restricts folders this is a display-only view of
-     * the real list, in the order the preset named them. Everything that edits
-     * a folder, counts them, resolves membership or uploads an order must call
-     * {@link #getDialogFiltersUnrestricted()} instead - see
-     * {@code PurpleGate.shownFilters}, and the desktop fork's two-accessor
-     * split in {@code ChatFilters::purpleShownList()}.
-     */
+    /** Purple: see PurpleFolders#shownFilters. */
     public ArrayList<DialogFilter> getDialogFilters() {
-        return PurpleGate.shownFilters(getDialogFiltersUnrestricted());
+        return PurpleFolders.shownFilters(currentAccount, getDialogFiltersUnrestricted());
     }
 
     /**
@@ -9746,7 +9738,7 @@ public class MessagesController extends BaseController implements NotificationCe
         // header, the scroll offsets - because all of them ask this one
         // question, and a state the app has always had to handle needs no new
         // branch anywhere.
-        if (PurpleGate.hidingArchive()) {
+        if (PurpleFolders.hidingArchive(currentAccount)) {
             return false;
         }
         return SharedConfig.archiveHidden && dialogs_dict.get(DialogObject.makeFolderDialogId(1)) != null;
@@ -17303,7 +17295,7 @@ public class MessagesController extends BaseController implements NotificationCe
             // skipped is only the reordering, which cannot be told truthfully
             // from a truncated list. Same reasoning as the refusal to drag a
             // pinned row while a preset runs, in DialogsActivity.
-            if (PurpleGate.hidingEverywhere()) {
+            if (PurpleFolders.hidingEverywhere(currentAccount)) {
                 return;
             }
             ArrayList<TLRPC.Dialog> dialogs = getDialogs(folderId);
@@ -21612,16 +21604,7 @@ public class MessagesController extends BaseController implements NotificationCe
         return isDialogMuted(dialogId, topicId, null);
     }
 
-    /**
-     * Whether the user muted this chat, ignoring the running Work Mode preset.
-     *
-     * Purple: the answer for anything that labels or drives a Mute/Unmute
-     * toggle, or lists the user's own notification exceptions. A menu reading
-     * the effective answer would offer "Unmute" on a chat the preset silences,
-     * and unmuting it would appear to do nothing. See
-     * docs/purple/work_mode.md and the desktop fork's
-     * {@code NotifySettings::purpleMutedWithoutPreset}.
-     */
+    /** Purple: see README, Work Mode lists and mute. */
     public boolean mutedWithoutPreset(long dialogId, long topicId) {
         return mutedWithoutPreset(dialogId, topicId, null);
     }
@@ -21631,13 +21614,7 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public boolean isDialogMuted(long dialogId, long topicId, TLRPC.Chat chat) {
-        // Purple: a work preset can silence a chat, never unsilence one - a
-        // chat the user muted stays muted whichever list it falls into - so
-        // this is only ever an extra mute and belongs first. Going through the
-        // one accessor the rest of the app already uses is deliberate: the
-        // chat list's bell, the grey unread counter and the muted buckets the
-        // unread counters are built from all read this, so they follow without
-        // a second gate anywhere.
+        // Purple: see README, Work Mode lists and mute.
         if (PurpleGate.silenced(currentAccount, dialogId)) {
             return true;
         }
@@ -22350,16 +22327,10 @@ public class MessagesController extends BaseController implements NotificationCe
                 if (ChatObject.isChatCollapsedInCommunity(currentAccount, chat)) {
                     final long communityId = chat.linked_community_id;
                     dialogsCommunityLastMessageDate.put(communityId, Math.max(dialogsCommunityLastMessageDate.get(communityId), d.last_message_date));
-                    // Purple: a community row's badge is a running total over
-                    // rows, so a chat under a "hide until" is out of it exactly
-                    // as it is out of All chats and out of every folder tab.
-                    // The chat's own row keeps its own number; the fold simply
-                    // stops adding it up.
-                    if (PurpleGate.countedInTotals(currentAccount, d.id)) {
-                        dialogsCommunityUnreadCount.put(communityId, dialogsCommunityUnreadCount.get(communityId) + getDialogUnreadCount(d));
-                        if (d.unread_mark) {
-                            dialogsCommunityUnreadMark.put(communityId, 1);
-                        }
+                    if (!PurpleGate.countedInTotals(currentAccount, d.id)) continue;
+                    dialogsCommunityUnreadCount.put(communityId, dialogsCommunityUnreadCount.get(communityId) + getDialogUnreadCount(d));
+                    if (d.unread_mark) {
+                        dialogsCommunityUnreadMark.put(communityId, 1);
                     }
                 }
             } else if (d.id > 0) {
@@ -22367,16 +22338,10 @@ public class MessagesController extends BaseController implements NotificationCe
                 if (ChatObject.isUserCollapsedInCommunity(currentAccount, user)) {
                     final long communityId = user.linked_community_id;
                     dialogsCommunityLastMessageDate.put(communityId, Math.max(dialogsCommunityLastMessageDate.get(communityId), d.last_message_date));
-                    // Purple: a community row's badge is a running total over
-                    // rows, so a chat under a "hide until" is out of it exactly
-                    // as it is out of All chats and out of every folder tab.
-                    // The chat's own row keeps its own number; the fold simply
-                    // stops adding it up.
-                    if (PurpleGate.countedInTotals(currentAccount, d.id)) {
-                        dialogsCommunityUnreadCount.put(communityId, dialogsCommunityUnreadCount.get(communityId) + getDialogUnreadCount(d));
-                        if (d.unread_mark) {
-                            dialogsCommunityUnreadMark.put(communityId, 1);
-                        }
+                    if (!PurpleGate.countedInTotals(currentAccount, d.id)) continue;
+                    dialogsCommunityUnreadCount.put(communityId, dialogsCommunityUnreadCount.get(communityId) + getDialogUnreadCount(d));
+                    if (d.unread_mark) {
+                        dialogsCommunityUnreadMark.put(communityId, 1);
                     }
                 }
             }
@@ -22441,7 +22406,7 @@ public class MessagesController extends BaseController implements NotificationCe
         // An extra view's pinned order is resolved against the dialogs, and on
         // a cold start the settings are read before there are any. This is the
         // moment they arrive, and it is ahead of the sort that reads the pins.
-        PurpleGate.refillViewPinsIfNeeded();
+        PurpleFolders.refillViewPinsIfNeeded(currentAccount);
         if (chatsDict == null && ApplicationLoader.mainInterfacePaused) {
             return;
         }
@@ -22532,20 +22497,7 @@ public class MessagesController extends BaseController implements NotificationCe
         }
         for (int a = 0, N = allDialogs.size(); a < N; a++) {
             TLRPC.Dialog d = allDialogs.get(a);
-            // Purple: this is the seam hide_everywhere_p is answered at, and the
-            // only one. Every list below is derived here from dialogs_dict, so a
-            // chat skipped now is missing from all of them at once - the chat
-            // list, the folder buckets, the forward picker, the kind-limited
-            // pickers - and from the unread total counted beside them.
-            // dialogs_dict itself is left alone on purpose: the chat still opens
-            // from a notification or a link, and comes back whole when the
-            // preset stops. The promo row is exempt because the block below
-            // removes it from allDialogs itself and adds it back after the loop;
-            // skipping it here would leave two of it.
-            if ((promoDialog == null || d.id != promoDialog.id)
-                    && PurpleGate.hiddenEverywhere(currentAccount, d)) {
-                continue;
-            }
+            if (PurpleFolders.hiddenFromLists(currentAccount, this, d)) continue;
             if (d instanceof TLRPC.TL_dialog) {
                 ArrayList<MessageObject> messageObjects = dialogMessage.get(d.id);
                 if (messageObjects != null) {

@@ -60,7 +60,7 @@ import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.MessagesStorage;
-import org.telegram.messenger.purple.PurpleGate;
+import org.telegram.messenger.purple.PurpleFolders;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.Utilities;
@@ -1808,11 +1808,7 @@ public class FilterTabsView extends FrameLayout {
         }
 
         public void swapElements(int fromIndex, int toIndex) {
-            if (PurpleGate.foldersRestricted()) {
-                // Unreachable through the drag, which is refused above. Here
-                // too because this rewrites the real filters' order fields in
-                // place, using what are strip indices - the one thing that must
-                // not happen against a restricted strip.
+            if (PurpleFolders.foldersRestricted(UserConfig.selectedAccount)) {
                 return;
             }
             int idx1 = fromIndex;
@@ -1871,7 +1867,7 @@ public class FilterTabsView extends FrameLayout {
         }
 
         public void moveElementToStart(int theIndex) {
-            if (PurpleGate.foldersRestricted()) {
+            if (PurpleFolders.foldersRestricted(UserConfig.selectedAccount)) {
                 return;
             }
             int count = tabs.size();
@@ -1923,12 +1919,7 @@ public class FilterTabsView extends FrameLayout {
 
         @Override
         public int getMovementFlags(@NonNull RecyclerView recyclerView, @NonNull RecyclerView.ViewHolder viewHolder) {
-            // Purple: a strip index is not a server-side position while a
-            // preset restricts the folders, and a drop is uploaded as the whole
-            // positional order - so dragging here would drop every folder the
-            // preset is hiding from the account, not just from the view. Same
-            // hazard as the pin drag, guarded the same way.
-            if (PurpleGate.foldersRestricted()) {
+            if (PurpleFolders.foldersRestricted(UserConfig.selectedAccount)) {
                 return makeMovementFlags(0, 0);
             }
             if (MessagesController.getInstance(UserConfig.selectedAccount).premiumFeaturesBlocked() && (!isEditing || (viewHolder.getAdapterPosition() == 0 && tabs.get(0).isDefault && !UserConfig.getInstance(UserConfig.selectedAccount).isPremium()))) {

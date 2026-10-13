@@ -48,7 +48,6 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.purple.PurpleDefaults;
-import org.telegram.messenger.purple.PurpleGate;
 import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
@@ -233,13 +232,8 @@ public class NotificationsSettingsActivity extends BaseFragment implements Notif
 
     public void loadExceptions(Runnable onDone) {
         MediaDataController.getInstance(currentAccount).loadHints(true);
-        // Purple: the same seeding as the stories exceptions screen next door,
-        // and the same rule - these five rows are the frequent-contact strip
-        // under another name, not exceptions the user made. Filtered on the
-        // way in, before the walk moves to the storage thread.
-        final ArrayList<TLRPC.TL_topPeer> topPeers = PurpleGate.visibleTopPeers(
-                currentAccount,
-                MediaDataController.getInstance(currentAccount).hints);
+        final ArrayList<TLRPC.TL_topPeer> topPeers = new ArrayList<>(MediaDataController.getInstance(currentAccount).hints);
+        org.telegram.messenger.purple.PurpleHints.removeHiddenTopPeers(currentAccount, topPeers);
         MessagesStorage.getInstance(currentAccount).getStorageQueue().postRunnable(() -> {
             ArrayList<NotificationException> usersResult = new ArrayList<>();
             ArrayList<NotificationException> chatsResult = new ArrayList<>();

@@ -254,3 +254,26 @@ rather than inventing an account.
   idempotence/registration, and retains recover's deferred dispatch.
 - Recovery connection observers use the event account and late selected account;
   LaunchActivity resume recovery stays within super.onResume's lifecycle dispatch.
+
+## Work Mode lists, folders and mute seams
+
+- checkCollapsedDialogsInCommunity: each countedInTotals continue follows the
+  dialogsCommunityLastMessageDate.put and precedes the stock count/mark block.
+  At this baseline no executable statements follow either collapsed branch
+  before the enclosing allDialogs loop ends. Reassess the continue if upstream
+  adds such work, so uncounted chats do not lose new side effects.
+- buildShortcuts: local hints shadows this.hints only inside the passcode block.
+  Keep its restored capped loop and original peer/index/order operations; do not
+  accidentally add field hints reads inside that scope or move filtering past
+  the maxShortcuts limit. No filtering returns the original list instance.
+- NotificationsSettingsActivity: retain the stock topPeers copy before filtering
+  it, then keep exception seeding and PurpleDefaults values unchanged. The live
+  MediaDataController.hints list stays untouched.
+- MessagesController uses its currentAccount for facade hooks and passes the
+  actual controller for promo exclusion. FilterTabsView uses late-bound
+  UserConfig.selectedAccount consistently with its real requests. Fixed legacy
+  Gate flag/view/pin methods remain shared-policy delegates behind the facade;
+  these contracts do not implement future per-account storage or a new policy.
+- Preserve isPromoDialog(id, false) before hiddenEverywhere, so the promo row is
+  removed/reinserted once and never filtered twice. Keep mutedWithoutPreset for
+  user toggles and isDialogMuted for effective mute; membership ignores preset mute.

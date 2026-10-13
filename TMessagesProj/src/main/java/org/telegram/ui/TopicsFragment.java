@@ -1980,8 +1980,6 @@ public class TopicsFragment extends BaseFragment implements NotificationCenter.N
             public void muteFor(int timeInSeconds) {
                 finishPreviewFragment();
                 if (timeInSeconds == 0) {
-                    // Purple: toggles and their labels read the user's own mute;
-                    // the header's mute icon further down keeps the effective one.
                     if (getMessagesController().mutedWithoutPreset(-chatId, topic.id)) {
                         getNotificationsController().muteDialog(-chatId, topic.id, false);
                     }

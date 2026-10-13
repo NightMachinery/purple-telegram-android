@@ -52,7 +52,6 @@ import org.telegram.SQLite.SQLiteCursor;
 import org.telegram.SQLite.SQLiteDatabase;
 import org.telegram.SQLite.SQLiteException;
 import org.telegram.SQLite.SQLitePreparedStatement;
-import org.telegram.messenger.purple.PurpleGate;
 import org.telegram.messenger.ringtone.RingtoneDataStore;
 import org.telegram.messenger.ringtone.RingtoneUploader;
 import org.telegram.messenger.utils.EphemeralMessagesHelper;
@@ -5003,26 +5002,8 @@ public class MediaDataController extends BaseController {
         }
         ArrayList<TLRPC.TL_topPeer> hintsFinal = new ArrayList<>();
         if (SharedConfig.passcodeHash.length() <= 0) {
-            // Purple: these become the OS share sheet's direct-share targets,
-            // which sit outside the app and outlive the screen that made them,
-            // so a chat the preset is hiding must not become one. Same two
-            // questions the in-app strips ask; the folder snapshot is taken
-            // once for the loop.
-            final boolean purpleEverywhere = PurpleGate.hidingEverywhere();
-            final boolean purpleSuggestions = PurpleGate.hidingFromSuggestions();
-            final ArrayList<MessagesController.DialogFilter> purpleFolders = purpleSuggestions
-                    ? PurpleGate.suggestionFolders(currentAccount)
-                    : null;
+            ArrayList<TLRPC.TL_topPeer> hints = org.telegram.messenger.purple.PurpleHints.visibleTopPeers(currentAccount, this.hints);
             for (int a = 0; a < hints.size(); a++) {
-                if (purpleEverywhere || purpleSuggestions) {
-                    final long did = DialogObject.getPeerDialogId(hints.get(a).peer);
-                    if (purpleEverywhere && PurpleGate.hiddenEverywhere(currentAccount, did)) {
-                        continue;
-                    }
-                    if (PurpleGate.hiddenFromSuggestions(currentAccount, did, purpleFolders)) {
-                        continue;
-                    }
-                }
                 hintsFinal.add(hints.get(a));
                 if (hintsFinal.size() == maxShortcuts - 2) {
                     break;
