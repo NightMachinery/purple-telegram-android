@@ -57,6 +57,7 @@ import org.telegram.SQLite.SQLiteException;
 import org.telegram.SQLite.SQLitePreparedStatement;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.messenger.purple.PurpleGate;
+import org.telegram.messenger.purple.PurpleLocalPremium;
 import org.telegram.messenger.purple.PurpleFolders;
 import org.telegram.messenger.support.LongSparseIntArray;
 import org.telegram.messenger.support.LongSparseLongArray;
@@ -886,21 +887,9 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public void lockFiltersInternal() {
+        if (PurpleLocalPremium.unlockLockedFolders(currentAccount, this)) return;
         boolean changed = false;
-        // Purple: Local Premium unlocks folders the account already has. The
-        // lock is entirely a client-side refusal to use folders the server has
-        // already sent us - it is not the *count* limit, which the server
-        // enforces on creation and which this does not touch. Clearing rather
-        // than merely skipping, because the flags may already be set from a
-        // run with the unlock off, and nothing else would take them down.
-        if (PurpleGate.localPremium() && !getUserConfig().isPremium()) {
-            for (int i = 0; i < dialogFilters.size(); i++) {
-                if (dialogFilters.get(i).locked) {
-                    dialogFilters.get(i).locked = false;
-                    changed = true;
-                }
-            }
-        } else if (!getUserConfig().isPremium() && dialogFilters.size() - 1 > dialogFiltersLimitDefault) {
+        if (!getUserConfig().isPremium() && dialogFilters.size() - 1 > dialogFiltersLimitDefault) {
             int n = dialogFilters.size() - 1 - dialogFiltersLimitDefault;
             ArrayList<DialogFilter> filtersSortedById = new ArrayList<>(dialogFilters);
             Collections.reverse(filtersSortedById);
@@ -918,22 +907,7 @@ public class MessagesController extends BaseController implements NotificationCe
                 }
             }
         }
-        // Purple: only when the account has more folders than the limit, which
-        // is the only case where any of this is in play - so the line appears
-        // whichever way the unlock went, rather than leaving an absence to be
-        // read as evidence. The lock is a client-side refusal; the *count*
-        // limit the server enforces on creation is untouched.
-        if (dialogFilters.size() - 1 > dialogFiltersLimitDefault) {
-            int locked = 0;
-            for (int i = 0; i < dialogFilters.size(); i++) {
-                if (dialogFilters.get(i).locked) {
-                    ++locked;
-                }
-            }
-            FileLog.d("Purple: " + (dialogFilters.size() - 1) + " folders against a limit of "
-                    + dialogFiltersLimitDefault + ", " + locked + " locked"
-                    + (PurpleGate.localPremium() ? " (local premium)." : "."));
-        }
+        PurpleLocalPremium.logFolderLocks(currentAccount, this);
         if (changed) {
             getNotificationCenter().postNotificationName(NotificationCenter.dialogFiltersUpdated);
         }
@@ -21710,7 +21684,12 @@ public class MessagesController extends BaseController implements NotificationCe
         NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.updateInterfaces, UPDATE_MASK_REACTIONS_READ);
     }
 
+    public SponsoredMessagesInfo getCachedSponsoredMessages(long dialogId) {
+        return sponsoredMessages.get(dialogId);
+    }
+
     public SponsoredMessagesInfo getSponsoredMessages(long dialogId) {
+        if (PurpleLocalPremium.withholdSponsored(currentAccount, dialogId)) return null;
         SponsoredMessagesInfo info = sponsoredMessages.get(dialogId);
         if (info != null && (info.loading || Math.abs(SystemClock.elapsedRealtime() - info.loadTime) <= 5 * 60 * 1000)) {
             return info;

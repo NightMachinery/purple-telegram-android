@@ -277,3 +277,34 @@ rather than inventing an account.
 - Preserve isPromoDialog(id, false) before hiddenEverywhere, so the promo row is
   removed/reinserted once and never filtered twice. Keep mutedWithoutPreset for
   user toggles and isDialogMuted for effective mute; membership ignores preset mute.
+
+## Local Premium cache and folder seams
+
+- getSponsoredMessages must consult Local Premium before its first cache access,
+  including the loading/five-minute cache hit. Keep the exact stock request and
+  callback body after that hook, and bind both actual ChatActivity null consumers.
+  removeFromSponsored separately retains an eligible cached-list mutation
+  through its owner read-only seam, without requesting under Local Premium.
+- Keep ChatActivity's stock premium/settings/eligibility early return. The A2
+  sponsored hook and its PurpleChatHooks method are removed here; do not remove
+  unrelated purple hooks or settings-import code, or restore the old A2
+  "(your setting)" log. Sponsored policy logs occur per controller invocation
+  and are not network-request completion evidence.
+- lockFiltersInternal must return after a handled Local Premium/non-Premium
+  unlock, so stock locking cannot run afterward and duplicate notifications
+  cannot be posted. The helper uses the actual controller account, clears only
+  existing locked flags, logs only over the same count limit, and posts the
+  original event only when a flag changed. Keep the nonhandled stock algorithm,
+  count limit and log-before-changed-notification ordering.
+
+### Sponsored cache removal during Local Premium
+
+The display/request hook refuses sponsored content before cache access while
+Local Premium is enabled. The existing removal caller separately receives only
+an already cached loading or unexpired result through the owning controller;
+its original removal and bot-message fast path stay unchanged. This path makes
+no sponsored request while Local Premium is enabled. With the switch off, it
+uses the original getter. Missing or expired cached results under Local Premium
+remain absent; this is an intentional request omission, not cache clearing.
+Keep the original elapsedRealtime, absolute-difference and five-minute cache
+eligibility together with this removal hook when merging upstream.

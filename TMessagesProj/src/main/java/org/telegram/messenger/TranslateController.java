@@ -92,21 +92,18 @@ public class TranslateController extends BaseController {
     }
 
     public boolean isFeatureAvailable() {
-        // Purple: see docs/purple/premium.md. The master switch above is not
-        // Premium-locked on Android the way it is on the desktop, so this is
-        // the only gate in front of the whole-chat translation UI.
-        return isChatTranslateEnabled()
-                && (UserConfig.getInstance(currentAccount).isPremium() || PurpleGate.localPremium());
+        if (org.telegram.messenger.purple.PurpleLocalPremium.on()) return isChatTranslateEnabled();
+        return isChatTranslateEnabled() && UserConfig.getInstance(currentAccount).isPremium();
     }
 
     public boolean isFeatureAvailable(long dialogId) {
         if (!isChatTranslateEnabled()) {
             return false;
         }
+        if (org.telegram.messenger.purple.PurpleLocalPremium.on()) return true;
         final TLRPC.Chat chat = getMessagesController().getChat(-dialogId);
         return (
             UserConfig.getInstance(currentAccount).isPremium() ||
-            PurpleGate.localPremium() ||
             chat != null && chat.autotranslation
         );
     }

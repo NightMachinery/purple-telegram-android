@@ -1250,6 +1250,42 @@ Work Mode is ported, the launch-time offer of a settings import included. The
 contents of a folder tab are deliberately unfiltered: a preset decides its own
 view, a folder decides its own tab.
 
+### Local Premium hooks
+
+PurpleLocalPremium.on() delegates to the existing shared PurpleGate.localPremium()
+decision, including its original lazy load and fallback. Local Premium remains
+outside Work Mode account lists. TranslateController keeps its master switch and
+stock account/autotranslation expressions, with the Local Premium early returns
+at the two named seams. The existing language restriction term is unchanged.
+VideoAds keeps its loading/loaded gate and stock Premium/settings guard; Local
+Premium stops the request before its stock work.
+
+MessagesController checks withholdSponsored(currentAccount, dialogId) before
+any sponsored cache lookup. Cached ads cannot be returned while Local Premium
+is on. ChatActivity keeps its exact stock premium/settings early return and
+removes only the accepted A2 purple.withholdSponsored hook; PurpleChatHooks
+loses only that sponsored method. Its other hooks and settings-import code
+remain unchanged. The same two sponsored log messages now fire per controller
+invocation, including cache hits. The Local Premium cache-only removal path
+does not call this request policy or write its log. A "requested"
+line records the existing policy answer, not proof of an actual network request.
+The "(your setting)" log was removed in A2 and is not restored here.
+
+addSponsoredMessages treats null as nothing to add. removeFromSponsored uses
+a separate Purple removal helper: Local Premium on admits only the original
+loading or unexpired cache hit without a request; off uses the original getter.
+Its bot-message fast path, null handling and cached messages removal stay exact.
+Missing or expired caches make no request while Local Premium is on.
+
+Folder unlocking takes the real controller and its actor account explicitly.
+The fixed controller accessors are protected; public UserConfig.getInstance(account)
+and NotificationCenter.getInstance(account) resolve the same account-owned
+instances as those accessors. Only Local Premium on for a non-Premium account
+clears existing locked flags. The folder count limit enforced by the server
+is unchanged. The same over-limit-only folder log follows the clear/stock
+lock work and precedes the one changed-only dialogFiltersUpdated notification.
+Helpers retain no owner, collection or asynchronous state.
+
 ### Push notifications
 
 `[notifications].preview_always` in `settings.toml` lets messages and reactions
@@ -1389,3 +1425,15 @@ You will require Android Studio 2025.1.4, Android NDK 27.2.12479018 and Android 
 ### Localization
 
 We moved all translations to https://translations.telegram.org/en/android/. Please use it.
+
+### Sponsored cache removal during Local Premium
+
+The display/request hook refuses sponsored content before cache access while
+Local Premium is enabled. The existing removal caller separately receives only
+an already cached loading or unexpired result through the owning controller;
+its original removal and bot-message fast path stay unchanged. This path makes
+no sponsored request while Local Premium is enabled. With the switch off, it
+uses the original getter. Missing or expired cached results under Local Premium
+remain absent; this is an intentional request omission, not cache clearing.
+Keep the original elapsedRealtime, absolute-difference and five-minute cache
+eligibility together with this removal hook when merging upstream.

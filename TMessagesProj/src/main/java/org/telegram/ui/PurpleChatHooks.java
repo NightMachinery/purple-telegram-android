@@ -343,26 +343,5 @@ final class PurpleChatHooks {
         PurpleScreenTime.input();
     }
 
-    // ---- sponsored messages --------------------------------------------------
 
-    /**
-     * Whether to skip asking for sponsored messages, called after upstream's
-     * own checks have let the request through. With Local Premium on we
-     * simply stop asking: the server hands these to whoever requests them,
-     * with no Premium check on the request, so the client is the only thing
-     * withholding them (docs/purple/premium.md in the desktop repository).
-     *
-     * Both outcomes are logged, because whether the request went out is not
-     * otherwise visible from outside: the network log names no TL
-     * constructors.
-     */
-    boolean withholdSponsored() {
-        final long dialogId = chat.getDialogId();
-        if (PurpleGate.localPremium()) {
-            FileLog.d("Purple: sponsored for " + dialogId + ": not requested (local premium).");
-            return true;
-        }
-        FileLog.d("Purple: sponsored for " + dialogId + ": requested.");
-        return false;
-    }
 }

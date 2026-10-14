@@ -24921,7 +24921,6 @@ public class ChatActivity extends BaseFragment implements
         if (sponsoredMessagesAdded || chatMode != 0 || !ChatObject.isChannel(currentChat) && !UserObject.isBot(currentUser) || !forwardEndReached[0] || getUserConfig().isPremium() && getMessagesController().isSponsoredDisabled() || isReport()) {
             return;
         }
-        if (purple.withholdSponsored()) return;
         MessagesController.SponsoredMessagesInfo res = getMessagesController().getSponsoredMessages(dialog_id);
         if (res == null || res.messages == null) {
             return;
@@ -24977,7 +24976,7 @@ public class ChatActivity extends BaseFragment implements
             updateTopPanel(true);
             return;
         }
-        MessagesController.SponsoredMessagesInfo sponsoredMessagesInfo = getMessagesController().getSponsoredMessages(dialog_id);
+        MessagesController.SponsoredMessagesInfo sponsoredMessagesInfo = org.telegram.messenger.purple.PurpleLocalPremium.sponsoredForRemoval(currentAccount, getMessagesController(), dialog_id);
         if (sponsoredMessagesInfo != null) {
             sponsoredMessagesInfo.messages.remove(message);
         }
