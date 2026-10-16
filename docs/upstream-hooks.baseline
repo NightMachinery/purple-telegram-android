@@ -85,15 +85,6 @@ file TMessagesProj/src/main/java/org/telegram/ui/Stories/DialogStoriesCell.java 
 file TMessagesProj/src/main/java/org/telegram/ui/Stories/StoriesController.java 73 2 4
 file TMessagesProj/src/main/java/org/telegram/ui/Stories/StoryViewer.java 5 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/TopicsFragment.java 5 5 4
-file TMessagesProj/src/main/res/values-ar/strings.xml 2 2 1
-file TMessagesProj/src/main/res/values-de/strings.xml 2 2 1
-file TMessagesProj/src/main/res/values-es/strings.xml 2 2 1
-file TMessagesProj/src/main/res/values-it/strings.xml 2 2 1
-file TMessagesProj/src/main/res/values-ko/strings.xml 2 2 1
-file TMessagesProj/src/main/res/values-nl/strings.xml 2 2 1
-file TMessagesProj/src/main/res/values-pt-rBR/strings.xml 2 2 1
-file TMessagesProj/src/main/res/values-ru/strings.xml 2 2 1
-file TMessagesProj/src/main/res/values-uk/strings.xml 2 2 1
 file TMessagesProj/src/main/res/values/strings.xml 562 2 2
 file TMessagesProj/src/main/res/xml/auth.xml 1 1 1
 file TMessagesProj/src/main/res/xml/auth_menu.xml 1 1 1
