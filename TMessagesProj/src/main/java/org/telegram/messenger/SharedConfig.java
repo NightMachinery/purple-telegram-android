@@ -29,7 +29,6 @@ import androidx.core.content.pm.ShortcutManagerCompat;
 
 import org.json.JSONObject;
 import org.telegram.messenger.purple.PurpleDefaults;
-import org.telegram.messenger.purple.PurpleCore;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.SerializedData;
 import org.telegram.tgnet.TLRPC;
@@ -826,14 +825,7 @@ public class SharedConfig {
     }
 
     public static boolean checkPasscode(String passcode) {
-        if (checkPasscodeCandidate(passcode)) {
-            return true;
-        }
-        String mapped = PurpleCore.persianKeyboardToEnglish(passcode);
-        return !mapped.equals(passcode) && checkPasscodeCandidate(mapped);
-    }
-
-    private static boolean checkPasscodeCandidate(String passcode) {
+        if (org.telegram.messenger.purple.PurplePasscode.checkMapped(passcode)) return true;
         if (passcodeSalt.length == 0) {
             boolean result = Utilities.MD5(passcode).equals(passcodeHash);
             if (result) {

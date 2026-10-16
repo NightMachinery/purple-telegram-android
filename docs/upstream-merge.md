@@ -285,6 +285,22 @@ rather than inventing an account.
    predicates retain their OR order and repeated did reads; dialog filtering
    keeps the dialog-object overload. Recommendation display/request guards
    remain the shared Normal/state flag policy, with no new cache or observer.
+   Startup/defaults hooks preserve initialization and fallback order. Keep
+   PurpleBuildVars first in the existing static block and assign only the
+   existing BuildConfig credential expressions. Compare the complete upstream
+   passcode hash/salt-migration body, keeping the first reentrant PurplePasscode
+   guard, plain-before-native ordering and finally reset. The two UI callers
+   support the non-null/single-thread source domain; qualify extra wrong-input
+   hashes and exception logging rather than claiming all failures are inert.
+   Locale ownAppName must take key, primary resource and fallback resource:
+   primary failure still tries fallback and logs the primary error, and own
+   names never return null to cloud lookup. Keep the stock non-own cloud path
+   and two-argument delegator. PushService uses only the original fallback
+   branch, preserving constant short-circuit and one contains/explicit-choice
+   read, with no eager main settings lookup. Rebind ApplicationLoader's startup
+   intersection only after preceding startup changes are accepted. Keep every
+   Google-services file unchanged until actual processGoogleServices proves
+   which conditional stub is unnecessary; the standalone append stays.
 9. Build, and diff `purple/apk-facts.sh` against the build before the merge.
    Expect upstream's own changes, and check that the package id, the AppName
    values and the Purple libraries in `lib/` are unchanged.
