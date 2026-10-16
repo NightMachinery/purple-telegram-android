@@ -364,9 +364,7 @@ public class ApplicationLoader extends Application {
         if (preferences.contains("pushService")) {
             enabled = preferences.getBoolean("pushService", true);
         } else {
-            // Purple: on unless the user turned it off - see PurpleDefaults.
-            enabled = PurpleDefaults.KEEP_ALIVE_SERVICE
-                    || MessagesController.getMainSettings(UserConfig.selectedAccount).getBoolean("keepAliveService", false);
+            enabled = PurpleDefaults.pushServiceDefault();
         }
         if (enabled) {
             try {

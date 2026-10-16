@@ -1445,6 +1445,52 @@ retain only imports and narrow helper calls; rationale lives here. Verify
 hidden hints, taps under the finger, result/name/avatar alignment and the
 recommendation switch in the actual app after compiler qualification.
 
+#### Startup, defaults and app names
+
+`PurpleBuildVars.apply()` runs first in BuildVars' existing static block. The
+upstream mutable declarations remain intact; the helper assigns the same
+BuildConfig.APP_ID and APP_HASH expressions and disables passkeys before the
+original logging setup. BuildConfig values still come from the existing
+build scripts, with no alternate identifiers or credential source.
+
+`PurpleDefaults` keeps its existing compile-time constants and constructor.
+Its ownAppName(key, res, fallbackRes) handles only AppName and AppNameBeta,
+before LocaleController consults a cloud pack. It reads the original resource,
+tries the same fallback resource after a primary exception and logs that
+primary exception even if fallback succeeds. If no value is available it
+returns LOC_ERR:key, so an own-name error cannot fall through to cloud names.
+Other keys return null from this helper and follow the exact upstream cloud,
+fallback and resource path. The two-argument locale delegator is unchanged.
+
+The keep-alive helper is deliberately only the existing pushService `else`
+fallback, rather than an override after an eager upstream preference read.
+The original contains/explicit getBoolean branch remains. KEEP_ALIVE_SERVICE
+still short-circuits selected-account and main-settings lookup when true;
+there is no second contains check, extra initialization or preference write.
+ConnectionsManager's background default remains the same constant, and all
+existing settings-screen and archive-default callers retain their behavior.
+
+`PurplePasscode` uses a reentrancy flag around a plain SharedConfig check.
+Recursive calls while the flag is set execute the exact restored upstream
+hash/salt-migration body. A successful plain input returns before native
+keyboard mapping. Only a failed plain check maps the input; a changed mapped
+string is checked the same way, and finally always clears the flag. Correct
+legacy passcodes still migrate once. A failed supported non-null input may
+run one extra plain hash after the helper returns false. The actual callers
+are passcode UI callbacks; their single-thread assumption does not establish
+universal concurrency safety, null behavior or side-effect-free failure,
+since the original exception paths can log. Keep native mapping exceptions
+and existing caller retry/error handling intact and qualify cold/resumed
+plain, Persian-layout and wrong-input cases in the actual app.
+
+Launcher alias defaults, icon tint invalidation, provider paths and session
+archive ignore patterns retain their executable/resource meaning; only fork
+rationale was moved here. The stock icon stays available and Purple stays
+the initially enabled alias. Google-services configuration is unchanged:
+removing a conditional stub requires actual processGoogleServices proof on
+the approved build host, and the standalone append must remain. Source
+preparation alone does not qualify that removal or login/service behavior.
+
 ### Push notifications
 
 `[notifications].preview_always` in `settings.toml` lets messages and reactions

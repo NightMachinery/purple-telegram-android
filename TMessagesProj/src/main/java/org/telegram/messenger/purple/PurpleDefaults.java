@@ -14,6 +14,11 @@
 
 package org.telegram.messenger.purple;
 
+import org.telegram.messenger.ApplicationLoader;
+import org.telegram.messenger.FileLog;
+import org.telegram.messenger.MessagesController;
+import org.telegram.messenger.UserConfig;
+
 public final class PurpleDefaults {
 
     /**
@@ -71,5 +76,31 @@ public final class PurpleDefaults {
     public static final boolean ARCHIVE_HIDDEN = true;
 
     private PurpleDefaults() {
+    }
+
+    public static String ownAppName(String key, int res, int fallbackRes) {
+        if (!"AppName".equals(key) && !"AppNameBeta".equals(key)) {
+            return null;
+        }
+        String value = null;
+        try {
+            value = ApplicationLoader.applicationContext.getString(res);
+        } catch (Exception e) {
+            if (fallbackRes != 0) {
+                try {
+                    value = ApplicationLoader.applicationContext.getString(fallbackRes);
+                } catch (Exception ignored) {}
+            }
+            FileLog.e(e);
+        }
+        if (value == null) {
+            value = "LOC_ERR:" + key;
+        }
+        return value;
+    }
+
+    public static boolean pushServiceDefault() {
+        return KEEP_ALIVE_SERVICE
+                || MessagesController.getMainSettings(UserConfig.selectedAccount).getBoolean("keepAliveService", false);
     }
 }

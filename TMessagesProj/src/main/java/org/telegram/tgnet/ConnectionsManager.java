@@ -285,10 +285,6 @@ public class ConnectionsManager extends BaseController {
         if (preferences.contains("pushConnection")) {
             return preferences.getBoolean("pushConnection", true);
         } else {
-            // Purple: on by default. There is no push in this fork, so the
-            // background connection is the only way a notification arrives.
-            // Not the "backgroundConnection" preference's default - the server
-            // writes that key from the app config and would overwrite it.
             return PurpleDefaults.PUSH_CONNECTION;
         }
     }
