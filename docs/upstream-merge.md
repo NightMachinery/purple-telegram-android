@@ -163,7 +163,8 @@ named here gives each one its account:
 - A6: MessagesController's `shownFilters`, `hidingArchive`, `hidingEverywhere`
   and `refillViewPinsIfNeeded`; FilterTabsView's three `foldersRestricted`;
   MediaDataController's `hidingEverywhere` and `hidingFromSuggestions`.
-- A9: NotificationsController's two `badgeRebuilt`.
+- A9: NotificationsController's badge calls now pass the loop account to
+  `PurpleBadge`; its legacy `badgeRebuilt` flag remains shared.
 - A10: DialogStoriesCell's `filteringStories`, and StoriesController's
   `filteringStories` and `addStoryShown`.
 - A11: DialogsSearchAdapter's `hidingEverywhere` and `hidingFromSuggestions`,
@@ -211,6 +212,22 @@ rather than inventing an account.
      filtered list;
    - where ChatMessageCell passes private fields to PurpleImportButton, they
      must still mean what they did;
+   - NotificationsController's `PurpleBadge` arguments must still be the
+     loop account and that controller's own `pushDialogs` and unread total.
+     Keep shown-then-counted filtering in the muted loops separate from the
+     count-only rebuild. Preserve the message loop's outer null guard and
+     the chat loop's earlier stock `dialog.id` dereference and catch;
+   - direct `PurpleNotify.previewAlways` calls must test all three story
+     flags before the lazy dialog-id getter. The summary keeps its one-dialog
+     short circuit and precomputed id. Grouped notifications instead exclude
+     story groups and story reactions, with a last message for non-story
+     groups; they deliberately do not add the direct story-mention exclusion;
+   - keep `passcode && !previewAlways` in the group-summary photo gate. The
+     grouped stock passcode block stays intact between name/photo save and
+     restoration for the same preview decision, and still disables replies;
+   - `PurpleNotify.silenced` must load the gate before the mute query, before
+     the controller's stock override lookup. It adds no load to Gate.silenced
+     itself, which other callers intentionally use without loading;
    - the CMake arguments and targets in `TMessagesProj/build.gradle`'s
      `defaultConfig`, which `purple/gradle/library.gradle` edits in place, and
      the standalone module's `applicationId`, build types, `afat` flavor and

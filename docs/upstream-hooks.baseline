@@ -1,5 +1,4 @@
 base 62b56a07ca7e30e39f7fd00a6728d6bbd716ca1c
-account TMessagesProj/src/main/java/org/telegram/messenger/NotificationsController.java badgeRebuilt 2
 account TMessagesProj/src/main/java/org/telegram/ui/Adapters/DialogsSearchAdapter.java hidingEverywhere 1
 account TMessagesProj/src/main/java/org/telegram/ui/Adapters/DialogsSearchAdapter.java hidingFromSuggestions 1
 account TMessagesProj/src/main/java/org/telegram/ui/Cells/DialogCell.java recentStyle 2
@@ -39,7 +38,7 @@ file TMessagesProj/src/main/java/org/telegram/messenger/LocaleController.java 18
 file TMessagesProj/src/main/java/org/telegram/messenger/MediaDataController.java 1 0 1
 file TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java 95 2 17
 file TMessagesProj/src/main/java/org/telegram/messenger/MessagesStorage.java 118 38 20
-file TMessagesProj/src/main/java/org/telegram/messenger/NotificationsController.java 213 65 51
+file TMessagesProj/src/main/java/org/telegram/messenger/NotificationsController.java 85 60 51
 file TMessagesProj/src/main/java/org/telegram/messenger/ScreenReceiver.java 2 0 1
 file TMessagesProj/src/main/java/org/telegram/messenger/SendMessagesHelper.java 52 5 15
 file TMessagesProj/src/main/java/org/telegram/messenger/SharedConfig.java 11 1 3

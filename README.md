@@ -469,6 +469,22 @@ touch is the "All chats" counter, because that tab counts what is on screen in
 front of you, which is a different question from whether the icon should light
 up.
 
+`NotificationsController` passes each badge loop's account and that account's
+controller-owned `pushDialogs` to `PurpleBadge`. When muted chats count, the
+existing dialog loops require a chat to be shown and then counted for the
+badge, in that order. When muted chats do not count, a requested rebuild walks
+`pushDialogs` and applies only the count rule, preserving the forum and
+community handling. Otherwise it uses the original unread total or dialog
+count. Rebuilding from the owned collection avoids subtraction drift when
+folder membership changes. The account reaches every chat decision; the
+legacy `badgeRebuilt` policy flag remains shared until the separate account
+policy work changes it. The controller retains its activated-account,
+selected-account, badge-setting, stock chat-exclusion and exception handling.
+
+The recent-chat grace hook remains in `setOpenedDialogId`, before the
+notification-queue post. It therefore runs on the caller's thread, where the
+chat-list eligibility it reads belongs.
+
 A folder can also pull its chats *into* the preset's view with
 `include_in_main_view`, whatever the lists decided - `"all"` for everything in
 it, `"pinned"` for the chats pinned inside that folder. A folder that names no
@@ -1338,6 +1354,23 @@ remove those defaults, or use typed entries such as `"private:123"` and
 content only: Work Mode still controls delivery, passcode-locked replies stay
 disabled, secret chats and unresolved peers stay hidden, and Android's
 notification privacy settings still apply.
+
+The preview decision lives in `PurpleNotify`. Direct message previews test
+story push, story mention and story reaction flags before reading the dialog
+id, because that getter can fill the message's cached id. A summary first
+requires exactly one push dialog and uses its already computed id. The
+grouped case remains different: it excludes story groups and story reactions,
+allows the existing story-mention case, and takes the non-story group's last
+message. These routes preserve the existing peer/account and secret-media
+privacy decisions.
+
+The group-summary avatar gate keeps `passcode && !previewAlways`. Grouped
+notifications keep upstream's passcode block intact, saving the name and
+photo before it and restoring them afterward only for the same preview
+decision. Locked replies remain disabled. `PurpleNotify.silenced` loads the
+gate before asking about the current account's mute, then the controller's
+original override lookup runs when that early return does not apply. This
+loads settings for background notifications even when no chat list has opened.
 
 There is no FCM push in this fork, and no Firebase project of your own will
 bring it back. Telegram's servers deliver pushes through Telegram's own Firebase
