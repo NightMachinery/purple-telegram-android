@@ -67,7 +67,8 @@ import androidx.core.graphics.drawable.IconCompat;
 import com.google.common.collect.Lists;
 
 import org.telegram.messenger.purple.PurpleAccent;
-import org.telegram.messenger.purple.PurpleGate;
+import org.telegram.messenger.purple.PurpleBadge;
+import org.telegram.messenger.purple.PurpleNotify;
 import org.telegram.messenger.purple.PurpleRecent;
 import org.telegram.messenger.support.LongSparseIntArray;
 import org.telegram.messenger.utils.tlutils.TLKeyboardHelper;
@@ -441,12 +442,6 @@ public class NotificationsController extends BaseController implements Notificat
     }
 
     public void setOpenedDialogId(long dialog_id, long topicId) {
-        // Purple: this method already means "this chat became, or stopped being,
-        // the one you are looking at" - every caller means exactly that, in both
-        // directions - which is precisely what the [recent] grace period needs,
-        // and the only place in the app that means it. Called before the post
-        // below rather than inside it, so it runs on the caller's thread: the
-        // eligibility test reads the chat list, which the UI thread owns.
         PurpleRecent.setOpened(currentAccount, dialog_id);
         notificationsQueue.postRunnable(() -> {
             openedDialogId = dialog_id;
@@ -1731,47 +1726,6 @@ public class NotificationsController extends BaseController implements Notificat
         });
     }
 
-    /**
-     * What {@code total_unread_count} and {@code pushDialogs.size()} would be
-     * with the chats an uncounted folder holds left out.
-     *
-     * Both of those are maintained incrementally, in five places each, from the
-     * dialogs the notify gate let through - so honouring badge_p by subtracting
-     * from them would drift the moment a chat's folder membership changed while
-     * it had unread, and a badge that has drifted downwards is a negative
-     * number on the launcher. Rebuilding over pushDialogs cannot: it is the
-     * same source the running totals are accumulated from, so the answer is a
-     * subset by construction rather than by argument, and the forum and
-     * community rules are mirrored from the accumulation itself.
-     *
-     * Only reached when a preset actually named a folder with badge_p = false.
-     *
-     * @param messages count unread messages, as showBadgeMessages asks, rather
-     *                 than unread chats
-     */
-    private int purpleBadgeCount(boolean messages) {
-        int count = 0;
-        for (int a = 0, n = pushDialogs.size(); a < n; a++) {
-            final long dialogId = pushDialogs.keyAt(a);
-            if (!PurpleGate.countedForBadge(currentAccount, dialogId)) {
-                continue;
-            }
-            if (!messages) {
-                count++;
-                continue;
-            }
-            final Integer unread = pushDialogs.valueAt(a);
-            if (unread == null || getMessagesController().isCommunity(dialogId)) {
-                continue;
-            } else if (getMessagesController().isForum(dialogId)) {
-                count += unread > 0 ? 1 : 0;
-            } else {
-                count += unread;
-            }
-        }
-        return count;
-    }
-
     private int getTotalAllUnreadCount() {
         int count = 0;
         for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
@@ -1799,38 +1753,7 @@ public class NotificationsController extends BaseController implements Notificat
                                     continue;
                                 }
                             }
-                            // Purple: a chat the running preset hides does not
-                            // light the icon, and this branch walks every dialog
-                            // so it has to be told. Skipping is safe here in a
-                            // way subtracting afterwards would not be: the total
-                            // is built up from what is left, so it cannot go
-                            // negative. Silenced-but-shown chats still count,
-                            // because counting muted chats is exactly what this
-                            // branch was asked to do.
-                            //
-                            // This used to say the other branch needed no such
-                            // line, because a hidden chat never enters the
-                            // counters it sums - getNotifyOverride silences it,
-                            // and the muted bucket is dropped. Both halves were
-                            // wrong. Hiding and silencing are independent bits
-                            // in the preset (SHOW_MASK against NOTIFY_BIT), so a
-                            // hidden chat can be perfectly audible; and two
-                            // kinds of row escape EXCLUDE_MUTED even when it is
-                            // muted - a chat with an unread mention is filed in
-                            // the unmuted bucket on purpose
-                            // (MessagesStorage.calcUnreadCounters), and the
-                            // source query picks up unread_mark and mention-only
-                            // rows whose unread_count is zero. The counters ask
-                            // the preset for themselves now, through the shown-
-                            // only buckets the default tab is summed from.
-                            if (dialog != null && !PurpleGate.shown(a, dialog)) {
-                                continue;
-                            }
-                            // Purple: nor does a chat a folder asked to keep out
-                            // of the counts. Skipping, not subtracting - see
-                            // purpleBadgeCount() for why that distinction is the
-                            // whole of this feature.
-                            if (dialog != null && !PurpleGate.countedForBadge(a, dialog.id)) {
+                            if (dialog != null && !PurpleBadge.onBadge(a, dialog)) {
                                 continue;
                             }
                             if (dialog != null) {
@@ -1841,17 +1764,7 @@ public class NotificationsController extends BaseController implements Notificat
                         FileLog.e(e);
                     }
                 } else {
-                    // Purple: the running total was accumulated over every chat
-                    // the notify gate let through, so a chat left out of the
-                    // counts - by a folder's badge_p, or by a "hide until"
-                    // running under the default scope - cannot be taken off it
-                    // without subtracting, and the last subtraction in this
-                    // fork's history drove a badge to -334. Rebuild it instead,
-                    // over the very dialogs it was built from. Costs nothing
-                    // unless something actually asked, which is the usual case.
-                    count += PurpleGate.badgeRebuilt()
-                            ? controller.purpleBadgeCount(true)
-                            : controller.total_unread_count;
+                    count += PurpleBadge.messages(a, controller.pushDialogs, controller.total_unread_count);
                 }
             } else {
                 if (controller.showBadgeMuted) {
@@ -1864,13 +1777,7 @@ public class NotificationsController extends BaseController implements Notificat
                                     continue;
                                 }
                             }
-                            // Purple: same rule as the message-counting branch
-                            // above - a hidden chat is not on screen, so it does
-                            // not get to claim a number on the icon.
-                            if (!PurpleGate.shown(a, dialog)) {
-                                continue;
-                            }
-                            if (!PurpleGate.countedForBadge(a, dialog.id)) {
+                            if (!PurpleBadge.onBadge(a, dialog)) {
                                 continue;
                             }
                             if (MessagesController.getInstance(a).getDialogUnreadCount(dialog) != 0) {
@@ -1882,9 +1789,7 @@ public class NotificationsController extends BaseController implements Notificat
                         FileLog.e(e, false);
                     }
                 } else {
-                    count += PurpleGate.badgeRebuilt()
-                            ? controller.purpleBadgeCount(false)
-                            : controller.pushDialogs.size();
+                    count += PurpleBadge.chats(a, controller.pushDialogs);
                 }
             }
         }
@@ -1905,10 +1810,7 @@ public class NotificationsController extends BaseController implements Notificat
     }
 
     public String getShortStringForMessage(MessageObject messageObject, String[] userName, boolean[] preview) {
-        boolean previewAlways = !messageObject.isStoryPush
-                && !messageObject.isStoryMentionPush
-                && !messageObject.isStoryReactionPush
-                && PurpleGate.previewAlways(currentAccount, messageObject.getDialogId());
+        boolean previewAlways = PurpleNotify.previewAlways(currentAccount, messageObject);
         if (!previewAlways && (AndroidUtilities.needShowPasscode() || SharedConfig.isWaitingForPasscodeEnter)) {
             return LocaleController.getString(R.string.NotificationHiddenMessage);
         }
@@ -2595,10 +2497,7 @@ public class NotificationsController extends BaseController implements Notificat
     }
 
     private String getStringForMessage(MessageObject messageObject, boolean shortMessage, boolean[] text, boolean[] preview) {
-        boolean previewAlways = !messageObject.isStoryPush
-                && !messageObject.isStoryMentionPush
-                && !messageObject.isStoryReactionPush
-                && PurpleGate.previewAlways(currentAccount, messageObject.getDialogId());
+        boolean previewAlways = PurpleNotify.previewAlways(currentAccount, messageObject);
         if (!previewAlways && (AndroidUtilities.needShowPasscode() || SharedConfig.isWaitingForPasscodeEnter)) {
             return LocaleController.getString(R.string.YouHaveNewMessage);
         }
@@ -3363,28 +3262,7 @@ public class NotificationsController extends BaseController implements Notificat
     }
 
     private int getNotifyOverride(SharedPreferences preferences, long dialog_id, long topicId) {
-        // Purple: notifications are the one place that runs with no chat list
-        // ever created - the app sits on the background connection and never
-        // draws anything - and the gate is shut until something has read
-        // settings.toml. Nothing else in this class would have, so a work mode
-        // would have been silent about exactly the case it exists for. After
-        // the first call this is a volatile read; the first one does its file
-        // I/O on the notifications queue, which already talks to preferences
-        // and SQLite.
-        PurpleGate.ensureLoaded();
-        // The second mute root. This class never asks
-        // MessagesController.isDialogMuted on the delivery path, so without
-        // this hook a preset would show the muted bell and count nothing while
-        // the phone still rang. 2 is the "muted forever" value every caller of
-        // this method already understands.
-        //
-        // It is also what keeps a hidden chat out of the app badge:
-        // total_unread_count and pushDialogs are only ever fed for dialogs
-        // that pass the check this answer drives, so the incrementally
-        // maintained counters simply never see them - which is the only safe
-        // way to leave a chat out of a counter that is added to and subtracted
-        // from rather than recomputed.
-        if (PurpleGate.silenced(currentAccount, dialog_id)) {
+        if (PurpleNotify.silenced(currentAccount, dialog_id)) {
             return 2;
         }
         int notifyOverride = dialogsNotificationsFacade.getProperty(NotificationsSettingsFacade.PROPERTY_NOTIFY, dialog_id, topicId, -1);
@@ -4383,10 +4261,7 @@ public class NotificationsController extends BaseController implements Notificat
             }
             boolean passcode = AndroidUtilities.needShowPasscode() || SharedConfig.isWaitingForPasscodeEnter;
             boolean previewAlways = pushDialogs.size() == 1
-                    && !lastMessageObject.isStoryPush
-                    && !lastMessageObject.isStoryMentionPush
-                    && !lastMessageObject.isStoryReactionPush
-                    && PurpleGate.previewAlways(currentAccount, dialog_id);
+                    && PurpleNotify.previewAlways(currentAccount, lastMessageObject, dialog_id);
             final boolean allowSummary = !"samsung".equalsIgnoreCase(Build.MANUFACTURER);
             if (DialogObject.isEncryptedDialog(dialog_id) || allowSummary && pushDialogs.size() > 1 || passcode && !previewAlways) {
                 if (passcode && !previewAlways) {
@@ -5236,19 +5111,21 @@ public class NotificationsController extends BaseController implements Notificat
                 photoPath = null;
             }
 
-            boolean previewAlways = !dialogKey.story
-                    && !lastMessageObject.isStoryReactionPush
-                    && PurpleGate.previewAlways(currentAccount, dialogId);
+            boolean previewAlways = PurpleNotify.previewAlwaysGroup(currentAccount, dialogKey.story, lastMessageObject, dialogId);
+            final String purpleName = name;
+            final TLRPC.FileLocation purplePhotoPath = photoPath;
             if (waitingForPasscode) {
-                if (!previewAlways) {
-                    if (DialogObject.isChatDialog(dialogId)) {
-                        name = LocaleController.getString(R.string.NotificationHiddenChatName);
-                    } else {
-                        name = LocaleController.getString(R.string.NotificationHiddenName);
-                    }
-                    photoPath = null;
+                if (DialogObject.isChatDialog(dialogId)) {
+                    name = LocaleController.getString(R.string.NotificationHiddenChatName);
+                } else {
+                    name = LocaleController.getString(R.string.NotificationHiddenName);
                 }
+                photoPath = null;
                 canReply = false;
+            }
+            if (previewAlways) {
+                name = purpleName;
+                photoPath = purplePhotoPath;
             }
 
             if (photoPath != null) {
