@@ -20,7 +20,6 @@ import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.R;
-import org.telegram.messenger.purple.PurpleCore;
 import org.telegram.messenger.purple.PurpleGate;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLObject;
@@ -87,23 +86,6 @@ public class DialogsChannelsAdapter extends UniversalAdapter {
         myChannels.addAll(channels);
     }
 
-    /**
-     * Purple: whether the "similar channels" section is drawn at all.
-     *
-     * The one suggestion in the app that is not assembled out of your own
-     * chats - the server picks it - which is why a preset that is hiding
-     * things does not get to show it uninvited. {@code [suggestions]
-     * recommended_channels_p} brings it back under a preset; under Normal the
-     * tab is stock, section and all.
-     */
-    public static boolean purpleRecommendedShown() {
-        if (!PurpleGate.filtering()) {
-            return true;
-        }
-        final PurpleCore.Loaded state = PurpleGate.state();
-        return state != null && state.recommendedChannels;
-    }
-
     public void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
         if (TextUtils.isEmpty(query)) {
             if (myChannels != null && !myChannels.isEmpty()) {
@@ -119,10 +101,7 @@ public class DialogsChannelsAdapter extends UniversalAdapter {
                     items.add(UItem.asProfileCell(myChannels.get(i)).withUsername(true));
                 }
             }
-            // Purple: null when the section is off, which takes the flickers
-            // below with it - a shimmer for a list that is never going to
-            // arrive would be the tab loading forever.
-            final boolean recommended = purpleRecommendedShown();
+            final boolean recommended = org.telegram.messenger.purple.PurpleHints.recommendedChannelsShown();
             MessagesController.ChannelRecommendations recommendations = !recommended ? null
                     : MessagesController.getInstance(currentAccount).getCachedChannelRecommendations(0);
             if (recommendations != null) {

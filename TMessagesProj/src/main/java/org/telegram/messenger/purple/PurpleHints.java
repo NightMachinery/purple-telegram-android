@@ -3,6 +3,7 @@ package org.telegram.messenger.purple;
 import java.util.ArrayList;
 
 import org.telegram.messenger.DialogObject;
+import org.telegram.messenger.MediaDataController;
 import org.telegram.messenger.MessagesController;
 import org.telegram.tgnet.TLRPC;
 
@@ -43,5 +44,68 @@ public final class PurpleHints {
         final ArrayList<TLRPC.TL_topPeer> visible = PurpleGate.visibleTopPeers(currentAccount, topPeers);
         topPeers.clear();
         topPeers.addAll(visible);
+    }
+
+    public static ArrayList<TLRPC.TL_topPeer> visibleHints(int currentAccount) {
+        final ArrayList<TLRPC.TL_topPeer> all = MediaDataController.getInstance(currentAccount).hints;
+        final boolean everywhere = PurpleGate.hidingEverywhere();
+        final boolean suggestions = PurpleGate.hidingFromSuggestions();
+        if (!everywhere && !suggestions) {
+            return all;
+        }
+        final ArrayList<MessagesController.DialogFilter> folders =
+                suggestions ? PurpleGate.suggestionFolders(currentAccount) : null;
+        final ArrayList<TLRPC.TL_topPeer> out = new ArrayList<>(all.size());
+        for (int a = 0, n = all.size(); a < n; a++) {
+            final TLRPC.TL_topPeer peer = all.get(a);
+            final long dialogId = DialogObject.getPeerDialogId(peer.peer);
+            if (everywhere && PurpleGate.hiddenEverywhere(currentAccount, dialogId)) {
+                continue;
+            }
+            if (PurpleGate.hiddenFromSuggestions(currentAccount, dialogId, folders)) {
+                continue;
+            }
+            out.add(peer);
+        }
+        return out;
+    }
+
+    public static boolean hiddenSearchResult(int currentAccount, Object obj) {
+        return PurpleGate.hiddenEverywhere(currentAccount, searchDialogId(obj));
+    }
+
+    private static long searchDialogId(Object obj) {
+        if (obj instanceof TLRPC.User) {
+            return ((TLRPC.User) obj).id;
+        } else if (obj instanceof TLRPC.Chat) {
+            return -((TLRPC.Chat) obj).id;
+        } else if (obj instanceof TLRPC.EncryptedChat) {
+            return DialogObject.makeEncryptedDialogId(((TLRPC.EncryptedChat) obj).id);
+        }
+        return 0;
+    }
+
+    public static ArrayList<MessagesController.DialogFilter> suggestionFolders(int currentAccount) {
+        return PurpleGate.suggestionFolders(currentAccount);
+    }
+
+    public static boolean hiddenFromSuggestions(int currentAccount, long dialogId, ArrayList<MessagesController.DialogFilter> folders) {
+        return PurpleGate.hiddenFromSuggestions(currentAccount, dialogId, folders);
+    }
+
+    public static boolean hiddenEverywhere(int currentAccount, long dialogId) {
+        return PurpleGate.hiddenEverywhere(currentAccount, dialogId);
+    }
+
+    public static boolean hiddenEverywhere(int currentAccount, TLRPC.Dialog dialog) {
+        return PurpleGate.hiddenEverywhere(currentAccount, dialog);
+    }
+
+    public static boolean recommendedChannelsShown() {
+        if (!PurpleGate.filtering()) {
+            return true;
+        }
+        final PurpleCore.Loaded state = PurpleGate.state();
+        return state != null && state.recommendedChannels;
     }
 }

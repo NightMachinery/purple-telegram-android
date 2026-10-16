@@ -88,7 +88,7 @@ import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
-import org.telegram.messenger.purple.PurpleGate;
+import org.telegram.messenger.purple.PurpleHints;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.NativeByteBuffer;
 import org.telegram.tgnet.TLObject;
@@ -1855,20 +1855,15 @@ public class ShareAlert extends BottomSheet implements NotificationCenter.Notifi
             @Override
             public void setRecentSearch(ArrayList<DialogsSearchAdapter.RecentSearchObject> arrayList, LongSparseArray<DialogsSearchAdapter.RecentSearchObject> hashMap) {
                 if (arrayList != null) {
-                    // Purple: this sheet keeps its own copy of the recent table
-                    // rather than going through DialogsSearchAdapter, so the
-                    // hook that filters the search screen's Recent list does not
-                    // reach it - the same [suggestions] rule has to be applied
-                    // here. One snapshot for the whole pass, as everywhere else.
                     final ArrayList<MessagesController.DialogFilter> purpleFolders =
-                            PurpleGate.suggestionFolders(currentAccount);
+                            PurpleHints.suggestionFolders(currentAccount);
                     for (int i = 0; i < arrayList.size(); ++i) {
                         DialogsSearchAdapter.RecentSearchObject recentSearchObject = arrayList.get(i);
                         if (recentSearchObject.object instanceof TLRPC.Chat && !ChatObject.canWriteToChat((TLRPC.Chat) recentSearchObject.object)) {
                             arrayList.remove(i);
                             i--;
-                        } else if (PurpleGate.hiddenEverywhere(currentAccount, recentSearchObject.did)
-                                || PurpleGate.hiddenFromSuggestions(currentAccount, recentSearchObject.did, purpleFolders)) {
+                        } else if (PurpleHints.hiddenEverywhere(currentAccount, recentSearchObject.did)
+                                || PurpleHints.hiddenFromSuggestions(currentAccount, recentSearchObject.did, purpleFolders)) {
                             arrayList.remove(i);
                             i--;
                         }
@@ -2941,11 +2936,7 @@ public class ShareAlert extends BottomSheet implements NotificationCenter.Notifi
                 if (!(dialog instanceof TLRPC.TL_dialog)) {
                     continue;
                 }
-                // Purple: the share sheet builds its own list straight off
-                // getAllDialogs(), so it never sees the lists sortDialogs()
-                // derives and has to ask for itself. Under hide_everywhere_p a
-                // hidden chat is gone from the app, and this is part of the app.
-                if (PurpleGate.hiddenEverywhere(currentAccount, dialog)) {
+                if (PurpleHints.hiddenEverywhere(currentAccount, dialog)) {
                     continue;
                 }
                 if (dialog.id == selfUserId) {
@@ -3614,7 +3605,7 @@ public class ShareAlert extends BottomSheet implements NotificationCenter.Notifi
                                 cell.setColors(Theme.key_voipgroup_nameText, Theme.key_voipgroup_inviteMembersBackground);
                             }
 
-                            TLRPC.TL_topPeer peer = DialogsSearchAdapter.CategoryAdapterRecycler.visibleHints(currentAccount).get(position);
+                            TLRPC.TL_topPeer peer = PurpleHints.visibleHints(currentAccount).get(position);
                             TLRPC.Chat chat = null;
                             TLRPC.User user = null;
                             long did = 0;
@@ -3642,7 +3633,7 @@ public class ShareAlert extends BottomSheet implements NotificationCenter.Notifi
                     });
                     horizontalListView.setOnItemClickListener((view1, position) -> {
                         HintDialogCell cell = (HintDialogCell) view1;
-                        TLRPC.TL_topPeer peer = DialogsSearchAdapter.CategoryAdapterRecycler.visibleHints(currentAccount).get(position);
+                        TLRPC.TL_topPeer peer = PurpleHints.visibleHints(currentAccount).get(position);
                         TLRPC.Dialog dialog = new TLRPC.TL_dialog();
                         TLRPC.Chat chat = null;
                         TLRPC.User user = null;

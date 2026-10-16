@@ -1407,6 +1407,44 @@ hooks/import and viewer/push accessor substitutions. Check Normal, all-hidden
 plus hidden add-story, add-story-only hiding, viewer/push hidden peers and
 title counts against the actual app after compiler qualification.
 
+#### Hints and suggestions implementation
+
+`PurpleHints.visibleHints(account)` supplies the same visible-list contract
+to search counts and row binding, share binding and taps, quick share, the
+boost selector and multi-contacts. It obtains that account's MediaDataController
+hints once, reads hiding-everywhere before hiding-suggestions and returns the
+original list when neither is active. Otherwise it takes one conditional
+folder snapshot, allocates one result and retains the same accepted peer
+objects in their original order. The everywhere test short-circuits first;
+the suggestions predicate remains at its following call site even when the
+captured suggestions switch is false. There is no sorting, mutation or cache.
+
+Typed search uses only the everywhere policy, as the first filter guard.
+The helper maps a User to its id, a Chat to the negative id, an EncryptedChat
+to its encrypted dialog id, and all other objects, including null, to zero.
+Even that zero goes through the existing Gate predicate. All picker
+restrictions remain after the guard. When a local result is removed, its
+matching name is removed at the same index before the loop index is adjusted,
+so a hidden first hit cannot shift names onto the next avatar.
+
+Recent search and the share sheet take a new suggestion-folder snapshot once
+per invocation, before their loops and query branches. They reuse that same
+snapshot for each row. No cross-pass cache is introduced: resolution
+generation alone does not establish invalidation for mutable folder data or
+clock/preset state. The share recent guard keeps its two original predicates
+and short-circuit order; its dialog guard keeps the dialog-object overload,
+without an eager id read. Typed searches stay separate from suggestions.
+
+Recommended channels use the shared `recommendedChannelsShown()` policy:
+Normal returns true; filtering reads the existing state and requires its
+recommendedChannels flag. The channel adapter's collections, cached/loading
+paths and collapse logic are unchanged, and the pager calls the policy at
+the same request point. Its existing notification branch already rebuilds
+on preset refresh, so no extra observer is needed. The seven upstream files
+retain only imports and narrow helper calls; rationale lives here. Verify
+hidden hints, taps under the finger, result/name/avatar alignment and the
+recommendation switch in the actual app after compiler qualification.
+
 ### Push notifications
 
 `[notifications].preview_always` in `settings.toml` lets messages and reactions
