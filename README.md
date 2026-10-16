@@ -243,6 +243,35 @@ which also shows whatever the file got wrong. The rules, the keys and the reason
 apps compile the same core, so a `settings.toml` moved across through Saved
 Messages behaves identically.
 
+Temporary Work Mode chat rows draw their mark through one `PurpleRowMark`
+per `DialogCell`. The cell snapshots the mark during update with its own
+account, looking up the dialog only for a real chat-list row outside the
+Archive and forum topics. Fake picker rows clear it at the same point when
+the cell is reused. Drawing does not query temporary membership again;
+the style and theme color are still read at their original frame decisions.
+A held show-until uses the green theme key, while the recent close buffer
+uses the unread-counter accent. The helper owns its lazy antialiased paint
+and rectangle, separate from the rectangle stock counters rewrite before use.
+
+The stripe stays on the leading edge in RTL and LTR, after the row background
+and inside its swipe translation. The ring keeps the original badge else-if
+slot, after errors, counts, mentions and the open-bot button. The pin stays
+beside the date. Expired or nonpositive spans do not draw a timer; successful
+draws preserve elapsed-realtime arithmetic, clamping, inset stroke, rounded
+cap, anticlockwise arc and fill-style reset.
+
+Only a successful unexpired ring draw cancels and rearms its same cell's
+invalidation callback, once a second. Clear and rebind do not add immediate
+repainting, cancellation or scheduling. A per-cell attach listener does
+nothing on attach and cancels that pending callback on detach. The listener
+runs just after the old `onDetachedFromWindow` hook; that timing change still
+needs device qualification, along with recycling, colors and RTL/LTR drawing.
+
+The swipe mute cache remains in `DialogCell`: the label follows the user's
+own mute, while the bell and grey counter still show the effective mute,
+including a preset's additional silencing. Moving the row mark does not move
+the stock swipe action or change what Mute and Unmute offer.
+
 **Peek** is the temporary look past the running preset, and it sits in the same
 box, under the preset it suspends. `[peek] tap_mobile` is how long a tap on it
 lasts here, and **five minutes** when the file does not write that key - not

@@ -1,7 +1,6 @@
 base 62b56a07ca7e30e39f7fd00a6728d6bbd716ca1c
 account TMessagesProj/src/main/java/org/telegram/ui/Adapters/DialogsSearchAdapter.java hidingEverywhere 1
 account TMessagesProj/src/main/java/org/telegram/ui/Adapters/DialogsSearchAdapter.java hidingFromSuggestions 1
-account TMessagesProj/src/main/java/org/telegram/ui/Cells/DialogCell.java recentStyle 2
 account TMessagesProj/src/main/java/org/telegram/ui/Components/DialogsChannelsAdapter.java filtering 1
 account TMessagesProj/src/main/java/org/telegram/ui/Components/DialogsChannelsAdapter.java state 1
 account TMessagesProj/src/main/java/org/telegram/ui/Stories/DialogStoriesCell.java filteringStories 1
@@ -51,7 +50,7 @@ file TMessagesProj/src/main/java/org/telegram/ui/Adapters/SearchAdapter.java 53 
 file TMessagesProj/src/main/java/org/telegram/ui/ArchiveSettingsActivity.java 1 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/CacheControlActivity.java 98 3 6
 file TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java 18 0 4
-file TMessagesProj/src/main/java/org/telegram/ui/Cells/DialogCell.java 142 1 11
+file TMessagesProj/src/main/java/org/telegram/ui/Cells/DialogCell.java 15 1 8
 file TMessagesProj/src/main/java/org/telegram/ui/Cells/GroupCreateUserCell.java 1 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/Cells/ManageChatUserCell.java 1 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/Cells/ProfileSearchCell.java 1 1 1
