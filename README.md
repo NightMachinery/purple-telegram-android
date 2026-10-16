@@ -1286,6 +1286,46 @@ is unchanged. The same over-limit-only folder log follows the clear/stock
 lock work and precedes the one changed-only dialogFiltersUpdated notification.
 Helpers retain no owner, collection or asynchronous state.
 
+### Storage unread counter hooks
+
+MessagesStorage retains each stock collection and per-peer counter chain.
+PurpleUnreadMirror starts with the real storage account after the existing
+in-place reset and collection bookkeeping. Its six int[2][2] arrays and the
+read pass's two int[2] mention arrays remain the original storage-owned objects.
+Each after hook runs after the entire stock chain and before its trailing
+usersDict/chatsDict put or encryptedChatsByUsersCount bookkeeping. Uncounted
+user/chat classification and lazy community lookup are skipped; preceding and
+trailing bookkeeping still run. Encrypted peers retain counter-cell rollback.
+Every changed cell is handled, including a mention and a channel/group increment
+for the same read-pass peer.
+
+The full-pass shown-only arrays accumulate counted visible changes. The six
+pick locals read those arrays only for the main tab; folders and Archive read
+the original corrected counter arrays. The read pass instead counts unshown
+counted peers and holds the main delta while requesting the same debounced
+recount. Its chat hook passes !ChatObject.isCommunity(chat), preserving the
+community no-op for unshown accounting. Mirrors belong to one pass on the
+storage thread, re-snapshot after each item, and retain no cross-pass state.
+
+PurpleCounters preserves the full-pass uncounted log before the filter loop,
+the main stock-sum log after the main assignment, and the read-pass uncounted
+log before the hold/recount decision. The public
+updateAllFiltersCountersForPurple method remains a one-line compatibility hook
+because the unchanged Gate calls it. The hook passes this explicitly, so even
+a separately constructed storage keeps its own queue and reset receiver. The
+account-only helper resolves the existing singleton for its own callers. The
+owner-taking helper posts the same
+resetAllUnreadCounters(false) work through that account's public storage queue.
+User/chat classification captures one account-bound counted answer before any
+collapsed-community lookup and uses that same answer for mirror accounting.
+Uncounted children must not lazily admit their linked community into the folder
+exception dictionary. Trailing user/chat dictionary and encrypted bookkeeping
+remain outside that eligibility guard. No early collection or type-loop skip
+replaces stock bookkeeping. The seven
+existing exception-walk guards remain because collapsed-community queries
+lazily populate chatsDict. The original audit names all eight adjacent counter
+arrays; any added array must be mirrored explicitly before the refactor is safe.
+
 ### Push notifications
 
 `[notifications].preview_always` in `settings.toml` lets messages and reactions
