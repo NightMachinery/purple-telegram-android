@@ -1,8 +1,4 @@
 base 62b56a07ca7e30e39f7fd00a6728d6bbd716ca1c
-account TMessagesProj/src/main/java/org/telegram/ui/Adapters/DialogsSearchAdapter.java hidingEverywhere 1
-account TMessagesProj/src/main/java/org/telegram/ui/Adapters/DialogsSearchAdapter.java hidingFromSuggestions 1
-account TMessagesProj/src/main/java/org/telegram/ui/Components/DialogsChannelsAdapter.java filtering 1
-account TMessagesProj/src/main/java/org/telegram/ui/Components/DialogsChannelsAdapter.java state 1
 caller TMessagesProj/src/main/java/org/telegram/messenger/ChatsWidgetService.java isDialogMuted 1
 caller TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java getDialogFilters 3
 caller TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java isDialogMuted 14
@@ -42,7 +38,7 @@ file TMessagesProj/src/main/java/org/telegram/messenger/TranslateController.java
 file TMessagesProj/src/main/java/org/telegram/messenger/video/VideoAds.java 1 0 1
 file TMessagesProj/src/main/java/org/telegram/tgnet/ConnectionsManager.java 6 1 2
 file TMessagesProj/src/main/java/org/telegram/ui/Adapters/ContactsAdapter.java 112 24 16
-file TMessagesProj/src/main/java/org/telegram/ui/Adapters/DialogsSearchAdapter.java 93 3 10
+file TMessagesProj/src/main/java/org/telegram/ui/Adapters/DialogsSearchAdapter.java 18 3 8
 file TMessagesProj/src/main/java/org/telegram/ui/Adapters/SearchAdapter.java 53 18 5
 file TMessagesProj/src/main/java/org/telegram/ui/ArchiveSettingsActivity.java 1 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/CacheControlActivity.java 98 3 6
@@ -58,14 +54,14 @@ file TMessagesProj/src/main/java/org/telegram/ui/Components/ChatActivityEnterVie
 file TMessagesProj/src/main/java/org/telegram/ui/Components/ChatAvatarContainer.java 10 0 3
 file TMessagesProj/src/main/java/org/telegram/ui/Components/ChatNotificationsPopupWrapper.java 4 4 4
 file TMessagesProj/src/main/java/org/telegram/ui/Components/ContactsEmptyView.java 10 0 1
-file TMessagesProj/src/main/java/org/telegram/ui/Components/DialogsChannelsAdapter.java 37 2 5
+file TMessagesProj/src/main/java/org/telegram/ui/Components/DialogsChannelsAdapter.java 16 2 4
 file TMessagesProj/src/main/java/org/telegram/ui/Components/FilterTabsView.java 13 3 5
 file TMessagesProj/src/main/java/org/telegram/ui/Components/MessagePrivateSeenView.java 4 1 4
-file TMessagesProj/src/main/java/org/telegram/ui/Components/Premium/boosts/UserSelectorBottomSheet.java 4 2 3
+file TMessagesProj/src/main/java/org/telegram/ui/Components/Premium/boosts/UserSelectorBottomSheet.java 1 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/Components/Premium/boosts/cells/selector/SelectorUserCell.java 1 1 1
-file TMessagesProj/src/main/java/org/telegram/ui/Components/SearchViewPager.java 12 1 2
-file TMessagesProj/src/main/java/org/telegram/ui/Components/ShareAlert.java 21 2 5
-file TMessagesProj/src/main/java/org/telegram/ui/Components/quickforward/QuickShareSelectorOverlayLayout.java 7 2 2
+file TMessagesProj/src/main/java/org/telegram/ui/Components/SearchViewPager.java 3 1 1
+file TMessagesProj/src/main/java/org/telegram/ui/Components/ShareAlert.java 12 2 5
+file TMessagesProj/src/main/java/org/telegram/ui/Components/quickforward/QuickShareSelectorOverlayLayout.java 2 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/ContactsActivity.java 58 1 10
 file TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java 58 14 24
 file TMessagesProj/src/main/java/org/telegram/ui/FilterCreateActivity.java 1 1 1
@@ -73,7 +69,7 @@ file TMessagesProj/src/main/java/org/telegram/ui/FiltersSetupActivity.java 5 5 5
 file TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java 9 1 6
 file TMessagesProj/src/main/java/org/telegram/ui/LauncherIconController.java 13 2 2
 file TMessagesProj/src/main/java/org/telegram/ui/MainTabsActivity.java 6 2 3
-file TMessagesProj/src/main/java/org/telegram/ui/MultiContactsSelectorBottomSheet.java 4 1 2
+file TMessagesProj/src/main/java/org/telegram/ui/MultiContactsSelectorBottomSheet.java 1 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/NotificationsCustomSettingsActivity.java 8 5 4
 file TMessagesProj/src/main/java/org/telegram/ui/NotificationsSettingsActivity.java 6 4 5
 file TMessagesProj/src/main/java/org/telegram/ui/ProfileActivity.java 15 9 10

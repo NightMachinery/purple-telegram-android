@@ -272,6 +272,19 @@ rather than inventing an account.
    account arguments identify the actor without creating a new policy domain.
    Preserve the cell's cached self answer, archive guard and size adjustment,
    and its mini-row self/unread/size-three short-circuit order.
+   Hints/suggestions hooks share one account-aware visible-list contract for
+   counts, binding and taps. Keep the original list alias when both hiding
+   switches are off, original peer order and identity, and one folder snapshot
+   per pass. Do not cache that snapshot solely by resolution generation;
+   mutable owner folder and clock/preset invalidation must be established first.
+   In recent search keep the snapshot before both query branches, delegate/null
+   precedence, title/username matching and the five-result limit. Typed search
+   must apply only the everywhere guard before picker restrictions, including
+   the Gate call for an unknown object's zero dialog id. Keep names.remove
+   beside result.remove so the next avatar keeps its own name. Share recent
+   predicates retain their OR order and repeated did reads; dialog filtering
+   keeps the dialog-object overload. Recommendation display/request guards
+   remain the shared Normal/state flag policy, with no new cache or observer.
 9. Build, and diff `purple/apk-facts.sh` against the build before the merge.
    Expect upstream's own changes, and check that the package id, the AppName
    values and the Purple libraries in `lib/` are unchanged.
