@@ -1371,6 +1371,42 @@ existing exception-walk guards remain because collapsed-community queries
 lazily populate chatsDict. The original audit names all eight adjacent counter
 arrays; any added array must be mirrored explicitly before the refactor is safe.
 
+#### Stories strip implementation
+
+`PurpleStories` owns the shown-list, self-row, presence and title-count
+policies. `StoriesController.hasStories()` and `hasOnlySelfStories()` retain
+upstream bodies behind filtering guards. The raw controller list still feeds
+counters and archive machinery. Every helper receives the invoking account
+and the same controller instance, using its public raw-list getter instead
+of exposing private fields or finding another controller.
+
+The shown-list accessor returns the original list when filtering is off or
+all peers are accepted. The first rejected peer creates a prefix copy; later
+accepted peers are appended in their original order. It does not mutate,
+sort, deduplicate or cache the controller list. Peer eligibility passes the
+owner's unread answer to the existing Gate policy, including its self-id
+special case. The account argument on the self-row facade is an ownership
+seam; `addStoryShown` in `PurpleGate` remains the shared policy. It is true
+outside filtering or during a peek, and otherwise follows `hide_add_story_p`.
+
+The cell keeps its cached self-row answer, archive suppression and size
+adjustment. Its collapsed row asks self eligibility before unread state,
+then checks self stories and the shown-list size at most three. Presence asks
+the shown list; the only-self helper computes that list before asking about
+self stories. If every peer and the add-story row are hidden, neither
+presence predicate keeps an empty strip visible. Hiding only the add-story
+row does not hide other peers. The title evaluates the original server-count
+getter first, then uses the visible size while filtering a non-archive strip.
+
+`DialogStoriesCell`, the viewer's growing onward chain and the push-opening
+tail use the same shown-list facade. Their archive branches keep the exact
+unfiltered hidden-list route, including the viewer's `hiddedStories` flag.
+The push-named prefix and existing copying behavior are unchanged. Changes
+in these four upstream files are only the controller guards/import, cell
+hooks/import and viewer/push accessor substitutions. Check Normal, all-hidden
+plus hidden add-story, add-story-only hiding, viewer/push hidden peers and
+title counts against the actual app after compiler qualification.
+
 ### Push notifications
 
 `[notifications].preview_always` in `settings.toml` lets messages and reactions

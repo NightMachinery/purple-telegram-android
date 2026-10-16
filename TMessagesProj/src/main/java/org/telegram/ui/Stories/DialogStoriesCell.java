@@ -62,7 +62,7 @@ import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
-import org.telegram.messenger.purple.PurpleGate;
+import org.telegram.messenger.purple.PurpleStories;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.TLObject;
@@ -590,20 +590,12 @@ public class DialogStoriesCell extends FrameLayout implements NotificationCenter
         oldMiniItems.clear();
         oldMiniItems.addAll(miniItems);
         items.clear();
-        // Purple: your own row answers for itself, from `hide_add_story_p'
-        // alone - a door to posting is not a chat the preset is judging, so
-        // neither the `stories' policy nor the lists nor the folders get a say.
-        // A peek puts it back with everything else.
-        final boolean selfShown = type != TYPE_ARCHIVE
-                && storiesController.selfStoryShownOnStrip();
-        if (selfShown) {
+        final boolean selfShown = type != TYPE_ARCHIVE && PurpleStories.selfStoryShown(currentAccount);
+        if (type != TYPE_ARCHIVE && selfShown) {
             items.add(new Item(UserConfig.getInstance(currentAccount).getClientUserId()));
         }
 
-        // Purple: the archive's own strip is never filtered - it is the
-        // upstream hidden/unhidden machinery, which has nothing to do with a
-        // work preset - so only the chat list's strip asks the shown accessor.
-        ArrayList<TL_stories.PeerStories> allStories = type == TYPE_ARCHIVE ? storiesController.getHiddenList() : storiesController.getDialogListStoriesShown();
+        ArrayList<TL_stories.PeerStories> allStories = type == TYPE_ARCHIVE ? storiesController.getHiddenList() : PurpleStories.shownStories(currentAccount, storiesController);
         for (int i = 0; i < allStories.size(); i++) {
             long dialogId = DialogObject.getPeerDialogId(allStories.get(i).peer);
             if (dialogId != UserConfig.getInstance(currentAccount).getClientUserId()) {
@@ -616,15 +608,7 @@ public class DialogStoriesCell extends FrameLayout implements NotificationCenter
         }
         int totalCount;
         boolean hidden = type == TYPE_ARCHIVE;
-        totalCount = Math.max(1, Math.max(storiesController.getTotalStoriesCount(hidden), size));
-        if (!hidden && PurpleGate.filteringStories()) {
-            // Purple: the count the title prints is the strip's own, so while a
-            // preset is filtering it counts what is on the strip rather than
-            // what the server said. Otherwise the title would announce stories
-            // the strip is deliberately not showing, which is the leak said out
-            // loud. The desktop moves Content::total after the same loop.
-            totalCount = Math.max(1, size);
-        }
+        totalCount = PurpleStories.titleCount(currentAccount, storiesController, hidden, size);
 
         currentTitle = null;
         if (storiesController.hasOnlySelfStories()) {
@@ -691,12 +675,8 @@ public class DialogStoriesCell extends FrameLayout implements NotificationCenter
 
     private boolean shouldDrawSelfInMini() {
         long dialogId = UserConfig.getInstance(currentAccount).clientUserId;
-        // Purple: the collapsed strip is the same strip, so it counts the shown
-        // list and asks the same one question about your own row. A hidden peer
-        // padding this out to four would push your own row out of a row of
-        // three that has space for it.
-        return storiesController.selfStoryShownOnStrip()
-                && (storiesController.hasUnreadStories(dialogId) || (storiesController.hasSelfStories() && storiesController.getDialogListStoriesShown().size() <= 3));
+        return PurpleStories.selfStoryShown(currentAccount)
+                && (storiesController.hasUnreadStories(dialogId) || (storiesController.hasSelfStories() && PurpleStories.shownStories(currentAccount, storiesController).size() <= 3));
     }
 
     Comparator<StoryCell> comparator = (o1, o2) -> o2.position - o1.position;

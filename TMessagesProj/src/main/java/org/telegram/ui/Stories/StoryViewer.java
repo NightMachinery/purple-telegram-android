@@ -2960,11 +2960,7 @@ public class StoryViewer implements NotificationCenter.NotificationCenterDelegat
                     return;
                 }
                 StoriesController storiesController = MessagesController.getInstance(currentAccount).getStoriesController();
-                // Purple: this is the chain a swipe walks onward along, grown
-                // as new stories arrive while the viewer is open. The strip it
-                // was opened from is filtered, so this has to be too, or
-                // swiping past the last shown peer would land on a hidden one.
-                ArrayList<TL_stories.PeerStories> allStories = storiesListPlaceProvider.hiddedStories ? storiesController.getHiddenList() : storiesController.getDialogListStoriesShown();
+                ArrayList<TL_stories.PeerStories> allStories = storiesListPlaceProvider.hiddedStories ? storiesController.getHiddenList() : org.telegram.messenger.purple.PurpleStories.shownStories(currentAccount, storiesController);
                 boolean changed = false;
                 ArrayList<Long> dialogs = storiesViewPager.getDialogIds();
                 for (int i = 0; i < allStories.size(); i++) {
