@@ -170,10 +170,10 @@ named here gives each one its account:
 - A11: DialogsSearchAdapter's `hidingEverywhere` and `hidingFromSuggestions`,
   and DialogsChannelsAdapter's `filtering` and `state`.
 
-The other two are DialogCell's `recentStyle()` reads, and they stay without an
-account for good: the mark style is app-wide, and the mark itself is null for
-an account that shows no temporary rows. Once the batches above have landed,
-they are the only entries left. A new hook whose call site has no account in
+DialogCell's two `recentStyle()` reads now live in `PurpleRowMark`. The style
+stays app-wide behind the per-cell temporary mark, which is null for an account
+that shows no temporary rows. Once the batches above have landed, no such
+entries remain in upstream files. A new hook whose call site has no account in
 hand is recorded in the ratchet as needing one, and the commit says so,
 rather than inventing an account.
 
@@ -228,6 +228,21 @@ rather than inventing an account.
    - `PurpleNotify.silenced` must load the gate before the mute query, before
      the controller's stock override lookup. It adds no load to Gate.silenced
      itself, which other callers intentionally use without loading;
+   - DialogCell must bind `PurpleRowMark` at update with its actual account
+     and original chat-list/folder/topic eligibility, leaving dialog lookup
+     lazy. Fake picker rows clear the snapshot, while drawing keeps the two
+     dynamic style decisions rather than querying temporary membership;
+   - the row stripe remains inside swipe translation after the background.
+     The timer remains in the same badge else-if chain with converted size,
+     margin and countTop values; stock pin/count/error/mention/swipe code stays
+     in the cell. Inspect stock rectangle reads for dominating writes before
+     relying on the helper's separate rectangle;
+   - the helper's same-cell timer callback is armed only by an unexpired draw,
+     cancel-then-post once a second. Detach listener cancellation now fires
+     just after onDetachedFromWindow; clear/rebind and no-op attach add no
+     scheduling or repaint. Qualify that exact timing and recycling on device;
+   - the swipe label's dialogMutedByUser cache stays distinct from the
+     effective dialogMuted flag, because the swipe changes only the user's mute;
    - the CMake arguments and targets in `TMessagesProj/build.gradle`'s
      `defaultConfig`, which `purple/gradle/library.gradle` edits in place, and
      the standalone module's `applicationId`, build types, `afat` flavor and
