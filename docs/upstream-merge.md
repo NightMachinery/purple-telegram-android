@@ -262,6 +262,16 @@ rather than inventing an account.
    `sendReceipt` parameter has to follow at every call site, and
    `prepareSendingPurpleDocument` calls it too. A mistake is a compile error,
    so it cannot pass silently.
+   Stories strip hooks also need a source comparison: `PurpleStories` repeats
+   upstream's one-line only-self predicate on the shown list. If upstream
+   changes `hasOnlySelfStories()`, reconcile that predicate and its eager
+   shown-list-before-self ordering. Keep `getDialogListStories()` as the exact
+   raw-list seam, the lazy first-rejection prefix copy and all-accepted alias,
+   archive/hidden-list branches, and the title's server getter before its
+   filtering override. Self-row policy still delegates shared `addStoryShown`;
+   account arguments identify the actor without creating a new policy domain.
+   Preserve the cell's cached self answer, archive guard and size adjustment,
+   and its mini-row self/unread/size-three short-circuit order.
 9. Build, and diff `purple/apk-facts.sh` against the build before the merge.
    Expect upstream's own changes, and check that the package id, the AppName
    values and the Purple libraries in `lib/` are unchanged.

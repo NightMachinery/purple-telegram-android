@@ -3,9 +3,6 @@ account TMessagesProj/src/main/java/org/telegram/ui/Adapters/DialogsSearchAdapte
 account TMessagesProj/src/main/java/org/telegram/ui/Adapters/DialogsSearchAdapter.java hidingFromSuggestions 1
 account TMessagesProj/src/main/java/org/telegram/ui/Components/DialogsChannelsAdapter.java filtering 1
 account TMessagesProj/src/main/java/org/telegram/ui/Components/DialogsChannelsAdapter.java state 1
-account TMessagesProj/src/main/java/org/telegram/ui/Stories/DialogStoriesCell.java filteringStories 1
-account TMessagesProj/src/main/java/org/telegram/ui/Stories/StoriesController.java addStoryShown 1
-account TMessagesProj/src/main/java/org/telegram/ui/Stories/StoriesController.java filteringStories 1
 caller TMessagesProj/src/main/java/org/telegram/messenger/ChatsWidgetService.java isDialogMuted 1
 caller TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java getDialogFilters 3
 caller TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java isDialogMuted 14
@@ -73,7 +70,7 @@ file TMessagesProj/src/main/java/org/telegram/ui/ContactsActivity.java 58 1 10
 file TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java 58 14 24
 file TMessagesProj/src/main/java/org/telegram/ui/FilterCreateActivity.java 1 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/FiltersSetupActivity.java 5 5 5
-file TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java 14 1 6
+file TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java 9 1 6
 file TMessagesProj/src/main/java/org/telegram/ui/LauncherIconController.java 13 2 2
 file TMessagesProj/src/main/java/org/telegram/ui/MainTabsActivity.java 6 2 3
 file TMessagesProj/src/main/java/org/telegram/ui/MultiContactsSelectorBottomSheet.java 4 1 2
@@ -81,9 +78,9 @@ file TMessagesProj/src/main/java/org/telegram/ui/NotificationsCustomSettingsActi
 file TMessagesProj/src/main/java/org/telegram/ui/NotificationsSettingsActivity.java 6 4 5
 file TMessagesProj/src/main/java/org/telegram/ui/ProfileActivity.java 15 9 10
 file TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java 7 0 3
-file TMessagesProj/src/main/java/org/telegram/ui/Stories/DialogStoriesCell.java 27 4 4
-file TMessagesProj/src/main/java/org/telegram/ui/Stories/StoriesController.java 73 2 4
-file TMessagesProj/src/main/java/org/telegram/ui/Stories/StoryViewer.java 5 1 1
+file TMessagesProj/src/main/java/org/telegram/ui/Stories/DialogStoriesCell.java 8 5 4
+file TMessagesProj/src/main/java/org/telegram/ui/Stories/StoriesController.java 3 0 3
+file TMessagesProj/src/main/java/org/telegram/ui/Stories/StoryViewer.java 1 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/TopicsFragment.java 5 5 4
 file TMessagesProj/src/main/res/values/strings.xml 562 2 2
 file TMessagesProj/src/main/res/xml/auth.xml 1 1 1
