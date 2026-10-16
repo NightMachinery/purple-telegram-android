@@ -308,3 +308,27 @@ uses the original getter. Missing or expired cached results under Local Premium
 remain absent; this is an intentional request omission, not cache clearing.
 Keep the original elapsedRealtime, absolute-difference and five-minute cache
 eligibility together with this removal hook when merging upstream.
+
+## Storage unread mirror seams
+
+- Preserve in-place resets and all eight adjacent counter-array field names.
+  PurpleUnreadMirror retains the real six bucket references and read mention
+  references; a new array requires an explicit mirror extension, as the unchanged
+  original counter-field audit checks.
+- Before each full/read user/chat classification chain, capture one account-bound
+  counted answer. Guard the whole chain, including lazy community-cache admission,
+  with that answer and pass it unchanged to the following mirror hook. Keep trailing
+  user/chat puts and encrypted-user counts outside the eligibility guard. An
+  uncounted child must not newly expose its community to folder exceptions.
+  Never move a countedInTotals skip into
+  collection or type-loop entry: unread/mention maps, newUnreadDialogs and secret
+  chat/user/chat dictionaries must still receive their original side effects.
+- The read chat hook passes !ChatObject.isCommunity(chat), and every changed
+  cell is restored or retained before re-snapshot. Keep mention-plus-group/channel
+  double increments and all Archive/main array dimensions intact.
+- Keep full uncounted logging before the filter loop and stock-sum logging after
+  main assignment. Read uncounted logging precedes its same hold/recount decision;
+  the main continue preserves pending-main state while folders/Archive apply deltas.
+- Keep the public updateAllFiltersCountersForPurple compatibility hook while Gate
+  calls it; recountAll receives this explicitly and posts the original false-reset through
+  that exact owner storage queue; the account-only entry uses the singleton. Retain the seven lazy community exception-walk guards unchanged.
