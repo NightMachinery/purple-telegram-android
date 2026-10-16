@@ -76,9 +76,11 @@ an error instead of starting a download.
   or `isDialogMuted(` than the ratchet records, anywhere in the Java sources.
 - **A locale without the app's name.** A library `values*/strings.xml` that
   defines AppName exactly as upstream does, while the standalone module defines
-  no AppName for the same qualifier. Until the AppName overrides move to the
-  standalone module, every library strings file still carries Purple's own
-  AppName edit, so this only fires for a locale upstream newly adds.
+  no AppName for the same qualifier. The nine translated library files are
+  upstream-exact; their `AppName` and `AppNameBeta` overrides live in matching
+  standalone `values-*/purple_app_name.xml` files. The default names remain in
+  the library until the default-resource extraction. Check both names when
+  upstream adds a locale or changes its app-name resources.
 - **The stock last-seen request without its guard.** MessagePrivateSeenView
   contains `TL_inputPrivacyValueAllowAll` without the line calling
   `PurpleLastSeenSheet.onLastSeenButton(`. Upstream's button there shows your
@@ -193,9 +195,11 @@ rather than inventing an account.
      shows; a site that edits or counts every folder uses
      `getDialogFiltersUnrestricted()`. A mute check that must follow the
      user's own mute under a preset uses `mutedWithoutPreset`.
-   - `appname`: upstream added a locale that defines AppName. Give that
-     qualifier Purple's AppName and AppNameBeta the way the other locales
-     carry them.
+   - `appname`: upstream added a locale that defines AppName. Add Purple's
+     AppName and AppNameBeta to the matching standalone app qualifier's
+     `purple_app_name.xml`, keeping the full library translation upstream-exact.
+     After building, check both packaged names in all ten configurations and
+     compare the sorted string pool; source XML alone does not prove the merge.
    - `account`, `privacy` and `counters`: see the rules above.
 5. Run `purple/upstream-hooks.sh baseline`, read the lines it prints, and
    commit the ratchet with `purple/UPSTREAM_BASE`.

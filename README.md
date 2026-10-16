@@ -1481,6 +1481,24 @@ last tried, so plan on a real account for anything past the login screen.
 
 ---
 
+### Localized app names
+
+The standalone app owns `AppName` and `AppNameBeta` overrides in
+`TMessagesProj_AppStandalone/src/main/res/values-*/purple_app_name.xml` for
+Arabic, German, Spanish, Italian, Korean, Dutch, Brazilian Portuguese,
+Russian and Ukrainian. Each file contains only `Purple Telegram` and
+`Purple Telegram Beta`; the corresponding complete library translations
+remain identical to upstream. The default names still live in the library's
+`values/strings.xml` until the default-resource extraction.
+
+The standalone application depends on `TMessagesProj` and uses its own
+`src/main/res` resources for the same qualifiers. App resources are intended
+to override library resources; confirm the actual merge and packaged names
+in the default configuration and all nine locales after a build. When
+upstream adds a locale or an `AppName` resource, check the matching standalone
+qualifier and add both names there. Keep unrelated translation resources in
+the library and compare the sorted packaged string pool before and after.
+
 ## Telegram messenger for Android
 
 [Telegram](https://telegram.org) is a messaging app with a focus on speed and security. It’s superfast, simple and free.
