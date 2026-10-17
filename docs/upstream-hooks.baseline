@@ -37,9 +37,10 @@ file TMessagesProj/src/main/java/org/telegram/messenger/SharedConfig.java 3 1 3
 file TMessagesProj/src/main/java/org/telegram/messenger/TranslateController.java 6 1 4
 file TMessagesProj/src/main/java/org/telegram/messenger/video/VideoAds.java 1 0 1
 file TMessagesProj/src/main/java/org/telegram/tgnet/ConnectionsManager.java 2 1 2
-file TMessagesProj/src/main/java/org/telegram/ui/Adapters/ContactsAdapter.java 112 24 16
+file TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBarMenuItem.java 2 1 1
+file TMessagesProj/src/main/java/org/telegram/ui/Adapters/ContactsAdapter.java 55 24 16
 file TMessagesProj/src/main/java/org/telegram/ui/Adapters/DialogsSearchAdapter.java 18 3 8
-file TMessagesProj/src/main/java/org/telegram/ui/Adapters/SearchAdapter.java 53 18 5
+file TMessagesProj/src/main/java/org/telegram/ui/Adapters/SearchAdapter.java 28 18 6
 file TMessagesProj/src/main/java/org/telegram/ui/ArchiveSettingsActivity.java 1 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/CacheControlActivity.java 98 3 6
 file TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java 18 0 4
@@ -62,7 +63,7 @@ file TMessagesProj/src/main/java/org/telegram/ui/Components/Premium/boosts/cells
 file TMessagesProj/src/main/java/org/telegram/ui/Components/SearchViewPager.java 3 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/Components/ShareAlert.java 12 2 5
 file TMessagesProj/src/main/java/org/telegram/ui/Components/quickforward/QuickShareSelectorOverlayLayout.java 2 1 1
-file TMessagesProj/src/main/java/org/telegram/ui/ContactsActivity.java 58 1 10
+file TMessagesProj/src/main/java/org/telegram/ui/ContactsActivity.java 24 1 9
 file TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java 58 14 24
 file TMessagesProj/src/main/java/org/telegram/ui/FilterCreateActivity.java 1 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/FiltersSetupActivity.java 5 5 5

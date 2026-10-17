@@ -28,6 +28,7 @@ import org.telegram.messenger.ContactsController;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
+import org.telegram.messenger.purple.PurpleContactsFilter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
@@ -118,26 +119,6 @@ public class SearchAdapter extends RecyclerListView.SelectionAdapter {
 
     protected boolean acceptSearchResult(Object object) {
         return !(object instanceof TLRPC.User) || acceptUser((TLRPC.User) object);
-    }
-
-    private int getAcceptedSearchCount(ArrayList<?> results) {
-        int count = 0;
-        for (int i = 0; i < results.size(); i++) {
-            if (acceptSearchResult(results.get(i))) {
-                count++;
-            }
-        }
-        return count;
-    }
-
-    private Object getAcceptedSearchResult(ArrayList<?> results, int index) {
-        for (int i = 0; i < results.size(); i++) {
-            Object result = results.get(i);
-            if (acceptSearchResult(result) && index-- == 0) {
-                return result;
-            }
-        }
-        return null;
     }
 
     public void searchDialogs(final String query) {
@@ -273,13 +254,7 @@ public class SearchAdapter extends RecyclerListView.SelectionAdapter {
     private void updateSearchResults(int searchReqIdFinal, final ArrayList<Object> users, final ArrayList<CharSequence> names, ArrayList<ContactsController.Contact> unregistredContacts) {
         AndroidUtilities.runOnUIThread(() -> {
             if (searchReqIdFinal == searchReqId) {
-                for (int i = users.size() - 1; i >= 0; i--) {
-                    Object user = users.get(i);
-                    if (user instanceof TLRPC.User && !acceptUser((TLRPC.User) user)) {
-                        users.remove(i);
-                        names.remove(i);
-                    }
-                }
+                PurpleContactsFilter.dropRejected(users, names, this::acceptUser);
                 searchResult = users;
                 searchResultNames = names;
                 this.unregistredContacts = allowUnregisteredContacts() ? unregistredContacts : new ArrayList<>();
@@ -318,11 +293,11 @@ public class SearchAdapter extends RecyclerListView.SelectionAdapter {
             count += unregistredContacts.size() + 1;
         }
 
-        int globalCount = getAcceptedSearchCount(searchAdapterHelper.getGlobalSearch());
+        int globalCount = PurpleContactsFilter.acceptedCount(searchAdapterHelper.getGlobalSearch(), this::acceptSearchResult);
         if (globalCount != 0) {
             count += globalCount + 1;
         }
-        int phoneCount = getAcceptedSearchCount(searchAdapterHelper.getPhoneSearch());
+        int phoneCount = PurpleContactsFilter.acceptedCount(searchAdapterHelper.getPhoneSearch(), this::acceptSearchResult);
         if (phoneCount != 0) {
             count += phoneCount;
         }
@@ -335,8 +310,8 @@ public class SearchAdapter extends RecyclerListView.SelectionAdapter {
     public boolean isGlobalSearch(int i) {
         int localCount = searchResult.size();
         int unregistredCount = unregistredContacts.size();
-        int globalCount = getAcceptedSearchCount(searchAdapterHelper.getGlobalSearch());
-        int phoneCount = getAcceptedSearchCount(searchAdapterHelper.getPhoneSearch());
+        int globalCount = PurpleContactsFilter.acceptedCount(searchAdapterHelper.getGlobalSearch(), this::acceptSearchResult);
+        int phoneCount = PurpleContactsFilter.acceptedCount(searchAdapterHelper.getPhoneSearch(), this::acceptSearchResult);
         int globalHeader = localCount;
         if (unregistredCount > 0) {
             globalHeader += unregistredCount + 1;
@@ -348,8 +323,8 @@ public class SearchAdapter extends RecyclerListView.SelectionAdapter {
     public Object getItem(int i) {
         int localCount = searchResult.size();
         int unregistredCount = unregistredContacts.size();
-        int globalCount = getAcceptedSearchCount(searchAdapterHelper.getGlobalSearch());
-        int phoneCount = getAcceptedSearchCount(searchAdapterHelper.getPhoneSearch());
+        int globalCount = PurpleContactsFilter.acceptedCount(searchAdapterHelper.getGlobalSearch(), this::acceptSearchResult);
+        int phoneCount = PurpleContactsFilter.acceptedCount(searchAdapterHelper.getPhoneSearch(), this::acceptSearchResult);
         if (i >= 0 && i < localCount) {
             return searchResult.get(i);
         } else {
@@ -365,11 +340,11 @@ public class SearchAdapter extends RecyclerListView.SelectionAdapter {
                 }
             }
             if (i >= 0 && i < phoneCount) {
-                return getAcceptedSearchResult(searchAdapterHelper.getPhoneSearch(), i);
+                return PurpleContactsFilter.acceptedItem(searchAdapterHelper.getPhoneSearch(), i, this::acceptSearchResult);
             } else {
                 i -= phoneCount;
                 if (i > 0 && i <= globalCount) {
-                    return getAcceptedSearchResult(searchAdapterHelper.getGlobalSearch(), i - 1);
+                    return PurpleContactsFilter.acceptedItem(searchAdapterHelper.getGlobalSearch(), i - 1, this::acceptSearchResult);
                 }
             }
         }

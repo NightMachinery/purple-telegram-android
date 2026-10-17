@@ -70,10 +70,7 @@ public class ContactsAdapter extends RecyclerListView.SectionsAdapter {
     private boolean isEmpty;
     private boolean hasPhonebook;
     public boolean isEmptyWithMainTabs;
-    private UserFilter userFilter;
-    private HashMap<String, ArrayList<TLRPC.TL_contact>> filteredUsersSectionsDict;
-    private ArrayList<String> filteredSortedUsersSectionsArray;
-    private ArrayList<TLRPC.TL_contact> filteredOnlineContacts;
+    private org.telegram.messenger.purple.PurpleContactsFilter purpleFilter;
 
     BaseFragment fragment;
 
@@ -97,78 +94,29 @@ public class ContactsAdapter extends RecyclerListView.SectionsAdapter {
     }
 
     public void setUserFilter(UserFilter value) {
-        userFilter = value;
+        purpleFilter = value != null ? new org.telegram.messenger.purple.PurpleContactsFilter(currentAccount, onlyUsers, value::matches) : null;
         notifyDataSetChanged();
     }
 
-    private boolean filteringUsers() {
-        return userFilter != null;
-    }
-
     private HashMap<String, ArrayList<TLRPC.TL_contact>> usersSectionsDict() {
-        if (filteringUsers()) {
-            return filteredUsersSectionsDict;
-        }
-        return onlyUsers == 2
+        return purpleFilter != null ? purpleFilter.usersSectionsDict() : onlyUsers == 2
                 ? ContactsController.getInstance(currentAccount).usersMutualSectionsDict
                 : ContactsController.getInstance(currentAccount).usersSectionsDict;
     }
 
     private ArrayList<String> sortedUsersSectionsArray() {
-        if (filteringUsers()) {
-            return filteredSortedUsersSectionsArray;
-        }
-        return onlyUsers == 2
+        return purpleFilter != null ? purpleFilter.sortedUsersSectionsArray() : onlyUsers == 2
                 ? ContactsController.getInstance(currentAccount).sortedUsersMutualSectionsArray
                 : ContactsController.getInstance(currentAccount).sortedUsersSectionsArray;
     }
 
     private ArrayList<TLRPC.TL_contact> onlineContacts() {
-        return filteringUsers() ? filteredOnlineContacts : onlineContacts;
-    }
-
-    private ArrayList<TLRPC.TL_contact> filterContacts(ArrayList<TLRPC.TL_contact> contacts) {
-        final ArrayList<TLRPC.TL_contact> result = new ArrayList<>();
-        if (contacts == null) {
-            return result;
-        }
-        for (TLRPC.TL_contact contact : contacts) {
-            final TLRPC.User user = MessagesController.getInstance(currentAccount).getUser(contact.user_id);
-            if (userFilter.matches(user)) {
-                result.add(contact);
-            }
-        }
-        return result;
-    }
-
-    private void rebuildFilteredContacts() {
-        if (!filteringUsers()) {
-            filteredUsersSectionsDict = null;
-            filteredSortedUsersSectionsArray = null;
-            filteredOnlineContacts = null;
-            return;
-        }
-        final HashMap<String, ArrayList<TLRPC.TL_contact>> sourceDict = onlyUsers == 2
-                ? ContactsController.getInstance(currentAccount).usersMutualSectionsDict
-                : ContactsController.getInstance(currentAccount).usersSectionsDict;
-        final ArrayList<String> sourceSections = onlyUsers == 2
-                ? ContactsController.getInstance(currentAccount).sortedUsersMutualSectionsArray
-                : ContactsController.getInstance(currentAccount).sortedUsersSectionsArray;
-        filteredUsersSectionsDict = new HashMap<>();
-        filteredSortedUsersSectionsArray = new ArrayList<>();
-        for (String section : sourceSections) {
-            final ArrayList<TLRPC.TL_contact> contacts = filterContacts(sourceDict.get(section));
-            if (!contacts.isEmpty()) {
-                filteredUsersSectionsDict.put(section, contacts);
-                filteredSortedUsersSectionsArray.add(section);
-            }
-        }
-        filteredOnlineContacts = filterContacts(onlineContacts);
+        return purpleFilter != null ? purpleFilter.onlineContacts() : onlineContacts;
     }
 
     @Override
     public void notifyDataSetChanged() {
-        rebuildFilteredContacts();
+        if (purpleFilter != null) purpleFilter.rebuild(onlineContacts);
         super.notifyDataSetChanged();
     }
 
@@ -380,8 +328,7 @@ public class ContactsAdapter extends RecyclerListView.SectionsAdapter {
         }
 
         hasPhonebook = !ContactsController.getInstance(currentAccount).phoneBookContacts.isEmpty();
-        isEmptyWithMainTabs = isEmpty && !filteringUsers()
-                && needPhonebook && !isAdmin && onlyUsers == 0;
+        isEmptyWithMainTabs = isEmpty && purpleFilter == null && needPhonebook && !isAdmin && onlyUsers == 0;
         if (isEmptyWithMainTabs) {
             // empty + invite friends
             return hasPhonebook ? 2 : 1;
@@ -603,11 +550,7 @@ public class ContactsAdapter extends RecyclerListView.SectionsAdapter {
         switch (holder.getItemViewType()) {
             case EMPTY_CELL:
                 holder.itemView.setPadding(0, dp(!hasPhonebook ? 96 : 25), 0, dp(18));
-                if (holder.itemView instanceof ViewGroup
-                        && ((ViewGroup) holder.itemView).getChildAt(0) instanceof ContactsEmptyView) {
-                    ((ContactsEmptyView) ((ViewGroup) holder.itemView).getChildAt(0))
-                            .setFilteredEmptyState(filteringUsers());
-                }
+                org.telegram.messenger.purple.PurpleContactsFilter.bindEmpty(holder.itemView, purpleFilter != null);
                 break;
             case INVITE_CELL:
                 InviteUserCell inviteUserCell = (InviteUserCell) holder.itemView;

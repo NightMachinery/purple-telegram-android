@@ -333,7 +333,8 @@ public class ActionBarMenuItem extends FrameLayout {
                     View child = popupLayout.getItemAt(a);
                     child.getHitRect(rect);
                     Object tag = child.getTag();
-                    if (tag instanceof Integer && (Integer) tag < 100) {
+                    if (tag instanceof Integer && ((Integer) tag < 100
+                            || org.telegram.ui.PurpleContactsLastSeenFilter.isDragSelectable(child))) {
                         if (!rect.contains((int) x, (int) y)) {
                             child.setPressed(false);
                             child.setSelected(false);

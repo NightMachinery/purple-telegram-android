@@ -407,3 +407,25 @@ eligibility together with this removal hook when merging upstream.
 - Keep the public updateAllFiltersCountersForPurple compatibility hook while Gate
   calls it; recountAll receives this explicitly and posts the original false-reset through
   that exact owner storage queue; the account-only entry uses the singleton. Retain the seven lazy community exception-walk guards unchanged.
+
+## Contacts Last Seen filter
+
+ContactsActivity delegates the existing optional filter menu, query refresh
+and dialog-filter observer to its per-instance PurpleContactsLastSeenFilter.
+ContactsAdapter keeps a nullable PurpleContactsFilter and the original stock
+collection fallbacks. SearchAdapter retains its protected policy hooks and
+delegates accepted counting, indexing and paired local-result removal. The
+ContactsEmptyView setter remains unchanged for its private final fields.
+ActionBarMenuItem has one guarded Purple eligibility hook for the actionable
+filter submenu row. Keep its reserved logical id while preserving ordinary
+taps, press-drag-release dispatch and exclusion of other reserved/separator
+tags; the upstream tag-below-100 branch remains unchanged.
+
+Keep the actual actor account, observer attach/detach points, status refresh
+before sorting, live query reads and paired user/name order. Preserve mutual
+sections, letters, online order, empty-state actions, picker eligibility and
+first/last global classification. The original More container owns no separate
+peek action. Recheck the reserved helper ids against accepted preceding source
+at integration. Actual host TL and project Java qualification, the full hooks
+audit, product review and application checks precede late integration; source
+comparison alone does not prove runtime observer or tap behavior.

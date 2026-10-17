@@ -74,13 +74,11 @@ import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
-import org.telegram.messenger.purple.PurpleLastSeen;
 import org.telegram.messenger.utils.SearchTextWatcher;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.ActionBarMenu;
 import org.telegram.ui.ActionBar.ActionBarMenuItem;
-import org.telegram.ui.ActionBar.ActionBarMenuSubItem;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BackDrawable;
 import org.telegram.ui.ActionBar.BaseFragment;
@@ -145,8 +143,7 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
 
     private ActionBarMenuItem sortItem;
     private boolean sortByName;
-    private ActionBarMenuSubItem lastSeenFilterItem;
-    private boolean lastSeenFilter;
+    private final PurpleContactsLastSeenFilter purple = new PurpleContactsLastSeenFilter();
 
     private FragmentFloatingButton floatingButton;
     private boolean floatingButtonVisibleByScroll = true;
@@ -197,8 +194,6 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
 
     private final static int search_button = 0;
     private final static int sort_button = 1;
-    private final static int more_button = 2;
-    private final static int filter_last_seen = 3;
 
     private final static int delete = 100;
 
@@ -229,7 +224,7 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.updateInterfaces);
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.encryptedChatCreated);
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.closeChats);
-        NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.dialogFiltersUpdated);
+        purple.attach(currentAccount);
         checkPermission = UserConfig.getInstance(currentAccount).syncContacts;
         if (arguments != null) {
             onlyUsers = arguments.getBoolean("onlyUsers", false);
@@ -272,7 +267,7 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.updateInterfaces);
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.encryptedChatCreated);
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.closeChats);
-        NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.dialogFiltersUpdated);
+        purple.detach();
         delegate = null;
     }
 
@@ -353,8 +348,7 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
                         searchField.editText.requestFocus();
                         AndroidUtilities.showKeyboard(searchField.editText);
                     });
-                } else if (id == filter_last_seen) {
-                    setLastSeenFilter(!lastSeenFilter);
+                } else if (purple.onMenuItem(id)) {
                 }
             }
         });
@@ -417,29 +411,23 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
             sortItem = menu.addItem(sort_button, sortByName ? R.drawable.msg_contacts_time : R.drawable.msg_contacts_name);
             sortItem.setContentDescription(getString(R.string.AccDescrContactSorting));
         }
-        if (!destroyAfterSelect && !createSecretChat && !returnAsResult) {
-            ActionBarMenuItem moreItem = menu.addItem(more_button, R.drawable.ic_ab_other);
-            moreItem.setContentDescription(getString(R.string.AccDescrMoreOptions));
-            lastSeenFilterItem = moreItem.addSubItem(filter_last_seen, R.drawable.msg_view_file,
-                    getString(R.string.PurpleContactsVisibleLastSeen), true);
-            lastSeenFilterItem.setChecked(lastSeenFilter);
-        }
+        purple.addMenu(menu, destroyAfterSelect, createSecretChat, returnAsResult);
 
         listView = new RecyclerListView(context);
         searchListViewAdapter = new SearchAdapter(listView, context, ignoreUsers, selectedContacts, allowUsernameSearch, false, false, allowBots, allowSelf, true, 0, resourceProvider) {
             @Override
             protected boolean acceptUser(TLRPC.User user) {
-                return !lastSeenFilter || PurpleLastSeen.canSeeOrPeek(user);
+                return purple.acceptUser(user);
             }
 
             @Override
             protected boolean allowUnregisteredContacts() {
-                return !lastSeenFilter;
+                return purple.allowUnregisteredContacts();
             }
 
             @Override
             protected boolean acceptSearchResult(Object object) {
-                return !lastSeenFilter || (object instanceof TLRPC.User && acceptUser((TLRPC.User) object));
+                return purple.acceptSearchResult(object);
             }
 
             @Override
@@ -590,6 +578,7 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
         listView.setVerticalScrollBarEnabled(false);
         listView.setFastScrollEnabled(RecyclerListView.FastScroll.LETTER_TYPE);
         listView.setLayoutManager(layoutManager = new LinearLayoutManager(context, LinearLayoutManager.VERTICAL, false));
+        purple.attach(listView, listViewAdapter, searchListViewAdapter, () -> searchQuery);
         listView.setAdapter(listViewAdapter);
         listView.setClipToPadding(false);
         scrollHelper = new RecyclerAnimationScrollHelper(listView, layoutManager);
@@ -680,7 +669,7 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
                 //}
 
                 if (view instanceof ViewGroup && ((ViewGroup) view).getChildAt(0) instanceof ContactsEmptyView) {
-                    if (!lastSeenFilter && floatingButton != null) {
+                    if (!purple.enabled() && floatingButton != null) {
                         floatingButton.performClick();
                     }
                     return;
@@ -1271,22 +1260,7 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
         if (listViewAdapter != null) {
             listViewAdapter.notifyDataSetChanged();
         }
-        refreshLastSeenSearch();
-    }
-
-    private void setLastSeenFilter(boolean value) {
-        lastSeenFilter = value;
-        lastSeenFilterItem.setChecked(value);
-        listViewAdapter.setUserFilter(value ? PurpleLastSeen::canSeeOrPeek : null);
-        refreshLastSeenSearch();
-    }
-
-    private void refreshLastSeenSearch() {
-        if (listView != null
-                && listView.getAdapter() == searchListViewAdapter
-                && !TextUtils.isEmpty(searchQuery)) {
-            searchListViewAdapter.searchDialogs(searchQuery);
-        }
+        purple.refresh();
     }
 
     @Override
@@ -1417,17 +1391,9 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
             if ((mask & MessagesController.UPDATE_MASK_AVATAR) != 0 || (mask & MessagesController.UPDATE_MASK_NAME) != 0 || (mask & MessagesController.UPDATE_MASK_STATUS) != 0) {
                 updateVisibleRows(mask);
             }
-            if ((mask & MessagesController.UPDATE_MASK_STATUS) != 0 && lastSeenFilter) {
-                listViewAdapter.notifyDataSetChanged();
-                refreshLastSeenSearch();
-            }
+            purple.refresh(mask);
             if ((mask & MessagesController.UPDATE_MASK_STATUS) != 0 && !sortByName && listViewAdapter != null) {
                 scheduleSort();
-            }
-        } else if (id == NotificationCenter.dialogFiltersUpdated) {
-            if (lastSeenFilter && listViewAdapter != null) {
-                listViewAdapter.notifyDataSetChanged();
-                refreshLastSeenSearch();
             }
         } else if (id == NotificationCenter.encryptedChatCreated) {
             if (createSecretChat && creatingChat) {

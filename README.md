@@ -1491,6 +1491,32 @@ removing a conditional stub requires actual processGoogleServices proof on
 the approved build host, and the standalone append must remain. Source
 preparation alone does not qualify that removal or login/service behavior.
 
+
+The optional Contacts Last Seen filter is owned by one
+`PurpleContactsLastSeenFilter` per screen. Its menu and dialog-filter observer
+retain the original screen lifecycle and account; status refresh stays after
+visible row updates and before the stock sort. Picker menu eligibility is
+unchanged. `PurpleContactsFilter` owns the filtered section, letter and online
+snapshots, accepted-result counting and indexing, and backward removal of
+rejected local users with their names. A null adapter helper selects the exact
+ordinary collections. The filter still delegates to the shared
+`PurpleLastSeen.canSeeOrPeek` policy.
+
+The upstream seams are ContactsActivity's helper calls, ContactsAdapter's
+predicate setter and collection accessors, and SearchAdapter's three protected
+policy hooks and count/item swaps. ContactsEmptyView keeps its original setter
+because it writes private final fields. ActionBarMenuItem keeps its stock drag-selection path and adds one guarded
+Purple eligibility call for the filter row, so its reserved id remains usable
+with both a separate tap and a press-drag-release gesture. Other reserved or
+separator tags retain the original exclusion. The More container and its existing
+filter action use helper-owned reserved ids; there is no extra peek action.
+
+After an upstream merge, verify section letters and fast scroll, the online
+list, local/phone/global search mappings and first/last global classification,
+filtered empty text with no invite action, picker menus, and observer removal
+on the actual application. Source extraction does not establish these runtime
+contracts.
+
 ### Push notifications
 
 `[notifications].preview_always` in `settings.toml` lets messages and reactions
