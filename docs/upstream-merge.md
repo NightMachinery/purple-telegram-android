@@ -429,3 +429,25 @@ peek action. Recheck the reserved helper ids against accepted preceding source
 at integration. Actual host TL and project Java qualification, the full hooks
 audit, product review and application checks precede late integration; source
 comparison alone does not prove runtime observer or tap behavior.
+
+## Per-chat storage
+
+CacheControlActivity routes argument reads, entity publication, transition and
+resume to its per-instance PurpleChatStorage. Preserve the original dialog-id
+lookup, own-before-migrated merge, handled-before-show order and parent/pause
+guards. The no-argument updateRows and stock void showClearCacheDialog methods
+use package access; the stock method retains its total-size and parent guard.
+
+The sheet delegate captures one attempt receipt with the original combined
+entity and own/migrated parts. Its single showDialog return sets the receipt;
+do not substitute visibleDialog, since sheet-stack success need not update it.
+After the unchanged stock cleanup, the same delegate passes the remaining
+entity to the captured cleanup action. Keep null-part skips, kept-file set,
+copied file iteration, backward type removal, model removal and row update.
+Manual sheets have no scoped action. Do not look up parts from a later list.
+
+Actual host/project qualification, full hooks audit and product review precede
+late integration. Native checks cover cached opening, migrated parts leaving
+the list after Clear, empty/zero-total alerts, once-only transition opening and
+unchanged Settings storage. Source comparison does not prove file deletion or
+runtime sheet lifetime.

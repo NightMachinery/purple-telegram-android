@@ -102,6 +102,26 @@ When no files are attributed to the chat, a message says so instead of showing
 an empty sheet. The screen behind the sheet still shows storage for all chats.
 The entry appears in the same chats as Keep Media.
 
+
+Per-chat opening is coordinated by one `PurpleChatStorage` per Storage screen.
+It reads the original dialog and migration arguments, waits for the original
+parent, pause and transition conditions, and handles the request once before
+showing a sheet or the existing empty-cache alert. The stock Settings screen,
+sheet creation, avatar action and cleanup stay in CacheControlActivity.
+
+CacheControlActivity keeps the helper field, argument read, entity publication,
+transition and resume hooks. Its stock void sheet method also captures a small
+attempt receipt for the delegate and reports the original single `showDialog`
+return. A sheet-stack success may leave `visibleDialog` unchanged, so that
+field cannot establish whether the sheet opened. The receipt retains the
+original combined entity and own/migrated parts for cleanup after the stock
+mutation; a later entity publication cannot replace those references. The
+no-argument row update and sheet method have package access for this helper.
+
+After a merge, verify cached-chat opening, merged migrated-chat cleanup of both
+parts, the zero-cache alert, showing once across a transition, and unchanged
+manual Settings storage actions on the actual application.
+
 ### Building
 
 Compile on any machine where the setup below is complete. That can be the

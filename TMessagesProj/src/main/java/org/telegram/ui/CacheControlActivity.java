@@ -167,10 +167,7 @@ public class CacheControlActivity extends BaseFragment implements NotificationCe
     private long totalDeviceFreeSize = -1;
     private long migrateOldFolderRow = -1;
     private boolean calculating = true;
-    private long scopedDialogId;
-    private long scopedMergeDialogId;
-    private boolean scopedDialogHandled;
-    private ArrayList<DialogFileEntities> scopedEntities;
+    private final PurpleChatStorage purple = new PurpleChatStorage(this);
     private boolean collapsed = true;
     private CachedMediaLayout cachedMediaLayout;
 
@@ -322,8 +319,7 @@ public class CacheControlActivity extends BaseFragment implements NotificationCe
     public boolean onFragmentCreate() {
         super.onFragmentCreate();
         canceled = false;
-        scopedDialogId = arguments != null ? arguments.getLong("dialog_id", 0) : 0;
-        scopedMergeDialogId = arguments != null ? arguments.getLong("merge_dialog_id", 0) : 0;
+        purple.read(arguments);
         getNotificationCenter().addObserver(this, NotificationCenter.didClearDatabase);
         databaseSize = MessagesStorage.getInstance(currentAccount).getDatabaseSize();
         loadingDialogs = true;
@@ -549,7 +545,7 @@ public class CacheControlActivity extends BaseFragment implements NotificationCe
                                     totalDeviceFreeSize <= 0 || totalDeviceSize <= 0 ? 0 : (float) (totalDeviceSize - totalDeviceFreeSize) / totalDeviceSize
                             );
                         }
-                        showScopedDialog(entities);
+                        purple.onEntities(entities);
                     }
                 });
             });
@@ -666,7 +662,7 @@ public class CacheControlActivity extends BaseFragment implements NotificationCe
         return string;
     }
 
-    private void updateRows() {
+    void updateRows() {
         updateRows(true);
     }
 
@@ -1436,82 +1432,15 @@ public class CacheControlActivity extends BaseFragment implements NotificationCe
     @Override
     public void onTransitionAnimationEnd(boolean isOpen, boolean backward) {
         super.onTransitionAnimationEnd(isOpen, backward);
-        if (isOpen && scopedEntities != null) {
-            showScopedDialog(scopedEntities);
-        }
+        purple.onTransitionEnd(isOpen);
     }
 
-    private void showScopedDialog(ArrayList<DialogFileEntities> entities) {
-        if (scopedDialogId == 0 || scopedDialogHandled) {
-            return;
-        }
-        scopedEntities = entities;
-        if (isPaused || getParentActivity() == null || getParentLayout() == null
-                || getParentLayout().isTransitionAnimationInProgress()) {
-            return;
-        }
-        scopedDialogHandled = true;
-        scopedEntities = null;
-        DialogFileEntities own = null;
-        DialogFileEntities migrated = null;
-        for (int i = 0; i < entities.size(); i++) {
-            DialogFileEntities candidate = entities.get(i);
-            if (candidate.dialogId == scopedDialogId) {
-                own = candidate;
-            } else if (scopedMergeDialogId != 0 && candidate.dialogId == scopedMergeDialogId) {
-                migrated = candidate;
-            }
-        }
-        if (migrated != null) {
-            DialogFileEntities combined = new DialogFileEntities(scopedDialogId);
-            if (own != null) {
-                combined.merge(own);
-            }
-            combined.merge(migrated);
-            if (showClearCacheDialog(combined, own, migrated)) {
-                return;
-            }
-        } else if (own != null && showClearCacheDialog(own)) {
-            return;
-        }
-        showDialog(new AlertDialog.Builder(getParentActivity(), getResourceProvider())
-                .setTitle(LocaleController.getString(R.string.PurpleChatStorage))
-                .setMessage(LocaleController.getString(R.string.PurpleChatStorageEmpty))
-                .setPositiveButton(LocaleController.getString(R.string.OK), null)
-                .create());
-    }
-
-    private void removeClearedFiles(DialogFileEntities remaining, DialogFileEntities[] parts) {
-        HashSet<CacheModel.FileInfo> kept = new HashSet<>();
-        for (int i = 0; i < remaining.entitiesByType.size(); i++) {
-            kept.addAll(remaining.entitiesByType.valueAt(i).files);
-        }
-        for (DialogFileEntities part : parts) {
-            if (part == null) {
-                continue;
-            }
-            for (int i = part.entitiesByType.size() - 1; i >= 0; i--) {
-                for (CacheModel.FileInfo file : new ArrayList<>(part.entitiesByType.valueAt(i).files)) {
-                    if (!kept.contains(file)) {
-                        part.removeFile(file);
-                    }
-                }
-                if (part.entitiesByType.valueAt(i).files.isEmpty()) {
-                    part.entitiesByType.removeAt(i);
-                }
-            }
-            if (part.entitiesByType.size() == 0 && cacheModel != null) {
-                cacheModel.remove(part);
-            }
-        }
-        updateRows();
-    }
-
-    private boolean showClearCacheDialog(DialogFileEntities entities, DialogFileEntities... parts) {
+    void showClearCacheDialog(DialogFileEntities entities) {
         if (totalSize <= 0 || getParentActivity() == null) {
-            return false;
+            return;
         }
 
+        final PurpleChatStorage.ShowAttempt purpleAttempt = purple.capture(entities);
         bottomSheet = new DialogCacheBottomSheet(CacheControlActivity.this, entities, entities.createCacheModel(), new DialogCacheBottomSheet.Delegate() {
             @Override
             public void onAvatarClick() {
@@ -1528,12 +1457,10 @@ public class CacheControlActivity extends BaseFragment implements NotificationCe
             @Override
             public void cleanupDialogFiles(DialogFileEntities entities, StorageDiagramView.ClearViewData[] clearViewData, CacheModel cacheModel) {
                 CacheControlActivity.this.cleanupDialogFiles(entities, clearViewData, cacheModel);
-                if (parts.length > 0) {
-                    removeClearedFiles(entities, parts);
-                }
+                purple.afterCleanup(entities, purpleAttempt);
             }
         });
-        return showDialog(bottomSheet) != null;
+        purple.onShown(purpleAttempt, showDialog(bottomSheet));
     }
 
     private void cleanupDialogFiles(DialogFileEntities dialogEntities, StorageDiagramView.ClearViewData[] clearViewData, CacheModel dialogCacheModel) {
@@ -1710,9 +1637,7 @@ public class CacheControlActivity extends BaseFragment implements NotificationCe
         if (!calculating) {
 //            loadDialogEntities();
         }
-        if (scopedEntities != null) {
-            showScopedDialog(scopedEntities);
-        }
+        purple.onResume();
     }
 
     @Override
