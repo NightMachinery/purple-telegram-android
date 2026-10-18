@@ -486,17 +486,20 @@ Qt Core ships as a prebuilt next to the app, so gradle never sees it; drop it be
 
 Purple's JNI bridges construct `PurpleAccountSyncCore.RawReply` and
 `PurpleSyncCore.RawReply` by class name and constructor signature. Keep the
-AndroidX `@Keep` annotation on both constructors and preserve the AndroidX
-annotation dependency's packaged `META-INF/proguard/androidx-annotations.pro`
-constructor consumer rules and their consumption by R8. Keep the existing
-`proguard-android.txt` configuration for its other native/default rules; its
-legacy support-annotation rules alone do not cover AndroidX.
-`TMessagesProj/proguard-rules.pro`
-is byte-exact upstream, including its absent final newline. Check both
-constructor signatures in fresh `seeds.txt`, and check that `usage.txt` does
-not remove them; annotation presence alone is not shrinker acceptance. Run
-`run_config_sync_bridge.sh`, including stripped replies. Its host annotation
-fixture is outside production sources and proves no Android retention rule.
+AndroidX `@Keep` annotation on both constructors. Actual shrinking removed
+both constructors despite the annotation dependency's packaged consumer rules.
+`purple/proguard-purple.pro` therefore carries the two exact JNI constructor
+keep rules. `purple/gradle/library.gradle` adds that file to every library build
+type's ProGuard inputs and exports it through `consumerProguardFiles` for the
+application pass. Preserve both stages; keeping only the application pass
+cannot recover constructors removed during library shrinking.
+`TMessagesProj/proguard-rules.pro` stays byte-exact upstream, including its
+absent final newline. Check both constructor signatures in fresh library and
+application `seeds.txt`, and check neither `usage.txt` removes them. Annotation
+presence alone is not shrinker acceptance. The unchanged
+`run_config_sync_bridge.sh`, including stripped replies, carries its existing
+qualification. Its host annotation fixture is outside production sources and
+proves no Android retention rule.
 
 ### TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
 

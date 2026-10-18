@@ -59,4 +59,9 @@ if (purpleStlArgs.size() != 1 || purpleStlArgs[0] != '-DANDROID_STL=c++_shared')
 purpleCmake.arguments.add("-DPURPLE_QT_ANDROID=" + purpleQtAndroid())
 purpleCmake.targets.add('purplecore')
 
+android.buildTypes.configureEach {
+    proguardFile rootProject.file('purple/proguard-purple.pro')
+}
+android.defaultConfig.consumerProguardFiles rootProject.file('purple/proguard-purple.pro')
+
 apply from: "$rootDir/purple/version.gradle"

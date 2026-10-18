@@ -760,16 +760,18 @@ the contract are described in
 `TMessagesProj/jni/purple_jni/tests/run_config_sync_bridge.sh` holds the
 bridge to the core's flow tests on macOS. The JNI-only `RawReply` constructors
 in `PurpleAccountSyncCore` and `PurpleSyncCore` carry AndroidX `@Keep`.
-Retention comes from the AndroidX annotation dependency's packaged
-`META-INF/proguard/androidx-annotations.pro` constructor rules. Preserve that
-dependency and R8's consumption of its consumer rules; the Android default
-configuration alone only covers legacy support annotations. The shared
-upstream ProGuard rules file has no Purple additions. Verify both constructor
-signatures in a fresh shrinking build's `seeds.txt` and ensure `usage.txt`
-does not remove them. The Java host scripts compile a constructor-only `Keep`
-annotation fixture from `tests/java_binding`, outside Android production
-sources. It lets the host tests compile the same bridge classes; retention in
-the Android APK still depends on the real AndroidX annotation and R8 output.
+The annotation dependency packages constructor consumer rules, but the measured
+shrinking build still removed both JNI-only constructors. Purple therefore
+keeps their exact signatures in `purple/proguard-purple.pro`.
+`purple/gradle/library.gradle` applies this file to library shrinking and exports
+it as consumer rules for application shrinking. Preserve both uses: an
+application rule cannot restore a constructor already removed from the library.
+The shared upstream ProGuard rules file has no Purple additions. Verify both
+constructor signatures in fresh library and application `seeds.txt` reports and
+ensure neither `usage.txt` removes them. The Java host scripts compile a
+constructor-only `Keep` annotation fixture from `tests/java_binding`, outside
+Android production sources. It lets host tests compile the same bridge classes;
+Android retention still needs the actual shrinking output.
 The bridge host test also runs its missing-constructor stripped-replies case.
 
 `PurpleAccountSyncStore` keeps bound state and canonical pending config
