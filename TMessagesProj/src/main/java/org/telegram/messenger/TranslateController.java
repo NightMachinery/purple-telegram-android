@@ -1777,8 +1777,6 @@ public class TranslateController extends BaseController {
     }
 
     private boolean isLanguageRestricted(String lng) {
-        // Purple: the "Do Not Translate" list is a local preference; without
-        // Premium upstream ignores it and hardcodes your own language.
         if (getUserConfig().isPremium() || PurpleGate.localPremium()) {
             return RestrictedLanguagesSelectActivity.getRestrictedLanguages().contains(lng);
         }

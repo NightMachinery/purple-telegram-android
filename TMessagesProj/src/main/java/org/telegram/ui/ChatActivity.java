@@ -33308,10 +33308,6 @@ public class ChatActivity extends BaseFragment implements
         MediaController.saveFile(path, getParentActivity(), messageObject.isVideo() ? 1 : 0, null, null);
     }
 
-    /**
-     * Opens the Purple Work Mode settings.toml behind a Saved Messages document. If the file has
-     * not been downloaded yet we kick off the download, so a second tap does the import.
-     */
     private void openPurpleSettings(MessageObject message) {
         if (message == null || getParentActivity() == null) {
             return;

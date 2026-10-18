@@ -115,8 +115,6 @@
 -dontoptimize
 -dontobfuscate
 
-# Purple's JNI bridges build these replies in native code, by class name and
-# constructor signature; no Java code calls the constructors.
 -keep class org.telegram.messenger.purple.PurpleAccountSyncCore$RawReply {
     <init>(byte[], byte[], byte[], java.lang.String);
 }

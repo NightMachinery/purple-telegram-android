@@ -55,6 +55,9 @@ Where Purple code goes:
   Purple strings go there. Until then, add them to the Purple block at the
   end of `res/values/strings.xml`.
 
+Keep explanations for retained upstream hooks in the feature README section
+or `docs/upstream-merge.md`, so the upstream edit stays limited to its hook.
+
 How a hook looks:
 
 - It carries at most one comment line, `// Purple: see PurpleX#method`. The

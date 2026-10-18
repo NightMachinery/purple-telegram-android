@@ -122,6 +122,13 @@ After a merge, verify cached-chat opening, merged migrated-chat cleanup of both
 parts, the zero-cache alert, showing once across a transition, and unchanged
 manual Settings storage actions on the actual application.
 
+### Upstream hook maintenance
+
+Purple behavior lives in its own helpers. Retained upstream hooks and their
+longer rationale are tracked in the [merge checklist](docs/upstream-merge.md#retained-upstream-rationale)
+and the hook baseline. Run `purple/upstream-hooks.sh report --lines` after a
+refactor to find remaining comments and review the affected feature checks.
+
 ### Building
 
 Compile on any machine where the setup below is complete. That can be the

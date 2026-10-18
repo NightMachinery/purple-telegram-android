@@ -3059,9 +3059,6 @@ public class MessagesStorage extends BaseController {
                 if (filter != null) {
                     for (int b = 0, N2 = filter.alwaysShow.size(); b < N2; b++) {
                         long did = filter.alwaysShow.get(b);
-                        // Never counted into the buckets above, so never added
-                        // back here: an exception that pulls a chat onto a tab
-                        // still does not pull its number onto the tab's badge.
                         if (!PurpleGate.countedInTotals(currentAccount, did)) {
                             continue;
                         }
@@ -3117,9 +3114,6 @@ public class MessagesStorage extends BaseController {
                     }
                     for (int b = 0, N2 = filter.neverShow.size(); b < N2; b++) {
                         long did = filter.neverShow.get(b);
-                        // And never subtracted either, for the same reason -
-                        // taking away a count that was never added is how a
-                        // tab ends up showing a negative number.
                         if (!PurpleGate.countedInTotals(currentAccount, did)) {
                             continue;
                         }
@@ -6424,9 +6418,6 @@ public class MessagesStorage extends BaseController {
                 if (filter != null) {
                     for (int b = 0, N2 = filter.alwaysShow.size(); b < N2; b++) {
                         long did = filter.alwaysShow.get(b);
-                        // Never counted into the buckets above, so never taken back out
-                        // of the total here - the read pass subtracts what the unread
-                        // pass added, and neither touches a chat under a hide until.
                         if (!PurpleGate.countedInTotals(currentAccount, did)) {
                             continue;
                         }
@@ -6482,8 +6473,6 @@ public class MessagesStorage extends BaseController {
                     }
                     for (int b = 0, N2 = filter.neverShow.size(); b < N2; b++) {
                         long did = filter.neverShow.get(b);
-                        // The mirror of the alwaysShow guard: a chat that was never
-                        // added back must not be taken away either.
                         if (!PurpleGate.countedInTotals(currentAccount, did)) {
                             continue;
                         }
@@ -6636,8 +6625,6 @@ public class MessagesStorage extends BaseController {
                         if ((flags & MessagesController.DIALOG_FILTER_FLAG_EXCLUDE_MUTED) != 0 && dialogsToUpdateMentions != null) {
                             for (int b = 0, N2 = dialogsToUpdateMentions.size(); b < N2; b++) {
                                 long did = dialogsToUpdateMentions.keyAt(b);
-                                // Same guard on the mention correction: it undoes an addition
-                                // the buckets above were never asked to make.
                                 if (!PurpleGate.countedInTotals(currentAccount, did)) {
                                     continue;
                                 }
@@ -6658,8 +6645,6 @@ public class MessagesStorage extends BaseController {
                         }
                         for (int b = 0, N2 = filter.alwaysShow.size(); b < N2; b++) {
                             long did = filter.alwaysShow.get(b);
-                            // An exception can pull a chat onto a tab, but not its number
-                            // onto the tab's badge, for as long as the hide until runs.
                             if (!PurpleGate.countedInTotals(currentAccount, did)) {
                                 continue;
                             }
@@ -6730,9 +6715,6 @@ public class MessagesStorage extends BaseController {
                     }
                     for (int b = 0, N2 = filter.neverShow.size(); b < N2; b++) {
                         long did = filter.neverShow.get(b);
-                        // Never taken off the totals here, because the buckets above
-                        // never put it on them. The subtraction is the dangerous half:
-                        // it is what drives a tab negative.
                         if (!PurpleGate.countedInTotals(currentAccount, did)) {
                             continue;
                         }

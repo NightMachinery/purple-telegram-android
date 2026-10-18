@@ -420,11 +420,6 @@ public class MessagesController extends BaseController implements NotificationCe
         return PurpleFolders.shownFilters(currentAccount, getDialogFiltersUnrestricted());
     }
 
-    /**
-     * Every folder the account actually has - what {@link #getDialogFilters()}
-     * was before Work Mode. A preset changes which of them are on the strip and
-     * nothing else about them.
-     */
     public ArrayList<DialogFilter> getDialogFiltersUnrestricted() {
         if (frozenDialogFilters != null) {
             return frozenDialogFilters;
@@ -1320,10 +1315,6 @@ public class MessagesController extends BaseController implements NotificationCe
         }
 
         public boolean includesDialog(AccountInstance accountInstance, long dialogId, TLRPC.Dialog d) {
-            // Purple: one of the preset's invented tabs. Its membership comes
-            // from the file rather than from flags and exception lists, and it
-            // answers before all of them - a view holds what its lists claim
-            // and nothing else, so none of the machinery below applies to it.
             if (PurpleGate.isExtraView(this)) {
                 return PurpleGate.viewHolds(accountInstance.getCurrentAccount(), this, dialogId);
             }
@@ -1340,14 +1331,6 @@ public class MessagesController extends BaseController implements NotificationCe
             ContactsController contactsController = accountInstance.getContactsController();
             boolean skip = false;
 
-            // Purple: membership is decided as though this preset silenced
-            // nothing. The obvious version eats itself - a folder carrying
-            // "Exclude muted" stops containing a chat the moment the preset
-            // silences it, which takes it out of the folder, which un-silences
-            // it, which puts it back, forever. The input to the decision must
-            // not depend on its output. Same rule as the desktop fork's
-            // ChatFilter::contains(ignorePresetMute); see
-            // docs/purple/work_mode.md, "Breaking the loop".
             if ((flags & DIALOG_FILTER_FLAG_EXCLUDE_MUTED) != 0 && messagesController.mutedWithoutPreset(d.id, 0) && d.unread_mentions_count == 0 ||
                     (flags & DIALOG_FILTER_FLAG_EXCLUDE_READ) != 0 && messagesController.getDialogUnreadCount(d) == 0 && !d.unread_mark && d.unread_mentions_count == 0) {
                 return false;
@@ -9706,12 +9689,6 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public boolean hasHiddenArchive() {
-        // Purple: a preset with hide_archive_p makes the app look like an
-        // account that has never archived anything. Answering false here is
-        // what turns off every pull site at once - the gesture, the peek
-        // header, the scroll offsets - because all of them ask this one
-        // question, and a state the app has always had to handle needs no new
-        // branch anywhere.
         if (PurpleFolders.hidingArchive(currentAccount)) {
             return false;
         }
@@ -9835,11 +9812,6 @@ public class MessagesController extends BaseController implements NotificationCe
         for (int a = 0, N = dialogs.size(); a < N; a++) {
             TLRPC.Dialog dialog = dialogs.get(a);
 
-            // Purple: the same running total the folded row's own badge is, and
-            // the same rule - a chat under a "hide until" adds nothing to the
-            // community's number while keeping its own. Guarded here as well as
-            // in checkCollapsedDialogsInCommunity() because this is the sum the
-            // cell actually draws, recomputed every time it does.
             if (!PurpleGate.countedInTotals(currentAccount, dialog.id)) {
                 continue;
             }
@@ -17261,14 +17233,6 @@ public class MessagesController extends BaseController implements NotificationCe
 
         long newTaskId;
         if (taskId == 0) {
-            // Purple: under hide_everywhere_p the list below is a subset of the
-            // account, and this request goes out with force = true - so sending
-            // an order built from it would unpin every chat the preset is
-            // hiding, here and on every other device. The pin itself still
-            // reaches the server, through toggleDialogPin in pinDialog; what is
-            // skipped is only the reordering, which cannot be told truthfully
-            // from a truncated list. Same reasoning as the refusal to drag a
-            // pinned row while a preset runs, in DialogsActivity.
             if (PurpleFolders.hidingEverywhere(currentAccount)) {
                 return;
             }
@@ -21605,9 +21569,6 @@ public class MessagesController extends BaseController implements NotificationCe
                 forceChannel = null;
             }
             if (topicId != 0) {
-                // The preset was already consulted by the caller above, and its
-                // answer does not depend on the topic, so this falls back to the
-                // chat's own setting rather than starting over.
                 return mutedWithoutPreset(dialogId, 0, chat);
             } else {
                 return !getNotificationsController().isGlobalNotificationsEnabled(dialogId, forceChannel, false, false);
@@ -22382,9 +22343,6 @@ public class MessagesController extends BaseController implements NotificationCe
     
     
     public void sortDialogs(LongSparseArray<TLRPC.Chat> chatsDict) {
-        // An extra view's pinned order is resolved against the dialogs, and on
-        // a cold start the settings are read before there are any. This is the
-        // moment they arrive, and it is ahead of the sort that reads the pins.
         PurpleFolders.refillViewPinsIfNeeded(currentAccount);
         if (chatsDict == null && ApplicationLoader.mainInterfacePaused) {
             return;
@@ -22431,9 +22389,6 @@ public class MessagesController extends BaseController implements NotificationCe
                 }
                 for (int a = 0, N = allDialogs.size(); a < N; a++) {
                     final TLRPC.Dialog d = allDialogs.get(a);
-                    // Purple: under hide_everywhere_p a chat out of the main
-                    // list cannot be in a folder either, so the tab it belongs
-                    // to loses it as well. See docs/purple/work_mode.md.
                     if (PurpleGate.hiddenEverywhere(currentAccount, d)) {
                         continue;
                     }

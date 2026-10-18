@@ -451,3 +451,73 @@ late integration. Native checks cover cached opening, migrated parts leaving
 the list after Clear, empty/zero-total alerts, once-only transition opening and
 unchanged Settings storage. Source comparison does not prove file deletion or
 runtime sheet lifetime.
+
+## Retained upstream rationale
+
+Keep the upstream hooks small. The explanations below belong to the retained integration; changing or moving comments does not change the calls, guards or ownership rules. Review these details when rebasing their hooks.
+
+### TMessagesProj/jni/CMakeLists.txt
+
+purple - the Work Mode core, shared with the desktop fork. TMessagesProj/jni/purple is the purple-core submodule (https://github.com/NightMachinery/purple-core): plain C++20 over Qt Core and the vendored toml++, with no Android in it. purple_jni/ holds the JNI bridge, outside the submodule so the submodule stays pristine. It is a library of its own rather than more sources in tmessages.49 because it needs C++20 and Qt, and tmessages.49 is a C++14 world that must not gain a Qt dependency.
+
+C++20 over the file-wide -std=c++14: a later -std wins with clang, and the core is written against C++20.
+
+Qt Core ships as a prebuilt next to the app, so gradle never sees it; drop it beside libpurplecore.so in the CMake output so it is packaged with the rest.
+
+### TMessagesProj/proguard-rules.pro
+
+Purple's JNI bridges build these replies in native code, by class name and constructor signature; no Java code calls the constructors.
+
+### TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
+
+Every folder the account actually has - what {@link #getDialogFilters()} was before Work Mode. A preset changes which of them are on the strip and nothing else about them.
+
+Purple: one of the preset's invented tabs. Its membership comes from the file rather than from flags and exception lists, and it answers before all of them - a view holds what its lists claim and nothing else, so none of the machinery below applies to it.
+
+Purple: membership is decided as though this preset silenced nothing. The obvious version eats itself - a folder carrying "Exclude muted" stops containing a chat the moment the preset silences it, which takes it out of the folder, which un-silences it, which puts it back, forever. The input to the decision must not depend on its output. Same rule as the desktop fork's ChatFilter::contains(ignorePresetMute); see docs/purple/work_mode.md, "Breaking the loop".
+
+Purple: a preset with hide_archive_p makes the app look like an account that has never archived anything. Answering false here is what turns off every pull site at once - the gesture, the peek header, the scroll offsets - because all of them ask this one question, and a state the app has always had to handle needs no new branch anywhere.
+
+Purple: the same running total the folded row's own badge is, and the same rule - a chat under a "hide until" adds nothing to the community's number while keeping its own. Guarded here as well as in checkCollapsedDialogsInCommunity() because this is the sum the cell actually draws, recomputed every time it does.
+
+Purple: under hide_everywhere_p the list below is a subset of the account, and this request goes out with force = true - so sending an order built from it would unpin every chat the preset is hiding, here and on every other device. The pin itself still reaches the server, through toggleDialogPin in pinDialog; what is skipped is only the reordering, which cannot be told truthfully from a truncated list. Same reasoning as the refusal to drag a pinned row while a preset runs, in DialogsActivity.
+
+The preset was already consulted by the caller above, and its answer does not depend on the topic, so this falls back to the chat's own setting rather than starting over.
+
+An extra view's pinned order is resolved against the dialogs, and on a cold start the settings are read before there are any. This is the moment they arrive, and it is ahead of the sort that reads the pins.
+
+Purple: under hide_everywhere_p a chat out of the main list cannot be in a folder either, so the tab it belongs to loses it as well. See docs/purple/work_mode.md.
+
+### TMessagesProj/src/main/java/org/telegram/messenger/MessagesStorage.java
+
+Never counted into the buckets above, so never added back here: an exception that pulls a chat onto a tab still does not pull its number onto the tab's badge.
+
+And never subtracted either, for the same reason - taking away a count that was never added is how a tab ends up showing a negative number.
+
+Never counted into the buckets above, so never taken back out of the total here - the read pass subtracts what the unread pass added, and neither touches a chat under a hide until.
+
+The mirror of the alwaysShow guard: a chat that was never added back must not be taken away either.
+
+Same guard on the mention correction: it undoes an addition the buckets above were never asked to make.
+
+An exception can pull a chat onto a tab, but not its number onto the tab's badge, for as long as the hide until runs.
+
+Never taken off the totals here, because the buckets above never put it on them. The subtraction is the dangerous half: it is what drives a tab negative.
+
+### TMessagesProj/src/main/java/org/telegram/messenger/TranslateController.java
+
+Purple: the "Do Not Translate" list is a local preference; without Premium upstream ignores it and hardcodes your own language.
+
+### TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java
+
+Opens the Purple Work Mode settings.toml behind a Saved Messages document. If the file has not been downloaded yet we kick off the download, so a second tap does the import.
+
+### TMessagesProj/src/main/java/org/telegram/ui/Components/DialogsChannelsAdapter.java
+
+Purple: one snapshot of the folder strip for the whole walk. The predicate has to know which folders the running preset is showing, and asking for that per channel would rebuild the same list a hundred times for an answer that cannot move inside one rebuild.
+
+Purple: "my channels" is a strip of your own chats like the recent and frequent ones, so a channel the running preset hides - and that no shown folder tab reaches - is left out of it. Typed search below is untouched and still finds it.
+
+### TMessagesProj/src/main/java/org/telegram/ui/ProfileActivity.java
+
+Purple: a toggle, so the user's own mute. The mute icon beside the name further down keeps the effective answer.

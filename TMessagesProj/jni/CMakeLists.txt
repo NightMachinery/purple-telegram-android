@@ -236,16 +236,6 @@ target_link_libraries(${NATIVE_LIB}
 include(AndroidNdkModules)
 android_ndk_import_module_cpufeatures()
 
-#purple - the Work Mode core, shared with the desktop fork.
-#
-# TMessagesProj/jni/purple is the purple-core submodule
-# (https://github.com/NightMachinery/purple-core): plain C++20 over Qt Core and
-# the vendored toml++, with no Android in it. purple_jni/ holds the JNI bridge,
-# outside the submodule so the submodule stays pristine.
-#
-# It is a library of its own rather than more sources in tmessages.49 because
-# it needs C++20 and Qt, and tmessages.49 is a C++14 world that must not gain a
-# Qt dependency.
 if (NOT PURPLE_QT_ANDROID)
     message(FATAL_ERROR "PURPLE_QT_ANDROID is not set: point it at a Qt 6 Android prefix (see local.properties).")
 endif()
@@ -277,8 +267,6 @@ add_library(purplecore SHARED
         purple/purple/purple_screentime.cpp
         purple/purple/purple_engine.cpp)
 
-# C++20 over the file-wide -std=c++14: a later -std wins with clang, and the
-# core is written against C++20.
 target_compile_options(purplecore PRIVATE -std=c++20 -Oz)
 
 target_include_directories(purplecore PRIVATE
@@ -293,8 +281,6 @@ target_link_libraries(purplecore
         qt6core
         log)
 
-# Qt Core ships as a prebuilt next to the app, so gradle never sees it; drop it
-# beside libpurplecore.so in the CMake output so it is packaged with the rest.
 add_custom_command(TARGET purplecore POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 ${PURPLE_QT_ANDROID}/lib/libQt6Core_${ANDROID_ABI}.so

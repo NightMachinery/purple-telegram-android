@@ -4343,8 +4343,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     presentFragment(new AffiliateProgramFragment(userId));
                 }
             } else if (position == notificationsSimpleRow) {
-                // Purple: a toggle, so the user's own mute. The mute icon beside
-                // the name further down keeps the effective answer.
                 boolean muted = getMessagesController().mutedWithoutPreset(did, topicId);
                 getNotificationsController().muteDialog(did, topicId, !muted);
                 BulletinFactory.createMuteBulletin(ProfileActivity.this, !muted, null).show();
