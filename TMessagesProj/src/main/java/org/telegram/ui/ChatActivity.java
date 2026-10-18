@@ -310,7 +310,6 @@ import org.telegram.ui.Stars.StarsIntroActivity;
 import org.telegram.ui.Stars.StarsReactionsSheet;
 import org.telegram.ui.Stars.MessageSuggestionOfferSheet;
 import org.telegram.messenger.utils.tlutils.AmountUtils;
-import org.telegram.messenger.purple.PurpleSettings;
 import org.telegram.ui.Stories.StoriesListPlaceProvider;
 import org.telegram.ui.Stories.StoriesUtilities;
 import org.telegram.ui.Stories.PublicStoriesList;
@@ -33308,30 +33307,6 @@ public class ChatActivity extends BaseFragment implements
         MediaController.saveFile(path, getParentActivity(), messageObject.isVideo() ? 1 : 0, null, null);
     }
 
-    private void openPurpleSettings(MessageObject message) {
-        if (message == null || getParentActivity() == null) {
-            return;
-        }
-        File locFile = null;
-        if (message.messageOwner.attachPath != null && message.messageOwner.attachPath.length() != 0) {
-            File f = new File(message.messageOwner.attachPath);
-            if (f.exists()) {
-                locFile = f;
-            }
-        }
-        if (locFile == null) {
-            File f = getFileLoader().getPathToMessage(message.messageOwner);
-            if (f.exists()) {
-                locFile = f;
-            }
-        }
-        if (locFile != null) {
-            PurpleSettings.importFrom(getParentActivity(), locFile, message);
-        } else if (message.getDocument() != null) {
-            message.loadingCancelled = false;
-            getFileLoader().loadFile(message.getDocument(), message, FileLoader.PRIORITY_NORMAL_UP, 0);
-        }
-    }
 
     private void processSelectedOption(int option) {
         if (selectedObject == null || getParentActivity() == null) {
@@ -33481,6 +33456,7 @@ public class ChatActivity extends BaseFragment implements
                 break;
             }
             case OPTION_APPLY_LOCALIZATION_OR_THEME: {
+                if (purple.importSettings(selectedObject)) break;
                 File locFile = null;
                 if (!TextUtils.isEmpty(selectedObject.messageOwner.attachPath)) {
                     File f = new File(selectedObject.messageOwner.attachPath);
@@ -33495,9 +33471,7 @@ public class ChatActivity extends BaseFragment implements
                     }
                 }
                 if (locFile != null) {
-                    if (purple.isSettings(selectedObject)) {
-                        PurpleSettings.importFrom(getParentActivity(), locFile, selectedObject);
-                    } else if (locFile.getName().toLowerCase().endsWith("attheme")) {
+                    if (locFile.getName().toLowerCase().endsWith("attheme")) {
                         Theme.ThemeInfo themeInfo = Theme.applyThemeFile(locFile, selectedObject.getDocumentName(), null, true);
                         if (themeInfo != null) {
                             presentFragment(new ThemePreviewActivity(themeInfo));
@@ -41606,10 +41580,7 @@ public class ChatActivity extends BaseFragment implements
                     presentFragment(fragment);
                 }
             } else if (message.type == MessageObject.TYPE_FILE || message.type == MessageObject.TYPE_TEXT) {
-                if (purple.isSettings(message)) {
-                    openPurpleSettings(message);
-                    return;
-                }
+                if (purple.importSettings(message)) return;
                 if (message.getDocumentName().toLowerCase().endsWith("attheme")) {
                     File locFile = null;
                     if (message.messageOwner.attachPath != null && message.messageOwner.attachPath.length() != 0) {
@@ -41694,10 +41665,7 @@ public class ChatActivity extends BaseFragment implements
         @Override
         public void didPressInstantButton(ChatMessageCell cell, int type) {
             MessageObject messageObject = cell.getMessageObject();
-            if (type == PurpleImportButton.INSTANT_BUTTON_TYPE_PURPLE_IMPORT) {
-                openPurpleSettings(messageObject);
-                return;
-            }
+            if (purple.importSettingsButton(messageObject, type)) return;
             if (type == 19) {
                 if (progressDialogCurrent != null) {
                     progressDialogCurrent.cancel(true);
@@ -46094,7 +46062,7 @@ public class ChatActivity extends BaseFragment implements
                         icons.add(R.drawable.msg_shareout);
                     }
                 } else if (type == 10) {
-                    items.add(LocaleController.getString(selectedObject != null && purple.isSettings(selectedObject) ? R.string.ImportPurpleSettings : R.string.ApplyThemeFile));
+                    items.add(LocaleController.getString(R.string.ApplyThemeFile));
                     options.add(OPTION_APPLY_LOCALIZATION_OR_THEME);
                     icons.add(R.drawable.msg_theme);
                     if (!noforwardsOrPaidMedia && !selectedObject.isVoiceOnce() && !selectedObject.isRoundOnce()) {
@@ -46305,7 +46273,7 @@ public class ChatActivity extends BaseFragment implements
                     options.add(OPTION_APPLY_LOCALIZATION_OR_THEME);
                     icons.add(R.drawable.msg_language);
                 } else if (type == 10) {
-                    items.add(LocaleController.getString(selectedObject != null && purple.isSettings(selectedObject) ? R.string.ImportPurpleSettings : R.string.ApplyThemeFile));
+                    items.add(LocaleController.getString(R.string.ApplyThemeFile));
                     options.add(OPTION_APPLY_LOCALIZATION_OR_THEME);
                     icons.add(R.drawable.msg_theme);
                 } else if (type == 7) {
@@ -46345,6 +46313,7 @@ public class ChatActivity extends BaseFragment implements
             options.add(OPTION_WELCOME_REVERT);
             icons.add(R.drawable.outline_revert_24);
         }
+        purple.relabelImport(message, items, options, OPTION_APPLY_LOCALIZATION_OR_THEME);
     }
 
     private boolean showWelcomeMessageRevertOption(MessageObject messageObject) {

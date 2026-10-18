@@ -133,6 +133,13 @@ Native Purple build definitions live in `TMessagesProj/jni/purple_jni/purple.cma
 The upstream CMake entry point includes them in its existing directory context,
 so relative source paths and target settings keep their original meaning.
 
+### Settings document imports
+
+`PurpleSettingsImport` owns opening a settings document or starting its download.
+`ChatActivity` delegates its message, instant-button and menu hooks through
+`PurpleChatHooks`. The helper also labels the existing apply action for settings
+documents, while theme and language files continue through their upstream paths.
+
 ### Building
 
 Compile on any machine where the setup below is complete. That can be the
@@ -839,9 +846,10 @@ is kept as `settings.toml.import.bak`, as described above.
 The message-level import affordances use `PurpleSettingsMessage.is`: a
 `settings.toml` document no larger than `PurpleSettings.MAX_SIZE`, in Saved
 Messages for the message's own account. `MessageObject` keeps no Purple
-classification code. `ChatActivity` routes its five classification checks
-through its existing per-chat `PurpleChatHooks`; its import callbacks and
-account-switch guards stay in place. `ChatMessageCell` keeps the two layout
+classification code. `ChatActivity` forwards import and menu-label hooks
+through its existing per-chat `PurpleChatHooks`. `PurpleSettingsImport` owns
+file opening, download fallback and relabeling; `PurpleSettings` retains the
+account checks and import confirmation callback. `ChatMessageCell` keeps the two layout
 hooks and a guarded draw hook, passing its private geometry, selector and
 themed text color to `PurpleImportButton`. The selector creation stays in the
 cell because it owns the selector's mask, theme and drawable callback; it

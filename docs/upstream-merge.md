@@ -537,3 +537,14 @@ cpufeatures import. The Purple target definitions are in
 `purple_jni/purple.cmake`. Use `include`, preserving the parent source and
 binary directory context and relative source paths. Moving the block into a
 subdirectory would change that context and its target inputs.
+
+## Settings import hooks
+
+`ChatActivity` keeps one guarded call for the apply action, message tap and
+Purple instant button, plus one menu-label hook through `PurpleChatHooks`.
+`PurpleSettingsImport` owns the existing attach-path/message-path lookup, import
+call and download fallback. The menu-label hook takes the current message
+explicitly; it does not store menu state on the helper. Theme and language
+branches remain upstream. Verify downloaded and undownloaded settings files,
+message/bubble/menu imports in ordinary and secret chats, upstream theme and
+language handling, and picker/import-backup behavior on the native client.

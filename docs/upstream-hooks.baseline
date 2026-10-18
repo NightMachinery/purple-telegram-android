@@ -50,7 +50,7 @@ file TMessagesProj/src/main/java/org/telegram/ui/Cells/ManageChatUserCell.java 1
 file TMessagesProj/src/main/java/org/telegram/ui/Cells/ProfileSearchCell.java 1 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/Cells/UserCell.java 1 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/Cells/UserCell2.java 1 1 1
-file TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java 63 11 27
+file TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java 29 8 25
 file TMessagesProj/src/main/java/org/telegram/ui/Components/ChatActivityEnterView.java 12 0 6
 file TMessagesProj/src/main/java/org/telegram/ui/Components/ChatAvatarContainer.java 10 0 3
 file TMessagesProj/src/main/java/org/telegram/ui/Components/ChatNotificationsPopupWrapper.java 4 4 4

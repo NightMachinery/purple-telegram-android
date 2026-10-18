@@ -76,6 +76,18 @@ final class PurpleChatHooks {
         return PurpleSettingsMessage.is(message);
     }
 
+    boolean importSettings(MessageObject message) {
+        return PurpleSettingsImport.importSettings(chat, message);
+    }
+
+    boolean importSettingsButton(MessageObject message, int type) {
+        return PurpleSettingsImport.importButton(chat, message, type);
+    }
+
+    void relabelImport(MessageObject message, ArrayList<CharSequence> items, ArrayList<Integer> options, int optionId) {
+        PurpleSettingsImport.relabel(message, items, options, optionId);
+    }
+
     // ---- the header menu -----------------------------------------------------
 
     /**
