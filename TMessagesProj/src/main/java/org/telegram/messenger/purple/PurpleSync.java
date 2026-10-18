@@ -239,7 +239,14 @@ public final class PurpleSync {
         return null;
     }
 
-    public static SendMessagesHelper.SendReceipt receiptForRetry(
+    public static void registerRetry(int account, MessageObject messageObject, boolean unsent) {
+        PurpleSendReceipt receipt = receiptForRetry(account, messageObject, unsent);
+        if (receipt != null) {
+            PurpleSendReceipts.retry(account, messageObject.getId(), messageObject.getDialogId(), messageObject.messageOwner.attachPath, messageObject.messageOwner, receipt);
+        }
+    }
+
+    private static PurpleSendReceipt receiptForRetry(
             int account, MessageObject messageObject, boolean unsent) {
         if (messageObject == null
                 || messageObject.currentAccount != account

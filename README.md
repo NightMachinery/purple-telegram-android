@@ -140,6 +140,41 @@ so relative source paths and target settings keep their original meaning.
 `PurpleChatHooks`. The helper also labels the existing apply action for settings
 documents, while theme and language files continue through their upstream paths.
 
+### Send receipt ownership
+
+`PurpleSendReceipt` and the per-account `PurpleSendReceipts` own sync send
+completion. A new send registers its unique staged path before enqueueing preparation;
+message creation transfers that receipt to the local message id. Registration,
+lookup, transfer and removal use the same account lock. Preparation captures
+that account's generation before it is queued. Account cleanup advances the
+generation, cancels old receipts and clears bound ids, so a later login can
+reuse local ids. Old pending entries remain as invalidation markers until their
+owner's queued cleanup removes them; the UI handoff rejects those old entries.
+A duplicate pending path is refused without replacing the earlier receipt.
+The existing FIFO UI handoff consumes a live registration before its preparation
+cleanup runs.
+Retries already have a local id and register directly under that id, so a
+retry cannot consume an unrelated pending preparation. Finish removes a receipt
+before invoking it outside the lock. Terminal delivery also requires the exact
+originating message object captured by that send, so a late callback or storage
+continuation cannot consume a new lifetime's reused local id. Internal
+`processSentMessage` callers pass that captured owner through a thin overload;
+the original id-only bookkeeping entry point cannot select a Purple receipt.
+UI cancellation can receive a message deserialized from history, so it matches
+that logical send by account, negative local id, dialog and the unique staged
+attachment path retained at bind or retry. It never falls back to a bare id;
+asynchronous completion still requires the exact originating object.
+Cancellation and errors report id zero;
+confirmed sends report the server id. The MIME override is account-specific and
+applies only while a Purple preparation owns that path.
+
+`SendMessagesHelper.prepareSendingDocumentInternal` and its four live upstream
+call sites retain the upstream signature. Only the thin Purple preparation call
+needs to follow future signature changes. `PurpleSyncTelegramClient` forwards
+the same absolute staged path and adapts its receipt to the public interface.
+Native send, cancel, retry, startup resend and ordinary document/GIF/music MIME
+cases remain required; host checks do not establish device behavior.
+
 ### Building
 
 Compile on any machine where the setup below is complete. That can be the

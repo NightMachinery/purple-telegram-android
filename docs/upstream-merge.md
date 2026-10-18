@@ -258,10 +258,28 @@ rather than inventing an account.
    `purpleBucket` calls in the counting loops, and after A8 PurpleUnreadMirror.
    The report prints the current list.
 8. When upstream changes the signature of
-   `SendMessagesHelper.prepareSendingDocumentInternal`, Purple's added
-   `sendReceipt` parameter has to follow at every call site, and
-   `prepareSendingPurpleDocument` calls it too. A mistake is a compile error,
-   so it cannot pass silently.
+   `SendMessagesHelper.prepareSendingDocumentInternal`, only the thin
+   `prepareSendingPurpleDocument` call follows it. The signature and four live
+   upstream call sites stay upstream text. `PurpleSendReceipts` owns the
+   per-account staged-path to local-id transfer and completion; retries register
+   directly by their already known local id. The cleanup hook advances the
+   account generation and cancels old ownership; queued worker/UI hooks reject
+   that old generation before account-slot/local-id reuse. Preserve FIFO
+   preparation/UI cleanup ordering and duplicate-path refusal. Receipt terminal
+   hooks and the internal processSentMessage overload pass the original captured
+   message object; comparing a currently looked-up id or generation is not enough
+   after account-slot reuse. The protected id-only bookkeeping method remains
+   upstream text and cannot finish a Purple receipt without an owner. These
+   one-line caller arguments are required ownership hooks, not moved send logic.
+   UI cancellation is separate: a history-loaded message copy matches the bound
+   account/local-id/dialog/unique staged attach-path tuple, never just the id.
+   Bind and eligible retry retain that tuple. Storage restores the attach path
+   and dialog for pending outgoing documents; asynchronous callbacks continue
+   to require their exact original object. Test copied-message cancellation,
+   wrong tuple rejection and stale cancellation after local-id reuse.
+   Verify send confirmation,
+   cancel, airplane-mode retry, startup resend and ordinary document/GIF/music
+   MIME behavior on device; host checks do not establish those observations.
    Stories strip hooks also need a source comparison: `PurpleStories` repeats
    upstream's one-line only-self predicate on the shown list. If upstream
    changes `hasOnlySelfStories()`, reconcile that predicate and its eager

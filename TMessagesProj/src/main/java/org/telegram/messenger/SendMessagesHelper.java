@@ -54,6 +54,8 @@ import androidx.core.view.inputmethod.InputContentInfoCompat;
 import org.json.JSONObject;
 import org.telegram.messenger.audioinfo.AudioInfo;
 import org.telegram.messenger.purple.PurpleSync;
+import org.telegram.messenger.purple.PurpleSendReceipt;
+import org.telegram.messenger.purple.PurpleSendReceipts;
 import org.telegram.messenger.support.SparseLongArray;
 import org.telegram.messenger.utils.EphemeralMessagesHelper;
 import org.telegram.messenger.utils.tlutils.AmountUtils;
@@ -137,7 +139,6 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
     public static final int MEDIA_TYPE_RICH = 13;
     private final HashMap<String, ArrayList<DelayedMessage>> delayedMessages = new HashMap<>();
     private final SparseArray<MessageObject> unsentMessages = new SparseArray<>();
-    private final SparseArray<SendReceipt> sendReceipts = new SparseArray<>();
     private final SparseArray<TLRPC.Message> sendingMessages = new SparseArray<>();
     private final SparseArray<TLRPC.Message> editingMessages = new SparseArray<>();
     private final SparseArray<TLRPC.Message> uploadMessages = new SparseArray<>();
@@ -932,7 +933,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                     obj.messageOwner.errorAllowedPriceStars = 0;
                     obj.messageOwner.errorNewPriceStars = 0;
                     getNotificationCenter().postNotificationName(NotificationCenter.messageSendError, obj.getId());
-                    processSentMessage(obj.getId());
+                    processSentMessage(obj.getId(), obj.messageOwner);
                     removeFromUploadingMessages(obj.getId(), scheduled);
                 }
                 delayedMessages.remove( "group_" + groupId);
@@ -942,7 +943,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 obj.messageOwner.errorAllowedPriceStars = 0;
                 obj.messageOwner.errorNewPriceStars = 0;
                 getNotificationCenter().postNotificationName(NotificationCenter.messageSendError, obj.getId());
-                processSentMessage(obj.getId());
+                processSentMessage(obj.getId(), obj.messageOwner);
                 removeFromUploadingMessages(obj.getId(), scheduled);
             }
             sendDelayedRequests();
@@ -981,6 +982,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
     }
 
     public void cleanup() {
+        PurpleSendReceipts.cleanup(currentAccount);
         delayedMessages.clear();
         unsentMessages.clear();
         sendingMessages.clear();
@@ -1586,7 +1588,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             }
             dialogId = object.getDialogId();
             messageIds.add(object.getId());
-            finishSendReceipt(object.getId(), 0);
+            PurpleSendReceipts.cancel(currentAccount, object.getId(), object.getDialogId(), object.messageOwner.attachPath);
             if (object.isQuickReply()) {
                 topicId = object.getQuickReplyId();
             }
@@ -1721,7 +1723,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 getMessagesStorage().markMessageAsSendError(messageObject.messageOwner, messageObject.scheduled ? 1 : 0);
                 messageObject.messageOwner.send_state = MessageObject.MESSAGE_SEND_STATE_SEND_ERROR;
                 getNotificationCenter().postNotificationName(NotificationCenter.messageSendError, messageObject.getId());
-                processSentMessage(messageObject.getId());
+                processSentMessage(messageObject.getId(), messageObject.messageOwner);
                 return false;
             }
             if (messageObject.messageOwner.random_id == 0) {
@@ -1764,25 +1766,18 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         }
         SendMessagesHelper.SendMessageParams params = SendMessagesHelper.SendMessageParams.of(messageObject);
         params.payStars = payStars;
-        params.sendReceipt = PurpleSync.receiptForRetry(currentAccount, messageObject, unsent);
+        PurpleSync.registerRetry(currentAccount, messageObject, unsent);
         sendMessage(params);
         return true;
     }
 
-    private void finishSendReceipt(int localId, int serverId) {
-        SendReceipt receipt = sendReceipts.get(localId);
-        sendReceipts.remove(localId);
-        if (receipt != null) {
-            try {
-                receipt.onResult(serverId, false);
-            } catch (RuntimeException e) {
-                FileLog.e(e);
-            }
-        }
+
+    private void processSentMessage(int id, TLRPC.Message owner) {
+        PurpleSendReceipts.finish(currentAccount, id, owner, 0);
+        processSentMessage(id);
     }
 
     protected void processSentMessage(int id) {
-        finishSendReceipt(id, 0);
         int prevSize = unsentMessages.size();
         unsentMessages.remove(id);
         if (prevSize != 0 && unsentMessages.size() == 0) {
@@ -2712,7 +2707,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                                                             messageObjects.add(new MessageObject(msgObj.currentAccount, msgObj.messageOwner, true, true));
                                                             getMessagesController().updateInterfaceWithMessages(newMsgObj1.dialog_id, messageObjects, toMode);
                                                             getMediaDataController().increasePeerRaiting(newMsgObj1.dialog_id);
-                                                            processSentMessage(oldId);
+                                                            processSentMessage(oldId, newMsgObj1);
                                                             removeFromSendingMessages(oldId, scheduleDate != 0);
                                                         });
                                                     });
@@ -2741,7 +2736,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                                                         getMediaDataController().increasePeerRaiting(peer);
                                                         getNotificationCenter().postNotificationName(NotificationCenter.messageReceivedByServer, oldId, message.id, message, peer, 0L, existFlags, scheduleDate != 0);
                                                         getNotificationCenter().postNotificationName(NotificationCenter.messageReceivedByServer2, oldId, message.id, message, peer, 0L, existFlags, scheduleDate != 0);
-                                                        processSentMessage(oldId);
+                                                        processSentMessage(oldId, newMsgObj1);
                                                         removeFromSendingMessages(oldId, scheduleDate != 0);
                                                     });
                                                 });
@@ -2770,7 +2765,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                                 AndroidUtilities.runOnUIThread(() -> {
                                     newMsgObj1.send_state = MessageObject.MESSAGE_SEND_STATE_SEND_ERROR;
                                     getNotificationCenter().postNotificationName(NotificationCenter.messageSendError, newMsgObj1.id);
-                                    processSentMessage(newMsgObj1.id);
+                                    processSentMessage(newMsgObj1.id, newMsgObj1);
                                     removeFromSendingMessages(newMsgObj1.id, scheduleDate != 0);
                                 });
                             }
@@ -4400,7 +4395,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                     retryMessageObject.messageOwner.errorNewPriceStars = 0;
                     retryMessageObject.messageOwner.errorAllowedPriceStars = 0;
                     getNotificationCenter().postNotificationName(NotificationCenter.messageSendError, retryMessageObject.getId());
-                    processSentMessage(retryMessageObject.getId());
+                    processSentMessage(retryMessageObject.getId(), retryMessageObject.messageOwner);
                 }
                 return;
             }
@@ -4980,7 +4975,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 if (DialogObject.isUserDialog(peer)) {
                     TLRPC.User sendToUser = getMessagesController().getUser(peer);
                     if (sendToUser == null) {
-                        processSentMessage(newMsg.id);
+                        processSentMessage(newMsg.id, newMsg);
                         return;
                     }
                     if (sendToUser.bot) {
@@ -5156,9 +5151,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 reply = null;
             }
             newMsgObj = new MessageObject(currentAccount, newMsg, reply, true, true);
-            if (sendMessageParams.sendReceipt != null) {
-                sendReceipts.put(newMsgObj.getId(), sendMessageParams.sendReceipt);
-            }
+            PurpleSendReceipts.bind(currentAccount, sendMessageParams.path, newMsgObj.getId(), newMsgObj.getDialogId(), newMsgObj.messageOwner);
             newMsgObj.sendAnimationData = sendAnimationData;
             newMsgObj.wasJustSent = true;
             newMsgObj.sentHighQuality = sendMessageParams.sendingHighQuality;
@@ -6412,7 +6405,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 newMsgObj.messageOwner.errorNewPriceStars = 0;
             }
             getNotificationCenter().postNotificationName(NotificationCenter.messageSendError, newMsg.id);
-            processSentMessage(newMsg.id);
+            processSentMessage(newMsg.id, newMsg);
         }
     }
 
@@ -7631,7 +7624,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                                 newMsgObj.errorAllowedPriceStars = 0;
                                 newMsgObj.errorNewPriceStars = 0;
                                 getNotificationCenter().postNotificationName(NotificationCenter.messageSendError, newMsgObj.id);
-                                processSentMessage(newMsgObj.id);
+                                processSentMessage(newMsgObj.id, newMsgObj);
                                 removeFromSendingMessages(newMsgObj.id, scheduled);
                             }
                         }
@@ -7823,7 +7816,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                                     getMediaDataController().increasePeerRaiting(newMsgObj.dialog_id);
                                     getNotificationCenter().postNotificationName(NotificationCenter.messageReceivedByServer, oldId, newMsgObj.id, newMsgObj, newMsgObj.dialog_id, grouped_id, existFlags, finalCurrentSchedule);
                                     getNotificationCenter().postNotificationName(NotificationCenter.messageReceivedByServer2, oldId, newMsgObj.id, newMsgObj, newMsgObj.dialog_id, grouped_id, existFlags, finalCurrentSchedule);
-                                    processSentMessage(oldId);
+                                    processSentMessage(oldId, newMsgObj);
                                     removeFromSendingMessages(oldId, scheduled);
                                 });
                             });
@@ -7847,7 +7840,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                             getMessagesStorage().updateMessageCustomParams(MessageObject.getDialogId(newMsgObj), newMsgObj);
                         }
                         getNotificationCenter().postNotificationName(NotificationCenter.messageSendError, newMsgObj.id);
-                        processSentMessage(newMsgObj.id);
+                        processSentMessage(newMsgObj.id, newMsgObj);
                         removeFromSendingMessages(newMsgObj.id, scheduled);
                     }
                 }
@@ -8064,7 +8057,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                         Utilities.stageQueue.postRunnable(() -> {
                             getMessagesController().processUpdates(updates, false);
                             AndroidUtilities.runOnUIThread(() -> {
-                                processSentMessage(newMsgObj.id);
+                                processSentMessage(newMsgObj.id, newMsgObj);
                                 removeFromSendingMessages(newMsgObj.id, scheduled);
                             });
                         });
@@ -8111,7 +8104,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                         Utilities.stageQueue.postRunnable(() -> {
                             getMessagesController().processUpdates(updates, false);
                             AndroidUtilities.runOnUIThread(() -> {
-                                processSentMessage(newMsgObj.id);
+                                processSentMessage(newMsgObj.id, newMsgObj);
                                 removeFromSendingMessages(newMsgObj.id, scheduled);
                             });
                         });
@@ -8320,7 +8313,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                         }
 
                         if (!isSentError) {
-                            finishSendReceipt(oldId, newMsgObj.id);
+                            PurpleSendReceipts.finish(currentAccount, oldId, newMsgObj, newMsgObj.id);
                             getStatsController().incrementSentItemsCount(ApplicationLoader.getCurrentNetworkType(), StatsController.TYPE_MESSAGES, 1);
                             newMsgObj.send_state = MessageObject.MESSAGE_SEND_STATE_SENT;
                             newMsgObj.errorNewPriceStars = 0;
@@ -8338,7 +8331,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                                         getMessagesController().deleteMessages(messageIds, null, null, newMsgObj.dialog_id, false, scheduled ? ChatActivity.MODE_SCHEDULED : ChatActivity.MODE_DEFAULT, false, 0, null, 0, !scheduled && finalCurrentSchedule, scheduledMessageId);
                                         getMessagesController().updateInterfaceWithMessages(newMsgObj.dialog_id, messageObjects, finalCurrentSchedule ? ChatActivity.MODE_SCHEDULED : ChatActivity.MODE_DEFAULT);
                                         getMediaDataController().increasePeerRaiting(newMsgObj.dialog_id);
-                                        processSentMessage(oldId);
+                                        processSentMessage(oldId, newMsgObj);
                                         removeFromSendingMessages(oldId, scheduled);
                                     });
                                 });
@@ -8367,7 +8360,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                                         getMediaDataController().increasePeerRaiting(newMsgObj.dialog_id);
                                         getNotificationCenter().postNotificationName(NotificationCenter.messageReceivedByServer, oldId, newMsgObj.id, newMsgObj, newMsgObj.dialog_id, 0L, existFlags, scheduled);
                                         getNotificationCenter().postNotificationName(NotificationCenter.messageReceivedByServer2, oldId, newMsgObj.id, newMsgObj, newMsgObj.dialog_id, 0L, existFlags, scheduled);
-                                        processSentMessage(oldId);
+                                        processSentMessage(oldId, newMsgObj);
                                         removeFromSendingMessages(oldId, scheduled);
                                     });
                                 });
@@ -8387,7 +8380,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                             getMessagesStorage().updateMessageCustomParams(MessageObject.getDialogId(newMsgObj), newMsgObj);
                         }
                         getNotificationCenter().postNotificationName(NotificationCenter.messageSendError, newMsgObj.id);
-                        processSentMessage(newMsgObj.id);
+                        processSentMessage(newMsgObj.id, newMsgObj);
                         removeFromSendingMessages(newMsgObj.id, scheduled);
                     }
                 });
@@ -9251,7 +9244,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
     private final static int ERROR_TYPE_UNSUPPORTED = 1;
     private final static int ERROR_TYPE_FILE_TOO_LARGE = 2;
 
-    private static int prepareSendingDocumentInternal(AccountInstance accountInstance, String path, String originalPath, Uri uri, String mime, long dialogId, MessageObject replyToMsg, MessageObject replyToTopMsg, TL_stories.StoryItem storyItem, ChatActivity.ReplyQuote quote, final ArrayList<TLRPC.MessageEntity> entities, final MessageObject editingMessageObject, long[] groupId, boolean isGroupFinal, CharSequence caption, boolean notify, int scheduleDate, int scheduleRepeatPeriod, Integer[] docType, boolean forceDocument, SendMessageChatArguments sendMessageChatArguments, long effectId, boolean invertMedia, long payStars, long monoForumPeerId, MessageSuggestionParams suggestionParams, PollSendParams pollSendParams, int pollIndex, SendReceipt sendReceipt) {
+    private static int prepareSendingDocumentInternal(AccountInstance accountInstance, String path, String originalPath, Uri uri, String mime, long dialogId, MessageObject replyToMsg, MessageObject replyToTopMsg, TL_stories.StoryItem storyItem, ChatActivity.ReplyQuote quote, final ArrayList<TLRPC.MessageEntity> entities, final MessageObject editingMessageObject, long[] groupId, boolean isGroupFinal, CharSequence caption, boolean notify, int scheduleDate, int scheduleRepeatPeriod, Integer[] docType, boolean forceDocument, SendMessageChatArguments sendMessageChatArguments, long effectId, boolean invertMedia, long payStars, long monoForumPeerId, MessageSuggestionParams suggestionParams, PollSendParams pollSendParams, int pollIndex) {
         final long forcedPollGroupId = pollSendParams != null ? pollSendParams.groupId : 0;
 
         if ((path == null || path.length() == 0) && uri == null) {
@@ -9446,9 +9439,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             } else {
                 document.mime_type = "application/octet-stream";
             }
-            if (sendReceipt != null && mime != null) {
-                document.mime_type = mime;
-            }
+            if (mime != null && PurpleSendReceipts.pending(accountInstance.getCurrentAccount(), path)) document.mime_type = mime;
             if (!forceDocument && document.mime_type.equals("image/gif") && (editingMessageObject == null || editingMessageObject.getGroupIdForUse() == 0)) {
                 try {
                     Bitmap bitmap = ImageLoader.loadBitmap(f.getAbsolutePath(), null, 90, 90, true);
@@ -9552,6 +9543,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         }
 
         AndroidUtilities.runOnUIThread(() -> {
+            if (!PurpleSendReceipts.allowPrepared(accountInstance.getCurrentAccount(), pathFinal)) return;
             if (editingMessageObject != null) {
                 accountInstance.getSendMessagesHelper().editMessage(editingMessageObject, null, null, documentFinal, pathFinal, null, params, false, false, parentFinal);
             } else {
@@ -9566,7 +9558,6 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 sendMessageParams.suggestionParams = suggestionParams;
                 sendMessageParams.pollIndex = pollIndex;
                 sendMessageParams.pollSendParams = pollSendParams;
-                sendMessageParams.sendReceipt = sendReceipt;
                 accountInstance.getSendMessagesHelper().sendMessage(sendMessageParams);
             }
         });
@@ -9781,25 +9772,11 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         }
     }
 
-    public interface SendReceipt {
-        void onResult(int serverId, boolean preparationFailed);
-    }
 
     @UiThread
-    public static void prepareSendingPurpleDocument(AccountInstance accountInstance, String path, String caption, long dialogId, String mime, SendReceipt sendReceipt) {
-        Utilities.globalQueue.postRunnable(() -> {
-            int error;
-            try {
-                error = prepareSendingDocumentInternal(accountInstance, path, path, null, mime, dialogId, null, null, null, null, null, null, new long[1], true, caption, true, 0, 0, new Integer[1], true, null, 0, false, 0, 0, null, null, -1, sendReceipt);
-            } catch (RuntimeException e) {
-                FileLog.e(e);
-                error = ERROR_TYPE_UNSUPPORTED;
-            }
-            if (error != 0) {
-                handleError(error, accountInstance);
-                AndroidUtilities.runOnUIThread(() -> sendReceipt.onResult(0, true));
-            }
-        });
+    public static void prepareSendingPurpleDocument(AccountInstance accountInstance, String path, String caption, long dialogId, String mime, PurpleSendReceipt sendReceipt) {
+        PurpleSendReceipts.prepare(accountInstance.getCurrentAccount(), path, sendReceipt, ERROR_TYPE_UNSUPPORTED,
+                () -> prepareSendingDocumentInternal(accountInstance, path, path, null, mime, dialogId, null, null, null, null, null, null, new long[1], true, caption, true, 0, 0, new Integer[1], true, null, 0, false, 0, 0, null, null, -1), error -> handleError(error, accountInstance));
     }
 
     @UiThread
@@ -10001,7 +9978,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                     }
                     mediaCount++;
                     long prevGroupId = groupId[0];
-                    error = prepareSendingDocumentInternal(accountInstance, paths.get(a), originalPaths.get(a), null, mime, dialogId, replyToMsg, replyToTopMsg, storyItem, quote, a == 0 ? captionEntities : null, editingMessageObject, groupId, !forcedPollDoNotSendFinal && (pollSendParams == null && mediaCount == 10 || a == count - 1), captionFinal, notify, scheduleDate, scheduleRepeatPeriod, docType, inputContent == null, sendMessageChatArguments, first ? effectId : 0, invertMedia, payStars, monoForumPeerId, suggestionParams, pollSendParams, pollSendIndexes!= null ? pollSendIndexes.get(a) : -1, null);
+                    error = prepareSendingDocumentInternal(accountInstance, paths.get(a), originalPaths.get(a), null, mime, dialogId, replyToMsg, replyToTopMsg, storyItem, quote, a == 0 ? captionEntities : null, editingMessageObject, groupId, !forcedPollDoNotSendFinal && (pollSendParams == null && mediaCount == 10 || a == count - 1), captionFinal, notify, scheduleDate, scheduleRepeatPeriod, docType, inputContent == null, sendMessageChatArguments, first ? effectId : 0, invertMedia, payStars, monoForumPeerId, suggestionParams, pollSendParams, pollSendIndexes!= null ? pollSendIndexes.get(a) : -1);
                     first = false;
                     if (prevGroupId != groupId[0] || groupId[0] == -1) {
                         mediaCount = 1;
@@ -10024,7 +10001,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                     }
                     mediaCount++;
                     long prevGroupId = groupId[0];
-                    error = prepareSendingDocumentInternal(accountInstance, null, null, uris.get(a), mime, dialogId, replyToMsg, replyToTopMsg, storyItem, quote, captionEntitiesFinal, editingMessageObject, groupId, !forcedPollDoNotSendFinal && (pollSendParams == null && mediaCount == 10 || a == count - 1), captionFinal, notify, scheduleDate, scheduleRepeatPeriod, docType, inputContent == null, sendMessageChatArguments, first ? effectId : 0, invertMedia, payStars, monoForumPeerId, suggestionParams, pollSendParams, pollSendUriIndexes != null ? pollSendUriIndexes.get(a) : -1, null);
+                    error = prepareSendingDocumentInternal(accountInstance, null, null, uris.get(a), mime, dialogId, replyToMsg, replyToTopMsg, storyItem, quote, captionEntitiesFinal, editingMessageObject, groupId, !forcedPollDoNotSendFinal && (pollSendParams == null && mediaCount == 10 || a == count - 1), captionFinal, notify, scheduleDate, scheduleRepeatPeriod, docType, inputContent == null, sendMessageChatArguments, first ? effectId : 0, invertMedia, payStars, monoForumPeerId, suggestionParams, pollSendParams, pollSendUriIndexes != null ? pollSendUriIndexes.get(a) : -1);
                     first = false;
                     if (prevGroupId != groupId[0] || groupId[0] == -1) {
                         mediaCount = 1;
@@ -11581,7 +11558,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                         mediaCount = 0;
                     }
                     mediaCount++;
-                    int error = prepareSendingDocumentInternal(accountInstance, sendAsDocuments.get(a), sendAsDocumentsOriginal.get(a), sendAsDocumentsUri.get(a), extension, dialogId, replyToMsg, replyToTopMsg, storyItem, quote, sendAsDocumentsEntities.get(a), editingMessageObject, groupId2, mediaCount == 10 || a == documentsCount - 1, sendAsDocumentsCaptions.get(a), notify, scheduleDate, 0, null, forceDocument, sendMessageChatArguments, effectId, invertMedia, payStars, monoForumPeerId, suggestionParams, null, -1, null);
+                    int error = prepareSendingDocumentInternal(accountInstance, sendAsDocuments.get(a), sendAsDocumentsOriginal.get(a), sendAsDocumentsUri.get(a), extension, dialogId, replyToMsg, replyToTopMsg, storyItem, quote, sendAsDocumentsEntities.get(a), editingMessageObject, groupId2, mediaCount == 10 || a == documentsCount - 1, sendAsDocumentsCaptions.get(a), notify, scheduleDate, 0, null, forceDocument, sendMessageChatArguments, effectId, invertMedia, payStars, monoForumPeerId, suggestionParams, null, -1);
                     handleError(error, accountInstance);
                 }
             }
@@ -12127,7 +12104,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                     }
                 });
             } else {
-                prepareSendingDocumentInternal(accountInstance, videoPath, videoPath, null, null, dialogId, replyToMsg, replyToTopMsg, storyItem, quote, entities, editingMessageObject, null, false, caption, notify, scheduleDate, scheduleRepeatPeriod, null, forceDocument, sendMessageChatArguments, 0, invertMedia, stars, monoForumPeerId, suggestionParams, null, -1, null);
+                prepareSendingDocumentInternal(accountInstance, videoPath, videoPath, null, null, dialogId, replyToMsg, replyToTopMsg, storyItem, quote, entities, editingMessageObject, null, false, caption, notify, scheduleDate, scheduleRepeatPeriod, null, forceDocument, sendMessageChatArguments, 0, invertMedia, stars, monoForumPeerId, suggestionParams, null, -1);
             }
         }).start();
     }
@@ -12181,7 +12158,6 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         public long monoForumPeer;
         public boolean sendingHighQuality;
         public MessageSuggestionParams suggestionParams;
-        public SendReceipt sendReceipt;
         public boolean isLivePhoto;
         public long livePhotoTimestamp;
         public long dice_stake;
