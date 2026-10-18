@@ -129,6 +129,10 @@ longer rationale are tracked in the [merge checklist](docs/upstream-merge.md#ret
 and the hook baseline. Run `purple/upstream-hooks.sh report --lines` after a
 refactor to find remaining comments and review the affected feature checks.
 
+Native Purple build definitions live in `TMessagesProj/jni/purple_jni/purple.cmake`.
+The upstream CMake entry point includes them in its existing directory context,
+so relative source paths and target settings keep their original meaning.
+
 ### Building
 
 Compile on any machine where the setup below is complete. That can be the

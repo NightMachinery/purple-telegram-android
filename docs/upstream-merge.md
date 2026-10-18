@@ -529,3 +529,11 @@ Purple resource names and values are preserved in `values/purple_strings.xml`.
 The default standalone app names are in its `values/purple_app_name.xml`
 overlay, alongside the existing locale overlays. Library resource names do
 not overlap the extracted Purple resource names within the source set.
+
+## Native build hook
+
+`TMessagesProj/jni/CMakeLists.txt` retains one include after the Android
+cpufeatures import. The Purple target definitions are in
+`purple_jni/purple.cmake`. Use `include`, preserving the parent source and
+binary directory context and relative source paths. Moving the block into a
+subdirectory would change that context and its target inputs.

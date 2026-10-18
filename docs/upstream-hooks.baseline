@@ -19,7 +19,7 @@ file .gitignore 2 0 1
 file .gitmodules 3 0 1
 file TMessagesProj/build.gradle 1 0 1
 file TMessagesProj/google-services.json 29 0 1
-file TMessagesProj/jni/CMakeLists.txt 51 0 2
+file TMessagesProj/jni/CMakeLists.txt 3 0 2
 file TMessagesProj/proguard-rules.pro 8 1 1
 file TMessagesProj/src/main/AndroidManifest.xml 17 1 2
 file TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java 4 1 3
