@@ -51,9 +51,8 @@ Where Purple code goes:
 - Build logic goes under the repository's `purple/` directory, new Gradle
   scripts in `purple/gradle/`, each applied by one `apply from:` line. Native
   build logic goes in `TMessagesProj/jni/purple_jni/`.
-- Once `TMessagesProj/src/main/res/values/purple_strings.xml` exists, new
-  Purple strings go there. Until then, add them to the Purple block at the
-  end of `res/values/strings.xml`.
+- New Purple strings go in `TMessagesProj/src/main/res/values/purple_strings.xml`.
+  Default app names belong to the standalone app resource overlay.
 
 Keep explanations for retained upstream hooks in the feature README section
 or `docs/upstream-merge.md`, so the upstream edit stays limited to its hook.

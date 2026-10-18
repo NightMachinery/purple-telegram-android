@@ -174,7 +174,7 @@ public class PurpleScheduleActivity extends UniversalFragment
      * Which sentence it is comes from the core - see PurpleCore.ScheduleStatus
      * - because this was worked out here and again in the desktop fork, and the
      * two answers had already parted company. What stays here is the wording,
-     * which lives in strings.xml and goes through the usual translation
+     * which lives in purple_strings.xml and goes through the usual translation
      * pipeline, and which the core has no business owning.
      */
     public static CharSequence statusLine(PurpleCore.Loaded state) {

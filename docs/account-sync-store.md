@@ -486,7 +486,7 @@ the runner holds an Undo offer; **Check Saved Messages**, disabled while
 something runs or when the account no longer has the screen's user;
 **Cancel check**, while a check runs; the intro with the cloud disclosure; and
 **History**. `PurpleSyncText` words every status: the review's message comes
-from the core, the sentence from `strings.xml` (`PurpleSync*` resources), in
+from the core, the sentence from `purple_strings.xml` (`PurpleSync*` resources), in
 the desktop's English except where Android has no account list.
 
 What each action does:

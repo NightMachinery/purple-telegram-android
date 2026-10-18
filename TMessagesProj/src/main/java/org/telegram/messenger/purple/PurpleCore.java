@@ -1055,7 +1055,7 @@ public final class PurpleCore {
      * out. Both apps used to decide this for themselves and their answers had
      * parted company - one could tell "no rules" from "none of them are this
      * device's" and the other could not, and each hunted for the next window
-     * its own way. The wording stays here, in strings.xml; only the deciding
+     * its own way. The wording stays here, in purple_strings.xml; only the deciding
      * moved. See ScheduleStatusNow() in the core.
      */
     public static final class ScheduleStatus {

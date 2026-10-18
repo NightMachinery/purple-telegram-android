@@ -757,7 +757,7 @@ macOS against the real core and a fake transport. The Sync across devices
 screen (`PurpleSyncActivity`, with `PurpleSyncReviewDialog` and
 `PurpleSyncHistoryActivity`) holds one runner and one Telegram transport per
 visit and closes both when it closes. Which sentence it shows comes from the
-core; the wording is in `strings.xml`, through `PurpleSyncText`. The screen is
+core; the wording is in `purple_strings.xml`, through `PurpleSyncText`. The screen is
 described in `docs/account-sync-store.md`.
 
 **Send to Saved Messages after every save** on the same screen is `[sync]
@@ -861,7 +861,7 @@ pause, and a line saying what the schedule is doing now - "now: work until
 17:00, then home" inside a window, "now: home until 09:00" outside one, and
 "Mon 09:00" rather than a bare time for a window that is not today. Which of
 those sentences it is comes from the core, along with every part of it; only
-the wording is here, because it lives in `strings.xml` and goes through the
+the wording is here, because it lives in `purple_strings.xml` and goes through the
 usual translation pipeline. The schedule tick and the focus policy went the
 same way: they were written once here in the bridge and once in the desktop
 fork, in C++ both times, and are now one tested function each. What
@@ -1661,8 +1661,8 @@ The standalone app owns `AppName` and `AppNameBeta` overrides in
 Arabic, German, Spanish, Italian, Korean, Dutch, Brazilian Portuguese,
 Russian and Ukrainian. Each file contains only `Purple Telegram` and
 `Purple Telegram Beta`; the corresponding complete library translations
-remain identical to upstream. The default names still live in the library's
-`values/strings.xml` until the default-resource extraction.
+remain identical to upstream. The default names live in
+`TMessagesProj_AppStandalone/src/main/res/values/purple_app_name.xml`.
 
 The standalone application depends on `TMessagesProj` and uses its own
 `src/main/res` resources for the same qualifiers. App resources are intended

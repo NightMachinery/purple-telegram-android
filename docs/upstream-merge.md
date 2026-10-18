@@ -521,3 +521,11 @@ Purple: "my channels" is a strip of your own chats like the recent and frequent 
 ### TMessagesProj/src/main/java/org/telegram/ui/ProfileActivity.java
 
 Purple: a toggle, so the user's own mute. The mute icon beside the name further down keeps the effective answer.
+
+## Default Purple resources
+
+The library default `values/strings.xml` matches upstream byte for byte.
+Purple resource names and values are preserved in `values/purple_strings.xml`.
+The default standalone app names are in its `values/purple_app_name.xml`
+overlay, alongside the existing locale overlays. Library resource names do
+not overlap the extracted Purple resource names within the source set.
