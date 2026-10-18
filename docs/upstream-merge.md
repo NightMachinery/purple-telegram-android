@@ -482,9 +482,21 @@ C++20 over the file-wide -std=c++14: a later -std wins with clang, and the core 
 
 Qt Core ships as a prebuilt next to the app, so gradle never sees it; drop it beside libpurplecore.so in the CMake output so it is packaged with the rest.
 
-### TMessagesProj/proguard-rules.pro
+### Purple JNI reply constructors
 
-Purple's JNI bridges build these replies in native code, by class name and constructor signature; no Java code calls the constructors.
+Purple's JNI bridges construct `PurpleAccountSyncCore.RawReply` and
+`PurpleSyncCore.RawReply` by class name and constructor signature. Keep the
+AndroidX `@Keep` annotation on both constructors and preserve the AndroidX
+annotation dependency's packaged `META-INF/proguard/androidx-annotations.pro`
+constructor consumer rules and their consumption by R8. Keep the existing
+`proguard-android.txt` configuration for its other native/default rules; its
+legacy support-annotation rules alone do not cover AndroidX.
+`TMessagesProj/proguard-rules.pro`
+is byte-exact upstream, including its absent final newline. Check both
+constructor signatures in fresh `seeds.txt`, and check that `usage.txt` does
+not remove them; annotation presence alone is not shrinker acceptance. Run
+`run_config_sync_bridge.sh`, including stripped replies. Its host annotation
+fixture is outside production sources and proves no Android retention rule.
 
 ### TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java
 

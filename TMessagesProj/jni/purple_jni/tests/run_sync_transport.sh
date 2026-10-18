@@ -45,6 +45,7 @@ clang++ -std=c++20 -g -O1 -dynamiclib \
     -Wl,-rpath,"$QtPrefix/frameworks"
 
 javac -Xlint:all,-options,-restricted -Werror -d "$BuildPath" -cp "$Json" \
+    "$Tests/java_binding/androidx/annotation/Keep.java" \
     "$Tests/java_binding/android/content/SharedPreferences.java" \
     "$Tests/config_sync_bridge/org/telegram/messenger/MessagesController.java" \
     "$Tests/config_sync_bridge/org/telegram/messenger/UserConfig.java" \

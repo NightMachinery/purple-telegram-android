@@ -48,6 +48,7 @@ fi
 
 javac --release 8 -Xlint:all,-options,-restricted -Werror \
     -d "$BuildPath/main" -cp "$Json" \
+    "$Tests/java_binding/androidx/annotation/Keep.java" \
     "$Tests/java_binding/android/content/SharedPreferences.java" \
     "$Tests/store_stubs/android/util/AtomicFile.java" \
     "$Tests/sync_history/android/system/ErrnoException.java" \

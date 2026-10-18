@@ -758,7 +758,21 @@ described in `docs/account-sync-transport.md` and tested by
 the contract are described in
 `docs/account-sync-store.md`, and
 `TMessagesProj/jni/purple_jni/tests/run_config_sync_bridge.sh` holds the
-bridge to the core's flow tests on macOS. `PurpleAccountSyncStore` keeps bound state and canonical pending config
+bridge to the core's flow tests on macOS. The JNI-only `RawReply` constructors
+in `PurpleAccountSyncCore` and `PurpleSyncCore` carry AndroidX `@Keep`.
+Retention comes from the AndroidX annotation dependency's packaged
+`META-INF/proguard/androidx-annotations.pro` constructor rules. Preserve that
+dependency and R8's consumption of its consumer rules; the Android default
+configuration alone only covers legacy support annotations. The shared
+upstream ProGuard rules file has no Purple additions. Verify both constructor
+signatures in a fresh shrinking build's `seeds.txt` and ensure `usage.txt`
+does not remove them. The Java host scripts compile a constructor-only `Keep`
+annotation fixture from `tests/java_binding`, outside Android production
+sources. It lets the host tests compile the same bridge classes; retention in
+the Android APK still depends on the real AndroidX annotation and R8 output.
+The bridge host test also runs its missing-constructor stripped-replies case.
+
+`PurpleAccountSyncStore` keeps bound state and canonical pending config
 records under the app-private `purple/sync` directory, with exclusive ownership
 and fail-closed crash recovery. It also commits the config data an apply
 adopts, after the core's commit check, and tells an unjoined check whether any

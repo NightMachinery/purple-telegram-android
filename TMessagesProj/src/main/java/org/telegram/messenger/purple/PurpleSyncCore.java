@@ -102,6 +102,7 @@ public final class PurpleSyncCore {
         final byte[][] texts;
         final String metadataJson;
 
+        @androidx.annotation.Keep
         RawReply(byte[] record, byte[] state, byte[] text, byte[][] texts,
                 String metadataJson) {
             this.record = record;

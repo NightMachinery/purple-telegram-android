@@ -6,6 +6,7 @@ BuildPath="$(mktemp -d "${TMPDIR:-/tmp}/purple-account-binding-java.XXXXXX")"
 trap 'command rm -rf "$BuildPath"' EXIT
 
 javac -d "$BuildPath" \
+    "$Root/TMessagesProj/jni/purple_jni/tests/java_binding/androidx/annotation/Keep.java" \
     "$Root/TMessagesProj/jni/purple_jni/tests/java_binding/android/content/SharedPreferences.java" \
     "$Root/TMessagesProj/jni/purple_jni/tests/java_binding/org/json/JSONException.java" \
     "$Root/TMessagesProj/jni/purple_jni/tests/java_binding/org/json/JSONObject.java" \

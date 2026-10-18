@@ -42,6 +42,7 @@ clang++ -std=c++20 -g -O1 -dynamiclib \
     -Wl,-rpath,"$QtPrefix/frameworks"
 
 javac -Xlint:all,-options,-restricted -Werror -d "$BuildPath/classes" -cp "$Json" \
+    "$Tests/java_binding/androidx/annotation/Keep.java" \
     "$Tests/java_binding/android/content/SharedPreferences.java" \
     "$Tests/sync_history/android/system/ErrnoException.java" \
     "$Tests/sync_history/android/system/Os.java" \

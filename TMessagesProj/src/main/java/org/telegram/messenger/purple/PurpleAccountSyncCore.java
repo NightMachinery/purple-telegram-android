@@ -29,6 +29,7 @@ public final class PurpleAccountSyncCore {
         final byte[] configText;
         final String metadataJson;
 
+        @androidx.annotation.Keep
         private RawReply(byte[] record, byte[] state, byte[] configText,
                 String metadataJson) {
             this.record = record;
