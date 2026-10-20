@@ -543,6 +543,8 @@ Purple: the "Do Not Translate" list is a local preference; without Premium upstr
 
 ### TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java
 
+The inline-code clipboard action and fallback link Copy row delegate their local-copy restrictions to PurpleCopyPolicy. Forwarding, saving and view-once behavior are outside those two hooks.
+
 Opens the Purple Work Mode settings.toml behind a Saved Messages document. If the file has not been downloaded yet we kick off the download, so a second tap does the import.
 
 ### TMessagesProj/src/main/java/org/telegram/ui/Components/DialogsChannelsAdapter.java
@@ -581,3 +583,25 @@ explicitly; it does not store menu state on the helper. Theme and language
 branches remain upstream. Verify downloaded and undownloaded settings files,
 message/bubble/menu imports in ordinary and secret chats, upstream theme and
 language handling, and picker/import-backup behavior on the native client.
+
+The unrestricted-copy/Markdown batch adds ChatActivity menu/dispatch and copy
+selection policy hooks through PurpleChatHooks, plus the MessageObject code-copy
+policy call. Keep these local-copy decisions separate from forwarding flags.
+
+The article Markdown action also uses a constructor-supplied current-message
+lookup from ChatActivity's existing primary/migrated maps. Keep this lambda a
+lookup seam: full-block serialization, translation/full-page requests and
+lifetime/generation checks live in the Purple helpers. After a merge, verify
+full and partial articles, displayed translations, closed details, multi-block
+lists, media/captions and album composition. Delete/edit/account-switch/destroy
+while a full-page request is pending must not write stale clipboard content.
+The original Markdown file preview source is not a received-article source cache.
+
+
+### Selection Markdown
+
+`ChatActivity` delegates one reserved selection action, its action-mode item and
+visibility updates to `PurpleChatHooks`. Keep the original Copy dispatch and its
+selection cleanup intact. Markdown selection uses the existing private-map
+lookup seam and per-chat resolver, with dialog ID plus message ID as identity.
+The MD label must not be mistaken for ordinary Copy during action-mode merges.

@@ -307,6 +307,7 @@ public class MessagePreviewView extends FrameLayout {
 
                 @Override
                 protected boolean canCopy() {
+                    if (org.telegram.messenger.purple.PurpleCopyPolicy.unrestricted()) return true;
                     if (isReplyToRichMessage()) return false;
                     return messagePreviewParams == null || !messagePreviewParams.noforwards;
                 }

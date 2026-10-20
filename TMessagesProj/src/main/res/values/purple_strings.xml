@@ -560,4 +560,6 @@
     <string name="PurpleSyncEntryChanges">Restoring changes this device\'s settings like this:</string>
     <string name="PurpleSyncRestore">Restore</string>
     <string name="PurpleSyncRestoreQuestion">Replace settings.toml with the version from %1$s? The current file is kept in History. The change stays on this device until you publish it.</string>
+    <string name="PurpleCopyAsMarkdown">Copy as Markdown</string>
+    <string name="PurpleMarkdownShort">MD</string>
 </resources>

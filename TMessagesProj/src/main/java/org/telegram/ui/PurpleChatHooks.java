@@ -49,6 +49,9 @@ import java.util.ArrayList;
 
 final class PurpleChatHooks {
 
+    static final int COPY_AS_MARKDOWN = PurpleMarkdownCopy.OPTION;
+    static final int COPY_SELECTION_AS_MARKDOWN = 0x70750008;
+
     // Header menu rows, from Purple's id range (AGENTS.md, "How a hook looks").
     private static final int PEEK_LAST_SEEN = 0x70750001;
     private static final int DOWNLOAD_PINNED_MUSIC = 0x70750002;
@@ -57,6 +60,7 @@ final class PurpleChatHooks {
 
     private final ChatActivity chat;
     private final PurpleScreenTimeCover.Host screenTime;
+    private final PurpleMarkdownCopy markdownCopy;
 
     private PurplePinnedMusicBar pinnedMusicBar;
     private ChatActivityTopPanelLayout topPanel;
@@ -67,9 +71,35 @@ final class PurpleChatHooks {
      * @param finishing the chat's {@code isFinishing()}, which this class
      *     cannot call itself; see {@link PurpleScreenTimeCover.Host}.
      */
-    PurpleChatHooks(ChatActivity chat, Utilities.Callback0Return<Boolean> finishing) {
+    PurpleChatHooks(ChatActivity chat, Utilities.Callback0Return<Boolean> finishing, PurpleMarkdownCopy.Lookup lookup) {
         this.chat = chat;
         this.screenTime = new PurpleScreenTimeCover.Host(chat, finishing);
+        markdownCopy = new PurpleMarkdownCopy(chat, lookup);
+    }
+
+    View addSelectionCopy(org.telegram.ui.ActionBar.ActionBarMenu menu) {
+        ActionBarMenuItem item = menu.addItem(COPY_SELECTION_AS_MARKDOWN, getString(R.string.PurpleMarkdownShort));
+        item.setContentDescription(getString(R.string.PurpleCopyAsMarkdown));
+        return item;
+    }
+
+    void updateSelectionCopy(org.telegram.ui.ActionBar.ActionBarMenu menu, boolean visible) {
+        menu.setItemVisibility(COPY_SELECTION_AS_MARKDOWN, visible ? View.VISIBLE : View.GONE);
+    }
+
+    void copySelectionAsMarkdown(android.util.SparseArray<MessageObject>[] selected, boolean encrypted) {
+        ArrayList<MessageObject> messages = new ArrayList<>();
+        for (int index = selected.length - 1; index >= 0; index--) {
+            ArrayList<Integer> ids = new ArrayList<>();
+            for (int i = 0; i < selected[index].size(); i++) ids.add(selected[index].keyAt(i));
+            if (encrypted) java.util.Collections.sort(ids, java.util.Collections.reverseOrder());
+            else java.util.Collections.sort(ids);
+            for (Integer id : ids) {
+                MessageObject message = selected[index].get(id);
+                if (PurpleMarkdownCopy.canCopy(message)) messages.add(message);
+            }
+        }
+        markdownCopy.copySelection(messages);
     }
 
     boolean isSettings(MessageObject message) {
@@ -86,6 +116,19 @@ final class PurpleChatHooks {
 
     void relabelImport(MessageObject message, ArrayList<CharSequence> items, ArrayList<Integer> options, int optionId) {
         PurpleSettingsImport.relabel(message, items, options, optionId);
+    }
+
+    void addCopyOptions(MessageObject message, MessageObject.GroupedMessages group,
+            ArrayList<CharSequence> items, ArrayList<Integer> options, ArrayList<Integer> icons, int copy) {
+        PurpleMarkdownCopy.addMenuOptions(message, group, items, options, icons, copy);
+    }
+
+    void copyAsMarkdown(MessageObject message, MessageObject.GroupedMessages group) {
+        markdownCopy.copy(message, group);
+    }
+
+    static boolean canCopyMessage(MessageObject message) {
+        return PurpleMarkdownCopy.canCopy(message);
     }
 
     // ---- the header menu -----------------------------------------------------
@@ -336,10 +379,12 @@ final class PurpleChatHooks {
     }
 
     void onPause() {
+        markdownCopy.cancel();
         screenTime.onPause();
     }
 
     void onDestroy() {
+        markdownCopy.onDestroy();
         if (pinnedMusicBar != null) {
             pinnedMusicBar.unbind();
         }

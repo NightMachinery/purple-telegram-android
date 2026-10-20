@@ -27,6 +27,7 @@ file TMessagesProj/src/main/java/org/telegram/messenger/ContactsController.java 
 file TMessagesProj/src/main/java/org/telegram/messenger/DownloadController.java 13 0 5
 file TMessagesProj/src/main/java/org/telegram/messenger/LocaleController.java 1 0 1
 file TMessagesProj/src/main/java/org/telegram/messenger/MediaDataController.java 1 0 1
+file TMessagesProj/src/main/java/org/telegram/messenger/MessageObject.java 1 1 1
 file TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java 50 2 17
 file TMessagesProj/src/main/java/org/telegram/messenger/MessagesStorage.java 100 38 20
 file TMessagesProj/src/main/java/org/telegram/messenger/NotificationsController.java 85 60 51
@@ -49,13 +50,14 @@ file TMessagesProj/src/main/java/org/telegram/ui/Cells/ManageChatUserCell.java 1
 file TMessagesProj/src/main/java/org/telegram/ui/Cells/ProfileSearchCell.java 1 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/Cells/UserCell.java 1 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/Cells/UserCell2.java 1 1 1
-file TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java 29 8 25
+file TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java 50 15 35
 file TMessagesProj/src/main/java/org/telegram/ui/Components/ChatActivityEnterView.java 12 0 6
 file TMessagesProj/src/main/java/org/telegram/ui/Components/ChatAvatarContainer.java 10 0 3
 file TMessagesProj/src/main/java/org/telegram/ui/Components/ChatNotificationsPopupWrapper.java 4 4 4
 file TMessagesProj/src/main/java/org/telegram/ui/Components/ContactsEmptyView.java 10 0 1
 file TMessagesProj/src/main/java/org/telegram/ui/Components/DialogsChannelsAdapter.java 8 2 4
 file TMessagesProj/src/main/java/org/telegram/ui/Components/FilterTabsView.java 13 3 5
+file TMessagesProj/src/main/java/org/telegram/ui/Components/MessagePreviewView.java 1 0 1
 file TMessagesProj/src/main/java/org/telegram/ui/Components/MessagePrivateSeenView.java 4 1 4
 file TMessagesProj/src/main/java/org/telegram/ui/Components/Premium/boosts/UserSelectorBottomSheet.java 1 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/Components/Premium/boosts/cells/selector/SelectorUserCell.java 1 1 1

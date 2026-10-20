@@ -397,7 +397,9 @@ public class ChatActivity extends BaseFragment implements
 
     private long chatInviterId;
 
-    private final PurpleChatHooks purple = new PurpleChatHooks(this, this::isFinishing);
+    private final PurpleChatHooks purple = new PurpleChatHooks(this, this::isFinishing,
+            (origin, dialogId, messageId) -> dialogId == origin.dialog_id ? origin.messagesDict[0].get(messageId)
+                    : dialogId == origin.mergeDialogId ? origin.messagesDict[1].get(messageId) : null);
 
     //private static final LongSparseArray<ArrayList<ChatMessageCell>> chatMessageCellsCache = new LongSparseArray<ArrayList<ChatMessageCell>>();
 
@@ -3515,6 +3517,7 @@ public class ChatActivity extends BaseFragment implements
 
         @Override
         protected boolean canCopy() {
+            if (org.telegram.messenger.purple.PurpleCopyPolicy.unrestricted()) return true;
             if (chatActivity != null && chatActivity.getDialogId() == UserObject.VERIFY) {
                 return true;
             }
@@ -3727,6 +3730,9 @@ public class ChatActivity extends BaseFragment implements
                         getMessagesController().getTopicsController().toggleViewForumAsMessages(-dialog_id, false);
                         TopicsFragment.prepareToSwitchAnimation(ChatActivity.this);
                     }
+                } else if (id == PurpleChatHooks.COPY_SELECTION_AS_MARKDOWN) {
+                    purple.copySelectionAsMarkdown(selectedMessagesIds, currentEncryptedChat != null);
+                    clearSelectionMode();
                 } else if (id == copy) {
                     SpannableStringBuilder str = new SpannableStringBuilder();
                     long previousUid = 0;
@@ -10339,8 +10345,10 @@ public class ChatActivity extends BaseFragment implements
             actionModeViews.add(actionMode.addItemWithWidth(copy, R.drawable.msg_copy, dp(48), LocaleController.getString(R.string.Copy)));
             actionModeViews.add(actionMode.addItemWithWidth(delete, R.drawable.msg_delete, dp(48), LocaleController.getString(R.string.Delete)));
         }
+        actionModeViews.add(purple.addSelectionCopy(actionMode));
+        purple.updateSelectionCopy(actionMode, selectedMessagesCanCopyIds[0].size() + selectedMessagesCanCopyIds[1].size() != 0);
         actionMode.setItemVisibility(edit, canEditMessagesCount == 1 && selectedMessagesIds[0].size() + selectedMessagesIds[1].size() == 1 ? View.VISIBLE : View.GONE);
-        actionMode.setItemVisibility(copy, !isPeerNoForwards() && selectedMessagesCanCopyIds[0].size() + selectedMessagesCanCopyIds[1].size() != 0 ? View.VISIBLE : View.GONE);
+        actionMode.setItemVisibility(copy, (org.telegram.messenger.purple.PurpleCopyPolicy.unrestricted() || !isPeerNoForwards()) && selectedMessagesCanCopyIds[0].size() + selectedMessagesCanCopyIds[1].size() != 0 ? View.VISIBLE : View.GONE);
         actionMode.setItemVisibility(star, selectedMessagesCanStarIds[0].size() + selectedMessagesCanStarIds[1].size() != 0 ? View.VISIBLE : View.GONE);
         actionMode.setItemVisibility(delete, cantDeleteMessagesCount == 0 ? View.VISIBLE : View.GONE);
         actionMode.setItemVisibility(tag_message, getUserConfig().isPremium() ? View.VISIBLE : View.GONE);
@@ -13332,7 +13340,7 @@ public class ChatActivity extends BaseFragment implements
     }
 
     private void showTextSelectionHint(MessageObject messageObject) {
-        if (getParentActivity() == null || getMessagesController().isPeerNoForwards(messageObject.getDialogId()) || (messageObject != null && messageObject.messageOwner != null && messageObject.messageOwner.noforwards)) {
+        if (getParentActivity() == null || !org.telegram.messenger.purple.PurpleCopyPolicy.unrestricted() && (getMessagesController().isPeerNoForwards(messageObject.getDialogId()) || (messageObject != null && messageObject.messageOwner != null && messageObject.messageOwner.noforwards))) {
             return;
         }
         CharSequence text;
@@ -19102,7 +19110,7 @@ public class ChatActivity extends BaseFragment implements
             if (selectedMessagesIds[index].indexOfKey(messageObject.getId()) >= 0) {
                 selectedMessagesIds[index].remove(messageObject.getId());
                 if (!isReport()) {
-                    if ((messageObject.type == MessageObject.TYPE_TEXT || messageObject.isAnimatedEmoji() || messageObject.caption != null) && !(messageObject.messageOwner != null && messageObject.messageOwner.noforwards)) {
+                    if (PurpleChatHooks.canCopyMessage(messageObject)) {
                         selectedMessagesCanCopyIds[index].remove(messageObject.getId());
                     }
                     if (!messageObject.isAnimatedEmoji() && (messageObject.isSticker() || messageObject.isAnimatedSticker()) && MessageObject.isStickerHasSet(messageObject.getDocument())) {
@@ -19139,7 +19147,7 @@ public class ChatActivity extends BaseFragment implements
                 }
                 selectedMessagesIds[index].put(messageObject.getId(), messageObject);
                 if (!isReport()) {
-                    if ((messageObject.type == MessageObject.TYPE_TEXT || messageObject.isAnimatedEmoji() || messageObject.caption != null) && !(messageObject.messageOwner != null && messageObject.messageOwner.noforwards)) {
+                    if (PurpleChatHooks.canCopyMessage(messageObject)) {
                         selectedMessagesCanCopyIds[index].put(messageObject.getId(), messageObject);
                     }
                     if (!messageObject.isAnimatedEmoji() && (messageObject.isSticker() || messageObject.isAnimatedSticker()) && MessageObject.isStickerHasSet(messageObject.getDocument())) {
@@ -19233,8 +19241,9 @@ public class ChatActivity extends BaseFragment implements
                 int copyVisible = View.GONE, starVisible = View.GONE, newCopyVisible = View.GONE, newStarVisible = View.GONE;
                 if (copyItem != null) {
                     copyVisible = copyItem.getVisibility();
-                    copyItem.setVisibility(!noforwards && selectedMessagesCanCopyIds[0].size() + selectedMessagesCanCopyIds[1].size() != 0 ? View.VISIBLE : View.GONE);
+                    copyItem.setVisibility((org.telegram.messenger.purple.PurpleCopyPolicy.unrestricted() || !noforwards) && selectedMessagesCanCopyIds[0].size() + selectedMessagesCanCopyIds[1].size() != 0 ? View.VISIBLE : View.GONE);
                     newCopyVisible = copyItem.getVisibility();
+                    purple.updateSelectionCopy(actionBar.createActionMode(), newCopyVisible == View.VISIBLE);
                 }
                 if (starItem != null) {
                     starVisible = starItem.getVisibility();
@@ -33375,6 +33384,10 @@ public class ChatActivity extends BaseFragment implements
                 presentFragment(fragment);
                 break;
             }
+            case PurpleChatHooks.COPY_AS_MARKDOWN: {
+                purple.copyAsMarkdown(selectedObject, selectedObjectGroup);
+                break;
+            }
             case OPTION_COPY: {
                 final TL_iv.RichMessage copyRichMessage = selectedObject.messageOwner != null ? selectedObject.messageOwner.rich_message : null;
                 if (selectedObject.isDice()) {
@@ -36175,7 +36188,7 @@ public class ChatActivity extends BaseFragment implements
                 }
                 final int finalTimestamp = timestamp;
                 boolean noforwards = isPeerNoForwards() || (messageObject != null && messageObject.messageOwner != null && messageObject.messageOwner.noforwards);
-                builder.setItems(noforwards ? new CharSequence[] {LocaleController.getString(R.string.Open)} : new CharSequence[]{LocaleController.getString(R.string.Open), LocaleController.getString(R.string.Copy)}, (dialog, which) -> {
+                builder.setItems(noforwards && !org.telegram.messenger.purple.PurpleCopyPolicy.unrestricted() ? new CharSequence[] {LocaleController.getString(R.string.Open)} : new CharSequence[]{LocaleController.getString(R.string.Open), LocaleController.getString(R.string.Copy)}, (dialog, which) -> {
                     if (which == 0) {
                         if (str.startsWith("video?")) {
                             didPressMessageUrl(url, false, messageObject, cell);
@@ -36549,7 +36562,7 @@ public class ChatActivity extends BaseFragment implements
         }
         boolean noforwards = isPeerNoForwards() || (messageObject != null && messageObject.messageOwner != null && messageObject.messageOwner.noforwards);
         if (url instanceof URLSpanMono) {
-            if (!noforwards || getDialogId() == UserObject.VERIFY) {
+            if (org.telegram.messenger.purple.PurpleCopyPolicy.unrestricted() || !noforwards || getDialogId() == UserObject.VERIFY) {
                 ((URLSpanMono) url).copyToClipboard();
                 UndoView undoView = getUndoView();
                 if (undoView != null) {
@@ -46314,6 +46327,7 @@ public class ChatActivity extends BaseFragment implements
             icons.add(R.drawable.outline_revert_24);
         }
         purple.relabelImport(message, items, options, OPTION_APPLY_LOCALIZATION_OR_THEME);
+        purple.addCopyOptions(message, groupedMessages, items, options, icons, OPTION_COPY);
     }
 
     private boolean showWelcomeMessageRevertOption(MessageObject messageObject) {

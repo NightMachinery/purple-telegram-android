@@ -1061,7 +1061,7 @@ public class MessageObject {
         }
 
         public void layoutCode(String lng, int codeLength, boolean noforwards) {
-            hasCodeCopyButton = codeLength >= 75 && !noforwards;
+            hasCodeCopyButton = codeLength >= 75 && (!noforwards || org.telegram.messenger.purple.PurpleCopyPolicy.unrestricted());
             if (hasCodeCopyButton) {
                 copyText = new Text(getString(R.string.CopyCode).toUpperCase(), SharedConfig.fontSize - 3, AndroidUtilities.bold());
                 copyIcon = ApplicationLoader.applicationContext.getResources().getDrawable(R.drawable.msg_copy).mutate();

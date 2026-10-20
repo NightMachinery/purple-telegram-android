@@ -1793,3 +1793,58 @@ uses the original getter. Missing or expired cached results under Local Premium
 remain absent; this is an intentional request omission, not cache clearing.
 Keep the original elapsedRealtime, absolute-difference and five-minute cache
 eligibility together with this removal hook when merging upstream.
+
+## Unrestricted copying and Copy as Markdown
+
+Purple allows local message copying in protected chats. Normal Copy and the new
+Copy as Markdown row are offered for available message text and captions, even
+when stock Telegram hides Copy. Text selection, multi-message copy and code-copy
+controls follow this policy. Forwarding flags and server permissions are not
+rewritten, and this does not reveal content that has not been received.
+
+Copy as Markdown exports the visible text, including an album caption or an
+opened transcription, into the plain-text clipboard. Supported Android text spans
+become bold, italic, strikethrough, links, inline/fenced code and blockquotes.
+Underline uses inline HTML; unsupported visual formatting, including custom emoji
+and spoiler presentation, keeps its visible text. Literal Markdown punctuation is
+escaped, code fences adapt to embedded backticks, and invalid ranges are ignored.
+Translation and restriction notices use the displayed text, not a hidden original.
+
+ChatActivity adds one menu and one dispatch hook through PurpleChatHooks, with
+small copy/selection policy calls. MessageObject delegates code-copy eligibility,
+and MessagePreviewView allows selection copying in protected previews.
+The exporter and menu logic live in PurpleMarkdown, PurpleMarkdownCopy and
+PurpleCopyPolicy. These copy hooks leave forwarding and screen-capture policy
+unchanged.
+
+Article Copy as Markdown exports the complete displayed article block tree,
+including closed details, nested/task lists, quote attributions, tables, code,
+math source and media captions/credits. Merged tables and complex ordered lists
+use escaped HTML when Markdown cannot represent them. Unavailable media retains
+an explicit label and any supplied external link; no download or cache-path URL
+is invented. Unknown blocks retain a visible placeholder.
+
+A partial article is resolved before copying. Translated partial articles use
+the displayed translation language; original and translated blocks are never
+mixed. Requests belong to the originating chat/account and are cancelled when
+the chat is destroyed or another Markdown copy starts. Deletion, replacement,
+account changes, errors and still-partial replies leave the clipboard unchanged.
+Album messages are composed together and copied only after every member is ready.
+The multi-message selection toolbar also has an **MD** action, labelled
+**Copy as Markdown** for accessibility. It preserves ordinary Copy alongside it,
+orders migrated messages before current messages using Telegram's existing
+message ordering, and resolves the complete selection before one clipboard
+write. Identical numeric IDs in the two histories remain separate messages.
+A received Markdown file's original source is distinct from reconstructed
+article Markdown.
+
+The pure structural writer is PurpleArticleMarkdown. PurpleRichMessageMarkdown
+adapts the received TL blocks without a UI layout; PurpleMarkdownCopy owns the
+menu and guarded asynchronous action. ChatActivity's added constructor supplier
+looks up the current primary/migrated message, keeping private maps private.
+
+Inline-code and fallback link copying use the unrestricted local-copy policy.
+Ordinary Markdown exports numeric and username mentions as Telegram links and
+preserves styles carried by browser URL spans. Production API compilation and
+host helpers do not establish native UI or clipboard acceptance; prepared cases
+remain in docs/peek-controls-markdown-cases.md.
