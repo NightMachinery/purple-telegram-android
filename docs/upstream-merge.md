@@ -598,10 +598,27 @@ while a full-page request is pending must not write stale clipboard content.
 The original Markdown file preview source is not a received-article source cache.
 
 
-### Selection Markdown
+### Peek controls and selection Markdown
 
 `ChatActivity` delegates one reserved selection action, its action-mode item and
 visibility updates to `PurpleChatHooks`. Keep the original Copy dispatch and its
 selection cleanup intact. Markdown selection uses the existing private-map
 lookup seam and per-chat resolver, with dialog ID plus message ID as identity.
 The MD label must not be mistaken for ordinary Copy during action-mode merges.
+
+`DialogsActivity` adds one `purple.addEndPeek(menu)` call immediately after the
+passcode item's accessibility label. `PurpleDialogsHooks` delegates this row to
+`PurplePeekControls`; the handler and visibility policy stay in Purple code.
+The existing passcode, search, profile and daily controls remain caller-owned.
+No LaunchActivity lifecycle hook is added: the Purple controller observes the
+owning activity's lifecycle and the existing global account-change event.
+
+`PurpleGate` notifies the controller after restored view filters are rebuilt,
+and cancels pending operations at preset/lock entry. Exit checks use the actual
+restored `shown`, `hiddenEverywhere`, archive and `reachableElsewhere` answers.
+The Java clock values and setting write bind the shared core's
+`PeekStartDelaySeconds`, `PeekExitHiddenChats` and `SetPeekStartDelay`; integrating
+the same core revision into Android is required before compilation. Do not add
+a Java TOML parser or a second delay preference.
+
+Focused qualification cases are in [Peek and Markdown cases](peek-controls-markdown-cases.md).

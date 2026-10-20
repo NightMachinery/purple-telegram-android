@@ -169,7 +169,7 @@ public final class PurplePresetPicker {
         // rather than on an edit, and the two the file cannot express because
         // they are decisions about right now. This is where someone would look
         // for them, next to the preset they act on.
-        addClockRows(activity, layout, resourcesProvider, state);
+        addClockRows(fragment, builder.getDismissRunnable(), activity, layout, resourcesProvider, state);
 
         // The file's problems, under the choices they explain. Until these were
         // shown, a preset that silently did nothing because of a mistyped list
@@ -241,7 +241,7 @@ public final class PurplePresetPicker {
      * file describes a schedule at all - a switch that holds off nothing
      * explains nothing.
      */
-    private static void addClockRows(Activity activity, LinearLayout layout,
+    private static void addClockRows(BaseFragment fragment, Runnable dismiss, Activity activity, LinearLayout layout,
             Theme.ResourcesProvider resourcesProvider, PurpleCore.Loaded state) {
         final boolean pausable = state.clock.scheduleConfigured;
 
@@ -319,7 +319,9 @@ public final class PurplePresetPicker {
                     // the file does not write it, resolved in the core. Read
                     // from the load every time rather than captured, so an edit
                     // to the file lands on the next tap.
-                    PurpleGate.startPeek(now.clock.peekTap);
+                    dismiss.run();
+                    PurplePeekControls.toggle(fragment, now.clock.peekTap);
+                    return;
                 } else {
                     PurpleGate.stopPeek();
                 }
@@ -367,8 +369,8 @@ public final class PurplePresetPicker {
             // Both call the same thing with the same number, so the two pictures
             // of one peek cannot come to disagree about what a length means.
             final Utilities.Callback<Integer> pick = seconds -> {
-                PurpleGate.startPeek(seconds);
-                restartTick(tick);
+                dismiss.run();
+                PurplePeekControls.start(fragment, seconds);
             };
             dial.setOnPick(pick);
             chips.setOnPick(pick);

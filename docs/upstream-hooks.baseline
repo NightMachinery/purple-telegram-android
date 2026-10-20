@@ -65,7 +65,7 @@ file TMessagesProj/src/main/java/org/telegram/ui/Components/SearchViewPager.java
 file TMessagesProj/src/main/java/org/telegram/ui/Components/ShareAlert.java 12 2 5
 file TMessagesProj/src/main/java/org/telegram/ui/Components/quickforward/QuickShareSelectorOverlayLayout.java 2 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/ContactsActivity.java 24 1 9
-file TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java 58 14 24
+file TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java 59 14 25
 file TMessagesProj/src/main/java/org/telegram/ui/FilterCreateActivity.java 1 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/FiltersSetupActivity.java 5 5 5
 file TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java 9 1 6

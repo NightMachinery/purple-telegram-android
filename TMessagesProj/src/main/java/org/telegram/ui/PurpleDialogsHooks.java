@@ -51,6 +51,10 @@ public final class PurpleDialogsHooks {
         PurpleSyncOffer.checkOnLaunch(fragment, fragment.getCurrentAccount());
     }
 
+    public void addEndPeek(org.telegram.ui.ActionBar.ActionBarMenu menu) {
+        PurplePeekControls.addEndButton(menu);
+    }
+
     public void addSelectionItem(ActionBarMenuItem otherItem) {
         workModeItem = otherItem.addSubItem(SELECTION_ID, R.drawable.msg_customize, LocaleController.getString(R.string.PurpleLists));
     }

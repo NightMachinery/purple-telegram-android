@@ -357,6 +357,34 @@ your hand is a longer look than a shortcut fired mid-sentence. Write
 `auto_off`, `hotkey` and `hotkey_length` are read and ignored here: the first
 two are what a keyboard taps for, and there is no key to bind on a phone.
 
+Global **Work Mode settings > Peek** contains **Start delay (seconds)** beside
+**Peek duration**, and **Exit hidden chats when peek ends**, enabled by default.
+The shared `[peek] start_delay_seconds` accepts a nonnegative integer. When it
+is absent Android waits ten seconds and desktop waits zero; an explicit zero
+wins on either client. These choices apply across presets.
+
+The row, chips and dial all open the same full-screen countdown, with large
+remaining seconds and an **Abort Peek** button. Chats stay hidden until the
+countdown completes; the requested Peek duration starts then. Back, another
+start/toggle, leaving the app, changing account or preset, or locking the app
+cancels a pending start. Pending countdowns are never restored after restart.
+Choosing a new duration while Peek is active ends that Peek before the new
+countdown. **End Peek** appears beside the chat-list lock only while Peek is
+active and no countdown is running; it ends Peek immediately.
+
+Changing the start delay itself waits for the longer of the old and new values.
+Abort leaves the old value intact, and applying the setting does not start Peek.
+The shared exit switch is `[peek] exit_hidden_chats_p`. When Peek actually ends,
+its enabled default closes the open conversation only when the restored view
+hides it, including its current overrides and reachable folder tabs. Turning the
+switch off leaves the conversation open. Visible chats and Normal stay open.
+
+The delay comes from the same fresh settings bytes that guard completion and
+setting changes. External changes cancel a pending operation; missing or unusable
+settings do not start Peek. Deliberate hidden-chat exit bypasses recent/open grace
+and prevents that close from granting fresh grace. Ordinary navigation retains its
+close buffer.
+
 Tapping the row starts a peek of `tap_mobile`, and **tapping it again ends it**,
 the way the desktop's checkbox does: a checkbox that will not uncheck is broken
 however good the reason. A **long press extends** the running peek by another

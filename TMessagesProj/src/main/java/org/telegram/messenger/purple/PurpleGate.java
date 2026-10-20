@@ -329,6 +329,38 @@ public final class PurpleGate {
         return known != null && known.equals(candidate);
     }
 
+    public static final class PeekSettings {
+        public final PurplePeekSnapshot snapshot;
+        public final PurpleCore.Loaded state;
+        public final int generation;
+
+        private PeekSettings(PurplePeekSnapshot snapshot, PurpleCore.Loaded state, int generation) {
+            this.snapshot = snapshot;
+            this.state = state;
+            this.generation = generation;
+        }
+    }
+
+    public static PeekSettings peekSettings() {
+        ensureLoaded();
+        PurplePeekSnapshot snapshot = PurplePeekSnapshot.read(
+                PurpleSettings.settingsFile(), (int) PurpleSettings.MAX_SIZE);
+        if (snapshot.status != PurplePeekSnapshot.Status.Present) return null;
+        byte[] bytes = snapshot.bytes();
+        if (!runningSettings(bytes) || loaded == null || !loaded.ok || usedLastGood) {
+            reload("peek settings", bytes);
+        }
+        PeekSettings result = new PeekSettings(snapshot, loaded, generation);
+        return currentPeekSettings(result) ? result : null;
+    }
+
+    public static boolean currentPeekSettings(PeekSettings settings) {
+        return settings != null && settings.state != null && settings.state.ok
+                && !usedLastGood && loaded == settings.state && generation == settings.generation
+                && runningSettings(settings.snapshot.bytes())
+                && settings.snapshot.matches(PurpleSettings.settingsFile());
+    }
+
     /** Loads settings.toml and state.toml once, the first time anyone asks. */
     public static void ensureLoaded() {
         if (everLoaded) {
@@ -362,7 +394,10 @@ public final class PurpleGate {
      * @param reason what asked for the reload, for the log line
      */
     public static void reload(String reason) {
-        final byte[] settings = readSettings();
+        reload(reason, readSettings());
+    }
+
+    private static void reload(String reason, byte[] settings) {
         final byte[] state = PurpleState.read();
 
         PurpleCore.Loaded next = load(settings, state);
@@ -415,6 +450,7 @@ public final class PurpleGate {
             PurpleSettings.writeAtomic(PurpleSettings.lastGoodFile(), settings);
         }
 
+        final PurpleCore.Loaded previous = loaded;
         loaded = next;
         // What the watcher compares the file against. Set from the bytes this
         // reload actually read, so the app's own write comes straight back as
@@ -439,6 +475,8 @@ public final class PurpleGate {
         refreshPeekTimer(next);
         refreshOverrideTimer(next);
         rebuildViewFilters(next);
+        final PurpleCore.Loaded updated = next;
+        AndroidUtilities.runOnUIThread(() -> org.telegram.ui.PurplePeekControls.onGateReload(previous, updated));
 
         if (next.normal) {
             FileLog.d("Purple: normal. (" + reason + ")");
@@ -525,11 +563,12 @@ public final class PurpleGate {
      *                arrive through the load.
      * @return what happened, so the caller can say which way it went
      */
-    public static PurpleCore.PeekChange startPeek(int seconds) {
-        ensureLoaded();
+    public static PurpleCore.PeekChange startPeek(int seconds, PeekSettings settings) {
+        if (!currentPeekSettings(settings)) return null;
         final PurpleCore.PeekChange change =
                 PurpleCore.startPeek(PurpleState.read(), seconds);
-        if (change.text != null && PurpleState.write(change.text.getBytes(UTF_8))) {
+        if (currentPeekSettings(settings) && change.text != null
+                && PurpleState.write(change.text.getBytes(UTF_8))) {
             reload("peek");
         }
         return change;
@@ -587,6 +626,7 @@ public final class PurpleGate {
      * is the answer, not a guess at what the user meant.
      */
     public static void locked() {
+        org.telegram.ui.PurplePeekControls.cancel();
         if (!peeking()) {
             // A volatile read of the last load, and deliberately not
             // ensureLoaded(): nothing is peeking, so there is nothing to end,
@@ -681,6 +721,7 @@ public final class PurpleGate {
      * @return whether the choice reached state.toml
      */
     public static boolean setPreset(String presetOrNull) {
+        org.telegram.ui.PurplePeekControls.cancel();
         final String text;
         try {
             text = PurpleCore.setPreset(PurpleState.read(), presetOrNull);
@@ -784,6 +825,14 @@ public final class PurpleGate {
      * See docs/purple/work_mode.md, "Saved Messages has no exemption".
      */
     public static boolean shown(int currentAccount, TLRPC.Dialog dialog) {
+        return shown(currentAccount, dialog, true);
+    }
+
+    public static boolean shownWithoutRecent(int currentAccount, TLRPC.Dialog dialog) {
+        return shown(currentAccount, dialog, false);
+    }
+
+    private static boolean shown(int currentAccount, TLRPC.Dialog dialog, boolean includeRecent) {
         if (!filtering || dialog == null) {
             return true;
         }
@@ -794,7 +843,8 @@ public final class PurpleGate {
         }
         // A decision made about this one chat, which outranks the preset for as
         // long as it lasts.
-        switch (byHand(currentAccount, dialog.id, true)) {
+        switch (includeRecent ? byHand(currentAccount, dialog.id, true)
+                : overrideFor(currentAccount, dialog.id)) {
         case PurpleCore.OVERRIDE_SHOW: return true;
         case PurpleCore.OVERRIDE_HIDE: return false;
         default: break;
@@ -914,6 +964,15 @@ public final class PurpleGate {
      * mentions either of these costs.
      */
     public static boolean hiddenEverywhere(int currentAccount, TLRPC.Dialog dialog) {
+        return hiddenEverywhere(currentAccount, dialog, true);
+    }
+
+    public static boolean hiddenEverywhereWithoutRecent(int currentAccount, TLRPC.Dialog dialog) {
+        return hiddenEverywhere(currentAccount, dialog, false);
+    }
+
+    private static boolean hiddenEverywhere(
+            int currentAccount, TLRPC.Dialog dialog, boolean includeRecent) {
         if (!filtering || dialog == null) {
             return false;
         }
@@ -930,10 +989,11 @@ public final class PurpleGate {
         if (DialogObject.isFolderDialogId(dialog.id)) {
             return false;
         }
-        if (scope && byHand(currentAccount, dialog.id, true) == PurpleCore.OVERRIDE_HIDE) {
+        if (scope && (includeRecent ? byHand(currentAccount, dialog.id, true)
+                : overrideFor(currentAccount, dialog.id)) == PurpleCore.OVERRIDE_HIDE) {
             return true;
         }
-        return current.hideEverywhere && !shown(currentAccount, dialog);
+        return current.hideEverywhere && !shown(currentAccount, dialog, includeRecent);
     }
 
     /**

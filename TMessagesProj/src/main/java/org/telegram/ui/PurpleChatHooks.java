@@ -371,6 +371,7 @@ final class PurpleChatHooks {
      * the first resume the translate-availability log line.
      */
     void onResume() {
+        PurplePeekControls.chatResumed(chat);
         screenTime.onResume();
         if (!resumed) {
             resumed = true;
@@ -384,6 +385,7 @@ final class PurpleChatHooks {
     }
 
     void onDestroy() {
+        PurplePeekControls.chatDestroyed(chat);
         markdownCopy.onDestroy();
         if (pinnedMusicBar != null) {
             pinnedMusicBar.unbind();

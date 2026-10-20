@@ -61,6 +61,21 @@ public final class PurpleWriter {
         return null;
     }
 
+    public static String setPeekStartDelay(PurpleGate.PeekSettings settings, int seconds) {
+        if (!PurpleGate.currentPeekSettings(settings)) return "settings.toml changed";
+        PurpleCore.SpliceResult result = PurpleCore.setPeekStartDelay(settings.snapshot.bytes(), seconds);
+        if (result == null) return "no result from the core";
+        if (!result.ok()) return result.error;
+        if (!PurpleGate.currentPeekSettings(settings)) return "settings.toml changed";
+        if (!result.changed || result.text == null) return null;
+        if (!settings.snapshot.replace(PurpleSettings.settingsFile(), result.text.getBytes(UTF_8))) {
+            return "settings.toml changed or could not be written";
+        }
+        PurpleGate.reload("peek start delay");
+        PurpleSync.afterWrite("peek start delay", false);
+        return null;
+    }
+
     /**
      * Sets one boolean under one table - the Premium switch, the suggestions
      * flag, the schedule's own.

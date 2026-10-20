@@ -562,4 +562,16 @@
     <string name="PurpleSyncRestoreQuestion">Replace settings.toml with the version from %1$s? The current file is kept in History. The change stays on this device until you publish it.</string>
     <string name="PurpleCopyAsMarkdown">Copy as Markdown</string>
     <string name="PurpleMarkdownShort">MD</string>
+    <string name="PurplePeekHeader">Peek</string>
+    <string name="PurplePeekDuration">Peek duration</string>
+    <string name="PurplePeekStartDelay">Start delay (seconds)</string>
+    <string name="PurplePeekSeconds">%1$d s</string>
+    <string name="PurplePeekExitHiddenChats">Exit hidden chats when peek ends</string>
+    <string name="PurplePeekSettingsInfo">Peek settings apply across Work Mode presets. Starting Peek shows a full-screen countdown before chats are revealed.</string>
+    <string name="PurplePeekDelayInfo">Changing this delay waits for the longer of the old and new delays. Abort preserves the old value. Saving this setting does not start Peek.</string>
+    <string name="PurplePeekInvalidDelay">Enter a whole number of seconds, zero or greater.</string>
+    <string name="PurplePeekStarting">Starting Peek</string>
+    <string name="PurplePeekChangingDelay">Changing Peek delay</string>
+    <string name="PurpleAbortPeek">Abort Peek</string>
+    <string name="PurpleEndPeek">End Peek</string>
 </resources>

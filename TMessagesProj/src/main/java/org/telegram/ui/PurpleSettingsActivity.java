@@ -84,6 +84,9 @@ public class PurpleSettingsActivity extends UniversalFragment
     private static final int ROW_SCREEN_TIME = 17;
     private static final int ROW_LAST_SEEN_SKIP_CONFIRMATION = 18;
     private static final int ROW_SYNC = 19;
+    private static final int ROW_PEEK_DURATION = 20;
+    private static final int ROW_PEEK_DELAY = 21;
+    private static final int ROW_PEEK_EXIT = 22;
 
     /**
      * Where the trade log's rows start numbering.
@@ -167,6 +170,17 @@ public class PurpleSettingsActivity extends UniversalFragment
                         listView.adapter.update(true);
                     }
                 })));
+
+        items.add(UItem.asHeader(getString(R.string.PurplePeekHeader)));
+        items.add(UItem.asButton(ROW_PEEK_DURATION, getString(R.string.PurplePeekDuration),
+                state == null || state.clock.peekTap == 0 ? getString(R.string.PurplePeekChipUntilStop)
+                        : formatString(R.string.PurplePeekSeconds, state.clock.peekTap)));
+        items.add(UItem.asButton(ROW_PEEK_DELAY, getString(R.string.PurplePeekStartDelay),
+                formatString(R.string.PurplePeekSeconds, state == null ? 10 : state.clock.peekStartDelay)));
+        UItem exitHidden = UItem.asCheck(ROW_PEEK_EXIT, getString(R.string.PurplePeekExitHiddenChats));
+        exitHidden.checked = state == null || state.clock.peekExitHiddenChats;
+        items.add(exitHidden);
+        items.add(UItem.asShadow(getString(R.string.PurplePeekSettingsInfo)));
 
         final UItem premium = UItem.asCheck(ROW_PREMIUM, getString(R.string.PurplePremiumLocal));
         // From the file, never from a preference: this client is the only thing
@@ -363,6 +377,15 @@ public class PurpleSettingsActivity extends UniversalFragment
     @Override
     protected void onClick(UItem item, View view, int position, float x, float y) {
         switch (item.id) {
+        case ROW_PEEK_DURATION:
+            PurplePresetPicker.show(this);
+            break;
+        case ROW_PEEK_DELAY:
+            editPeekDelay();
+            break;
+        case ROW_PEEK_EXIT:
+            write(PurpleWriter.setTableBool("peek", "exit_hidden_chats_p", !item.checked, "peek exit switch"));
+            break;
         case ROW_PRESET:
             PurplePresetPicker.show(this);
             break;
@@ -469,6 +492,35 @@ public class PurpleSettingsActivity extends UniversalFragment
      * An empty name writes an empty label rather than removing the line, which
      * the core and this screen both read as no name at all.
      */
+    private void editPeekDelay() {
+        Activity activity = getParentActivity();
+        PurpleCore.Loaded state = PurpleGate.state();
+        if (activity == null || state == null) return;
+        EditTextBoldCursor field = new EditTextBoldCursor(activity);
+        field.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+        field.setTextColor(Theme.getColor(Theme.key_dialogTextBlack));
+        field.setSingleLine(true);
+        field.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        field.setPadding(AndroidUtilities.dp(20), 0, AndroidUtilities.dp(20), 0);
+        field.setText(String.valueOf(state.clock.peekStartDelay));
+        field.selectAll();
+        AlertDialog.Builder builder = new AlertDialog.Builder(activity);
+        builder.setTitle(getString(R.string.PurplePeekStartDelay));
+        builder.setMessage(getString(R.string.PurplePeekDelayInfo));
+        builder.setView(field);
+        builder.setPositiveButton(getString(R.string.Save), (dialog, which) -> {
+            String value = field.getText().toString().trim();
+            try {
+                if (!value.matches("[0-9]+")) throw new NumberFormatException();
+                PurplePeekControls.changeDelay(this, Integer.parseInt(value));
+            } catch (NumberFormatException e) {
+                write(getString(R.string.PurplePeekInvalidDelay));
+            }
+        });
+        builder.setNegativeButton(getString(R.string.Cancel), null);
+        showDialog(builder.create());
+    }
+
     private void nameDevice() {
         final Activity activity = getParentActivity();
         if (activity == null) {

@@ -1306,6 +1306,10 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 	// the `tap'-else-`auto_off' a keyboard gets. Nothing downstream picks a
 	// length of its own - Java is handed the resolved number and shows it.
 	// Zero is a real answer here: a tap that starts a peek with no clock.
+	json += QStringLiteral(",\"peekStartDelay\":");
+	json += QString::number(Purple::PeekStartDelaySeconds(gate.settings, gate.device));
+	json += QStringLiteral(",\"peekExitHiddenChats\":");
+	AppendJsonBool(json, Purple::PeekExitHiddenChats(gate.settings));
 	json += QStringLiteral(",\"peekTap\":");
 	json += QString::number(
 		Purple::PeekTapSeconds(gate.settings, gate.device));
@@ -2278,6 +2282,22 @@ Java_org_telegram_messenger_purple_PurpleCore_addListNative(
 		QStringLiteral("settings.toml"),
 		FromJava(env, name),
 		FromJava(env, title))));
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_setPeekStartDelayNative(
+		JNIEnv *env,
+		jclass,
+		jbyteArray settingsUtf8,
+		jint seconds) {
+	auto text = QString();
+	if (!ReadUtf8(env, settingsUtf8, text)) {
+		return nullptr;
+	}
+	return ToJava(env, SpliceJson(Purple::SetPeekStartDelay(
+		text,
+		QStringLiteral("settings.toml"),
+		int(seconds))));
 }
 
 // One boolean under one table - the Premium switch and the two Work Mode flags

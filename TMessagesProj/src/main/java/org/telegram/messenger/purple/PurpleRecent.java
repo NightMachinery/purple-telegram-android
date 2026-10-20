@@ -54,9 +54,6 @@ public final class PurpleRecent {
      */
     private static volatile boolean active;
 
-    private static volatile long openedDialogId;
-    private static volatile int openedAccount = -1;
-
     /**
      * Whether the open chat's grace will apply when it closes.
      *
@@ -66,7 +63,7 @@ public final class PurpleRecent {
      * close it, "was it in the view" has become "was it in the view before I
      * read it", which is a question nothing can answer afterwards.
      */
-    private static volatile boolean openedEligible;
+    private static final PurpleRecentOpen opened = new PurpleRecentOpen();
 
     private static final Runnable SWEEP = PurpleRecent::sweep;
 
@@ -80,8 +77,8 @@ public final class PurpleRecent {
      */
     public static void setOpened(int currentAccount, long dialogId) {
         final int seconds = staySeconds();
-        final long wasId = openedDialogId;
-        final int wasAccount = openedAccount;
+        final long wasId = opened.dialogId;
+        final int wasAccount = opened.account;
         boolean changed = false;
 
         if (wasId != 0 && (wasId != dialogId || wasAccount != currentAccount)) {
@@ -89,7 +86,7 @@ public final class PurpleRecent {
             // difference between a setting that works and one that does not:
             // reading something for five minutes must not burn the grace before
             // you have finished with it.
-            if (openedEligible && seconds > 0) {
+            if (opened.close(wasAccount, wasId) && seconds > 0) {
                 synchronized (grace) {
                     drop(wasAccount, wasId);
                     grace.add(new Grace(wasAccount, wasId,
@@ -97,9 +94,6 @@ public final class PurpleRecent {
                 }
                 changed = true;
             }
-            openedDialogId = 0;
-            openedAccount = -1;
-            openedEligible = false;
         }
 
         if (dialogId != 0 && (wasId != dialogId || wasAccount != currentAccount)) {
@@ -112,9 +106,7 @@ public final class PurpleRecent {
             // asks the chat list, which asks back here - sees this chat as not
             // open rather than as trivially shown by its own grace.
             final boolean eligible = seconds > 0 && eligible(currentAccount, dialogId);
-            openedDialogId = dialogId;
-            openedAccount = currentAccount;
-            openedEligible = eligible;
+            opened.set(currentAccount, dialogId, eligible);
             changed = true;
         }
 
@@ -128,6 +120,16 @@ public final class PurpleRecent {
         }
     }
 
+    public static void suppressForPeekExit(int account, long dialogId) {
+        opened.suppress(account, dialogId);
+        synchronized (grace) {
+            drop(account, dialogId);
+        }
+        refreshActive();
+        arm();
+        PurpleGate.refreshLists();
+    }
+
     /**
      * Whether this chat is in the view because you were recently looking at it.
      *
@@ -138,10 +140,10 @@ public final class PurpleRecent {
         if (!active || staySeconds() <= 0) {
             return false;
         }
-        if (dialogId == openedDialogId && currentAccount == openedAccount) {
+        if (dialogId == opened.dialogId && currentAccount == opened.account) {
             // Open right now: it stays regardless, and it is not counting down
             // yet - the clock starts when you stop looking at it.
-            return openedEligible;
+            return opened.eligible;
         }
         final long now = SystemClock.elapsedRealtime();
         synchronized (grace) {
@@ -167,7 +169,7 @@ public final class PurpleRecent {
         if (!active) {
             return 0;
         }
-        if (dialogId == openedDialogId && currentAccount == openedAccount) {
+        if (dialogId == opened.dialogId && currentAccount == opened.account) {
             return 0;
         }
         synchronized (grace) {
@@ -229,7 +231,7 @@ public final class PurpleRecent {
     /** Recomputes the fast-path flag from what is actually outstanding. */
     private static void refreshActive() {
         synchronized (grace) {
-            active = openedDialogId != 0 || !grace.isEmpty();
+            active = opened.dialogId != 0 || !grace.isEmpty();
         }
     }
 
