@@ -164,7 +164,7 @@ final class PurpleChatHooks {
         final ActionBarMenuItem headerItem = chat.getHeaderItem();
         if (headerItem.hasSubItem(PEEK_LAST_SEEN)) {
             headerItem.setSubItemShown(
-                    PEEK_LAST_SEEN, PurpleLastSeen.peekEligible(lastSeenPeekUser()));
+                    PEEK_LAST_SEEN, PurpleLastSeen.peekEligible(chat.getCurrentAccount(), lastSeenPeekUser()));
         }
         updateKeepMediaItem();
     }
@@ -193,7 +193,7 @@ final class PurpleChatHooks {
         headerItem.lazilyAddSubItem(PEEK_LAST_SEEN, R.drawable.msg_view_file,
                 getString(R.string.PurplePeekAction));
         headerItem.setSubItemShown(
-                PEEK_LAST_SEEN, PurpleLastSeen.peekEligible(lastSeenPeekUser()));
+                PEEK_LAST_SEEN, PurpleLastSeen.peekEligible(chat.getCurrentAccount(), lastSeenPeekUser()));
     }
 
     /**

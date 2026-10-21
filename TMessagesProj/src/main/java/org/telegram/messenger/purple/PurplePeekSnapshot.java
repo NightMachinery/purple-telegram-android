@@ -20,6 +20,11 @@ public final class PurplePeekSnapshot {
         this.maxBytes = maxBytes;
     }
 
+    static PurplePeekSnapshot captured(byte[] bytes, int maxBytes) {
+        return new PurplePeekSnapshot(bytes == null ? Status.Missing : Status.Present,
+                bytes == null ? null : bytes.clone(), maxBytes);
+    }
+
     public static PurplePeekSnapshot read(File file, int maxBytes) {
         try {
             if (!file.exists()) return new PurplePeekSnapshot(Status.Missing, null, maxBytes);

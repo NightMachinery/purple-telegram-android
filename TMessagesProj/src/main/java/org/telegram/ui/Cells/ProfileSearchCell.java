@@ -658,7 +658,7 @@ public class ProfileSearchCell extends BaseCell implements NotificationCenter.No
                         isOnline = new boolean[1];
                     }
                     isOnline[0] = false;
-                    statusString = org.telegram.messenger.purple.PurpleLastSeen.decorate(user, LocaleController.formatUserStatus(currentAccount, user, isOnline));
+                    statusString = org.telegram.messenger.purple.PurpleLastSeen.decorate(currentAccount, user, LocaleController.formatUserStatus(currentAccount, user, isOnline));
                     if (isOnline[0]) {
                         currentStatusPaint = Theme.dialogs_onlinePaint;
                     }

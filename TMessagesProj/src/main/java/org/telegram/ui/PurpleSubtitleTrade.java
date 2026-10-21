@@ -23,13 +23,13 @@ public final class PurpleSubtitleTrade {
         userId = 0;
     }
 
-    public CharSequence decorate(TLRPC.User user, CharSequence status) {
+    public CharSequence decorate(int account, TLRPC.User user, CharSequence status) {
         final int width = container.getMeasuredWidth();
         final int availableWidth = width > 0
                 ? width - dp((container.getAvatarImageView().getVisibility() == View.VISIBLE ? 54 : 0) + 16)
                 : 0;
-        final CharSequence decorated = PurpleLastSeen.decorate(user, status, availableWidth);
-        userId = PurpleLastSeen.tappable(user) ? user.id : 0;
+        final CharSequence decorated = PurpleLastSeen.decorate(account, user, status, availableWidth);
+        userId = PurpleLastSeen.tappable(account, user) ? user.id : 0;
         return decorated;
     }
 

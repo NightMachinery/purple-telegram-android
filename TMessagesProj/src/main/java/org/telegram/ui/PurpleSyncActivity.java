@@ -77,12 +77,12 @@ public class PurpleSyncActivity extends UniversalFragment {
     public boolean onFragmentCreate() {
         final UserConfig config = UserConfig.getInstance(currentAccount);
         final long userId = config.isClientActivated() ? config.getClientUserId() : 0;
-        if (userId > 0) {
+        if (userId > 0 && org.telegram.messenger.purple.PurpleAccountOwner.legacyOperation(currentAccount)) {
             runner = new PurpleSyncRunner(currentAccount,
                     new PurpleSyncTelegramTransport(currentAccount, userId));
             status = getString(R.string.PurpleSyncReady);
         } else {
-            status = getString(R.string.PurpleSyncSignIn);
+            status = getString(R.string.PurpleAccountWriteHeld);
         }
         return super.onFragmentCreate();
     }

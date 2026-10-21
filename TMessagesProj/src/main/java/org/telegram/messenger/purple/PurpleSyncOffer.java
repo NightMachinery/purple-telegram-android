@@ -173,6 +173,8 @@ public final class PurpleSyncOffer {
     }
 
     private static boolean show(BaseFragment fragment, int account, TLRPC.Message message) {
+        final PurpleAccountFiles.Identity origin = PurpleAccountFiles.capture(account);
+        if (origin == null || !PurpleAccountOwner.legacyOperation(account)) return false;
         final String from = PurpleSettings.accountLabel(account);
         if (from == null || !BulletinFactory.canShowBulletin(fragment)) {
             return false;
@@ -188,7 +190,7 @@ public final class PurpleSyncOffer {
                         LocaleController.formatString(R.string.PurpleSyncOfferFrom,
                                 from, LocaleController.formatDateTime(message.date, true)),
                         LocaleController.getString(R.string.Import),
-                        () -> startImport(fragment, account, message))
+                        () -> { if (origin.current()) startImport(fragment, account, message); })
                 .show();
         return true;
     }
@@ -210,6 +212,8 @@ public final class PurpleSyncOffer {
     }
 
     private static void search(int account, String query, Found callback) {
+        final PurpleAccountFiles.Identity origin = PurpleAccountFiles.capture(account);
+        if (origin == null || !PurpleAccountOwner.legacyOperation(account)) { callback.run(null); return; }
         final TLRPC.TL_messages_search req = new TLRPC.TL_messages_search();
         req.peer = MessagesController.getInstance(account).getInputPeer(UserConfig.getInstance(account).getClientUserId());
         req.q = query;
@@ -220,6 +224,7 @@ public final class PurpleSyncOffer {
             return;
         }
         ConnectionsManager.getInstance(account).sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+            if (!origin.current() || !PurpleAccountOwner.legacyOperation(account)) { callback.run(null); return; }
             if (error != null || !(response instanceof TLRPC.messages_Messages)) {
                 // Nothing about this is worth a dialog: the user did not ask for
                 // it and the manual import is still there.
@@ -316,6 +321,7 @@ public final class PurpleSyncOffer {
     }
 
     private static void startImport(BaseFragment fragment, int account, TLRPC.Message message) {
+        if (!PurpleAccountOwner.legacyOperation(account)) return;
         // Again after the choice. The id is already down from the line above;
         // repeating it here keeps the record beside the decision it records,
         // so neither half can be moved without the other being noticed.
@@ -349,6 +355,7 @@ public final class PurpleSyncOffer {
         private final int account;
         private final TLRPC.Message message;
         private final Runnable giveUp;
+        private final PurpleAccountFiles.Identity origin;
         private String fileName;
         private boolean finished;
 
@@ -356,10 +363,12 @@ public final class PurpleSyncOffer {
             this.fragment = fragment;
             this.account = account;
             this.message = message;
+            this.origin = PurpleAccountFiles.capture(account);
             this.giveUp = () -> finish(null);
         }
 
         void start(TLRPC.Document document) {
+            if (origin == null || !origin.current() || !PurpleAccountOwner.legacyOperation(account)) return;
             fileName = FileLoader.getAttachFileName(document);
             final NotificationCenter center = NotificationCenter.getInstance(account);
             center.addObserver(this, NotificationCenter.fileLoaded);
@@ -396,6 +405,7 @@ public final class PurpleSyncOffer {
             center.removeObserver(this, NotificationCenter.fileLoaded);
             center.removeObserver(this, NotificationCenter.fileLoadFailed);
 
+            if (origin == null || !origin.current() || !PurpleAccountOwner.legacyOperation(account)) return;
             if (file == null || !file.exists()) {
                 file = FileLoader.getInstance(account).getPathToMessage(message);
             }

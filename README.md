@@ -1876,3 +1876,9 @@ Ordinary Markdown exports numeric and username mentions as Telegram links and
 preserves styles carried by browser URL spans. Production API compilation and
 host helpers do not establish native UI or clipboard acceptance; prepared cases
 remain in docs/peek-controls-markdown-cases.md.
+
+### Account settings foundation
+
+The source-only M2 candidate and its held surfaces are described in
+[docs/account-settings-m2.md](docs/account-settings-m2.md). It requires separate
+Java/JNI qualification and independent review before integration.

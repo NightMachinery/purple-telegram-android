@@ -95,7 +95,25 @@ public final class PurpleSyncSettingsFile {
     }
 
     public static Contents read() {
-        return read(PurpleSettings.settingsFile(), PurpleSettings.lastGoodFile());
+        if (!PurpleAccountOwner.legacyOperation(org.telegram.messenger.UserConfig.selectedAccount)) return invalid();
+        Contents result = read(PurpleSettings.settingsFile(), PurpleSettings.lastGoodFile());
+        if (result.status == Status.Present && !legacy(result.bytes)) return invalid();
+        return result;
+    }
+
+    static Contents read(PurpleSyncFileContext context) {
+        if (context == null || !context.current()) return invalid();
+        Contents result = read(context.files.settings, context.files.good);
+        if (!context.current() || (result.status == Status.Present && !legacy(result.bytes))) return invalid();
+        return result;
+    }
+
+    static WriteResult replace(PurpleSyncFileContext context, Contents expected, byte[] bytes,
+            String reason, boolean fromImport) {
+        if (context == null || !context.editable() || !legacy(bytes)) return new WriteResult(WriteStatus.Changed, null);
+        return replace(context.files.settings, context.files.good, expected, bytes, reason,
+                fromImport, (text, why, imported) -> context.editable()
+                        && PurpleSettings.storeForSync(context, expected, text, why, imported));
     }
 
     static Contents read(File file, File lastGood) {
@@ -121,12 +139,16 @@ public final class PurpleSyncSettingsFile {
      */
     public static WriteResult write(byte[] bytes, String reason,
             boolean fromImport) {
+        if (!PurpleAccountOwner.legacyOperation(org.telegram.messenger.UserConfig.selectedAccount)
+                || !legacy(bytes)) return new WriteResult(WriteStatus.WriteFailed, null);
         return write(PurpleSettings.settingsFile(), bytes, reason, fromImport,
                 PurpleSettings::storeForSync);
     }
 
     public static WriteResult replace(Contents expected, byte[] bytes,
             String reason, boolean fromImport) {
+        if (!PurpleAccountOwner.legacyOperation(org.telegram.messenger.UserConfig.selectedAccount)
+                || !legacy(bytes)) return new WriteResult(WriteStatus.WriteFailed, null);
         return replace(PurpleSettings.settingsFile(),
                 PurpleSettings.lastGoodFile(), expected, bytes, reason,
                 fromImport, PurpleSettings::storeForSync);
@@ -200,6 +222,12 @@ public final class PurpleSyncSettingsFile {
         return new Contents(Status.Invalid, new byte[0]);
     }
 
+    private static boolean legacy(byte[] text) {
+        if (text == null) return false;
+        try { PurpleCore.ParseResult parsed = PurpleCore.parse(text); return parsed.ok && parsed.version <= 1; }
+        catch (RuntimeException | UnsatisfiedLinkError e) { return false; }
+    }
+
     private static boolean loads(byte[] text) {
         if (text == null) {
             return false;
@@ -213,13 +241,6 @@ public final class PurpleSyncSettingsFile {
     }
 
     private static byte[] readLastGood(File file) {
-        if (!file.exists() || file.length() > PurpleSettings.MAX_SIZE) {
-            return null;
-        }
-        try {
-            return PurpleSettings.readAll(file);
-        } catch (IOException e) {
-            return null;
-        }
+        return PurpleAccountFileSnapshot.read(file).bytes;
     }
 }

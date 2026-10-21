@@ -351,8 +351,10 @@ public final class PurpleSyncApply {
         }
     }
 
-    static RestoreResult restore(PurpleSyncRunner.Env env, String id,
+    static RestoreResult restore(PurpleSyncRunner.Session session, String id,
             PurpleSyncHistory.Reason reason) {
+        if (session == null || !session.available()) return restored(PurpleSyncCore.RestoreStatus.WriteError);
+        final PurpleSyncRunner.Env env = session.env;
         if (reason != PurpleSyncHistory.Reason.BeforeRestore
                 && reason != PurpleSyncHistory.Reason.BeforeUndo) {
             return restored(PurpleSyncCore.RestoreStatus.InvalidReason);
@@ -386,7 +388,7 @@ public final class PurpleSyncApply {
                     entry.fingerprint);
         }
         final boolean undo = reason == PurpleSyncHistory.Reason.BeforeUndo;
-        final Written write = writeWithHistory(env, null, local, text,
+        final Written write = writeWithHistory(env, session, local, text,
                 entry.fingerprint, reason, entry.id, "", id, false,
                 undo ? REASON_UNDO : REASON_RESTORE);
         switch (write.status) {
@@ -517,8 +519,12 @@ public final class PurpleSyncApply {
                 || !fingerprint.equals(PurpleSyncCore.settingsFingerprint(text))
                 || !PurpleSyncCore.isSettingsTextWritable(text)) {
             return result;
-        } else if (account != null && !account.available()) {
+        } else if (account != null && !account.writable()) {
             result.status = PurpleSyncCore.ApplyStatus.AccountUnavailable;
+            return result;
+        }
+        if (current == null || !env.readSettings().sameAs(current)) {
+            result.status = PurpleSyncCore.ApplyStatus.NeedsRecheck;
             return result;
         }
         final boolean existed =
@@ -532,7 +538,7 @@ public final class PurpleSyncApply {
         result.historyId = saved.id;
         result.restorable = saved.existed
                 && PurpleSyncCore.isSettingsTextWritable(current.bytes);
-        if (account != null && !account.available()) {
+        if (account != null && !account.writable()) {
             result.status = PurpleSyncCore.ApplyStatus.AccountUnavailable;
             return result;
         }

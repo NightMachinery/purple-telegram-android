@@ -469,7 +469,7 @@ public class GroupCreateUserCell extends FrameLayout {
                         } else {
                             statusTextView.setTag(Theme.key_windowBackgroundWhiteGrayText);
                             statusTextView.setTextColor(Theme.getColor(forceDarkTheme ? Theme.key_voipgroup_lastSeenText : Theme.key_windowBackgroundWhiteGrayText, resourcesProvider));
-                            statusTextView.setText(org.telegram.messenger.purple.PurpleLastSeen.decorate(currentUser, LocaleController.formatUserStatus(currentAccount, currentUser)));
+                            statusTextView.setText(org.telegram.messenger.purple.PurpleLastSeen.decorate(currentAccount, currentUser, LocaleController.formatUserStatus(currentAccount, currentUser)));
                         }
                     }
                     statusTextView.setEmojiColor(statusTextView.getTextColor());

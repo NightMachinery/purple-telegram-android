@@ -11391,9 +11391,9 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             } else {
                 isOnline[0] = false;
                 newString2 = LocaleController.formatUserStatus(currentAccount, user, isOnline, shortStatus ? new boolean[1] : null);
-                newString2 = PurpleLastSeenTrade.decorateProfile(user, newString2);
-                hiddenStatusButton = PurpleLastSeenTrade.eligible(user);
-                PurpleLastSeenTrade.syncMenu(otherItem, user);
+                newString2 = PurpleLastSeenTrade.decorateProfile(currentAccount, user, newString2);
+                hiddenStatusButton = PurpleLastSeenTrade.eligible(currentAccount, user);
+                PurpleLastSeenTrade.syncMenu(otherItem, currentAccount, user);
                 if (onlineTextView[1] != null && !mediaHeaderVisible) {
                     int key = isOnline[0] && peerColor == null ? Theme.key_profile_status : Theme.key_actionBarDefaultSubtitle;
                     onlineTextView[1].setTag(key);
@@ -12122,7 +12122,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 }
                 selfUser = true;
             } else {
-                PurpleLastSeenTrade.addMenu(otherItem, user);
+                PurpleLastSeenTrade.addMenu(otherItem, currentAccount, user);
                 if (user.bot && user.bot_can_edit) {
                     editItemVisible = true;
                 }

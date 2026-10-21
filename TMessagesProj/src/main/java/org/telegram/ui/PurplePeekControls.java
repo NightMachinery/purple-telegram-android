@@ -113,7 +113,8 @@ public final class PurplePeekControls {
             return;
         }
         PurpleGate.PeekSettings settings = PurpleGate.peekSettings();
-        if (settings == null || settings.state.clock.peekStartDelay == seconds || pending != null) return;
+        if (settings == null || !PurpleGate.currentPeekEditSettings(settings)
+                || settings.state.clock.peekStartDelay == seconds || pending != null) return;
         begin(fragment, 0, seconds, settings);
     }
 
@@ -177,7 +178,7 @@ public final class PurplePeekControls {
         final WeakReference<Activity> activity;
         final View fragmentView;
         final int account;
-        final long userId;
+        final org.telegram.messenger.purple.PurpleAccountFiles.Identity identity;
         final String preset;
         final boolean normal;
         final int generation;
@@ -195,7 +196,7 @@ public final class PurplePeekControls {
             activity = new WeakReference<>(fragment.getParentActivity());
             fragmentView = fragment.getFragmentView();
             account = fragment.getCurrentAccount();
-            userId = UserConfig.getInstance(account).getClientUserId();
+            identity = org.telegram.messenger.purple.PurpleAccountFiles.capture(account);
             PurpleCore.Loaded state = settings.state;
             preset = state.preset;
             normal = state.normal;
@@ -217,8 +218,7 @@ public final class PurplePeekControls {
                     && fragmentView != null && fragment.getFragmentView() == fragmentView && fragmentView.isAttachedToWindow()
                     && isCurrent(fragment)
                     && account == UserConfig.selectedAccount && fragment.getCurrentAccount() == account
-                    && UserConfig.getInstance(account).isClientActivated()
-                    && UserConfig.getInstance(account).getClientUserId() == userId
+                    && identity != null && identity.current()
                     && state != null && state.normal == normal && Objects.equals(state.preset, preset)
                     && PurpleGate.generation() == generation && state == settings.state;
         }
@@ -306,7 +306,7 @@ public final class PurplePeekControls {
             PurpleGate.PeekSettings refreshed = PurpleGate.peekSettings();
             if (pending != this) return;
             if (!valid() || refreshed == null || !PurpleGate.currentPeekSettings(settings)
-                    || !settings.snapshot.sameAs(refreshed.snapshot)) {
+                    || !PurpleGate.samePeekSettings(settings, refreshed)) {
                 cancelIfCurrent();
                 return;
             }

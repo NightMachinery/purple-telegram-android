@@ -1,114 +1,74 @@
-/*
- * This is the source code of Purple Telegram for Android.
- *
- * Reloads settings.toml when it changes on disk, so an edit lands without a
- * restart. The desktop fork's purple_config.cpp does the same job with a
- * QFileSystemWatcher; this is that, in Android's shape.
- */
-
 package org.telegram.messenger.purple;
 
 import android.os.FileObserver;
-
 import org.telegram.messenger.AndroidUtilities;
-import org.telegram.messenger.FileLog;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 
 public final class PurpleWatcher {
-
-    /**
-     * Held deliberately. A FileObserver that is garbage collected stops
-     * delivering events, silently, which is the classic way this feature
-     * appears to work in testing and then does nothing in the field.
-     */
-    private static FileObserver observer;
-
-    /**
-     * CREATE and MOVED_TO cover a file arriving; CLOSE_WRITE covers one edited
-     * in place; DELETE and MOVED_FROM cover it going away, which matters as
-     * much as the rest - it is what takes down the "running from the last good
-     * copy" warning once the real file comes back, and what puts it up when the
-     * file vanishes.
-     */
-    private static final int EVENTS = FileObserver.CLOSE_WRITE
-            | FileObserver.MOVED_TO
-            | FileObserver.MOVED_FROM
-            | FileObserver.CREATE
-            | FileObserver.DELETE;
-
-    /**
-     * How long to let the writes settle. One save is several events - a
-     * truncate, a write, a close, or a temp file and a rename - and reloading
-     * on each would parse a half-written file and log a parse error the user
-     * never caused.
-     */
-    private static final long QUIET_MS = 400;
-
+    private static final ArrayList<FileObserver> observers = new ArrayList<>();
+    private static boolean started;
+    private static long binding;
+    private static final int EVENTS = FileObserver.CLOSE_WRITE | FileObserver.MOVED_TO
+            | FileObserver.MOVED_FROM | FileObserver.CREATE | FileObserver.DELETE
+            | FileObserver.DELETE_SELF | FileObserver.MOVE_SELF;
     private static final Runnable RELOAD = () -> {
-        // The app writes this file itself - a list edit, an import, the preset
-        // switch that follows one - and every one of those reloads
-        // synchronously before returning. The watcher then hears its own write
-        // and would reload a second time, half a second later, over whatever
-        // the user is by then looking at. Comparing the file on disk against
-        // the bytes the gate is running on separates that echo from a real
-        // outside change; the desktop fork does the same in purple_config.cpp.
-        //
-        // A deletion, or a file that has moved on again since, does not match
-        // and reloads as it always did.
-        if (PurpleGate.runningSettings(PurpleGate.settingsBytes())) {
-            FileLog.d("Purple: settings.toml changed, but it is what we are "
-                    + "already running; not reloading.");
-            return;
-        }
-        PurpleGate.reload("settings.toml changed on disk");
+        PurpleAccountOwner.reloadGlobal();
+        PurpleAccountSettings.invalidate();
+        rebind();
+        PurpleGate.reload("account settings changed on disk");
     };
 
-    private PurpleWatcher() {
+    public static synchronized void start() {
+        if (started) return;
+        started = true;
+        rebind();
     }
 
-    /**
-     * Starts watching, once. Safe to call from anywhere; later calls do nothing.
-     */
-    public static synchronized void start() {
-        if (observer != null) {
-            return;
+    public static synchronized void rebind() {
+        if (!started) return;
+        ++binding;
+        long current = binding;
+        for (FileObserver observer : observers) observer.stopWatching();
+        observers.clear();
+        Set<String> paths = new HashSet<>();
+        paths.add(PurpleAccountFiles.root().getParent());
+        addExisting(paths, PurpleAccountFiles.root());
+        addExisting(paths, PurpleAccountFiles.file("accounts"));
+        PurpleAccountFiles global = PurpleAccountOwner.globalFiles();
+        if (global != null) addExisting(paths, global.directory);
+        if (PurpleAccountOwner.ready()) {
+            for (PurpleAccountFiles.Identity id : PurpleAccountOwner.signedIn()) {
+                PurpleAccountFiles files = PurpleAccountFiles.resolve(id.key, PurpleAccountOwner.owner());
+                if (files != null) addExisting(paths, files.directory);
+            }
         }
-        final File dir = PurpleSettings.dir();
-        try {
-            // The directory, never the file. An import - and most editors -
-            // replace settings.toml through a temp file and a rename rather
-            // than rewriting it in place, and a watch on the old inode goes
-            // deaf the moment that happens, without saying so.
-            //
-            // The String constructor rather than the File one because that is
-            // the one this app's minimum API has.
-            observer = new FileObserver(dir.getAbsolutePath(), EVENTS) {
-                @Override
-                public void onEvent(int event, String path) {
-                    if (path == null || !PurpleSettings.FILE_NAME.equals(path)) {
-                        // state.toml, settings.toml.good and the ".tmp" siblings
-                        // of both are ours. reload() writes the second of those,
-                        // so reacting to it would be a loop.
-                        return;
+        for (String path : paths) {
+            try {
+                FileObserver observer = new FileObserver(path, EVENTS) {
+                    @Override public void onEvent(int event, String name) {
+                        synchronized (PurpleWatcher.class) {
+                            if (current != binding) return;
+                        }
+                        if (name != null && !(name.equals("purple") || name.equals("accounts")
+                                || name.equals("local.toml") || name.equals("settings.toml")
+                                || name.equals("settings.toml.good") || name.matches("[01]-[1-9][0-9]*"))) return;
+                        AndroidUtilities.cancelRunOnUIThread(RELOAD);
+                        AndroidUtilities.runOnUIThread(RELOAD, 400);
                     }
-                    // Posting to the UI thread both debounces (the handler drops
-                    // the pending one) and serialises this against the reload an
-                    // import or a preset switch is doing. That reload has
-                    // already happened by the time this runs, which is what
-                    // lets RELOAD recognise the app's own write and leave it
-                    // alone - so an import reloads once, not twice.
-                    AndroidUtilities.cancelRunOnUIThread(RELOAD);
-                    AndroidUtilities.runOnUIThread(RELOAD, QUIET_MS);
-                }
-            };
-            observer.startWatching();
-        } catch (Exception e) {
-            // A watch is a convenience: without it the file is still read at
-            // startup, on import and on a preset switch, which is what this
-            // build did before. Losing it must not take the app with it.
-            observer = null;
-            FileLog.e(e);
+                };
+                observer.startWatching();
+                observers.add(observer);
+            } catch (RuntimeException e) { }
         }
     }
+
+    private static void addExisting(Set<String> paths, File directory) {
+        if (PurpleAccountFileSnapshot.directory(directory) == 1) paths.add(directory.getPath());
+    }
+
+    private PurpleWatcher() { }
 }

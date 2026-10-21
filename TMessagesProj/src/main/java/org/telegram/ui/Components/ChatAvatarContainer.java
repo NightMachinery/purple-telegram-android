@@ -1250,7 +1250,7 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
                     isOnline[0] = false;
                     newStatus = LocaleController.formatUserStatus(currentAccount, user, isOnline, allowShorterStatus ? statusMadeShorter : null);
                     useOnlineColor = isOnline[0];
-                    newStatus = purpleTrade.decorate(user, newStatus);
+                    newStatus = purpleTrade.decorate(currentAccount, user, newStatus);
                 }
                 newSubtitle = newStatus;
             } else {

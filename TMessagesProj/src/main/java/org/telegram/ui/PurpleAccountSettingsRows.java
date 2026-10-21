@@ -1,0 +1,152 @@
+package org.telegram.ui;
+
+import org.telegram.messenger.LocaleController;
+import org.telegram.messenger.R;
+import org.telegram.messenger.purple.PurpleAccountFiles;
+import org.telegram.messenger.purple.PurpleAccountSettings;
+import org.telegram.messenger.UserConfig;
+import org.telegram.messenger.purple.PurpleAccountOwner;
+import org.telegram.messenger.purple.PurpleGate;
+import org.telegram.messenger.purple.PurpleSettings;
+import org.telegram.ui.ActionBar.AlertDialog;
+import org.telegram.ui.ActionBar.BaseFragment;
+import org.telegram.ui.Components.UItem;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public final class PurpleAccountSettingsRows {
+    private static final int OWNER = 0x70750080;
+    private static final int GLOBAL = 0x70750081;
+
+    public static void add(ArrayList<UItem> items, int account) {
+        PurpleAccountOwner.ensureStarted();
+        items.add(UItem.asButton(OWNER, text(R.string.PurpleAccountOwner),
+                PurpleAccountOwner.ready() ? ownerLabel()
+                        : text(R.string.PurpleAccountOwnerChoose)));
+        items.add(UItem.asButton(GLOBAL, text(R.string.PurpleAccountGlobal), globalLabel()));
+        if (PurpleAccountOwner.recovered()) items.add(UItem.asShadow(text(R.string.PurpleAccountOwnerRecovered)));
+        if (PurpleAccountOwner.localWarning()) items.add(UItem.asShadow(text(R.string.PurpleAccountLocalWarning)));
+        items.add(UItem.asShadow(text(R.string.PurpleAccountRoles)));
+        PurpleAccountSettings.Effective effective = PurpleAccountSettings.forAccount(account);
+        if (effective != null) {
+            if (effective.globalReadError || effective.globalGoodReadError
+                    || !effective.globalError.isEmpty() || !effective.globalGoodError.isEmpty()) {
+                items.add(UItem.asShadow(text(R.string.PurpleAccountGlobalFileError)));
+            }
+            if (effective.accountReadError || effective.accountGoodReadError
+                    || !effective.accountError.isEmpty() || !effective.accountGoodError.isEmpty()) {
+                items.add(UItem.asShadow(text(R.string.PurpleAccountOwnFileError)));
+            }
+            if (effective.globalGood || effective.accountGood) {
+                items.add(UItem.asShadow(text(R.string.PurpleSettingsFileLastGood)));
+            }
+        }
+        if (!PurpleAccountOwner.legacyEditorAllowed(account)) {
+            items.add(UItem.asShadow(text(R.string.PurpleAccountWriteHeld)));
+        }
+    }
+
+    private static String ownerLabel() {
+        for (PurpleAccountFiles.Identity id : PurpleAccountOwner.signedIn()) {
+            if (id.key.equals(PurpleAccountOwner.owner())) return label(id);
+        }
+        return text(R.string.PurpleAccountOwnerKnown);
+    }
+
+    private static String globalLabel() {
+        String key = PurpleAccountOwner.global();
+        if (key == null) return text(R.string.PurpleAccountOwnerChoose);
+        for (PurpleAccountFiles.Identity id : PurpleAccountOwner.signedIn()) {
+            if (key.equals(id.key)) return label(id);
+        }
+        return text(R.string.PurpleAccountGlobalSignedOut);
+    }
+
+    public static boolean click(BaseFragment fragment, int row) {
+        if (row != OWNER && row != GLOBAL) return false;
+        if (fragment.getParentActivity() == null) return true;
+        if (row == OWNER && PurpleAccountOwner.ready()) return true;
+        if (row == GLOBAL && !PurpleAccountOwner.ready()) return true;
+        List<PurpleAccountFiles.Identity> choices = row == OWNER
+                ? PurpleAccountOwner.eligible() : PurpleAccountOwner.signedIn();
+        if (choices.isEmpty()) {
+            refused(fragment, text(R.string.PurpleAccountNoEligible));
+            return true;
+        }
+        if (row == OWNER) {
+            for (int i = 0; i < choices.size(); ++i) {
+                PurpleAccountFiles.Identity id = choices.get(i);
+                if (id.slot == UserConfig.selectedAccount && id.key.startsWith("0-")) {
+                    choices.remove(i);
+                    choices.add(0, id);
+                    break;
+                }
+            }
+        }
+        CharSequence[] labels = new CharSequence[choices.size()];
+        for (int i = 0; i < labels.length; ++i) labels[i] = label(choices.get(i));
+        AlertDialog.Builder dialog = new AlertDialog.Builder(fragment.getParentActivity());
+        dialog.setTitle(text(row == OWNER ? R.string.PurpleAccountOwnerChoose : R.string.PurpleAccountGlobal));
+        String bindingLabel = text(R.string.PurpleAccountBindingUnmatched);
+        String binding = PurpleAccountOwner.bindingAccount();
+        if (binding != null && !binding.isEmpty()) {
+            for (PurpleAccountFiles.Identity id : PurpleAccountOwner.signedIn()) {
+                if (id.key.equals(binding)) bindingLabel = LocaleController.formatString(R.string.PurpleAccountBindingMatches, label(id));
+            }
+        }
+        dialog.setMessage(row == OWNER ? text(R.string.PurpleAccountOwnerQuestion) + "\n\n" + bindingLabel
+                : text(R.string.PurpleAccountGlobalQuestion));
+        dialog.setItems(labels, (whichDialog, index) -> {
+            PurpleAccountFiles.Identity id = choices.get(index);
+            if (!id.current() || fragment.getParentActivity() == null) { refused(fragment, text(R.string.PurpleAccountWriteHeld)); return; }
+            PurpleAccountOwner.GlobalChoice globalChoice = row == GLOBAL
+                    ? PurpleAccountOwner.prepareGlobal(id, PurpleAccountFiles.capture(fragment.getCurrentAccount())) : null;
+            if (row == GLOBAL && globalChoice == null) { refused(fragment, text(R.string.PurpleAccountWriteHeld)); return; }
+            AlertDialog.Builder confirmation = new AlertDialog.Builder(fragment.getParentActivity());
+            confirmation.setTitle(label(id));
+            confirmation.setMessage(text(row == OWNER ? R.string.PurpleAccountOwnerQuestion : R.string.PurpleAccountGlobalQuestion)
+                    + (globalChoice == null ? "" : "\n\n" + text(globalChoice.normal
+                            ? R.string.PurpleAccountGlobalNormal : R.string.PurpleAccountGlobalKeepsMode))
+                    + (globalChoice != null && globalChoice.missing ? "\n" + text(R.string.PurpleAccountGlobalMissing) : "")
+                    + (globalChoice != null && globalChoice.empty ? "\n" + text(R.string.PurpleAccountGlobalEmpty) : "")
+                    + (globalChoice != null && globalChoice.usingGood ? "\n" + text(R.string.PurpleSettingsFileLastGood) : ""));
+            confirmation.setPositiveButton(text(R.string.OK), (confirmed, button) -> {
+                boolean changed = id.current() && (row == OWNER
+                        ? PurpleAccountOwner.chooseOwner(id.key) : PurpleAccountOwner.chooseGlobal(globalChoice));
+                if (changed) {
+                    org.telegram.messenger.purple.PurpleAccountSettings.invalidate();
+                    org.telegram.messenger.purple.PurpleWatcher.rebind();
+                    PurpleGate.reload("account file choice");
+                } else refused(fragment, text(R.string.PurpleAccountWriteHeld));
+            });
+            confirmation.setNegativeButton(text(R.string.Cancel), null);
+            fragment.showDialog(confirmation.create());
+        });
+        dialog.setNegativeButton(text(R.string.Cancel), null);
+        fragment.showDialog(dialog.create());
+        return true;
+    }
+
+    public static void requestOwner(android.content.Context context) {
+        BaseFragment fragment = LaunchActivity.getSafeLastFragment();
+        if (fragment != null && fragment.getParentActivity() == context) click(fragment, OWNER);
+    }
+
+    private static void refused(BaseFragment fragment, String message) {
+        if (fragment.getParentActivity() == null) return;
+        AlertDialog.Builder refused = new AlertDialog.Builder(fragment.getParentActivity());
+        refused.setMessage(message);
+        refused.setPositiveButton(text(R.string.OK), null);
+        fragment.showDialog(refused.create());
+    }
+
+    private static String label(PurpleAccountFiles.Identity id) {
+        String name = PurpleSettings.accountLabel(id.slot);
+        if (name == null) name = text(R.string.PurpleAccountUnnamed);
+        return id.key.startsWith("1-") ? name + " " + text(R.string.PurpleAccountTestServers) : name;
+    }
+
+    private static String text(int id) { return LocaleController.getString(id); }
+    private PurpleAccountSettingsRows() { }
+}

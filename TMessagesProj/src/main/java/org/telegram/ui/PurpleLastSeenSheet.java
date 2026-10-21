@@ -26,7 +26,7 @@ public final class PurpleLastSeenSheet {
         final TLRPC.User user = dialogId > 0
                 ? MessagesController.getInstance(currentAccount).getUser(dialogId)
                 : null;
-        if (PurpleLastSeen.peekEligible(user)) {
+        if (PurpleLastSeen.peekEligible(currentAccount, user)) {
             row.setBackground(Theme.createRadSelectorDrawable(Theme.getColor(Theme.key_listSelector, resourcesProvider), 6, 0));
             row.setOnClickListener(v -> MessagePrivateSeenView.showSheet(row.getContext(), currentAccount,
                     dialogId, true, dismiss, updated, resourcesProvider));
@@ -38,12 +38,12 @@ public final class PurpleLastSeenSheet {
         final TLRPC.User lastSeenUser = dialogId > 0
                 ? MessagesController.getInstance(currentAccount).getUser(dialogId)
                 : null;
-        final boolean purplePeekEnabled = PurpleLastSeen.peekEnabled();
-        final boolean purplePeek = PurpleLastSeen.peekEligible(lastSeenUser);
+        final boolean purplePeekEnabled = PurpleLastSeen.peekEnabled(currentAccount);
+        final boolean purplePeek = PurpleLastSeen.peekEligible(currentAccount, lastSeenUser);
         final String username = lastSeenUser != null ? UserObject.getFirstName(lastSeenUser) : "";
         headerView.setText(LocaleController.getString(R.string.PurpleTradeTitle));
         descriptionView.setText(AndroidUtilities.replaceTags(purplePeek
-                ? LocaleController.formatString(R.string.PurpleTradeSheetText, username, PurpleLastSeen.holdSeconds())
+                ? LocaleController.formatString(R.string.PurpleTradeSheetText, username, PurpleLastSeen.holdSeconds(currentAccount))
                 : LocaleController.formatString(purplePeekEnabled
                         ? R.string.PurpleTradeSheetUnavailable
                         : R.string.PurpleTradeSheetOff, username)));
@@ -58,7 +58,7 @@ public final class PurpleLastSeenSheet {
         final TLRPC.User user = dialogId > 0
                 ? MessagesController.getInstance(currentAccount).getUser(dialogId)
                 : null;
-        if (!PurpleLastSeen.peekEligible(user)) {
+        if (!PurpleLastSeen.peekEligible(currentAccount, user)) {
             return true;
         }
         final BaseFragment fragment = LaunchActivity.getSafeLastFragment();

@@ -88,6 +88,14 @@ public class PurpleSettingsEditorActivity extends BaseFragment {
 
     private Runnable validate;
 
+    private org.telegram.messenger.purple.PurpleAccountFiles.Identity fileOrigin;
+
+    @Override public boolean onFragmentCreate() {
+        fileOrigin = org.telegram.messenger.purple.PurpleAccountFiles.capture(currentAccount);
+        return org.telegram.messenger.purple.PurpleAccountOwner.legacyEditorAllowed(currentAccount)
+                && fileOrigin != null && super.onFragmentCreate();
+    }
+
     @Override
     public View createView(Context context) {
         actionBar.setBackButtonImage(R.drawable.ic_ab_back);
@@ -369,7 +377,9 @@ public class PurpleSettingsEditorActivity extends BaseFragment {
             builder.show();
             return;
         }
-        if (!PurpleSettings.save(bytes, "editor")) {
+        if (fileOrigin == null || !fileOrigin.current()
+                || !org.telegram.messenger.purple.PurpleAccountOwner.legacyEditorAllowed(currentAccount)
+                || !PurpleSettings.save(bytes, "editor")) {
             error(getString(R.string.PurpleEditorSaveFailed));
             return;
         }

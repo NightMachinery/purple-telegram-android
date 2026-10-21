@@ -52,27 +52,23 @@ public final class PurpleSettings {
     }
 
     public static File dir() {
-        File dir = new File(ApplicationLoader.getFilesDirFixed(), "purple");
-        if (!dir.exists()) {
-            dir.mkdirs();
-        }
-        return dir;
+        return PurpleAccountFiles.root();
     }
 
     public static File settingsFile() {
-        return new File(dir(), FILE_NAME);
+        return PurpleAccountFiles.rootSettings();
     }
 
     public static File backupFile() {
-        return new File(dir(), BACKUP_NAME);
+        return PurpleAccountFiles.rootBackup();
     }
 
     public static File importBackupFile() {
-        return new File(dir(), IMPORT_BACKUP_NAME);
+        return PurpleAccountFiles.rootImportBackup();
     }
 
     public static File lastGoodFile() {
-        return new File(dir(), LAST_GOOD_NAME);
+        return PurpleAccountFiles.rootGood();
     }
 
     public static void importFrom(Context context, File source, int messageDate) {
@@ -118,8 +114,11 @@ public final class PurpleSettings {
         if (context == null || bytes == null) {
             return;
         }
-        if (!PurpleSyncOfferRules.mayImport(account, UserConfig.selectedAccount)) {
-            showError(context, LocaleController.getString(R.string.PurpleImportAccountChanged));
+        if (!PurpleAccountOwner.legacyOperation(account == PurpleSyncOfferRules.NO_ACCOUNT
+                ? UserConfig.selectedAccount : account)
+                || !PurpleSyncOfferRules.mayImport(account, UserConfig.selectedAccount)) {
+            showError(context, LocaleController.getString(R.string.PurpleAccountWriteHeld));
+            if (!PurpleAccountOwner.ready()) org.telegram.ui.PurpleAccountSettingsRows.requestOwner(context);
             return;
         }
         if (bytes.length > MAX_SIZE) {
@@ -127,6 +126,8 @@ public final class PurpleSettings {
             return;
         }
 
+        final PurpleAccountFiles.Identity origin = PurpleAccountFiles.capture(
+                account == PurpleSyncOfferRules.NO_ACCOUNT ? UserConfig.selectedAccount : account);
         final PurpleCore.ParseResult parsed;
         try {
             parsed = PurpleCore.parse(bytes);
@@ -139,7 +140,7 @@ public final class PurpleSettings {
         final int version = parsed.version;
         final String error = parsed.error;
         final int warnings = parsed.warnings.size();
-        if (!ok) {
+        if (!ok || version > 1) {
             showError(context, LocaleController.formatString(R.string.PurpleSettingsInvalid, error));
             return;
         }
@@ -171,10 +172,13 @@ public final class PurpleSettings {
         builder.setTitle(LocaleController.getString(R.string.ImportPurpleSettings));
         builder.setMessage(message.toString());
         builder.setPositiveButton(LocaleController.getString(R.string.Import), (dialog, which) -> {
-            if (!PurpleSyncOfferRules.mayImport(account, UserConfig.selectedAccount)) {
+            if (!PurpleAccountOwner.legacyOperation(account == PurpleSyncOfferRules.NO_ACCOUNT
+                ? UserConfig.selectedAccount : account)
+                || !PurpleSyncOfferRules.mayImport(account, UserConfig.selectedAccount)) {
                 showError(context, LocaleController.getString(R.string.PurpleImportAccountChanged));
                 return;
             }
+            if (origin == null || !origin.current() || !PurpleAccountOwner.legacyOperation(origin.slot)) return;
             if (store(bytes)) {
                 Toast.makeText(context, LocaleController.getString(R.string.PurpleSettingsImported), Toast.LENGTH_SHORT).show();
             } else {
@@ -185,7 +189,7 @@ public final class PurpleSettings {
         builder.show();
     }
 
-    static String accountLabel(int account) {
+    public static String accountLabel(int account) {
         final TLRPC.User user = UserConfig.getInstance(account).getCurrentUser();
         if (user == null) {
             return null;
@@ -228,6 +232,24 @@ public final class PurpleSettings {
         return fromImport ? store(bytes, reason, true) : replace(bytes, reason, false);
     }
 
+    static boolean storeForSync(PurpleSyncFileContext context, PurpleSyncSettingsFile.Contents expected,
+            byte[] bytes, String reason, boolean fromImport) {
+        if (!context.editable() || !PurpleSyncSettingsFile.read(context).sameAs(expected)) return false;
+        try {
+            PurpleCore.ParseResult parsed = PurpleCore.parse(bytes);
+            if (!parsed.ok || parsed.version > 1 || !context.editable()
+                    || !PurpleSyncSettingsFile.read(context).sameAs(expected)) return false;
+            PurpleSettingsBackups.take(context.files.settings, context.files.backup,
+                    context.files.importBackup, fromImport);
+        } catch (IOException | RuntimeException | UnsatisfiedLinkError e) { return false; }
+        if (!context.editable() || !PurpleSyncSettingsFile.read(context).sameAs(expected)
+                || !writeAtomic(context.files.settings, bytes)) return false;
+        if (!context.editable()) return true;
+        PurpleGate.reload(reason);
+        if (fromImport && context.current()) PurpleSync.afterWrite(context, bytes, reason, true);
+        return true;
+    }
+
     /**
      * @param fromImport whether these bytes came from the other device rather
      *                   than from something done on this one. It is the whole
@@ -244,6 +266,9 @@ public final class PurpleSettings {
     }
 
     private static boolean replace(byte[] bytes, String reason, boolean fromImport) {
+        if (!PurpleAccountOwner.legacyEditorAllowed(UserConfig.selectedAccount)) return false;
+        try { PurpleCore.ParseResult parsed = PurpleCore.parse(bytes); if (!parsed.ok || parsed.version > 1) return false; }
+        catch (RuntimeException | UnsatisfiedLinkError e) { return false; }
         final File target = settingsFile();
         try {
             PurpleSettingsBackups.take(target, backupFile(), importBackupFile(), fromImport);

@@ -706,6 +706,7 @@ public class ConnectionsManager extends BaseController {
     public void switchBackend(boolean restart) {
         SharedPreferences preferences = MessagesController.getGlobalMainSettings();
         preferences.edit().remove("language_showed2").commit();
+        org.telegram.messenger.purple.PurpleAccountFiles.identityChanged(currentAccount);
         native_switchBackend(currentAccount, restart);
     }
 

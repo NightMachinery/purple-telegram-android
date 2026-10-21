@@ -107,6 +107,7 @@ public class PurpleSettingsActivity extends UniversalFragment
     private static final int REQUEST_IMPORT = 4711;
 
     private boolean checkingSaved;
+    private org.telegram.messenger.purple.PurpleAccountFiles.Identity importOrigin;
     private View versionFooter;
 
 
@@ -151,6 +152,7 @@ public class PurpleSettingsActivity extends UniversalFragment
         // below ends in a reload, and re-running this is what makes a refused
         // write leave the switch exactly where the file is with no extra code.
         final PurpleCore.Loaded state = PurpleGate.state();
+        PurpleAccountSettingsRows.add(items, currentAccount);
 
         items.add(UItem.asHeader(getString(R.string.PurpleWorkMode)));
         items.add(UItem.asButton(ROW_PRESET, getString(R.string.PurpleWorkMode),
@@ -212,11 +214,11 @@ public class PurpleSettingsActivity extends UniversalFragment
         items.add(UItem.asHeader(getString(R.string.PurpleLastSeenHeader)));
         final UItem reasons =
                 UItem.asCheck(ROW_LAST_SEEN_REASONS, getString(R.string.PurpleLastSeenReasonsRow));
-        reasons.checked = (state == null || state.lastSeenReasons);
+        reasons.checked = PurpleLastSeen.reasons(currentAccount);
         items.add(reasons);
         final UItem trade =
                 UItem.asCheck(ROW_LAST_SEEN_TRADE, getString(R.string.PurpleLastSeenTradeRow));
-        trade.checked = (state == null || state.lastSeenTrade);
+        trade.checked = PurpleLastSeen.peekEnabled(currentAccount);
         items.add(trade);
         final UItem skipConfirmation = UItem.asCheck(
                 ROW_LAST_SEEN_SKIP_CONFIRMATION,
@@ -250,7 +252,7 @@ public class PurpleSettingsActivity extends UniversalFragment
         items.add(UItem.asButton(ROW_IMPORT, getString(R.string.PurpleImportFromFile)));
         items.add(UItem.asButton(ROW_SHARE, getString(R.string.PurpleShareFile)));
         items.add(UItem.asButton(ROW_PATH, getString(R.string.PurpleFilePath),
-                PurpleSettings.settingsFile().getAbsolutePath()));
+                accountFilePath()));
         items.add(UItem.asShadow(fileStatus(state) + "\n"
                 + getString(R.string.PurpleFilePathInfo)));
 
@@ -325,6 +327,11 @@ public class PurpleSettingsActivity extends UniversalFragment
      * good copy running is a different thing to say than a parse error, and a
      * warning count only means anything about a file that was read.
      */
+    private String accountFilePath() {
+        File file = org.telegram.messenger.purple.PurpleAccountSettings.fileForAccount(currentAccount);
+        return file == null ? getString(R.string.PurpleAccountWriteHeld) : file.getAbsolutePath();
+    }
+
     private static CharSequence fileStatus(PurpleCore.Loaded state) {
         if (state == null) {
             return getString(R.string.PurpleFileMissing);
@@ -376,6 +383,14 @@ public class PurpleSettingsActivity extends UniversalFragment
 
     @Override
     protected void onClick(UItem item, View view, int position, float x, float y) {
+        if (PurpleAccountSettingsRows.click(this, item.id)) return;
+        if (!org.telegram.messenger.purple.PurpleAccountOwner.legacyEditorAllowed(currentAccount)
+                && item.id != ROW_PRESET && item.id != ROW_SEND && item.id != ROW_SHARE
+                && item.id != ROW_SCREEN_TIME && item.id != ROW_DEVICE && item.id != ROW_NOTIFICATIONS
+                && item.id != ROW_LAST_SEEN_SKIP_CONFIRMATION) {
+            error(getString(R.string.PurpleAccountWriteHeld));
+            return;
+        }
         switch (item.id) {
         case ROW_PEEK_DURATION:
             PurplePresetPicker.show(this);
@@ -602,6 +617,8 @@ public class PurpleSettingsActivity extends UniversalFragment
     }
 
     private void startImportPicker() {
+        importOrigin = org.telegram.messenger.purple.PurpleAccountFiles.capture(currentAccount);
+        if (importOrigin == null || !org.telegram.messenger.purple.PurpleAccountOwner.legacyOperation(currentAccount)) return;
         try {
             final Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
             intent.setType("*/*");
@@ -618,9 +635,8 @@ public class PurpleSettingsActivity extends UniversalFragment
             return;
         }
         final Activity activity = getParentActivity();
-        if (activity == null) {
-            return;
-        }
+        if (activity == null || importOrigin == null || !importOrigin.current()
+                || !org.telegram.messenger.purple.PurpleAccountOwner.legacyOperation(currentAccount)) return;
         // The date names the file in the question importFrom asks, and a file
         // off the disk has only now.
         final int date = (int) (System.currentTimeMillis() / 1000L);
@@ -679,8 +695,13 @@ public class PurpleSettingsActivity extends UniversalFragment
 
     /** Hands the file to whatever else on the phone can take a text document. */
     private void shareFile() {
+        if (!org.telegram.messenger.purple.PurpleAccountOwner.manualBackupAllowed(currentAccount, PurpleGate.settingsBytes())) {
+            error(getString(R.string.PurpleAccountWriteHeld));
+            return;
+        }
         final Activity activity = getParentActivity();
-        final File source = PurpleSettings.settingsFile();
+        final File source = PurpleSync.manualShareFile(currentAccount, PurpleGate.settingsBytes());
+        if (source == null) { error(getString(R.string.PurpleAccountWriteHeld)); return; }
         if (activity == null) {
             return;
         }

@@ -144,6 +144,18 @@ public final class PurpleSyncHistory {
         long nowMs();
     }
 
+    interface Current {
+        boolean current();
+    }
+
+    static boolean publishIfCurrent(Current current, File temporary, File target) {
+        return current.current() && temporary.renameTo(target);
+    }
+
+    static boolean deleteIfCurrent(Current current, File file) {
+        return current.current() && file.delete();
+    }
+
     static final Core NATIVE = new Core() {
         @Override
         public String fingerprint(byte[] bytes) {
@@ -171,9 +183,20 @@ public final class PurpleSyncHistory {
     private final Clock clock;
     private final SecureRandom random = new SecureRandom();
 
+    private PurpleAccountFiles.Identity origin;
+    private boolean production;
+    private PurpleSyncFileContext context;
+
     public PurpleSyncHistory() {
-        this(new File(new File(ApplicationLoader.getFilesDirFixed(), "purple"),
-                "sync-history"), NATIVE, System::currentTimeMillis);
+        this(new PurpleSyncFileContext(org.telegram.messenger.UserConfig.selectedAccount));
+    }
+
+    PurpleSyncHistory(PurpleSyncFileContext context) {
+        this(context.files == null ? PurpleAccountFiles.rootHistory() : context.files.history,
+                NATIVE, System::currentTimeMillis);
+        this.context = context;
+        production = true;
+        origin = context.origin;
     }
 
     PurpleSyncHistory(File directory, Core core, Clock clock) {
@@ -197,6 +220,7 @@ public final class PurpleSyncHistory {
      */
     public Entry save(byte[] text, Reason reason, String label,
             String versionKey, String keepId) {
+        if (!accessible()) return null;
         final byte[] bytes = (text != null) ? text : new byte[0];
         if (reason == null || label == null || versionKey == null
                 || bytes.length > MAX_TEXT_BYTES
@@ -216,7 +240,7 @@ public final class PurpleSyncHistory {
             return null;
         }
         synchronized (LOCK) {
-            if (!prepareDirectories()) {
+            if (!accessible() || !prepareDirectories()) {
                 return null;
             }
             final long sequence = newestSequence() + 1;
@@ -232,14 +256,14 @@ public final class PurpleSyncHistory {
             final Entry entry = new Entry(id, createdMs, sequence, reason,
                     label, versionKey, fingerprint, bytes.length, text != null);
             final byte[] metadata = serialize(entry);
-            final boolean written = metadata != null
-                    && writePrivate(textFile(id), bytes)
-                    && writePrivate(metadataFile(id), metadata);
+            final boolean written = accessible() && metadata != null
+                    && accessible() && writePrivate(textFile(id), bytes)
+                    && accessible() && writePrivate(metadataFile(id), metadata);
             final Loaded saved = written ? load(id) : null;
             if (saved == null || !Arrays.equals(saved.text, bytes)) {
                 FileLog.e("Purple: could not save settings history " + id
                         + ".");
-                discard(id);
+                if (accessible()) discard(id);
                 return null;
             }
             final Set<String> keep = new HashSet<>();
@@ -247,13 +271,19 @@ public final class PurpleSyncHistory {
             if (keepId != null && !keepId.isEmpty()) {
                 keep.add(keepId);
             }
-            prune(keep);
+            if (accessible()) prune(keep);
             return saved.entry;
         }
     }
 
     /** Every valid entry, newest first. */
+    private boolean accessible() {
+        return !production || (context != null && context.current() && origin != null && origin.current()
+                && PurpleAccountOwner.legacyOperation(origin.slot));
+    }
+
     public List<Entry> list() {
+        if (!accessible()) return java.util.Collections.emptyList();
         synchronized (LOCK) {
             if (!existingDirectories()) {
                 return Collections.emptyList();
@@ -279,6 +309,7 @@ public final class PurpleSyncHistory {
 
     /** The exact bytes of a valid entry, or null. */
     public byte[] read(String id) {
+        if (!accessible()) return null;
         synchronized (LOCK) {
             if (!isHistoryId(id) || !existingDirectories()) {
                 FileLog.e("Purple: no settings history entry " + id + ".");
@@ -372,7 +403,7 @@ public final class PurpleSyncHistory {
         if (parent == null) {
             return false;
         }
-        if (lstat(parent) == null && !parent.mkdir()) {
+        if (lstat(parent) == null && (!accessible() || !parent.mkdir())) {
             FileLog.e("Purple: could not create " + parent + ".");
             return false;
         }
@@ -381,6 +412,7 @@ public final class PurpleSyncHistory {
             return false;
         }
         if (lstat(directory) == null) {
+            if (!accessible()) return false;
             try {
                 Os.mkdir(directory.getPath(), PRIVATE_DIRECTORY_MODE);
             } catch (ErrnoException e) {
@@ -459,10 +491,9 @@ public final class PurpleSyncHistory {
     }
 
     private void discard(String id) {
-        for (File file : new File[] {
-                textFile(id), metadataFile(id),
-                temporary(textFile(id)), temporary(metadataFile(id)) }) {
-            if (lstat(file) != null && !file.delete()) {
+        for (File file : new File[] { textFile(id), metadataFile(id) }) {
+            if (lstat(file) != null && !deleteIfCurrent(this::accessible, file)) {
+                if (!accessible()) return;
                 FileLog.e("Purple: could not remove " + file + ".");
             }
         }
@@ -503,7 +534,8 @@ public final class PurpleSyncHistory {
             final boolean obsolete = validIds.contains(id)
                     || (full && id.compareTo(oldestKept) < 0);
             final File file = new File(directory, name);
-            if (obsolete && !file.delete()) {
+            if (obsolete && !deleteIfCurrent(this::accessible, file)) {
+                if (!accessible()) return;
                 FileLog.e("Purple: could not remove " + file + ".");
             }
         }
@@ -652,30 +684,32 @@ public final class PurpleSyncHistory {
      * Writes a new owner-only file through a temporary sibling and a rename,
      * then requires it to read back exactly.
      */
-    private static boolean writePrivate(File target, byte[] bytes) {
+    private boolean writePrivate(File target, byte[] bytes) {
         final File temp = temporary(target);
-        if (lstat(temp) != null || lstat(target) != null) {
+        if (!accessible() || lstat(temp) != null || lstat(target) != null) {
             return false;
         }
+        boolean created = false;
         boolean renamed = false;
         try {
+            if (!accessible() || !(created = temp.createNewFile())) return false;
             try (FileOutputStream stream = new FileOutputStream(temp)) {
                 Os.chmod(temp.getPath(), PRIVATE_FILE_MODE);
                 stream.write(bytes);
                 stream.getFD().sync();
             }
-            renamed = temp.renameTo(target);
+            renamed = publishIfCurrent(this::accessible, temp, target);
         } catch (IOException | ErrnoException | SecurityException e) {
             FileLog.e(e);
         } finally {
-            if (!renamed && lstat(temp) != null && !temp.delete()) {
+            if (created && !renamed && lstat(temp) != null && !temp.delete()) {
                 FileLog.e("Purple: could not remove " + temp + ".");
             }
         }
-        if (!renamed) {
+        if (!renamed || !accessible()) {
             return false;
         }
         final byte[] readBack = readPrivate(target, bytes.length);
-        return readBack != null && Arrays.equals(readBack, bytes);
+        return accessible() && readBack != null && Arrays.equals(readBack, bytes);
     }
 }

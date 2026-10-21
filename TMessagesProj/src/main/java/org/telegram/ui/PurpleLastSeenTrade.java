@@ -83,28 +83,28 @@ public final class PurpleLastSeenTrade {
         return true;
     }
 
-    public static boolean eligible(TLRPC.User user) {
-        return PurpleLastSeen.peekEligible(user);
+    public static boolean eligible(int account, TLRPC.User user) {
+        return PurpleLastSeen.peekEligible(account, user);
     }
 
-    public static String decorateProfile(TLRPC.User user, String status) {
-        return PurpleLastSeen.decorate(user, status, AndroidUtilities.displaySize.x).toString();
+    public static String decorateProfile(int account, TLRPC.User user, String status) {
+        return PurpleLastSeen.decorate(account, user, status, AndroidUtilities.displaySize.x).toString();
     }
 
-    public static void addMenu(ActionBarMenuItem menu, TLRPC.User user) {
+    public static void addMenu(ActionBarMenuItem menu, int account, TLRPC.User user) {
         menu.addSubItem(MENU_ID, R.drawable.msg_view_file, getString(R.string.PurplePeekAction));
-        menu.setSubItemShown(MENU_ID, eligible(user));
+        menu.setSubItemShown(MENU_ID, eligible(account, user));
     }
 
-    public static void syncMenu(ActionBarMenuItem menu, TLRPC.User user) {
+    public static void syncMenu(ActionBarMenuItem menu, int account, TLRPC.User user) {
         if (menu != null && menu.hasSubItem(MENU_ID)) {
-            menu.setSubItemShown(MENU_ID, eligible(user));
+            menu.setSubItemShown(MENU_ID, eligible(account, user));
         }
     }
 
     public static void syncMenu(ActionBarMenuItem menu, BaseFragment fragment, long userId) {
         if (menu.hasSubItem(MENU_ID)) {
-            syncMenu(menu, fragment.getMessagesController().getUser(userId));
+            syncMenu(menu, fragment.getCurrentAccount(), fragment.getMessagesController().getUser(userId));
         }
     }
 
@@ -245,13 +245,13 @@ public final class PurpleLastSeenTrade {
         if (user == null) {
             return;
         }
-        if (!PurpleLastSeen.peekEnabled()) {
+        if (!PurpleLastSeen.peekEnabled(currentAccount)) {
             FileLog.d("Purple: last seen peek refused because [last_seen] trade_p is false");
             error(fragment, getString(R.string.PurpleTradeDisabled));
             return;
         }
         final String name = UserObject.getFirstName(user);
-        if (!PurpleLastSeen.peekEligible(user)) {
+        if (!PurpleLastSeen.peekEligible(currentAccount, user)) {
             // Their own setting, an exact time already, or "a long time ago",
             // which is not a coarsening of anything: in none of the three is
             // there anything of ours in the way to move.
@@ -302,7 +302,7 @@ public final class PurpleLastSeenTrade {
         builder.setTitle(getString(R.string.PurpleTradeTitle));
         final boolean showSkipConfirmation = !noAsk();
         final CharSequence explanation = formatString(
-                R.string.PurpleTradeText, name, PurpleLastSeen.holdSeconds())
+                R.string.PurpleTradeText, name, PurpleLastSeen.holdSeconds(currentAccount))
                 + (showSkipConfirmation
                         ? "\n\n" + getString(R.string.PurpleTradeDontAskHelp)
                         : "");
@@ -459,11 +459,11 @@ public final class PurpleLastSeenTrade {
         if (owner == 0) {
             return;
         }
-        if (!PurpleLastSeen.peekEnabled()) {
+        if (!PurpleLastSeen.peekEnabled(currentAccount)) {
             error(fragment, getString(R.string.PurpleTradeDisabled));
             return;
         }
-        if (!PurpleLastSeen.peekEligible(user)) {
+        if (!PurpleLastSeen.peekEligible(currentAccount, user)) {
             error(fragment, formatString(R.string.PurpleTradeNotNeeded,
                     UserObject.getFirstName(user)));
             return;
@@ -507,7 +507,7 @@ public final class PurpleLastSeenTrade {
             }
             return;
         }
-        if (!PurpleLastSeen.peekEligible(user)) {
+        if (!PurpleLastSeen.peekEligible(currentAccount, user)) {
             running = 0;
             error(fragment, getString(R.string.PurpleTradeDisabled));
             return;
@@ -548,7 +548,7 @@ public final class PurpleLastSeenTrade {
         req.key = new TLRPC.TL_inputPrivacyKeyStatusTimestamp();
         req.rules = opened;
         final long deadlineMs = System.currentTimeMillis()
-                + PurpleLastSeen.holdSeconds() * 1000L;
+                + PurpleLastSeen.holdSeconds(currentAccount) * 1000L;
         transaction.deadline = () -> beginRestore(transaction);
         AndroidUtilities.runOnUIThread(transaction.deadline,
                 Math.max(0L, deadlineMs - System.currentTimeMillis()));
@@ -570,7 +570,7 @@ public final class PurpleLastSeenTrade {
                         return;
                     }
                     FileLog.d("Purple: last seen peek open, waiting "
-                            + PurpleLastSeen.holdSeconds() + "s");
+                            + PurpleLastSeen.holdSeconds(currentAccount) + "s");
                     poll(fragment, currentAccount, user, restore, deadlineMs);
                 }), ConnectionsManager.RequestFlagFailOnServerErrors);
     }

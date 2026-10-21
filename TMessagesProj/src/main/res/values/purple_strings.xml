@@ -574,4 +574,26 @@
     <string name="PurplePeekChangingDelay">Changing Peek delay</string>
     <string name="PurpleAbortPeek">Abort Peek</string>
     <string name="PurpleEndPeek">End Peek</string>
+    <string name="PurpleAccountOwner">Root settings file owner</string>
+    <string name="PurpleAccountOwnerKnown">Recorded on this device</string>
+    <string name="PurpleAccountOwnerChoose">Choose which account owns settings.toml</string>
+    <string name="PurpleAccountOwnerQuestion">This account keeps settings.toml and its Work Mode. Other accounts inherit it until they have settings of their own. Only signed-in accounts without an account directory can be chosen.</string>
+    <string name="PurpleAccountGlobal">App-wide settings account</string>
+    <string name="PurpleAccountGlobalQuestion">This account supplies Work Mode, Peek and other app-wide settings on this device. The root file owner stays unchanged.</string>
+    <string name="PurpleAccountGlobalSignedOut">Signed out, using its file on this device</string>
+    <string name="PurpleAccountOwnerRecovered">The managed root owner record restored local.toml. Root file ownership has not changed.</string>
+    <string name="PurpleAccountLocalWarning">local.toml could not supply a valid global choice. Using the root owner for app-wide settings.</string>
+    <string name="PurpleAccountRoles">Last Seen and notification preview use this screen’s account. Work Mode and Peek use the app-wide account. Device state stays on this device.</string>
+    <string name="PurpleAccountWriteHeld">This account’s file cannot be edited or synced here yet. Choose the root owner first. Non-root editing, History, Reset and version 2 transfers are held. Manual root-file backup remains available.</string>
+    <string name="PurpleAccountUnnamed">Signed-in account</string>
+    <string name="PurpleAccountTestServers">(test servers)</string>
+    <string name="PurpleAccountGlobalFileError">The app-wide file is unreadable or invalid. Its own good copy is used when available.</string>
+    <string name="PurpleAccountOwnFileError">This account’s file is unreadable or invalid. Its good copy or inherited values are used.</string>
+    <string name="PurpleAccountNoEligible">No eligible signed-in account is available. Accounts that already have a directory cannot own the root file. Unreadable owner inputs must be repaired before choosing.</string>
+    <string name="PurpleAccountBindingUnmatched">The root sync store does not identify one signed-in account.</string>
+    <string name="PurpleAccountBindingMatches">The root sync store is linked to %1$s.</string>
+    <string name="PurpleAccountGlobalNormal">This file does not define the running preset. Choosing it switches Work Mode to Normal.</string>
+    <string name="PurpleAccountGlobalKeepsMode">The current mode remains selected in this file.</string>
+    <string name="PurpleAccountGlobalMissing">The chosen settings file is missing. No settings file will be created.</string>
+    <string name="PurpleAccountGlobalEmpty">The chosen settings file is empty.</string>
 </resources>

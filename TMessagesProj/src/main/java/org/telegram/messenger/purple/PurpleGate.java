@@ -329,13 +329,27 @@ public final class PurpleGate {
         return known != null && known.equals(candidate);
     }
 
+    private static File peekLoadedFile;
+    private static String peekLoadedGlobal;
+    private static PurpleAccountFileSnapshot peekLoadedPrimary;
+    private static PurpleAccountFileSnapshot peekLoadedGood;
+
     public static final class PeekSettings {
         public final PurplePeekSnapshot snapshot;
         public final PurpleCore.Loaded state;
         public final int generation;
+        private final File file;
+        private final String global;
+        private final PurpleAccountFileSnapshot primary;
+        private final PurpleAccountFileSnapshot good;
 
-        private PeekSettings(PurplePeekSnapshot snapshot, PurpleCore.Loaded state, int generation) {
-            this.snapshot = snapshot;
+        private PeekSettings(File file, String global, PurpleAccountFileSnapshot primary,
+                PurpleAccountFileSnapshot good, PurpleCore.Loaded state, int generation) {
+            this.file = file;
+            this.global = global;
+            this.primary = primary;
+            this.good = good;
+            this.snapshot = PurplePeekSnapshot.captured(primary.bytes, (int) PurpleSettings.MAX_SIZE);
             this.state = state;
             this.generation = generation;
         }
@@ -343,22 +357,44 @@ public final class PurpleGate {
 
     public static PeekSettings peekSettings() {
         ensureLoaded();
-        PurplePeekSnapshot snapshot = PurplePeekSnapshot.read(
-                PurpleSettings.settingsFile(), (int) PurpleSettings.MAX_SIZE);
-        if (snapshot.status != PurplePeekSnapshot.Status.Present) return null;
-        byte[] bytes = snapshot.bytes();
-        if (!runningSettings(bytes) || loaded == null || !loaded.ok || usedLastGood) {
-            reload("peek settings", bytes);
+        File file = PurpleAccountSettings.globalFile();
+        String global = PurpleAccountOwner.global();
+        PurpleAccountFileSnapshot primary = PurpleAccountFileSnapshot.read(file);
+        PurpleAccountFileSnapshot good = PurpleAccountFileSnapshot.read(new File(file.getPath() + ".good"));
+        if (primary.status == PurpleAccountFileSnapshot.Status.ReadError
+                || good.status == PurpleAccountFileSnapshot.Status.ReadError) return null;
+        if (!file.equals(peekLoadedFile) || !java.util.Objects.equals(global, peekLoadedGlobal)
+                || !primary.same(peekLoadedPrimary) || !good.same(peekLoadedGood)
+                || loaded == null || !loaded.ok) {
+            reload("peek settings", primary.bytes);
         }
-        PeekSettings result = new PeekSettings(snapshot, loaded, generation);
+        PeekSettings result = new PeekSettings(file, global, primary, good, loaded, generation);
         return currentPeekSettings(result) ? result : null;
     }
 
     public static boolean currentPeekSettings(PeekSettings settings) {
         return settings != null && settings.state != null && settings.state.ok
-                && !usedLastGood && loaded == settings.state && generation == settings.generation
-                && runningSettings(settings.snapshot.bytes())
-                && settings.snapshot.matches(PurpleSettings.settingsFile());
+                && loaded == settings.state && generation == settings.generation
+                && settings.file.equals(peekLoadedFile)
+                && java.util.Objects.equals(settings.global, peekLoadedGlobal)
+                && settings.primary.same(peekLoadedPrimary) && settings.good.same(peekLoadedGood)
+                && java.util.Objects.equals(settings.global, PurpleAccountOwner.global())
+                && settings.file.equals(PurpleAccountSettings.globalFile())
+                && settings.primary.matches(settings.file)
+                && settings.good.matches(new File(settings.file.getPath() + ".good"));
+    }
+
+    public static boolean currentPeekEditSettings(PeekSettings settings) {
+        return currentPeekSettings(settings) && !usedLastGood
+                && PurpleAccountOwner.legacyEditorAllowed(UserConfig.selectedAccount)
+                && settings.file.equals(PurpleSettings.settingsFile())
+                && settings.primary.status == PurpleAccountFileSnapshot.Status.Present;
+    }
+
+    public static boolean samePeekSettings(PeekSettings first, PeekSettings second) {
+        return first != null && second != null && first.file.equals(second.file)
+                && java.util.Objects.equals(first.global, second.global)
+                && first.primary.same(second.primary) && first.good.same(second.good);
     }
 
     /** Loads settings.toml and state.toml once, the first time anyone asks. */
@@ -398,6 +434,10 @@ public final class PurpleGate {
     }
 
     private static void reload(String reason, byte[] settings) {
+        final File peekFile = PurpleAccountSettings.globalFile();
+        final String peekGlobal = PurpleAccountOwner.global();
+        final PurpleAccountFileSnapshot peekPrimary = PurpleAccountFileSnapshot.read(peekFile);
+        final PurpleAccountFileSnapshot peekGood = PurpleAccountFileSnapshot.read(new File(peekFile.getPath() + ".good"));
         final byte[] state = PurpleState.read();
 
         PurpleCore.Loaded next = load(settings, state);
@@ -433,7 +473,10 @@ public final class PurpleGate {
         // silenced.
         boolean shadowed = false;
         if (settings == null || !next.ok) {
-            final byte[] lastGood = readFile(PurpleSettings.lastGoodFile());
+            if (peekGood.status == PurpleAccountFileSnapshot.Status.ReadError) {
+                FileLog.e("Purple: global last-good settings input is unreadable");
+            }
+            final byte[] lastGood = peekGood.bytes;
             if (lastGood != null) {
                 final PurpleCore.Loaded alt = load(lastGood, state);
                 if (alt != null && alt.ok) {
@@ -446,12 +489,14 @@ public final class PurpleGate {
             }
         }
         usedLastGood = shadowed;
-        if (!shadowed && next.ok && settings != null) {
-            PurpleSettings.writeAtomic(PurpleSettings.lastGoodFile(), settings);
-        }
 
+        PurpleAccountSettings.invalidate();
         final PurpleCore.Loaded previous = loaded;
         loaded = next;
+        peekLoadedFile = peekFile;
+        peekLoadedGlobal = peekGlobal;
+        peekLoadedPrimary = java.util.Arrays.equals(settings, peekPrimary.bytes) ? peekPrimary : null;
+        peekLoadedGood = peekGood;
         // What the watcher compares the file against. Set from the bytes this
         // reload actually read, so the app's own write comes straight back as
         // "already running" rather than as a change to react to.
@@ -814,7 +859,7 @@ public final class PurpleGate {
             return false;
         }
         ensureLoaded();
-        return PurpleCore.previewAlways(bareIdOf(currentAccount, dialogId),
+        return PurpleAccountSettings.preview(currentAccount, bareIdOf(currentAccount, dialogId),
                 kindOf(currentAccount, dialogId));
     }
 
@@ -2866,7 +2911,7 @@ public final class PurpleGate {
     }
 
     private static byte[] readSettings() {
-        return readFile(PurpleSettings.settingsFile());
+        return PurpleAccountSettings.globalBytes();
     }
 
     private static byte[] readFile(File file) {

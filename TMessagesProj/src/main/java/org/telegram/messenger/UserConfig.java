@@ -259,6 +259,7 @@ public class UserConfig extends BaseController {
     }
 
     public void setCurrentUser(TLRPC.User user) {
+        org.telegram.messenger.purple.PurpleAccountFiles.userChanging(currentAccount, user.id);
         synchronized (sync) {
             TLRPC.User oldUser = currentUser;
             currentUser = user;
@@ -459,6 +460,7 @@ public class UserConfig extends BaseController {
     }
 
     public void clearConfig() {
+        org.telegram.messenger.purple.PurpleAccountFiles.identityChanged(currentAccount);
         getPreferences().edit().clear().apply();
 
         sharingMyLocationUntil = 0;

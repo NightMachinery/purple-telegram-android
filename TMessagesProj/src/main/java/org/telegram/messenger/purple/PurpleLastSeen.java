@@ -51,9 +51,13 @@ public final class PurpleLastSeen {
     }
 
     /** Whether a coarse last seen is allowed to say why - {@code reasons_p}. */
+    public static boolean reasons(int account) {
+        PurpleAccountSettings.Effective current = PurpleAccountSettings.forAccount(account);
+        return current != null && current.current() && current.reasons;
+    }
+
     public static boolean reasons() {
-        final PurpleCore.Loaded current = loadedState();
-        return current != null && current.lastSeenReasons;
+        return false;
     }
 
     /**
@@ -63,15 +67,23 @@ public final class PurpleLastSeen {
      * difference between the two switches: turning this off leaves the
      * explanation standing and removes the peek action.
      */
+    public static boolean peekEnabled(int account) {
+        PurpleAccountSettings.Effective current = PurpleAccountSettings.forAccount(account);
+        return current != null && current.current() && current.trade;
+    }
+
     public static boolean peekEnabled() {
-        final PurpleCore.Loaded current = loadedState();
-        return current != null && current.lastSeenTrade;
+        return false;
     }
 
     /** How long to wait for their exact status - {@code trade_hold}, seconds. */
+    public static int holdSeconds(int account) {
+        PurpleAccountSettings.Effective current = PurpleAccountSettings.forAccount(account);
+        return current == null || !current.current() ? 0 : current.holdSeconds;
+    }
+
     public static int holdSeconds() {
-        final PurpleCore.Loaded current = loadedState();
-        return current == null ? 10 : Math.max(current.lastSeenTradeHold, 0);
+        return 0;
     }
 
     private static PurpleCore.Loaded loadedState() {
@@ -231,7 +243,7 @@ public final class PurpleLastSeen {
      * Ourselves, a bot and a deleted account stop here too. None of them has a
      * status anybody peeked at, so there is nothing remembered to put over it.
      */
-    private static PurpleCore.LastSeenNote note(TLRPC.User user) {
+    private static PurpleCore.LastSeenNote note(int account, TLRPC.User user) {
         PurpleGate.ensureLoaded();
         if (user == null || user.self || user.bot || user.deleted) {
             return PurpleCore.LastSeenNote.PLAIN;
@@ -240,7 +252,7 @@ public final class PurpleLastSeen {
         if (shape == PurpleCore.SHAPE_EXACT) {
             return PurpleCore.LastSeenNote.PLAIN;
         }
-        return PurpleCore.lastSeenNote(user.id, reasonFor(user), shape);
+        return PurpleAccountSettings.note(account, user.id, reasonFor(user), shape);
     }
 
     /**
@@ -266,12 +278,12 @@ public final class PurpleLastSeen {
      *                         nothing has been measured yet, which reads as
      *                         narrow
      */
-    public static CharSequence decorate(TLRPC.User user, CharSequence status,
+    public static CharSequence decorate(int account, TLRPC.User user, CharSequence status,
             int availableWidthPx) {
         if (user == null || status == null) {
             return status;
         }
-        final PurpleCore.LastSeenNote note = note(user);
+        final PurpleCore.LastSeenNote note = note(account, user);
         if (note.line == PurpleCore.LINE_REMEMBERED) {
             return LocaleController.formatString(R.string.PurpleLastSeenAsOf,
                     LocaleController.formatDateOnline(note.wasOnlineUnix, null),
@@ -296,7 +308,7 @@ public final class PurpleLastSeen {
      * that has not been laid out yet at the moment it is filled in.
      */
     public static CharSequence decorate(TLRPC.User user, CharSequence status) {
-        return decorate(user, status, 0);
+        return status;
     }
 
     /**
@@ -308,26 +320,35 @@ public final class PurpleLastSeen {
      * {@code trade_remember}. Inside the cooldown the sheet counts the wait
      * down rather than refusing - see PurpleLastSeenTrade.
      */
-    public static boolean tappable(TLRPC.User user) {
-        return note(user).tappable;
+    public static CharSequence decorate(int account, TLRPC.User user, CharSequence status) {
+        return decorate(account, user, status, 0);
     }
 
-    public static boolean peekEligible(TLRPC.User user) {
-        return peekEnabled()
+    public static CharSequence decorate(TLRPC.User user, CharSequence status, int width) { return status; }
+    public static boolean tappable(TLRPC.User user) { return false; }
+    public static boolean peekEligible(TLRPC.User user) { return false; }
+    public static boolean canSeeOrPeek(TLRPC.User user) { return false; }
+
+    public static boolean tappable(int account, TLRPC.User user) {
+        return note(account, user).tappable;
+    }
+
+    public static boolean peekEligible(int account, TLRPC.User user) {
+        return peekEnabled(account)
                 && shapeFor(user) == PurpleCore.SHAPE_COARSE
                 && reasonFor(user) == PurpleCore.REASON_BY_ME;
     }
 
-    public static boolean canSeeOrPeek(TLRPC.User user) {
+    public static boolean canSeeOrPeek(int account, TLRPC.User user) {
         if (user == null || user.self || user.bot || UserObject.isDeleted(user)) {
             return false;
         }
         if (shapeFor(user) == PurpleCore.SHAPE_EXACT) {
             return true;
         }
-        final PurpleCore.LastSeenNote note = note(user);
+        final PurpleCore.LastSeenNote note = note(account, user);
         return (note.line == PurpleCore.LINE_REMEMBERED && note.wasOnlineUnix > 0)
-                || peekEligible(user);
+                || peekEligible(account, user);
     }
 
     /**

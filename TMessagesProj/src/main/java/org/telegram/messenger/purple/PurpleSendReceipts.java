@@ -17,14 +17,21 @@ public final class PurpleSendReceipts {
         final long generation;
         final PurpleSendReceipt receipt;
         final String path;
+        final PurpleAccountFiles.Identity origin;
         long dialogId;
         boolean completed;
         Object owner;
 
-        Entry(long generation, String path, PurpleSendReceipt receipt) {
+        Entry(int account, long generation, String path, PurpleSendReceipt receipt) {
             this.generation = generation;
             this.receipt = receipt;
             this.path = path;
+            origin = PurpleAccountFiles.capture(account);
+        }
+
+        boolean allowed() {
+            String owner = PurpleAccountOwner.owner();
+            return origin != null && origin.current() && (owner == null || origin.key.equals(owner));
         }
     }
 
@@ -46,7 +53,7 @@ public final class PurpleSendReceipts {
         Entry entry;
         boolean registered;
         synchronized (state) {
-            entry = new Entry(state.generation, path, receipt);
+            entry = new Entry(account, state.generation, path, receipt);
             registered = path != null && receipt != null && !state.pending.containsKey(path);
             if (registered) {
                 state.pending.put(path, entry);
@@ -54,7 +61,7 @@ public final class PurpleSendReceipts {
         }
         Utilities.globalQueue.postRunnable(() -> {
             synchronized (state) {
-                if (entry.generation != state.generation) {
+                if (entry.generation != state.generation || !entry.allowed()) {
                     AndroidUtilities.runOnUIThread(() -> discard(state, path, entry));
                     return;
                 }
@@ -105,7 +112,7 @@ public final class PurpleSendReceipts {
         }
         synchronized (state) {
             Entry entry = state.pending.get(path);
-            return entry != null && entry.generation == state.generation && !entry.completed;
+            return entry != null && entry.generation == state.generation && !entry.completed && entry.allowed();
         }
     }
 
@@ -116,7 +123,7 @@ public final class PurpleSendReceipts {
         }
         synchronized (state) {
             Entry entry = state.pending.get(path);
-            return entry == null || (entry.generation == state.generation && !entry.completed);
+            return entry == null || (entry.generation == state.generation && !entry.completed && entry.allowed());
         }
     }
 
@@ -127,7 +134,7 @@ public final class PurpleSendReceipts {
         }
         synchronized (state) {
             Entry entry = state.pending.get(path);
-            if (entry == null || entry.generation != state.generation || entry.completed) {
+            if (entry == null || entry.generation != state.generation || entry.completed || !entry.allowed()) {
                 return;
             }
             Entry existing = state.bound.get(localId);
@@ -144,7 +151,7 @@ public final class PurpleSendReceipts {
     public static void retry(int account, int localId, long dialogId, String path, Object owner, PurpleSendReceipt receipt) {
         Account state = account(account);
         synchronized (state) {
-            Entry entry = new Entry(state.generation, path, receipt);
+            Entry entry = new Entry(account, state.generation, path, receipt);
             entry.owner = owner;
             entry.dialogId = dialogId;
             state.bound.put(localId, entry);
@@ -159,7 +166,7 @@ public final class PurpleSendReceipts {
         Entry entry;
         synchronized (state) {
             entry = state.bound.get(localId);
-            if (entry == null || entry.generation != state.generation || entry.completed || owner == null || entry.owner != owner) {
+            if (entry == null || entry.generation != state.generation || entry.completed || !entry.allowed() || owner == null || entry.owner != owner) {
                 return;
             }
             state.bound.remove(localId);
@@ -176,7 +183,7 @@ public final class PurpleSendReceipts {
         Entry entry;
         synchronized (state) {
             entry = state.bound.get(localId);
-            if (entry == null || entry.generation != state.generation || entry.completed
+            if (entry == null || entry.generation != state.generation || entry.completed || !entry.allowed()
                     || entry.dialogId != dialogId || !path.equals(entry.path)) {
                 return;
             }

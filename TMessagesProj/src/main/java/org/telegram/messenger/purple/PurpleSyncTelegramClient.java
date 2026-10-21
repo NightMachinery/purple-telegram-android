@@ -35,10 +35,12 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
 
     private final int account;
     private final long userId;
+    private final PurpleAccountFiles.Identity origin;
 
     private PurpleSyncTelegramClient(int account, long userId) {
         this.account = account;
         this.userId = userId;
+        origin = PurpleAccountFiles.capture(account);
     }
 
     static PurpleSyncClient create(int account, long userId) {
@@ -69,7 +71,9 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
 
     @Override
     public boolean isActive() {
-        return userId > 0 && PurpleAccountBinding.isSameActiveUser(account, userId);
+        return userId > 0 && origin != null && origin.userId == userId && origin.current()
+                && PurpleAccountOwner.legacyOperation(account)
+                && PurpleAccountBinding.isSameActiveUser(account, userId);
     }
 
     @Override
@@ -89,6 +93,7 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
 
     @Override
     public int requestHistory(int offsetId, int limit, Reply<History> reply) {
+        if (!isActive()) { reply.onReply(History.failed("AccountUnavailable")); return 0; }
         final TLRPC.TL_messages_getHistory request = new TLRPC.TL_messages_getHistory();
         request.peer = new TLRPC.TL_inputPeerSelf();
         request.offset_id = offsetId;
@@ -108,6 +113,7 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
 
     @Override
     public int requestMessage(int id, Reply<Lookup> reply) {
+        if (!isActive()) { reply.onReply(Lookup.failed("AccountUnavailable")); return 0; }
         final TLRPC.TL_messages_getMessages request = new TLRPC.TL_messages_getMessages();
         request.id.add(id);
         return ConnectionsManager.getInstance(account).sendRequest(request,
@@ -130,6 +136,7 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
 
     @Override
     public Object download(Message message, Reply<File> reply) {
+        if (!isActive()) { reply.onReply(null); return null; }
         final Download download = new Download((Remote) message.remote, reply);
         AndroidUtilities.runOnUIThread(download::start);
         return download;
@@ -137,14 +144,15 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
 
     @Override
     public void cancelDownload(Object download) {
-        AndroidUtilities.runOnUIThread(((Download) download)::stop);
+        if (download != null) AndroidUtilities.runOnUIThread(((Download) download)::stop);
     }
 
     @Override
     public void localCopies(Reply<List<LocalCopy>> reply) {
+        if (!isActive()) { reply.onReply(java.util.Collections.emptyList()); return; }
         final MessagesStorage storage = MessagesStorage.getInstance(account);
         storage.getStorageQueue().postRunnable(
-                () -> reply.onReply(queryLocalCopies(storage)));
+                () -> reply.onReply(isActive() ? queryLocalCopies(storage) : java.util.Collections.emptyList()));
     }
 
     @Override
@@ -164,6 +172,7 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
 
     @Override
     public void send(File file, String caption, String mime, Receipt receipt) {
+        if (!isActive()) { receipt.onReceipt(0, true); return; }
         SendMessagesHelper.prepareSendingPurpleDocument(
                 AccountInstance.getInstance(account), file.getAbsolutePath(),
                 caption, userId, mime, receipt::onReceipt);
@@ -308,6 +317,7 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
         }
 
         void start() {
+            if (!isActive()) { finish(null); return; }
             if (finished) {
                 return;
             }

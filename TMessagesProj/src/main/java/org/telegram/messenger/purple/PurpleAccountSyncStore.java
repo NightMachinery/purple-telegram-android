@@ -147,9 +147,20 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
     private byte[] state;
     private Status status = Status.Disabled;
     private boolean opened;
+    private boolean production;
+    private PurpleAccountFiles.Identity origin;
+    private PurpleSyncFileContext context;
 
     public PurpleAccountSyncStore() {
         this(defaultRoot(), NATIVE);
+        production = true;
+    }
+
+    PurpleAccountSyncStore(PurpleSyncFileContext context) {
+        this(context.files == null ? defaultRoot() : context.files.syncDirectory, NATIVE);
+        this.context = context;
+        origin = context.origin;
+        production = true;
     }
 
     PurpleAccountSyncStore(File root, Core core) {
@@ -166,6 +177,10 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
             return result(Status.InvalidTransition);
         }
         opened = true;
+        if (production) {
+            if (context == null) origin = PurpleAccountFiles.capture(currentAccount);
+            if (!routeCurrent()) return fail(Status.AccountUnbound);
+        }
         if (!optedIn) {
             return result(Status.Disabled);
         }
@@ -258,6 +273,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
     }
 
     public synchronized Result initialize(byte[] boundState) {
+        if (!routeCurrent()) return fail(Status.AccountUnbound);
         if (status != Status.Uninitialized || stateFile.exists()
                 || stageFile.exists() || boundState == null
                 || boundState.length > STATE_LIMIT) {
@@ -448,7 +464,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
     }
 
     public synchronized byte[] stateBytes() {
-        return (status == Status.Ready && state != null) ? state.clone() : null;
+        return (routeCurrent() && status == Status.Ready && state != null) ? state.clone() : null;
     }
 
     public synchronized Status status() {
@@ -516,15 +532,20 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
     }
 
     private static File defaultRoot() {
-        return new File(new File(ApplicationLoader.getFilesDirFixed(),
-                "purple"), "sync");
+        return PurpleAccountFiles.rootSync();
     }
 
     private boolean bound() {
         return state != null && bindingMatches(state);
     }
 
+    private boolean routeCurrent() {
+        return !production || ((context == null || context.current()) && origin != null && origin.current()
+                && PurpleAccountOwner.legacyOperation(origin.slot));
+    }
+
     private boolean bindingMatches(byte[] bytes) {
+        if (!routeCurrent()) return false;
         final Reply checked = core.checkBinding(account, bytes);
         return checked.valid() && "Bound".equals(checked.verdict);
     }

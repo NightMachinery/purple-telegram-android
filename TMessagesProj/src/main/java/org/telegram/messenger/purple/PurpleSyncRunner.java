@@ -58,15 +58,23 @@ public final class PurpleSyncRunner {
         final int account;
         final long userId;
         final Env env;
+        final PurpleAccountFiles.Identity origin;
 
         Session(int account, long userId, Env env) {
             this.account = account;
             this.userId = userId;
             this.env = env;
+            this.origin = env instanceof Platform ? ((Platform) env).context.origin : PurpleAccountFiles.capture(account);
+        }
+
+        boolean writable() {
+            return available() && (!(env instanceof Platform) || ((Platform) env).context.editable());
         }
 
         boolean available() {
-            return userId > 0 && PurpleAccountBinding.isSameActiveUser(account, userId);
+            return (!(env instanceof Platform) || ((Platform) env).context.current())
+                    && userId > 0 && origin != null && origin.userId == userId && origin.current()
+                    && PurpleAccountBinding.isSameActiveUser(account, userId);
         }
     }
 
@@ -198,7 +206,7 @@ public final class PurpleSyncRunner {
 
     public PurpleSyncRunner(int account, PurpleSyncTransport transport) {
         this(account, PurpleAccountBinding.activeUserId(account), transport,
-                new Platform(), sharedQueue(), AndroidUtilities::runOnUIThread);
+                new Platform(account), sharedQueue(), AndroidUtilities::runOnUIThread);
     }
 
     PurpleSyncRunner(int account, long userId, PurpleSyncTransport transport,
@@ -377,13 +385,12 @@ public final class PurpleSyncRunner {
     }
 
     public boolean history(Listener<List<PurpleSyncHistory.Entry>> done) {
-        if (closed) {
-            return false;
-        }
+        if (closed || !session.available() || !PurpleAccountOwner.legacyOperation(session.account)) return false;
         queue.post(() -> {
+            if (!session.available() || !PurpleAccountOwner.legacyOperation(session.account)) return;
             final List<PurpleSyncHistory.Entry> entries = session.env.history().list();
             ui.post(() -> {
-                if (!closed) {
+                if (!closed && session.available() && PurpleAccountOwner.legacyOperation(session.account)) {
                     done.onResult(Collections.unmodifiableList(entries));
                 }
             });
@@ -392,10 +399,12 @@ public final class PurpleSyncRunner {
     }
 
     public boolean preview(String historyId, Listener<Preview> done) {
-        if (closed || historyId == null) {
+        if (closed || historyId == null || !session.available()
+                || !PurpleAccountOwner.legacyOperation(session.account)) {
             return false;
         }
         queue.post(() -> {
+            if (!session.available() || !PurpleAccountOwner.legacyOperation(session.account)) return;
             final PurpleSyncHistory history = session.env.history();
             PurpleSyncHistory.Entry found = null;
             for (PurpleSyncHistory.Entry entry : history.list()) {
@@ -412,7 +421,7 @@ public final class PurpleSyncRunner {
             final Preview preview = (text != null)
                     ? new Preview(found, text, local, diff) : null;
             ui.post(() -> {
-                if (!closed) {
+                if (!closed && session.available() && PurpleAccountOwner.legacyOperation(session.account)) {
                     done.onResult(preview);
                 }
             });
@@ -428,7 +437,7 @@ public final class PurpleSyncRunner {
         queue.post(() -> {
             final PurpleSyncCore.Diff diff = PurpleSyncCore.diff(before, after);
             ui.post(() -> {
-                if (!closed) {
+                if (!closed && session.available() && PurpleAccountOwner.legacyOperation(session.account)) {
                     done.onResult(diff);
                 }
             });
@@ -515,6 +524,8 @@ public final class PurpleSyncRunner {
     private Start refusal(boolean needsAccount) {
         if (closed) {
             return Start.Closed;
+        } else if (!session.available() || !PurpleAccountOwner.legacyOperation(session.account)) {
+            return Start.AccountUnavailable;
         } else if (busy) {
             return Start.Busy;
         } else if (needsAccount && !session.available()) {
@@ -524,7 +535,8 @@ public final class PurpleSyncRunner {
     }
 
     private boolean live(long started) {
-        return !closed && started == generation;
+        return !closed && started == generation && session.available()
+                && PurpleAccountOwner.legacyOperation(session.account);
     }
 
     private Check issue(PurpleSyncApply.Reviewed reviewed,
@@ -601,8 +613,12 @@ public final class PurpleSyncRunner {
         busy = true;
         current = null;
         queue.post(() -> {
+            if (!session.available()) {
+                ui.post(() -> { if (!closed && generation == started) busy = false; });
+                return;
+            }
             final PurpleSyncApply.RestoreResult result =
-                    PurpleSyncApply.restore(session.env, historyId, reason);
+                    PurpleSyncApply.restore(session, historyId, reason);
             final boolean finished = reason == PurpleSyncHistory.Reason.BeforeUndo
                     && undoFinished(result.status);
             final PurpleSyncApply.Reviewed next =
@@ -610,6 +626,7 @@ public final class PurpleSyncRunner {
                             ? PurpleSyncApply.reviewWithAdopt(session, inventory)
                             : null;
             ui.post(() -> {
+                if (!live(started)) return;
                 if (!closed) {
                     if (reason == PurpleSyncHistory.Reason.BeforeUndo) {
                         if (finished && undo != null
@@ -663,6 +680,11 @@ public final class PurpleSyncRunner {
     }
 
     static final class Platform implements Env {
+        final PurpleSyncFileContext context;
+
+        Platform() { this(org.telegram.messenger.UserConfig.selectedAccount); }
+        Platform(int account) { context = new PurpleSyncFileContext(account); }
+
         @Override
         public String device() {
             return PurpleDevice.id();
@@ -675,22 +697,22 @@ public final class PurpleSyncRunner {
 
         @Override
         public boolean hasState() {
-            return PurpleAccountSyncStore.hasState();
+            return context.current() && PurpleAccountSyncStore.hasState(context.files.syncDirectory);
         }
 
         @Override
         public PurpleAccountSyncStore store() {
-            return new PurpleAccountSyncStore();
+            return new PurpleAccountSyncStore(context);
         }
 
         @Override
         public PurpleSyncHistory history() {
-            return new PurpleSyncHistory();
+            return new PurpleSyncHistory(context);
         }
 
         @Override
         public PurpleSyncSettingsFile.Contents readSettings() {
-            return PurpleSyncSettingsFile.read();
+            return PurpleSyncSettingsFile.read(context);
         }
 
         @Override
@@ -698,9 +720,9 @@ public final class PurpleSyncRunner {
                 PurpleSyncSettingsFile.Contents expected, byte[] bytes,
                 String reason, boolean fromImport) {
             return replaceOn(AndroidUtilities::runOnUIThread,
-                    () -> PurpleSyncSettingsFile.replace(expected, bytes, reason,
+                    () -> PurpleSyncSettingsFile.replace(context, expected, bytes, reason,
                             fromImport),
-                    PurpleSyncSettingsFile::read);
+                    () -> PurpleSyncSettingsFile.read(context));
         }
     }
 }

@@ -1766,7 +1766,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         }
         SendMessagesHelper.SendMessageParams params = SendMessagesHelper.SendMessageParams.of(messageObject);
         params.payStars = payStars;
-        PurpleSync.registerRetry(currentAccount, messageObject, unsent);
+        if (!PurpleSync.registerRetry(currentAccount, messageObject, unsent)) return false;
         sendMessage(params);
         return true;
     }

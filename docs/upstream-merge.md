@@ -622,3 +622,20 @@ the same core revision into Android is required before compilation. Do not add
 a Java TOML parser or a second delay preference.
 
 Focused qualification cases are in [Peek and Markdown cases](peek-controls-markdown-cases.md).
+
+### M2 account ownership hooks
+
+UserConfig notifies the Purple identity adapter before replacing its signed-in
+user and before clearing the slot. The user-change hook stays outside its lock.
+ConnectionsManager notifies the same adapter before switching server environments.
+These hooks retire cached account readers and asynchronous ownership proofs;
+startup owner selection remains in PurpleAccountOwner and the shared planner.
+The two exact ratchet entries record these small lifecycle hooks.
+
+Existing status decorators and profile/menu hooks pass their originating account.
+The existing Purple document retry hook returns early when a staged settings
+retry no longer has an allowed owner/lifetime. Feature logic stays in Purple files.
+The original complete audit runs against the actual worktree with a private
+scratch index, including exact new Purple paths, while canonical index bytes
+remain unchanged. Compiler/audit qualification does not enable the held non-root
+editor/sync/store/History/Undo/Reset or version 2 transfer routes.

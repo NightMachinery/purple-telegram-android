@@ -304,7 +304,7 @@ public class ManageChatUserCell extends FrameLayout {
                         statusTextView.setText(LocaleController.getString(R.string.Online));
                     } else {
                         statusTextView.setTextColor(statusColor);
-                        statusTextView.setText(org.telegram.messenger.purple.PurpleLastSeen.decorate(currentUser, LocaleController.formatUserStatus(currentAccount, currentUser)));
+                        statusTextView.setText(org.telegram.messenger.purple.PurpleLastSeen.decorate(currentAccount, currentUser, LocaleController.formatUserStatus(currentAccount, currentUser)));
                     }
                 }
             }

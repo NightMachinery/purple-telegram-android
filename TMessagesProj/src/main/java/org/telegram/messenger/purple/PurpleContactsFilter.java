@@ -72,7 +72,7 @@ public final class PurpleContactsFilter {
     }
 
     public static boolean canSeeOrPeek(int currentAccount, TLRPC.User user) {
-        return PurpleLastSeen.canSeeOrPeek(user);
+        return PurpleLastSeen.canSeeOrPeek(currentAccount, user);
     }
 
     public static int acceptedCount(ArrayList<?> results, Predicate<Object> accept) {
