@@ -3,6 +3,7 @@
 #include "purple/purple_account_files.h"
 #include "purple/purple_settings.h"
 #include "purple/purple_state.h"
+#include "purple/purple_splice.h"
 
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
@@ -250,4 +251,49 @@ Java_org_telegram_messenger_purple_PurpleAccountOwner_globalTransitionNative(
     return Json(env, {{"ok", usable || (!settings && !good)}, {"normal", reset},
         {"preset", state.activePreset}, {"missing", settings == nullptr}, {"empty", settings && !env->GetArrayLength(settings)},
         {"good", usingGood}, {"state", Purple::SerializeState(state)}});
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleAccountRowWrite_planNative(
+        JNIEnv *env, jclass, jbyteArray own, jstring path, jbyteArray good,
+        jint purpose, jint action) {
+    if (purpose < 0 || purpose > 2 || action < -2 || action > 1
+        || (purpose == 2 && action == -1)) return Json(env, {{"ok", false}});
+    const auto table = purpose == 2 ? u"sync"_q : u"last_seen"_q;
+    const auto key = purpose == 0 ? u"reasons_p"_q
+        : purpose == 1 ? u"trade_p"_q : u"send_after_save_p"_q;
+    const auto scope = Purple::SettingsScope(table, key);
+    if (scope != (purpose == 2 ? Purple::SettingScope::FileLocal : Purple::SettingScope::PerAccount)) {
+        return Json(env, {{"ok", false}});
+    }
+    const auto name = Text(env, path);
+    auto text = Bytes(env, own);
+    auto parsed = Purple::ParseSettings(text, name);
+    auto usingGood = false;
+    if (action == -2 && own && !parsed.ok() && good) {
+        text = Bytes(env, good);
+        parsed = Purple::ParseSettings(text, name + u".good"_q);
+        usingGood = true;
+    }
+    if (!parsed.ok() || parsed.settings.version > 2) return Json(env, {{"ok", false}});
+    const auto removed = Purple::RemoveTableKey(text, name, table, key);
+    if (!removed.ok()) return Json(env, {{"ok", false}});
+    const auto value = purpose == 0 ? parsed.settings.lastSeen.reasons
+        : purpose == 1 ? parsed.settings.lastSeen.trade : parsed.settings.sync.sendAfterSave;
+    if (action == -2) return Json(env, {{"ok", true}, {"value", own ? value : false},
+        {"pinned", own && removed.changed}, {"usingGood", usingGood}});
+    if (!own) {
+        if (action == -1) return Json(env, {{"ok", true}, {"changed", false}});
+        if (purpose == 2) return Json(env, {{"ok", false}});
+        text = u"# Purple Telegram settings for one account.\n"
+            "# This file holds only what differs for this account. Anything it leaves out\n"
+            "# comes from the account that supplies app-wide settings on each device.\n"
+            "# Work Mode, Local Premium and the other app-wide settings written here take\n"
+            "# effect only on devices where this account supplies the app-wide settings.\n"
+            "# See config.md, \"Settings per account\".\nversion = 2\n"_q;
+    }
+    const auto result = action == -1 ? removed
+        : Purple::SetTableBool(text, name, table, key, action != 0);
+    return Json(env, {{"ok", result.ok()}, {"changed", result.changed}, {"text", result.text},
+        {"created", own == nullptr}, {"version", own ? parsed.settings.version : 2}});
 }

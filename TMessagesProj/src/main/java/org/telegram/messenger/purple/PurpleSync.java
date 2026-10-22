@@ -49,7 +49,11 @@ public final class PurpleSync {
      * short enough that somebody who changed a switch and put the phone down
      * has the file on the other machine before they pick the other one up.
      */
-    private static final long DEBOUNCE_MS = 5000L;
+    private static final PurpleSaveDebounce saves = new PurpleSaveDebounce(new PurpleSaveDebounce.Scheduler() {
+        public boolean currentThread() { return android.os.Looper.myLooper() == android.os.Looper.getMainLooper(); }
+        public void post(Runnable callback, long delay) { AndroidUtilities.runOnUIThread(callback, delay); }
+        public void cancel(Runnable callback) { AndroidUtilities.cancelRunOnUIThread(callback); }
+    });
 
     private static final Charset UTF_8 = Charset.forName("UTF-8");
     private static final ArrayList<PendingSend> pendingSends = new ArrayList<>();
@@ -69,12 +73,7 @@ public final class PurpleSync {
     private PurpleSync() {
     }
 
-    /**
-     * The armed send. One instance, so re-arming is a cancel and a post of the
-     * same object rather than a queue of runnables each holding a stale copy of
-     * the file it was armed for.
-     */
-    private static final Runnable pending = PurpleSync::fire;
+    static void refreshFromWatcher(Runnable reload) { saves.refresh(reload); }
 
     /**
      * Called after every write of settings.toml the app itself made, except
@@ -110,6 +109,7 @@ public final class PurpleSync {
         AndroidUtilities.runOnUIThread(() -> {
             if (!origin.current() || !PurpleAccountOwner.legacyOperation(origin.slot)
                     || (context != null && !context.current())) return;
+            saves.cancel();
             // Read from disk rather than handed in: the splice, the editor and
             // the import all end in a file, and the file is the only thing all
             // three agree about.
@@ -130,8 +130,16 @@ public final class PurpleSync {
                 return;
             }
             FileLog.d("Purple: auto-send armed by " + reason + ".");
-            AndroidUtilities.cancelRunOnUIThread(pending);
-            AndroidUtilities.runOnUIThread(pending, DEBOUNCE_MS);
+            final long roleEpoch = PurpleAccountOwner.roleEpoch();
+            final String owner = PurpleAccountOwner.owner();
+            final String global = PurpleAccountOwner.global();
+            saves.replace(() -> origin.current() && UserConfig.selectedAccount == origin.slot
+                    && PurpleAccountOwner.legacyOperation(origin.slot)
+                    && roleEpoch == PurpleAccountOwner.roleEpoch()
+                    && java.util.Objects.equals(owner, PurpleAccountOwner.owner())
+                    && java.util.Objects.equals(global, PurpleAccountOwner.global())
+                    && (context == null || context.current())
+                    && Arrays.equals(bytes, PurpleGate.settingsBytes()), PurpleSync::fire);
         });
     }
 
@@ -143,6 +151,21 @@ public final class PurpleSync {
      * write that armed this may have been followed by one that turned the
      * switch off, or by an import that has since claimed these very bytes.
      */
+    static void afterAccountRowWrite(PurpleAccountFiles.Identity origin, File file,
+            byte[] bytes, PurpleSaveDebounce.Receipt receipt, boolean allowSend) {
+        byte[] expected = bytes.clone();
+        saves.admit(receipt, () -> {
+            if (!receipt.current() || !origin.current()
+                    || UserConfig.selectedAccount != origin.slot
+                    || !PurpleAccountOwner.legacyOperation(origin.slot)
+                    || !file.equals(PurpleAccountFiles.rootSettings())
+                    || !Arrays.equals(expected, PurpleAccountFileSnapshot.read(file).bytes)
+                    || !PurpleAutoSendRules.postsFrom(origin.slot, activatedAccounts())
+                    || !PurpleCore.shouldAutoSend(expected, PurpleState.read(), expected, false)) return;
+            sendToSavedMessages(origin.slot, expected);
+        }, allowSend);
+    }
+
     private static void fire() {
         if (!PurpleAccountOwner.legacyOperation(UserConfig.selectedAccount)) return;
         final byte[] bytes = PurpleGate.settingsBytes();

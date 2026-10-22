@@ -4,6 +4,7 @@ import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.purple.PurpleAccountFiles;
 import org.telegram.messenger.purple.PurpleAccountSettings;
+import org.telegram.messenger.purple.PurpleAccountRowWrite;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.purple.PurpleAccountOwner;
 import org.telegram.messenger.purple.PurpleGate;
@@ -45,6 +46,47 @@ public final class PurpleAccountSettingsRows {
         if (!PurpleAccountOwner.legacyEditorAllowed(account)) {
             items.add(UItem.asShadow(text(R.string.PurpleAccountWriteHeld)));
         }
+    }
+
+    private static boolean multipleRoles() {
+        java.util.HashSet<String> keys = new java.util.HashSet<>();
+        for (PurpleAccountFiles.Identity id : PurpleAccountOwner.signedIn()) keys.add(id.key);
+        if (PurpleAccountOwner.global() != null) keys.add(PurpleAccountOwner.global());
+        return keys.size() > 1;
+    }
+
+    public static String resetLabel() {
+        return LocaleController.formatString(R.string.PurpleRowUseGlobal, globalLabel());
+    }
+
+    public static String scope(PurpleAccountRowWrite.Intent intent) {
+        if (intent == null || !multipleRoles()) return null;
+        String own = PurpleSettings.accountLabel(intent.account);
+        if (own == null) own = text(R.string.PurpleAccountUnnamed);
+        if (intent.fileLocal) return LocaleController.formatString(R.string.PurpleRowFileLocal, own);
+        if (!intent.globalAccount) return LocaleController.formatString(intent.pinned
+                ? R.string.PurpleRowOnlyAccount : R.string.PurpleRowSameGlobal,
+                intent.pinned ? own : globalLabel());
+        String caption = LocaleController.formatString(R.string.PurpleRowGlobalInherited, globalLabel());
+        ArrayList<String> overrides = new ArrayList<>();
+        for (PurpleAccountFiles.Identity id : PurpleAccountOwner.signedIn()) {
+            if (intent.overriddenBy(id.slot)) overrides.add(label(id));
+        }
+        if (!overrides.isEmpty()) caption += "\n" + LocaleController.formatString(
+                R.string.PurpleRowOtherAccountsOwn, android.text.TextUtils.join(", ", overrides));
+        return caption;
+    }
+
+    public static String appWideScope(int account) {
+        if (!multipleRoles()) return null;
+        PurpleAccountFiles.Identity origin = PurpleAccountFiles.capture(account);
+        if (origin != null && origin.key.equals(PurpleAccountOwner.global())) return null;
+        boolean globalSignedIn = false;
+        for (PurpleAccountFiles.Identity id : PurpleAccountOwner.signedIn()) {
+            if (id.key.equals(PurpleAccountOwner.global())) globalSignedIn = true;
+        }
+        return globalSignedIn ? LocaleController.formatString(R.string.PurpleRowAppWide, globalLabel())
+                : text(R.string.PurpleRowAppWideSignedOut);
     }
 
     private static String ownerLabel() {

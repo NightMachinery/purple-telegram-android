@@ -19,7 +19,7 @@ final class PurpleAccountFileSnapshot {
     final Status status;
     final byte[] bytes;
     private int limit = LIMIT;
-    private static final int LIMIT = 4 * 1024 * 1024;
+    static final int LIMIT = 4 * 1024 * 1024;
 
     private PurpleAccountFileSnapshot(Status status, byte[] bytes) {
         this.status = status;

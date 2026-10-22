@@ -15,12 +15,12 @@ public final class PurpleWatcher {
     private static final int EVENTS = FileObserver.CLOSE_WRITE | FileObserver.MOVED_TO
             | FileObserver.MOVED_FROM | FileObserver.CREATE | FileObserver.DELETE
             | FileObserver.DELETE_SELF | FileObserver.MOVE_SELF;
-    private static final Runnable RELOAD = () -> {
+    private static final Runnable RELOAD = () -> PurpleSync.refreshFromWatcher(() -> {
         PurpleAccountOwner.reloadGlobal();
         PurpleAccountSettings.invalidate();
         rebind();
         PurpleGate.reload("account settings changed on disk");
-    };
+    });
 
     public static synchronized void start() {
         if (started) return;

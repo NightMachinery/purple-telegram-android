@@ -1882,3 +1882,9 @@ remain in docs/peek-controls-markdown-cases.md.
 The source-only M2 candidate and its held surfaces are described in
 [docs/account-settings-m2.md](docs/account-settings-m2.md). It requires separate
 Java/JNI qualification and independent review before integration.
+
+
+Account-specific Last Seen reasons and Peek trade rows, file-local Send after save,
+and long-press Reset for pinned non-global values are described in
+[the account settings notes](docs/account-settings-m2.md#account-rows-and-reset).
+The general editor, History and layered-file transfer gates remain conservative.

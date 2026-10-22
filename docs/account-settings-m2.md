@@ -175,3 +175,64 @@ UserConfig.clearConfig during IO still require separately admitted Android
 observations. This repair scope ran no compiler, tests or runtime cases. Affected
 qualification and the same reviewer's remaining-finding closure are pending;
 the previous four source closures and unchanged qualification carry.
+
+
+## Account rows and Reset
+
+The Last Seen reasons and Peek trade switches now capture the settings screen's
+account and lifetime. They read its effective layered values and write only its
+own settings file through fixed row purposes. Send after save reads that own file
+without inheritance. Multiple loaded roles add account, global and file-local
+captions; a pinned non-global reasons/trade row offers Use global value on long
+press. Reset delegates to the shared RemoveTableKey and preserves unrelated text.
+The broad editor guard remains in place, including app-wide edits whose global
+file cannot use the accepted legacy route. No general table writer was unlocked.
+
+An explicit first reasons/trade edit may create the approved minimal version 2
+header and requested key. This creation never sends. Missing-file Send after save
+is held until a per-account edit has created the file. Existing versions and the
+legacy root fingerprint/auto-send policy remain; non-root and version 2 transport
+remain held. Existing row-save backup policy is unchanged: the legacy row writer
+never took whole-editor/import backups, and these row intents do not overwrite
+those backups. Global last-good maintenance remains with the accepted global
+reload path. No generic editor, History or transport route was enabled.
+
+Intents retain fragment/activity/account lifetime, owner/global revision and role
+epoch, Java/native generations, exact own/global/good/local/owner inputs, regular
+file identities and parent directory identities. Synchronous notification precedes
+publication and is rechecked; the final fsync-to-rename boundary checks the same
+original context under owner/account/settings locks. Reentrant row mutation is
+held. Parent creation is exclusive and only owned unpublished temporary files and
+empty owned directories may be cleaned. Invalid current own files may display
+valid own-good values but cannot be overwritten through these rows. A missing
+app-wide file with an existing good copy is held for repair.
+
+The isolated account-row cases invoke actual production JNI and shared splice/
+layering code for false pinning, inheritance, Reset, file-local values, minimal
+creation, version preservation and invalid-purpose/fallback refusals. Real file
+mutation cases exercise the production final-publication helper after fsync and
+preparation retirement. These host cases do not execute Android Os, actual
+UserConfig/session changes, UI account switching or symlink/directory refusal
+through the Android capture adapter. Those platform cases remain unmeasured.
+There is a final validation-to-rename interval against noncooperating external
+writers; this is not a universal filesystem compare-and-swap.
+
+
+### Row-save receipt and debounce repair
+
+Row and legacy saves now share one production debounce coordinator. Every new supported save replaces the pending decision; imports and successful no-send row creations cancel it. A canceled callback is also fenced by entry identity, even if it was already queued. Existing root/schema1, originating account, selected first activated account, file-local flag, imported fingerprint and owner restrictions still run before a send.
+
+The row send receipt retains the original view/account lifetime, owner/global role epoch, exact files and directory identities. Only the actual watcher reload boundary may advance its expected counters: one owner revision and two Java/native invalidations. Both sides require the retained inputs. A changed role, lifetime, path/file or unexpected invalidation permanently retires that receipt. An ordinary own-file refresh therefore preserves the five-second decision without resetting its deadline or recapturing an account.
+
+Final planned text is encoded as UTF-8 and checked against the same 4 MiB reader cap before notification, parent creation or temporary/public file mutation. Oversized output is refused without truncation.
+
+The focused repair fixture invokes the unchanged genuine JNI row plan and the actual production output-byte policy and shared coordinator. Virtual time drives inert decisions, including own refresh, changed context, mixed legacy/row order, canceled queued callbacks and exact-cap/multibyte boundaries. Android Handler/FileObserver dispatch and Os-backed Intent publication remain platform qualification gaps; no host substitute implements those classes. Qualification execution is recorded in the external repair packet.
+
+
+### Receipt admission before an overdue watcher
+
+The row-save route uses the shared coordinator's admission boundary. On the main looper it registers or cancels immediately, so an already-due400ms watcher cannot run first when synchronous reload/notification work has delayed the UI writer. The five-second decision is scheduled from this admission, without an additional queued hop. Off-thread callers post admission without acquiring the coordinator lock.
+
+Actual row click and Reset callbacks run on the main looper. Legacy arming and watcher refresh also run there, and the application Handler is constructed from that looper. Inline admission therefore runs under the existing owner/files/settings locks on the same thread as watcher refresh; it introduces no concurrent coordinator-to-owner lock inversion. Epoch, role/lifetime/view, exact-file and final send-policy guards remain intact.
+
+The focused admission entry invokes the actual production admission method with a virtual scheduler that leaves an overdue watcher queued while the writer is busy. The queued-policy control loses its otherwise valid decision; inline admission survives the same refresh and preserves the complete five-second delay. Changed context and extra invalidations still retire it, and no-send admission cancels old work. The original39-assertion method is byte-identical and carried without replay. Actual Android Handler/FileObserver dispatch remains a platform gap.

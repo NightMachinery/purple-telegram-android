@@ -584,7 +584,7 @@
     <string name="PurpleAccountOwnerRecovered">The managed root owner record restored local.toml. Root file ownership has not changed.</string>
     <string name="PurpleAccountLocalWarning">local.toml could not supply a valid global choice. Using the root owner for app-wide settings.</string>
     <string name="PurpleAccountRoles">Last Seen and notification preview use this screen’s account. Work Mode and Peek use the app-wide account. Device state stays on this device.</string>
-    <string name="PurpleAccountWriteHeld">This account’s file cannot be edited or synced here yet. Choose the root owner first. Non-root editing, History, Reset and version 2 transfers are held. Manual root-file backup remains available.</string>
+    <string name="PurpleAccountWriteHeld">Full-file editing, settings sync and History are not available for this account yet. Supported account switches stay available when their original account and settings files are current. Choose a root owner if one is missing.</string>
     <string name="PurpleAccountUnnamed">Signed-in account</string>
     <string name="PurpleAccountTestServers">(test servers)</string>
     <string name="PurpleAccountGlobalFileError">The app-wide file is unreadable or invalid. Its own good copy is used when available.</string>
@@ -596,4 +596,12 @@
     <string name="PurpleAccountGlobalKeepsMode">The current mode remains selected in this file.</string>
     <string name="PurpleAccountGlobalMissing">The chosen settings file is missing. No settings file will be created.</string>
     <string name="PurpleAccountGlobalEmpty">The chosen settings file is empty.</string>
+    <string name="PurpleRowUseGlobal">Use value from %1$s</string>
+    <string name="PurpleRowFileLocal">Only this settings file, for %1$s. This switch never inherits.</string>
+    <string name="PurpleRowOnlyAccount">Only for %1$s</string>
+    <string name="PurpleRowSameGlobal">Same as %1$s on this device</string>
+    <string name="PurpleRowGlobalInherited">For %1$s and every account that does not set its own, on this device</string>
+    <string name="PurpleRowOtherAccountsOwn">%1$s sets its own</string>
+    <string name="PurpleRowAppWide">For every account on this device, in %1$s settings</string>
+    <string name="PurpleRowAppWideSignedOut">For every account on this device. Uses the app-wide account’s file, which does not sync while that account is signed out.</string>
 </resources>

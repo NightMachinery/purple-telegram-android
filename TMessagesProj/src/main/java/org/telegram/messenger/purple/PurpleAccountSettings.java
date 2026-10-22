@@ -155,7 +155,9 @@ public final class PurpleAccountSettings {
 
     public static byte[] globalBytes() { return PurpleAccountFileSnapshot.read(globalFile()).bytes; }
 
-    private static native long epochNative();
+    static synchronized long generation() { return generation; }
+
+    static native long epochNative();
     private static native long createNative(long epoch, byte[] global, String globalPath, byte[] globalGood,
             byte[] account, String accountPath, byte[] accountGood);
     private static native String describeNative(long handle);

@@ -37,6 +37,7 @@ import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.purple.PurpleCore;
+import org.telegram.messenger.purple.PurpleAccountRowWrite;
 import org.telegram.messenger.purple.PurpleDevice;
 import org.telegram.messenger.purple.PurpleGate;
 import org.telegram.messenger.purple.PurpleLastSeen;
@@ -109,6 +110,43 @@ public class PurpleSettingsActivity extends UniversalFragment
     private boolean checkingSaved;
     private org.telegram.messenger.purple.PurpleAccountFiles.Identity importOrigin;
     private View versionFooter;
+    private long rowLifetime;
+    private PurpleAccountRowWrite.Intent reasonsIntent;
+    private PurpleAccountRowWrite.Intent tradeIntent;
+    private PurpleAccountRowWrite.Intent sendIntent;
+
+    @Override
+    public void setCurrentAccount(int account) {
+        if (currentAccount != account) ++rowLifetime;
+        super.setCurrentAccount(account);
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        ++rowLifetime;
+        if (listView != null) listView.adapter.update(true);
+    }
+
+    @Override
+    public void onPause() {
+        ++rowLifetime;
+        super.onPause();
+    }
+
+    private PurpleAccountRowWrite.Current rowCurrent() {
+        Activity activity = getParentActivity();
+        int account = currentAccount;
+        long lifetime = rowLifetime;
+        return () -> activity != null && getParentActivity() == activity
+                && !isFinished && !isPaused && currentAccount == account && rowLifetime == lifetime;
+    }
+
+    private void scope(ArrayList<UItem> items, PurpleAccountRowWrite.Intent intent) {
+        String caption = PurpleAccountSettingsRows.scope(intent);
+        if (caption != null) items.add(UItem.asShadow(caption));
+    }
+
 
 
     // Every reload the gate does ends in this signal, whichever account-wide
@@ -124,6 +162,7 @@ public class PurpleSettingsActivity extends UniversalFragment
 
     @Override
     public void onFragmentDestroy() {
+        ++rowLifetime;
         getNotificationCenter().removeObserver(this, NotificationCenter.dialogFiltersUpdated);
         super.onFragmentDestroy();
     }
@@ -153,6 +192,12 @@ public class PurpleSettingsActivity extends UniversalFragment
         // write leave the switch exactly where the file is with no extra code.
         final PurpleCore.Loaded state = PurpleGate.state();
         PurpleAccountSettingsRows.add(items, currentAccount);
+        PurpleAccountRowWrite.Current current = rowCurrent();
+        reasonsIntent = PurpleAccountRowWrite.reasons(currentAccount, current);
+        tradeIntent = PurpleAccountRowWrite.trade(currentAccount, current);
+        sendIntent = PurpleAccountRowWrite.sendAfterSave(currentAccount, current);
+        String appWideScope = PurpleAccountSettingsRows.appWideScope(currentAccount);
+        if (appWideScope != null) items.add(UItem.asShadow(appWideScope));
 
         items.add(UItem.asHeader(getString(R.string.PurpleWorkMode)));
         items.add(UItem.asButton(ROW_PRESET, getString(R.string.PurpleWorkMode),
@@ -214,12 +259,14 @@ public class PurpleSettingsActivity extends UniversalFragment
         items.add(UItem.asHeader(getString(R.string.PurpleLastSeenHeader)));
         final UItem reasons =
                 UItem.asCheck(ROW_LAST_SEEN_REASONS, getString(R.string.PurpleLastSeenReasonsRow));
-        reasons.checked = PurpleLastSeen.reasons(currentAccount);
+        reasons.checked = reasonsIntent == null ? PurpleLastSeen.reasons(currentAccount) : reasonsIntent.value;
         items.add(reasons);
+        scope(items, reasonsIntent);
         final UItem trade =
                 UItem.asCheck(ROW_LAST_SEEN_TRADE, getString(R.string.PurpleLastSeenTradeRow));
-        trade.checked = PurpleLastSeen.peekEnabled(currentAccount);
+        trade.checked = tradeIntent == null ? PurpleLastSeen.peekEnabled(currentAccount) : tradeIntent.value;
         items.add(trade);
+        scope(items, tradeIntent);
         final UItem skipConfirmation = UItem.asCheck(
                 ROW_LAST_SEEN_SKIP_CONFIRMATION,
                 getString(R.string.PurpleTradeSkipConfirmationRow));
@@ -262,8 +309,9 @@ public class PurpleSettingsActivity extends UniversalFragment
         // is a different kind of thing to agree to than pressing Send once.
         final UItem autoSend =
                 UItem.asCheck(ROW_AUTOSEND, getString(R.string.PurpleSendAfterSave));
-        autoSend.checked = (state != null && state.sendAfterSave);
+        autoSend.checked = sendIntent != null && sendIntent.value;
         items.add(autoSend);
+        scope(items, sendIntent);
         items.add(UItem.asShadow(getString(R.string.PurpleSendAfterSaveInfo)));
 
         // Under the file rather than under Work Mode: the label is a line in
@@ -384,6 +432,12 @@ public class PurpleSettingsActivity extends UniversalFragment
     @Override
     protected void onClick(UItem item, View view, int position, float x, float y) {
         if (PurpleAccountSettingsRows.click(this, item.id)) return;
+        if (item.id == ROW_LAST_SEEN_REASONS || item.id == ROW_LAST_SEEN_TRADE || item.id == ROW_AUTOSEND) {
+            PurpleAccountRowWrite.Intent intent = item.id == ROW_LAST_SEEN_REASONS ? reasonsIntent
+                    : item.id == ROW_LAST_SEEN_TRADE ? tradeIntent : sendIntent;
+            write(intent == null ? getString(R.string.PurpleAccountWriteHeld) : intent.set(!item.checked));
+            return;
+        }
         if (!org.telegram.messenger.purple.PurpleAccountOwner.legacyEditorAllowed(currentAccount)
                 && item.id != ROW_PRESET && item.id != ROW_SEND && item.id != ROW_SHARE
                 && item.id != ROW_SCREEN_TIME && item.id != ROW_DEVICE && item.id != ROW_NOTIFICATIONS
@@ -430,18 +484,6 @@ public class PurpleSettingsActivity extends UniversalFragment
         case ROW_SEND:
             sendToSaved();
             break;
-        case ROW_AUTOSEND:
-            write(PurpleWriter.setTableBool(
-                    "sync", "send_after_save_p", !item.checked, "auto-send switch"));
-            break;
-        case ROW_LAST_SEEN_REASONS:
-            write(PurpleWriter.setTableBool(
-                    "last_seen", "reasons_p", !item.checked, "last seen reasons switch"));
-            break;
-        case ROW_LAST_SEEN_TRADE:
-            write(PurpleWriter.setTableBool(
-                    "last_seen", "trade_p", !item.checked, "last seen trade switch"));
-            break;
         case ROW_LAST_SEEN_SKIP_CONFIRMATION:
             PurpleLastSeenTrade.setNoAsk(!item.checked);
             listView.adapter.update(true);
@@ -476,7 +518,15 @@ public class PurpleSettingsActivity extends UniversalFragment
 
     @Override
     protected boolean onLongClick(UItem item, View view, int position, float x, float y) {
-        return false;
+        PurpleAccountRowWrite.Intent intent = item.id == ROW_LAST_SEEN_REASONS ? reasonsIntent
+                : item.id == ROW_LAST_SEEN_TRADE ? tradeIntent : null;
+        if (intent == null || !intent.canReset() || getParentActivity() == null) return false;
+        AlertDialog.Builder dialog = new AlertDialog.Builder(getParentActivity());
+        dialog.setItems(new CharSequence[]{PurpleAccountSettingsRows.resetLabel()},
+                (whichDialog, index) -> write(intent.reset()));
+        dialog.setNegativeButton(getString(R.string.Cancel), null);
+        showDialog(dialog.create());
+        return true;
     }
 
     /**
