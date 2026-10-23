@@ -283,7 +283,7 @@ public class StoriesController {
     }
 
     public boolean hasStories() {
-        if (PurpleStories.filteringStoryStrip()) return PurpleStories.storyStripHasStories(currentAccount, this);
+        if (PurpleStories.filteringStoryStrip(currentAccount)) return PurpleStories.storyStripHasStories(currentAccount, this);
         return (dialogListStories != null && dialogListStories.size() > 0) || hasSelfStories();
     }
 
@@ -4280,7 +4280,7 @@ public class StoriesController {
     }
 
     public boolean hasOnlySelfStories() {
-        if (PurpleStories.filteringStoryStrip()) return PurpleStories.storyStripOnlySelf(currentAccount, this);
+        if (PurpleStories.filteringStoryStrip(currentAccount)) return PurpleStories.storyStripOnlySelf(currentAccount, this);
         return hasSelfStories() && (getDialogListStories().isEmpty() || (getDialogListStories().size() == 1 && DialogObject.getPeerDialogId(getDialogListStories().get(0).peer) == UserConfig.getInstance(currentAccount).clientUserId));
     }
 

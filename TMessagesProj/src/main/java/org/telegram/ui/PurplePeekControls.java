@@ -174,7 +174,7 @@ public final class PurplePeekControls {
         TLRPC.Dialog dialog = MessagesController.getInstance(account).dialogs_dict.get(dialogId);
         if (dialog == null || PurpleGate.shownWithoutRecent(account, dialog)) return;
         if (!PurpleGate.hiddenEverywhereWithoutRecent(account, dialog)
-                && ((dialog.folder_id != 0 && !PurpleGate.hidingArchive())
+                && ((dialog.folder_id != 0 && !PurpleGate.hidingArchive(account))
                     || PurpleGate.reachableElsewhere(account, dialogId, null))) return;
         PurpleRecent.suppressForPeekExit(account, dialogId);
         chat.finishFragment();

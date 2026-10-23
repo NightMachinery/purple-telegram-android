@@ -28,6 +28,8 @@ public final class PurpleWriter {
     public static final class Session {
         public final String globalKey;
         public final boolean appWide;
+        public final String key;
+        public final int mode;
         private final PurpleGlobalAccountChoice.Session context;
         private final PurpleAccountFiles.Identity origin;
         private final PurpleRoutedWriteModel model;
@@ -60,11 +62,13 @@ public final class PurpleWriter {
                         }
                     }, PurpleEditorDirectories.NATIVE);
             this.appWide = model.appWide;
+            key = model.key; mode = model.mode;
         }
         public boolean current() { return !retired && model.current(); }
         public boolean forAccount(int account) { return origin.slot == account && origin.current(); }
-        public boolean sameRoute() {
-            return action.current() && view.current() && origin.current() && PurpleAccountOwner.ready()
+        public boolean sameRoute() { return action.current() && routeCurrent(); }
+        public boolean routeCurrent() {
+            return view.current() && origin.current() && PurpleAccountOwner.ready()
                     && role == PurpleAccountOwner.roleEpoch() && revision == PurpleAccountOwner.revision()
                     && java.util.Objects.equals(context.owner, PurpleAccountOwner.owner())
                     && java.util.Objects.equals(globalKey, PurpleAccountOwner.global());
@@ -85,6 +89,31 @@ public final class PurpleWriter {
                 return applyText(result.optBoolean("changed"), result.optString("text"), "list edit");
             } catch (Exception | UnsatisfiedLinkError e) { return "list settings could not be read"; }
         }
+        public String deleteOwn(String list) {
+            try {
+                org.json.JSONObject result = model.deleteOwn(list);
+                return result == null ? "own members cannot be deleted" : applyText(result.optBoolean("changed"),
+                        result.optString("text"), "delete own list members");
+            } catch (Exception | UnsatisfiedLinkError e) { return "own list settings could not be read"; }
+        }
+        public String setMode(int next) {
+            if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) return "settings writes require the UI thread";
+            synchronized (PurpleAccountOwner.class) {
+                synchronized (PurpleAccountFiles.class) {
+                    synchronized (PurpleAccountSettings.class) {
+                        if (writing || !current()) return "settings context changed";
+                        writing = true;
+                        try {
+                            if (!model.setMode(next)) return "Work Mode choice changed or could not be written";
+                            PurpleAccountOwner.reloadGlobal();
+                            PurpleGate.reload("account Work Mode choice");
+                            return null;
+                        } catch (Exception | UnsatisfiedLinkError e) { return "Work Mode choice could not be written"; }
+                        finally { writing = false; retired = true; }
+                    }
+                }
+            }
+        }
         private String applyText(boolean changed, String text, String reason) {
             if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) return "settings writes require the UI thread";
             synchronized (PurpleAccountOwner.class) {
@@ -98,7 +127,7 @@ public final class PurpleWriter {
                             PurpleAccountEditorModel.Result result = model.save(text);
                             if (!result.ok) return result.changed ? "settings were written but the context changed" : "settings changed or could not be written";
                             if (!context.currentAfterAccountRefresh(true)) return "settings context changed after writing";
-                            if (appWide) PurpleGate.reload(reason);
+                            PurpleGate.reload(reason);
                             if (appWide && !retired && action.current() && view.current() && origin.current() && PurpleAccountOwner.ready()
                                     && role == PurpleAccountOwner.roleEpoch() && revision == PurpleAccountOwner.revision()
                                     && java.util.Objects.equals(context.owner, PurpleAccountOwner.owner())

@@ -68,7 +68,8 @@ public final class PurpleListMenu {
      * somebody asking why they cannot see it.
      */
     public static String verdictLine(int currentAccount, long dialogId) {
-        if (!PurpleGate.filtering()) {
+        if (PurpleWorkMode.stock(currentAccount)) return LocaleController.formatString(R.string.PurpleListsStock, PurpleSettings.accountLabel(currentAccount));
+        if (!PurpleGate.filtering(currentAccount)) {
             return null;
         }
         final PurpleCore.Loaded current = PurpleGate.state();
@@ -77,7 +78,7 @@ public final class PurpleListMenu {
         }
         final long bareId = PurpleGate.bareIdOf(currentAccount, dialogId);
         final int kind = PurpleGate.kindOf(currentAccount, dialogId);
-        final int packed = PurpleCore.visible(bareId, kind);
+        final int packed = PurpleWorkMode.visible(currentAccount, bareId, kind);
         final int mode = packed & PurpleCore.SHOW_MASK;
 
         final TLRPC.Dialog dialog =
@@ -113,7 +114,7 @@ public final class PurpleListMenu {
                 ? LocaleController.getString(R.string.PurpleVerdictByFolder)
                 : "";
 
-        final String list = PurpleCore.decider(bareId, kind);
+        final String list = PurpleWorkMode.decider(currentAccount, bareId, kind);
         final String where = (list == null || list.length() == 0)
                 ? LocaleController.formatString(R.string.PurpleVerdictNoList, current.title)
                 : LocaleController.formatString(R.string.PurpleVerdictInList, list);

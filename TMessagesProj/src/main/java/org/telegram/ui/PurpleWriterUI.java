@@ -49,7 +49,7 @@ final class PurpleWriterUI {
     }
     static void retire(BaseFragment fragment) { lifetimes.put(fragment, lifetimes.getOrDefault(fragment, 0L) + 1); }
     static PurpleWriter.Session capture(BaseFragment fragment) { return capture(fragment, true); }
-    private static PurpleWriter.Current current(BaseFragment fragment) {
+    static PurpleWriter.Current current(BaseFragment fragment) {
         observe(fragment.getParentActivity());
         long activityEpoch = activities.getOrDefault(fragment.getParentActivity(), 0L);
         long activeEpoch = accountEpoch;

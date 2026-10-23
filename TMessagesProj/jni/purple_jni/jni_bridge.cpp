@@ -13,6 +13,7 @@ any later version.
 #include <jni.h>
 
 #include "purple/purple_engine.h"
+#include "purple/purple_local_choice.h"
 #include "purple/purple_passcode.h"
 #include "purple/purple_screentime.h"
 #include "purple/purple_settings.h"
@@ -22,6 +23,8 @@ any later version.
 #include <QtCore/QByteArray>
 #include <QtCore/QChar>
 #include <QtCore/QDateTime>
+#include <QtCore/QJsonDocument>
+#include <QtCore/QJsonObject>
 #include <QtCore/QString>
 
 #include <algorithm>
@@ -168,7 +171,14 @@ void AppendJsonBool(QString &out, bool value) {
 // The desktop keeps the same three next to each other in Purple::Gate; here
 // Java owns the files and the reload policy, and this is only the part that has
 // to survive between calls.
+struct AccountSnapshot {
+    Purple::Settings settings;
+    Purple::Resolved resolved;
+};
+
 struct Gate {
+	std::map<jlong, AccountSnapshot> accountSettings;
+	jlong nextAccount = 0;
 	std::mutex mutex;
 	Purple::Settings settings;
 	Purple::State state;
@@ -1595,12 +1605,7 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 // One int rather than an object because a JNI object allocation per chat is the
 // one cost this path cannot carry: the show mode is the low nibble and the
 // notify flag is 0x10.
-extern "C" JNIEXPORT jint JNICALL
-Java_org_telegram_messenger_purple_PurpleCore_visibleNative(
-		JNIEnv *,
-		jclass,
-		jlong bareId,
-		jint kind) {
+static jint visibleFor(JNIEnv *env, jlong handle, jlong bareId, jint kind) {
 	// The Java constants are these enumerators by value. Reordering either enum
 	// in the core would silently turn every group into a private chat, so the
 	// mapping is checked here rather than trusted.
@@ -1618,21 +1623,27 @@ Java_org_telegram_messenger_purple_PurpleCore_visibleNative(
 	constexpr auto kViewShift = 8;
 	constexpr auto kStock = jint(int(Purple::ShowMode::Always)) | kNotifyBit;
 
+	auto &gate = TheGate();
+	const auto lock = std::lock_guard(gate.mutex);
+	const auto account = gate.accountSettings.find(handle);
+	if (handle == 0) return kStock;
+	if (handle != -1 && account == gate.accountSettings.end()) return jint(Purple::ShowMode::Never);
+	const auto &settings = handle == -1 ? gate.settings : account->second.settings;
+    const auto &resolved = handle == -1 ? gate.resolved : account->second.resolved;
 	if (kind < 0 || kind > int(Purple::ChatKind::Bot)) {
 		// A kind the core cannot be asked about. Answering "shown and audible"
 		// is the harmless direction: the alternative is hiding a chat because
 		// the caller mislabelled it.
 		return kStock;
 	}
-	auto &gate = TheGate();
-	const auto lock = std::lock_guard(gate.mutex);
-	if (!gate.loaded || gate.resolved.normal) {
+
+	if (!gate.loaded || resolved.normal) {
 		return kStock;
 	}
 	const auto id = Purple::PeerIdValue(bareId);
 	const auto visibility = Purple::Visible(
-		gate.settings,
-		gate.resolved,
+		settings,
+		resolved,
 		id,
 		Purple::ChatKind(kind));
 
@@ -1643,11 +1654,11 @@ Java_org_telegram_messenger_purple_PurpleCore_visibleNative(
 	// JNI call per chat per view per sort. Sixteen is the core's own view
 	// limit, so the field cannot overflow.
 	auto views = jint(0);
-	for (auto i = 0, count = int(gate.resolved.views.size()); i != count; ++i) {
+	for (auto i = 0, count = int(resolved.views.size()); i != count; ++i) {
 		if (Purple::ViewHolds(
-				gate.settings,
-				gate.resolved,
-				gate.resolved.views[i],
+				settings,
+				resolved,
+				resolved.views[i],
 				id,
 				Purple::ChatKind(kind))) {
 			views |= (jint(1) << i);
@@ -1656,6 +1667,16 @@ Java_org_telegram_messenger_purple_PurpleCore_visibleNative(
 	return jint(int(visibility.show))
 		| (visibility.notify ? kNotifyBit : jint(0))
 		| (views << kViewShift);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_visibleNative(JNIEnv *env, jclass, jlong bareId, jint kind) {
+	return visibleFor(env, -1, bareId, kind);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_org_telegram_messenger_purple_PurpleWorkModeModel_visibleNative(JNIEnv *env, jclass, jlong handle, jlong bareId, jint kind) {
+	return visibleFor(env, handle, bareId, kind);
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
@@ -2127,20 +2148,19 @@ Java_org_telegram_messenger_purple_PurpleCore_setOverrideNative(
 // Answered from the resolution rather than from the file, unlike listsForNative
 // above: this is a question about what is happening now, and a list the preset
 // does not name has no say in it however many members it has.
-extern "C" JNIEXPORT jstring JNICALL
-Java_org_telegram_messenger_purple_PurpleCore_deciderNative(
-		JNIEnv *env,
-		jclass,
-		jlong bareId,
-		jint kind) {
+static jstring deciderFor(JNIEnv *env, jlong handle, jlong bareId, jint kind) {
 	auto &gate = TheGate();
 	const auto lock = std::lock_guard(gate.mutex);
-	if (!gate.loaded || gate.resolved.normal) {
+	const auto account = gate.accountSettings.find(handle);
+	if (handle != -1 && account == gate.accountSettings.end()) return nullptr;
+	const auto &settings = handle == -1 ? gate.settings : account->second.settings;
+    const auto &resolved = handle == -1 ? gate.resolved : account->second.resolved;
+	if (!gate.loaded || resolved.normal) {
 		return nullptr;
 	}
 	const auto effective = Purple::MatchList(
-		gate.settings,
-		gate.resolved,
+		settings,
+		resolved,
 		Purple::PeerIdValue(bareId),
 		Purple::ChatKind(kind));
 	if (!effective) {
@@ -2150,8 +2170,8 @@ Java_org_telegram_messenger_purple_PurpleCore_deciderNative(
 	// a list the file has dropped can still decide a chat while the preset
 	// runs from the cache, and it should be named by its title then too.
 	const auto list = Purple::LookupList(
-		gate.settings,
-		gate.resolved,
+		settings,
+		resolved,
 		effective->list);
 	if (!list) {
 		// Neither the file nor the snapshot knows the name. MatchList() does
@@ -2159,6 +2179,16 @@ Java_org_telegram_messenger_purple_PurpleCore_deciderNative(
 		return ToJava(env, effective->list);
 	}
 	return ToJava(env, list->title.isEmpty() ? list->name : list->title);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_deciderNative(JNIEnv *env, jclass, jlong bareId, jint kind) {
+	return deciderFor(env, -1, bareId, kind);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleWorkModeModel_deciderNative(JNIEnv *env, jclass, jlong handle, jlong bareId, jint kind) {
+	return deciderFor(env, handle, bareId, kind);
 }
 
 // The lists a chat could be put in, and which of them already hold it.
@@ -2935,35 +2965,46 @@ Java_org_telegram_messenger_purple_PurpleCore_lastSeenNoteNative(
 //
 // Same packed int as visibleNative, minus the view bits: this is asked once per
 // chat opened, not once per row, so there is nothing to ride along.
-extern "C" JNIEXPORT jint JNICALL
-Java_org_telegram_messenger_purple_PurpleCore_visibleUnpeekedNative(
-		JNIEnv *,
-		jclass,
-		jlong bareId,
-		jint kind) {
+static jint visibleUnpeekedFor(JNIEnv *env, jlong handle, jlong bareId, jint kind) {
 	constexpr auto kNotifyBit = jint(0x10);
 	constexpr auto kStock = jint(int(Purple::ShowMode::Always)) | kNotifyBit;
 
+	auto &gate = TheGate();
+	const auto lock = std::lock_guard(gate.mutex);
+	const auto account = gate.accountSettings.find(handle);
+	if (handle == 0) return kStock;
+	if (handle != -1 && account == gate.accountSettings.end()) return jint(Purple::ShowMode::Never);
+	const auto &settings = handle == -1 ? gate.settings : account->second.settings;
+    const auto &resolved = handle == -1 ? gate.resolved : account->second.resolved;
 	if (kind < 0 || kind > int(Purple::ChatKind::Bot)) {
 		return kStock;
 	}
-	auto &gate = TheGate();
-	const auto lock = std::lock_guard(gate.mutex);
-	if (!gate.loaded || gate.resolved.normal) {
+
+	if (!gate.loaded || resolved.normal) {
 		return kStock;
 	}
 	// A copy with the peek put back, rather than clearing it on the live one:
 	// the gate is shared and the chat list is asking it the other question from
 	// another thread while this runs.
-	auto unpeeked = gate.resolved;
+	auto unpeeked = resolved;
 	unpeeked.peeking = false;
 	const auto visibility = Purple::Visible(
-		gate.settings,
+		settings,
 		unpeeked,
 		Purple::PeerIdValue(bareId),
 		Purple::ChatKind(kind));
 	return jint(int(visibility.show))
 		| (visibility.notify ? kNotifyBit : jint(0));
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_visibleUnpeekedNative(JNIEnv *env, jclass, jlong bareId, jint kind) {
+	return visibleUnpeekedFor(env, -1, bareId, kind);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_org_telegram_messenger_purple_PurpleWorkModeModel_visibleUnpeekedNative(JNIEnv *env, jclass, jlong handle, jlong bareId, jint kind) {
+	return visibleUnpeekedFor(env, handle, bareId, kind);
 }
 
 // Purple: whether this peer belongs on the stories strip.
@@ -2983,32 +3024,30 @@ Java_org_telegram_messenger_purple_PurpleCore_visibleUnpeekedNative(
 // `hasUnseen' is passed in rather than looked up, exactly as the desktop passes
 // it: the caller has the unread state right where the filter runs, so the seen
 // half of the ladder costs nothing and this needs no access to story state.
-extern "C" JNIEXPORT jboolean JNICALL
-Java_org_telegram_messenger_purple_PurpleCore_storyShownNative(
-		JNIEnv *,
-		jclass,
-		jlong bareId,
-		jint kind,
-		jboolean hasUnseen,
-		jint folderMode,
-		jboolean exemptFolder) {
+static jboolean storyShownFor(JNIEnv *env, jlong handle, jlong bareId, jint kind, jboolean hasUnseen, jint folderMode, jboolean exemptFolder) {
 	static_assert(int(Purple::StoryMode::Always) == 0);
 	static_assert(int(Purple::StoryMode::Unseen) == 1);
 	static_assert(int(Purple::StoryMode::Never) == 2);
 
+	auto &gate = TheGate();
+	const auto lock = std::lock_guard(gate.mutex);
+	const auto account = gate.accountSettings.find(handle);
+	if (handle == 0) return JNI_TRUE;
+	if (handle != -1 && account == gate.accountSettings.end()) return JNI_FALSE;
+	const auto &settings = handle == -1 ? gate.settings : account->second.settings;
+    const auto &resolved = handle == -1 ? gate.resolved : account->second.resolved;
 	if (kind < 0 || kind > int(Purple::ChatKind::Bot)) {
 		// A kind the core cannot be asked about. Shown is the harmless
 		// direction, the same one visibleNative takes.
 		return JNI_TRUE;
 	}
-	auto &gate = TheGate();
-	const auto lock = std::lock_guard(gate.mutex);
-	if (!gate.loaded || gate.resolved.normal) {
+
+	if (!gate.loaded || resolved.normal) {
 		return JNI_TRUE;
 	}
-	if (gate.resolved.stories == Purple::StoryPolicy::None) {
+	if (resolved.stories == Purple::StoryPolicy::None) {
 		return JNI_FALSE;
-	} else if (gate.resolved.peeking) {
+	} else if (resolved.peeking) {
 		// A peek reveals stories along with the chats they belong to. It is one
 		// deliberate look at what the preset is keeping from you, and a strip
 		// that stayed filtered through it would be answering a question nobody
@@ -3026,8 +3065,8 @@ Java_org_telegram_messenger_purple_PurpleCore_storyShownNative(
 	const auto id = Purple::PeerIdValue(bareId);
 	if (!mode) {
 		if (const auto entry = Purple::MatchList(
-				gate.settings,
-				gate.resolved,
+				settings,
+				resolved,
 				id,
 				Purple::ChatKind(kind))) {
 			mode = entry->stories;
@@ -3052,12 +3091,12 @@ Java_org_telegram_messenger_purple_PurpleCore_storyShownNative(
 			return false;
 		}
 		return Purple::Visible(
-			gate.settings,
-			gate.resolved,
+			settings,
+			resolved,
 			id,
 			Purple::ChatKind(kind)).show == Purple::ShowMode::Never;
 	};
-	switch (gate.resolved.stories) {
+	switch (resolved.stories) {
 	case Purple::StoryPolicy::All: return JNI_TRUE;
 	case Purple::StoryPolicy::AllUnseen: return hasUnseen;
 	case Purple::StoryPolicy::Follow:
@@ -3067,6 +3106,16 @@ Java_org_telegram_messenger_purple_PurpleCore_storyShownNative(
 	case Purple::StoryPolicy::None: return JNI_FALSE;
 	}
 	return JNI_TRUE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_storyShownNative(JNIEnv *env, jclass, jlong bareId, jint kind, jboolean hasUnseen, jint folderMode, jboolean exemptFolder) {
+	return storyShownFor(env, -1, bareId, kind, hasUnseen, folderMode, exemptFolder);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_org_telegram_messenger_purple_PurpleWorkModeModel_storyShownNative(JNIEnv *env, jclass, jlong handle, jlong bareId, jint kind, jboolean hasUnseen, jint folderMode, jboolean exemptFolder) {
+	return storyShownFor(env, handle, bareId, kind, hasUnseen, folderMode, exemptFolder);
 }
 
 // Purple: the whole screen-time report for one window, in one call.
@@ -3377,4 +3426,49 @@ Java_org_telegram_messenger_purple_PurpleCore_formatSpanNative(
 // never reached. It does nothing but name the JNI version it was built for.
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
 	return JNI_VERSION_1_6;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_org_telegram_messenger_purple_PurpleWorkModeModel_retireNative(JNIEnv *env, jclass, jlongArray handles) {
+    auto &gate = TheGate();
+    const auto lock = std::lock_guard(gate.mutex);
+    if (!handles) return;
+    const auto count = env->GetArrayLength(handles);
+    if (!count) return;
+    auto values = std::vector<jlong>(count);
+    env->GetLongArrayRegion(handles, 0, count, values.data());
+    if (env->ExceptionCheck()) return;
+    for (const auto handle : values) if (handle > 0) gate.accountSettings.erase(handle);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleWorkModeModel_createNative(
+        JNIEnv *env, jclass, jbyteArray local, jstring keyText, jstring globalText,
+        jbyteArray global, jstring globalPath, jbyteArray globalGood,
+        jbyteArray own, jstring ownPath, jbyteArray ownGood) {
+    auto localText = QString(), globalBytes = QString(), ownBytes = QString();
+    auto gg = QString(), ag = QString();
+    if (!ReadUtf8(env, local, localText) || !ReadUtf8(env, global, globalBytes)
+        || !ReadUtf8(env, own, ownBytes) || !ReadUtf8(env, globalGood, gg) || !ReadUtf8(env, ownGood, ag)) return nullptr;
+    const auto key = Purple::ParseAccountKey(FromJava(env, keyText));
+    const auto globalKey = Purple::ParseAccountKey(FromJava(env, globalText));
+    const auto choice = Purple::ParseLocalChoice(localText, u"local.toml"_q);
+    if (!local || !key || !globalKey || !choice.ok()
+        || (choice.choice.globalAccount && !(*choice.choice.globalAccount == *globalKey))) return nullptr;
+    const auto mode = Purple::AccountWorkModeFor(choice.choice, *key, *globalKey);
+    auto options = Purple::SettingsLayerOptions();
+    options.globalPresent = global != nullptr;
+    options.accountPresent = own != nullptr;
+    options.followListMembers = mode == Purple::AccountWorkMode::Follow || *key == *globalKey;
+    const auto gp = FromJava(env, globalPath), ap = FromJava(env, ownPath);
+    if (globalGood) options.globalGood = Purple::SettingsLayerText{gg, gp + u".good"_q};
+    if (ownGood) options.accountGood = Purple::SettingsLayerText{ag, ap + u".good"_q};
+    const auto layered = Purple::LayerSettings(globalBytes, gp, ownBytes, ap, options);
+    if (!layered.effective.ok()) return nullptr;
+    auto &gate = TheGate();
+    const auto lock = std::lock_guard(gate.mutex);
+    const auto handle = mode == Purple::AccountWorkMode::Stock ? jlong(0) : ++gate.nextAccount;
+    if (handle) gate.accountSettings.emplace(handle, AccountSnapshot{layered.effective.settings, gate.resolved});
+    return ToJava(env, QString::fromUtf8(QJsonDocument(QJsonObject{
+        {"mode", int(mode)}, {"handle", QString::number(handle)}}).toJson(QJsonDocument::Compact)));
 }

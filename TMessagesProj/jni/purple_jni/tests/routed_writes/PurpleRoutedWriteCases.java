@@ -137,6 +137,8 @@ public final class PurpleRoutedWriteCases {
         check(PurpleRoutedWriteModel.modeNative(bytes("[account_work_mode]\n\"0-202\"=\"follow\"\n"),"0-202","0-101")==1,"actual shared local choice mode");
         check(PurpleRoutedWriteModel.modeNative(bytes("[account_work_mode]\n\"0-101\"=\"follow\"\n"),"0-101","0-101")==0,"global follow resolves to own");
         reviewRegressions(parent);
+        sliceTwo(parent);
+        publicationReview(parent);
         return checks;
     }
     private static void reviewRegressions(File parent) throws Exception {
@@ -189,4 +191,148 @@ public final class PurpleRoutedWriteCases {
         check(Files.readString(current.global.toPath()).contains("start_delay_seconds=9"), "positive Peek change publishes the requested delay");
     }
     private PurpleRoutedWriteCases() { }
+    private static JSONObject facts(String before, String own, String global) throws Exception {
+        return new JSONObject(PurpleListDiagnosticsModel.factsNative(before == null ? null : bytes(before), bytes(own), bytes(global)));
+    }
+    private static long runtime(String mode, String own, String global, String globalKey) throws Exception {
+        JSONObject result = new JSONObject(PurpleWorkModeModel.createNative(bytes("[account_work_mode]\n\"0-202\"=\""+mode+"\"\n"),
+                "0-202",globalKey,bytes(global),"global",null,own==null?null:bytes(own),"own",null));
+        check(result.getInt("mode")== (mode.equals("stock")?2:mode.equals("follow")&&!globalKey.equals("0-202")?1:0),"native runtime captures exact mode");
+        return Long.parseLong(result.getString("handle"));
+    }
+    private static void sliceTwo(File parent) throws Exception {
+        Fixture choices=new Fixture(parent,"mode-transitions","0-101","own","version=2\n[lists.work]\nmembers=[55]\n");
+        byte[] a=Files.readAllBytes(choices.global.toPath()),b=Files.readAllBytes(choices.own.toPath());
+        for(int mode:new int[]{1,2,0}) {
+            choices.open("0-101",false);
+            check(choices.model.setMode(mode),"guarded native local mode publication");
+            check(PurpleRoutedWriteModel.modeNative(Files.readAllBytes(choices.local.toPath()),"0-202","0-101")==mode,"mode transition readback");
+            check(Arrays.equals(a,Files.readAllBytes(choices.global.toPath()))&&Arrays.equals(b,Files.readAllBytes(choices.own.toPath())),"device choice never rewrites either settings file");
+        }
+        choices.open("0-101",false);check(!choices.model.setMode(3),"unknown choice refused");
+        Fixture staleMode=new Fixture(parent,"stale-mode-picker","0-101","own","version=2\n");staleMode.open("0-101",false);
+        write(staleMode.local,"root_file_account=\"0-101\"\nglobal_account=\"0-202\"\n");
+        a=Files.readAllBytes(staleMode.global.toPath());b=Files.readAllBytes(staleMode.own.toPath());byte[] local=Files.readAllBytes(staleMode.local.toPath());
+        check(!staleMode.model.setMode(2)&&Arrays.equals(local,Files.readAllBytes(staleMode.local.toPath())),"stale picker cannot change a new global route");
+        check(Arrays.equals(a,Files.readAllBytes(staleMode.global.toPath()))&&Arrays.equals(b,Files.readAllBytes(staleMode.own.toPath())),"stale choice leaves A and B untouched");
+        Fixture reset=new Fixture(parent,"delete-own","0-101","own","# header\nversion=2\n[lists.work]\n# retained table note\nmembers=[55]\n[last_seen]\nreasons_p=false\n");reset.open("0-101",false);
+        JSONObject row=reset.model.lists(55).getJSONArray("lists").getJSONObject(0);
+        check(row.getBoolean("ownMembers")&&row.getBoolean("deleteOwn"),"members-only v2 table is visibly own and reversible");
+        JSONObject deletion=reset.model.deleteOwn("work");check(deletion!=null&&reset.model.save(deletion.getString("text")).ok,"guarded own deletion succeeds");
+        String text=Files.readString(reset.own.toPath());check(text.contains("retained table note")&&text.contains("reasons_p=false")&&!text.contains("members"),"deletion preserves notes and other keys");
+        check(Files.readString(reset.global.toPath()).equals(GLOBAL),"deletion never changes global bytes");
+        reset.refreshed=0;reset.open("0-101",false);
+        check(reset.model.lists(11).getJSONArray("lists").getJSONObject(0).getBoolean("member"),"deleting own members restores inherited checkmark");
+        for(String definition:new String[]{"version=1\n[lists.work]\nmembers=[55]\n","[lists.work]\nmembers=[55]\n",
+                "version=2\n[lists.work]\ntitle=\"Defined\"\nmembers=[55]\n","version=2\n[lists.work]\nkinds=[\"private\"]\nmembers=[55]\n",
+                "version=2\n[lists.work]\nunknown=1\nmembers=[55]\n"}) {
+            Fixture whole=new Fixture(parent,"delete-refused-"+checks,"0-101","own",definition);whole.open("0-101",false);
+            check(!whole.model.lists(55).getJSONArray("lists").getJSONObject(0).getBoolean("deleteOwn")&&whole.model.deleteOwn("work")==null,"defined or unknown-key list never offers Reset");
+            check(Files.readString(whole.own.toPath()).equals(definition)&&Files.readString(whole.global.toPath()).equals(GLOBAL),"refused Reset leaves both files unchanged");
+        }
+        Fixture dotted=new Fixture(parent,"delete-literal-dot","0-101","own","version=2\n[lists.\"work.dot\"]\nmembers=[55]\n[lists.work]\nmembers=[66]\n");
+        write(dotted.global,GLOBAL+"\n[lists.\"work.dot\"]\nmembers=[99]\n");dotted.open("0-101",false);
+        deletion=dotted.model.deleteOwn("work.dot");check(deletion!=null&&dotted.model.save(deletion.getString("text")).ok,"literal dotted table name uses quoted TOML key");
+        check(Files.readString(dotted.own.toPath()).contains("members=[66]"),"literal table deletion leaves sibling members unchanged");
+        Fixture staleDelete=new Fixture(parent,"stale-own-delete","0-101","own","version=2\n[lists.work]\nmembers=[55]\n");staleDelete.open("0-101",false);
+        write(staleDelete.local,"root_file_account=\"0-101\"\nglobal_account=\"0-202\"\n");
+        check(staleDelete.model.deleteOwn("work")==null&&Files.readString(staleDelete.own.toPath()).contains("55")&&Files.readString(staleDelete.global.toPath()).equals(GLOBAL),"delete confirmation across A-to-B switch refuses with both files intact");
+        JSONObject diag=facts("version=2\n[premium]\nenabled_p=true\n[lists.work]\ntitle=\"Old\"\nmembers=[1]\n", "version=2\n[premium]\nenabled_p=false\n[lists.work]\ntitle=\"New\"\nmembers=[2,3]\n",GLOBAL);
+        check(diag.optBoolean("ok")&&diag.getInt("inactiveCount")==2,"inactive app-wide key count includes title but excludes members");
+        diag=facts(null,"version=2\n[lists.\"work.dot\"]\nmembers=[1,2]\n",GLOBAL);
+        check(diag.getJSONArray("orphaned").getJSONObject(0).getString("name").equals("work.dot")&&diag.getJSONArray("orphaned").getJSONObject(0).getInt("count")==2,"undefined literal list warns with own member count");
+        diag=facts("version=1\n[lists.work]\nmembers=[1]\n","version=1\n[lists.work]\n",GLOBAL);
+        check(diag.getJSONArray("emptied").length()==1,"whole-file removed members warn about devices using its definitions");
+        diag=facts("version=2\n[lists.work]\nmembers=[1]\n","version=2\n",GLOBAL);
+        check(diag.getJSONArray("emptied").length()==0,"members-only Reset does not claim a global definition became empty");
+        String config="version=1\n[lists.work]\ntitle=\"Work\"\nmembers=[11]\n[presets.test]\nlist_order=[{list=\"work\",show_mode=\"always\",notify_p=false,stories=\"never\"}]\n[[presets.test.views]]\nname=\"Work view\"\nlist_order=[{list=\"work\",show_mode=\"always\"}]\n";
+        PurpleCore.Loaded loaded=PurpleCore.load(bytes(config),bytes("active_preset=\"test\"\n"),"fixture","android","phone");
+        check(loaded.ok&&!loaded.normal,"genuine production gate resolves filtering fixture");
+        String own="version=2\n[lists.work]\nmembers=[55]\n[last_seen]\nreasons_p=false\n";
+        long ownHandle=runtime("own",own,config,"0-101"),followHandle=runtime("follow",own,config,"0-101"),stockHandle=runtime("stock",own,config,"0-101");
+        int mine=PurpleWorkModeModel.visibleNative(ownHandle,55,PurpleCore.KIND_PRIVATE),other=PurpleWorkModeModel.visibleNative(ownHandle,11,PurpleCore.KIND_PRIVATE);
+        check((mine&PurpleCore.SHOW_MASK)==PurpleCore.SHOW_ALWAYS&&(other&PurpleCore.SHOW_MASK)==PurpleCore.SHOW_NEVER,"own runtime replaces global members");
+        check((mine&PurpleCore.NOTIFY_BIT)==0,"own member preserves app-wide entry mute");
+        check((PurpleWorkModeModel.visibleNative(followHandle,11,0)&PurpleCore.SHOW_MASK)==PurpleCore.SHOW_ALWAYS&&(PurpleWorkModeModel.visibleNative(followHandle,55,0)&PurpleCore.SHOW_MASK)==PurpleCore.SHOW_NEVER,"follow runtime uses global members without discarding fork");
+        check(PurpleWorkModeModel.visibleNative(stockHandle,55,0)==(PurpleCore.SHOW_ALWAYS|PurpleCore.NOTIFY_BIT)&&PurpleWorkModeModel.visibleUnpeekedNative(stockHandle,11,0)==16,"stock runtime is visible and audible regardless of preset");
+        check((mine&(1<<8))!=0&&(other&(1<<8))==0,"extra view membership follows per-account members");
+        check("Work".equals(PurpleWorkModeModel.deciderNative(ownHandle,55,0))&&PurpleWorkModeModel.deciderNative(ownHandle,11,0)==null,"verdict decider follows own snapshot");
+        check(!PurpleWorkModeModel.storyShownNative(ownHandle,55,0,true,-1,false)&&PurpleWorkModeModel.storyShownNative(stockHandle,55,0,true,-1,false),"own story rule applies while stock stays stock");
+        check((PurpleWorkModeModel.visibleNative(ownHandle,55,0)&PurpleCore.SHOW_MASK)==PurpleCore.SHOW_ALWAYS,"another account snapshot never overwrites own runtime");
+        long fresh=runtime("own","version=2\n[lists.work]\nmembers=[77]\n",config,"0-101");
+        check((PurpleWorkModeModel.visibleNative(fresh,55,0)&15)==4&&(PurpleWorkModeModel.visibleNative(ownHandle,55,0)&15)==0,"runtime settings are captured snapshots rather than live disk choice");
+        PurpleWorkModeModel.retireNative(new long[]{ownHandle,followHandle,fresh});check(PurpleWorkModeModel.visibleNative(ownHandle,55,0)==4,"retired native snapshots fail closed");
+        check(PurpleWorkModeModel.createNative(bytes("global_account=\"0-303\"\n"),"0-202","0-101",bytes(config),"global",null,bytes(own),"own",null)==null,"runtime rejects a local choice for another global account");
+        JSONObject globalMode=new JSONObject(PurpleRoutedWriteModel.modePlanNative(bytes("root_file_account=\"0-202\"\n"),"0-202","0-202",2));
+        check(globalMode.optBoolean("ok")&&PurpleRoutedWriteModel.modeNative(bytes(globalMode.getString("text")),"0-202","0-202")==2,"global account may choose stock without changing its presets");
+        check(!new JSONObject(PurpleRoutedWriteModel.modePlanNative(bytes("root_file_account=\"0-202\"\n"),"0-202","0-202",1)).optBoolean("ok"),"global follow is not an offered choice");
+        byte[] previousChoice=bytes("[account_work_mode]\n\"0-202\"=\"stock\"\n");
+        check(Arrays.equals(previousChoice,PurpleWorkModeModel.localForReload(bytes("[broken"),false,previousChoice,"0-101")),"malformed local reload retains previous accepted device choice");
+        check(Arrays.equals(previousChoice,PurpleWorkModeModel.localForReload(null,false,previousChoice,"0-101")),"unreadable local reload retains previous accepted device choice");
+        check(PurpleRoutedWriteModel.modeNative(PurpleWorkModeModel.localForReload(null,true,previousChoice,"0-101"),"0-202","0-101")==0,"removing local file resets device choice to own");
+    }
+    private static void publicationReview(File parent) throws Exception {
+        String config="version=1\n[lists.work]\nmembers=[11]\n[presets.test]\nlist_order=[{list=\"work\",show_mode=\"always\",notify_p=false,stories=\"never\"}]\n";
+        String own="version=2\n[lists.work]\nmembers=[55]\n";
+        PurpleCore.load(bytes(config),bytes("active_preset=\"test\"\n"),"fixture","android","phone");
+        long initial=runtime("own",own,config,"0-101");
+        PurpleWorkModeModel.Publication<Long> publication=new PurpleWorkModeModel.Publication<>(initial);
+        long candidate=runtime("own",own,config,"0-101");
+        check(publication.read(h -> PurpleWorkModeModel.visibleNative(h,11,0))==4,"replacement build leaves published exclusion intact");
+        java.util.concurrent.atomic.AtomicInteger retired=new java.util.concurrent.atomic.AtomicInteger();
+        check(!publication.publish(candidate,()->false,h->{retired.incrementAndGet();PurpleWorkModeModel.retireNative(new long[]{h});})
+                &&retired.get()==0&&publication.read(h->h)==initial,"rejected replacement never retires published generation");
+        java.util.concurrent.CountDownLatch entered=new java.util.concurrent.CountDownLatch(1),release=new java.util.concurrent.CountDownLatch(1),attempted=new java.util.concurrent.CountDownLatch(1),retirement=new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicReference<Throwable> error=new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicInteger answer=new java.util.concurrent.atomic.AtomicInteger();
+        Thread reader=new Thread(()->{
+            try { publication.read(h->{entered.countDown();try{if(!release.await(5,java.util.concurrent.TimeUnit.SECONDS))throw new AssertionError("reader release timeout");}catch(InterruptedException e){throw new AssertionError(e);}answer.set(PurpleWorkModeModel.visibleNative(h,55,0));return 0;}); }
+            catch(Throwable failure){error.set(failure);}
+        });
+        Thread publisher=new Thread(()->{
+            try { attempted.countDown();publication.publish(candidate,()->true,h->{
+                if(publication.read(current->current)!=candidate)throw new AssertionError("retired before publication");
+                retired.incrementAndGet();PurpleWorkModeModel.retireNative(new long[]{h});retirement.countDown();
+            }); } catch(Throwable failure){error.set(failure);}
+        });
+        reader.start();
+        check(entered.await(5,java.util.concurrent.TimeUnit.SECONDS),"in-flight reader acquired published generation");
+        publisher.start();
+        check(attempted.await(5,java.util.concurrent.TimeUnit.SECONDS)&&!retirement.await(100,java.util.concurrent.TimeUnit.MILLISECONDS),"retirement waits for an in-flight reader");
+        check(PurpleWorkModeModel.visibleNative(initial,11,0)==4&&PurpleWorkModeModel.visibleNative(initial,55,0)==0,"old native snapshot remains usable during pending publication");
+        release.countDown();reader.join(5000);publisher.join(5000);
+        check(!reader.isAlive()&&!publisher.isAlive()&&error.get()==null&&answer.get()==0,"in-flight reader never observes visible audible fallback");
+        check(retired.get()==1&&publication.read(h->PurpleWorkModeModel.visibleNative(h,11,0))==4,"replacement publishes before old snapshot retirement");
+        check(PurpleWorkModeModel.visibleNative(initial,55,0)==4&&PurpleWorkModeModel.visibleUnpeekedNative(initial,55,0)==4
+                &&!PurpleWorkModeModel.storyShownNative(initial,55,0,true,-1,false),"retired positive handles fail hidden muted and story hidden");
+        check(PurpleWorkModeModel.visibleNative(Long.MAX_VALUE,55,-1)==4,"missing handle remains closed even with invalid chat kind");
+        PurpleCore.load(bytes(config),bytes("active_preset=\"normal\"\n"),"fixture","android","phone");
+        long normal=runtime("own",own,config,"0-101");
+        check(publication.read(h->PurpleWorkModeModel.visibleNative(h,11,0))==4,"replacement resolution build does not mutate published resolution");
+        check(publication.publish(normal,()->true,h->PurpleWorkModeModel.retireNative(new long[]{h}))
+                &&publication.read(h->PurpleWorkModeModel.visibleNative(h,11,0))==16,"new resolution begins at generation publication");
+        PurpleWorkModeModel.retireNative(new long[]{normal});
+        Fixture follow=new Fixture(parent,"follow-editor-preview","0-101","follow",own);
+        PurpleAccountEditorModel editor=new PurpleAccountEditorModel(follow.root,follow.own,new File(follow.own.getPath()+".bak"),"0-101","0-101","0-202",
+                Arrays.asList(follow.global),PHYSICAL,follow,PurpleEditorDirectories.NATIVE);
+        String changed="version=2\n[lists.work]\nmembers=[77]\n";
+        PurpleAccountEditorModel.Preview preview=editor.preview(changed);
+        check(editor.workMode==1&&preview!=null&&preview.facts.getBoolean("followMembers")
+                &&preview.facts.getJSONArray("inactive").toString().contains("lists.work.members"),"opening Follow choice marks own member edits inactive in genuine editor model");
+        check(!new JSONObject(PurpleAccountEditorModel.previewNative(bytes(own),bytes(changed),"own",false,0)).getBoolean("followMembers")
+                &&!new JSONObject(PurpleAccountEditorModel.previewNative(bytes(own),bytes(changed),"own",false,2)).getBoolean("followMembers"),"Own and Stock previews keep own member edits active for their storage scope");
+        PurpleAccountEditorModel.Preview removed=editor.preview("version=2\n");
+        check(removed!=null&&removed.facts.getBoolean("followMembers")&&removed.facts.getJSONArray("inactive").toString().contains("lists.work.members"),"Follow preview also classifies removed own member keys as inactive here");
+        write(follow.local,"root_file_account=\"0-101\"\nglobal_account=\"0-101\"\n");
+        check(editor.preview(changed)==null&&!editor.save(preview).ok&&Files.readString(follow.own.toPath()).equals(own),"choice changed after opening refuses preview and saved Follow intent");
+        for(String escaped:new String[]{"work\\nline","work\\tline","work\\rline","work\\u0001line","work\\u007fline","work\\\"quote","work\\\\slash"}) {
+            Fixture literal=new Fixture(parent,"delete-control-"+checks,"0-101","own","version=2\n[lists.\""+escaped+"\"]\nmembers=[55]\n");
+            write(literal.global,GLOBAL+"\n[lists.\""+escaped+"\"]\nmembers=[11]\n");literal.open("0-101",false);
+            String name=new JSONObject("{\"name\":\""+escaped+"\"}").getString("name");
+            JSONObject deletion=literal.model.deleteOwn(name);
+            check(deletion!=null&&literal.model.save(deletion.getString("text")).ok,"Delete own accepts fully escaped literal list name "+escaped);
+            check(Files.readString(literal.global.toPath()).equals(GLOBAL+"\n[lists.\""+escaped+"\"]\nmembers=[11]\n")
+                    &&!Files.readString(literal.own.toPath()).contains("members"),"literal control-name deletion preserves global bytes");
+        }
+    }
 }

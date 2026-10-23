@@ -18,7 +18,12 @@ public final class PurpleAccountEditor {
         private final PurpleAccountEditorModel.Preview value;
         private final Session owner;
         Preview(Session owner, PurpleAccountEditorModel.Preview value) { this.owner = owner; this.value = value; }
-        public String warnings() { return lines(value.facts.optJSONArray("warnings")); }
+        public String warnings() {
+            String warnings = lines(value.facts.optJSONArray("warnings"));
+            if (value.facts.optBoolean("followMembers")) warnings += (warnings.isEmpty() ? "" : "\n\n")
+                    + org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.PurpleEditorFollowMembers);
+            return warnings;
+        }
         public String inactiveNotes() {
             JSONArray groups = value.facts.optJSONArray("inactive");
             StringBuilder text = new StringBuilder();
@@ -35,13 +40,22 @@ public final class PurpleAccountEditor {
         public final String accountKey, globalKey, openedText, path;
         public final boolean global, missing, needsDirectory;
         private final PurpleAccountEditorModel model;
+        private final java.util.List<PurpleAccountFiles.Identity> warningAccounts;
+        private final PurpleAccountFiles globalFiles;
         private volatile boolean retired;
         private volatile Current confirmation;
         Session(PurpleGlobalAccountChoice.Session context, PurpleAccountFiles.Identity origin,
                 String key, PurpleAccountFiles files, PurpleAccountFiles globalFiles) throws Exception {
             accountKey = key; globalKey = context.global; global = key.equals(globalKey);
+            warningAccounts = new java.util.ArrayList<>(context.accounts);
+            this.globalFiles = globalFiles;
+            java.util.ArrayList<java.io.File> authorities = new java.util.ArrayList<>(Arrays.asList(files.good, globalFiles.settings, globalFiles.good));
+            for (PurpleAccountFiles.Identity id : warningAccounts) {
+                PurpleAccountFiles accountFiles = PurpleAccountFiles.resolve(id.key, context.owner);
+                if (accountFiles != null) authorities.add(accountFiles.settings);
+            }
             model = new PurpleAccountEditorModel(PurpleAccountFiles.root(), files.settings, files.backup,
-                    context.owner, context.global, key, Arrays.asList(files.good, globalFiles.settings, globalFiles.good),
+                    context.owner, context.global, key, authorities,
                     PurpleGlobalAccountChoice.PHYSICAL, new PurpleAccountEditorModel.Context() {
                         public boolean current(boolean refreshed) {
                             return !retired && (confirmation == null || confirmation.current()) && origin.current() && PurpleAccountOwner.ready()
@@ -66,7 +80,20 @@ public final class PurpleAccountEditor {
         }
         public Preview preview(String text) {
             PurpleAccountEditorModel.Preview result = current() ? model.preview(text) : null;
-            return result == null ? null : new Preview(this, result);
+            if (result == null) return null;
+            try {
+                JSONArray warnings = result.facts.getJSONArray("warnings");
+                for (PurpleAccountFiles.Identity id : warningAccounts) {
+                    if (!global && !id.key.equals(accountKey) || global && id.key.equals(globalKey)) continue;
+                    PurpleAccountFiles files = PurpleAccountFiles.resolve(id.key, PurpleAccountOwner.owner());
+                    if (files == null) continue;
+                    byte[] before = model.capturedBytes(files.settings);
+                    String notes = PurpleListDiagnostics.notes(before, global ? before : result.bytes,
+                            global ? result.bytes : model.capturedBytes(globalFiles.settings), id.slot, globalKey, !global);
+                    if (!notes.isEmpty()) warnings.put(notes);
+                }
+                return current() ? new Preview(this, result) : null;
+            } catch (Exception e) { return null; }
         }
         public Outcome save(Preview preview, Current confirmation) {
             if (Looper.myLooper() != Looper.getMainLooper() || preview == null || preview.owner != this || confirmation == null || !confirmation.current()) {

@@ -36,6 +36,7 @@ final class PurpleAccountEditorModel {
     final File target;
     final File backup;
     final boolean global;
+    final int workMode;
     final boolean missing;
     final boolean needsDirectory;
     final String openedText;
@@ -62,6 +63,8 @@ final class PurpleAccountEditorModel {
         for (File file : authorities) capture(root, file);
         PurpleGlobalChoiceFiles.Snapshot local = capture(root, new File(root, "local.toml"));
         PurpleGlobalChoiceFiles.Snapshot record = capture(root, new File(root, "accounts/root.toml"));
+        workMode = PurpleRoutedWriteModel.modeNative(local.bytes, key, globalKey);
+        if (workMode < 0) throw new IllegalStateException("editor Work Mode choice unavailable");
         JSONObject route = new JSONObject(PurpleGlobalChoiceModel.planNative(local.bytes, record.bytes, owner, globalKey, key));
         if (!route.optBoolean("ok") || !new File(root, route.getString("selectedPath")).equals(target)
                 || target.equals(backup)) throw new IllegalStateException("editor target changed");
@@ -92,6 +95,14 @@ final class PurpleAccountEditorModel {
     byte[] capturedBytes(File file) {
         PurpleGlobalChoiceFiles.Snapshot value = inputs.get(file.getPath());
         return value == null || value.bytes == null ? null : value.bytes.clone();
+    }
+    boolean currentAfterLocal(PurpleGlobalChoiceFiles.Snapshot local) {
+        if (local == null || !context.current(false)) return false;
+        for (PurpleGlobalChoiceFiles.Snapshot value : inputs.values()) {
+            if (!(value.file.equals(local.file) ? local : value).current(physical)) return false;
+        }
+        for (PurpleGlobalChoiceFiles.Snapshot value : directories.values()) if (!value.current(physical)) return false;
+        return context.current(false);
     }
     boolean current() { return current(null); }
     private boolean current(Result result) { return current(result, null, null); }
@@ -133,7 +144,7 @@ final class PurpleAccountEditorModel {
         try {
             byte[] bytes = encode(text);
             if (bytes == null || !current()) return null;
-            JSONObject facts = new JSONObject(previewNative(original, bytes, target.getPath(), global));
+            JSONObject facts = new JSONObject(previewNative(original, bytes, target.getPath(), global, workMode));
             if (!facts.optBoolean("ok") || !current()) return null;
             return new Preview(bytes, facts);
         } catch (Exception | UnsatisfiedLinkError e) { return null; }
@@ -150,7 +161,7 @@ final class PurpleAccountEditorModel {
         Result result = new Result();
         try {
             if (consumed || preview == null || !current()) return result;
-            JSONObject verified = new JSONObject(previewNative(original, preview.bytes, target.getPath(), global));
+            JSONObject verified = new JSONObject(previewNative(original, preview.bytes, target.getPath(), global, workMode));
             if (!verified.optBoolean("ok") || !current()) return result;
             consumed = true;
             if (!prepareParents(result)) return result;
@@ -183,5 +194,5 @@ final class PurpleAccountEditorModel {
         return result;
     }
     static native String templateNative();
-    static native String previewNative(byte[] opened, byte[] draft, String path, boolean global);
+    static native String previewNative(byte[] opened, byte[] draft, String path, boolean global, int workMode);
 }

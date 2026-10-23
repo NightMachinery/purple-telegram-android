@@ -712,7 +712,7 @@ public class SearchViewPager extends ViewPagerFixed implements FilteredSearchVie
         }
 
         if (view == channelsSearchContainer) {
-            if (org.telegram.messenger.purple.PurpleHints.recommendedChannelsShown()) {
+            if (org.telegram.messenger.purple.PurpleHints.recommendedChannelsShown(currentAccount)) {
                 MessagesController.getInstance(currentAccount).getChannelRecommendations(0);
             }
             channelsSearchAdapter.search(query);

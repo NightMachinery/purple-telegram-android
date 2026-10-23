@@ -29,6 +29,9 @@ public final class PurpleAccountSettingsRows {
         if (PurpleAccountOwner.recovered()) items.add(UItem.asShadow(text(R.string.PurpleAccountOwnerRecovered)));
         if (PurpleAccountOwner.localWarning()) items.add(UItem.asShadow(text(R.string.PurpleAccountLocalWarning)));
         items.add(UItem.asShadow(text(R.string.PurpleAccountRoles)));
+        PurpleWorkModeUI.add(items, account);
+        String listNotes = org.telegram.messenger.purple.PurpleListDiagnostics.accountNotes(account);
+        if (!listNotes.isEmpty()) items.add(UItem.asShadow(listNotes));
         PurpleAccountSettings.Effective effective = PurpleAccountSettings.forAccount(account);
         if (effective != null) {
             if (effective.globalReadError || effective.globalGoodReadError
@@ -119,6 +122,7 @@ public final class PurpleAccountSettingsRows {
     }
 
     public static boolean click(BaseFragment fragment, int row, PurpleAccountRowWrite.Current current) {
+        if (PurpleWorkModeUI.click(fragment, row)) return true;
         if (row == GLOBAL) { PurpleGlobalAccountChoiceUI.open(fragment, current); return true; }
         if (row != OWNER && row != GLOBAL) return false;
         if (fragment.getParentActivity() == null) return true;

@@ -29,22 +29,22 @@ public final class PurpleFolders {
 
     public static ArrayList<MessagesController.DialogFilter> shownFilters(int currentAccount,
             ArrayList<MessagesController.DialogFilter> raw) {
-        return PurpleGate.shownFilters(raw);
+        return PurpleGate.shownFilters(currentAccount, raw);
     }
 
     public static boolean hidingArchive(int currentAccount) {
-        return PurpleGate.hidingArchive();
+        return PurpleGate.hidingArchive(currentAccount);
     }
 
     public static boolean hidingEverywhere(int currentAccount) {
-        return PurpleGate.hidingEverywhere();
+        return PurpleGate.hidingEverywhere(currentAccount);
     }
 
     public static boolean foldersRestricted(int currentAccount) {
-        return PurpleGate.foldersRestricted();
+        return PurpleGate.foldersRestricted(currentAccount);
     }
 
     public static void refillViewPinsIfNeeded(int currentAccount) {
-        PurpleGate.refillViewPinsIfNeeded();
+        PurpleGate.refillViewPinsIfNeeded(currentAccount);
     }
 }

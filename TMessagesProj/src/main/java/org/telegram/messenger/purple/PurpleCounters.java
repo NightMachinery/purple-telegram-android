@@ -16,6 +16,14 @@ public final class PurpleCounters {
         owner.getStorageQueue().postRunnable(() -> owner.resetAllUnreadCounters(false));
     }
 
+    static void recountThen(int currentAccount, Runnable next) {
+        MessagesStorage owner = MessagesStorage.getInstance(currentAccount);
+        owner.getStorageQueue().postRunnable(() -> {
+            owner.resetAllUnreadCounters(false);
+            org.telegram.messenger.AndroidUtilities.runOnUIThread(next);
+        });
+    }
+
     public static void logUncounted(PurpleUnreadMirror mirror) {
         if (mirror.uncounted() > 0) {
             FileLog.d("Purple: " + mirror.uncounted()

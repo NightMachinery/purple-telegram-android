@@ -18,7 +18,6 @@ package org.telegram.messenger.purple;
 import android.os.SystemClock;
 import android.text.TextUtils;
 
-import androidx.collection.LongSparseArray;
 
 import org.telegram.messenger.AccountInstance;
 import org.telegram.messenger.AndroidUtilities;
@@ -80,14 +79,6 @@ public final class PurpleGate {
      * user cannot see is the kind of thing that has to be said out loud.
      */
     private static volatile boolean usedLastGood;
-
-    /**
-     * The show mode of each dialog, as {@link PurpleCore#visible} packed it. The
-     * mode half of the answer only moves when the resolution does, so it is
-     * cached; the unread half is recomputed on every pass because it moves all
-     * the time.
-     */
-    private static final LongSparseArray<Integer> modeCache = new LongSparseArray<>();
 
     private static final Object cacheLock = new Object();
 
@@ -167,27 +158,6 @@ public final class PurpleGate {
      */
     private static final int VIEW_ID_BASE = 0x50555250;
 
-    /**
-     * The synthetic filters standing for the preset's extra tabs.
-     *
-     * Rebuilt once per reload and handed out by reference, never rebuilt per
-     * call: {@code sortDialogs()} fills {@code filter.dialogs} for whichever
-     * filter is selected, and a fresh object every time would mean the tab on
-     * screen was never the one anything filled.
-     */
-    private static volatile ArrayList<MessagesController.DialogFilter> viewFilters =
-            new ArrayList<>();
-
-    /**
-     * Whether some extra view's pinned order is still missing peers.
-     *
-     * Set while a pin names a chat this client has not loaded yet, which on a
-     * cold start is <i>every</i> pin: the gate loads the first time anything
-     * asks it a question, long before the dialog list is in memory. Cleared by
-     * {@link #refillViewPinsIfNeeded()} once they all resolve.
-     */
-    private static volatile boolean viewPinsIncomplete;
-
     /** Telegram's Archive, which is a folder id rather than a chat. */
     private static final int ARCHIVE_FOLDER_ID = 1;
 
@@ -201,6 +171,10 @@ public final class PurpleGate {
      */
     public static boolean filtering() {
         return filtering;
+    }
+
+    public static boolean filtering(int currentAccount) {
+        return filtering && !PurpleWorkMode.stock(currentAccount);
     }
 
     /** The resolution now in force, or null if nothing has been loaded yet. */
@@ -227,8 +201,8 @@ public final class PurpleGate {
      * identical to the account's, so dragging a tab still means what it says.
      * Mirrors the desktop fork's {@code Purple::FoldersRestricted()}.
      */
-    public static boolean foldersRestricted() {
-        if (!filtering) {
+    public static boolean foldersRestricted(int currentAccount) {
+        if (!filtering(currentAccount)) {
             return false;
         }
         final PurpleCore.Loaded current = loaded;
@@ -544,6 +518,7 @@ public final class PurpleGate {
         usedLastGood = shadowed;
 
         PurpleAccountSettings.invalidate();
+        PurpleWorkMode.reload(shadowed && choice == null ? peekGood.bytes : settings, peekFile, peekPrimary, peekGood);
         final PurpleCore.Loaded previous = loaded;
         loaded = next;
         acceptedSupportedSource = candidate;
@@ -555,10 +530,6 @@ public final class PurpleGate {
         // reload actually read, so the app's own write comes straight back as
         // "already running" rather than as a change to react to.
         settingsFingerprint = fingerprintOf(choice == null ? settings : choice.primary);
-        synchronized (cacheLock) {
-            modeCache.clear();
-            storyCache.clear();
-        }
         if (next.stateText != null) {
             PurpleState.write(next.stateText.getBytes(UTF_8));
         }
@@ -574,6 +545,7 @@ public final class PurpleGate {
         refreshPeekTimer(next);
         refreshOverrideTimer(next);
         rebuildViewFilters(next);
+        PurpleListDiagnostics.afterReload();
         final PurpleCore.Loaded updated = next;
         AndroidUtilities.runOnUIThread(() -> org.telegram.ui.PurplePeekControls.onGateReload(previous, updated));
 
@@ -796,6 +768,7 @@ public final class PurpleGate {
     public static boolean setOverride(
             int currentAccount, long dialogId, int kind, int seconds) {
         ensureLoaded();
+        if (!filtering(currentAccount)) return false;
         final long id = bareIdOf(currentAccount, dialogId);
         if (id == 0) {
             return false;
@@ -810,7 +783,7 @@ public final class PurpleGate {
 
     /** The "until" decision in force for this chat, for the menu that offers one. */
     public static int overrideKind(int currentAccount, long dialogId) {
-        return filtering ? overrideFor(currentAccount, dialogId) : PurpleCore.OVERRIDE_NONE;
+        return filtering(currentAccount) ? overrideFor(currentAccount, dialogId) : PurpleCore.OVERRIDE_NONE;
     }
 
     /**
@@ -839,7 +812,8 @@ public final class PurpleGate {
     }
 
     /** What the Work Mode entry in the main menu says. */
-    public static String menuLabel() {
+    public static String menuLabel(int currentAccount) {
+        if (PurpleWorkMode.stock(currentAccount)) return LocaleController.getString(R.string.PurpleWorkModeOffAccount);
         final PurpleCore.Loaded current = loaded;
         if (current == null || current.normal) {
             return LocaleController.getString(R.string.PurpleWorkMode);
@@ -932,7 +906,7 @@ public final class PurpleGate {
     }
 
     private static boolean shown(int currentAccount, TLRPC.Dialog dialog, boolean includeRecent) {
-        if (!filtering || dialog == null) {
+        if (!filtering(currentAccount) || dialog == null) {
             return true;
         }
         // The Archive row is not a chat and has no kind, so it is answered
@@ -972,7 +946,7 @@ public final class PurpleGate {
      * @param dialogId a TLRPC.Dialog id, not a bare id
      */
     public static boolean shown(int currentAccount, long dialogId) {
-        if (!filtering) {
+        if (!filtering(currentAccount)) {
             return true;
         }
         return shown(
@@ -1072,7 +1046,7 @@ public final class PurpleGate {
 
     private static boolean hiddenEverywhere(
             int currentAccount, TLRPC.Dialog dialog, boolean includeRecent) {
-        if (!filtering || dialog == null) {
+        if (!filtering(currentAccount) || dialog == null) {
             return false;
         }
         final PurpleCore.Loaded current = loaded;
@@ -1104,7 +1078,7 @@ public final class PurpleGate {
      * list this could take it out of, so it is not hidden either.
      */
     public static boolean hiddenEverywhere(int currentAccount, long dialogId) {
-        if (!hidingEverywhere()) {
+        if (!hidingEverywhere(currentAccount)) {
             return false;
         }
         return hiddenEverywhere(
@@ -1120,8 +1094,8 @@ public final class PurpleGate {
      * order is the one that matters, because it is uploaded with
      * {@code force = true} and a truncated one unpins the rest of the account.
      */
-    public static boolean hidingEverywhere() {
-        if (!filtering) {
+    public static boolean hidingEverywhere(int currentAccount) {
+        if (!filtering(currentAccount)) {
             return false;
         }
         final PurpleCore.Loaded current = loaded;
@@ -1148,8 +1122,8 @@ public final class PurpleGate {
      * the row appear and vanish on the peek timer would shift the whole list by
      * one on both edges, for no chat anybody was looking for.
      */
-    public static boolean hidingArchive() {
-        if (!filtering) {
+    public static boolean hidingArchive(int currentAccount) {
+        if (!filtering(currentAccount)) {
             return false;
         }
         final PurpleCore.Loaded current = loaded;
@@ -1193,7 +1167,7 @@ public final class PurpleGate {
      * under every ordinary preset actually costs.
      */
     public static Temporary temporary(int currentAccount, TLRPC.Dialog dialog) {
-        if (!filtering || dialog == null) {
+        if (!filtering(currentAccount) || dialog == null) {
             return null;
         }
         final PurpleCore.Loaded current = loaded;
@@ -1277,7 +1251,7 @@ public final class PurpleGate {
      * through anyway is not leaving, whatever else is also true of it.
      */
     private static boolean wouldLeaveTheView(int currentAccount, TLRPC.Dialog dialog) {
-        if (!filtering || peeking()) {
+        if (!filtering(currentAccount) || peeking()) {
             return false;
         }
         // A hide stays in the reckoning - it is a reason the row would be gone,
@@ -1383,7 +1357,7 @@ public final class PurpleGate {
      * @param dialogId a TLRPC.Dialog id, or any peer id in dialog form
      */
     public static boolean silenced(int currentAccount, long dialogId) {
-        if (!filtering) {
+        if (!filtering(currentAccount)) {
             return false;
         }
         final PurpleCore.Loaded current = loaded;
@@ -1472,7 +1446,7 @@ public final class PurpleGate {
      * establish that reaching into the gate from there is fine.
      */
     public static boolean countedInTotals(int currentAccount, long dialogId) {
-        if (!filtering) {
+        if (!filtering(currentAccount)) {
             return true;
         }
         final PurpleCore.Loaded current = loaded;
@@ -1509,7 +1483,7 @@ public final class PurpleGate {
      * badge too, and the badge adds the quiet folders on top of it.
      */
     public static boolean countedForBadge(int currentAccount, long dialogId) {
-        if (!filtering) {
+        if (!filtering(currentAccount)) {
             return true;
         }
         if (!countedInTotals(currentAccount, dialogId)) {
@@ -1531,8 +1505,8 @@ public final class PurpleGate {
      * counts, or a "hide until" is running under a scope that takes its chat out
      * of them. Both are rare, and the rebuild only ever runs when one is true.
      */
-    public static boolean badgeRebuilt() {
-        if (!filtering) {
+    public static boolean badgeRebuilt(int currentAccount) {
+        if (!filtering(currentAccount)) {
             return false;
         }
         final PurpleCore.Loaded current = loaded;
@@ -1550,8 +1524,8 @@ public final class PurpleGate {
      * The tab half of {@code badge_p}, asked of the folder rather than of a
      * chat: a folder left out of the counts shows no count of its own either.
      */
-    public static boolean folderCounted(MessagesController.DialogFilter filter) {
-        if (!filtering || filter == null) {
+    public static boolean folderCounted(int currentAccount, MessagesController.DialogFilter filter) {
+        if (!filtering(currentAccount) || filter == null) {
             return true;
         }
         final PurpleCore.Loaded current = loaded;
@@ -1763,7 +1737,7 @@ public final class PurpleGate {
      */
     public static ArrayList<TLRPC.Dialog> filter(int currentAccount, ArrayList<TLRPC.Dialog> source) {
         ensureLoaded();
-        if (!filtering || source == null || source.isEmpty()) {
+        if (!filtering(currentAccount) || source == null || source.isEmpty()) {
             return source;
         }
 
@@ -1786,7 +1760,7 @@ public final class PurpleGate {
                 // whose archive row is pinned rather than pulled has it in
                 // dialogs_dict like any other row, and hasHiddenArchive() is
                 // never asked about that one.
-                show = !hidingArchive();
+                show = !hidingArchive(currentAccount);
             } else {
                 final int packed = packedFor(currentAccount, dialog.id);
 
@@ -1992,16 +1966,22 @@ public final class PurpleGate {
      * {@code DialogFilter.includesDialog()} needs.
      */
     private static void rebuildViewFilters(PurpleCore.Loaded next) {
-        if (next.views.isEmpty()) {
-            if (!viewFilters.isEmpty()) {
-                viewFilters = new ArrayList<>();
+        for (int account = 0; account < UserConfig.MAX_ACCOUNT_COUNT; ++account) rebuildViewFilters(next, account);
+    }
+
+    private static void rebuildViewFilters(PurpleCore.Loaded next, int currentAccount) {
+        PurpleWorkMode.View view = PurpleWorkMode.view(currentAccount);
+        if (view == null) return;
+        if (view.mode == 2 || next.views.isEmpty()) {
+            if (!view.filters.isEmpty()) {
+                view.filters = new ArrayList<>();
             }
             return;
         }
         // The list being replaced, read once. Its objects are published - other
         // threads are holding them through the volatile - so nothing here
         // touches one; only the localId is copied out of it.
-        final ArrayList<MessagesController.DialogFilter> previous = viewFilters;
+        final ArrayList<MessagesController.DialogFilter> previous = view.filters;
         final ArrayList<MessagesController.DialogFilter> result =
                 new ArrayList<>(next.views.size());
         boolean incomplete = false;
@@ -2021,11 +2001,11 @@ public final class PurpleGate {
             if (i < previous.size()) {
                 filter.localId = previous.get(i).localId;
             }
-            incomplete |= !fillViewPins(filter, next.views.get(i).pinned);
+            incomplete |= !fillViewPins(currentAccount, filter, next.views.get(i).pinned);
             result.add(filter);
         }
-        viewFilters = result;
-        viewPinsIncomplete = incomplete;
+        view.filters = result;
+        view.pinsIncomplete = incomplete;
         FileLog.d("Purple: " + result.size() + " extra view"
                 + (result.size() == 1 ? "" : "s") + " on the strip.");
     }
@@ -2046,14 +2026,14 @@ public final class PurpleGate {
      *
      * @return whether every pin resolved, so the order is the one asked for
      */
-    private static boolean fillViewPins(MessagesController.DialogFilter filter, long[] pinned) {
+    private static boolean fillViewPins(int currentAccount, MessagesController.DialogFilter filter, long[] pinned) {
         if (pinned == null || pinned.length == 0) {
             return true;
         }
         boolean complete = true;
         try {
             final MessagesController controller =
-                    MessagesController.getInstance(UserConfig.selectedAccount);
+                    MessagesController.getInstance(currentAccount);
             for (int a = 0; a < pinned.length; ++a) {
                 final long bare = pinned[a];
                 if (bare == 0) {
@@ -2106,22 +2086,24 @@ public final class PurpleGate {
      * sort. That is the right direction: the peer may still arrive, and the
      * walk is a map lookup per pin on a path that already sorts the list.
      */
-    public static void refillViewPinsIfNeeded() {
-        if (!viewPinsIncomplete) {
+    public static void refillViewPinsIfNeeded(int currentAccount) {
+        PurpleWorkMode.View view = PurpleWorkMode.view(currentAccount);
+        if (view == null || view.mode == 2) return;
+        if (!view.pinsIncomplete) {
             return;
         }
         final PurpleCore.Loaded current = loaded;
-        final ArrayList<MessagesController.DialogFilter> filters = viewFilters;
+        final ArrayList<MessagesController.DialogFilter> filters = view.filters;
         if (current == null || filters.isEmpty()) {
-            viewPinsIncomplete = false;
+            view.pinsIncomplete = false;
             return;
         }
         boolean incomplete = false;
         final int n = Math.min(filters.size(), current.views.size());
         for (int i = 0; i < n; ++i) {
-            incomplete |= !fillViewPins(filters.get(i), current.views.get(i).pinned);
+            incomplete |= !fillViewPins(currentAccount, filters.get(i), current.views.get(i).pinned);
         }
-        viewPinsIncomplete = incomplete;
+        view.pinsIncomplete = incomplete;
         if (!incomplete) {
             FileLog.d("Purple: extra view pins resolved.");
         }
@@ -2147,7 +2129,7 @@ public final class PurpleGate {
      */
     public static boolean viewHolds(
             int currentAccount, MessagesController.DialogFilter filter, long dialogId) {
-        if (!filtering || !isExtraView(filter)) {
+        if (!filtering(currentAccount) || !isExtraView(filter)) {
             return false;
         }
         if (DialogObject.isFolderDialogId(dialogId)) {
@@ -2239,7 +2221,7 @@ public final class PurpleGate {
         // A folder the preset left out of the counts shows no number on its own
         // tab either. For a folder that is background on purpose a count is a
         // number you have already decided not to act on.
-        if (!folderCounted(filter)) {
+        if (!folderCounted(currentAccount, filter)) {
             return 0;
         }
         // An invented tab keeps its own count, because the totals Telegram
@@ -2253,9 +2235,9 @@ public final class PurpleGate {
     }
 
     public static ArrayList<MessagesController.DialogFilter> shownFilters(
-            ArrayList<MessagesController.DialogFilter> raw) {
+            int currentAccount, ArrayList<MessagesController.DialogFilter> raw) {
         final PurpleCore.Loaded current = loaded;
-        if (!filtering || current == null || raw == null || raw.isEmpty()) {
+        if (!filtering(currentAccount) || current == null || raw == null || raw.isEmpty()) {
             return raw;
         }
         final ArrayList<MessagesController.DialogFilter> result = new ArrayList<>(raw.size());
@@ -2271,7 +2253,8 @@ public final class PurpleGate {
         // Not lifted by a peek: a peek suspends hiding, and a view hides
         // nothing - it is a selection asked for by name, and filling it with
         // every chat for two minutes would only take it away.
-        final ArrayList<MessagesController.DialogFilter> views = viewFilters;
+        final PurpleWorkMode.View view = PurpleWorkMode.view(currentAccount);
+        final ArrayList<MessagesController.DialogFilter> views = view == null ? new ArrayList<>() : view.filters;
         result.addAll(views);
 
         if (current.clock.peeking) {
@@ -2416,15 +2399,17 @@ public final class PurpleGate {
 
     /** The cached half of the answer: what the preset says about this chat. */
     private static int packedFor(int currentAccount, long id) {
+        final PurpleWorkMode.View view = PurpleWorkMode.view(currentAccount);
+        if (view == null || view.mode == 2) return PurpleCore.SHOW_ALWAYS | PurpleCore.NOTIFY_BIT;
         synchronized (cacheLock) {
-            final Integer cached = modeCache.get(id);
+            final Integer cached = view.modes.get(id);
             if (cached != null) {
                 return cached;
             }
         }
         final int packed;
         try {
-            packed = PurpleCore.visible(bareIdOf(currentAccount, id), kindOf(currentAccount, id));
+            packed = PurpleWorkMode.visible(currentAccount, bareIdOf(currentAccount, id), kindOf(currentAccount, id));
         } catch (UnsatisfiedLinkError | RuntimeException e) {
             FileLog.e(e);
             // Nothing to decide with, so decide nothing: shown, and allowed to
@@ -2434,7 +2419,7 @@ public final class PurpleGate {
             return PurpleCore.SHOW_ALWAYS | PurpleCore.NOTIFY_BIT;
         }
         synchronized (cacheLock) {
-            modeCache.put(id, packed);
+            view.modes.put(id, packed);
         }
         return packed;
     }
@@ -2503,7 +2488,7 @@ public final class PurpleGate {
      * then vanish from it a minute later is a flicker nobody asked for.
      */
     public static boolean shownByPreset(int currentAccount, TLRPC.Dialog dialog) {
-        if (!filtering || dialog == null) {
+        if (!filtering(currentAccount) || dialog == null) {
             return true;
         }
         if (DialogObject.isFolderDialogId(dialog.id)) {
@@ -2532,7 +2517,7 @@ public final class PurpleGate {
      * @param dialogId a TLRPC.Dialog id, not a bare id
      */
     public static boolean hiddenWhilePeeking(int currentAccount, long dialogId) {
-        if (!filtering || !peeking() || DialogObject.isFolderDialogId(dialogId)) {
+        if (!filtering(currentAccount) || !peeking() || DialogObject.isFolderDialogId(dialogId)) {
             return false;
         }
         final TLRPC.Dialog dialog =
@@ -2547,7 +2532,7 @@ public final class PurpleGate {
         }
         final int packed;
         try {
-            packed = PurpleCore.visibleUnpeeked(
+            packed = PurpleWorkMode.unpeeked(currentAccount,
                     bareIdOf(currentAccount, dialogId),
                     kindOf(currentAccount, dialogId));
         } catch (UnsatisfiedLinkError | RuntimeException e) {
@@ -2586,7 +2571,7 @@ public final class PurpleGate {
             }
             final ArrayList<MessagesController.DialogFilter> shown = (folders != null)
                     ? folders
-                    : shownFilters(controller.getDialogFiltersUnrestricted());
+                    : shownFilters(currentAccount, controller.getDialogFiltersUnrestricted());
             if (shown == null) {
                 return false;
             }
@@ -2618,8 +2603,8 @@ public final class PurpleGate {
      * {@code [suggestions]} - or a peek that has suspended the preset - costs
      * one field read per strip rather than one folder walk per row.
      */
-    public static boolean hidingFromSuggestions() {
-        if (!filtering) {
+    public static boolean hidingFromSuggestions(int currentAccount) {
+        if (!filtering(currentAccount)) {
             return false;
         }
         final PurpleCore.Loaded current = loaded;
@@ -2633,11 +2618,11 @@ public final class PurpleGate {
      * or null when there is nothing to hide.
      */
     public static ArrayList<MessagesController.DialogFilter> suggestionFolders(int currentAccount) {
-        if (!hidingFromSuggestions()) {
+        if (!hidingFromSuggestions(currentAccount)) {
             return null;
         }
         try {
-            return shownFilters(MessagesController.getInstance(currentAccount)
+            return shownFilters(currentAccount, MessagesController.getInstance(currentAccount)
                     .getDialogFiltersUnrestricted());
         } catch (Exception e) {
             return null;
@@ -2664,7 +2649,7 @@ public final class PurpleGate {
             int currentAccount,
             long dialogId,
             ArrayList<MessagesController.DialogFilter> folders) {
-        if (!hidingFromSuggestions()) {
+        if (!hidingFromSuggestions(currentAccount)) {
             return false;
         }
         final TLRPC.Dialog dialog =
@@ -2703,8 +2688,8 @@ public final class PurpleGate {
         if (hints == null) {
             return out;
         }
-        final boolean everywhere = hidingEverywhere();
-        final boolean suggestions = hidingFromSuggestions();
+        final boolean everywhere = hidingEverywhere(currentAccount);
+        final boolean suggestions = hidingFromSuggestions(currentAccount);
         if (!everywhere && !suggestions) {
             out.addAll(hints);
             return out;
@@ -2737,8 +2722,8 @@ public final class PurpleGate {
      * stories still has to be asked. It is one volatile read either way, and
      * under Normal it is the only cost.
      */
-    public static boolean filteringStories() {
-        return filtering && loaded != null;
+    public static boolean filteringStories(int currentAccount) {
+        return filtering(currentAccount) && loaded != null;
     }
 
     /**
@@ -2766,13 +2751,14 @@ public final class PurpleGate {
      * @param dialogId a TLRPC.Dialog id, not a bare id
      */
     public static boolean storyShown(int currentAccount, long dialogId, boolean hasUnseen) {
-        if (!filteringStories() || DialogObject.isFolderDialogId(dialogId)) {
+        if (!filteringStories(currentAccount) || DialogObject.isFolderDialogId(dialogId)) {
             return true;
         }
         if (dialogId == UserConfig.getInstance(currentAccount).getClientUserId()) {
-            return addStoryShown();
+            return addStoryShown(currentAccount);
         }
-        final Integer cached = cachedStoryAnswer(dialogId);
+        final PurpleWorkMode.View accountView = PurpleWorkMode.view(currentAccount);
+        final Integer cached = cachedStoryAnswer(accountView, dialogId);
         if (cached != null) {
             return (cached & (hasUnseen ? STORY_SHOWN_UNSEEN : STORY_SHOWN_SEEN)) != 0;
         }
@@ -2783,7 +2769,7 @@ public final class PurpleGate {
                 && exemptFolderMode(currentAccount, dialogId) != PurpleCore.MODE_UNSET;
         final boolean answer;
         try {
-            answer = PurpleCore.storyShown(
+            answer = PurpleWorkMode.story(currentAccount,
                     bareIdOf(currentAccount, dialogId),
                     kindOf(currentAccount, dialogId),
                     hasUnseen,
@@ -2795,7 +2781,7 @@ public final class PurpleGate {
             return true;
         }
         if (cacheableStoryAnswer(current)) {
-            cacheStoryAnswer(currentAccount, dialogId, hasUnseen, answer);
+            cacheStoryAnswer(accountView, currentAccount, dialogId, hasUnseen, answer);
         }
         return answer;
     }
@@ -2821,12 +2807,9 @@ public final class PurpleGate {
      * reasoning as {@link #hidingArchive}: a preset that has already named what
      * gets through has no reason to leave a way in standing on the strip.
      *
-     * No account argument, for the same reason {@link #hidingArchive} takes
-     * none: a preset is the app's, not one login's, and there is nothing here
-     * to look a dialog up by.
      */
-    public static boolean addStoryShown() {
-        if (!filteringStories()) {
+    public static boolean addStoryShown(int currentAccount) {
+        if (!filteringStories(currentAccount)) {
             return true;
         }
         final PurpleCore.Loaded current = loaded;
@@ -2836,16 +2819,16 @@ public final class PurpleGate {
         return !current.hideAddStory;
     }
 
-    /** Bit set in {@link #storyCache} when the story shows while unseen. */
+    /** Bit set in {@link PurpleWorkMode.View#stories} when the story shows while unseen. */
     private static final int STORY_SHOWN_UNSEEN = 0x1;
 
-    /** Bit set in {@link #storyCache} when it shows with everything watched. */
+    /** Bit set in {@link PurpleWorkMode.View#stories} when it shows with everything watched. */
     private static final int STORY_SHOWN_SEEN = 0x2;
 
     /**
-     * The strip's answer per chat, both halves of the seen ladder in one int.
+     * The strip's answer per account and chat, both halves of the seen ladder in one int.
      *
-     * The same bargain {@link #modeCache} strikes, with the seen half kept
+     * The same bargain {@link PurpleWorkMode.View#modes} strikes, with the seen half kept
      * rather than recomputed: the whole answer moves only when the resolution
      * does, so one native call per chat per reload is all it can be worth - and
      * the second half costs a second call at fill time instead of a call on
@@ -2857,7 +2840,6 @@ public final class PurpleGate {
      * about that, so a preset with folder opinions pays the walk every time
      * rather than answering out of a cache that could be stale.
      */
-    private static final LongSparseArray<Integer> storyCache = new LongSparseArray<>();
 
     private static boolean cacheableStoryAnswer(PurpleCore.Loaded current) {
         return current != null
@@ -2865,17 +2847,17 @@ public final class PurpleGate {
                 && current.exemptFolders.isEmpty();
     }
 
-    private static Integer cachedStoryAnswer(long dialogId) {
+    private static Integer cachedStoryAnswer(PurpleWorkMode.View view, long dialogId) {
         synchronized (cacheLock) {
-            return storyCache.get(dialogId);
+            return view == null ? null : view.stories.get(dialogId);
         }
     }
 
     private static void cacheStoryAnswer(
-            int currentAccount, long dialogId, boolean hasUnseen, boolean answer) {
+            PurpleWorkMode.View view, int currentAccount, long dialogId, boolean hasUnseen, boolean answer) {
         final boolean other;
         try {
-            other = PurpleCore.storyShown(
+            other = PurpleWorkMode.story(currentAccount,
                     bareIdOf(currentAccount, dialogId),
                     kindOf(currentAccount, dialogId),
                     !hasUnseen,
@@ -2893,7 +2875,7 @@ public final class PurpleGate {
             packed |= STORY_SHOWN_SEEN;
         }
         synchronized (cacheLock) {
-            storyCache.put(dialogId, packed);
+            if (view != null) view.stories.put(dialogId, packed);
         }
     }
 
@@ -2992,36 +2974,20 @@ public final class PurpleGate {
      * model and needs no re-sort; this one is a rebuild of derived lists.
      */
     private static void postRefresh() {
+        final int requested = generation;
         AndroidUtilities.runOnUIThread(() -> {
+            if (requested != generation) return;
             dropStaleViewSelections();
-            for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; ++a) {
-                if (!UserConfig.getInstance(a).isClientActivated()) {
-                    continue;
-                }
-                // A no-op while the interface is paused, which is fine: resuming
-                // sorts the dialogs itself, before anything can be drawn.
-                MessagesController.getInstance(a).sortDialogs(null);
-                NotificationCenter.getInstance(a).postNotificationName(NotificationCenter.dialogsNeedReload, true);
-                // Which folders are on the strip is part of the preset too, and
-                // the strip is rebuilt from this one signal - the same one a
-                // folder edit sends.
-                NotificationCenter.getInstance(a).postNotificationName(NotificationCenter.dialogFiltersUpdated);
-                // The stories strip follows the preset too, and nothing about
-                // the sources changes when a preset does - so without this it
-                // would sit there showing what the last preset let through
-                // until the next story arrived. The desktop merges
-                // Purple::ActiveChanges() into the strip's own producer for
-                // exactly this reason; here the strip is rebuilt from this one
-                // signal, which DialogsActivity already listens for.
-                NotificationCenter.getInstance(a).postNotificationName(NotificationCenter.storiesUpdated);
-                // A preset also decides what is silenced, and the unread
-                // counters are built from muted/unmuted buckets, so switching
-                // one moves numbers that no chat-list rebuild would touch.
-                // Every tab and not only the "exclude muted" ones, because a
-                // "hide until" takes its chat out of every running total and
-                // a reload is what starts and ends one.
-                MessagesStorage.getInstance(a).updateAllFiltersCountersForPurple();
-                NotificationsController.getInstance(a).updateBadge();
+            for (PurpleAccountFiles.Identity identity : PurpleAccountOwner.signedIn()) {
+                PurpleCounters.recountThen(identity.slot, () -> {
+                    if (requested != generation || !identity.current()) return;
+                    int account = identity.slot;
+                    MessagesController.getInstance(account).sortDialogs(null);
+                    NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.dialogsNeedReload, true);
+                    NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.dialogFiltersUpdated);
+                    NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.storiesUpdated);
+                    NotificationsController.getInstance(account).updateBadge();
+                });
             }
         });
     }
@@ -3139,11 +3105,12 @@ public final class PurpleGate {
      * from wherever asked for it, and this reaches into MessagesController.
      */
     private static void dropStaleViewSelections() {
-        final ArrayList<MessagesController.DialogFilter> current = viewFilters;
         for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; ++a) {
             if (!UserConfig.getInstance(a).isClientActivated()) {
                 continue;
             }
+            PurpleWorkMode.View view = PurpleWorkMode.view(a);
+            final ArrayList<MessagesController.DialogFilter> current = view == null ? new ArrayList<>() : view.filters;
             final MessagesController controller = MessagesController.getInstance(a);
             for (int k = 0; k < controller.selectedDialogFilter.length; ++k) {
                 final MessagesController.DialogFilter selected = controller.selectedDialogFilter[k];

@@ -10,15 +10,19 @@ final class PurpleRoutedWriteModel {
     final String key, globalKey, targetKey;
     final File globalFile, ownFile;
     final boolean appWide;
+    final int mode;
+    private final File localFile;
+    private final PurpleGlobalChoiceFiles.Physical physical;
     private final byte[] local, global, own;
 
     PurpleRoutedWriteModel(File root, File ownFile, File globalFile, String owner, String globalKey,
             String key, boolean appWide, PurpleGlobalChoiceFiles.Physical physical,
             PurpleAccountEditorModel.Context context, PurpleEditorDirectories.Creator creator) throws Exception {
         this.key = key; this.globalKey = globalKey; this.globalFile = globalFile; this.ownFile = ownFile;
-        File localFile = new File(root, "local.toml");
+        this.physical = physical;
+        localFile = new File(root, "local.toml");
         PurpleGlobalChoiceFiles.Snapshot choice = new PurpleGlobalChoiceFiles.Snapshot(localFile, false, PurpleGlobalChoiceFiles.LIMIT, physical);
-        int mode = modeNative(choice.bytes, key, globalKey);
+        mode = modeNative(choice.bytes, key, globalKey);
         if (mode < 0) throw new IllegalStateException("invalid Work Mode choice");
         this.appWide = appWide || key.equals(globalKey) || mode == 1;
         targetKey = this.appWide ? globalKey : key;
@@ -46,6 +50,24 @@ final class PurpleRoutedWriteModel {
         JSONObject result = new JSONObject(listNative(local, own, ownFile.getPath(), global, globalFile.getPath(), key, globalKey, list, peer, add, title));
         return result.optBoolean("ok") && result.optBoolean("appWide") == appWide && current() ? result : null;
     }
+    JSONObject deleteOwn(String list) throws Exception {
+        if (appWide || !current()) return null;
+        JSONObject result = new JSONObject(deleteOwnNative(own, ownFile.getPath(), global, globalFile.getPath(), list));
+        return result.optBoolean("ok") && current() ? result : null;
+    }
+    boolean setMode(int next) throws Exception {
+        if (!current()) return false;
+        JSONObject plan = new JSONObject(modePlanNative(local, key, globalKey, next));
+        if (!plan.optBoolean("ok") || !current()) return false;
+        if (!plan.optBoolean("changed")) return true;
+        byte[] text = PurpleAccountEditorModel.encode(plan.getString("text"));
+        if (text == null) return false;
+        PurpleGlobalChoiceFiles.Publication result = PurpleGlobalChoiceFiles.replace(localFile, text, physical,
+                this::current, PurpleAppWideRemovalModel::ownedTemporary);
+        return result.changed && result.local != null && editor.currentAfterLocal(result.local);
+    }
+    static native String modePlanNative(byte[] local, String key, String globalKey, int mode);
+    static native String deleteOwnNative(byte[] own, String ownPath, byte[] global, String globalPath, String list);
     PurpleAccountEditorModel.Result save(String text) { return editor.save(editor.preview(text)); }
     static native int modeNative(byte[] local, String key, String globalKey);
     static native String listNative(byte[] local, byte[] own, String ownPath, byte[] global, String globalPath,

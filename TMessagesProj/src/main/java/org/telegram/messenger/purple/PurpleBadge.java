@@ -16,11 +16,11 @@ public final class PurpleBadge {
     }
 
     public static int messages(int account, LongSparseArray<Integer> pushDialogs, int stockTotal) {
-        return PurpleGate.badgeRebuilt() ? count(account, pushDialogs, true) : stockTotal;
+        return PurpleGate.badgeRebuilt(account) ? count(account, pushDialogs, true) : stockTotal;
     }
 
     public static int chats(int account, LongSparseArray<Integer> pushDialogs) {
-        return PurpleGate.badgeRebuilt() ? count(account, pushDialogs, false) : pushDialogs.size();
+        return PurpleGate.badgeRebuilt(account) ? count(account, pushDialogs, false) : pushDialogs.size();
     }
 
     private static int count(int account, LongSparseArray<Integer> pushDialogs, boolean messages) {

@@ -199,6 +199,7 @@ public final class PurpleRecent {
      * minus the chats already one click away on a folder tab that is showing.
      */
     private static boolean eligible(int currentAccount, long dialogId) {
+        if (!PurpleGate.filtering(currentAccount)) return false;
         final PurpleCore.Loaded current = PurpleGate.state();
         if (current == null) {
             return false;

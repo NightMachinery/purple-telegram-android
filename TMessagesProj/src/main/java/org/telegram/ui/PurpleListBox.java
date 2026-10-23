@@ -70,7 +70,7 @@ public final class PurpleListBox {
 
         PurpleGate.ensureLoaded();
         final PurpleCore.Loaded state = PurpleGate.state();
-        final boolean filtering = state != null && !state.normal;
+        final boolean filtering = PurpleGate.filtering(currentAccount);
         final PurpleWriter.Session writer = PurpleWriterUI.capture(fragment, false);
         final List<PurpleCore.ListEntry> lists = writer == null ? java.util.Collections.emptyList()
                 : writer.lists(PurpleGate.bareIdOf(currentAccount, dialogId));
@@ -94,7 +94,7 @@ public final class PurpleListBox {
         // What is deciding this chat right now, above the lists that could change
         // it. Until this line existed, a chat missing from the view and a chat
         // sitting in it under a mode looked identical from here.
-        final String verdict = PurpleListMenu.verdictLine(currentAccount, dialogId);
+        final String verdict = listVerdict(writer, lists, currentAccount, dialogId);
         final TextView verdictView = verdict == null ? null
                 : note(activity, verdict,
                         Theme.getColor(Theme.key_dialogTextGray2, resourcesProvider));
@@ -206,11 +206,37 @@ public final class PurpleListBox {
             entries = lists.toArray(new PurpleCore.ListEntry[0]);
             cells = new CheckBoxCell[count];
             for (int a = 0; a < count; ++a) {
-                final int index = a;
                 final CheckBoxCell cell = new CheckBoxCell(activity, 1, resourcesProvider);
                 cells[a] = cell;
-                cell.setText(titleOf(entries[a]), null, entries[a].member, a < count - 1);
-                cell.setPadding(dp(4), 0, dp(4), 0);
+                final PurpleCore.ListEntry entry = entries[a];
+                final String own = PurpleSettings.accountLabel(currentAccount);
+                final String global = captured == null ? "" : PurpleAccountSettingsRows.globalLabel(captured.globalKey);
+                final String subtitle = captured != null && (entry.ownMembers || captured.key.equals(captured.globalKey))
+                        ? formatString(R.string.PurpleListOwn, own) : formatString(R.string.PurpleListSame, global);
+                String title = titleOf(entry);
+                android.text.SpannableStringBuilder label = new android.text.SpannableStringBuilder(title + "\n" + subtitle);
+                label.setSpan(new android.text.style.RelativeSizeSpan(0.8125f), title.length() + 1, label.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                label.setSpan(new android.text.style.ForegroundColorSpan(Theme.getColor(Theme.key_dialogTextGray2, resourcesProvider)),
+                        title.length() + 1, label.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                cell.setMultiline(true);
+                cell.getTextView().setLines(2);
+                cell.setText(label, null, entry.member, a < count - 1);
+                if (entry.deleteOwn) cell.setOnLongClickListener(v -> {
+                    if (captured == null || !captured.current()) return true;
+                    AlertDialog.Builder confirmation = new AlertDialog.Builder(activity, resourcesProvider);
+                    confirmation.setTitle(formatString(R.string.PurpleListDeleteOwn, own, titleOf(entry)));
+                    confirmation.setMessage(formatString(R.string.PurpleListDeleteOwnConfirm, own, titleOf(entry), global));
+                    confirmation.setPositiveButton(getString(R.string.Delete), (dialog, which) -> {
+                        String error = captured.deleteOwn(entry.name);
+                        if (error != null) Toast.makeText(activity, getString(R.string.PurpleListsFailed), Toast.LENGTH_LONG).show();
+                        AndroidUtilities.runOnUIThread(() -> { if (captured.routeCurrent()) show(fragment, currentAccount, dialogId); });
+                    });
+                    confirmation.setNegativeButton(getString(R.string.Cancel), (dialog, which) ->
+                            AndroidUtilities.runOnUIThread(() -> { if (captured.routeCurrent()) show(fragment, currentAccount, dialogId); }));
+                    PurpleWriterUI.show(fragment, confirmation.create(), captured);
+                    return true;
+                });
+                cell.setPadding(dp(4), dp(8), dp(4), dp(8));
                 cell.setBackground(Theme.createSelectorDrawable(
                         Theme.getColor(Theme.key_listSelector, resourcesProvider),
                         Theme.RIPPLE_MASK_ALL));
@@ -229,7 +255,7 @@ public final class PurpleListBox {
                     // box was built with.
                     final boolean wanted = !cell.isChecked();
                     final String error = PurpleListMenu.toggle(
-                            captured, currentAccount, dialogId, entries[index], wanted);
+                            captured, currentAccount, dialogId, entry, wanted);
                     if (error != null) {
                         // The file is unchanged and so is the running
                         // resolution; the detail is in the log, which is where a
@@ -238,6 +264,13 @@ public final class PurpleListBox {
                                 getString(R.string.PurpleListsFailed),
                                 Toast.LENGTH_SHORT).show();
                         return;
+                    }
+                    if (captured != null) {
+                        String notice = captured.mode == 1 ? formatString(wanted ? R.string.PurpleListFollowAdded : R.string.PurpleListFollowRemoved,
+                                global, titleOf(entry), own) : captured.mode == 2
+                                ? formatString(R.string.PurpleListStockEdited, own, titleOf(entry))
+                                : !captured.appWide && !entry.ownMembers ? formatString(R.string.PurpleListForked, titleOf(entry), own, global) : null;
+                        if (notice != null) Toast.makeText(activity, notice, Toast.LENGTH_LONG).show();
                     }
                     refresh();
                 });
@@ -256,7 +289,7 @@ public final class PurpleListBox {
             final List<PurpleCore.ListEntry> fresh = writer == null ? java.util.Collections.emptyList()
                     : writer.lists(PurpleGate.bareIdOf(currentAccount, dialogId));
             final PurpleCore.Loaded state = PurpleGate.state();
-            final boolean filtering = state != null && !state.normal;
+            final boolean filtering = PurpleGate.filtering(currentAccount);
             if (fresh.isEmpty() && !filtering) {
                 builder.getDismissRunnable().run();
                 return;
@@ -266,7 +299,7 @@ public final class PurpleListBox {
                 // Only when there is still one to show. It goes away with the
                 // preset and not with a list edit, so a null here means the
                 // answer is unchanged rather than empty.
-                final String verdict = PurpleListMenu.verdictLine(currentAccount, dialogId);
+                final String verdict = listVerdict(writer, fresh, currentAccount, dialogId);
                 if (verdict != null) {
                     verdictView.setText(verdict);
                 }
@@ -287,7 +320,9 @@ public final class PurpleListBox {
     private static void showNewList(BaseFragment fragment, Activity activity,
             Theme.ResourcesProvider resourcesProvider, Rows rows,
             int currentAccount, long dialogId) {
+        if (rows.writer == null || !rows.writer.current()) return;
         final PurpleWriter.Session writer = PurpleWriterUI.capture(fragment);
+        if (writer == null) return;
         final AlertDialog.Builder builder = new AlertDialog.Builder(activity, resourcesProvider);
         builder.setTitle(getString(R.string.PurpleNewListTitle));
 
@@ -312,7 +347,7 @@ public final class PurpleListBox {
         // and comes back rebuilt from the file with the new list ticked, which
         // is what the user was looking at and what they came here to change.
         final Runnable reopen = () -> AndroidUtilities.runOnUIThread(
-                () -> show(fragment, currentAccount, dialogId));
+                () -> { if (writer.routeCurrent()) show(fragment, currentAccount, dialogId); });
         builder.setPositiveButton(getString(R.string.Save), (dialog, which) -> {
             createList(fragment, writer, activity, rows, currentAccount, dialogId, field.getText().toString());
             reopen.run();
@@ -351,6 +386,7 @@ public final class PurpleListBox {
             Toast.makeText(activity, getString(R.string.PurpleListsFailed),
                     Toast.LENGTH_SHORT).show();
         }
+        Toast.makeText(activity, getString(R.string.PurpleListStructureAppWide), Toast.LENGTH_LONG).show();
         rows.refresh();
     }
 
@@ -436,6 +472,20 @@ public final class PurpleListBox {
         case PurpleCore.OVERRIDE_NOTIFY: return getString(R.string.PurpleUntilNotify);
         default: return getString(R.string.PurpleUntilShow);
         }
+    }
+
+    private static String listVerdict(PurpleWriter.Session writer, List<PurpleCore.ListEntry> lists, int account, long dialogId) {
+        String verdict = PurpleListMenu.verdictLine(account, dialogId);
+        if (writer == null || writer.mode == 2 || writer.key.equals(writer.globalKey)) return verdict;
+        String global = PurpleAccountSettingsRows.globalLabel(writer.globalKey);
+        String summary;
+        if (writer.mode == 1) summary = formatString(R.string.PurpleListSame, global);
+        else {
+            int own = 0;
+            for (PurpleCore.ListEntry list : lists) if (list.ownMembers) ++own;
+            summary = formatString(R.string.PurpleListOwnSummary, own, PurpleSettings.accountLabel(account), global);
+        }
+        return verdict == null ? summary : summary + "\n\n" + verdict;
     }
 
     /**

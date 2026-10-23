@@ -36,7 +36,7 @@ public final class PurpleHints {
     }
 
     private static boolean hidingFromSuggestions(int currentAccount) {
-        return PurpleGate.hidingFromSuggestions();
+        return PurpleGate.hidingFromSuggestions(currentAccount);
     }
 
     public static void removeHiddenTopPeers(int currentAccount,
@@ -48,8 +48,8 @@ public final class PurpleHints {
 
     public static ArrayList<TLRPC.TL_topPeer> visibleHints(int currentAccount) {
         final ArrayList<TLRPC.TL_topPeer> all = MediaDataController.getInstance(currentAccount).hints;
-        final boolean everywhere = PurpleGate.hidingEverywhere();
-        final boolean suggestions = PurpleGate.hidingFromSuggestions();
+        final boolean everywhere = PurpleGate.hidingEverywhere(currentAccount);
+        final boolean suggestions = PurpleGate.hidingFromSuggestions(currentAccount);
         if (!everywhere && !suggestions) {
             return all;
         }
@@ -101,8 +101,8 @@ public final class PurpleHints {
         return PurpleGate.hiddenEverywhere(currentAccount, dialog);
     }
 
-    public static boolean recommendedChannelsShown() {
-        if (!PurpleGate.filtering()) {
+    public static boolean recommendedChannelsShown(int currentAccount) {
+        if (!PurpleGate.filtering(currentAccount)) {
             return true;
         }
         final PurpleCore.Loaded state = PurpleGate.state();

@@ -127,19 +127,19 @@ public final class PurpleDialogsHooks {
     }
 
     public boolean filtering(int account) {
-        return PurpleGate.filtering();
+        return PurpleGate.filtering(account);
     }
 
     public boolean foldersRestricted(int account) {
-        return PurpleGate.foldersRestricted();
+        return PurpleGate.foldersRestricted(account);
     }
 
     public boolean hidingArchive(int account) {
-        return PurpleGate.hidingArchive();
+        return PurpleGate.hidingArchive(account);
     }
 
     public String menuLabel(int account) {
-        return PurpleGate.menuLabel();
+        return PurpleGate.menuLabel(account);
     }
 
     public void showPresetPicker() {

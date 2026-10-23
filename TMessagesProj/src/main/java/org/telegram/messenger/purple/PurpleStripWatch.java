@@ -18,7 +18,7 @@ public final class PurpleStripWatch {
     }
 
     public static String stripIdentity(int account, PurpleCore.Loaded state) {
-        if (state == null) {
+        if (state == null || PurpleWorkMode.stock(account)) {
             return "";
         }
         final StringBuilder identity = new StringBuilder();

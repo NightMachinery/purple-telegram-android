@@ -12,7 +12,7 @@ public final class PurpleStories {
     }
 
     public static ArrayList<TL_stories.PeerStories> shownStories(int currentAccount, StoriesController c) {
-        if (!PurpleGate.filteringStories()) {
+        if (!PurpleGate.filteringStories(currentAccount)) {
             return c.getDialogListStories();
         }
         final ArrayList<TL_stories.PeerStories> dialogListStories = c.getDialogListStories();
@@ -47,17 +47,17 @@ public final class PurpleStories {
         return c.hasSelfStories() && selfStoryShown(currentAccount) && (shown.isEmpty() || (shown.size() == 1 && DialogObject.getPeerDialogId(shown.get(0).peer) == UserConfig.getInstance(currentAccount).clientUserId));
     }
 
-    public static boolean filteringStoryStrip() {
-        return PurpleGate.filteringStories();
+    public static boolean filteringStoryStrip(int currentAccount) {
+        return PurpleGate.filteringStories(currentAccount);
     }
 
     public static boolean selfStoryShown(int currentAccount) {
-        return PurpleGate.addStoryShown();
+        return PurpleGate.addStoryShown(currentAccount);
     }
 
     public static int titleCount(int currentAccount, StoriesController c, boolean hidden, int size) {
         int totalCount = Math.max(1, Math.max(c.getTotalStoriesCount(hidden), size));
-        if (!hidden && PurpleGate.filteringStories()) {
+        if (!hidden && PurpleGate.filteringStories(currentAccount)) {
             totalCount = Math.max(1, size);
         }
         return totalCount;

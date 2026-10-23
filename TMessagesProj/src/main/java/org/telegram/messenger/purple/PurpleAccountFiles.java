@@ -21,6 +21,13 @@ public final class PurpleAccountFiles {
             this.lifetime = lifetime;
         }
 
+        boolean matchesSlot() {
+            synchronized (PurpleAccountFiles.class) {
+                UserConfig config = UserConfig.getInstance(slot);
+                return lifetime == lifetimes[slot] && config.isClientActivated() && config.getClientUserId() == userId
+                        && key.startsWith(ConnectionsManager.getInstance(slot).isTestBackend() ? "1-" : "0-");
+            }
+        }
         public boolean current() {
             Identity now = capture(slot);
             return now != null && key.equals(now.key) && lifetime == now.lifetime;

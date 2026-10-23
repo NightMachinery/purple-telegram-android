@@ -20,7 +20,7 @@ public final class PurpleAccountOwner {
     private static boolean localWarning;
     private static JSONObject plan;
     private static volatile long revision;
-    private static long roleEpoch;
+    private static volatile long roleEpoch;
     private static String bindingAccount;
 
     public static synchronized void ensureStarted() {
@@ -187,6 +187,7 @@ public final class PurpleAccountOwner {
     public static synchronized String global() { ensureStarted(); return global; }
     public static synchronized long revision() { ensureStarted(); return revision; }
     static long observedRevision() { return revision; }
+    static long observedRoleEpoch() { return roleEpoch; }
     public static synchronized boolean ready() { ensureStarted(); return ready; }
     public static synchronized boolean recovered() { ensureStarted(); return recovered; }
     public static synchronized boolean localWarning() { ensureStarted(); return localWarning; }

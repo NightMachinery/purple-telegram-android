@@ -58,16 +58,16 @@ public final class PurpleAccountEditorCases {
     public static int run(File parent) throws Exception {
         checks=0;
         String mixed="version=2\n[last_seen]\nreasons_p=false\ntrade_remember=\"7d\"\n[playlists]\nmenu_item_p=false\n";
-        JSONObject facts=new JSONObject(PurpleAccountEditorModel.previewNative(bytes(ORIGINAL),bytes(mixed),"fixture.toml",false));
+        JSONObject facts=new JSONObject(PurpleAccountEditorModel.previewNative(bytes(ORIGINAL),bytes(mixed),"fixture.toml",false,0));
         check(facts.optBoolean("ok"),"actual shared parser accepts mixed-scope input");
         String notes=facts.getJSONArray("inactive").toString();
         check(notes.contains("last_seen.trade_remember")&&notes.contains("playlists.menu_item_p")&&!notes.contains("last_seen.reasons_p"),"real per-key registry distinguishes mixed-table keys");
-        check(new JSONObject(PurpleAccountEditorModel.previewNative(bytes(ORIGINAL),bytes(mixed),"fixture.toml",true)).getJSONArray("inactive").length()==0,"global target has no inactive notes");
-        check(!new JSONObject(PurpleAccountEditorModel.previewNative(bytes(ORIGINAL),bytes("["),"fixture.toml",false)).optBoolean("ok"),"broken draft refuses");
-        check(!new JSONObject(PurpleAccountEditorModel.previewNative(bytes(ORIGINAL),bytes("version=999\n"),"fixture.toml",false)).optBoolean("ok"),"newer draft refuses");
-        check(!new JSONObject(PurpleAccountEditorModel.previewNative(null,bytes("version=1\n"),"fixture.toml",false)).optBoolean("ok"),"first creation cannot downgrade layered template");
-        check(!new JSONObject(PurpleAccountEditorModel.previewNative(bytes(ORIGINAL),new byte[]{(byte)0xff},"fixture.toml",false)).optBoolean("ok"),"real JNI rejects malformed UTF8");
-        check(!new JSONObject(PurpleAccountEditorModel.previewNative(new byte[]{(byte)0xff},bytes(DRAFT),"fixture.toml",false)).optBoolean("ok"),"real JNI rejects malformed opened UTF8");
+        check(new JSONObject(PurpleAccountEditorModel.previewNative(bytes(ORIGINAL),bytes(mixed),"fixture.toml",true,0)).getJSONArray("inactive").length()==0,"global target has no inactive notes");
+        check(!new JSONObject(PurpleAccountEditorModel.previewNative(bytes(ORIGINAL),bytes("["),"fixture.toml",false,0)).optBoolean("ok"),"broken draft refuses");
+        check(!new JSONObject(PurpleAccountEditorModel.previewNative(bytes(ORIGINAL),bytes("version=999\n"),"fixture.toml",false,0)).optBoolean("ok"),"newer draft refuses");
+        check(!new JSONObject(PurpleAccountEditorModel.previewNative(null,bytes("version=1\n"),"fixture.toml",false,0)).optBoolean("ok"),"first creation cannot downgrade layered template");
+        check(!new JSONObject(PurpleAccountEditorModel.previewNative(bytes(ORIGINAL),new byte[]{(byte)0xff},"fixture.toml",false,0)).optBoolean("ok"),"real JNI rejects malformed UTF8");
+        check(!new JSONObject(PurpleAccountEditorModel.previewNative(new byte[]{(byte)0xff},bytes(DRAFT),"fixture.toml",false,0)).optBoolean("ok"),"real JNI rejects malformed opened UTF8");
         check(PurpleAccountEditorModel.encode("\uD800")==null,"Java strict encoding rejects an unpaired surrogate");
         Fixture saved=new Fixture(parent,"save");saved.open();
         PurpleAccountEditorModel.Result success=saved.model.save(saved.model.preview(DRAFT));

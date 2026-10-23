@@ -915,12 +915,15 @@ public final class PurpleCore {
         public final String title;
         public final boolean member;
         public final long[] members;
+        public final boolean ownMembers, deleteOwn;
 
-        private ListEntry(String name, String title, boolean member, long[] members) {
+        private ListEntry(String name, String title, boolean member, long[] members, boolean ownMembers, boolean deleteOwn) {
             this.name = name;
             this.title = title;
             this.member = member;
             this.members = members;
+            this.ownMembers = ownMembers;
+            this.deleteOwn = deleteOwn;
         }
     }
 
@@ -1211,7 +1214,7 @@ public final class PurpleCore {
             final long[] members = new long[ids == null ? 0 : ids.length()];
             for (int a = 0; a < members.length; ++a) members[a] = ids.optLong(a, 0);
             result.add(new ListEntry(entry.optString("name", ""), entry.optString("title", ""),
-                    entry.optBoolean("member", false), members));
+                    entry.optBoolean("member", false), members, entry.optBoolean("ownMembers"), entry.optBoolean("deleteOwn")));
         }
         return result;
     }

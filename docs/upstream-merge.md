@@ -144,7 +144,7 @@ instead of building something different:
 
 ## Work Mode hooks carry the account
 
-Work Mode lists are to become per account, so a Work Mode hook in an upstream
+Work Mode list members resolve per account, so a Work Mode hook in an upstream
 file must take the account or session it acts for instead of reading a
 global. The report lists every preset-level `PurpleGate` call in an upstream
 file that passes no account: `filtering`, `foldersRestricted`, `peeking`,
@@ -166,7 +166,7 @@ named here gives each one its account:
   and `refillViewPinsIfNeeded`; FilterTabsView's three `foldersRestricted`;
   MediaDataController's `hidingEverywhere` and `hidingFromSuggestions`.
 - A9: NotificationsController's badge calls now pass the loop account to
-  `PurpleBadge`; its legacy `badgeRebuilt` flag remains shared.
+  `PurpleBadge`; its `badgeRebuilt` predicate uses that account’s stock choice.
 - A10: DialogStoriesCell's `filteringStories`, and StoriesController's
   `filteringStories` and `addStoryShown`.
 - A11: DialogsSearchAdapter's `hidingEverywhere` and `hidingFromSuggestions`,
@@ -639,3 +639,12 @@ The original complete audit runs against the actual worktree with a private
 scratch index, including exact new Purple paths, while canonical index bytes
 remain unchanged. Compiler/audit qualification does not enable the held non-root
 editor/sync/store/History/Undo/Reset or version 2 transfer routes.
+
+### Account Work Mode choice hooks
+
+The existing StoriesController filteringStoryStrip and channel recommendation
+hooks in DialogsChannelsAdapter and SearchViewPager now supply currentAccount.
+Their Purple helpers apply the device-local stock choice. The existing folder,
+badge, settings-label and dialog helpers already receive the account; their
+internal readers now use per-account snapshots and caches. These changes add
+no upstream decision logic or hook sites. See account-routed-writers.md.

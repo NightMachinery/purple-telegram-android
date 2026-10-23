@@ -93,7 +93,7 @@ public class DialogsChannelsAdapter extends UniversalAdapter {
                     items.add(UItem.asProfileCell(myChannels.get(i)).withUsername(true));
                 }
             }
-            final boolean recommended = org.telegram.messenger.purple.PurpleHints.recommendedChannelsShown();
+            final boolean recommended = org.telegram.messenger.purple.PurpleHints.recommendedChannelsShown(currentAccount);
             MessagesController.ChannelRecommendations recommendations = !recommended ? null
                     : MessagesController.getInstance(currentAccount).getCachedChannelRecommendations(0);
             if (recommendations != null) {

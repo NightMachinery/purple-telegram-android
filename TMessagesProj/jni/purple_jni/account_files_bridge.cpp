@@ -507,7 +507,8 @@ Java_org_telegram_messenger_purple_PurpleAccountEditorModel_templateNative(
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_org_telegram_messenger_purple_PurpleAccountEditorModel_previewNative(
-        JNIEnv *env, jclass, jbyteArray opened, jbyteArray draft, jstring path, jboolean global) {
+        JNIEnv *env, jclass, jbyteArray opened, jbyteArray draft, jstring path, jboolean global, jint workMode) {
+    if (workMode < 0 || workMode > 2) return Json(env, {{"ok", false}});
     if (!draft || env->GetArrayLength(draft) > 4 * 1024 * 1024) return Json(env, {{"ok", false}});
     const auto size = env->GetArrayLength(draft);
     auto raw = QByteArray(size, Qt::Uninitialized);
@@ -518,11 +519,13 @@ Java_org_telegram_messenger_purple_PurpleAccountEditorModel_previewNative(
     const auto parsed = Purple::ParseSettings(text, name);
     if (!parsed.ok() || parsed.settings.version > Purple::kHighestSettingsVersion
         || (!opened && parsed.settings.version != 2)) return Json(env, {{"ok", false}});
+    auto beforeInput = QByteArray();
     if (opened) {
         const auto beforeSize = env->GetArrayLength(opened);
         if (beforeSize > 4 * 1024 * 1024) return Json(env, {{"ok", false}});
         auto beforeRaw = QByteArray(beforeSize, Qt::Uninitialized);
         env->GetByteArrayRegion(opened, 0, beforeSize, reinterpret_cast<jbyte*>(beforeRaw.data()));
+        beforeInput = beforeRaw;
         const auto beforeText = QString::fromUtf8(beforeRaw);
         if (beforeText.toUtf8() != beforeRaw) return Json(env, {{"ok", false}});
         const auto before = Purple::ParseSettings(beforeText, name);
@@ -531,18 +534,35 @@ Java_org_telegram_messenger_purple_PurpleAccountEditorModel_previewNative(
     auto warnings = QJsonArray();
     for (const auto &warning : parsed.warnings) warnings.push_back(warning);
     auto inactive = QJsonArray();
+    auto followMembers = false;
     if (!global) {
         const auto summary = Purple::SummarizeConfigChange(raw, QByteArray("version=2\n"));
         if (!summary.parsed) return Json(env, {{"ok", false}});
         for (const auto &entry : summary.entries) {
             auto keys = QJsonArray();
             for (const auto &key : entry.keys) {
-                if (key.scope == Purple::SettingScope::AppWide) keys.push_back(key.table + u"."_q + key.key);
+                const auto followed = workMode == int(Purple::AccountWorkMode::Follow)
+                    && key.scope == Purple::SettingScope::PerAccount && key.key == u"members"_q
+                    && key.table.startsWith(u"lists."_q);
+                followMembers |= followed;
+                if (key.scope == Purple::SettingScope::AppWide || followed) keys.push_back(key.table + u"."_q + key.key);
             }
             if (!keys.empty()) inactive.push_back(QJsonObject{{"label", entry.label}, {"keys", keys}});
         }
     }
-    return Json(env, {{"ok", true}, {"version", parsed.settings.version}, {"warnings", warnings}, {"inactive", inactive}});
+    if (!global && opened && workMode == int(Purple::AccountWorkMode::Follow)) {
+        const auto changes = Purple::SummarizeConfigChange(beforeInput, raw);
+        for (const auto &entry : changes.entries) for (const auto &key : entry.keys) {
+            if (key.scope != Purple::SettingScope::PerAccount || key.key != u"members"_q
+                || !key.table.startsWith(u"lists."_q)) continue;
+            followMembers = true;
+            const auto address = key.table + u"."_q + key.key;
+            auto listed = false;
+            for (const auto &group : inactive) if (group.toObject()["keys"].toArray().contains(address)) listed = true;
+            if (!listed) inactive.push_back(QJsonObject{{"label", entry.label}, {"keys", QJsonArray{address}}});
+        }
+    }
+    return Json(env, {{"ok", true}, {"version", parsed.settings.version}, {"warnings", warnings}, {"inactive", inactive}, {"followMembers", followMembers}});
 }
 
 extern "C" JNIEXPORT jstring JNICALL
@@ -627,6 +647,8 @@ Java_org_telegram_messenger_purple_PurpleRoutedWriteModel_listNative(
         || (!appWide && ownBytes && (!layered.account.current.parsed.ok()
             || layered.account.current.parsed.settings.version > Purple::kHighestSettingsVersion))
         || !layered.effective.ok()) return Json(env, {{"ok", false}});
+    const auto raw = own.toUtf8();
+    const auto tree = toml::parse(std::string_view(raw.constData(), raw.size()));
     auto lists = QJsonArray();
     for (const auto &entry : layered.effective.settings.lists) {
         auto members = QJsonArray();
@@ -635,7 +657,12 @@ Java_org_telegram_messenger_purple_PurpleRoutedWriteModel_listNative(
             members.push_back(QString::number(id));
             if (id == Purple::PeerIdValue(peer)) member = true;
         }
-        lists.push_back(QJsonObject{{"name", entry.name}, {"title", entry.title}, {"member", member}, {"members", members}});
+        const auto table = tree ? tree.table()["lists"][entry.name.toStdString()].as_table() : nullptr;
+        const auto ownMembers = table && table->contains("members");
+        const auto deleteOwn = !appWide && ownMembers && table->size() == 1
+            && layered.account.current.parsed.settings.version == 2;
+        lists.push_back(QJsonObject{{"name", entry.name}, {"title", entry.title}, {"member", member},
+            {"members", members}, {"ownMembers", ownMembers && !appWide}, {"deleteOwn", deleteOwn}});
     }
     if (!listText) return Json(env, {{"ok", true}, {"appWide", appWide}, {"lists", lists}});
     const auto name = Text(env, listText);
@@ -664,4 +691,78 @@ Java_org_telegram_messenger_purple_PurpleRoutedWriteModel_listNative(
         });
     return Json(env, {{"ok", result.ok()}, {"appWide", appWide}, {"changed", result.changed},
         {"text", result.text}, {"error", result.error}});
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleRoutedWriteModel_modePlanNative(
+        JNIEnv *env, jclass, jbyteArray local, jstring keyText, jstring globalText, jint mode) {
+    const auto key = Purple::ParseAccountKey(Text(env, keyText));
+    const auto global = Purple::ParseAccountKey(Text(env, globalText));
+    const auto original = Bytes(env, local);
+    const auto parsed = Purple::ParseLocalChoice(original, u"local.toml"_q);
+    if (!local || !key || !global || !parsed.ok() || mode < 0 || mode > 2
+        || (*key == *global && mode == 1)) return Json(env, {{"ok", false}});
+    const auto result = Purple::SetAccountWorkMode(original, u"local.toml"_q, *key, Purple::AccountWorkMode(mode));
+    return Json(env, {{"ok", result.ok()}, {"changed", result.changed}, {"text", result.text}});
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleRoutedWriteModel_deleteOwnNative(
+        JNIEnv *env, jclass, jbyteArray ownBytes, jstring ownPath, jbyteArray globalBytes,
+        jstring globalPath, jstring listText) {
+    const auto own = Bytes(env, ownBytes);
+    const auto path = Text(env, ownPath);
+    const auto name = Text(env, listText);
+    const auto parsed = Purple::ParseSettings(own, path);
+    const auto global = Purple::ParseSettings(Bytes(env, globalBytes), Text(env, globalPath));
+    const auto raw = own.toUtf8();
+    const auto tree = toml::parse(std::string_view(raw.constData(), raw.size()));
+    const auto table = tree ? tree.table()["lists"][name.toStdString()].as_table() : nullptr;
+    if (!ownBytes || !globalBytes || !parsed.ok() || parsed.settings.version != 2
+        || !global.ok() || !global.settings.list(name) || !table || table->size() != 1
+        || !table->contains("members") || path == Text(env, globalPath)) return Json(env, {{"ok", false}});
+    auto quoted = QString();
+    for (const auto ch : name) {
+        if (ch == '"' || ch == '\\') { quoted += '\\'; quoted += ch; }
+        else if (ch.unicode() < 0x20 || ch.unicode() == 0x7f) quoted += u"\\u%1"_q.arg(int(ch.unicode()), 4, 16, QChar('0'));
+        else quoted += ch;
+    }
+    const auto result = Purple::RemoveTableKey(own, path, u"lists.\""_q + quoted + u"\""_q, u"members"_q);
+    return Json(env, {{"ok", result.ok()}, {"changed", result.changed}, {"text", result.text}});
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleListDiagnosticsModel_factsNative(
+        JNIEnv *env, jclass, jbyteArray beforeBytes, jbyteArray ownBytes, jbyteArray globalBytes) {
+    const auto own = Bytes(env, ownBytes), global = Bytes(env, globalBytes);
+    const auto parsed = Purple::ParseSettings(own, u"account settings"_q);
+    const auto definitions = Purple::ParseSettings(global, u"app-wide settings"_q);
+    if (!ownBytes || !globalBytes || !parsed.ok() || !definitions.ok()) return Json(env, {{"ok", false}});
+    auto inactive = 0;
+    if (beforeBytes) {
+        const auto summary = Purple::SummarizeConfigChange(Bytes(env, beforeBytes).toUtf8(), own.toUtf8());
+        if (summary.parsed) for (const auto &entry : summary.entries) for (const auto &key : entry.keys) {
+            if (key.scope == Purple::SettingScope::AppWide) ++inactive;
+        }
+    }
+    const auto raw = own.toUtf8();
+    const auto tree = toml::parse(std::string_view(raw.constData(), raw.size()));
+    const auto oldRaw = Bytes(env, beforeBytes).toUtf8();
+    const auto previous = toml::parse(std::string_view(oldRaw.constData(), oldRaw.size()));
+    const auto tables = tree ? tree.table()["lists"].as_table() : nullptr;
+    auto orphaned = QJsonArray(), emptied = QJsonArray();
+    if (tables) for (const auto &[key, value] : *tables) {
+        const auto table = value.as_table();
+        if (!table) continue;
+        const auto name = QString::fromUtf8(key.str().data(), int(key.str().size()));
+        const auto members = (*table)["members"].as_array();
+        if (members && !definitions.settings.list(name)) orphaned.push_back(QJsonObject{{"name", name}, {"count", int(members->size())}});
+        const auto old = previous ? previous.table()["lists"][key.str()].as_table() : nullptr;
+        const auto oldMembers = old ? (*old)["members"].as_array() : nullptr;
+        const auto defines = parsed.settings.version != 2 || table->contains("title") || table->contains("kinds");
+        if (beforeBytes && defines && (!members || members->empty()) && oldMembers && !oldMembers->empty()) {
+            emptied.push_back(name);
+        }
+    }
+    return Json(env, {{"ok", true}, {"inactiveCount", inactive}, {"orphaned", orphaned}, {"emptied", emptied}});
 }

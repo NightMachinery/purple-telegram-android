@@ -131,6 +131,16 @@ public final class PurplePresetPicker {
         layout.setOrientation(LinearLayout.VERTICAL);
         builder.setView(layout);
 
+        boolean allStock = true;
+        java.util.List<org.telegram.messenger.purple.PurpleAccountFiles.Identity> accounts = org.telegram.messenger.purple.PurpleAccountOwner.signedIn();
+        for (org.telegram.messenger.purple.PurpleAccountFiles.Identity id : accounts) {
+            if (!org.telegram.messenger.purple.PurpleWorkMode.stock(id.slot)) allStock = false;
+        }
+        if (allStock && !accounts.isEmpty()) layout.addView(note(activity, getString(R.string.PurpleWorkModeAllOff), Theme.getColor(Theme.key_dialogTextGray2, resourcesProvider)));
+        else if (org.telegram.messenger.purple.PurpleWorkMode.stock(fragment.getCurrentAccount())) {
+            layout.addView(note(activity, formatString(R.string.PurpleListsStock,
+                    org.telegram.messenger.purple.PurpleSettings.accountLabel(fragment.getCurrentAccount())), Theme.getColor(Theme.key_dialogTextGray2, resourcesProvider)));
+        }
         final int count = presets.size() + 1;
         for (int a = 0; a < count; ++a) {
             final PurpleCore.PresetInfo preset = a == 0 ? null : presets.get(a - 1);
