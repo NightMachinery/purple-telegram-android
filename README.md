@@ -1893,3 +1893,10 @@ The general editor, History and layered-file transfer gates remain conservative.
 The Android app-wide account chooser now has actual source preview, confirmation
 and guarded local-choice publication with commit-before-activation ordering.
 See `docs/account-settings-m2.md` for current scope and qualification boundaries.
+
+
+Explicit app-wide removal adds a source-labelled
+confirmation and exact backup before changing a non-global account file to layered
+settings. It reuses the shared removal registry and guarded writer. See
+[the account settings notes](docs/account-settings-m2.md#explicit-removal-from-a-non-global-account-file)
+for publication ordering, partial outcomes and qualified host coverage.

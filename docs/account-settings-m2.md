@@ -248,7 +248,7 @@ The native local-choice splice changes only the global-account scalar and an exi
 
 Commit and activation are separate. A detected failed or stale saved commit cannot invoke Normal or Gate activation. A successful missing-preset choice reaches Normal through the real old Gate before loading the selected settings. The model rechecks after Normal, activation and synchronous notification. Saved-but-not-safely-activated results are explicit and never roll back over a foreign writer. State persistence and local choice are not one crash-atomic transaction; the final check-to-rename interval is finite.
 
-The assigned external qualification packet records compiler and genuine model/writer/native causal results. Host callbacks do not instantiate Android Gate/Handler/Os/UI/UserConfig, so physical/native/application/R8/release coverage remains separate. General editors, destructive app-wide removal, list forks and version2 transport stay held.
+The assigned external qualification packet records compiler and genuine model/writer/native causal results. Host callbacks do not instantiate Android Gate/Handler/Os/UI/UserConfig, so physical/native/application/R8/release coverage remains separate. General editors, list forks and version2 transport stay held.
 
 The chooser activation carries the exact validated primary/recovery/default selection into Gate, including recovery flags and the observed-primary watcher fingerprint. A future-version primary with a supported same-account recovery copy cannot silently replace the previewed values during this activation.
 
@@ -283,3 +283,64 @@ original JNI Peek state resolution and retained-authority handoff. The previous
 99, 27 and 21 checks were carried unchanged into the final 30-check handoff
 qualification. Actual Android timer/UI dispatch, application/R8, device and
 release acceptance remain separate.
+
+
+### Explicit removal from a non-global account file
+
+The Settings file action appears only for an existing non-global
+account file with inactive app-wide settings. The real shared removal splice and
+configuration-change registry supply the count and named groups. The confirmation
+names the originating account, captured app-wide source and both exact paths. Its
+Cancel button receives initial focus; a missing or unfocusable Cancel retires the
+confirmation. Delegated dismiss, pre-dismiss and live visible-dialog checks use
+the existing production dialog-lifetime policy.
+
+Preview creates no file or directory. The production model captures strict bounded
+UTF-8 snapshots and physical file/directory identities for the own primary, good,
+backup, global primary/good, local choice and owner record. It also retains the
+originating account/session roster, fragment/activity lifetime, owner/global keys,
+role/revision, settings/native generations and Gate generation. A queued watcher,
+logout/re-login, role change or replacement refuses rather than recapturing authority.
+Before offering a preview, the existing genuine JNI local-choice planner validates
+actual local/owner bytes and resolved own/global paths against the cached roles.
+A hand edit that is already on disk but still queued in FileObserver cannot make
+the newly global account eligible for this non-global removal action.
+Main, backup and existing parent destinations must remain writable. The source
+itself must parse and be supported; a recovery copy is not substituted
+for the file being explicitly removed from.
+
+Confirmation first publishes the exact original bytes to settings.toml.bak, or
+reuses an already exact captured backup without replacing its inode. The main file
+is replaced only after that backup and all original authority still verify. Both
+writes reuse the accepted no-follow, descriptor-owned private temporary-file
+writer through a narrow creator overload. Removal creates an exclusive native
+temporary file and retains its fstat identity before closing the creation descriptor.
+A foreign replacement before the first Java mark cannot be adopted or cleaned as
+owned. Existing chooser callers retain their unchanged creator path. Native RemoveAppWideSettings alone produces the successor and version2
+transition, retaining per-account, file-local, unknown values and retained comments.
+No global settings, preset, good copy, History, store or fingerprint is rewritten.
+No send callback is scheduled. Existing unsupported editor and transport guards stay.
+
+After a verified main publication, only account-reader caches are invalidated.
+The post-invalidation check expects exactly that one settings/native generation
+step and no owner/global/role/Gate change. Synchronous notification is followed by
+another retained-context check. Outcomes distinguish no confirmed main replacement,
+backup-only publication and main saved after context retirement. No rollback can
+overwrite a later writer. UI results are shown only in the live originating view.
+
+The two file publications are not a cross-file transaction. The last validation
+before rename has a finite check-to-rename gap against a noncooperating same-UID
+writer; parent-directory fsync and universal filesystem compare-and-swap are not
+claimed. Existing native no-follow descriptor ownership is reused unchanged.
+
+Production Java (3,073 sources) and the affected Android JNI compilation and
+linking passed. The genuine host production-model/JNI/NIO suite passed all 118
+checks, including backup ordering, missing read-only global directories, retained
+ownership and partial-publication outcomes. Independent complete source review
+and focused closure of the two findings passed. Tests and the repeatable route
+live beside TMessagesProj/jni/purple_jni/tests/appwide_removal/PurpleAppWideRemovalCases.java.
+
+Android UI, Os, Handler and FileObserver behavior remain unmeasured. Application
+and shrinker qualification for this source revision, device coverage and release
+remain separate. All touched UI/bridge files are Purple-owned; no upstream hook
+or audit ratchet changes are introduced.

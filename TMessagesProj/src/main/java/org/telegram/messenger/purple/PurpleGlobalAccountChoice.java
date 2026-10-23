@@ -68,10 +68,12 @@ public final class PurpleGlobalAccountChoice {
             return ui.current() && origin != null && origin.current()
                     && root.equals(PurpleAccountFiles.root()) && PurpleGlobalChoiceModel.sameRoster(roster, roster());
         }
-        public boolean current() {
+        public boolean current() { return currentAfterAccountRefresh(false); }
+        boolean currentAfterAccountRefresh(boolean refreshed) {
+            int steps = refreshed ? 1 : 0;
             return identityCurrent() && Objects.equals(owner, PurpleAccountOwner.owner()) && Objects.equals(global, PurpleAccountOwner.global())
                     && revision == PurpleAccountOwner.revision() && role == PurpleAccountOwner.roleEpoch()
-                    && generation == PurpleAccountSettings.generation() && nativeEpoch == PurpleAccountSettings.epochNative()
+                    && generation + steps == PurpleAccountSettings.generation() && nativeEpoch + steps == PurpleAccountSettings.epochNative()
                     && gate == PurpleGate.generation();
         }
         public Choice preview(String key, Current confirmation) {

@@ -297,6 +297,7 @@ public class PurpleSettingsActivity extends UniversalFragment
         }
 
         items.add(UItem.asHeader(getString(R.string.PurpleSettingsFileHeader)));
+        PurpleAppWideRemovalUI.add(items, currentAccount, current);
         items.add(UItem.asButton(ROW_EDIT, getString(R.string.PurpleEditSettings)));
         items.add(UItem.asButton(ROW_SYNC, getString(R.string.PurpleSyncTitle)));
         items.add(UItem.asButton(ROW_SEND, getString(R.string.PurpleSendToSaved)));
@@ -436,6 +437,7 @@ public class PurpleSettingsActivity extends UniversalFragment
 
     @Override
     protected void onClick(UItem item, View view, int position, float x, float y) {
+        if (PurpleAppWideRemovalUI.click(this, item.id, rowCurrent())) return;
         if (PurpleAccountSettingsRows.click(this, item.id, rowCurrent())) return;
         if (item.id == ROW_LAST_SEEN_REASONS || item.id == ROW_LAST_SEEN_TRADE || item.id == ROW_AUTOSEND) {
             PurpleAccountRowWrite.Intent intent = item.id == ROW_LAST_SEEN_REASONS ? reasonsIntent

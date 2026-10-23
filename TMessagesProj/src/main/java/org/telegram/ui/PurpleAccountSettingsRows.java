@@ -96,8 +96,9 @@ public final class PurpleAccountSettingsRows {
         return text(R.string.PurpleAccountOwnerKnown);
     }
 
-    private static String globalLabel() {
-        String key = PurpleAccountOwner.global();
+    static String globalLabel() { return globalLabel(PurpleAccountOwner.global()); }
+
+    static String globalLabel(String key) {
         if (key == null) return text(R.string.PurpleAccountOwnerChoose);
         for (PurpleAccountFiles.Identity id : PurpleAccountOwner.signedIn()) {
             if (key.equals(id.key)) return label(id);

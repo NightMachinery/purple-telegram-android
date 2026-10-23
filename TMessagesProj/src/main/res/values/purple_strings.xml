@@ -616,4 +616,13 @@
     <string name="PurpleGlobalChoiceUnavailable">The account, window or settings changed. Preview the app-wide choice again.</string>
     <string name="PurpleGlobalChoiceOn">on</string>
     <string name="PurpleGlobalChoiceOff">off</string>
+    <string name="PurpleAppWideInactive">This file sets %1$d app-wide settings that this device takes from %2$s’s file. They apply on devices where %3$s supplies the app-wide settings.</string>
+    <string name="PurpleAppWideInactiveGroup">%1$s: %2$d settings</string>
+    <string name="PurpleAppWideRemoveFrom">Remove app-wide settings from %1$s’s file</string>
+    <string name="PurpleAppWideRemoveAction">Remove app-wide settings</string>
+    <string name="PurpleAppWideRemoveQuestion">This removes Work Mode, Local Premium and the other app-wide settings from %1$s’s file. Once synced, devices where this account supplies the app-wide settings run without them. This device continues using %2$s’s app-wide settings. The current file is kept as settings.toml.bak.</string>
+    <string name="PurpleAppWideRemovePaths">Account file: %1$s\nExact backup: %2$s</string>
+    <string name="PurpleAppWideRemoveUnavailable">The account, settings or confirmation changed, or the files could not be written safely. No main-file replacement was confirmed.</string>
+    <string name="PurpleAppWideRemoveBackupOnly">The main file was not replaced. Its exact backup was saved, but the settings context then changed or publication could not complete.</string>
+    <string name="PurpleAppWideRemoveSavedContext">Settings were saved with their exact backup, but the account or screen context changed afterward. Nothing was rolled back.</string>
 </resources>

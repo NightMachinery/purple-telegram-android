@@ -13,6 +13,10 @@
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 #include <QtCore/QDateTime>
+#include <QtCore/QDir>
+#include <QtCore/QFile>
+
+#include <cstdlib>
 
 #include <cerrno>
 #include <fcntl.h>
@@ -442,4 +446,49 @@ Java_org_telegram_messenger_purple_PurpleGlobalChoiceFiles_writeNative(
     const auto synced = (::fsync(descriptor) == 0);
     const auto closed = (::close(descriptor) == 0);
     return synced && closed;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleAppWideRemovalModel_planNative(
+        JNIEnv *env, jclass, jbyteArray original, jstring path) {
+    if (!original || env->GetArrayLength(original) > 4 * 1024 * 1024) return Json(env, {{"ok", false}});
+    const auto size = env->GetArrayLength(original);
+    auto raw = QByteArray(size, Qt::Uninitialized);
+    env->GetByteArrayRegion(original, 0, size, reinterpret_cast<jbyte*>(raw.data()));
+    const auto text = QString::fromUtf8(raw);
+    if (text.toUtf8() != raw) return Json(env, {{"ok", false}});
+    const auto source = Text(env, path);
+    const auto parsed = Purple::ParseSettings(text, source);
+    if (!parsed.ok() || parsed.settings.version > Purple::kHighestSettingsVersion) return Json(env, {{"ok", false}});
+    const auto splice = Purple::RemoveAppWideSettings(text, source);
+    if (!splice.ok() || splice.text.toUtf8().size() > 4 * 1024 * 1024) return Json(env, {{"ok", false}});
+    const auto summary = Purple::SummarizeConfigChange(raw, splice.text.toUtf8());
+    if (!summary.parsed) return Json(env, {{"ok", false}});
+    auto count = 0;
+    auto groups = QJsonArray();
+    for (const auto &entry : summary.entries) {
+        auto removed = 0;
+        for (const auto &key : entry.keys) {
+            if (key.scope == Purple::SettingScope::AppWide && key.kind == Purple::ConfigChangeKind::Removed) ++removed;
+        }
+        if (removed) groups.push_back(QJsonObject{{"label", entry.label}, {"count", removed}});
+        count += removed;
+    }
+    return Json(env, {{"ok", true}, {"count", count}, {"groups", groups}, {"text", splice.text}});
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleAppWideRemovalModel_createNative(
+        JNIEnv *env, jclass, jstring parent) {
+    auto pattern = QFile::encodeName(QDir(Text(env, parent)).filePath(u"appwide-XXXXXX"_q));
+    const auto descriptor = ::mkstemp(pattern.data());
+    if (descriptor < 0) return Json(env, {{"ok", false}});
+    struct stat status {};
+    const auto measured = ::fstat(descriptor, &status) == 0 && S_ISREG(status.st_mode) && status.st_nlink == 1;
+    ::close(descriptor);
+    if (!measured) return Json(env, {{"ok", false}});
+    const auto identity = QString::number(qulonglong(status.st_dev)) + u":"_q
+        + QString::number(qulonglong(status.st_ino));
+    return Json(env, {{"ok", true}, {"path", QFile::decodeName(pattern)},
+        {"identity", identity}, {"mode", int(status.st_mode)}});
 }

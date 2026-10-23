@@ -44,6 +44,12 @@ final class PurpleGlobalChoiceFiles {
             } catch (Exception e) { return false; }
         }
     }
+    interface Creator { Created create(File parent) throws Exception; }
+    static final class Created {
+        final File file;
+        final Mark mark;
+        Created(File file, Mark mark) { this.file = file; this.mark = mark; }
+    }
     static final class Publication {
         boolean changed;
         Snapshot local;
@@ -64,13 +70,25 @@ final class PurpleGlobalChoiceFiles {
         }
     }
     static Publication replace(File target, byte[] bytes, Physical physical, Current current) {
+        return replace(target, bytes, physical, current, null);
+    }
+    static Publication replace(File target, byte[] bytes, Physical physical, Current current, Creator creator) {
         Publication result = new Publication();
         File temporary = null;
         Mark owned = null;
         try {
             if (bytes == null || bytes.length > LIMIT || !current.current()) return result;
-            temporary = File.createTempFile("choice-", ".tmp", target.getParentFile());
-            owned = physical.mark(temporary, false);
+            if (creator == null) {
+                temporary = File.createTempFile("choice-", ".tmp", target.getParentFile());
+                owned = physical.mark(temporary, false);
+            } else {
+                Created created = creator.create(target.getParentFile());
+                if (created == null) return result;
+                temporary = created.file;
+                owned = created.mark;
+                if (!target.getParentFile().equals(temporary.getParentFile())
+                        || !owned.identity.equals(physical.mark(temporary, false).identity)) return result;
+            }
             if (owned.missing() || !current.current() || !physical.write(temporary, owned, bytes)) return result;
             Snapshot written = new Snapshot(temporary, false, LIMIT, physical);
             if (!owned.identity.equals(written.mark.identity) || (written.mark.mode & 0777) != 0600 || !Arrays.equals(bytes, written.bytes)
