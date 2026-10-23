@@ -99,6 +99,10 @@ public final class PurpleSyncOfferRulesTest {
         testOlderFileIsNotOffered();
         testImportNeedsTheSourceAccountActive();
         testAccountLabel();
+        check(PurpleSyncOfferRules.localStamp(false, 0, 1500) == 1500);
+        check(PurpleSyncOfferRules.localStamp(true, 900, 1500) == 900);
+        check(launch(TEST, TEST, 30, 1499, 0, PurpleSyncOfferRules.localStamp(false, 0, 1500)) == Verdict.NOT_NEWER);
+        check(launch(TEST, DAILY, 30, 1600, 0, 1500) == Verdict.INACTIVE_ACCOUNT);
         System.out.println(checks + " checks, " + failures + " failures");
         if (failures != 0) {
             System.exit(1);

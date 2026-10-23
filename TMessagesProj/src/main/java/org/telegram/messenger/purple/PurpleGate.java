@@ -408,6 +408,35 @@ public final class PurpleGate {
         reload(reason, readSettings());
     }
 
+    public static void reloadAccountFiles(String reason) {
+        final PurpleCore.Loaded current = loaded;
+        final PurpleGlobalChoiceProgress accepted = acceptedSupportedSource;
+        final File file = PurpleAccountSettings.globalFile();
+        final PurpleAccountFileSnapshot primary = PurpleAccountFileSnapshot.read(file);
+        final PurpleAccountFileSnapshot good = PurpleAccountFileSnapshot.read(new File(file.getPath() + ".good"));
+        if (current == null || accepted == null || !accepted.current() || !file.equals(peekLoadedFile)
+                || !java.util.Objects.equals(PurpleAccountOwner.global(), peekLoadedGlobal)
+                || !primary.same(peekLoadedPrimary) || !good.same(peekLoadedGood)) {
+            reload(reason);
+            return;
+        }
+        PurpleAccountSettings.invalidate();
+        if (loaded != current || acceptedSupportedSource != accepted || !accepted.current()
+                || !primary.matches(file) || !good.matches(new File(file.getPath() + ".good"))) return;
+        PurpleWorkMode.reload(accepted.source.settings, file, primary, good);
+        ++generation;
+        rebuildViewFilters(current);
+        PurpleListDiagnostics.afterReload();
+        postRefresh();
+        AndroidUtilities.runOnUIThread(() -> {
+            for (PurpleAccountFiles.Identity id : PurpleAccountOwner.signedIn()) {
+                NotificationCenter.getInstance(id.slot).postNotificationName(
+                        NotificationCenter.updateInterfaces, MessagesController.UPDATE_MASK_STATUS);
+            }
+        });
+        rebuildShortcuts();
+    }
+
     static void reloadGlobalChoice(String reason, PurpleGlobalChoiceModel.ActivationSource source) {
         reload(reason, source.settings, source);
     }

@@ -49,24 +49,24 @@ public final class PurpleSync {
      * short enough that somebody who changed a switch and put the phone down
      * has the file on the other machine before they pick the other one up.
      */
-    private static final PurpleSaveDebounce saves = new PurpleSaveDebounce(new PurpleSaveDebounce.Scheduler() {
+    private static final PurpleSaveDebounce.Scheduler scheduler = new PurpleSaveDebounce.Scheduler() {
         public boolean currentThread() { return android.os.Looper.myLooper() == android.os.Looper.getMainLooper(); }
         public void post(Runnable callback, long delay) { AndroidUtilities.runOnUIThread(callback, delay); }
         public void cancel(Runnable callback) { AndroidUtilities.cancelRunOnUIThread(callback); }
-    });
+    };
+    private static final PurpleSaveDebounces saves = new PurpleSaveDebounces(scheduler);
+    private static PurpleSaveDebounce saves(String key) { return saves.of(key); }
 
     private static final Charset UTF_8 = Charset.forName("UTF-8");
     private static final ArrayList<PendingSend> pendingSends = new ArrayList<>();
 
     private static final class PendingSend {
-        final int account;
         final byte[] bytes;
         final PurpleAccountFiles.Identity origin;
 
-        PendingSend(int account, byte[] bytes) {
-            this.account = account;
+        PendingSend(PurpleAccountFiles.Identity origin, byte[] bytes) {
             this.bytes = bytes;
-            origin = PurpleAccountFiles.capture(account);
+            this.origin = origin;
         }
     }
 
@@ -75,136 +75,74 @@ public final class PurpleSync {
 
     static void refreshFromWatcher(Runnable reload) { saves.refresh(reload); }
 
-    /**
-     * Called after every write of settings.toml the app itself made, except
-     * an account sync restore or undo, which stays on this device as it does
-     * on desktop.
-     *
-     * Every other writer funnels through here - the splices in
-     * {@link PurpleWriter}, the editor's whole-file save, and the import -
-     * because the question the core answers is about bytes on disk and not
-     * about which screen put them there.
-     *
-     * @param reason what asked for the write, for the log line
-     * @param wroteFromImport whether this write IS an import installing the
-     *                        file the other device sent. That never sends -
-     *                        returning bytes to whoever just handed them over
-     *                        is the ping-pong - and it is also the moment the
-     *                        imported fingerprint is written down.
-     */
-    public static void afterWrite(final String reason, final boolean wroteFromImport) {
-        afterWrite(PurpleAccountFiles.capture(UserConfig.selectedAccount), null, null, reason, wroteFromImport);
+    public static byte[] accountBytes(int account) {
+        if (!PurpleAccountOwner.legacyTransferOperation(account)) return null;
+        PurpleAccountFiles.Identity origin = PurpleAccountFiles.capture(account);
+        PurpleAccountFiles files = origin == null ? null : PurpleAccountFiles.resolve(origin.key, PurpleAccountOwner.owner());
+        if (files == null) return null;
+        PurpleAccountFileSnapshot file = PurpleAccountFileSnapshot.read(files.settings);
+        return origin.current() && file.status == PurpleAccountFileSnapshot.Status.Present ? file.bytes : null;
     }
 
-    static void afterWrite(PurpleSyncFileContext context, byte[] expected, String reason, boolean wroteFromImport) {
-        if (context == null || expected == null) return;
-        afterWrite(context.origin, context, expected.clone(), reason, wroteFromImport);
+    public static void afterWrite(String reason, boolean imported) {
+        PurpleAccountFiles.Identity origin = PurpleAccountFiles.capture(UserConfig.selectedAccount);
+        if (origin == null || !PurpleAccountOwner.legacyOperation(origin.slot)) return;
+        byte[] bytes = accountBytes(origin.slot);
+        if (bytes != null) afterFileWrite(origin, PurpleAccountFiles.rootSettings(), bytes, imported, !imported);
     }
-
-    private static void afterWrite(final PurpleAccountFiles.Identity origin,
-            final PurpleSyncFileContext context, final byte[] expected,
-            final String reason, final boolean wroteFromImport) {
-        if (origin == null || !origin.current() || !PurpleAccountOwner.legacyOperation(origin.slot)
-                || (context != null && !context.current())) return;
+    static void afterWrite(PurpleSyncFileContext context, byte[] bytes, String reason, boolean imported) {
+        if (context == null || bytes == null) return;
+        byte[] expected = bytes.clone();
         AndroidUtilities.runOnUIThread(() -> {
-            if (!origin.current() || !PurpleAccountOwner.legacyOperation(origin.slot)
-                    || (context != null && !context.current())) return;
-            saves.cancel();
-            // Read from disk rather than handed in: the splice, the editor and
-            // the import all end in a file, and the file is the only thing all
-            // three agree about.
-            final byte[] bytes = PurpleGate.settingsBytes();
-            if (bytes == null || (expected != null && !java.util.Arrays.equals(expected, bytes))) {
-                return;
-            }
-            if (wroteFromImport) {
-                // Recorded whether or not the switch is on. It costs one write
-                // of state.toml on a rare event, and it means turning the
-                // switch on later does not immediately post back the file this
-                // device was given.
-                if (context == null) noteImported(bytes);
-                else noteImported(context, bytes);
-                return;
-            }
-            if (!PurpleCore.shouldAutoSend(bytes, PurpleState.read(), bytes, false)) {
-                return;
-            }
-            FileLog.d("Purple: auto-send armed by " + reason + ".");
-            final long roleEpoch = PurpleAccountOwner.roleEpoch();
-            final String owner = PurpleAccountOwner.owner();
-            final String global = PurpleAccountOwner.global();
-            saves.replace(() -> origin.current() && UserConfig.selectedAccount == origin.slot
-                    && PurpleAccountOwner.legacyOperation(origin.slot)
-                    && roleEpoch == PurpleAccountOwner.roleEpoch()
-                    && java.util.Objects.equals(owner, PurpleAccountOwner.owner())
-                    && java.util.Objects.equals(global, PurpleAccountOwner.global())
-                    && (context == null || context.current())
-                    && Arrays.equals(bytes, PurpleGate.settingsBytes()), PurpleSync::fire);
+            if (context.current()) afterFileWrite(context.origin, context.files.settings, expected, imported, false);
         });
     }
-
-    /**
-     * The debounce running out.
-     *
-     * Everything is asked again rather than remembered from five seconds ago,
-     * because five seconds is long enough for all of it to have moved: the
-     * write that armed this may have been followed by one that turned the
-     * switch off, or by an import that has since claimed these very bytes.
-     */
-    static void afterRoutedWrite(PurpleAccountFiles.Identity origin, File file, byte[] expected, String reason) {
-        if (origin == null || !origin.current() || !file.equals(PurpleAccountFiles.rootSettings())
-                || !PurpleAccountOwner.legacyEditorAllowed(origin.slot)) return;
-        afterWrite(origin, null, expected.clone(), reason, false);
+    static void afterRoutedWrite(PurpleAccountFiles.Identity actor, File file, byte[] bytes, String reason) {
+        if (actor == null || !actor.current()) return;
+        for (PurpleAccountFiles.Identity id : PurpleAccountOwner.signedIn()) {
+            PurpleAccountFiles files = PurpleAccountFiles.resolve(id.key, PurpleAccountOwner.owner());
+            if (files != null && files.settings.equals(file)) { afterFileWrite(id, file, bytes, false, true); return; }
+        }
     }
-
     static void afterAccountRowWrite(PurpleAccountFiles.Identity origin, File file,
             byte[] bytes, PurpleSaveDebounce.Receipt receipt, boolean allowSend) {
-        byte[] expected = bytes.clone();
-        saves.admit(receipt, () -> {
-            if (!receipt.current() || !origin.current()
-                    || UserConfig.selectedAccount != origin.slot
-                    || !PurpleAccountOwner.legacyOperation(origin.slot)
-                    || !file.equals(PurpleAccountFiles.rootSettings())
-                    || !Arrays.equals(expected, PurpleAccountFileSnapshot.read(file).bytes)
-                    || !PurpleAutoSendRules.postsFrom(origin.slot, activatedAccounts())
-                    || !PurpleCore.shouldAutoSend(expected, PurpleState.read(), expected, false)) return;
-            sendToSavedMessages(origin.slot, expected);
-        }, allowSend);
+        if (receipt.current()) afterFileWrite(origin, file, bytes, false, allowSend);
     }
-
-    private static void fire() {
-        if (!PurpleAccountOwner.legacyOperation(UserConfig.selectedAccount)) return;
-        final byte[] bytes = PurpleGate.settingsBytes();
-        if (bytes == null) {
-            return;
+    static boolean afterFileWrite(PurpleAccountFiles.Identity origin, File file, byte[] bytes,
+            boolean imported, boolean allowSend) {
+        if (origin == null || bytes == null || !origin.current() || !PurpleAccountOwner.legacyTransferOperation(origin.slot)) return false;
+        byte[] expected = bytes.clone();
+        String owner = PurpleAccountOwner.owner();
+        String global = PurpleAccountOwner.global();
+        long role = PurpleAccountOwner.roleEpoch();
+        PurpleAccountFiles files = PurpleAccountFiles.resolve(origin.key, owner);
+        if (files == null || !file.equals(files.settings)) return false;
+        PurpleAccountFileSnapshot written = PurpleAccountFileSnapshot.read(file);
+        PurpleAccountFileSnapshot local = PurpleAccountFileSnapshot.read(PurpleAccountFiles.file("local.toml"));
+        PurpleAccountFileSnapshot record = PurpleAccountFileSnapshot.read(PurpleAccountFiles.file("accounts/root.toml"));
+        if (!Arrays.equals(expected, written.bytes)) return false;
+        PurpleSaveDebounce.Current current = () -> origin.current() && PurpleAccountOwner.ready()
+                && PurpleAutoSendRules.postsFrom(origin.slot, activatedAccounts())
+                && role == PurpleAccountOwner.roleEpoch() && owner.equals(PurpleAccountOwner.owner())
+                && global.equals(PurpleAccountOwner.global()) && local.matches(PurpleAccountFiles.file("local.toml"))
+                && record.matches(PurpleAccountFiles.file("accounts/root.toml")) && written.matches(file);
+        if (imported) {
+            saves(origin.key).cancel();
+            return current.current() && PurpleLegacySendState.note(origin, file, expected, true);
         }
-        if (!PurpleCore.shouldAutoSend(bytes, PurpleState.read(), bytes, false)) {
-            return;
-        }
-        final int account = UserConfig.selectedAccount;
-        if (!UserConfig.getInstance(account).isClientActivated()) {
-            // Nobody to send to. The fingerprint stays unwritten, so the send
-            // happens on the next save after a login rather than never.
-            return;
-        }
-        if (!PurpleAutoSendRules.postsFrom(account, activatedAccounts())) {
-            FileLog.d("Purple: auto-send skipped: the selected account is not the first account.");
-            return;
-        }
-        final String error = sendToSavedMessages(account, bytes);
-        if (error != null) {
-            // Said in the log and nowhere else: nobody asked for this one, so a
-            // bulletin over whatever screen happens to be open would be the app
-            // interrupting to report on something it started itself.
-            FileLog.e("Purple: auto-send: " + error);
-        }
+        saves(origin.key).admit(current::current, () -> {
+            byte[] state = PurpleLegacySendState.read(files);
+            if (current.current() && state != null && PurpleCore.shouldAutoSend(expected, state, expected, false)) {
+                String error = sendToSavedMessages(origin.slot, expected);
+                if (error != null) FileLog.e("Purple: auto-send: " + error);
+            }
+        }, allowSend);
+        return true;
     }
 
     private static boolean[] activatedAccounts() {
-        final boolean[] activated = new boolean[UserConfig.MAX_ACCOUNT_COUNT];
-        for (int account = 0; account < activated.length; ++account) {
-            activated[account] = UserConfig.getInstance(account).isClientActivated();
-        }
+        boolean[] activated = new boolean[UserConfig.MAX_ACCOUNT_COUNT];
+        for (int i = 0; i < activated.length; ++i) activated[i] = UserConfig.getInstance(i).isClientActivated();
         return activated;
     }
 
@@ -227,7 +165,7 @@ public final class PurpleSync {
         if (origin == null || !PurpleAccountOwner.manualBackupAllowed(account, bytes)) return null;
         File directory = staging().newDirectory(System.currentTimeMillis());
         if (directory == null) return null;
-        File staged = new File(directory, PurpleSettings.FILE_NAME);
+        File staged = new File(directory, PurpleSettings.exportName(PurpleCore.parse(bytes).version));
         if (!writeBytes(staged, bytes) || !origin.current()
                 || !PurpleAccountOwner.manualBackupAllowed(account, bytes)) {
             PurpleSettingsStaging.remove(staged);
@@ -252,13 +190,14 @@ public final class PurpleSync {
             FileLog.e(e);
             return LocaleController.getString(R.string.PurpleCoreUnavailable);
         }
-        if (!parsed.ok || parsed.version > 1) {
+        if (!parsed.ok || parsed.version > PurpleSettings.SUPPORTED_SCHEMA_VERSION) {
             return LocaleController.getString(R.string.PurpleSendRefused);
         }
-        final PendingSend pendingSend = new PendingSend(account, sentBytes);
+        if (origin == null || !origin.current()) return LocaleController.getString(R.string.PurpleAccountWriteHeld);
+        final PendingSend pendingSend = new PendingSend(origin, sentBytes);
         synchronized (pendingSends) {
             for (PendingSend pending : pendingSends) {
-                if (pending.account == account && Arrays.equals(pending.bytes, sentBytes)) {
+                if (pending.origin.key.equals(origin.key) && pending.origin.lifetime == origin.lifetime && Arrays.equals(pending.bytes, sentBytes)) {
                     return null;
                 }
             }
@@ -269,7 +208,7 @@ public final class PurpleSync {
             clearPending(pendingSend);
             return LocaleController.getString(R.string.PurpleSendFailed);
         }
-        final File staged = new File(stagingDir, PurpleSettings.FILE_NAME);
+        final File staged = new File(stagingDir, PurpleSettings.exportName(parsed.version));
         if (!writeBytes(staged, sentBytes)) {
             clearPending(pendingSend);
             PurpleSettingsStaging.remove(staged);
@@ -290,17 +229,17 @@ public final class PurpleSync {
                     caption,
                     UserConfig.getInstance(account).getClientUserId(),
                     null,
-                    (serverId, preparationFailed) -> {
+                    PurpleSendReceipt.guarded(origin::current, (serverId, preparationFailed) -> {
                         clearPending(pendingSend);
-                        if (serverId > 0 && origin.current() && PurpleAccountOwner.legacyOperation(account)) {
-                            noteConfirmedSend(account, sentBytes, serverId);
+                        if (serverId > 0 && origin.current() && PurpleAccountOwner.legacyTransferOperation(account)) {
+                            noteConfirmedSend(origin, sentBytes, serverId);
                             if (!staged.exists()) {
                                 stagingDir.delete();
                             }
                         } else if (preparationFailed) {
                             PurpleSettingsStaging.remove(staged);
                         }
-                    });
+                    }));
         } catch (RuntimeException e) {
             FileLog.e(e);
             clearPending(pendingSend);
@@ -335,7 +274,7 @@ public final class PurpleSync {
                 || !UserConfig.getInstance(account).isClientActivated()
                 || !(messageObject.messageOwner.media instanceof TLRPC.TL_messageMediaDocument)
                 || messageObject.messageOwner.media.document == null
-                || !PurpleSettings.FILE_NAME.equals(
+                || !PurpleSettings.fileName(
                         FileLoader.getDocumentFileName(messageObject.messageOwner.media.document))) {
             return null;
         }
@@ -364,58 +303,32 @@ public final class PurpleSync {
                 }
             }
             PurpleCore.ParseResult parsed = PurpleCore.parse(sentBytes);
-            if (!parsed.ok || parsed.version > 1 || !PurpleAccountOwner.manualBackupAllowed(account, sentBytes)) return null;
+            if (!parsed.ok || parsed.version > PurpleSettings.SUPPORTED_SCHEMA_VERSION
+                    || !PurpleSettings.exportName(parsed.version).equals(staged.getName())
+                    || !PurpleAccountOwner.manualBackupAllowed(account, sentBytes)) return null;
             final PurpleAccountFiles.Identity retryOrigin = PurpleAccountFiles.capture(account);
-            return (serverId, preparationFailed) -> {
+            if (retryOrigin == null) return null;
+            return PurpleSendReceipt.guarded(retryOrigin::current, (serverId, preparationFailed) -> {
                 if (serverId > 0 && retryOrigin != null && retryOrigin.current()
-                        && PurpleAccountOwner.legacyOperation(account)) {
-                    noteConfirmedSend(account, sentBytes, serverId);
+                        && PurpleAccountOwner.legacyTransferOperation(account)) {
+                    noteConfirmedSend(retryOrigin, sentBytes, serverId);
                 }
-            };
+            });
         } catch (IOException | RuntimeException | UnsatisfiedLinkError e) {
             FileLog.e(e);
             return null;
         }
     }
 
-    private static void noteConfirmedSend(int account, byte[] sentBytes, int serverId) {
-        if (!PurpleAccountOwner.legacyOperation(account)) return;
-        if (Arrays.equals(PurpleGate.settingsBytes(), sentBytes)) {
-            noteSent(sentBytes);
-        }
-        PurpleSyncOffer.noteSentMessage(account, serverId);
-    }
-
-    /** Remembers the file this device just sent. */
-    private static void noteSent(byte[] bytes) {
-        write(PurpleCore.noteSent(PurpleState.read(), bytes));
-    }
-
-    /** Remembers the file this device just wrote because the other one sent it. */
-    private static void noteImported(byte[] bytes) {
-        write(PurpleCore.noteImported(PurpleState.read(), bytes));
-    }
-
-    private static void noteImported(PurpleSyncFileContext context, byte[] bytes) {
-        PurpleAccountFileSnapshot state = PurpleAccountFileSnapshot.read(
-                PurpleState.stateFile(), (int) PurpleState.MAX_SIZE);
-        if (!context.current() || state.status == PurpleAccountFileSnapshot.Status.ReadError) return;
-        String text = PurpleCore.noteImported(state.bytes, bytes);
-        if (text != null && context.current() && java.util.Arrays.equals(bytes, PurpleGate.settingsBytes())) {
-            PurpleAccountFileSnapshot.replace(PurpleState.stateFile(), state, text.getBytes(UTF_8));
-        }
-    }
-
-    /**
-     * Puts a fingerprint into state.toml, and reloads nothing.
-     *
-     * Neither fingerprint is part of the resolution - no preset, no folder and
-     * no row reads them - so a reload here would rebuild every chat list to
-     * record a fact about a document.
-     */
-    private static void write(String text) {
-        if (text != null) {
-            PurpleState.write(text.getBytes(UTF_8));
+    private static void noteConfirmedSend(PurpleAccountFiles.Identity origin, byte[] sentBytes, int serverId) {
+        synchronized (PurpleAccountOwner.class) {
+            synchronized (PurpleAccountFiles.class) {
+                if (origin == null || !origin.current()) return;
+                PurpleConfirmedSend.note(origin::current, () -> {
+                    PurpleAccountFiles files = PurpleAccountFiles.resolve(origin.key, PurpleAccountOwner.owner());
+                    return files != null && PurpleLegacySendState.note(origin, files.settings, sentBytes, false);
+                }, () -> PurpleSyncOffer.noteSentMessage(origin.slot, serverId));
+            }
         }
     }
 
@@ -423,6 +336,15 @@ public final class PurpleSync {
         synchronized (pendingSends) {
             pendingSends.remove(pendingSend);
         }
+    }
+
+    static boolean stagedLegacyFile(String path) {
+        if (path == null) return false;
+        File file = new File(path);
+        PurpleSettingsStaging staging = staging();
+        File root = staging.rootOf(file);
+        try { return root != null && staging.isCanonical(file, root); }
+        catch (IOException | RuntimeException e) { return false; }
     }
 
     private static PurpleSettingsStaging staging() {

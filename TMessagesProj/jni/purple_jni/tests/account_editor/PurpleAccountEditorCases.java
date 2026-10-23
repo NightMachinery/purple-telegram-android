@@ -16,7 +16,7 @@ public final class PurpleAccountEditorCases {
     private static byte[] bytes(String text) { return text.getBytes(StandardCharsets.UTF_8); }
     private static void check(boolean value, String message) { if (!value) throw new AssertionError(message); ++checks; }
     private static void write(File file, String text) throws Exception { Files.createDirectories(file.toPath().getParent()); Files.write(file.toPath(), bytes(text)); }
-    private static final PurpleGlobalChoiceFiles.Physical PHYSICAL = new PurpleGlobalChoiceFiles.Physical() {
+    static final PurpleGlobalChoiceFiles.Physical PHYSICAL = new PurpleGlobalChoiceFiles.Physical() {
         public PurpleGlobalChoiceFiles.Mark mark(File file, boolean directory) throws Exception {
             if (!Files.exists(file.toPath(), LinkOption.NOFOLLOW_LINKS)) return new PurpleGlobalChoiceFiles.Mark("missing", "", 0);
             BasicFileAttributes a = Files.readAttributes(file.toPath(), BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);

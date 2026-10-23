@@ -56,7 +56,7 @@ public final class PurpleSyncOffer {
     private static final long DOWNLOAD_TIMEOUT = 5 * 60 * 1000L;
 
     /** Accounts already looked at in this process. */
-    private static final Set<Integer> checked = new HashSet<>();
+    private static final Set<String> checked = new HashSet<>();
 
     private PurpleSyncOffer() {
     }
@@ -93,22 +93,11 @@ public final class PurpleSyncOffer {
             return;
         }
         synchronized (checked) {
-            if (!checked.add(currentAccount)) {
+            if (!checked.add(checkKey(currentAccount))) {
                 return;
             }
         }
-        search(currentAccount, PurpleSettings.FILE_NAME, first -> {
-            if (first != null) {
-                consider(fragment, currentAccount, first);
-                return;
-            }
-            // Searching by filename leans on the server indexing document names,
-            // which is what the shared-files search box relies on too. If that
-            // ever stops being true the feature would silently never fire, so
-            // the empty answer is worth one more request: no query at all, just
-            // the document filter, and the newest few sorted out here.
-            search(currentAccount, "", second -> consider(fragment, currentAccount, second));
-        });
+        searchSettings(currentAccount, found -> consider(fragment, currentAccount, found));
     }
 
     /**
@@ -133,15 +122,9 @@ public final class PurpleSyncOffer {
         // Marked as looked at either way, so the next launch does not repeat by
         // itself what has just been done by hand.
         synchronized (checked) {
-            checked.add(currentAccount);
+            checked.add(checkKey(currentAccount));
         }
-        search(currentAccount, PurpleSettings.FILE_NAME, first -> {
-            if (first != null) {
-                done.run(offerNow(fragment, currentAccount, first));
-                return;
-            }
-            search(currentAccount, "", second -> done.run(offerNow(fragment, currentAccount, second)));
-        });
+        searchSettings(currentAccount, found -> done.run(offerNow(fragment, currentAccount, found)));
     }
 
     /** Whether the caller's request found something worth offering. */
@@ -155,7 +138,7 @@ public final class PurpleSyncOffer {
         }
         final PurpleSyncOfferRules.Verdict verdict = PurpleSyncOfferRules.judge(
                 account, UserConfig.selectedAccount, true,
-                message.id, message.date, 0, localStamp());
+                message.id, message.date, 0, localStamp(account));
         if (verdict == PurpleSyncOfferRules.Verdict.INACTIVE_ACCOUNT) {
             forget(account);
             FileLog.d("Purple: sync check: account " + account + " is no longer the active one.");
@@ -174,7 +157,7 @@ public final class PurpleSyncOffer {
 
     private static boolean show(BaseFragment fragment, int account, TLRPC.Message message) {
         final PurpleAccountFiles.Identity origin = PurpleAccountFiles.capture(account);
-        if (origin == null || !PurpleAccountOwner.legacyOperation(account)) return false;
+        if (origin == null || !PurpleAccountOwner.legacyTransferOperation(account)) return false;
         final String from = PurpleSettings.accountLabel(account);
         if (from == null || !BulletinFactory.canShowBulletin(fragment)) {
             return false;
@@ -188,7 +171,9 @@ public final class PurpleSyncOffer {
                         R.raw.info,
                         LocaleController.getString(R.string.PurpleSyncOffer),
                         LocaleController.formatString(R.string.PurpleSyncOfferFrom,
-                                from, LocaleController.formatDateTime(message.date, true)),
+                                from, LocaleController.formatDateTime(message.date, true)) + "\n\n"
+                                + LocaleController.formatString(origin.key.equals(PurpleAccountOwner.global())
+                                ? R.string.PurpleImpactGlobalScope : R.string.PurpleImpactOwnScope, from),
                         LocaleController.getString(R.string.Import),
                         () -> { if (origin.current()) startImport(fragment, account, message); })
                 .show();
@@ -197,13 +182,17 @@ public final class PurpleSyncOffer {
 
     private static void forget(int account) {
         synchronized (checked) {
-            checked.remove(account);
+            checked.remove(checkKey(account));
         }
     }
 
-    private static long localStamp() {
-        final File local = PurpleSettings.settingsFile();
-        return local.exists() ? local.lastModified() / 1000L : 0L;
+    private static long localStamp(int account) {
+        PurpleAccountFiles.Identity id = PurpleAccountFiles.capture(account);
+        PurpleAccountFiles files = id == null ? null : PurpleAccountFiles.resolve(id.key, PurpleAccountOwner.owner());
+        PurpleAccountFiles global = PurpleAccountOwner.globalFiles();
+        if (files == null || global == null) return Long.MAX_VALUE;
+        return PurpleSyncOfferRules.localStamp(files.settings.isFile(), files.settings.lastModified() / 1000L,
+                global.settings.lastModified() / 1000L);
     }
 
     /** What a Saved Messages lookup came back with, or null. */
@@ -211,9 +200,27 @@ public final class PurpleSyncOffer {
         void run(TLRPC.Message message);
     }
 
+    private static String checkKey(int account) {
+        PurpleAccountFiles.Identity origin = PurpleAccountFiles.capture(account);
+        return origin == null ? "signed-out:" + account : origin.key + ":" + origin.lifetime;
+    }
+    private static void searchSettings(int account, Found callback) {
+        final PurpleAccountFiles.Identity origin = PurpleAccountFiles.capture(account);
+        if (origin == null) { callback.run(null); return; }
+        search(account, PurpleSettings.FILE_NAME, whole -> {
+            if (!origin.current()) { callback.run(null); return; }
+            search(account, PurpleSettings.ACCOUNT_FILE_NAME, layered -> {
+                if (!origin.current()) { callback.run(null); return; }
+                TLRPC.Message best = whole == null ? layered : layered == null || whole.id >= layered.id ? whole : layered;
+                if (best != null) callback.run(best);
+                else search(account, "", found -> callback.run(origin.current() ? found : null));
+            });
+        });
+    }
+
     private static void search(int account, String query, Found callback) {
         final PurpleAccountFiles.Identity origin = PurpleAccountFiles.capture(account);
-        if (origin == null || !PurpleAccountOwner.legacyOperation(account)) { callback.run(null); return; }
+        if (origin == null || !PurpleAccountOwner.legacyTransferOperation(account)) { callback.run(null); return; }
         final TLRPC.TL_messages_search req = new TLRPC.TL_messages_search();
         req.peer = MessagesController.getInstance(account).getInputPeer(UserConfig.getInstance(account).getClientUserId());
         req.q = query;
@@ -224,7 +231,7 @@ public final class PurpleSyncOffer {
             return;
         }
         ConnectionsManager.getInstance(account).sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
-            if (!origin.current() || !PurpleAccountOwner.legacyOperation(account)) { callback.run(null); return; }
+            if (!origin.current() || !PurpleAccountOwner.legacyTransferOperation(account)) { callback.run(null); return; }
             if (error != null || !(response instanceof TLRPC.messages_Messages)) {
                 // Nothing about this is worth a dialog: the user did not ask for
                 // it and the manual import is still there.
@@ -272,7 +279,7 @@ public final class PurpleSyncOffer {
         for (int a = 0, n = document.attributes.size(); a < n; a++) {
             final TLRPC.DocumentAttribute attribute = document.attributes.get(a);
             if (attribute instanceof TLRPC.TL_documentAttributeFilename
-                    && PurpleSettings.FILE_NAME.equalsIgnoreCase(((TLRPC.TL_documentAttributeFilename) attribute).file_name)) {
+                    && PurpleSettings.fileName(((TLRPC.TL_documentAttributeFilename) attribute).file_name)) {
                 return document;
             }
         }
@@ -289,7 +296,7 @@ public final class PurpleSyncOffer {
         // mtime is the whole of what we know about how fresh the local copy is.
         // That is enough: the write happens after the message was sent, so an
         // imported file always stamps later than the message it came from.
-        final long localStamp = localStamp();
+        final long localStamp = localStamp(account);
         final SharedPreferences prefs = MessagesController.getMainSettings(account);
         final int lastOffered = prefs.getInt(OFFERED_KEY, 0);
 
@@ -321,7 +328,7 @@ public final class PurpleSyncOffer {
     }
 
     private static void startImport(BaseFragment fragment, int account, TLRPC.Message message) {
-        if (!PurpleAccountOwner.legacyOperation(account)) return;
+        if (!PurpleAccountOwner.legacyTransferOperation(account)) return;
         // Again after the choice. The id is already down from the line above;
         // repeating it here keeps the record beside the decision it records,
         // so neither half can be moved without the other being noticed.
@@ -339,7 +346,7 @@ public final class PurpleSyncOffer {
         }
         final File cached = FileLoader.getInstance(account).getPathToMessage(message);
         if (cached != null && cached.exists()) {
-            PurpleSettings.importFrom(activity, cached, message.date, account);
+            PurpleSettings.importFrom(activity, cached, message.date, account, true);
             return;
         }
         // Not downloaded yet. Up to 4 MiB over the connection the search has
@@ -368,7 +375,7 @@ public final class PurpleSyncOffer {
         }
 
         void start(TLRPC.Document document) {
-            if (origin == null || !origin.current() || !PurpleAccountOwner.legacyOperation(account)) return;
+            if (origin == null || !origin.current() || !PurpleAccountOwner.legacyTransferOperation(account)) return;
             fileName = FileLoader.getAttachFileName(document);
             final NotificationCenter center = NotificationCenter.getInstance(account);
             center.addObserver(this, NotificationCenter.fileLoaded);
@@ -405,13 +412,14 @@ public final class PurpleSyncOffer {
             center.removeObserver(this, NotificationCenter.fileLoaded);
             center.removeObserver(this, NotificationCenter.fileLoadFailed);
 
-            if (origin == null || !origin.current() || !PurpleAccountOwner.legacyOperation(account)) return;
+            if (origin == null || !origin.current() || account != UserConfig.selectedAccount
+                    || !PurpleAccountOwner.legacyTransferOperation(account)) return;
             if (file == null || !file.exists()) {
                 file = FileLoader.getInstance(account).getPathToMessage(message);
             }
             final Activity activity = fragment.getParentActivity();
             if (file != null && file.exists() && activity != null) {
-                PurpleSettings.importFrom(activity, file, message.date, account);
+                PurpleSettings.importFrom(activity, file, message.date, account, true);
                 return;
             }
             FileLog.d("Purple: sync offer: could not download the settings.toml behind msg " + message.id + ".");

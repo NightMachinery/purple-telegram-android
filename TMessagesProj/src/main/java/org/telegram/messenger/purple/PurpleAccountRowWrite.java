@@ -223,7 +223,7 @@ public final class PurpleAccountRowWrite {
                             }
                             Map<String, Stamp> committed = new LinkedHashMap<>(inputs);
                             committed.put(target.getPath(), new Stamp(target, false));
-                            boolean allowSend = !result.optBoolean("created") && result.optInt("version") <= 1;
+                            boolean allowSend = !result.optBoolean("created") && result.optInt("version") <= 2;
                             if (globalAccount) PurpleGate.reload("account settings row");
                             else PurpleAccountSettings.invalidate();
                             Stamp committedGood = new Stamp(good, false);

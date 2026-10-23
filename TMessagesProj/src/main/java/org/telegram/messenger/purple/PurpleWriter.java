@@ -127,15 +127,15 @@ public final class PurpleWriter {
                             PurpleAccountEditorModel.Result result = model.save(text);
                             if (!result.ok) return result.changed ? "settings were written but the context changed" : "settings changed or could not be written";
                             if (!context.currentAfterAccountRefresh(true)) return "settings context changed after writing";
-                            PurpleGate.reload(reason);
+                            if (appWide) PurpleGate.reload(reason);
+                            else PurpleGate.reloadAccountFiles(reason);
+                            if (!model.editor.missing) PurpleSync.afterRoutedWrite(origin, model.editor.target, text.getBytes(UTF_8), reason);
                             if (appWide && !retired && action.current() && view.current() && origin.current() && PurpleAccountOwner.ready()
                                     && role == PurpleAccountOwner.roleEpoch() && revision == PurpleAccountOwner.revision()
                                     && java.util.Objects.equals(context.owner, PurpleAccountOwner.owner())
                                     && java.util.Objects.equals(globalKey, PurpleAccountOwner.global())
                                     && generation + 2 == PurpleAccountSettings.generation() && epoch + 2 == PurpleAccountSettings.epochNative()
                                     && gate + 1 == PurpleGate.generation()) {
-                                if (!model.editor.missing) PurpleSync.afterRoutedWrite(origin, model.editor.target,
-                                        text.getBytes(UTF_8), reason);
                                 boolean offline = true;
                                 for (PurpleAccountFiles.Identity id : PurpleAccountOwner.signedIn()) if (globalKey.equals(id.key)) offline = false;
                                 if (offline && offlineNotice != null) offlineNotice.run();

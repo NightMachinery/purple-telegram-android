@@ -453,6 +453,7 @@ public class PurpleSettingsActivity extends UniversalFragment
         }
         if (!org.telegram.messenger.purple.PurpleAccountOwner.legacyEditorAllowed(currentAccount)
                 && item.id != ROW_PRESET && item.id != ROW_SEND && item.id != ROW_SHARE
+                && item.id != ROW_IMPORT && item.id != ROW_CHECK && item.id != ROW_PATH
                 && item.id != ROW_SCREEN_TIME && item.id != ROW_DEVICE && item.id != ROW_NOTIFICATIONS
                 && item.id != ROW_LAST_SEEN_SKIP_CONFIRMATION
                 && item.id != ROW_PEEK_DURATION && item.id != ROW_PEEK_DELAY && item.id != ROW_PEEK_EXIT
@@ -514,7 +515,8 @@ public class PurpleSettingsActivity extends UniversalFragment
             shareFile();
             break;
         case ROW_PATH:
-            if (AndroidUtilities.addToClipboard(PurpleSettings.settingsFile().getAbsolutePath())
+            File accountFile = org.telegram.messenger.purple.PurpleAccountSettings.fileForAccount(currentAccount);
+            if (accountFile != null && AndroidUtilities.addToClipboard(accountFile.getAbsolutePath())
                     && BulletinFactory.canShowBulletin(this)) {
                 BulletinFactory.of(this)
                         .createCopyBulletin(getString(R.string.TextCopied))
@@ -650,7 +652,7 @@ public class PurpleSettingsActivity extends UniversalFragment
      */
     private void sendToSaved() {
         final String refusal = PurpleSync.sendToSavedMessages(
-                currentAccount, PurpleGate.settingsBytes());
+                currentAccount, PurpleSync.accountBytes(currentAccount));
         if (refusal != null) {
             error(refusal);
             return;
@@ -688,7 +690,10 @@ public class PurpleSettingsActivity extends UniversalFragment
 
     private void startImportPicker() {
         importOrigin = org.telegram.messenger.purple.PurpleAccountFiles.capture(currentAccount);
-        if (importOrigin == null || !org.telegram.messenger.purple.PurpleAccountOwner.legacyOperation(currentAccount)) return;
+        if (importOrigin == null || !org.telegram.messenger.purple.PurpleAccountOwner.legacyTransferOperation(currentAccount)) {
+            error(getString(R.string.PurpleAccountWriteHeld));
+            return;
+        }
         try {
             final Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
             intent.setType("*/*");
@@ -701,12 +706,13 @@ public class PurpleSettingsActivity extends UniversalFragment
 
     @Override
     public void onActivityResultFragment(int requestCode, int resultCode, Intent data) {
-        if (requestCode != REQUEST_IMPORT || data == null || data.getData() == null) {
-            return;
-        }
+        if (requestCode != REQUEST_IMPORT) return;
+        final org.telegram.messenger.purple.PurpleAccountFiles.Identity opening = importOrigin;
+        importOrigin = null;
+        if (resultCode != Activity.RESULT_OK || data == null || data.getData() == null || isFinished) return;
         final Activity activity = getParentActivity();
-        if (activity == null || importOrigin == null || !importOrigin.current()
-                || !org.telegram.messenger.purple.PurpleAccountOwner.legacyOperation(currentAccount)) return;
+        if (activity == null || opening == null || !opening.current()
+                || !org.telegram.messenger.purple.PurpleAccountOwner.legacyTransferOperation(currentAccount)) return;
         // The date names the file in the question importFrom asks, and a file
         // off the disk has only now.
         final int date = (int) (System.currentTimeMillis() / 1000L);
@@ -716,7 +722,7 @@ public class PurpleSettingsActivity extends UniversalFragment
                 // importFrom validates, shows the confirmation, keeps a backup and
                 // refuses a file that does not parse - all of which this screen
                 // would otherwise be repeating.
-                PurpleSettings.importFrom(activity, new File(path), date);
+                PurpleSettings.importFrom(activity, new File(path), date, opening);
                 return;
             }
             // Not a real path - a document provider's handle - or a real one
@@ -730,7 +736,7 @@ public class PurpleSettingsActivity extends UniversalFragment
             try (InputStream in = activity.getContentResolver().openInputStream(data.getData())) {
                 bytes = readAtMost(in, PurpleSettings.MAX_SIZE + 1);
             }
-            PurpleSettings.importFrom(activity, bytes, date);
+            PurpleSettings.importFrom(activity, bytes, date, opening);
         } catch (Exception e) {
             FileLog.e(e);
             error(getString(R.string.PurpleImportFailed));
@@ -765,12 +771,12 @@ public class PurpleSettingsActivity extends UniversalFragment
 
     /** Hands the file to whatever else on the phone can take a text document. */
     private void shareFile() {
-        if (!org.telegram.messenger.purple.PurpleAccountOwner.manualBackupAllowed(currentAccount, PurpleGate.settingsBytes())) {
+        if (!org.telegram.messenger.purple.PurpleAccountOwner.manualBackupAllowed(currentAccount, PurpleSync.accountBytes(currentAccount))) {
             error(getString(R.string.PurpleAccountWriteHeld));
             return;
         }
         final Activity activity = getParentActivity();
-        final File source = PurpleSync.manualShareFile(currentAccount, PurpleGate.settingsBytes());
+        final File source = PurpleSync.manualShareFile(currentAccount, PurpleSync.accountBytes(currentAccount));
         if (source == null) { error(getString(R.string.PurpleAccountWriteHeld)); return; }
         if (activity == null) {
             return;

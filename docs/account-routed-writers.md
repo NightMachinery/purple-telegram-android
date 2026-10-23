@@ -28,10 +28,10 @@ and resolve only the edited chat title in the initiating account. Every tick
 rebuilds checkbox callbacks with a fresh captured route.
 
 The first successful offline app-wide file edit in a process shows one bulletin
-with Change, opening the existing app-wide account chooser. Existing sync,
-History and full-file transfer restrictions remain. Only the existing eligible
-root route may arm send-after-save, using the retained origin and expected
-bytes. First file creation never sends.
+with Change, opening the existing app-wide account chooser. Modern sync and History restrictions remain. Legacy whole-file imports and
+exports now use each account’s captured file, as described in
+[account transfers](account-transfers.md). Eligible existing-file saves arm only
+the file owner’s independent countdown. First file creation never sends.
 
 Headless cases live in `TMessagesProj/jni/purple_jni/tests/routed_writes/`.
 They use the production routed/editor models, actual core JNI and real isolated
@@ -76,7 +76,8 @@ with chat counts in account settings, editor preview and reload bulletins.
 The bulletin opens the affected account editor through identity/role guards.
 Removing members from a table that defines a list warns about devices using
 that account as their app-wide source. Loading and warning generation create
-no account files. Existing non-root sync/History transfer holds remain.
+no account files. Modern non-root sync/History holds remain; legacy account-file transfers have
+their own guarded path.
 
 Native account generations hold both effective settings and their resolved
 preset. Reload builds and validates a replacement while the published handles

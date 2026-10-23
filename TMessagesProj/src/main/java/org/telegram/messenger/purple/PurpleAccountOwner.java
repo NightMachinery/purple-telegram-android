@@ -227,13 +227,23 @@ public final class PurpleAccountOwner {
 
     public static boolean legacyEditorAllowed(int slot) { return legacyOperation(slot) && legacyRootFile(); }
 
-    public static boolean manualBackupAllowed(int slot, byte[] bytes) {
+    public static boolean legacyTransferOperation(int slot) {
         ensureStarted();
         PurpleAccountFiles.Identity id = PurpleAccountFiles.capture(slot);
-        if (id == null || (owner() != null && !id.key.equals(owner()))) return false;
-        PurpleAccountFileSnapshot root = PurpleAccountFileSnapshot.read(PurpleAccountFiles.file("settings.toml"));
-        return root.status == PurpleAccountFileSnapshot.Status.Present && Arrays.equals(root.bytes, bytes)
-                && legacyRootFile() && id.current();
+        return ready() && id != null && id.current();
+    }
+
+    public static boolean manualBackupAllowed(int slot, byte[] bytes) {
+        if (bytes == null || !legacyTransferOperation(slot)) return false;
+        PurpleAccountFiles.Identity id = PurpleAccountFiles.capture(slot);
+        PurpleAccountFiles files = id == null ? null : PurpleAccountFiles.resolve(id.key, owner());
+        if (files == null) return false;
+        PurpleAccountFileSnapshot file = PurpleAccountFileSnapshot.read(files.settings);
+        try {
+            return file.status == PurpleAccountFileSnapshot.Status.Present && Arrays.equals(file.bytes, bytes)
+                    && PurpleConfigImpact.ready(new PurpleConfigImpact.Input(bytes, true, 0, null,
+                    new String[0], new byte[0][], new int[0]).analyze(bytes)) && id.current();
+        } catch (Exception | UnsatisfiedLinkError e) { return false; }
     }
 
     private static boolean legacyRootFile() {

@@ -18,6 +18,7 @@ public final class PurpleSendReceipts {
         final PurpleSendReceipt receipt;
         final String path;
         final PurpleAccountFiles.Identity origin;
+        final boolean legacyStaged;
         long dialogId;
         boolean completed;
         Object owner;
@@ -27,11 +28,13 @@ public final class PurpleSendReceipts {
             this.receipt = receipt;
             this.path = path;
             origin = PurpleAccountFiles.capture(account);
+            legacyStaged = PurpleSync.stagedLegacyFile(path);
         }
 
         boolean allowed() {
             String owner = PurpleAccountOwner.owner();
-            return origin != null && origin.current() && (owner == null || origin.key.equals(owner));
+            return origin != null && origin.current() && receipt != null && receipt.current() && PurpleTransferRules.receiptAllowed(
+                    owner, origin.key, legacyStaged, legacyStaged && PurpleAccountOwner.ready());
         }
     }
 
@@ -62,7 +65,12 @@ public final class PurpleSendReceipts {
         Utilities.globalQueue.postRunnable(() -> {
             synchronized (state) {
                 if (entry.generation != state.generation || !entry.allowed()) {
-                    AndroidUtilities.runOnUIThread(() -> discard(state, path, entry));
+                    boolean notify = !entry.completed;
+                    entry.completed = true;
+                    AndroidUtilities.runOnUIThread(() -> {
+                        discard(state, path, entry);
+                        if (notify && receipt != null) deliver(receipt, 0, true);
+                    });
                     return;
                 }
             }

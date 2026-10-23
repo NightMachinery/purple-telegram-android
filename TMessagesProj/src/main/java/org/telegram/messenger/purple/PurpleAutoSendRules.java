@@ -22,6 +22,6 @@ final class PurpleAutoSendRules {
     }
 
     static boolean postsFrom(int selectedAccount, boolean[] activated) {
-        return selectedAccount != NO_ACCOUNT && selectedAccount == firstAccount(activated);
+        return selectedAccount >= 0 && selectedAccount < activated.length && activated[selectedAccount];
     }
 }

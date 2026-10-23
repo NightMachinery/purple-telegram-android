@@ -1,5 +1,10 @@
 # Account settings foundation candidate
 
+Current routing and legacy transfer behavior is documented in
+[account-routed-writers.md](account-routed-writers.md) and
+[account-transfers.md](account-transfers.md). The candidate notes below retain
+the earlier foundation and qualification boundaries.
+
 This source candidate adapts the accepted shared AccountFiles,
 PlanAccountOwnerStartup, ParseLocalChoice and LayerSettings APIs. The predecessor passed the original hook audit, production Java compilation,
 changed bridge/shared-unit NDK compilation and genuine prepared host JNI cases.

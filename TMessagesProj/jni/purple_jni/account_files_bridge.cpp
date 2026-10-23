@@ -766,3 +766,95 @@ Java_org_telegram_messenger_purple_PurpleListDiagnosticsModel_factsNative(
     }
     return Json(env, {{"ok", true}, {"inactiveCount", inactive}, {"orphaned", orphaned}, {"emptied", emptied}});
 }
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleConfigImpact_analyzeNative(
+        JNIEnv *env, jclass, jbyteArray current, jbyteArray proposed, jboolean global,
+        jint mode, jbyteArray globalFile, jobjectArray accounts, jobjectArray files, jintArray modes) {
+    const auto refused = [&] { return Json(env, {{"status", int(Purple::ConfigImpactStatus::InvalidContext)}}); };
+    if (mode < 0 || mode > 2 || !accounts || !files || !modes) return refused();
+    const auto count = env->GetArrayLength(accounts);
+    if (count > 100 || env->GetArrayLength(files) != count || env->GetArrayLength(modes) != count) return refused();
+    auto valid = true;
+    const auto read = [&](jbyteArray value) {
+        auto result = Purple::ConfigImpactText{ {}, bool(value) };
+        if (!value) return result;
+        const auto size = env->GetArrayLength(value);
+        if (size > 4 * 1024 * 1024) { valid = false; return result; }
+        result.text.resize(size);
+        env->GetByteArrayRegion(value, 0, size, reinterpret_cast<jbyte*>(result.text.data()));
+        valid &= QString::fromUtf8(result.text).toUtf8() == result.text;
+        return result;
+    };
+    auto input = Purple::ConfigImpactInput();
+    input.current = read(current); input.proposed = read(proposed); input.global = read(globalFile);
+    input.role = global ? Purple::ConfigImpactFileRole::Global : Purple::ConfigImpactFileRole::Layered;
+    input.workMode = Purple::AccountWorkMode(mode);
+    auto choices = std::vector<jint>(count);
+    env->GetIntArrayRegion(modes, 0, count, choices.data());
+    for (auto i = 0; i < count; ++i) {
+        const auto key = static_cast<jstring>(env->GetObjectArrayElement(accounts, i));
+        const auto file = static_cast<jbyteArray>(env->GetObjectArrayElement(files, i));
+        if (choices[i] < 0 || choices[i] > 2) valid = false;
+        input.accounts.push_back({ Text(env, key), read(file), Purple::AccountWorkMode(choices[i]) });
+        if (key) env->DeleteLocalRef(key);
+        if (file) env->DeleteLocalRef(file);
+    }
+    if (!valid || env->ExceptionCheck()) return refused();
+    const auto result = Purple::AnalyzeConfigChange(input);
+    auto findings = QJsonArray();
+    for (const auto &entry : result.findings) {
+        findings.push_back(QJsonObject{{"kind", int(entry.kind)}, {"table", entry.change.table},
+            {"key", entry.change.key}, {"scope", int(entry.change.scope)}, {"label", entry.label},
+            {"account", entry.account}, {"beforeUse", int(entry.beforeUse)}, {"afterUse", int(entry.afterUse)},
+            {"beforeCount", entry.beforeCount}, {"afterCount", entry.afterCount}, {"dangerous", entry.dangerous}});
+    }
+    const auto before = Purple::ParseSettings(QString::fromUtf8(input.current.text), u"current"_q);
+    const auto after = Purple::ParseSettings(QString::fromUtf8(input.proposed.text), u"proposed"_q);
+    return Json(env, {{"status", int(result.status)}, {"account", result.account},
+        {"dangerous", result.dangerous}, {"findings", findings},
+        {"turnsWorkModeOff", !before.settings.presets.empty() && after.settings.presets.empty()}});
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleLegacySendState_noteNative(
+        JNIEnv *env, jclass, jbyteArray state, jbyteArray bytes, jboolean imported) {
+    if (!bytes) return nullptr;
+    const auto stateSize = state ? env->GetArrayLength(state) : 0;
+    if (stateSize > 8 * 1024 * 1024) return nullptr;
+    auto raw = QByteArray(stateSize, Qt::Uninitialized);
+    if (state) env->GetByteArrayRegion(state, 0, stateSize, reinterpret_cast<jbyte*>(raw.data()));
+    const auto text = QString::fromUtf8(raw);
+    if (text.toUtf8() != raw) return nullptr;
+    auto parsed = toml::parse(std::string_view(raw.constData(), size_t(raw.size())));
+    if (!parsed) return nullptr;
+    for (const auto marker : { "last_imported_fingerprint", "last_sent_fingerprint" }) {
+        const auto node = parsed.table().get(marker);
+        if (node && !node->is_string()) return nullptr;
+    }
+    const auto key = imported ? "last_imported_fingerprint" : "last_sent_fingerprint";
+    const auto size = env->GetArrayLength(bytes);
+    if (size > 4 * 1024 * 1024) return nullptr;
+    auto content = QByteArray(size, Qt::Uninitialized);
+    env->GetByteArrayRegion(bytes, 0, size, reinterpret_cast<jbyte*>(content.data()));
+    const auto quoted = u"\""_q + Purple::SettingsFingerprint(content) + u"\""_q;
+    auto next = text;
+    if (const auto node = parsed.table().get(key)) {
+        if (!node->is_string()) return nullptr;
+        const auto at = [&](const auto &position) {
+            const auto lines = text.split(u'\n');
+            auto offset = 0;
+            for (auto line = 1; line < int(position.line); ++line) offset += lines[line - 1].size() + 1;
+            const auto prefix = lines[int(position.line) - 1].toUcs4().mid(0, int(position.column) - 1);
+            return offset + QString::fromUcs4(prefix.constData(), prefix.size()).size();
+        };
+        const auto begin = at(node->source().begin), end = at(node->source().end);
+        next.replace(begin, end - begin, quoted);
+    } else {
+        next.prepend(QString::fromLatin1(key) + u" = "_q + quoted + u"\n"_q);
+    }
+    const auto check = next.toUtf8();
+    auto verified = toml::parse(std::string_view(check.constData(), size_t(check.size())));
+    if (!verified || verified.table()[key].value<std::string>() != std::optional<std::string>(Purple::SettingsFingerprint(content).toStdString())) return nullptr;
+    return env->NewString(reinterpret_cast<const jchar*>(next.utf16()), next.size());
+}

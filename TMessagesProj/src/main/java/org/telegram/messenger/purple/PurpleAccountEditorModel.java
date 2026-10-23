@@ -26,15 +26,19 @@ final class PurpleAccountEditorModel {
         boolean directoryAttempted;
         int directoriesCreated;
         PurpleGlobalChoiceFiles.Snapshot backup;
+        PurpleGlobalChoiceFiles.Snapshot importBackup;
         PurpleGlobalChoiceFiles.Snapshot main;
     }
     static final class Preview {
         final byte[] bytes;
         final JSONObject facts;
-        Preview(byte[] bytes, JSONObject facts) { this.bytes = bytes; this.facts = facts; }
+        final boolean imported;
+        Preview(byte[] bytes, JSONObject facts, boolean imported) { this.bytes = bytes; this.facts = facts; this.imported = imported; }
     }
     final File target;
     final File backup;
+    final File importBackup;
+    private PurpleConfigImpact.Input impact;
     final boolean global;
     final int workMode;
     final boolean missing;
@@ -56,7 +60,7 @@ final class PurpleAccountEditorModel {
     PurpleAccountEditorModel(File root, File target, File backup, String owner, String globalKey,
             String key, List<File> authorities, PurpleGlobalChoiceFiles.Physical physical, Context context,
             PurpleEditorDirectories.Creator directoryCreator) throws Exception {
-        this.target = target; this.backup = backup;
+        this.target = target; this.backup = backup; importBackup = new File(target.getPath() + ".import.bak");
         this.physical = physical; this.context = context; this.directoryCreator = directoryCreator;
         global = key.equals(globalKey);
         for (File p = target.getParentFile(); p != null && !p.equals(root); p = p.getParentFile()) targetParents.add(0, p);
@@ -70,6 +74,7 @@ final class PurpleAccountEditorModel {
                 || target.equals(backup)) throw new IllegalStateException("editor target changed");
         PurpleGlobalChoiceFiles.Snapshot own = capture(root, target);
         capture(root, backup);
+        capture(root, importBackup);
         needsDirectory = directories.get(target.getParent()).mark.missing();
         original = own.bytes == null ? null : own.bytes.clone();
         missing = own.mark.missing();
@@ -111,6 +116,7 @@ final class PurpleAccountEditorModel {
         for (PurpleGlobalChoiceFiles.Snapshot value : inputs.values()) {
             PurpleGlobalChoiceFiles.Snapshot expected = value;
             if (result != null && value.file.equals(backup) && result.backup != null) expected = result.backup;
+            if (result != null && value.file.equals(importBackup) && result.importBackup != null) expected = result.importBackup;
             if (result != null && value.file.equals(target) && result.main != null) expected = result.main;
             if (!expected.current(physical)) return false;
         }
@@ -140,13 +146,20 @@ final class PurpleAccountEditorModel {
         }
         return current(result);
     }
-    Preview preview(String text) {
+    void impact(PurpleConfigImpact.Input input) { impact = input; }
+    Preview preview(String text) { return preview(text, false); }
+    Preview preview(String text, boolean imported) {
         try {
             byte[] bytes = encode(text);
             if (bytes == null || !current()) return null;
-            JSONObject facts = new JSONObject(previewNative(original, bytes, target.getPath(), global, workMode));
+            JSONObject facts = new JSONObject(previewNative(original == null && imported ? new byte[0] : original, bytes, target.getPath(), global, workMode));
             if (!facts.optBoolean("ok") || !current()) return null;
-            return new Preview(bytes, facts);
+            if (impact != null) {
+                JSONObject findings = impact.analyze(bytes);
+                if (!PurpleConfigImpact.ready(findings) || !current()) return null;
+                facts.put("impact", findings);
+            }
+            return new Preview(bytes, facts, imported);
         } catch (Exception | UnsatisfiedLinkError e) { return null; }
     }
     static byte[] encode(String text) {
@@ -161,26 +174,33 @@ final class PurpleAccountEditorModel {
         Result result = new Result();
         try {
             if (consumed || preview == null || !current()) return result;
-            JSONObject verified = new JSONObject(previewNative(original, preview.bytes, target.getPath(), global, workMode));
+            JSONObject verified = new JSONObject(previewNative(original == null && preview.imported ? new byte[0] : original, preview.bytes, target.getPath(), global, workMode));
             if (!verified.optBoolean("ok") || !current()) return result;
+            if (impact != null && !PurpleConfigImpact.ready(impact.analyze(preview.bytes))) return result;
             consumed = true;
             if (!prepareParents(result)) return result;
-            for (File destination : new File[]{target, backup}) {
+            for (File destination : preview.imported ? new File[]{target, backup, importBackup} : new File[]{target, backup}) {
                 PurpleGlobalChoiceFiles.Snapshot parent = directories.get(destination.getParent());
                 PurpleGlobalChoiceFiles.Snapshot prior = inputs.get(destination.getPath());
                 if (parent == null || parent.mark.missing() || !destination.getParentFile().canWrite()
                         || !prior.mark.missing() && ((prior.mark.mode & 0222) == 0 || !destination.canWrite())) return result;
             }
             if (!current(result)) return result;
-            if (original != null) {
-                PurpleGlobalChoiceFiles.Snapshot previous = inputs.get(backup.getPath());
-                if (Arrays.equals(original, previous.bytes)) result.backup = previous;
-                else {
-                    PurpleGlobalChoiceFiles.Publication published = PurpleGlobalChoiceFiles.replace(
-                            backup, original, physical, () -> current(result), PurpleAppWideRemovalModel::ownedTemporary);
-                    result.backupChanged = published.changed; result.backup = published.local;
-                    if (!published.changed || published.local == null) return result;
+            if (original != null) for (File destination : preview.imported ? new File[]{importBackup, backup} : new File[]{backup}) {
+                PurpleGlobalChoiceFiles.Snapshot previous = inputs.get(destination.getPath());
+                PurpleGlobalChoiceFiles.Snapshot receipt = previous;
+                if (!Arrays.equals(original, previous.bytes)) {
+                    PurpleGlobalChoiceFiles.Publication publication = PurpleGlobalChoiceFiles.replace(
+                            destination, original, physical, () -> current(result), PurpleAppWideRemovalModel::ownedTemporary);
+                    result.backupChanged |= publication.changed;
+                    receipt = publication.local;
+                    if (destination.equals(importBackup)) result.importBackup = receipt;
+                    else result.backup = receipt;
+                    if (!publication.changed || receipt == null) return result;
                 }
+                if (destination.equals(importBackup)) result.importBackup = receipt;
+                else result.backup = receipt;
+                if (!current(result)) return result;
             }
             if (!current(result)) return result;
             PurpleGlobalChoiceFiles.Publication published = PurpleGlobalChoiceFiles.replace(

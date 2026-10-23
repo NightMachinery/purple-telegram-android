@@ -10,12 +10,13 @@ public final class PurpleSettingsMessage {
     }
 
     public static boolean is(MessageObject message) {
+        if (message == null) return false;
         TLRPC.Document document = message.getDocument();
         if (document == null || document.size > PurpleSettings.MAX_SIZE) {
             return false;
         }
         String name = message.getDocumentName();
-        if (name == null || !"settings.toml".equals(name.toLowerCase())) {
+        if (!PurpleSettings.fileName(name)) {
             return false;
         }
         long selfId = UserConfig.getInstance(message.currentAccount).getClientUserId();

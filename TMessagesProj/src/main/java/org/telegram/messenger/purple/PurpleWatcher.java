@@ -19,7 +19,7 @@ public final class PurpleWatcher {
         PurpleAccountOwner.reloadGlobal();
         PurpleAccountSettings.invalidate();
         rebind();
-        PurpleGate.reload("account settings changed on disk");
+        PurpleGate.reloadAccountFiles("account settings changed on disk");
     });
 
     public static synchronized void start() {

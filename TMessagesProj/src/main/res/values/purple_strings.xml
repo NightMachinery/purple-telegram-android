@@ -584,7 +584,7 @@
     <string name="PurpleAccountOwnerRecovered">The managed root owner record restored local.toml. Root file ownership has not changed.</string>
     <string name="PurpleAccountLocalWarning">local.toml could not supply a valid global choice. Using the root owner for app-wide settings.</string>
     <string name="PurpleAccountRoles">Last Seen and notification preview use this screen’s account. Work Mode and Peek use the app-wide account. Device state stays on this device.</string>
-    <string name="PurpleAccountWriteHeld">Settings sync, History and other full-file workflows are not available for this account yet. The guarded editor and supported account switches stay available when their original account and settings files are current. Choose a root owner if one is missing.</string>
+    <string name="PurpleAccountWriteHeld">Modern settings sync and History are not available for this account yet. Send, Share and Import use this account’s file once a root owner is chosen and the original account and settings files remain current.</string>
     <string name="PurpleAccountUnnamed">Signed-in account</string>
     <string name="PurpleAccountTestServers">(test servers)</string>
     <string name="PurpleAccountGlobalFileError">The app-wide file is unreadable or invalid. Its own good copy is used when available.</string>
@@ -671,4 +671,27 @@
     <string name="PurpleWorkModeAllOff">Work Mode is off for every account on this device.</string>
     <string name="PurpleListOwnSummary">%1$d lists are %2$s’s own; the rest follow %3$s on this device.</string>
     <string name="PurpleEditorFollowMembers">This account follows the app-wide account’s lists on this device. Its own list members are inactive here. Saving still changes its stored settings for other devices.</string>
+    <string name="PurpleImpactHeld">These settings cannot be compared safely. Repair or review the account files before replacing them.</string>
+    <string name="PurpleImpactTitle">Settings of %1$s</string>
+    <string name="PurpleImpactGlobalScope">%1$s supplies the app-wide settings on this device, so this also changes Work Mode and the other app-wide settings here.</string>
+    <string name="PurpleImpactOwnScope">Only %1$s’s own settings are used on this device. Its app-wide settings apply on devices where it supplies them.</string>
+    <string name="PurpleImpactWorkModeOff">This version has no Work Mode presets. Applying it turns Work Mode off on this device, because %1$s supplies the app-wide settings here.</string>
+    <string name="PurpleImpactEmptyHere">This version empties %2$s here, because %1$s supplies the app-wide settings on this device.</string>
+    <string name="PurpleImpactPinned">%1$s stops following %2$s for %3$s on this device. Reset brings this setting back.</string>
+    <string name="PurpleImpactUnpinned">%1$s follows %2$s again for %3$s on this device.</string>
+    <string name="PurpleImpactAppWideLoss">Removes an app-wide setting from this account’s file: %1$s.</string>
+    <string name="PurpleImpactListLoss">Removes a list definition: %1$s.</string>
+    <string name="PurpleImpactPresetLoss">Removes a Work Mode preset: %1$s.</string>
+    <string name="PurpleImpactScheduleLoss">Removes or replaces schedule settings: %1$s.</string>
+    <string name="PurpleImpactEmptyList">Empties a list this file defines, including on devices where this account supplies app-wide settings: %1$s.</string>
+    <string name="PurpleImpactStranded">Own members remain in the file but lose their list definition here: %1$s.</string>
+    <string name="PurpleImpactUnknownRemoval">Removes an unrecognized setting: %1$s.</string>
+    <string name="PurpleImpactStoredPin">%1$s stores an own value for %3$s instead of inheriting %2$s. This pin is inactive on this device.</string>
+    <string name="PurpleImpactStoredUnpin">%1$s removes its stored own value for %3$s, restoring inheritance from %2$s. This pin was inactive on this device.</string>
+    <string name="PurpleImpactInactiveOnly">This version changes only settings this device does not use. Applying it keeps this device in step and changes nothing here.</string>
+    <string name="PurpleImpactUsed">Used on this device</string>
+    <string name="PurpleImpactUnused">Not used on this device</string>
+    <string name="PurpleImpactUnknown">Unrecognized settings</string>
+    <string name="PurpleTransferSave">Saves this account’s file with a backup. An existing file sends after the usual delay only if its own Send after save setting is on.</string>
+    <string name="PurpleImportCompletionUnverified">The settings file was written, but import completion could not be verified. Reopen settings and review the account file. No automatic send was queued.</string>
 </resources>

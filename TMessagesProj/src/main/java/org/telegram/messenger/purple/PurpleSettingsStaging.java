@@ -47,7 +47,7 @@ final class PurpleSettingsStaging {
 
     File rootOf(File staged) {
         final File directory = staged.getParentFile();
-        if (directory == null || !fileName.equals(staged.getName())) {
+        if (directory == null || !acceptedName(staged.getName())) {
             return null;
         }
         final File parent = directory.getParentFile();
@@ -64,13 +64,17 @@ final class PurpleSettingsStaging {
         final String uuid = staged.getParentFile().getName();
         return UUID.fromString(uuid).toString().equals(uuid)
                 && staged.getCanonicalFile().equals(new File(
-                        new File(stagingRoot.getCanonicalFile(), uuid), fileName));
+                        new File(stagingRoot.getCanonicalFile(), uuid), staged.getName()));
     }
 
     static void remove(File staged) {
         if (staged.delete()) {
             staged.getParentFile().delete();
         }
+    }
+
+    private boolean acceptedName(String name) {
+        return fileName.equals(name) || "settings.toml".equals(fileName) && "account-settings.toml".equals(name);
     }
 
     private void prune(File directoryRoot, long now) {
@@ -82,6 +86,10 @@ final class PurpleSettingsStaging {
         for (File dir : dirs) {
             if (!dir.isDirectory() || dir.lastModified() >= oldest) {
                 continue;
+            }
+            if ("settings.toml".equals(fileName)) {
+                File layered = new File(dir, "account-settings.toml");
+                if (layered.isFile() && layered.lastModified() < oldest) remove(layered);
             }
             final File staged = new File(dir, fileName);
             if (staged.isFile() && staged.lastModified() < oldest) {

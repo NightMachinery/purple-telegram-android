@@ -39,6 +39,8 @@ final class PurpleSyncOfferRules {
         return Verdict.OFFER;
     }
 
+    static long localStamp(boolean ownPresent, long own, long global) { return ownPresent ? own : global; }
+
     static boolean mayImport(int sourceAccount, int activeAccount) {
         return sourceAccount == NO_ACCOUNT || sourceAccount == activeAccount;
     }

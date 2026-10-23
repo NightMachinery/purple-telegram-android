@@ -30,9 +30,12 @@ import java.io.OutputStream;
 public final class PurpleSettings {
 
     /** Schema version this build was written against. */
-    public static final int SUPPORTED_SCHEMA_VERSION = 1;
+    public static final int SUPPORTED_SCHEMA_VERSION = 2;
 
     public static final String FILE_NAME = "settings.toml";
+    public static final String ACCOUNT_FILE_NAME = "account-settings.toml";
+    public static boolean fileName(String name) { return PurpleTransferRules.fileName(name); }
+    public static String exportName(int version) { return PurpleTransferRules.exportName(version); }
     public static final String BACKUP_NAME = "settings.toml.bak";
     public static final String IMPORT_BACKUP_NAME = "settings.toml.import.bak";
 
@@ -86,7 +89,18 @@ public final class PurpleSettings {
      * @param account whose Saved Messages the file is in, or NO_ACCOUNT; the
      *                question names it and the import needs it to be active
      */
-    static void importFrom(Context context, File source, int messageDate, int account) {
+    public static void importFrom(Context context, File source, int messageDate, int account) {
+        importFrom(context, source, messageDate, account, false);
+    }
+    static void importFrom(Context context, File source, int messageDate, int account, boolean activeOnly) {
+        importFrom(context, source, messageDate, PurpleAccountFiles.capture(
+                account == PurpleSyncOfferRules.NO_ACCOUNT ? UserConfig.selectedAccount : account), activeOnly);
+    }
+    public static void importFrom(Context context, File source, int messageDate, PurpleAccountFiles.Identity origin) {
+        importFrom(context, source, messageDate, origin, false);
+    }
+    private static void importFrom(Context context, File source, int messageDate, PurpleAccountFiles.Identity origin, boolean activeOnly) {
+        if (origin == null || !origin.current()) return;
         if (context == null || source == null || !source.exists()) {
             return;
         }
@@ -97,96 +111,78 @@ public final class PurpleSettings {
 
         final byte[] bytes;
         try {
-            bytes = readAll(source);
+            try (InputStream input = new FileInputStream(source)) {
+                java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream();
+                byte[] buffer = new byte[8192];
+                int count;
+                while (output.size() <= MAX_SIZE && (count = input.read(buffer, 0,
+                        (int) Math.min(buffer.length, MAX_SIZE + 1 - output.size()))) > 0) output.write(buffer, 0, count);
+                bytes = output.toByteArray();
+            }
         } catch (IOException e) {
             FileLog.e(e);
             showError(context, LocaleController.getString(R.string.PurpleImportFailed));
             return;
         }
-        importFrom(context, bytes, messageDate, account);
+        importFrom(context, bytes, messageDate, origin, activeOnly);
     }
 
     public static void importFrom(Context context, byte[] bytes, int messageDate) {
         importFrom(context, bytes, messageDate, PurpleSyncOfferRules.NO_ACCOUNT);
     }
 
-    private static void importFrom(Context context, byte[] bytes, int messageDate, int account) {
-        if (context == null || bytes == null) {
-            return;
-        }
-        if (!PurpleAccountOwner.legacyOperation(account == PurpleSyncOfferRules.NO_ACCOUNT
-                ? UserConfig.selectedAccount : account)
-                || !PurpleSyncOfferRules.mayImport(account, UserConfig.selectedAccount)) {
-            showError(context, LocaleController.getString(R.string.PurpleAccountWriteHeld));
-            if (!PurpleAccountOwner.ready()) org.telegram.ui.PurpleAccountSettingsRows.requestOwner(context);
-            return;
-        }
-        if (bytes.length > MAX_SIZE) {
+    public static void importFrom(Context context, byte[] bytes, int messageDate, int account) {
+        importFrom(context, bytes, messageDate, account, false);
+    }
+    private static void importFrom(Context context, byte[] bytes, int messageDate, int account, boolean activeOnly) {
+        importFrom(context, bytes, messageDate, PurpleAccountFiles.capture(
+                account == PurpleSyncOfferRules.NO_ACCOUNT ? UserConfig.selectedAccount : account), activeOnly);
+    }
+    public static void importFrom(Context context, byte[] bytes, int messageDate, PurpleAccountFiles.Identity origin) {
+        importFrom(context, bytes, messageDate, origin, false);
+    }
+    private static void importFrom(Context context, byte[] bytes, int messageDate, PurpleAccountFiles.Identity origin, boolean activeOnly) {
+        if (context == null) return;
+        if (bytes == null || bytes.length > MAX_SIZE) {
             showError(context, LocaleController.getString(R.string.PurpleImportFailed));
             return;
         }
-
-        final PurpleAccountFiles.Identity origin = PurpleAccountFiles.capture(
-                account == PurpleSyncOfferRules.NO_ACCOUNT ? UserConfig.selectedAccount : account);
-        final PurpleCore.ParseResult parsed;
-        try {
-            parsed = PurpleCore.parse(bytes);
-        } catch (UnsatisfiedLinkError | RuntimeException e) {
-            FileLog.e(e);
-            showError(context, LocaleController.getString(R.string.PurpleCoreUnavailable));
+        if (origin == null || !origin.current()) {
+            showError(context, LocaleController.getString(R.string.PurpleImportAccountChanged));
             return;
         }
-        final boolean ok = parsed.ok;
-        final int version = parsed.version;
-        final String error = parsed.error;
-        final int warnings = parsed.warnings.size();
-        if (!ok || version > 1) {
-            showError(context, LocaleController.formatString(R.string.PurpleSettingsInvalid, error));
+        final int destination = origin.slot;
+        final PurpleAccountEditor.Session session = PurpleAccountEditor.open(destination, false,
+                () -> origin != null && origin.current() && (!activeOnly || destination == UserConfig.selectedAccount));
+        final PurpleAccountEditor.Preview preview = session == null ? null : session.previewImport(bytes.clone());
+        if (preview == null) {
+            showError(context, LocaleController.getString(R.string.PurpleImpactHeld));
+            if (!PurpleAccountOwner.ready()) org.telegram.ui.PurpleAccountSettingsRows.requestOwner(context);
             return;
         }
-
-        final String sent = LocaleController.formatDateTime(messageDate, true);
-        final String from = account == PurpleSyncOfferRules.NO_ACCOUNT ? null : accountLabel(account);
-        StringBuilder message = new StringBuilder();
-        message.append(from == null
-                ? LocaleController.formatString(R.string.PurpleImportQuestion, sent)
-                : LocaleController.formatString(R.string.PurpleImportQuestionFrom, sent, from));
-        message.append("\n\n");
-        message.append(LocaleController.formatString(R.string.PurpleImportSchema, version));
-        if (version > SUPPORTED_SCHEMA_VERSION) {
-            message.append(" ");
-            message.append(LocaleController.getString(R.string.PurpleImportSchemaNewer));
-        }
-        message.append("\n");
-        if (warnings == 0) {
-            message.append(LocaleController.getString(R.string.PurpleImportNoWarnings));
-        } else if (warnings == 1) {
-            message.append(LocaleController.getString(R.string.PurpleImportOneWarning));
-        } else {
-            message.append(LocaleController.formatString(R.string.PurpleImportManyWarnings, warnings));
-        }
-        message.append("\n\n");
-        message.append(LocaleController.getString(R.string.PurpleImportReplaces));
-
+        String message = preview.impactNotes() + "\n\n" + LocaleController.formatString(
+                R.string.PurpleImportQuestionFrom, LocaleController.formatDateTime(messageDate, true), accountLabel(destination));
+        if (!preview.warnings().isEmpty()) message += "\n\n" + preview.warnings();
+        message += "\n\n" + LocaleController.getString(R.string.PurpleImportReplaces);
         AlertDialog.Builder builder = new AlertDialog.Builder(context);
-        builder.setTitle(LocaleController.getString(R.string.ImportPurpleSettings));
-        builder.setMessage(message.toString());
+        builder.setTitle(LocaleController.formatString(R.string.PurpleImpactTitle, accountLabel(destination)));
+        builder.setMessage(message);
+        final AlertDialog[] shown = new AlertDialog[1];
         builder.setPositiveButton(LocaleController.getString(R.string.Import), (dialog, which) -> {
-            if (!PurpleAccountOwner.legacyOperation(account == PurpleSyncOfferRules.NO_ACCOUNT
-                ? UserConfig.selectedAccount : account)
-                || !PurpleSyncOfferRules.mayImport(account, UserConfig.selectedAccount)) {
-                showError(context, LocaleController.getString(R.string.PurpleImportAccountChanged));
-                return;
-            }
-            if (origin == null || !origin.current() || !PurpleAccountOwner.legacyOperation(origin.slot)) return;
-            if (store(bytes)) {
+            PurpleAccountEditor.Outcome result = session.save(preview,
+                    () -> origin.current() && shown[0] != null && shown[0].isShowing() && !shown[0].isDismissed());
+            if (result.ok) {
+                PurpleGate.reloadAccountFiles("account import");
                 Toast.makeText(context, LocaleController.getString(R.string.PurpleSettingsImported), Toast.LENGTH_SHORT).show();
-            } else {
-                showError(context, LocaleController.getString(R.string.PurpleImportFailed));
-            }
+            } else showError(context, LocaleController.getString(result.changed ? R.string.PurpleImportCompletionUnverified
+                    : R.string.PurpleImportAccountChanged));
         });
         builder.setNegativeButton(LocaleController.getString(R.string.Cancel), null);
-        builder.show();
+        shown[0] = builder.create();
+        shown[0].setOnDismissListener(dialog -> session.retire());
+        shown[0].show();
+        android.view.View cancel = shown[0].getButton(android.content.DialogInterface.BUTTON_NEGATIVE);
+        if (cancel != null) { cancel.setFocusableInTouchMode(true); cancel.requestFocus(); }
     }
 
     public static String accountLabel(int account) {

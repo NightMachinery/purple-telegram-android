@@ -240,6 +240,12 @@ public final class PurpleSettingsStagingTest {
         testPrune();
         testReceiptRoots();
         testRemove();
+        Dirs layeredDirs = new Dirs();
+        PurpleSettingsStaging layeredStaging = layeredDirs.staging();
+        File layered = stage(layeredDirs.root, UUID.randomUUID().toString(), "account-settings.toml");
+        check(layeredStaging.rootOf(layered).equals(layeredDirs.root));
+        check(layeredStaging.isCanonical(layered, layeredDirs.root));
+        check(layeredStaging.rootOf(new File(layered.getParentFile(), "other.toml")) == null);
         System.out.println(checks + " checks, " + failures + " failures");
         if (failures != 0) {
             System.exit(1);

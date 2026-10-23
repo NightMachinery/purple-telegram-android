@@ -35,11 +35,11 @@ public final class PurpleAutoSendRulesTest {
     }
 
     private static void testOnlyTheFirstAccountPosts() {
-        begin("only the first account posts");
+        begin("every signed-in origin posts");
         final boolean[] activated = slots(true, false, false, true);
         check(PurpleAutoSendRules.firstAccount(activated) == 0);
         check(PurpleAutoSendRules.postsFrom(0, activated));
-        check(!PurpleAutoSendRules.postsFrom(3, activated));
+        check(PurpleAutoSendRules.postsFrom(3, activated));
     }
 
     private static void testFirstAccountNeedNotBeSlotZero() {
@@ -47,17 +47,17 @@ public final class PurpleAutoSendRulesTest {
         final boolean[] activated = slots(false, true, false, true);
         check(PurpleAutoSendRules.firstAccount(activated) == 1);
         check(PurpleAutoSendRules.postsFrom(1, activated));
-        check(!PurpleAutoSendRules.postsFrom(3, activated));
+        check(PurpleAutoSendRules.postsFrom(3, activated));
         check(!PurpleAutoSendRules.postsFrom(0, activated));
     }
 
     private static void testEveryOtherAccountIsSkipped() {
-        begin("every other account is skipped");
+        begin("each origin is independent");
         final boolean[] activated = slots(true, true, true, true);
         check(PurpleAutoSendRules.postsFrom(0, activated));
-        check(!PurpleAutoSendRules.postsFrom(1, activated));
-        check(!PurpleAutoSendRules.postsFrom(2, activated));
-        check(!PurpleAutoSendRules.postsFrom(3, activated));
+        check(PurpleAutoSendRules.postsFrom(1, activated));
+        check(PurpleAutoSendRules.postsFrom(2, activated));
+        check(PurpleAutoSendRules.postsFrom(3, activated));
     }
 
     private static void testNoAccount() {

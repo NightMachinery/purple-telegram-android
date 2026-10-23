@@ -254,9 +254,8 @@ public class PurpleSettingsEditorActivity extends BaseFragment {
             AndroidUtilities.runOnUIThread(() -> {
                 if (!live() || session != opened || generation != targetGeneration || !text.equals(field.getText().toString())) return;
                 if (preview == null) { error(getString(R.string.PurpleEditorValidationHeld)); return; }
-                String message = opened.path + "\n\n" + getString(R.string.PurpleEditorLocalSaveOnly);
+                String message = preview.impactNotes() + "\n\n" + opened.path + "\n\n" + getString(R.string.PurpleTransferSave);
                 if (opened.needsDirectory) message += "\n\n" + getString(R.string.PurpleEditorCreatesDirectory);
-                if (!preview.inactiveNotes().isEmpty()) message += "\n\n" + getString(R.string.PurpleEditorInactiveNotes) + "\n" + preview.inactiveNotes();
                 if (!preview.warnings().isEmpty()) message += "\n\n" + getString(R.string.PurpleEditorPreviewWarnings) + "\n" + preview.warnings();
                 AlertDialog.Builder builder = new AlertDialog.Builder(window);
                 builder.setTitle(getString(R.string.PurpleEditorSavePreview)); builder.setMessage(message);
@@ -288,6 +287,10 @@ public class PurpleSettingsEditorActivity extends BaseFragment {
                 });
                 builder.setNegativeButton(getString(R.string.Cancel), null);
                 permit.show(builder);
+                if (permit.dialog != null) {
+                    View cancel = permit.dialog.getButton(android.content.DialogInterface.BUTTON_NEGATIVE);
+                    if (cancel != null) { cancel.setFocusableInTouchMode(true); cancel.requestFocus(); }
+                }
             });
         });
     }
