@@ -133,7 +133,7 @@ final class PurpleAppWideRemovalModel {
         } catch (RuntimeException | UnsatisfiedLinkError e) { result.ok = false; }
         return result;
     }
-    private static PurpleGlobalChoiceFiles.Created ownedTemporary(File parent) throws Exception {
+    static PurpleGlobalChoiceFiles.Created ownedTemporary(File parent) throws Exception {
         JSONObject created = new JSONObject(createNative(parent.getPath()));
         if (!created.optBoolean("ok")) return null;
         return new PurpleGlobalChoiceFiles.Created(new File(created.getString("path")),

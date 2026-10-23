@@ -188,7 +188,7 @@ public final class PurpleAccountSettingsRows {
         fragment.showDialog(refused.create());
     }
 
-    private static String label(PurpleAccountFiles.Identity id) {
+    static String label(PurpleAccountFiles.Identity id) {
         String name = PurpleSettings.accountLabel(id.slot);
         if (name == null) name = text(R.string.PurpleAccountUnnamed);
         return id.key.startsWith("1-") ? name + " " + text(R.string.PurpleAccountTestServers) : name;

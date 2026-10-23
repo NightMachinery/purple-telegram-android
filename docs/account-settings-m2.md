@@ -344,3 +344,46 @@ Android UI, Os, Handler and FileObserver behavior remain unmeasured. Application
 and shrinker qualification for this source revision, device coverage and release
 remain separate. All touched UI/bridge files are Purple-owned; no upstream hook
 or audit ratchet changes are introduced.
+
+
+### Account-targeted editor candidate
+
+The settings-file block opens the fragment account explicitly, or its distinct
+app-wide file, including a signed-out global account. The editor title switches
+between those two targets. A dirty switch requires Save, Discard or Cancel.
+Opening an absent account file displays the shared account-local version-2
+template without creating a file. Save never flattens inherited settings.
+
+Save previews use the shared parser and scope registry. Inactive app-wide keys
+are notes grouped by table and key, including app-wide keys within mixed tables.
+Warnings remain a separate section. The exact opened bytes, no-follow identity,
+parent directories, role inputs, origin lifetime and generations remain bound
+through preview, confirmation, backup, publication and notifications. A changed
+context after publication is reported as saved with activation unconfirmed; no
+rollback or universal filesystem compare-and-swap is claimed.
+
+The first explicit Save can create missing components of this account file's
+parent chain. Opening or switching creates nothing. The editor supplies a
+narrow creation capability; model callers without it still refuse missing
+parents. No setting row is written to create a directory, and no inherited
+settings or unrelated key is pinned.
+
+Creation checks the captured parent descriptor, performs an exclusive mkdir,
+and retains the created directory's descriptor identity. Before adopting that
+receipt, the model rechecks the original account/editor/role token, every disk
+input, the parent chain and the exact created inode. An existing name, symlink,
+changed parent or changed lifetime refuses further publication. Existing row
+creation code is unchanged. Directory creation performs no chmod on existing
+paths and never deletes directories. If saving stops after creation, a directory
+may remain and the UI says so. File temporary cleanup retains its existing owned
+identity check.
+
+These are finite checks around filesystem operations, not a universal atomic
+namespace transaction. In particular, mkdir and opening its descriptor are
+separate syscalls; concurrent name replacement within an unobserved handoff is
+not claimed impossible. No host permission result proves Android behavior.
+A missing root file, or a missing primary with its own good copy, remains a
+recovery case. App-wide activation remains with the existing guarded watcher.
+Editor writes queue no automatic Send, and version-2/non-root transport remains
+held. Compiler, genuine JNI/filesystem cases and native UI checks are prepared
+but unrun. This candidate does not replace the accepted application.

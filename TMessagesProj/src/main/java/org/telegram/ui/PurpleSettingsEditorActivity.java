@@ -1,45 +1,29 @@
-/*
- * This is the source code of Purple Telegram for Android.
- *
- * Editing settings.toml on the phone. The file lives in app-private storage,
- * so without this screen the only way to change a preset from a phone is to
- * send yourself a new file - which is fine for a rewrite and absurd for fixing
- * a typo in a list name.
- *
- * The point of the file being TOML is that a person writes it, so this is a
- * plain monospaced text box and not a form: everything the format can say is
- * editable here, including the things no screen in this app has a control for.
- * What the screen adds is the one thing a text box cannot - being told, as you
- * type, whether the core can still read what you have written.
- */
-
 package org.telegram.ui;
 
-import static org.telegram.messenger.LocaleController.formatPluralString;
 import static org.telegram.messenger.LocaleController.getString;
 
+import android.app.Activity;
 import android.content.Context;
 import android.graphics.Typeface;
 import android.text.Editable;
 import android.text.InputType;
-import android.text.TextUtils;
 import android.text.TextWatcher;
+import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.inputmethod.EditorInfo;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-
 import org.telegram.messenger.AndroidUtilities;
-import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.purple.PurpleAccountEditor;
 import org.telegram.messenger.purple.PurpleCore;
-import org.telegram.messenger.purple.PurpleSettings;
+import org.telegram.messenger.purple.PurpleAccountFiles;
+import org.telegram.messenger.purple.PurpleGlobalChoiceDialog;
 import org.telegram.ui.ActionBar.ActionBar;
-import org.telegram.ui.ActionBar.ActionBarMenu;
 import org.telegram.ui.ActionBar.ActionBarMenuItem;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
@@ -47,253 +31,184 @@ import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.EditTextBoldCursor;
 import org.telegram.ui.Components.LayoutHelper;
 
-import java.io.File;
-import java.nio.charset.Charset;
-import java.util.List;
-
 public class PurpleSettingsEditorActivity extends BaseFragment {
-
-    private static final Charset UTF_8 = Charset.forName("UTF-8");
-
-    private static final int done_button = 1;
-    private static final int revert_button = 2;
-
-    /** Long enough that typing a word does not start a parse per keystroke. */
+    private static final int DONE = 1;
+    private static final int REVERT = 2;
     private static final long VALIDATE_DELAY = 300L;
-
     private EditTextBoldCursor field;
     private TextView status;
-
-    /** The text as opened, for Revert and for "has this been edited". */
+    private TextView banner;
+    private PurpleAccountEditor.Session session;
+    private PurpleAccountFiles.Identity origin;
+    private Activity window;
+    private boolean appWide;
+    private volatile boolean alive;
+    private volatile boolean resumed;
+    private volatile int targetGeneration;
+    private int validationGeneration;
+    private Runnable validation;
+    private AlertDialog activeDialog;
+    private AlertDialog savingDialog;
     private String openedText = "";
-
-    /**
-     * What the file was when it was opened. Length and mtime rather than a
-     * hash: this is not a security question, it is "did something else write
-     * here while I was typing", and the two together answer it for every writer
-     * this app has - each of which replaces the file rather than editing it.
-     */
-    private long openedLength;
-    private long openedModified;
-
-    /** The most recent parse, or null while one is outstanding. */
     private PurpleCore.ParseResult parsed;
 
-    /**
-     * Which validation run is current. A parse runs off the UI thread and the
-     * text can move on while it does, so a result arriving for text that has
-     * since changed is dropped rather than drawn.
-     */
-    private int validateGeneration;
-
-    private Runnable validate;
-
-    private org.telegram.messenger.purple.PurpleAccountFiles.Identity fileOrigin;
-
-    @Override public boolean onFragmentCreate() {
-        fileOrigin = org.telegram.messenger.purple.PurpleAccountFiles.capture(currentAccount);
-        return org.telegram.messenger.purple.PurpleAccountOwner.legacyEditorAllowed(currentAccount)
-                && fileOrigin != null && super.onFragmentCreate();
+    public PurpleSettingsEditorActivity() { this(org.telegram.messenger.UserConfig.selectedAccount, false); }
+    public PurpleSettingsEditorActivity(int account, boolean appWide) {
+        setCurrentAccount(account);
+        this.appWide = appWide;
     }
-
-    @Override
-    public View createView(Context context) {
+    @Override public boolean onFragmentCreate() {
+        origin = PurpleAccountFiles.capture(currentAccount);
+        alive = origin != null;
+        return alive && super.onFragmentCreate();
+    }
+    private boolean live() {
+        return alive && resumed && !isFinished && origin != null && origin.current()
+                && window != null && window == getParentActivity()
+                && (savingDialog == null || savingDialog == activeDialog && savingDialog.isShowing());
+    }
+    @Override public View createView(Context context) {
+        window = getParentActivity(); resumed = true;
         actionBar.setBackButtonImage(R.drawable.ic_ab_back);
         actionBar.setAllowOverlayTitle(true);
         actionBar.setTitle(getString(R.string.PurpleEditorTitle));
         actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
-            @Override
-            public void onItemClick(int id) {
-                if (id == -1) {
-                    if (onBackPressed(true)) {
-                        finishFragment();
-                    }
-                } else if (id == done_button) {
-                    save(false);
-                } else if (id == revert_button) {
-                    field.setText(openedText);
-                    field.setSelection(field.length());
-                }
+            @Override public void onItemClick(int id) {
+                if (id == -1 && onBackPressed(true)) finishFragment();
+                else if (id == DONE) save(null);
+                else if (id == REVERT && live() && session != null) { field.setText(openedText); field.setSelection(field.length()); }
             }
         });
-
-        final ActionBarMenu menu = actionBar.createMenu();
-        final ActionBarMenuItem other = menu.addItem(0, R.drawable.ic_ab_other);
-        other.addSubItem(revert_button, getString(R.string.PurpleEditorRevert));
-        final View done = menu.addItemWithWidth(done_button, R.drawable.ic_ab_done, AndroidUtilities.dp(56));
-        done.setContentDescription(getString(R.string.Done));
-
-        final LinearLayout layout = new LinearLayout(context);
+        ActionBarMenuItem other = actionBar.createMenu().addItem(0, R.drawable.ic_ab_other);
+        other.addSubItem(REVERT, getString(R.string.PurpleEditorRevert));
+        actionBar.createMenu().addItemWithWidth(DONE, R.drawable.ic_ab_done, AndroidUtilities.dp(56))
+                .setContentDescription(getString(R.string.Done));
+        LinearLayout layout = new LinearLayout(context);
         layout.setOrientation(LinearLayout.VERTICAL);
         layout.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
-
-        status = new TextView(context);
-        status.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
-        status.setPadding(AndroidUtilities.dp(16), AndroidUtilities.dp(10),
-                AndroidUtilities.dp(16), AndroidUtilities.dp(10));
-        status.setGravity(LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT);
-        // The one place in this screen where tapping does something other than
-        // move the cursor: a parse error names a line and a column, and the
-        // useful thing to do with it is go there.
-        status.setOnClickListener(v -> jumpToError());
-        layout.addView(status, LayoutHelper.createLinear(
-                LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-
+        banner = label(context); layout.addView(banner, LayoutHelper.createLinear(-1, -2));
+        status = label(context); status.setOnClickListener(v -> jumpToError());
+        layout.addView(status, LayoutHelper.createLinear(-1, -2));
         field = new EditTextBoldCursor(context);
         field.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
         field.setTypeface(Typeface.MONOSPACE);
         field.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
-        field.setHintTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteHintText));
         field.setCursorColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
-        field.setCursorSize(AndroidUtilities.dp(18));
-        field.setCursorWidth(1.5f);
+        field.setCursorSize(AndroidUtilities.dp(18)); field.setCursorWidth(1.5f);
         field.setBackgroundDrawable(null);
         field.setPadding(AndroidUtilities.dp(16), 0, AndroidUtilities.dp(16), AndroidUtilities.dp(16));
         field.setGravity(Gravity.TOP | (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT));
-        // No maxLines, no newline filter and no IME_ACTION_DONE: a return key
-        // that saved instead of breaking the line would make the file
-        // unwritable, and every line of a TOML file is one the user typed.
-        field.setInputType(InputType.TYPE_CLASS_TEXT
-                | InputType.TYPE_TEXT_FLAG_MULTI_LINE
-                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        field.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         field.setImeOptions(EditorInfo.IME_FLAG_NO_EXTRACT_UI);
         field.setVerticalScrollBarEnabled(true);
         field.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
-            }
-
-            @Override
-            public void onTextChanged(CharSequence s, int start, int before, int count) {
-            }
-
-            @Override
-            public void afterTextChanged(Editable s) {
-                scheduleValidate();
-            }
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+            public void onTextChanged(CharSequence s, int start, int before, int count) { }
+            public void afterTextChanged(Editable s) { scheduleValidation(); }
         });
-        layout.addView(field, LayoutHelper.createLinear(
-                LayoutHelper.MATCH_PARENT, 0, 1f));
-
-        fragmentView = layout;
-
-        open();
-        return fragmentView;
+        layout.addView(field, LayoutHelper.createLinear(-1, 0, 1f));
+        fragmentView = layout; open(appWide); return layout;
     }
-
-    // The two branches of the same intent. With animations on, focusing during
-    // the slide-in fights it, so the keyboard waits for the transition to end;
-    // with them off there is no transition to wait for and onResume is the only
-    // moment there is. Both are needed, and neither on its own works.
-    @Override
-    public void onResume() {
-        super.onResume();
-        if (!org.telegram.messenger.MessagesController.getGlobalMainSettings()
-                .getBoolean("view_animations", true)) {
-            field.requestFocus();
-            AndroidUtilities.showKeyboard(field);
+    private TextView label(Context context) {
+        TextView view = new TextView(context);
+        view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+        view.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2));
+        view.setPadding(AndroidUtilities.dp(16), AndroidUtilities.dp(10), AndroidUtilities.dp(16), AndroidUtilities.dp(10));
+        return view;
+    }
+    private void open(boolean target) {
+        if (!live()) return;
+        ++targetGeneration; ++validationGeneration;
+        if (session != null) session.retire();
+        appWide = target;
+        int generation = targetGeneration;
+        session = PurpleAccountEditor.open(currentAccount, target, () -> live() && generation == targetGeneration);
+        if (session == null) {
+            field.setEnabled(false); status.setText(getString(R.string.PurpleEditorContextChanged)); return;
+        }
+        field.setEnabled(true);
+        openedText = session.openedText;
+        field.setText(openedText); field.setSelection(0);
+        String own = PurpleAccountSettingsRows.label(origin);
+        String global = PurpleAccountSettingsRows.globalLabel(session.globalKey);
+        boolean distinct = !origin.key.equals(session.globalKey);
+        actionBar.setTitle(!distinct ? getString(R.string.PurpleEditorTitle)
+                : LocaleController.formatString(session.global ? R.string.PurpleEditorAppWideTitle : R.string.PurpleEditorAccountTitle,
+                session.global ? global : own));
+        actionBar.setTitleActionRunnable(distinct ? this::chooseTarget : null);
+        banner.setVisibility(session.global ? View.GONE : View.VISIBLE);
+        banner.setText(LocaleController.formatString(R.string.PurpleEditorInactiveBanner, global, own));
+        scheduleValidation();
+    }
+    private final class DialogPermit {
+        final PurpleGlobalChoiceDialog authority = new PurpleGlobalChoiceDialog();
+        final PurpleGlobalChoiceDialog.Token token = authority.picker();
+        AlertDialog dialog;
+        boolean current() { return authority.current(token); }
+        void show(AlertDialog.Builder builder) {
+            builder.setOnPreDismissListener(ignored -> authority.dismissed(token));
+            dialog = builder.create();
+            authority.bind(token, dialog, () -> live() && dialog.isShowing() && !dialog.isDismissed()
+                    && getVisibleDialog() == dialog);
+            android.app.Dialog shown = live() ? showDialog(dialog, ignored -> authority.dismissed(token)) : null;
+            if (!authority.shown(token, shown) && dialog.isShowing()) dialog.dismiss();
         }
     }
-
-    @Override
-    public void onTransitionAnimationEnd(boolean isOpen, boolean backward) {
-        if (isOpen) {
-            field.requestFocus();
-            AndroidUtilities.showKeyboard(field);
-        }
+    private void chooseTarget() {
+        if (!live() || session == null || !session.current()) return;
+        DialogPermit permit = new DialogPermit();
+        AlertDialog.Builder builder = new AlertDialog.Builder(window);
+        builder.setTitle(getString(R.string.PurpleEditorChooseTarget));
+        builder.setItems(new CharSequence[]{LocaleController.formatString(R.string.PurpleEditorAccountTitle,
+                        PurpleAccountSettingsRows.label(origin)), LocaleController.formatString(R.string.PurpleEditorAppWideTitle,
+                        PurpleAccountSettingsRows.globalLabel(session.globalKey))}, (dialog, which) -> {
+            if (permit.current() && live() && session != null && session.current()) switchTarget(which == 1);
+        });
+        permit.show(builder);
     }
-
-    /** Reads the file fresh, and remembers what it was. */
-    private void open() {
-        final File file = PurpleSettings.settingsFile();
-        String text = "";
-        if (file.exists()) {
-            final byte[] bytes = read(file);
-            if (bytes != null) {
-                text = new String(bytes, UTF_8);
-            }
-        }
-        openedText = text;
-        openedLength = file.exists() ? file.length() : -1L;
-        openedModified = file.exists() ? file.lastModified() : -1L;
-        field.setText(text);
-        field.setSelection(0);
-        scheduleValidate();
+    private void switchTarget(boolean target) {
+        if (target == appWide || !live()) return;
+        if (!dirty()) { open(target); return; }
+        int generation = targetGeneration;
+        DialogPermit permit = new DialogPermit();
+        AlertDialog.Builder builder = new AlertDialog.Builder(window);
+        builder.setTitle(getString(R.string.PurpleEditorDirtySwitchTitle));
+        builder.setMessage(getString(R.string.PurpleEditorDirtySwitch));
+        builder.setPositiveButton(getString(R.string.Save), (dialog, which) -> {
+            if (permit.current() && live() && generation == targetGeneration) save(() -> open(target));
+        });
+        builder.setNegativeButton(getString(R.string.Discard), (dialog, which) -> {
+            if (permit.current() && live() && generation == targetGeneration) open(target);
+        });
+        builder.setNeutralButton(getString(R.string.Cancel), null);
+        permit.show(builder);
     }
-
-    // ---- validation ----------------------------------------------------------
-
-    private void scheduleValidate() {
-        if (validate != null) {
-            AndroidUtilities.cancelRunOnUIThread(validate);
-        }
-        parsed = null;
-        setStatus(getString(R.string.PurpleEditorChecking), Theme.key_windowBackgroundWhiteGrayText2);
-        validate = this::runValidate;
-        AndroidUtilities.runOnUIThread(validate, VALIDATE_DELAY);
+    private boolean dirty() { return field != null && !openedText.equals(field.getText().toString()); }
+    private void scheduleValidation() {
+        if (validation != null) AndroidUtilities.cancelRunOnUIThread(validation);
+        ++validationGeneration; parsed = null;
+        if (status != null) status.setText(getString(R.string.PurpleEditorChecking));
+        validation = this::validateText;
+        AndroidUtilities.runOnUIThread(validation, VALIDATE_DELAY);
     }
-
-    /**
-     * Parses off the UI thread.
-     *
-     * PurpleCore.parse is pure and touches no file, so it can be asked about
-     * text that is not on disk and may never be - which is the whole reason
-     * this screen can say "12:5: expected ..." before anything is written.
-     */
-    private void runValidate() {
-        final int generation = ++validateGeneration;
-        final byte[] bytes = field.getText().toString().getBytes(UTF_8);
+    private void validateText() {
+        if (!live() || session == null) return;
+        int generation = validationGeneration;
+        PurpleAccountEditor.Session opened = session;
+        String text = field.getText().toString();
         Utilities.globalQueue.postRunnable(() -> {
-            PurpleCore.ParseResult result;
-            try {
-                result = PurpleCore.parse(bytes);
-            } catch (UnsatisfiedLinkError | RuntimeException e) {
-                FileLog.e(e);
-                result = null;
-            }
-            final PurpleCore.ParseResult answer = result;
+            PurpleCore.ParseResult answer = opened.parse(text);
+            boolean supported = answer != null && answer.ok && opened.preview(text) != null;
             AndroidUtilities.runOnUIThread(() -> {
-                if (generation != validateGeneration) {
-                    // The text moved on while this ran. Drawing this answer
-                    // would put a stale error under text that no longer has it.
-                    return;
-                }
+                if (!live() || generation != validationGeneration || session != opened || !text.equals(field.getText().toString())) return;
                 parsed = answer;
-                drawStatus();
+                status.setText(answer == null ? getString(R.string.PurpleEditorContextChanged)
+                        : !answer.ok ? answer.error : !supported ? getString(R.string.PurpleEditorValidationHeld)
+                        : answer.warnings.isEmpty() ? getString(R.string.PurpleEditorOk)
+                        : android.text.TextUtils.join("\n", answer.warnings));
             });
         });
     }
-
-    private void drawStatus() {
-        if (parsed == null) {
-            setStatus(getString(R.string.PurpleCoreUnavailable), Theme.key_text_RedRegular);
-            return;
-        }
-        if (!parsed.ok) {
-            setStatus(parsed.error, Theme.key_text_RedRegular);
-            return;
-        }
-        final int warnings = parsed.warnings.size();
-        if (warnings == 0) {
-            setStatus(getString(R.string.PurpleEditorOk), Theme.key_windowBackgroundWhiteGreenText);
-        } else {
-            setStatus(formatPluralString("PurpleEditorWarnings", warnings), Theme.key_color_orange);
-        }
-    }
-
-    private void setStatus(CharSequence text, int colorKey) {
-        if (status != null) {
-            status.setText(text);
-            status.setTextColor(Theme.getColor(colorKey));
-        }
-    }
-
-    /**
-     * Moves the cursor to where the parser stopped.
-     *
-     * The error reads "LINE:COLUMN: text", one-based on both counts, which is
-     * what the core writes and what every other reader of that string assumes.
-     */
     private void jumpToError() {
         if (parsed == null || parsed.ok || TextUtils.isEmpty(parsed.error)) {
             return;
@@ -327,146 +242,80 @@ public class PurpleSettingsEditorActivity extends BaseFragment {
         AndroidUtilities.showKeyboard(field);
     }
 
-    // ---- saving --------------------------------------------------------------
-
-    /**
-     * @param overwrite true once the user has been told the file moved and said
-     *                  to write anyway
-     */
-    private void save(boolean overwrite) {
-        if (getParentActivity() == null) {
-            return;
-        }
-        final byte[] bytes = field.getText().toString().getBytes(UTF_8);
-        if (bytes.length > PurpleSettings.MAX_SIZE) {
-            error(getString(R.string.PurpleEditorTooBig));
-            return;
-        }
-        // The status line is debounced and may describe older text. Parse the
-        // exact bytes being saved, though a large file can pause this thread.
-        final PurpleCore.ParseResult result;
-        try {
-            result = PurpleCore.parse(bytes);
-        } catch (UnsatisfiedLinkError | RuntimeException e) {
-            FileLog.e(e);
-            error(getString(R.string.PurpleCoreUnavailable));
-            return;
-        }
-        if (!result.ok) {
-            // Writing a file the core cannot read would leave the app running
-            // its cached resolution with no way back except this screen - which
-            // would then be showing the file that broke it.
-            parsed = result;
-            drawStatus();
-            error(getString(R.string.PurpleEditorSaveBroken));
-            return;
-        }
-        final File file = PurpleSettings.settingsFile();
-        final long length = file.exists() ? file.length() : -1L;
-        final long modified = file.exists() ? file.lastModified() : -1L;
-        if (!overwrite && (length != openedLength || modified != openedModified)) {
-            // An import, a list edit from a chat menu, or the desktop's copy
-            // arriving. Saving over it silently is the one outcome nobody wants.
-            final AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
-            builder.setTitle(getString(R.string.PurpleEditorMovedTitle));
-            builder.setMessage(getString(R.string.PurpleEditorMoved));
-            builder.setPositiveButton(getString(R.string.PurpleEditorOverwrite),
-                    (dialog, which) -> save(true));
-            builder.setNegativeButton(getString(R.string.PurpleEditorReload),
-                    (dialog, which) -> open());
-            builder.show();
-            return;
-        }
-        if (fileOrigin == null || !fileOrigin.current()
-                || !org.telegram.messenger.purple.PurpleAccountOwner.legacyEditorAllowed(currentAccount)
-                || !PurpleSettings.save(bytes, "editor")) {
-            error(getString(R.string.PurpleEditorSaveFailed));
-            return;
-        }
-        openedText = field.getText().toString();
-        openedLength = file.exists() ? file.length() : -1L;
-        openedModified = file.exists() ? file.lastModified() : -1L;
-
-        // Warnings are the parser saying it read something it could not use -
-        // a list nothing names, a preset naming a list that is not there. The
-        // import path throws them away, which is exactly the wrong place: the
-        // person who can act on them is the one who just typed the line.
-        final List<String> warnings = result.warnings;
-        if (warnings.isEmpty()) {
-            finishFragment();
-            return;
-        }
-        final StringBuilder message = new StringBuilder();
-        for (int a = 0, n = warnings.size(); a < n; ++a) {
-            if (a > 0) {
-                message.append("\n\n");
-            }
-            message.append(warnings.get(a));
-        }
-        final AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
-        builder.setTitle(getString(R.string.PurpleEditorWarningsTitle));
-        builder.setMessage(message.toString());
-        builder.setPositiveButton(getString(R.string.OK), (dialog, which) -> finishFragment());
-        builder.show();
-    }
-
-    @Override
-    public boolean onBackPressed(boolean invoked) {
-        if (field == null || openedText.equals(field.getText().toString())) {
-            return super.onBackPressed(invoked);
-        }
-        if (!invoked || getParentActivity() == null) {
-            return false;
-        }
-        final AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
-        builder.setTitle(getString(R.string.PurpleEditorDiscardTitle));
-        builder.setMessage(getString(R.string.PurpleEditorDiscard));
-        builder.setPositiveButton(getString(R.string.Discard), (dialog, which) -> {
-            openedText = field.getText().toString();
-            finishFragment();
+    private void save(Runnable afterSave) {
+        if (!live() || session == null || !session.current()) { error(getString(R.string.PurpleEditorContextChanged)); return; }
+        ++validationGeneration;
+        if (validation != null) AndroidUtilities.cancelRunOnUIThread(validation);
+        String text = field.getText().toString();
+        int generation = targetGeneration;
+        PurpleAccountEditor.Session opened = session;
+        Utilities.globalQueue.postRunnable(() -> {
+            PurpleAccountEditor.Preview preview = opened.preview(text);
+            AndroidUtilities.runOnUIThread(() -> {
+                if (!live() || session != opened || generation != targetGeneration || !text.equals(field.getText().toString())) return;
+                if (preview == null) { error(getString(R.string.PurpleEditorValidationHeld)); return; }
+                String message = opened.path + "\n\n" + getString(R.string.PurpleEditorLocalSaveOnly);
+                if (opened.needsDirectory) message += "\n\n" + getString(R.string.PurpleEditorCreatesDirectory);
+                if (!preview.inactiveNotes().isEmpty()) message += "\n\n" + getString(R.string.PurpleEditorInactiveNotes) + "\n" + preview.inactiveNotes();
+                if (!preview.warnings().isEmpty()) message += "\n\n" + getString(R.string.PurpleEditorPreviewWarnings) + "\n" + preview.warnings();
+                AlertDialog.Builder builder = new AlertDialog.Builder(window);
+                builder.setTitle(getString(R.string.PurpleEditorSavePreview)); builder.setMessage(message);
+                DialogPermit permit = new DialogPermit();
+                builder.setPositiveButton(getString(R.string.Save), (dialog, which) -> {
+                    if (!live() || !permit.current() || session != opened
+                            || generation != targetGeneration || !text.equals(field.getText().toString())) return;
+                    ++validationGeneration;
+                    if (validation != null) AndroidUtilities.cancelRunOnUIThread(validation);
+                    activeDialog = permit.dialog; savingDialog = permit.dialog;
+                    PurpleAccountEditor.Outcome result;
+                    try { result = opened.save(preview, () -> permit.current() && live() && generation == targetGeneration
+                            && text.equals(field.getText().toString())); }
+                    finally { savingDialog = null; }
+                    if (!live() || generation != targetGeneration) return;
+                    activeDialog = null;
+                    if (!result.ok) {
+                        error(getString(result.changed ? R.string.PurpleEditorSavedContextChanged
+                                : result.backupChanged ? R.string.PurpleEditorBackupOnly
+                                : result.directoryAttempted ? R.string.PurpleEditorDirectoryPartial : R.string.PurpleEditorSaveStopped));
+                        return;
+                    }
+                    openedText = text;
+                    if (afterSave != null) afterSave.run();
+                    else finishFragment();
+                });
+                builder.setNegativeButton(getString(R.string.Cancel), null);
+                permit.show(builder);
+            });
         });
-        builder.setNegativeButton(getString(R.string.Cancel), null);
-        builder.show();
-        return false;
     }
-
-    @Override
-    public void onFragmentDestroy() {
-        if (validate != null) {
-            AndroidUtilities.cancelRunOnUIThread(validate);
-            validate = null;
-        }
+    @Override public boolean onBackPressed(boolean invoked) {
+        if (!dirty()) return super.onBackPressed(invoked);
+        if (!invoked || !live()) return false;
+        DialogPermit permit = new DialogPermit();
+        AlertDialog.Builder builder = new AlertDialog.Builder(window);
+        builder.setTitle(getString(R.string.PurpleEditorDiscardTitle)); builder.setMessage(getString(R.string.PurpleEditorDiscard));
+        builder.setPositiveButton(getString(R.string.Discard), (dialog, which) -> { if (permit.current() && live()) finishFragment(); });
+        builder.setNegativeButton(getString(R.string.Cancel), null); permit.show(builder); return false;
+    }
+    @Override public void onResume() {
+        super.onResume(); resumed = true;
+        if (field != null && !org.telegram.messenger.MessagesController.getGlobalMainSettings()
+                .getBoolean("view_animations", true)) { field.requestFocus(); AndroidUtilities.showKeyboard(field); }
+    }
+    @Override public void onTransitionAnimationEnd(boolean isOpen, boolean backward) {
+        if (isOpen && field != null && live()) { field.requestFocus(); AndroidUtilities.showKeyboard(field); }
+    }
+    @Override public void onPause() { resumed = false; ++validationGeneration; super.onPause(); }
+    @Override public void onFragmentDestroy() {
+        alive = false; ++targetGeneration; ++validationGeneration;
+        if (session != null) session.retire();
+        if (validation != null) AndroidUtilities.cancelRunOnUIThread(validation);
         super.onFragmentDestroy();
     }
-
     private void error(CharSequence text) {
-        if (getParentActivity() == null) {
-            return;
-        }
-        final AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
-        builder.setTitle(getString(R.string.PurpleEditorTitle));
-        builder.setMessage(text);
-        builder.setPositiveButton(getString(R.string.OK), null);
-        builder.show();
-    }
-
-    private static byte[] read(File file) {
-        try {
-            final java.io.InputStream in = new java.io.FileInputStream(file);
-            try {
-                final java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
-                final byte[] buffer = new byte[8192];
-                int count;
-                while ((count = in.read(buffer)) > 0) {
-                    out.write(buffer, 0, count);
-                }
-                return out.toByteArray();
-            } finally {
-                in.close();
-            }
-        } catch (Exception e) {
-            FileLog.e(e);
-            return null;
-        }
+        if (!live()) return;
+        AlertDialog.Builder builder = new AlertDialog.Builder(window);
+        builder.setTitle(getString(R.string.PurpleEditorTitle)); builder.setMessage(text);
+        builder.setPositiveButton(getString(R.string.OK), null); showDialog(builder.create());
     }
 }

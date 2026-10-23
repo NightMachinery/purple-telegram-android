@@ -298,7 +298,7 @@ public class PurpleSettingsActivity extends UniversalFragment
 
         items.add(UItem.asHeader(getString(R.string.PurpleSettingsFileHeader)));
         PurpleAppWideRemovalUI.add(items, currentAccount, current);
-        items.add(UItem.asButton(ROW_EDIT, getString(R.string.PurpleEditSettings)));
+        PurpleAccountEditorUI.add(items, currentAccount);
         items.add(UItem.asButton(ROW_SYNC, getString(R.string.PurpleSyncTitle)));
         items.add(UItem.asButton(ROW_SEND, getString(R.string.PurpleSendToSaved)));
         items.add(UItem.asButton(ROW_CHECK, getString(R.string.PurpleCheckSaved)));
@@ -437,6 +437,7 @@ public class PurpleSettingsActivity extends UniversalFragment
 
     @Override
     protected void onClick(UItem item, View view, int position, float x, float y) {
+        if (PurpleAccountEditorUI.click(this, item.id, rowCurrent())) return;
         if (PurpleAppWideRemovalUI.click(this, item.id, rowCurrent())) return;
         if (PurpleAccountSettingsRows.click(this, item.id, rowCurrent())) return;
         if (item.id == ROW_LAST_SEEN_REASONS || item.id == ROW_LAST_SEEN_TRADE || item.id == ROW_AUTOSEND) {
@@ -483,7 +484,7 @@ public class PurpleSettingsActivity extends UniversalFragment
                     "focus_sync", "enabled_p", !item.checked, "focus sync switch"));
             break;
         case ROW_EDIT:
-            presentFragment(new PurpleSettingsEditorActivity());
+            presentFragment(new PurpleSettingsEditorActivity(currentAccount, false));
             break;
         case ROW_SYNC:
             presentFragment(new PurpleSyncActivity(currentAccount));

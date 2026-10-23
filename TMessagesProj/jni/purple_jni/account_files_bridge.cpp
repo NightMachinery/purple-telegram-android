@@ -54,6 +54,15 @@ QString Key(const std::optional<Purple::AccountKey> &key) {
     return key ? Purple::AccountKeyText(key->environment, key->userId).value_or(QString()) : QString();
 }
 
+QString AccountEditorTemplate() {
+    return u"# Purple Telegram settings for one account.\n"
+            "# This file holds only what differs for this account. Anything it leaves out\n"
+            "# comes from the account that supplies app-wide settings on each device.\n"
+            "# Work Mode, Local Premium and the other app-wide settings written here take\n"
+            "# effect only on devices where this account supplies the app-wide settings.\n"
+            "# See config.md, \"Settings per account\".\nversion = 2\n"_q;
+}
+
 struct Layer {
     Purple::Settings settings;
     QJsonObject description;
@@ -298,12 +307,7 @@ Java_org_telegram_messenger_purple_PurpleAccountRowWrite_planNative(
     if (!own) {
         if (action == -1) return Json(env, {{"ok", true}, {"changed", false}});
         if (purpose == 2) return Json(env, {{"ok", false}});
-        text = u"# Purple Telegram settings for one account.\n"
-            "# This file holds only what differs for this account. Anything it leaves out\n"
-            "# comes from the account that supplies app-wide settings on each device.\n"
-            "# Work Mode, Local Premium and the other app-wide settings written here take\n"
-            "# effect only on devices where this account supplies the app-wide settings.\n"
-            "# See config.md, \"Settings per account\".\nversion = 2\n"_q;
+        text = AccountEditorTemplate();
     }
     const auto result = action == -1 ? removed
         : Purple::SetTableBool(text, name, table, key, action != 0);
@@ -491,4 +495,101 @@ Java_org_telegram_messenger_purple_PurpleAppWideRemovalModel_createNative(
         + QString::number(qulonglong(status.st_ino));
     return Json(env, {{"ok", true}, {"path", QFile::decodeName(pattern)},
         {"identity", identity}, {"mode", int(status.st_mode)}});
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleAccountEditorModel_templateNative(
+        JNIEnv *env, jclass) {
+    const auto text = AccountEditorTemplate();
+    return env->NewString(reinterpret_cast<const jchar*>(text.utf16()), text.size());
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleAccountEditorModel_previewNative(
+        JNIEnv *env, jclass, jbyteArray opened, jbyteArray draft, jstring path, jboolean global) {
+    if (!draft || env->GetArrayLength(draft) > 4 * 1024 * 1024) return Json(env, {{"ok", false}});
+    const auto size = env->GetArrayLength(draft);
+    auto raw = QByteArray(size, Qt::Uninitialized);
+    env->GetByteArrayRegion(draft, 0, size, reinterpret_cast<jbyte*>(raw.data()));
+    const auto text = QString::fromUtf8(raw);
+    if (text.toUtf8() != raw) return Json(env, {{"ok", false}});
+    const auto name = Text(env, path);
+    const auto parsed = Purple::ParseSettings(text, name);
+    if (!parsed.ok() || parsed.settings.version > Purple::kHighestSettingsVersion
+        || (!opened && parsed.settings.version != 2)) return Json(env, {{"ok", false}});
+    if (opened) {
+        const auto beforeSize = env->GetArrayLength(opened);
+        if (beforeSize > 4 * 1024 * 1024) return Json(env, {{"ok", false}});
+        auto beforeRaw = QByteArray(beforeSize, Qt::Uninitialized);
+        env->GetByteArrayRegion(opened, 0, beforeSize, reinterpret_cast<jbyte*>(beforeRaw.data()));
+        const auto beforeText = QString::fromUtf8(beforeRaw);
+        if (beforeText.toUtf8() != beforeRaw) return Json(env, {{"ok", false}});
+        const auto before = Purple::ParseSettings(beforeText, name);
+        if (before.ok() && before.settings.version > Purple::kHighestSettingsVersion) return Json(env, {{"ok", false}});
+    }
+    auto warnings = QJsonArray();
+    for (const auto &warning : parsed.warnings) warnings.push_back(warning);
+    auto inactive = QJsonArray();
+    if (!global) {
+        const auto summary = Purple::SummarizeConfigChange(raw, QByteArray("version=2\n"));
+        if (!summary.parsed) return Json(env, {{"ok", false}});
+        for (const auto &entry : summary.entries) {
+            auto keys = QJsonArray();
+            for (const auto &key : entry.keys) {
+                if (key.scope == Purple::SettingScope::AppWide) keys.push_back(key.table + u"."_q + key.key);
+            }
+            if (!keys.empty()) inactive.push_back(QJsonObject{{"label", entry.label}, {"keys", keys}});
+        }
+    }
+    return Json(env, {{"ok", true}, {"version", parsed.settings.version}, {"warnings", warnings}, {"inactive", inactive}});
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleEditorDirectories_createNative(
+        JNIEnv *env, jclass, jstring parentText, jstring nameText, jstring expectedText) {
+    const auto parent = Text(env, parentText);
+    const auto name = Text(env, nameText);
+    const auto expected = Text(env, expectedText);
+    if (parent.isEmpty() || parent.contains(QChar(0)) || name.isEmpty()
+        || name == u"."_q || name == u".."_q || name.contains(u'/')
+        || name.contains(u'\\') || name.contains(QChar(0))) {
+        return Json(env, {{"created", false}, {"owned", false}});
+    }
+    const auto parentName = QFile::encodeName(parent);
+    const auto childName = QFile::encodeName(name);
+    const auto parentFd = ::open(parentName.constData(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    if (parentFd < 0) return Json(env, {{"created", false}, {"owned", false}});
+    const auto identity = [](const struct stat &value) {
+        return QString::number(qulonglong(value.st_dev)) + u":"_q + QString::number(qulonglong(value.st_ino));
+    };
+    struct stat parentBefore {}, previous {};
+    const auto validParent = ::fstat(parentFd, &parentBefore) == 0
+        && S_ISDIR(parentBefore.st_mode) && identity(parentBefore) == expected;
+    const auto absent = validParent && ::fstatat(parentFd, childName.constData(), &previous, AT_SYMLINK_NOFOLLOW) < 0
+        && errno == ENOENT;
+    if (!absent || ::mkdirat(parentFd, childName.constData(), 0700) != 0) {
+        ::close(parentFd);
+        return Json(env, {{"created", false}, {"owned", false}});
+    }
+    const auto childFd = ::openat(parentFd, childName.constData(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    if (childFd < 0) {
+        ::close(parentFd);
+        return Json(env, {{"created", true}, {"owned", false}});
+    }
+    struct stat child {}, entry {}, parentAfter {}, visibleParent {};
+    const auto measured = ::fstat(childFd, &child) == 0;
+    const auto visibleFd = ::open(parentName.constData(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    const auto owned = measured && S_ISDIR(child.st_mode) && child.st_uid == ::getuid()
+        && (child.st_mode & 0777) == 0700
+        && ::fstatat(parentFd, childName.constData(), &entry, AT_SYMLINK_NOFOLLOW) == 0
+        && S_ISDIR(entry.st_mode) && identity(entry) == identity(child) && entry.st_mode == child.st_mode
+        && ::fstat(parentFd, &parentAfter) == 0 && identity(parentAfter) == expected
+        && parentAfter.st_mode == parentBefore.st_mode && visibleFd >= 0
+        && ::fstat(visibleFd, &visibleParent) == 0 && identity(visibleParent) == expected
+        && visibleParent.st_mode == parentBefore.st_mode;
+    if (visibleFd >= 0) ::close(visibleFd);
+    ::close(childFd);
+    ::close(parentFd);
+    return Json(env, {{"created", true}, {"owned", owned}, {"parentIdentity", expected},
+        {"identity", measured ? identity(child) : QString()}, {"mode", measured ? int(child.st_mode) : 0}});
 }

@@ -1900,3 +1900,8 @@ confirmation and exact backup before changing a non-global account file to layer
 settings. It reuses the shared removal registry and guarded writer. See
 [the account settings notes](docs/account-settings-m2.md#explicit-removal-from-a-non-global-account-file)
 for publication ordering, partial outcomes and qualified host coverage.
+
+
+The account-targeted editor candidate and its guarded first-save directory
+creation are described in [account settings](docs/account-settings-m2.md). Its
+compiler, JNI/filesystem and UI qualification is still pending.

@@ -584,7 +584,7 @@
     <string name="PurpleAccountOwnerRecovered">The managed root owner record restored local.toml. Root file ownership has not changed.</string>
     <string name="PurpleAccountLocalWarning">local.toml could not supply a valid global choice. Using the root owner for app-wide settings.</string>
     <string name="PurpleAccountRoles">Last Seen and notification preview use this screen’s account. Work Mode and Peek use the app-wide account. Device state stays on this device.</string>
-    <string name="PurpleAccountWriteHeld">Full-file editing, settings sync and History are not available for this account yet. Supported account switches stay available when their original account and settings files are current. Choose a root owner if one is missing.</string>
+    <string name="PurpleAccountWriteHeld">Settings sync, History and other full-file workflows are not available for this account yet. The guarded editor and supported account switches stay available when their original account and settings files are current. Choose a root owner if one is missing.</string>
     <string name="PurpleAccountUnnamed">Signed-in account</string>
     <string name="PurpleAccountTestServers">(test servers)</string>
     <string name="PurpleAccountGlobalFileError">The app-wide file is unreadable or invalid. Its own good copy is used when available.</string>
@@ -625,4 +625,22 @@
     <string name="PurpleAppWideRemoveUnavailable">The account, settings or confirmation changed, or the files could not be written safely. No main-file replacement was confirmed.</string>
     <string name="PurpleAppWideRemoveBackupOnly">The main file was not replaced. Its exact backup was saved, but the settings context then changed or publication could not complete.</string>
     <string name="PurpleAppWideRemoveSavedContext">Settings were saved with their exact backup, but the account or screen context changed afterward. Nothing was rolled back.</string>
+    <string name="PurpleEditorAccountTitle">%1$s settings</string>
+    <string name="PurpleEditorAppWideTitle">App-wide settings (%1$s)</string>
+    <string name="PurpleEditorChooseTarget">Edit settings file</string>
+    <string name="PurpleEditorInactiveBanner">%1$s supplies app-wide settings on this phone. Work Mode and the other app-wide settings in this file apply only on devices where %2$s supplies them.</string>
+    <string name="PurpleEditorInactiveNotes">Notes: app-wide keys not used on this device</string>
+    <string name="PurpleEditorContextChanged">The account, settings role or file changed. Close and reopen the editor before saving. Your text stays here.</string>
+    <string name="PurpleEditorValidationHeld">This exact text cannot be saved, or the file context changed. Check the draft, source version and file access, or close and reopen the editor.</string>
+    <string name="PurpleEditorDirtySwitchTitle">Save changes before switching files?</string>
+    <string name="PurpleEditorDirtySwitch">Save writes this file first. Discard opens the other file without these edits. Cancel keeps this text here.</string>
+    <string name="PurpleEditorSavePreview">Save this settings file?</string>
+    <string name="PurpleEditorSavedContextChanged">The settings file was written, but its context changed afterwards. Activation is unconfirmed. No automatic send was queued. Close and reopen the editor.</string>
+    <string name="PurpleEditorDestinationHeld">Saving a new account file is not available until its directory exists. Opening this editor creates nothing.</string>
+    <string name="PurpleEditorLocalSaveOnly">Changes are saved locally. Automatic sending from this editor is not available yet.</string>
+    <string name="PurpleEditorPreviewWarnings">Parser warnings</string>
+    <string name="PurpleEditorSaveStopped">Could not save this file. Your text remains in the editor.</string>
+    <string name="PurpleEditorBackupOnly">Saving stopped after updating the backup. Your text remains in the editor. Check the file context before reopening.</string>
+    <string name="PurpleEditorCreatesDirectory">Saving will create this account’s settings directory and version-2 file. Opening the editor does not create them.</string>
+    <string name="PurpleEditorDirectoryPartial">Saving stopped while preparing the account directory. The directory may now exist; your text remains in the editor. No automatic send was queued.</string>
 </resources>
