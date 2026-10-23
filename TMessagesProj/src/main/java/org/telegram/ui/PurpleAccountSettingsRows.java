@@ -25,7 +25,7 @@ public final class PurpleAccountSettingsRows {
         items.add(UItem.asButton(OWNER, text(R.string.PurpleAccountOwner),
                 PurpleAccountOwner.ready() ? ownerLabel()
                         : text(R.string.PurpleAccountOwnerChoose)));
-        items.add(UItem.asButton(GLOBAL, text(R.string.PurpleAccountGlobal), globalLabel()));
+        if (PurpleAccountOwner.ready() && globalChoiceVisible()) items.add(UItem.asButton(GLOBAL, text(R.string.PurpleAccountGlobal), globalLabel()));
         if (PurpleAccountOwner.recovered()) items.add(UItem.asShadow(text(R.string.PurpleAccountOwnerRecovered)));
         if (PurpleAccountOwner.localWarning()) items.add(UItem.asShadow(text(R.string.PurpleAccountLocalWarning)));
         items.add(UItem.asShadow(text(R.string.PurpleAccountRoles)));
@@ -102,10 +102,23 @@ public final class PurpleAccountSettingsRows {
         for (PurpleAccountFiles.Identity id : PurpleAccountOwner.signedIn()) {
             if (key.equals(id.key)) return label(id);
         }
-        return text(R.string.PurpleAccountGlobalSignedOut);
+        return LocaleController.formatString(R.string.PurpleGlobalChoiceSignedOut, key
+                + (key.startsWith("1-") ? " " + text(R.string.PurpleAccountTestServers) : ""));
+    }
+
+    private static boolean globalChoiceVisible() {
+        List<PurpleAccountFiles.Identity> accounts = PurpleAccountOwner.signedIn();
+        boolean signedIn = false;
+        for (PurpleAccountFiles.Identity id : accounts) if (id.key.equals(PurpleAccountOwner.global())) signedIn = true;
+        return accounts.size() >= 2 || !signedIn;
     }
 
     public static boolean click(BaseFragment fragment, int row) {
+        return click(fragment, row, () -> false);
+    }
+
+    public static boolean click(BaseFragment fragment, int row, PurpleAccountRowWrite.Current current) {
+        if (row == GLOBAL) { PurpleGlobalAccountChoiceUI.open(fragment, current); return true; }
         if (row != OWNER && row != GLOBAL) return false;
         if (fragment.getParentActivity() == null) return true;
         if (row == OWNER && PurpleAccountOwner.ready()) return true;
@@ -142,20 +155,11 @@ public final class PurpleAccountSettingsRows {
         dialog.setItems(labels, (whichDialog, index) -> {
             PurpleAccountFiles.Identity id = choices.get(index);
             if (!id.current() || fragment.getParentActivity() == null) { refused(fragment, text(R.string.PurpleAccountWriteHeld)); return; }
-            PurpleAccountOwner.GlobalChoice globalChoice = row == GLOBAL
-                    ? PurpleAccountOwner.prepareGlobal(id, PurpleAccountFiles.capture(fragment.getCurrentAccount())) : null;
-            if (row == GLOBAL && globalChoice == null) { refused(fragment, text(R.string.PurpleAccountWriteHeld)); return; }
             AlertDialog.Builder confirmation = new AlertDialog.Builder(fragment.getParentActivity());
             confirmation.setTitle(label(id));
-            confirmation.setMessage(text(row == OWNER ? R.string.PurpleAccountOwnerQuestion : R.string.PurpleAccountGlobalQuestion)
-                    + (globalChoice == null ? "" : "\n\n" + text(globalChoice.normal
-                            ? R.string.PurpleAccountGlobalNormal : R.string.PurpleAccountGlobalKeepsMode))
-                    + (globalChoice != null && globalChoice.missing ? "\n" + text(R.string.PurpleAccountGlobalMissing) : "")
-                    + (globalChoice != null && globalChoice.empty ? "\n" + text(R.string.PurpleAccountGlobalEmpty) : "")
-                    + (globalChoice != null && globalChoice.usingGood ? "\n" + text(R.string.PurpleSettingsFileLastGood) : ""));
+            confirmation.setMessage(text(R.string.PurpleAccountOwnerQuestion));
             confirmation.setPositiveButton(text(R.string.OK), (confirmed, button) -> {
-                boolean changed = id.current() && (row == OWNER
-                        ? PurpleAccountOwner.chooseOwner(id.key) : PurpleAccountOwner.chooseGlobal(globalChoice));
+                boolean changed = id.current() && PurpleAccountOwner.chooseOwner(id.key);
                 if (changed) {
                     org.telegram.messenger.purple.PurpleAccountSettings.invalidate();
                     org.telegram.messenger.purple.PurpleWatcher.rebind();

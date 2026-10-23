@@ -1888,3 +1888,8 @@ Account-specific Last Seen reasons and Peek trade rows, file-local Send after sa
 and long-press Reset for pinned non-global values are described in
 [the account settings notes](docs/account-settings-m2.md#account-rows-and-reset).
 The general editor, History and layered-file transfer gates remain conservative.
+
+
+The Android app-wide account chooser now has actual source preview, confirmation
+and guarded local-choice publication with commit-before-activation ordering.
+See `docs/account-settings-m2.md` for current scope and qualification boundaries.

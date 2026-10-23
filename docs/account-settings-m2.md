@@ -236,3 +236,50 @@ The row-save route uses the shared coordinator's admission boundary. On the main
 Actual row click and Reset callbacks run on the main looper. Legacy arming and watcher refresh also run there, and the application Handler is constructed from that looper. Inline admission therefore runs under the existing owner/files/settings locks on the same thread as watcher refresh; it introduces no concurrent coordinator-to-owner lock inversion. Epoch, role/lifetime/view, exact-file and final send-policy guards remain intact.
 
 The focused admission entry invokes the actual production admission method with a virtual scheduler that leaves an overdue watcher queued while the writer is busy. The queued-policy control loses its otherwise valid decision; inline admission survives the same refresh and preserves the complete five-second delay. Changed context and extra invalidations still retire it, and no-send admission cancels old work. The original39-assertion method is byte-identical and carried without replay. Actual Android Handler/FileObserver dispatch remains a platform gap.
+
+
+## Android app-wide account chooser
+
+The chooser uses the fragment account and captured signed-in production/test roster. Its row appears with multiple signed-in accounts or a signed-out current source. The signed-out source is labeled explicitly and can be retained as a no-op; it never invents another offline destination. Picker and confirmation retain weak UI references and the original fragment/account lifetime, manager identities, roster and UI/routing generations.
+
+Preview reads the actual current and selected account files, using only that same account's valid recovery copy when the primary is unavailable. Missing primary and recovery inputs preview defaults without creating directories or files. The summary reports actual list/preset counts, schedule configuration, Local Premium, fallback/default/no-app-wide status, paths and the actual missing running preset. Unsupported settings and unreadable/unsafe inputs refuse preview.
+
+The native local-choice splice changes only the global-account scalar and an existing managed path comment. It uses the shared account/path/local-choice/settings parsers, preserves owner, own/follow overrides, unknown Unicode and comments, and verifies strict UTF-8. The production Java model captures readable bytes and physical file/directory identities, rechecks around the final guarded publication, and only cleans its own unpublished temporary inode. It moves no settings/store/History/fingerprint data and sends nothing.
+
+Commit and activation are separate. A detected failed or stale saved commit cannot invoke Normal or Gate activation. A successful missing-preset choice reaches Normal through the real old Gate before loading the selected settings. The model rechecks after Normal, activation and synchronous notification. Saved-but-not-safely-activated results are explicit and never roll back over a foreign writer. State persistence and local choice are not one crash-atomic transaction; the final check-to-rename interval is finite.
+
+The assigned external qualification packet records compiler and genuine model/writer/native causal results. Host callbacks do not instantiate Android Gate/Handler/Os/UI/UserConfig, so physical/native/application/R8/release coverage remains separate. General editors, destructive app-wide removal, list forks and version2 transport stay held.
+
+The chooser activation carries the exact validated primary/recovery/default selection into Gate, including recovery flags and the observed-primary watcher fingerprint. A future-version primary with a supported same-account recovery copy cannot silently replace the previewed values during this activation.
+
+Temporary publication uses the production native no-follow, non-truncating open. The actual descriptor must identify the owned regular single-link inode before descriptor chmod/truncate/write/fsync. Pre-open foreign regular and symlink replacements are refused without mutating their bytes or mode. The final publication interval remains finite.
+
+Picker and confirmation use the production dialog-lifetime seam, exact live/showing dialog identity, AlertDialog pre-dismiss retirement and BaseFragment's delegated dismiss callback. Failed shows and dismissed/replaced dialogs revoke queued callbacks; intentional picker-to-confirmation handoff retires only the old picker. Host cases exercise this same lifetime policy, while actual Android UI dispatch remains unmeasured.
+
+Ordinary Gate reloads, including an already queued own local-choice watcher event, freshly apply the same supported primary/same-account recovery/default source policy. They snapshot strict source bytes, physical file/directory identities and the current owner/global/revision/role/settings/native/Gate context before native loading and Java publication. Relevant source/role changes refuse or refresh through a new read; stale recovery bytes are never cached across accounts. Invalid or unreadable source selection retains the previous running resolution rather than silently accepting a future-version primary. General shared parser compatibility and existing watcher/debounce invalidations remain unchanged. Host reload-policy qualification is separate from actual Android Handler/FileObserver/Gate execution.
+
+When fresh source selection refuses malformed/unsupported/unreadable inputs, state progress can still resolve against the last accepted supported bytes for the same owner/global/role/root/resolved file. Retained authority binds directory identity/mode and relevant primary/recovery inode/mode, and retires permanently on observed role or ownership change. Same-inode content edits do not block expiry or explicit Peek stop; they are never installed as settings. Fresh supported selection still wins. Defaults are not invented after a file creator/replacement, and recovery authority is not reused across roles/accounts. State-only resolution uses the same loader/publication seam as normal Gate loading; Android timer/UI dispatch remains separately unmeasured.
+
+### Retained state authority handoff
+
+An ordinary reload that cannot select supported settings derives a use token from
+the last accepted source. The token retains the original physical ownership and
+owner/global/role context through native resolution, final publication and future
+retention. It never captures replacement ownership for the old supported bytes.
+Only an accepted fresh supported selection can establish a new authority.
+Per-load revision, settings and Gate guards remain separate from that long-lived
+authority, so an ordinary watcher refresh can obtain a new load context.
+
+Focused causal cases cover primary and recovery replacement after derivation,
+role loss, replacement during and after real native resolution, short-context
+loss, fresh supported adoption, and malformed same-inode expiry and End success.
+Actual Android static Gate publication, timers, UI, FileObserver and Os dispatch
+remain unmeasured; host cases use the production token and original native loader.
+Finite check-to-use gaps and cross-file crash atomicity remain unchanged.
+
+Production Java qualification and the focused source closures passed. Genuine
+checks exercised the production chooser/writer policy, supported-source reloads,
+original JNI Peek state resolution and retained-authority handoff. The previous
+99, 27 and 21 checks were carried unchanged into the final 30-check handoff
+qualification. Actual Android timer/UI dispatch, application/R8, device and
+release acceptance remain separate.

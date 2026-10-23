@@ -4,11 +4,20 @@
 #include "purple/purple_settings.h"
 #include "purple/purple_state.h"
 #include "purple/purple_splice.h"
+#include "purple/purple_config_diff.h"
+
+#define TOML_EXCEPTIONS 0
+#include <toml.hpp>
 
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 #include <QtCore/QDateTime>
+
+#include <cerrno>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include <map>
 #include <mutex>
@@ -296,4 +305,141 @@ Java_org_telegram_messenger_purple_PurpleAccountRowWrite_planNative(
         : Purple::SetTableBool(text, name, table, key, action != 0);
     return Json(env, {{"ok", result.ok()}, {"changed", result.changed}, {"text", result.text},
         {"created", own == nullptr}, {"version", own ? parsed.settings.version : 2}});
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleGlobalChoiceModel_planNative(
+        JNIEnv *env, jclass, jbyteArray local, jbyteArray ownerRecord, jstring ownerText, jstring currentText, jstring selectedText) {
+    const auto owner = Purple::ParseAccountKey(Text(env, ownerText));
+    const auto current = Purple::ParseAccountKey(Text(env, currentText));
+    const auto selected = Purple::ParseAccountKey(Text(env, selectedText));
+    if (!owner || !current || !selected || !local) return Json(env, {{"ok", false}});
+    const auto record = Purple::ParseOwnerRecord(Bytes(env, ownerRecord), u"accounts/root.toml"_q);
+    if (!record.ok() || record.account != owner) return Json(env, {{"ok", false}});
+    auto raw = QByteArray(env->GetArrayLength(local), Qt::Uninitialized);
+    env->GetByteArrayRegion(local, 0, raw.size(), reinterpret_cast<jbyte*>(raw.data()));
+    const auto text = QString::fromUtf8(raw);
+    if (text.toUtf8() != raw) return Json(env, {{"ok", false}});
+    const auto previous = Purple::ParseLocalChoice(text, u"local.toml"_q);
+    if (!previous.ok() || previous.choice.rootFileAccount != owner
+        || Purple::GlobalAccountFor(previous.choice, *owner) != current) return Json(env, {{"ok", false}});
+    const auto oldPaths = Purple::ResolveAccountFiles(*current, owner, Purple::AccountFileLayout::Android);
+    const auto newPaths = Purple::ResolveAccountFiles(*selected, owner, Purple::AccountFileLayout::Android);
+    if (!oldPaths || !newPaths) return Json(env, {{"ok", false}});
+    const auto parsed = toml::parse(std::string_view(raw.constData(), raw.size()), std::string_view("local.toml"));
+    if (!parsed) return Json(env, {{"ok", false}});
+    const auto key = Purple::AccountKeyText(selected->environment, selected->userId).value();
+    const auto value = u"\"%1\""_q.arg(key);
+    const auto comment = u"# That account's file on this device: "_q + newPaths->settings;
+    auto next = text;
+    if (const auto node = parsed.table().get("global_account")) {
+        const auto begin = node->source().begin;
+        const auto end = node->source().end;
+        if (node->is_table() || node->is_array() || begin.line != end.line) return Json(env, {{"ok", false}});
+        auto lines = text.split('\n');
+        if (begin.line < 1 || begin.line > lines.size()) return Json(env, {{"ok", false}});
+        const auto points = lines[begin.line - 1].toUcs4();
+        const auto from = int(begin.column) - 1;
+        const auto till = int(end.column) - 1;
+        if (from < 0 || till < from || till > points.size()) return Json(env, {{"ok", false}});
+        lines[begin.line - 1] = QString::fromUcs4(points.constData(), from) + value
+            + QString::fromUcs4(points.constData() + till, points.size() - till);
+        if (begin.line < lines.size() && lines[begin.line].startsWith(u"# That account's file on this device: "_q)) {
+            lines[begin.line] = comment;
+        }
+        next = lines.join('\n');
+    } else {
+        next = u"global_account = %1\n%2\n"_q.arg(value, comment) + text;
+    }
+    const auto verified = Purple::ParseLocalChoice(next, u"local.toml"_q);
+    if (!verified.ok() || verified.choice.rootFileAccount != owner || verified.choice.globalAccount != selected
+        || verified.choice.accountWorkMode != previous.choice.accountWorkMode) return Json(env, {{"ok", false}});
+    return Json(env, {{"ok", true}, {"text", next}, {"currentPath", oldPaths->settings}, {"selectedPath", newPaths->settings}});
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleGlobalChoiceModel_describeNative(
+        JNIEnv *env, jclass, jbyteArray settings, jstring path, jbyteArray good, jbyteArray stateBytes) {
+    const auto name = Text(env, path);
+    auto parsed = Purple::ParseSettings(Bytes(env, settings), name);
+    const auto primary = settings && parsed.ok() && parsed.settings.version <= Purple::kHighestSettingsVersion;
+    auto usingGood = false;
+    if (!primary && good) {
+        const auto fallback = Purple::ParseSettings(Bytes(env, good), name + u".good"_q);
+        if (fallback.ok() && fallback.settings.version <= Purple::kHighestSettingsVersion) {
+            parsed = fallback;
+            usingGood = true;
+        }
+    }
+    const auto usable = primary || usingGood;
+    const auto defaults = !settings && !good;
+    if (!usable && !defaults) return Json(env, {{"ok", false}, {"needsGood", !primary}});
+    const auto selectedBytes = usingGood ? good : settings;
+    const auto summary = Purple::SummarizeConfigChange(QByteArray("version=2\n"), Bytes(env, selectedBytes).toUtf8());
+    auto noAppWide = true;
+    for (const auto &entry : summary.entries) {
+        for (const auto &key : entry.keys) if (key.scope == Purple::SettingScope::AppWide) noAppWide = false;
+    }
+    auto state = Purple::ParseState(Bytes(env, stateBytes), u"state.toml"_q);
+    const auto runningPreset = state.activePreset;
+    const auto wasNormal = state.activePreset.isEmpty()
+        || !state.activePreset.compare(Purple::NormalPreset(), Qt::CaseInsensitive);
+    const auto normal = !wasNormal && !parsed.settings.preset(state.activePreset);
+    if (normal) {
+        state.activePreset = Purple::NormalPreset();
+        state.activeSource = Purple::PresetSource::Manual;
+        state.peekActive = false;
+        state.peekDeadlineUnix = 0;
+    }
+    const auto &value = parsed.settings;
+    return Json(env, {{"ok", true}, {"needsGood", !primary}, {"good", usingGood}, {"defaults", defaults},
+        {"noAppWide", noAppWide}, {"lists", int(value.lists.size())}, {"presets", int(value.presets.size())},
+        {"schedule", value.schedule.enabled && (!value.schedule.rules.empty() || !value.schedule.rulesets.empty())},
+        {"premium", value.premium.enabled}, {"normal", normal}, {"preset", state.activePreset},
+        {"state", Purple::SerializeState(state)}, {"runningPreset", runningPreset}, {"missing", !settings}});
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_org_telegram_messenger_purple_PurpleGlobalChoiceModel_stateMatchesNative(
+        JNIEnv *env, jclass, jbyteArray bytes, jstring preset) {
+    const auto state = Purple::ParseState(Bytes(env, bytes), u"state.toml"_q);
+    return !state.activePreset.compare(Text(env, preset), Qt::CaseInsensitive);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_org_telegram_messenger_purple_PurpleGlobalChoiceFiles_writeNative(
+        JNIEnv *env, jclass, jstring path, jstring ownedIdentity, jbyteArray input) {
+    if (!path || !ownedIdentity || !input) return false;
+    const auto length = env->GetArrayLength(input);
+    if (length < 0 || length > 4 * 1024 * 1024) return false;
+    auto bytes = QByteArray(length, Qt::Uninitialized);
+    env->GetByteArrayRegion(input, 0, length, reinterpret_cast<jbyte*>(bytes.data()));
+    if (env->ExceptionCheck()) return false;
+    const auto name = Text(env, path).toUtf8();
+    const auto expected = Text(env, ownedIdentity);
+    const auto descriptor = ::open(name.constData(), O_WRONLY | O_CLOEXEC | O_NOFOLLOW);
+    if (descriptor < 0) return false;
+    struct stat actual;
+    if (::fstat(descriptor, &actual) != 0 || !S_ISREG(actual.st_mode) || actual.st_nlink != 1
+        || QString::number(qulonglong(actual.st_dev)) + u":"_q + QString::number(qulonglong(actual.st_ino)) != expected) {
+        ::close(descriptor);
+        return false;
+    }
+    if (::fchmod(descriptor, 0600) != 0 || ::ftruncate(descriptor, 0) != 0) {
+        ::close(descriptor);
+        return false;
+    }
+    auto offset = qsizetype(0);
+    while (offset < bytes.size()) {
+        const auto written = ::write(descriptor, bytes.constData() + offset, bytes.size() - offset);
+        if (written < 0 && errno == EINTR) continue;
+        if (written <= 0) {
+            ::close(descriptor);
+            return false;
+        }
+        offset += written;
+    }
+    const auto synced = (::fsync(descriptor) == 0);
+    const auto closed = (::close(descriptor) == 0);
+    return synced && closed;
 }

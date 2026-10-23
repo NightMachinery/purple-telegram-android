@@ -604,4 +604,16 @@
     <string name="PurpleRowOtherAccountsOwn">%1$s sets its own</string>
     <string name="PurpleRowAppWide">For every account on this device, in %1$s settings</string>
     <string name="PurpleRowAppWideSignedOut">For every account on this device. Uses the app-wide account’s file, which does not sync while that account is signed out.</string>
+    <string name="PurpleGlobalChoiceSignedOut">%1$s (not signed in)</string>
+    <string name="PurpleGlobalChoiceConfirm">Use these app-wide settings</string>
+    <string name="PurpleGlobalChoicePreview">App-wide settings from %1$s\n\nLists: %2$s → %3$s\nPresets: %4$s → %5$s\nSchedule: %6$s → %7$s\nLocal Premium: %8$s → %9$s</string>
+    <string name="PurpleGlobalChoicePaths">Current file: %1$s\nSelected file: %2$s</string>
+    <string name="PurpleGlobalChoiceNoAppWide">The selected file has no app-wide settings of its own. Account overrides and own/follow choices stay in place.</string>
+    <string name="PurpleGlobalChoiceDefaults">The selected settings file and its recovery copy are absent. Built-in defaults will apply; no account file will be created.</string>
+    <string name="PurpleGlobalChoicePreviousGood">The current source is using its recovery copy.</string>
+    <string name="PurpleGlobalChoiceNormal">The running preset “%1$s” is missing from the selected source. Work Mode will enter Normal before these settings are activated.</string>
+    <string name="PurpleGlobalChoiceSavedIncomplete">The app-wide choice was saved, but activation did not finish safely. Preview it again. The saved choice has not been rolled back.</string>
+    <string name="PurpleGlobalChoiceUnavailable">The account, window or settings changed. Preview the app-wide choice again.</string>
+    <string name="PurpleGlobalChoiceOn">on</string>
+    <string name="PurpleGlobalChoiceOff">off</string>
 </resources>

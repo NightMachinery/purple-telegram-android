@@ -70,6 +70,7 @@ public final class PurpleGate {
 
     /** The last resolution we could compute, or null before the first load. */
     private static volatile PurpleCore.Loaded loaded;
+    private static PurpleGlobalChoiceProgress acceptedSupportedSource;
 
     private static volatile boolean everLoaded;
 
@@ -433,14 +434,65 @@ public final class PurpleGate {
         reload(reason, readSettings());
     }
 
-    private static void reload(String reason, byte[] settings) {
+    static void reloadGlobalChoice(String reason, PurpleGlobalChoiceModel.ActivationSource source) {
+        reload(reason, source.settings, source);
+    }
+
+    private static void reload(String reason, byte[] settings) { reload(reason, settings, null); }
+
+    private static void reload(String reason, byte[] settings, PurpleGlobalChoiceModel.ActivationSource choice) {
         final File peekFile = PurpleAccountSettings.globalFile();
         final String peekGlobal = PurpleAccountOwner.global();
         final PurpleAccountFileSnapshot peekPrimary = PurpleAccountFileSnapshot.read(peekFile);
         final PurpleAccountFileSnapshot peekGood = PurpleAccountFileSnapshot.read(new File(peekFile.getPath() + ".good"));
         final byte[] state = PurpleState.read();
-
-        PurpleCore.Loaded next = load(settings, state);
+        PurpleGlobalChoiceReload reloadPolicy = null;
+        PurpleGlobalChoiceProgress.Use retainedUse = null;
+        PurpleGlobalChoiceProgress.Current loadContext = () -> true;
+        if (choice == null) {
+            try {
+                final File policyRoot = PurpleAccountFiles.root();
+                final String policyOwner = PurpleAccountOwner.owner();
+                final String policyGlobal = PurpleAccountOwner.global();
+                final long policyRevision = PurpleAccountOwner.revision();
+                final long policyRole = PurpleAccountOwner.roleEpoch();
+                final long policyGeneration = PurpleAccountSettings.generation();
+                final long policyEpoch = PurpleAccountSettings.epochNative();
+                final int policyGate = generation;
+                final boolean policyReady = PurpleAccountOwner.ready();
+                loadContext = () -> java.util.Objects.equals(policyOwner, PurpleAccountOwner.owner())
+                                && java.util.Objects.equals(policyGlobal, PurpleAccountOwner.global())
+                                && policyRevision == PurpleAccountOwner.revision() && policyRole == PurpleAccountOwner.roleEpoch()
+                                && policyGeneration == PurpleAccountSettings.generation() && policyEpoch == PurpleAccountSettings.epochNative()
+                                && policyGate == generation && policyReady == PurpleAccountOwner.ready()
+                                && policyRoot.equals(PurpleAccountFiles.root()) && peekFile.equals(PurpleAccountSettings.globalFile());
+                reloadPolicy = PurpleGlobalChoiceReload.read(policyRoot, peekFile, PurpleGlobalAccountChoice.PHYSICAL, loadContext::current);
+                if (reloadPolicy == null || !java.util.Arrays.equals(settings, reloadPolicy.source.primary) || !reloadPolicy.current()) {
+                    retainedUse = acceptedSupportedSource == null ? null : acceptedSupportedSource.forStateUse(settings, loadContext);
+                    if (retainedUse == null) { acceptedSupportedSource = null; return; }
+                    choice = retainedUse.source;
+                    reloadPolicy = null;
+                } else {
+                    choice = reloadPolicy.source;
+                }
+                settings = choice.settings;
+            } catch (RuntimeException | UnsatisfiedLinkError e) {
+                FileLog.e(e);
+                return;
+            }
+        }
+        final File acceptedRoot = PurpleAccountFiles.root();
+        final String acceptedOwner = PurpleAccountOwner.owner(), acceptedGlobal = PurpleAccountOwner.global();
+        final long acceptedRole = PurpleAccountOwner.roleEpoch();
+        final boolean acceptedReady = PurpleAccountOwner.ready();
+        PurpleGlobalChoiceProgress candidate = retainedUse != null ? retainedUse.authority() : PurpleGlobalChoiceProgress.accepted(acceptedRoot, peekFile, choice,
+                PurpleGlobalAccountChoice.PHYSICAL, () -> java.util.Objects.equals(acceptedOwner,PurpleAccountOwner.owner())
+                        && java.util.Objects.equals(acceptedGlobal,PurpleAccountOwner.global()) && acceptedRole == PurpleAccountOwner.roleEpoch()
+                        && acceptedReady == PurpleAccountOwner.ready() && acceptedRoot.equals(PurpleAccountFiles.root())
+                        && peekFile.equals(PurpleAccountSettings.globalFile()));
+        if (candidate == null || !candidate.current() || !loadContext.current() || retainedUse != null && !retainedUse.current() || reloadPolicy != null && !reloadPolicy.current()) return;
+        PurpleCore.Loaded next = retainedUse != null ? retainedUse.resolve(state, PurpleGate::load) : PurpleGlobalChoiceProgress.resolve(choice, state, PurpleGate::load);
+        if (!candidate.current() || !loadContext.current() || retainedUse != null && !retainedUse.current() || reloadPolicy != null && !reloadPolicy.current()) return;
         if (next == null) {
             return;
         }
@@ -471,8 +523,8 @@ public final class PurpleGate {
         // names those lists. Without that copy the cached order would name
         // lists nothing can look up, and every chat would be hidden and
         // silenced.
-        boolean shadowed = false;
-        if (settings == null || !next.ok) {
+        boolean shadowed = choice != null && choice.good;
+        if (choice == null && (settings == null || !next.ok)) {
             if (peekGood.status == PurpleAccountFileSnapshot.Status.ReadError) {
                 FileLog.e("Purple: global last-good settings input is unreadable");
             }
@@ -488,19 +540,21 @@ public final class PurpleGate {
                 }
             }
         }
+        if (!candidate.current() || !loadContext.current() || retainedUse != null && !retainedUse.current() || reloadPolicy != null && !reloadPolicy.current()) return;
         usedLastGood = shadowed;
 
         PurpleAccountSettings.invalidate();
         final PurpleCore.Loaded previous = loaded;
         loaded = next;
+        acceptedSupportedSource = candidate;
         peekLoadedFile = peekFile;
         peekLoadedGlobal = peekGlobal;
-        peekLoadedPrimary = java.util.Arrays.equals(settings, peekPrimary.bytes) ? peekPrimary : null;
+        peekLoadedPrimary = java.util.Arrays.equals(choice == null ? settings : choice.primary, peekPrimary.bytes) ? peekPrimary : null;
         peekLoadedGood = peekGood;
         // What the watcher compares the file against. Set from the bytes this
         // reload actually read, so the app's own write comes straight back as
         // "already running" rather than as a change to react to.
-        settingsFingerprint = fingerprintOf(settings);
+        settingsFingerprint = fingerprintOf(choice == null ? settings : choice.primary);
         synchronized (cacheLock) {
             modeCache.clear();
             storyCache.clear();

@@ -135,11 +135,16 @@ public class PurpleSettingsActivity extends UniversalFragment
     }
 
     private PurpleAccountRowWrite.Current rowCurrent() {
-        Activity activity = getParentActivity();
+        java.lang.ref.WeakReference<PurpleSettingsActivity> fragment = new java.lang.ref.WeakReference<>(this);
+        java.lang.ref.WeakReference<Activity> activity = new java.lang.ref.WeakReference<>(getParentActivity());
         int account = currentAccount;
         long lifetime = rowLifetime;
-        return () -> activity != null && getParentActivity() == activity
-                && !isFinished && !isPaused && currentAccount == account && rowLifetime == lifetime;
+        return () -> {
+            PurpleSettingsActivity view = fragment.get();
+            Activity owner = activity.get();
+            return view != null && owner != null && view.getParentActivity() == owner
+                    && !view.isFinished && !view.isPaused && view.currentAccount == account && view.rowLifetime == lifetime;
+        };
     }
 
     private void scope(ArrayList<UItem> items, PurpleAccountRowWrite.Intent intent) {
@@ -431,7 +436,7 @@ public class PurpleSettingsActivity extends UniversalFragment
 
     @Override
     protected void onClick(UItem item, View view, int position, float x, float y) {
-        if (PurpleAccountSettingsRows.click(this, item.id)) return;
+        if (PurpleAccountSettingsRows.click(this, item.id, rowCurrent())) return;
         if (item.id == ROW_LAST_SEEN_REASONS || item.id == ROW_LAST_SEEN_TRADE || item.id == ROW_AUTOSEND) {
             PurpleAccountRowWrite.Intent intent = item.id == ROW_LAST_SEEN_REASONS ? reasonsIntent
                     : item.id == ROW_LAST_SEEN_TRADE ? tradeIntent : sendIntent;
