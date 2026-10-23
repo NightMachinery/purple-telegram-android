@@ -161,8 +161,27 @@ public class PurpleScreenTimeActivity extends UniversalFragment
         this(0);
     }
 
+    public PurpleScreenTimeActivity(long chatId, int account) {
+        this(chatId);
+        setCurrentAccount(account);
+    }
+
     public PurpleScreenTimeActivity(long chatId) {
         this.chatId = chatId;
+    }
+
+    private PurpleWriter.Session rowWriter;
+
+    @Override
+    public void onPause() {
+        PurpleWriterUI.retire(this);
+        super.onPause();
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        if (listView != null) listView.adapter.update(true);
     }
 
     @Override
@@ -173,6 +192,7 @@ public class PurpleScreenTimeActivity extends UniversalFragment
 
     @Override
     public void onFragmentDestroy() {
+        PurpleWriterUI.retire(this);
         getNotificationCenter().removeObserver(this, NotificationCenter.dialogFiltersUpdated);
         super.onFragmentDestroy();
     }
@@ -322,6 +342,7 @@ public class PurpleScreenTimeActivity extends UniversalFragment
 
     @Override
     protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
+        rowWriter = PurpleWriterUI.capture(this);
         final Context context = getContext();
         if (context == null) {
             return;
@@ -572,6 +593,7 @@ public class PurpleScreenTimeActivity extends UniversalFragment
      * about, and everything else in the block is what this dialog is for.
      */
     private void editBudget(PurpleCore.Budget existing) {
+        final PurpleWriter.Session writer = PurpleWriterUI.capture(this);
         final Context context = getParentActivity();
         if (context == null) {
             return;
@@ -651,19 +673,19 @@ public class PurpleScreenTimeActivity extends UniversalFragment
             final int snoozeSeconds = number(snooze, openedSnooze) * 60;
             final int perDaySnoozes = number(snoozes, openedSnoozes);
             afterWrite(existing == null
-                    ? PurpleWriter.appendBudget(target[0], perDay[0], mode[0],
+                    ? PurpleWriter.appendBudget(writer, target[0], perDay[0], mode[0],
                             snoozeSeconds, perDaySnoozes, "budget added")
-                    : PurpleWriter.setBudget(existing.sourceIndex, existing.target,
+                    : PurpleWriter.setBudget(writer, existing.sourceIndex, existing.target,
                             target[0], perDay[0], mode[0], snoozeSeconds, perDaySnoozes,
                             "budget edited"));
         });
         builder.setNegativeButton(getString(R.string.Cancel), null);
         if (existing != null) {
             builder.setNeutralButton(getString(R.string.Delete), (dialog, which) ->
-                    afterWrite(PurpleWriter.removeBudget(
+                    afterWrite(PurpleWriter.removeBudget(writer,
                             existing.sourceIndex, existing.target, "budget removed")));
         }
-        showDialog(builder.create());
+        PurpleWriterUI.show(this, builder.create(), writer);
     }
 
     /**
@@ -1048,8 +1070,9 @@ public class PurpleScreenTimeActivity extends UniversalFragment
 
     @Override
     protected void onClick(UItem item, View view, int position, float x, float y) {
+        final PurpleWriter.Session writer = rowWriter;
         if (item.id == ROW_ENABLED) {
-            final String error = PurpleWriter.setTableBool(
+            final String error = PurpleWriter.setTableBool(writer,
                     "screen_time", "enabled_p", !item.checked, "screen time switch");
             if (error != null && BulletinFactory.canShowBulletin(this)) {
                 BulletinFactory.of(this)
@@ -1060,6 +1083,7 @@ public class PurpleScreenTimeActivity extends UniversalFragment
             // didReceivedNotification and refreshes this screen. Nothing to do
             // here but wait for it, which is what keeps a refused write from
             // needing an undo.
+            refresh();
             return;
         }
         if (item.id == ROW_EXPORT) {
@@ -1081,7 +1105,7 @@ public class PurpleScreenTimeActivity extends UniversalFragment
             final List<PurpleCore.ChatSpan> chats = ranked(scope());
             final int at = item.id - ROW_CHAT_FIRST;
             if (at >= 0 && at < chats.size()) {
-                presentFragment(new PurpleScreenTimeActivity(chats.get(at).dialogId));
+                presentFragment(new PurpleScreenTimeActivity(chats.get(at).dialogId, currentAccount));
             }
         }
     }

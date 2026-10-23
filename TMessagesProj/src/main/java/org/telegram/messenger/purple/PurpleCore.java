@@ -1197,25 +1197,21 @@ public final class PurpleCore {
         }
         final List<ListEntry> result = new ArrayList<>();
         try {
-            final JSONArray array = new JSONArray(json);
-            for (int i = 0; i < array.length(); ++i) {
-                final JSONObject entry = array.optJSONObject(i);
-                if (entry == null) {
-                    continue;
-                }
-                final JSONArray ids = entry.optJSONArray("members");
-                final long[] members = new long[ids == null ? 0 : ids.length()];
-                for (int a = 0; a < members.length; ++a) {
-                    members[a] = ids.optLong(a, 0);
-                }
-                result.add(new ListEntry(
-                        entry.optString("name", ""),
-                        entry.optString("title", ""),
-                        entry.optBoolean("member", false),
-                        members));
-            }
-        } catch (JSONException e) {
-            FileLog.e(e);
+            return listEntries(new JSONArray(json));
+        } catch (JSONException e) { FileLog.e(e); }
+        return result;
+    }
+
+    static List<ListEntry> listEntries(JSONArray array) {
+        final List<ListEntry> result = new ArrayList<>();
+        for (int i = 0; i < array.length(); ++i) {
+            final JSONObject entry = array.optJSONObject(i);
+            if (entry == null) continue;
+            final JSONArray ids = entry.optJSONArray("members");
+            final long[] members = new long[ids == null ? 0 : ids.length()];
+            for (int a = 0; a < members.length; ++a) members[a] = ids.optLong(a, 0);
+            result.add(new ListEntry(entry.optString("name", ""), entry.optString("title", ""),
+                    entry.optBoolean("member", false), members));
         }
         return result;
     }

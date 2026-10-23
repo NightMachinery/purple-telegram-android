@@ -387,3 +387,10 @@ recovery case. App-wide activation remains with the existing guarded watcher.
 Editor writes queue no automatic Send, and version-2/non-root transport remains
 held. Compiler, genuine JNI/filesystem cases and native UI checks are prepared
 but unrun. This candidate does not replace the accepted application.
+
+Routed local editing
+
+Generic app-wide writes and chat-list ticks now use captured account-file routes.
+See [account-routed-writers.md](account-routed-writers.md) for publication, scope
+and retained transfer restrictions. The own/follow/stock chooser, fork/delete
+UX and undefined-list warnings remain a separate slice.

@@ -53,10 +53,6 @@ public final class PurpleListBox {
      * how you pull one chat out of a rule that would otherwise sweep it up
      * somewhere else.
      *
-     * Membership is global rather than per preset. A chat is in a list or it is
-     * not; what changes between presets is what that list <i>does</i>, and
-     * whether the preset names it at all.
-     *
      * A non-Normal resolution can keep filtering from saved list definitions
      * while the primary file has no live lists. The box still explains the
      * chat and offers temporary overrides and explicit New list creation;
@@ -75,7 +71,9 @@ public final class PurpleListBox {
         PurpleGate.ensureLoaded();
         final PurpleCore.Loaded state = PurpleGate.state();
         final boolean filtering = state != null && !state.normal;
-        final List<PurpleCore.ListEntry> lists = PurpleListMenu.listsFor(currentAccount, dialogId);
+        final PurpleWriter.Session writer = PurpleWriterUI.capture(fragment, false);
+        final List<PurpleCore.ListEntry> lists = writer == null ? java.util.Collections.emptyList()
+                : writer.lists(PurpleGate.bareIdOf(currentAccount, dialogId));
         if (lists.isEmpty() && !filtering) {
             final AlertDialog.Builder empty = new AlertDialog.Builder(activity, resourcesProvider);
             empty.setTitle(getString(R.string.PurpleLists));
@@ -114,7 +112,7 @@ public final class PurpleListBox {
         layout.addView(listRows);
 
         final Rows rows = new Rows(activity, resourcesProvider, listRows, verdictView,
-                builder, currentAccount, dialogId);
+                builder, fragment, currentAccount, dialogId, writer);
         rows.build(lists);
 
         // After the lists and before the "until" decisions, because that is
@@ -157,7 +155,7 @@ public final class PurpleListBox {
                 Theme.getColor(Theme.key_dialogTextGray2, resourcesProvider)));
 
         builder.setNegativeButton(getString(R.string.Close), null);
-        fragment.showDialog(builder.create());
+        PurpleWriterUI.show(fragment, builder.create(), writer);
     }
 
     /**
@@ -180,6 +178,8 @@ public final class PurpleListBox {
         private final TextView verdictView;
         private final AlertDialog.Builder builder;
         private final int currentAccount;
+        private final BaseFragment fragment;
+        private PurpleWriter.Session writer;
         private final long dialogId;
 
         private PurpleCore.ListEntry[] entries = new PurpleCore.ListEntry[0];
@@ -187,7 +187,8 @@ public final class PurpleListBox {
 
         Rows(Activity activity, Theme.ResourcesProvider resourcesProvider,
                 LinearLayout container, TextView verdictView, AlertDialog.Builder builder,
-                int currentAccount, long dialogId) {
+                BaseFragment fragment, int currentAccount, long dialogId, PurpleWriter.Session writer) {
+            this.fragment = fragment; this.writer = writer;
             this.activity = activity;
             this.resourcesProvider = resourcesProvider;
             this.container = container;
@@ -201,6 +202,7 @@ public final class PurpleListBox {
         void build(List<PurpleCore.ListEntry> lists) {
             container.removeAllViews();
             final int count = lists.size();
+            final PurpleWriter.Session captured = writer;
             entries = lists.toArray(new PurpleCore.ListEntry[0]);
             cells = new CheckBoxCell[count];
             for (int a = 0; a < count; ++a) {
@@ -227,7 +229,7 @@ public final class PurpleListBox {
                     // box was built with.
                     final boolean wanted = !cell.isChecked();
                     final String error = PurpleListMenu.toggle(
-                            currentAccount, dialogId, entries[index], wanted);
+                            captured, currentAccount, dialogId, entries[index], wanted);
                     if (error != null) {
                         // The file is unchanged and so is the running
                         // resolution; the detail is in the log, which is where a
@@ -249,28 +251,17 @@ public final class PurpleListBox {
          * box with zero editable rows; this is not a general reload observer.
          */
         void refresh() {
-            final List<PurpleCore.ListEntry> fresh =
-                    PurpleListMenu.listsFor(currentAccount, dialogId);
+            writer = PurpleWriterUI.capture(fragment, false);
+            PurpleWriterUI.bind(writer, fragment);
+            final List<PurpleCore.ListEntry> fresh = writer == null ? java.util.Collections.emptyList()
+                    : writer.lists(PurpleGate.bareIdOf(currentAccount, dialogId));
             final PurpleCore.Loaded state = PurpleGate.state();
             final boolean filtering = state != null && !state.normal;
             if (fresh.isEmpty() && !filtering) {
                 builder.getDismissRunnable().run();
                 return;
             }
-            if (moved(fresh)) {
-                // A list added here, or renamed, added to or reordered by an
-                // outside edit between two taps. Either way row three would be
-                // ticking a list it no longer names, so the cells are rebuilt
-                // rather than reused. This used to close the box instead; it no
-                // longer has to, since making a list is now one of the ways it
-                // happens.
-                build(fresh);
-            } else {
-                for (int a = 0; a < cells.length; ++a) {
-                    entries[a] = fresh.get(a);
-                    cells[a].setChecked(entries[a].member, true);
-                }
-            }
+            build(fresh);
             if (verdictView != null) {
                 // Only when there is still one to show. It goes away with the
                 // preset and not with a list edit, so a null here means the
@@ -283,17 +274,7 @@ public final class PurpleListBox {
         }
 
         /** Whether the file's lists are no longer the ones these cells were built from. */
-        private boolean moved(List<PurpleCore.ListEntry> fresh) {
-            if (fresh.size() != entries.length) {
-                return true;
-            }
-            for (int a = 0; a < entries.length; ++a) {
-                if (!TextUtils.equals(fresh.get(a).name, entries[a].name)) {
-                    return true;
-                }
-            }
-            return false;
-        }
+
     }
 
     /**
@@ -306,6 +287,7 @@ public final class PurpleListBox {
     private static void showNewList(BaseFragment fragment, Activity activity,
             Theme.ResourcesProvider resourcesProvider, Rows rows,
             int currentAccount, long dialogId) {
+        final PurpleWriter.Session writer = PurpleWriterUI.capture(fragment);
         final AlertDialog.Builder builder = new AlertDialog.Builder(activity, resourcesProvider);
         builder.setTitle(getString(R.string.PurpleNewListTitle));
 
@@ -332,11 +314,11 @@ public final class PurpleListBox {
         final Runnable reopen = () -> AndroidUtilities.runOnUIThread(
                 () -> show(fragment, currentAccount, dialogId));
         builder.setPositiveButton(getString(R.string.Save), (dialog, which) -> {
-            createList(activity, rows, currentAccount, dialogId, field.getText().toString());
+            createList(fragment, writer, activity, rows, currentAccount, dialogId, field.getText().toString());
             reopen.run();
         });
         builder.setNegativeButton(getString(R.string.Cancel), (dialog, which) -> reopen.run());
-        fragment.showDialog(builder.create());
+        PurpleWriterUI.show(fragment, builder.create(), writer);
     }
 
     /**
@@ -348,10 +330,10 @@ public final class PurpleListBox {
      * a list empty - and that is the right shape: a splice that also added a
      * member would be a second thing for it to refuse halfway through.
      */
-    private static void createList(Activity activity, Rows rows,
+    private static void createList(BaseFragment fragment, PurpleWriter.Session writer, Activity activity, Rows rows,
             int currentAccount, long dialogId, String typed) {
         final String name = typed == null ? "" : typed.trim();
-        final String error = PurpleWriter.addList(name, "new list");
+        final String error = PurpleWriter.addList(writer, name, "new list");
         if (error != null) {
             // The core's own words - "a list needs a name", "a list name cannot
             // start with '*'", "there is already a list called 'x'" - because
@@ -359,10 +341,11 @@ public final class PurpleListBox {
             Toast.makeText(activity, error, Toast.LENGTH_LONG).show();
             return;
         }
+        if (writer == null || !writer.forAccount(currentAccount) || !writer.sameRoute()) return;
         final PurpleCore.ListEntry created =
                 find(PurpleListMenu.listsFor(currentAccount, dialogId), name);
         if (created != null
-                && PurpleListMenu.toggle(currentAccount, dialogId, created, true) != null) {
+                && PurpleListMenu.toggle(PurpleWriterUI.capture(fragment, false), currentAccount, dialogId, created, true) != null) {
             // The list exists and the chat is not in it, which the rebuilt rows
             // below will show honestly: an empty checkbox on a row that is there.
             Toast.makeText(activity, getString(R.string.PurpleListsFailed),

@@ -22,97 +22,152 @@ public final class PurpleWriter {
     private PurpleWriter() {
     }
 
-    /**
-     * Writes what a splice produced, and reloads.
-     *
-     * The three outcomes are all normal and only one of them is a failure. A
-     * refusal - an unwritable shape, a rule that has moved under the screen -
-     * leaves both the file and the running resolution exactly as they were. A
-     * splice that changed nothing is not an error either, and is not worth a
-     * write that would only churn the file's timestamp.
-     *
-     * @param reason what asked for it, for the log line and the reload
-     * @return null on success, or a reason to show the user
-     */
-    public static String apply(PurpleCore.SpliceResult result, String reason) {
-        if (!PurpleAccountOwner.legacyEditorAllowed(org.telegram.messenger.UserConfig.selectedAccount)) {
-            return org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.PurpleAccountWriteHeld);
+    public interface Current { boolean current(); }
+    private static boolean writing;
+
+    public static final class Session {
+        public final String globalKey;
+        public final boolean appWide;
+        private final PurpleGlobalAccountChoice.Session context;
+        private final PurpleAccountFiles.Identity origin;
+        private final PurpleRoutedWriteModel model;
+        private final Runnable offlineNotice;
+        private final Current view;
+        private final long role, revision, generation, epoch;
+        private final int gate;
+        private boolean retired;
+        private Current action = () -> true;
+
+        private Session(PurpleGlobalAccountChoice.Session context, PurpleAccountFiles.Identity origin,
+                boolean appWide, Runnable offlineNotice, Current view) throws Exception {
+            this.context = context; this.origin = origin; this.offlineNotice = offlineNotice; this.view = view;
+            globalKey = context.global;
+            role = PurpleAccountOwner.roleEpoch(); revision = PurpleAccountOwner.revision();
+            generation = PurpleAccountSettings.generation(); epoch = PurpleAccountSettings.epochNative(); gate = PurpleGate.generation();
+            PurpleAccountFiles own = PurpleAccountFiles.resolve(origin.key, context.owner);
+            PurpleAccountFiles global = PurpleAccountFiles.resolve(context.global, context.owner);
+            if (own == null || global == null) throw new IllegalStateException("missing settings route");
+            model = new PurpleRoutedWriteModel(PurpleAccountFiles.root(), own.settings, global.settings,
+                    context.owner, context.global, origin.key, appWide, PurpleGlobalAccountChoice.PHYSICAL,
+                    new PurpleAccountEditorModel.Context() {
+                        public boolean current(boolean refreshed) {
+                            return !retired && action.current() && origin.current() && PurpleAccountOwner.ready() && context.currentAfterAccountRefresh(refreshed);
+                        }
+                        public void refresh() { PurpleAccountSettings.invalidate(); }
+                        public void notifyChanged() {
+                            org.telegram.messenger.NotificationCenter.getInstance(origin.slot).postNotificationName(
+                                    org.telegram.messenger.NotificationCenter.dialogFiltersUpdated);
+                        }
+                    }, PurpleEditorDirectories.NATIVE);
+            this.appWide = model.appWide;
         }
-        if (result == null) {
-            return "no result from the core";
+        public boolean current() { return !retired && model.current(); }
+        public boolean forAccount(int account) { return origin.slot == account && origin.current(); }
+        public boolean sameRoute() {
+            return action.current() && view.current() && origin.current() && PurpleAccountOwner.ready()
+                    && role == PurpleAccountOwner.roleEpoch() && revision == PurpleAccountOwner.revision()
+                    && java.util.Objects.equals(context.owner, PurpleAccountOwner.owner())
+                    && java.util.Objects.equals(globalKey, PurpleAccountOwner.global());
         }
-        if (!result.ok()) {
-            FileLog.e("Purple: " + reason + " refused: " + result.error);
-            return result.error;
+        public void retire() { retired = true; }
+        public void guard(Current action) { this.action = action; }
+        private byte[] bytes() { return current() ? model.bytes() : null; }
+        public java.util.List<PurpleCore.ListEntry> lists(long peer) {
+            try {
+                org.json.JSONObject result = model.lists(peer);
+                return result == null ? java.util.Collections.emptyList() : PurpleCore.listEntries(result.getJSONArray("lists"));
+            } catch (Exception | UnsatisfiedLinkError e) { return java.util.Collections.emptyList(); }
         }
-        if (!result.changed || result.text == null) {
-            return null;
+        public String toggle(String list, long peer, boolean add, String title) {
+            try {
+                org.json.JSONObject result = model.toggle(list, peer, add, title);
+                if (result == null) return "list settings changed or are not editable";
+                return applyText(result.optBoolean("changed"), result.optString("text"), "list edit");
+            } catch (Exception | UnsatisfiedLinkError e) { return "list settings could not be read"; }
         }
-        if (!PurpleSettings.writeAtomic(
-                PurpleSettings.settingsFile(), result.text.getBytes(UTF_8))) {
-            return "could not write settings.toml";
+        private String applyText(boolean changed, String text, String reason) {
+            if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) return "settings writes require the UI thread";
+            synchronized (PurpleAccountOwner.class) {
+                synchronized (PurpleAccountFiles.class) {
+                    synchronized (PurpleAccountSettings.class) {
+                        if (writing || !current()) return "settings context changed";
+                        if (!changed) return null;
+                        if (text == null) return "no settings text from the core";
+                        writing = true;
+                        try {
+                            PurpleAccountEditorModel.Result result = model.save(text);
+                            if (!result.ok) return result.changed ? "settings were written but the context changed" : "settings changed or could not be written";
+                            if (!context.currentAfterAccountRefresh(true)) return "settings context changed after writing";
+                            if (appWide) PurpleGate.reload(reason);
+                            if (appWide && !retired && action.current() && view.current() && origin.current() && PurpleAccountOwner.ready()
+                                    && role == PurpleAccountOwner.roleEpoch() && revision == PurpleAccountOwner.revision()
+                                    && java.util.Objects.equals(context.owner, PurpleAccountOwner.owner())
+                                    && java.util.Objects.equals(globalKey, PurpleAccountOwner.global())
+                                    && generation + 2 == PurpleAccountSettings.generation() && epoch + 2 == PurpleAccountSettings.epochNative()
+                                    && gate + 1 == PurpleGate.generation()) {
+                                if (!model.editor.missing) PurpleSync.afterRoutedWrite(origin, model.editor.target,
+                                        text.getBytes(UTF_8), reason);
+                                boolean offline = true;
+                                for (PurpleAccountFiles.Identity id : PurpleAccountOwner.signedIn()) if (globalKey.equals(id.key)) offline = false;
+                                if (offline && offlineNotice != null) offlineNotice.run();
+                            }
+                            return null;
+                        } finally { writing = false; retired = true; }
+                    }
+                }
+            }
         }
-        // The file the gate reads has changed under it. The watcher would get
-        // there on its own, but only after its quiet period, and a switch the
-        // user has just flipped should take effect now.
-        PurpleGate.reload(reason);
-        // And the other machine may want it. Nothing happens here unless
-        // [sync] send_after_save_p is on; the reload comes first because the
-        // send reads the file back, and this device should already be running
-        // whatever it is about to post.
-        PurpleSync.afterWrite(reason, false);
-        return null;
     }
 
-    public static String setPeekStartDelay(PurpleGate.PeekSettings settings, int seconds) {
-        if (!PurpleGate.currentPeekEditSettings(settings)) return "settings.toml changed";
-        PurpleCore.SpliceResult result = PurpleCore.setPeekStartDelay(settings.snapshot.bytes(), seconds);
+    public static Session capture(int account, boolean appWide, Current current, Runnable offlineNotice) {
+        if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) return null;
+        synchronized (PurpleAccountOwner.class) {
+            synchronized (PurpleAccountFiles.class) {
+                synchronized (PurpleAccountSettings.class) {
+                    if (writing || current == null || !current.current()) return null;
+                    PurpleGlobalAccountChoice.Session context = PurpleGlobalAccountChoice.begin(account, current::current);
+                    PurpleAccountFiles.Identity origin = PurpleAccountFiles.capture(account);
+                    if (context == null || origin == null || !context.current()) return null;
+                    try {
+                        Session result = new Session(context, origin, appWide, offlineNotice, current);
+                        return result.current() ? result : null;
+                    } catch (Exception | UnsatisfiedLinkError e) { return null; }
+                }
+            }
+        }
+    }
+
+    public static String apply(Session session, PurpleCore.SpliceResult result, String reason) {
+        if (session == null || !session.current()) return "settings context changed";
         if (result == null) return "no result from the core";
-        if (!result.ok()) return result.error;
-        if (!PurpleGate.currentPeekEditSettings(settings)) return "settings.toml changed";
-        if (!result.changed || result.text == null) return null;
-        if (!settings.snapshot.replace(PurpleSettings.settingsFile(), result.text.getBytes(UTF_8))) {
-            return "settings.toml changed or could not be written";
-        }
-        PurpleGate.reload("peek start delay");
-        PurpleSync.afterWrite("peek start delay", false);
-        return null;
+        if (!result.ok()) { FileLog.e("Purple: " + reason + " refused: " + result.error); return result.error; }
+        return session.applyText(result.changed, result.text, reason);
     }
 
-    /**
-     * Sets one boolean under one table - the Premium switch, the suggestions
-     * flag, the schedule's own.
-     *
-     * Reads the file again rather than trusting anything the screen was built
-     * from: an import or an edit may have landed while it was open, and a
-     * splice against stale text would write back a file that had moved on.
-     * Every entry point below does the same, for the same reason.
-     */
+    public static String setPeekStartDelay(Session session, PurpleGate.PeekSettings settings, int seconds) {
+        if (session == null || !session.current() || !PurpleGate.currentPeekEditSettings(settings)
+                || !java.util.Arrays.equals(session.bytes(), settings.snapshot.bytes())) return "settings.toml changed";
+        return apply(session, PurpleCore.setPeekStartDelay(session.bytes(), seconds), "peek start delay");
+    }
+
     public static String setTableBool(
-            String table, String key, boolean value, String reason) {
-        final byte[] settings = PurpleGate.settingsBytes();
+            Session session, String table, String key, boolean value, String reason) {
+        final byte[] settings = session == null ? null : session.bytes();
         if (settings == null) {
             return "settings.toml is missing";
         }
-        return apply(
+        return apply(session,
                 PurpleCore.setTableBool(settings, table, key, value),
                 reason);
     }
 
-    /**
-     * Sets one string under one table - {@code [schedule] outside}, and the
-     * label {@code [devices]} gives a device id.
-     *
-     * The string half of {@link #setTableBool}, and read fresh for the same
-     * reason.
-     */
     public static String setTableString(
-            String table, String key, String value, String reason) {
-        final byte[] settings = PurpleGate.settingsBytes();
+            Session session, String table, String key, String value, String reason) {
+        final byte[] settings = session == null ? null : session.bytes();
         if (settings == null) {
             return "settings.toml is missing";
         }
-        return apply(
+        return apply(session,
                 PurpleCore.setTableString(settings, table, key, value),
                 reason);
     }
@@ -124,23 +179,34 @@ public final class PurpleWriter {
      *         already taken, since the name is how every later edit finds it
      */
     public static String addRuleset(
-            String name, String device, String mode, String reason) {
-        final byte[] settings = PurpleGate.settingsBytes();
+            Session session, String name, String device, String mode, String reason) {
+        final byte[] settings = session == null ? null : session.bytes();
         if (settings == null) {
             return "settings.toml is missing";
         }
-        return apply(
+        return apply(session,
                 PurpleCore.addRuleset(settings, name, device, mode),
                 reason);
     }
 
-    /** Takes a whole ruleset out, its rules with it. */
-    public static String removeRuleset(String name, String reason) {
-        final byte[] settings = PurpleGate.settingsBytes();
+    public static String addRuleset(Session session, String name, String device, String mode,
+            String outside, String reason) {
+        byte[] settings = session == null ? null : session.bytes();
+        if (settings == null) return "settings context changed";
+        PurpleCore.SpliceResult result = PurpleCore.addRuleset(settings, name, device, mode);
+        if (result != null && result.ok() && outside != null) {
+            result = PurpleCore.setRulesetString(result.text.getBytes(UTF_8), name, "outside", outside);
+        }
+        if (result == null || !result.ok()) return apply(session, result, reason);
+        return session.applyText(!java.util.Arrays.equals(settings, result.text.getBytes(UTF_8)), result.text, reason);
+    }
+
+    public static String removeRuleset(Session session, String name, String reason) {
+        final byte[] settings = session == null ? null : session.bytes();
         if (settings == null) {
             return "settings.toml is missing";
         }
-        return apply(PurpleCore.removeRuleset(settings, name), reason);
+        return apply(session, PurpleCore.removeRuleset(settings, name), reason);
     }
 
     /**
@@ -151,12 +217,12 @@ public final class PurpleWriter {
      * screen says "back to the default" without writing the default down.
      */
     public static String setRulesetString(
-            String name, String key, String value, String reason) {
-        final byte[] settings = PurpleGate.settingsBytes();
+            Session session, String name, String key, String value, String reason) {
+        final byte[] settings = session == null ? null : session.bytes();
         if (settings == null) {
             return "settings.toml is missing";
         }
-        return apply(
+        return apply(session,
                 PurpleCore.setRulesetString(settings, name, key, value),
                 reason);
     }
@@ -171,12 +237,12 @@ public final class PurpleWriter {
      * @return null on success, or the core's refusal - an empty name, one
      *         starting with {@code *}, or a name already taken
      */
-    public static String addList(String name, String reason) {
-        final byte[] settings = PurpleGate.settingsBytes();
+    public static String addList(Session session, String name, String reason) {
+        final byte[] settings = session == null ? null : session.bytes();
         if (settings == null) {
             return "settings.toml is missing";
         }
-        return apply(PurpleCore.addList(settings, name, ""), reason);
+        return apply(session, PurpleCore.addList(settings, name, ""), reason);
     }
 
     /**
@@ -192,14 +258,14 @@ public final class PurpleWriter {
      * {@code index} then counts within that one.
      */
     public static String setScheduleRule(
-            String ruleset, int index, int expectedFrom, int expectedTill,
+            Session session, String ruleset, int index, int expectedFrom, int expectedTill,
             String expectedPreset, boolean enabled, int[] days, int from, int till,
             String preset, String reason) {
-        final byte[] settings = PurpleGate.settingsBytes();
+        final byte[] settings = session == null ? null : session.bytes();
         if (settings == null) {
             return "settings.toml is missing";
         }
-        return apply(
+        return apply(session,
                 PurpleCore.setScheduleRule(settings, ruleset, index, expectedFrom,
                         expectedTill, expectedPreset, enabled, days, from, till, preset),
                 reason);
@@ -207,13 +273,13 @@ public final class PurpleWriter {
 
     /** Writes a new rule after the ruleset's last one, or starts the section. */
     public static String appendScheduleRule(
-            String ruleset, boolean enabled, int[] days, int from, int till,
+            Session session, String ruleset, boolean enabled, int[] days, int from, int till,
             String preset, String reason) {
-        final byte[] settings = PurpleGate.settingsBytes();
+        final byte[] settings = session == null ? null : session.bytes();
         if (settings == null) {
             return "settings.toml is missing";
         }
-        return apply(
+        return apply(session,
                 PurpleCore.appendScheduleRule(
                         settings, ruleset, enabled, days, from, till, preset),
                 reason);
@@ -221,13 +287,13 @@ public final class PurpleWriter {
 
     /** Takes one rule out, on the same expectation as {@link #setScheduleRule}. */
     public static String removeScheduleRule(
-            String ruleset, int index, int expectedFrom, int expectedTill,
+            Session session, String ruleset, int index, int expectedFrom, int expectedTill,
             String expectedPreset, String reason) {
-        final byte[] settings = PurpleGate.settingsBytes();
+        final byte[] settings = session == null ? null : session.bytes();
         if (settings == null) {
             return "settings.toml is missing";
         }
-        return apply(
+        return apply(session,
                 PurpleCore.removeScheduleRule(settings, ruleset, index, expectedFrom,
                         expectedTill, expectedPreset),
                 reason);
@@ -246,13 +312,13 @@ public final class PurpleWriter {
      * @return null on success, or a reason to show the user
      */
     public static String appendBudget(
-            String target, int perDaySeconds, String mode, int snoozeSeconds,
+            Session session, String target, int perDaySeconds, String mode, int snoozeSeconds,
             int snoozesPerDay, String reason) {
-        final byte[] settings = PurpleGate.settingsBytes();
+        final byte[] settings = session == null ? null : session.bytes();
         if (settings == null) {
             return "settings.toml is missing";
         }
-        return apply(
+        return apply(session,
                 PurpleCore.appendBudget(settings, target, perDaySeconds, mode,
                         snoozeSeconds, snoozesPerDay),
                 reason);
@@ -268,24 +334,24 @@ public final class PurpleWriter {
      * other than the one it was opened on.
      */
     public static String setBudget(
-            int index, String expectedTarget, String target, int perDaySeconds,
+            Session session, int index, String expectedTarget, String target, int perDaySeconds,
             String mode, int snoozeSeconds, int snoozesPerDay, String reason) {
-        final byte[] settings = PurpleGate.settingsBytes();
+        final byte[] settings = session == null ? null : session.bytes();
         if (settings == null) {
             return "settings.toml is missing";
         }
-        return apply(
+        return apply(session,
                 PurpleCore.setBudget(settings, index, expectedTarget, target,
                         perDaySeconds, mode, snoozeSeconds, snoozesPerDay),
                 reason);
     }
 
     /** Takes one budget out, on the same expectation as {@link #setBudget}. */
-    public static String removeBudget(int index, String expectedTarget, String reason) {
-        final byte[] settings = PurpleGate.settingsBytes();
+    public static String removeBudget(Session session, int index, String expectedTarget, String reason) {
+        final byte[] settings = session == null ? null : session.bytes();
         if (settings == null) {
             return "settings.toml is missing";
         }
-        return apply(PurpleCore.removeBudget(settings, index, expectedTarget), reason);
+        return apply(session, PurpleCore.removeBudget(settings, index, expectedTarget), reason);
     }
 }

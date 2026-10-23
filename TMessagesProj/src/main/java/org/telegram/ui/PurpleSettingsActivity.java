@@ -110,6 +110,7 @@ public class PurpleSettingsActivity extends UniversalFragment
     private boolean checkingSaved;
     private org.telegram.messenger.purple.PurpleAccountFiles.Identity importOrigin;
     private View versionFooter;
+    private PurpleWriter.Session rowWriter;
     private long rowLifetime;
     private PurpleAccountRowWrite.Intent reasonsIntent;
     private PurpleAccountRowWrite.Intent tradeIntent;
@@ -130,6 +131,7 @@ public class PurpleSettingsActivity extends UniversalFragment
 
     @Override
     public void onPause() {
+        PurpleWriterUI.retire(this);
         ++rowLifetime;
         super.onPause();
     }
@@ -167,6 +169,7 @@ public class PurpleSettingsActivity extends UniversalFragment
 
     @Override
     public void onFragmentDestroy() {
+        PurpleWriterUI.retire(this);
         ++rowLifetime;
         getNotificationCenter().removeObserver(this, NotificationCenter.dialogFiltersUpdated);
         super.onFragmentDestroy();
@@ -192,6 +195,7 @@ public class PurpleSettingsActivity extends UniversalFragment
 
     @Override
     protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
+        rowWriter = PurpleWriterUI.capture(this);
         // Read once per rebuild rather than remembered in a field. Every write
         // below ends in a reload, and re-running this is what makes a refused
         // write leave the switch exactly where the file is with no extra code.
@@ -437,6 +441,7 @@ public class PurpleSettingsActivity extends UniversalFragment
 
     @Override
     protected void onClick(UItem item, View view, int position, float x, float y) {
+        final PurpleWriter.Session writer = rowWriter;
         if (PurpleAccountEditorUI.click(this, item.id, rowCurrent())) return;
         if (PurpleAppWideRemovalUI.click(this, item.id, rowCurrent())) return;
         if (PurpleAccountSettingsRows.click(this, item.id, rowCurrent())) return;
@@ -449,7 +454,10 @@ public class PurpleSettingsActivity extends UniversalFragment
         if (!org.telegram.messenger.purple.PurpleAccountOwner.legacyEditorAllowed(currentAccount)
                 && item.id != ROW_PRESET && item.id != ROW_SEND && item.id != ROW_SHARE
                 && item.id != ROW_SCREEN_TIME && item.id != ROW_DEVICE && item.id != ROW_NOTIFICATIONS
-                && item.id != ROW_LAST_SEEN_SKIP_CONFIRMATION) {
+                && item.id != ROW_LAST_SEEN_SKIP_CONFIRMATION
+                && item.id != ROW_PEEK_DURATION && item.id != ROW_PEEK_DELAY && item.id != ROW_PEEK_EXIT
+                && item.id != ROW_SCHEDULE && item.id != ROW_PREMIUM && item.id != ROW_SUGGESTIONS
+                && item.id != ROW_FOCUS) {
             error(getString(R.string.PurpleAccountWriteHeld));
             return;
         }
@@ -461,26 +469,26 @@ public class PurpleSettingsActivity extends UniversalFragment
             editPeekDelay();
             break;
         case ROW_PEEK_EXIT:
-            write(PurpleWriter.setTableBool("peek", "exit_hidden_chats_p", !item.checked, "peek exit switch"));
+            write(PurpleWriter.setTableBool(writer, "peek", "exit_hidden_chats_p", !item.checked, "peek exit switch"));
             break;
         case ROW_PRESET:
             PurplePresetPicker.show(this);
             break;
         case ROW_SCHEDULE:
-            presentFragment(new PurpleScheduleActivity());
+            presentFragment(new PurpleScheduleActivity(currentAccount));
             break;
         case ROW_SCREEN_TIME:
-            presentFragment(new PurpleScreenTimeActivity());
+            presentFragment(new PurpleScreenTimeActivity(0, currentAccount));
             break;
         case ROW_PREMIUM:
-            write(PurpleWriter.setTableBool("premium", "enabled_p", !item.checked, "premium switch"));
+            write(PurpleWriter.setTableBool(writer, "premium", "enabled_p", !item.checked, "premium switch"));
             break;
         case ROW_SUGGESTIONS:
-            write(PurpleWriter.setTableBool(
+            write(PurpleWriter.setTableBool(writer,
                     "suggestions", "hide_invisible_p", !item.checked, "suggestions switch"));
             break;
         case ROW_FOCUS:
-            write(PurpleWriter.setTableBool(
+            write(PurpleWriter.setTableBool(writer,
                     "focus_sync", "enabled_p", !item.checked, "focus sync switch"));
             break;
         case ROW_EDIT:
@@ -567,8 +575,11 @@ public class PurpleSettingsActivity extends UniversalFragment
      */
     private void editPeekDelay() {
         Activity activity = getParentActivity();
-        PurpleCore.Loaded state = PurpleGate.state();
-        if (activity == null || state == null) return;
+        PurpleGate.PeekSettings settings = PurpleGate.peekSettings();
+        PurpleWriter.Session writer = PurpleWriterUI.capture(this);
+        if (activity == null || writer == null || settings == null
+                || !PurpleGate.currentPeekEditSettings(settings) || !writer.current()) return;
+        PurpleCore.Loaded state = settings.state;
         EditTextBoldCursor field = new EditTextBoldCursor(activity);
         field.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
         field.setTextColor(Theme.getColor(Theme.key_dialogTextBlack));
@@ -585,16 +596,17 @@ public class PurpleSettingsActivity extends UniversalFragment
             String value = field.getText().toString().trim();
             try {
                 if (!value.matches("[0-9]+")) throw new NumberFormatException();
-                PurplePeekControls.changeDelay(this, Integer.parseInt(value));
+                PurplePeekControls.changeDelay(this, Integer.parseInt(value), writer, settings);
             } catch (NumberFormatException e) {
                 write(getString(R.string.PurplePeekInvalidDelay));
             }
         });
         builder.setNegativeButton(getString(R.string.Cancel), null);
-        showDialog(builder.create());
+        PurpleWriterUI.show(this, builder.create(), writer);
     }
 
     private void nameDevice() {
+        final PurpleWriter.Session writer = PurpleWriterUI.capture(this);
         final Activity activity = getParentActivity();
         if (activity == null) {
             return;
@@ -619,10 +631,10 @@ public class PurpleSettingsActivity extends UniversalFragment
         builder.setMessage(PurpleDevice.id());
         builder.setView(field);
         builder.setPositiveButton(getString(R.string.Save), (dialog, which) -> write(
-                PurpleWriter.setTableString("devices", PurpleDevice.id(),
+                PurpleWriter.setTableString(writer, "devices", PurpleDevice.id(),
                         field.getText().toString().trim(), "device label")));
         builder.setNegativeButton(getString(R.string.Cancel), null);
-        showDialog(builder.create());
+        PurpleWriterUI.show(this, builder.create(), writer);
     }
 
     // ---- the file, in and out ------------------------------------------------

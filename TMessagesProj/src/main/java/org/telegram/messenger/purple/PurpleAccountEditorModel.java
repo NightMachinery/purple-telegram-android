@@ -89,6 +89,10 @@ final class PurpleAccountEditorModel {
                 new PurpleGlobalChoiceFiles.Snapshot(file, false, PurpleGlobalChoiceFiles.LIMIT, physical));
         return inputs.get(file.getPath());
     }
+    byte[] capturedBytes(File file) {
+        PurpleGlobalChoiceFiles.Snapshot value = inputs.get(file.getPath());
+        return value == null || value.bytes == null ? null : value.bytes.clone();
+    }
     boolean current() { return current(null); }
     private boolean current(Result result) { return current(result, null, null); }
     private boolean current(Result result, File pending, PurpleGlobalChoiceFiles.Snapshot receipt) {

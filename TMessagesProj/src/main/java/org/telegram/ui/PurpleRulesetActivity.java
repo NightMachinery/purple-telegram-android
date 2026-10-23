@@ -63,7 +63,8 @@ public class PurpleRulesetActivity extends UniversalFragment
      */
     private final String address;
 
-    public PurpleRulesetActivity(String address) {
+    public PurpleRulesetActivity(String address, int account) {
+        setCurrentAccount(account);
         this.address = (address == null) ? "" : address;
     }
 
@@ -71,6 +72,20 @@ public class PurpleRulesetActivity extends UniversalFragment
     // Every reload the gate does ends in this signal, whichever account-wide
     // thing caused it. Rebuilding on it is what keeps this screen agreeing with
     // the file when the change did not come from a row on it.
+    private PurpleWriter.Session rowWriter;
+
+    @Override
+    public void onPause() {
+        PurpleWriterUI.retire(this);
+        super.onPause();
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        if (listView != null) listView.adapter.update(true);
+    }
+
     @Override
     public boolean onFragmentCreate() {
         getNotificationCenter().addObserver(this, NotificationCenter.dialogFiltersUpdated);
@@ -79,6 +94,7 @@ public class PurpleRulesetActivity extends UniversalFragment
 
     @Override
     public void onFragmentDestroy() {
+        PurpleWriterUI.retire(this);
         getNotificationCenter().removeObserver(this, NotificationCenter.dialogFiltersUpdated);
         super.onFragmentDestroy();
     }
@@ -121,6 +137,7 @@ public class PurpleRulesetActivity extends UniversalFragment
 
     @Override
     protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
+        rowWriter = PurpleWriterUI.capture(this);
         final PurpleCore.Loaded state = PurpleGate.state();
         final PurpleCore.ScheduleRuleset ruleset = ruleset(state);
         if (ruleset == null) {
@@ -203,6 +220,8 @@ public class PurpleRulesetActivity extends UniversalFragment
 
     @Override
     protected void onClick(UItem item, View view, int position, float x, float y) {
+        final PurpleWriter.Session writer = item.id == ROW_DEVICE || item.id == ROW_OUTSIDE
+                ? PurpleWriterUI.capture(this) : rowWriter;
         final PurpleCore.Loaded state = PurpleGate.state();
         final PurpleCore.ScheduleRuleset ruleset = ruleset(state);
         if (ruleset == null) {
@@ -212,22 +231,23 @@ public class PurpleRulesetActivity extends UniversalFragment
         final Context context = getParentActivity();
         switch (item.id) {
         case ROW_MODE_DISABLED:
-            write(PurpleWriter.setRulesetString(
+            write(PurpleWriter.setRulesetString(writer,
                     ruleset.name, "mode", "disabled", "ruleset mode"));
             return;
         case ROW_MODE_ENABLED:
-            write(PurpleWriter.setRulesetString(
+            write(PurpleWriter.setRulesetString(writer,
                     ruleset.name, "mode", "enabled", "ruleset mode"));
             return;
         case ROW_MODE_ALWAYS:
-            write(PurpleWriter.setRulesetString(
+            write(PurpleWriter.setRulesetString(writer,
                     ruleset.name, "mode", "always", "ruleset mode"));
             return;
         case ROW_DEVICE:
             if (context != null) {
                 PurpleScheduleActivity.showScopePicker(this, context, state, ruleset.device,
-                        chosen -> write(PurpleWriter.setRulesetString(
+                        chosen -> write(PurpleWriter.setRulesetString(writer,
                                 ruleset.name, "device", chosen, "ruleset device")));
+                PurpleWriterUI.bind(writer, this);
             }
             return;
         case ROW_OUTSIDE:
@@ -238,8 +258,9 @@ public class PurpleRulesetActivity extends UniversalFragment
                 PurpleScheduleActivity.showPresetPicker(this, context, state,
                         getString(R.string.PurpleScheduleOutsideRow), ruleset.outside,
                         getString(R.string.PurpleScheduleOutsideSame),
-                        chosen -> write(PurpleWriter.setRulesetString(
+                        chosen -> write(PurpleWriter.setRulesetString(writer,
                                 ruleset.name, "outside", chosen, "ruleset outside")));
+                PurpleWriterUI.bind(writer, this);
             }
             return;
         case ROW_ADD:
@@ -268,7 +289,7 @@ public class PurpleRulesetActivity extends UniversalFragment
             // The switch alone: only enabled_p moves, and every other key is
             // written back exactly as read - which is also what makes the
             // expected fingerprint match.
-            write(PurpleWriter.setScheduleRule(
+            write(PurpleWriter.setScheduleRule(writer,
                     address, rule.index, rule.from, rule.till, rule.preset,
                     !rule.enabled, rule.days, rule.from, rule.till, rule.preset,
                     "schedule rule switch"));
@@ -302,6 +323,7 @@ public class PurpleRulesetActivity extends UniversalFragment
     }
 
     private void confirmDeleteRuleset(PurpleCore.ScheduleRuleset ruleset) {
+        final PurpleWriter.Session writer = PurpleWriterUI.capture(this);
         final Context context = getParentActivity();
         if (context == null) {
             return;
@@ -310,7 +332,7 @@ public class PurpleRulesetActivity extends UniversalFragment
         builder.setTitle(getString(R.string.PurpleScheduleDeleteRulesetTitle));
         builder.setMessage(ruleset.name);
         builder.setPositiveButton(getString(R.string.Delete), (dialog, which) -> {
-            final String failed = PurpleWriter.removeRuleset(
+            final String failed = PurpleWriter.removeRuleset(writer,
                     ruleset.name, "ruleset removed");
             if (failed != null) {
                 write(failed);
@@ -321,7 +343,7 @@ public class PurpleRulesetActivity extends UniversalFragment
             finishFragment();
         });
         builder.setNegativeButton(getString(R.string.Cancel), null);
-        showDialog(builder.create());
+        PurpleWriterUI.show(this, builder.create(), writer);
     }
 
     // ---- the rule editor -----------------------------------------------------
@@ -334,6 +356,7 @@ public class PurpleRulesetActivity extends UniversalFragment
      * instead of being quietly overwritten.
      */
     private void editRule(PurpleCore.Loaded state, PurpleCore.ScheduleRule existing) {
+        final PurpleWriter.Session writer = PurpleWriterUI.capture(this);
         final Context context = getParentActivity();
         if (context == null || state == null) {
             return;
@@ -421,13 +444,13 @@ public class PurpleRulesetActivity extends UniversalFragment
                 : R.string.PurpleScheduleRuleEdit));
         builder.setView(layout);
         builder.setPositiveButton(getString(R.string.Save),
-                (dialog, which) -> saveRule(existing, days, from[0], till[0], enabled[0], preset[0]));
+                (dialog, which) -> saveRule(writer, existing, days, from[0], till[0], enabled[0], preset[0]));
         builder.setNegativeButton(getString(R.string.Cancel), null);
         if (existing != null) {
             builder.setNeutralButton(getString(R.string.Delete),
-                    (dialog, which) -> confirmDeleteRule(existing));
+                    (dialog, which) -> confirmDeleteRule(writer, existing));
         }
-        showDialog(builder.create());
+        PurpleWriterUI.show(this, builder.create(), writer);
     }
 
     private TextView timeRow(Context context, LinearLayout layout, int label, int minutes) {
@@ -461,6 +484,7 @@ public class PurpleRulesetActivity extends UniversalFragment
     }
 
     private void saveRule(
+            PurpleWriter.Session writer,
             PurpleCore.ScheduleRule existing,
             boolean[] days,
             int from,
@@ -495,17 +519,21 @@ public class PurpleRulesetActivity extends UniversalFragment
             }
         }
         if (existing == null) {
-            write(PurpleWriter.appendScheduleRule(
+            write(PurpleWriter.appendScheduleRule(writer,
                     address, enabled, chosen, from, till, preset, "schedule rule added"));
             return;
         }
-        write(PurpleWriter.setScheduleRule(
+        write(PurpleWriter.setScheduleRule(writer,
                 address, existing.index, existing.from, existing.till, existing.preset,
                 enabled, chosen, from, till, preset,
                 "schedule rule edited"));
     }
 
-    private void confirmDeleteRule(PurpleCore.ScheduleRule rule) {
+    private void confirmDeleteRule(PurpleWriter.Session writer, PurpleCore.ScheduleRule rule) {
+        if (writer == null || !writer.current()) {
+            write(getString(R.string.PurpleAccountWriteHeld));
+            return;
+        }
         final Context context = getParentActivity();
         if (context == null) {
             return;
@@ -514,9 +542,9 @@ public class PurpleRulesetActivity extends UniversalFragment
         builder.setTitle(getString(R.string.PurpleScheduleDeleteTitle));
         builder.setMessage(PurpleScheduleActivity.ruleLine(rule));
         builder.setPositiveButton(getString(R.string.Delete), (dialog, which) -> write(
-                PurpleWriter.removeScheduleRule(address, rule.index, rule.from,
+                PurpleWriter.removeScheduleRule(writer, address, rule.index, rule.from,
                         rule.till, rule.preset, "schedule rule removed")));
         builder.setNegativeButton(getString(R.string.Cancel), null);
-        showDialog(builder.create());
+        PurpleWriterUI.show(this, builder.create(), writer);
     }
 }

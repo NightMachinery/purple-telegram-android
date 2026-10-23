@@ -644,4 +644,5 @@
     <string name="PurpleEditorCreatesDirectory">Saving will create this account’s settings directory and version-2 file. Opening the editor does not create them.</string>
     <string name="PurpleEditorDirectoryPartial">Saving stopped while preparing the account directory. The directory may now exist; your text remains in the editor. No automatic send was queued.</string>
     <string name="PurpleMediaSaved">Media saved</string>
+    <string name="PurpleAppWideOfflineEdit">Work Mode and the other app-wide settings are in %1$s’s file, which cannot sync while that account is signed out.</string>
 </resources>

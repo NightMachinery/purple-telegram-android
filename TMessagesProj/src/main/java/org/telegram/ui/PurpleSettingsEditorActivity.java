@@ -279,6 +279,9 @@ public class PurpleSettingsEditorActivity extends BaseFragment {
                                 : result.directoryAttempted ? R.string.PurpleEditorDirectoryPartial : R.string.PurpleEditorSaveStopped));
                         return;
                     }
+                    if (opened.global && result.changed) {
+                        PurpleWriterUI.editorSaved(this, opened.accountKey, origin, afterSave != null);
+                    }
                     openedText = text;
                     if (afterSave != null) afterSave.run();
                     else finishFragment();

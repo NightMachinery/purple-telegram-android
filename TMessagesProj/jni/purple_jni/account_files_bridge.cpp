@@ -23,6 +23,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <map>
 #include <mutex>
 
@@ -592,4 +593,75 @@ Java_org_telegram_messenger_purple_PurpleEditorDirectories_createNative(
     ::close(parentFd);
     return Json(env, {{"created", true}, {"owned", owned}, {"parentIdentity", expected},
         {"identity", measured ? identity(child) : QString()}, {"mode", measured ? int(child.st_mode) : 0}});
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_org_telegram_messenger_purple_PurpleRoutedWriteModel_modeNative(
+        JNIEnv *env, jclass, jbyteArray local, jstring keyText, jstring globalText) {
+    const auto key = Purple::ParseAccountKey(Text(env, keyText));
+    const auto global = Purple::ParseAccountKey(Text(env, globalText));
+    const auto parsed = Purple::ParseLocalChoice(Bytes(env, local), u"local.toml"_q);
+    if (!local || !key || !global || !parsed.ok()) return -1;
+    return int(Purple::AccountWorkModeFor(parsed.choice, *key, *global));
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleRoutedWriteModel_listNative(
+        JNIEnv *env, jclass type, jbyteArray local, jbyteArray ownBytes, jstring ownPath,
+        jbyteArray globalBytes, jstring globalPath, jstring keyText, jstring globalText,
+        jstring listText, jlong peer, jboolean add, jstring titleText) {
+    const auto mode = Java_org_telegram_messenger_purple_PurpleRoutedWriteModel_modeNative(env, type, local, keyText, globalText);
+    if (mode < 0 || !globalBytes || peer <= 0) return Json(env, {{"ok", false}});
+    const auto own = Bytes(env, ownBytes);
+    const auto global = Bytes(env, globalBytes);
+    const auto gp = Text(env, globalPath);
+    const auto ap = Text(env, ownPath);
+    const auto appWide = Text(env, keyText) == Text(env, globalText)
+        || mode == int(Purple::AccountWorkMode::Follow);
+    auto options = Purple::SettingsLayerOptions();
+    options.accountPresent = ownBytes != nullptr;
+    options.followListMembers = appWide;
+    const auto layered = Purple::LayerSettings(global, gp, own, ap, options);
+    if (!layered.global.current.parsed.ok()
+        || layered.global.current.parsed.settings.version > Purple::kHighestSettingsVersion
+        || (!appWide && ownBytes && (!layered.account.current.parsed.ok()
+            || layered.account.current.parsed.settings.version > Purple::kHighestSettingsVersion))
+        || !layered.effective.ok()) return Json(env, {{"ok", false}});
+    auto lists = QJsonArray();
+    for (const auto &entry : layered.effective.settings.lists) {
+        auto members = QJsonArray();
+        auto member = false;
+        for (const auto id : entry.members) {
+            members.push_back(QString::number(id));
+            if (id == Purple::PeerIdValue(peer)) member = true;
+        }
+        lists.push_back(QJsonObject{{"name", entry.name}, {"title", entry.title}, {"member", member}, {"members", members}});
+    }
+    if (!listText) return Json(env, {{"ok", true}, {"appWide", appWide}, {"lists", lists}});
+    const auto name = Text(env, listText);
+    const auto list = layered.effective.settings.list(name);
+    if (!list) return Json(env, {{"ok", false}});
+    auto ids = list->members;
+    const auto id = Purple::PeerIdValue(peer);
+    const auto found = std::find(ids.begin(), ids.end(), id);
+    if (add && found == ids.end()) ids.push_back(id);
+    else if (!add) ids.erase(std::remove(ids.begin(), ids.end(), id), ids.end());
+    auto inherited = true;
+    if (!appWide && ownBytes) {
+        const auto raw = own.toUtf8();
+        const auto tree = toml::parse(std::string_view(raw.constData(), raw.size()));
+        const auto table = tree ? tree.table()["lists"][name.toStdString()].as_table() : nullptr;
+        inherited = !table || !table->contains("members");
+    }
+    const auto comments = Purple::ListMemberComments((appWide || inherited) ? global : own,
+        (appWide || inherited) ? gp : ap, name);
+    const auto title = Text(env, titleText);
+    const auto result = Purple::SetListMembers(appWide ? global : ownBytes ? own : AccountEditorTemplate(),
+        appWide ? gp : ap, name, ids, [&](Purple::PeerIdValue member) {
+            if (member == id) return title;
+            const auto i = comments.find(member);
+            return i == comments.end() ? QString() : i->second;
+        });
+    return Json(env, {{"ok", result.ok()}, {"appWide", appWide}, {"changed", result.changed},
+        {"text", result.text}, {"error", result.error}});
 }

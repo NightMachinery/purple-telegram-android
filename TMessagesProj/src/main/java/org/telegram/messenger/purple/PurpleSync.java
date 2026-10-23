@@ -151,6 +151,12 @@ public final class PurpleSync {
      * write that armed this may have been followed by one that turned the
      * switch off, or by an import that has since claimed these very bytes.
      */
+    static void afterRoutedWrite(PurpleAccountFiles.Identity origin, File file, byte[] expected, String reason) {
+        if (origin == null || !origin.current() || !file.equals(PurpleAccountFiles.rootSettings())
+                || !PurpleAccountOwner.legacyEditorAllowed(origin.slot)) return;
+        afterWrite(origin, null, expected.clone(), reason, false);
+    }
+
     static void afterAccountRowWrite(PurpleAccountFiles.Identity origin, File file,
             byte[] bytes, PurpleSaveDebounce.Receipt receipt, boolean allowSend) {
         byte[] expected = bytes.clone();

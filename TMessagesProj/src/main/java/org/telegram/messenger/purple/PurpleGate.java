@@ -387,8 +387,8 @@ public final class PurpleGate {
 
     public static boolean currentPeekEditSettings(PeekSettings settings) {
         return currentPeekSettings(settings) && !usedLastGood
-                && PurpleAccountOwner.legacyEditorAllowed(UserConfig.selectedAccount)
-                && settings.file.equals(PurpleSettings.settingsFile())
+                && PurpleAccountOwner.ready()
+                && settings.file.equals(PurpleAccountSettings.globalFile())
                 && settings.primary.status == PurpleAccountFileSnapshot.Status.Present;
     }
 

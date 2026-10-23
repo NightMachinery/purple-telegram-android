@@ -103,23 +103,26 @@ public final class PurplePeekControls {
             settings = PurpleGate.peekSettings();
             if (settings == null || pending != null) return;
         }
-        begin(fragment, seconds, null, settings);
+        begin(fragment, seconds, null, settings, null);
     }
 
-    static void changeDelay(BaseFragment fragment, int seconds) {
-        if (seconds < 0) return;
+    static void changeDelay(BaseFragment fragment, int seconds,
+            PurpleWriter.Session writer, PurpleGate.PeekSettings settings) {
+        if (seconds < 0 || writer == null || !writer.current()
+                || settings == null || !PurpleGate.currentPeekEditSettings(settings)) return;
         if (pending != null) {
             cancel();
             return;
         }
-        PurpleGate.PeekSettings settings = PurpleGate.peekSettings();
-        if (settings == null || !PurpleGate.currentPeekEditSettings(settings)
-                || settings.state.clock.peekStartDelay == seconds || pending != null) return;
-        begin(fragment, 0, seconds, settings);
+        if (settings.state.clock.peekStartDelay == seconds || pending != null) return;
+        begin(fragment, 0, seconds, settings, writer);
     }
 
     private static void begin(
-            BaseFragment fragment, int seconds, Integer setting, PurpleGate.PeekSettings settings) {
+            BaseFragment fragment, int seconds, Integer setting, PurpleGate.PeekSettings settings,
+            PurpleWriter.Session writer) {
+        if (setting != null && (writer == null || !writer.current()
+                || !PurpleGate.currentPeekEditSettings(settings))) return;
         Activity activity = fragment == null ? null : fragment.getParentActivity();
         if (activity == null || activity.isFinishing() || activity.isDestroyed()
                 || fragment.isFinished || fragment.isPaused() || SharedConfig.appLocked) return;
@@ -136,8 +139,9 @@ public final class PurplePeekControls {
                 @Override public void onActivityDestroyed(Activity activity) { cancelFor(activity); }
             });
         }
-        Pending operation = new Pending(fragment, seconds, setting, settings);
+        Pending operation = new Pending(fragment, seconds, setting, settings, writer);
         pending = operation;
+        if (writer != null) writer.guard(() -> pending == operation || operation.committing);
         updateEndButtons();
         operation.show();
     }
@@ -149,7 +153,10 @@ public final class PurplePeekControls {
     public static void cancel() {
         Pending operation = pending;
         pending = null;
-        if (operation != null) operation.dismiss();
+        if (operation != null) {
+            if (operation.writer != null) operation.writer.retire();
+            operation.dismiss();
+        }
         updateEndButtons();
     }
 
@@ -185,13 +192,16 @@ public final class PurplePeekControls {
         final PurpleGate.PeekSettings settings;
         final int seconds;
         final Integer setting;
+        final PurpleWriter.Session writer;
         final long deadline;
         Dialog dialog;
+        boolean committing;
         TextView remaining;
         final Runnable tick = this::tick;
 
         Pending(
-                BaseFragment fragment, int seconds, Integer setting, PurpleGate.PeekSettings settings) {
+                BaseFragment fragment, int seconds, Integer setting, PurpleGate.PeekSettings settings,
+                PurpleWriter.Session writer) {
             origin = new WeakReference<>(fragment);
             activity = new WeakReference<>(fragment.getParentActivity());
             fragmentView = fragment.getFragmentView();
@@ -204,6 +214,7 @@ public final class PurplePeekControls {
             this.settings = settings;
             this.seconds = seconds;
             this.setting = setting;
+            this.writer = writer;
             deadline = SystemClock.elapsedRealtime()
                     + PurplePeekSnapshot.waitSeconds(state.clock.peekStartDelay, setting) * 1000L;
         }
@@ -219,6 +230,8 @@ public final class PurplePeekControls {
                     && isCurrent(fragment)
                     && account == UserConfig.selectedAccount && fragment.getCurrentAccount() == account
                     && identity != null && identity.current()
+                    && (setting == null || writer != null && writer.current()
+                        && PurpleGate.currentPeekEditSettings(settings))
                     && state != null && state.normal == normal && Objects.equals(state.preset, preset)
                     && PurpleGate.generation() == generation && state == settings.state;
         }
@@ -311,12 +324,15 @@ public final class PurplePeekControls {
                 return;
             }
             BaseFragment fragment = origin.get();
+            committing = writer != null;
             pending = null;
             dismiss();
             if (setting == null) {
                 PurpleGate.startPeek(seconds, settings);
             } else {
-                String error = PurpleWriter.setPeekStartDelay(settings, setting);
+                String error;
+                try { error = PurpleWriter.setPeekStartDelay(writer, settings, setting); }
+                finally { committing = false; writer.retire(); }
                 if (error != null && fragment != null && BulletinFactory.canShowBulletin(fragment)) {
                     BulletinFactory.of(fragment).createErrorBulletin(error).show();
                 }
@@ -326,7 +342,10 @@ public final class PurplePeekControls {
 
         void cancelIfCurrent() {
             if (pending == this) cancel();
-            else dismiss();
+            else {
+                if (writer != null) writer.retire();
+                dismiss();
+            }
         }
 
         void dismiss() {

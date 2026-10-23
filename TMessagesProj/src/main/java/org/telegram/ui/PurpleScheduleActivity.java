@@ -83,6 +83,22 @@ public class PurpleScheduleActivity extends UniversalFragment
     // the watcher noticing that settings.toml changed on disk. Rebuilding on it
     // is what keeps this screen agreeing with the file when the change did not
     // come from a row on it.
+    public PurpleScheduleActivity(int account) { setCurrentAccount(account); }
+
+    private PurpleWriter.Session rowWriter;
+
+    @Override
+    public void onPause() {
+        PurpleWriterUI.retire(this);
+        super.onPause();
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        if (listView != null) listView.adapter.update(true);
+    }
+
     @Override
     public boolean onFragmentCreate() {
         getNotificationCenter().addObserver(this, NotificationCenter.dialogFiltersUpdated);
@@ -91,6 +107,7 @@ public class PurpleScheduleActivity extends UniversalFragment
 
     @Override
     public void onFragmentDestroy() {
+        PurpleWriterUI.retire(this);
         getNotificationCenter().removeObserver(this, NotificationCenter.dialogFiltersUpdated);
         super.onFragmentDestroy();
     }
@@ -109,6 +126,7 @@ public class PurpleScheduleActivity extends UniversalFragment
 
     @Override
     protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
+        rowWriter = PurpleWriterUI.capture(this);
         // Re-read on every rebuild, and every write ends in a reload that
         // rebuilds - so a refused write puts the screen back where the file is
         // without this screen having to undo anything.
@@ -582,8 +600,9 @@ public class PurpleScheduleActivity extends UniversalFragment
 
     @Override
     protected void onClick(UItem item, View view, int position, float x, float y) {
+        final PurpleWriter.Session writer = rowWriter;
         if (item.id == ROW_ENABLED) {
-            write(PurpleWriter.setTableBool("schedule", "enabled_p", !item.checked,
+            write(PurpleWriter.setTableBool(writer, "schedule", "enabled_p", !item.checked,
                     "schedule switch"));
             return;
         }
@@ -618,7 +637,7 @@ public class PurpleScheduleActivity extends UniversalFragment
                 return;
             }
             presentFragment(new PurpleRulesetActivity(
-                    state.scheduleRulesets.get(at).address));
+                    state.scheduleRulesets.get(at).address, currentAccount));
         }
     }
 
@@ -705,6 +724,7 @@ public class PurpleScheduleActivity extends UniversalFragment
      * ruleset's preset would offer to copy it into a key nobody reads.
      */
     private void pickOutside() {
+        final PurpleWriter.Session writer = PurpleWriterUI.capture(this);
         final Context context = getParentActivity();
         final PurpleCore.Loaded state = PurpleGate.state();
         if (context == null || state == null) {
@@ -712,21 +732,15 @@ public class PurpleScheduleActivity extends UniversalFragment
         }
         showPresetPicker(this, context, state, getString(R.string.PurpleScheduleOutsideRow),
                 state.scheduleOutsideKey, null,
-                chosen -> write(PurpleWriter.setTableString(
+                chosen -> write(PurpleWriter.setTableString(writer,
                         "schedule", "outside", chosen, "schedule outside")));
+        PurpleWriterUI.bind(writer, this);
     }
 
     // ---- a new ruleset --------------------------------------------------------
 
-    /**
-     * Name it, say who it is for and what it does, and write the block.
-     *
-     * Two writes rather than one: AddRuleset() takes the device and the mode,
-     * which are the two keys a ruleset cannot be read without, and `outside' is
-     * an override that most rulesets do not want - so it is written afterwards
-     * and only when it was asked for, leaving a file that says nothing extra.
-     */
     private void addRuleset() {
+        final PurpleWriter.Session writer = PurpleWriterUI.capture(this);
         final Context context = getParentActivity();
         final PurpleCore.Loaded state = PurpleGate.state();
         if (context == null || state == null) {
@@ -788,17 +802,12 @@ public class PurpleScheduleActivity extends UniversalFragment
                 error(getString(R.string.PurpleScheduleRulesetNoName));
                 return;
             }
-            final String failed = PurpleWriter.addRuleset(
-                    wanted, device[0], mode[0], "ruleset added");
-            if (failed == null && outside[0] != null) {
-                write(PurpleWriter.setRulesetString(
-                        wanted, "outside", outside[0], "ruleset outside"));
-                return;
-            }
+            final String failed = PurpleWriter.addRuleset(writer,
+                    wanted, device[0], mode[0], outside[0], "ruleset added");
             write(failed);
         });
         builder.setNegativeButton(getString(R.string.Cancel), null);
-        showDialog(builder.create());
+        PurpleWriterUI.show(this, builder.create(), writer);
     }
 
     // ---- the pickers, shared with the ruleset screen ---------------------------

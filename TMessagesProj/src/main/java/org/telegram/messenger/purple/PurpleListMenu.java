@@ -18,7 +18,6 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.UserObject;
 import org.telegram.tgnet.TLRPC;
 
-import java.io.File;
 import java.util.List;
 
 public final class PurpleListMenu {
@@ -38,53 +37,18 @@ public final class PurpleListMenu {
         return state != null && (state.listCount > 0 || !state.normal);
     }
 
-    /**
-     * Live lists and membership only; empty when the primary file defines none
-     * or is unusable.
-     */
     public static List<PurpleCore.ListEntry> listsFor(int currentAccount, long dialogId) {
-        return PurpleCore.listsFor(
-                PurpleGate.settingsBytes(),
-                PurpleGate.bareIdOf(currentAccount, dialogId));
+        PurpleWriter.Session session = PurpleWriter.capture(currentAccount, false, () -> true, null);
+        return session == null ? java.util.Collections.emptyList()
+                : session.lists(PurpleGate.bareIdOf(currentAccount, dialogId));
     }
 
-    /**
-     * Adds or removes this chat, and reloads.
-     *
-     * Reads the file again rather than trusting what the menu was built from:
-     * the menu may have been open while an import or an edit landed, and a
-     * splice against stale text would write back a file that had moved on.
-     *
-     * Nothing is written when the splice refuses - an unwritable file, or a
-     * list written as an inline table it will not edit a line at a time - so a
-     * failure leaves both the file and the running resolution as they were.
-     *
-     * @return null on success, or a reason to show the user
-     */
     public static String toggle(
-            int currentAccount,
-            long dialogId,
-            PurpleCore.ListEntry list,
-            boolean add) {
-        if (list == null) {
-            return "no list";
-        }
-        final byte[] settings = PurpleGate.settingsBytes();
-        if (settings == null) {
-            return "settings.toml is missing";
-        }
-        final long bareId = PurpleGate.bareIdOf(currentAccount, dialogId);
-        // Write, reload and the three outcomes are PurpleWriter's, shared with
-        // every other edit: a refusal leaves the file alone, and a splice that
-        // changed nothing is not worth churning the timestamp for.
-        return PurpleWriter.apply(
-                PurpleCore.spliceMember(
-                        settings,
-                        list.name,
-                        bareId,
-                        add,
-                        titlesJson(currentAccount, list, bareId)),
-                "list edit");
+            PurpleWriter.Session session, int currentAccount, long dialogId,
+            PurpleCore.ListEntry list, boolean add) {
+        if (session == null || !session.forAccount(currentAccount) || list == null) return "list context changed";
+        long peer = PurpleGate.bareIdOf(currentAccount, dialogId);
+        return session.toggle(list.name, peer, add, titleOf(currentAccount, peer));
     }
 
     /**
@@ -157,40 +121,6 @@ public final class PurpleListMenu {
     }
 
     /**
-     * {@code {"12345":"Some Chat"}} for every id whose line the splice might
-     * rewrite: the chat being filed, and everyone already in the list.
-     *
-     * Names go stale, so they are regenerated from the model on every write
-     * rather than read back out of the file and trusted.
-     */
-    private static String titlesJson(
-            int currentAccount, PurpleCore.ListEntry list, long bareId) {
-        final StringBuilder json = new StringBuilder("{");
-        boolean first = true;
-        first = appendTitle(json, currentAccount, bareId, first);
-        for (int a = 0; a < list.members.length; ++a) {
-            if (list.members[a] != bareId) {
-                first = appendTitle(json, currentAccount, list.members[a], first);
-            }
-        }
-        return json.append('}').toString();
-    }
-
-    private static boolean appendTitle(
-            StringBuilder json, int currentAccount, long bareId, boolean first) {
-        final String title = titleOf(currentAccount, bareId);
-        if (title == null || title.length() == 0) {
-            return first;
-        }
-        if (!first) {
-            json.append(',');
-        }
-        json.append('"').append(bareId).append("\":");
-        appendJsonString(json, title);
-        return false;
-    }
-
-    /**
      * The chat's display name, from whichever side of the id it turns out to be.
      *
      * A bare id has had its type stripped, so it may name a user or a chat and
@@ -207,19 +137,4 @@ public final class PurpleListMenu {
         return chat != null ? chat.title : null;
     }
 
-    /** Enough JSON escaping for a display name, which is arbitrary user text. */
-    private static void appendJsonString(StringBuilder out, String value) {
-        out.append('"');
-        for (int a = 0, n = value.length(); a < n; ++a) {
-            final char c = value.charAt(a);
-            if (c == '"' || c == '\\') {
-                out.append('\\').append(c);
-            } else if (c < 0x20) {
-                out.append(' ');
-            } else {
-                out.append(c);
-            }
-        }
-        out.append('"');
-    }
 }
