@@ -1034,7 +1034,7 @@ public class TranslateAlert2 extends BottomSheet implements NotificationCenter.N
         if (textView != null) {
             textView.setTextIsSelectable(!noforwards);
         }
-        if (noforwards) {
+        if (org.telegram.messenger.purple.PurpleContentPolicy.secureContent(noforwards)) {
             getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
             AndroidUtilities.logFlagSecure();
         } else {

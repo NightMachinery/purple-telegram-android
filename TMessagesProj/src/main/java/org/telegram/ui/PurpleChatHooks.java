@@ -49,6 +49,8 @@ import java.util.ArrayList;
 
 final class PurpleChatHooks {
 
+    static final int SAVE_TO_GALLERY = org.telegram.messenger.purple.PurpleMediaSave.GALLERY;
+    static final int SAVE_TO_DOWNLOADS = org.telegram.messenger.purple.PurpleMediaSave.DOWNLOADS;
     static final int COPY_AS_MARKDOWN = PurpleMarkdownCopy.OPTION;
     static final int COPY_SELECTION_AS_MARKDOWN = 0x70750008;
 
@@ -121,6 +123,15 @@ final class PurpleChatHooks {
     void addCopyOptions(MessageObject message, MessageObject.GroupedMessages group,
             ArrayList<CharSequence> items, ArrayList<Integer> options, ArrayList<Integer> icons, int copy) {
         PurpleMarkdownCopy.addMenuOptions(message, group, items, options, icons, copy);
+    }
+
+    void addSaveOptions(MessageObject message, ArrayList<CharSequence> items,
+            ArrayList<Integer> options, ArrayList<Integer> icons) {
+        org.telegram.messenger.purple.PurpleMediaSave.addMenuOptions(message, items, options, icons);
+    }
+
+    void saveMedia(MessageObject message, int option) {
+        org.telegram.messenger.purple.PurpleMediaSave.save(chat.getParentActivity(), message, option == SAVE_TO_GALLERY);
     }
 
     void copyAsMarkdown(MessageObject message, MessageObject.GroupedMessages group) {

@@ -883,6 +883,7 @@ public class SecretMediaViewer implements NotificationCenter.NotificationCenterD
 
         secretDeleteTimer = new SecretDeleteTimer(activity);
         containerView.addView(secretDeleteTimer, LayoutHelper.createFrame(119, 48, Gravity.TOP | Gravity.RIGHT, 0, 0, 0, 0));
+        org.telegram.messenger.purple.PurpleMediaSave.addSecretMenu(actionBar, secretDeleteTimer, secretHint, () -> currentMessageObject);
 
         final VideoPlayerSeekBar.SeekBarDelegate seekBarDelegate = new VideoPlayerSeekBar.SeekBarDelegate() {
             @Override
@@ -967,7 +968,7 @@ public class SecretMediaViewer implements NotificationCenter.NotificationCenterD
                 WindowManager.LayoutParams.FLAG_LAYOUT_INSET_DECOR |
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE |
                 WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS;
-        windowLayoutParams.flags |= WindowManager.LayoutParams.FLAG_SECURE;
+        windowLayoutParams.flags = org.telegram.messenger.purple.PurpleContentPolicy.contentWindowFlags(windowLayoutParams.flags);
         AndroidUtilities.logFlagSecure();
         centerImage.setParentView(containerView);
         centerImage.setForceCrossfade(true);

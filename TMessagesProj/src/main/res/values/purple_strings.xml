@@ -643,4 +643,5 @@
     <string name="PurpleEditorBackupOnly">Saving stopped after updating the backup. Your text remains in the editor. Check the file context before reopening.</string>
     <string name="PurpleEditorCreatesDirectory">Saving will create this account’s settings directory and version-2 file. Opening the editor does not create them.</string>
     <string name="PurpleEditorDirectoryPartial">Saving stopped while preparing the account directory. The directory may now exist; your text remains in the editor. No automatic send was queued.</string>
+    <string name="PurpleMediaSaved">Media saved</string>
 </resources>

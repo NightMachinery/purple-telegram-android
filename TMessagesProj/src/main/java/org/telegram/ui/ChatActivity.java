@@ -8686,8 +8686,7 @@ public class ChatActivity extends BaseFragment implements
         chatScrollHelper.setAnimationCallback(chatScrollHelperCallback);
 
         flagSecure = new FlagSecureReason(getParentActivity().getWindow(), () ->
-            currentEncryptedChat != null ||
-            isPeerNoForwards()
+            org.telegram.messenger.purple.PurpleContentPolicy.secureContent(currentEncryptedChat != null || isPeerNoForwards())
         );
 
         if (oldMessage != null) {
@@ -19128,9 +19127,9 @@ public class ChatActivity extends BaseFragment implements
                     } else {
                         canForwardMessagesCount--;
                     }
-                    if (messageObject.isMusic() && !noforwards) {
+                    if (messageObject.isMusic() && !org.telegram.messenger.purple.PurpleContentPolicy.restrictSaving(noforwards)) {
                         canSaveMusicCount--;
-                    } else if (messageObject.isDocument() && !noforwards) {
+                    } else if (messageObject.isDocument() && !org.telegram.messenger.purple.PurpleContentPolicy.restrictSaving(noforwards)) {
                         canSaveDocumentsCount--;
                     } else {
                         cantSaveMessagesCount--;
@@ -19165,9 +19164,9 @@ public class ChatActivity extends BaseFragment implements
                     } else {
                         canForwardMessagesCount++;
                     }
-                    if (messageObject.isMusic() && !noforwards) {
+                    if (messageObject.isMusic() && !org.telegram.messenger.purple.PurpleContentPolicy.restrictSaving(noforwards)) {
                         canSaveMusicCount++;
-                    } else if (messageObject.isDocument() && !messageObject.isRoundOnce() && !messageObject.isVoiceOnce() && !noforwards) {
+                    } else if (messageObject.isDocument() && !messageObject.isRoundOnce() && !messageObject.isVoiceOnce() && !org.telegram.messenger.purple.PurpleContentPolicy.restrictSaving(noforwards)) {
                         canSaveDocumentsCount++;
                     } else {
                         cantSaveMessagesCount++;
@@ -33384,6 +33383,10 @@ public class ChatActivity extends BaseFragment implements
                 presentFragment(fragment);
                 break;
             }
+            case PurpleChatHooks.SAVE_TO_GALLERY:
+            case PurpleChatHooks.SAVE_TO_DOWNLOADS:
+                purple.saveMedia(selectedObject, option);
+                break;
             case PurpleChatHooks.COPY_AS_MARKDOWN: {
                 purple.copyAsMarkdown(selectedObject, selectedObjectGroup);
                 break;
@@ -39531,8 +39534,7 @@ public class ChatActivity extends BaseFragment implements
             return messageObject != null
                 && messageObject.messageOwner != null
                 && chatMode != MODE_SCHEDULED
-                && !isPeerNoForwards()
-                && !messageObject.messageOwner.noforwards
+                && !org.telegram.messenger.purple.PurpleContentPolicy.restrictSaving(isPeerNoForwards() || messageObject.messageOwner.noforwards)
                 && messageObject.type != MessageObject.TYPE_PAID_MEDIA;
         }
 
@@ -46328,6 +46330,7 @@ public class ChatActivity extends BaseFragment implements
         }
         purple.relabelImport(message, items, options, OPTION_APPLY_LOCALIZATION_OR_THEME);
         purple.addCopyOptions(message, groupedMessages, items, options, icons, OPTION_COPY);
+        purple.addSaveOptions(message, items, options, icons);
     }
 
     private boolean showWelcomeMessageRevertOption(MessageObject messageObject) {

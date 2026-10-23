@@ -2068,8 +2068,8 @@ public class PeerStoriesView extends SizeNotifierFrameLayout implements Notifica
                             createQualityItem(popupLayout);
                         }
 
-                        if (!unsupported && allowShare && !currentStory.isLive) {
-                            if (UserConfig.getInstance(currentAccount).isPremium()) {
+                        if (!unsupported && (allowShare || org.telegram.messenger.purple.PurpleContentPolicy.canSaveStory(currentAccount, currentStory.storyItem)) && !currentStory.isLive) {
+                            if (org.telegram.messenger.purple.PurpleContentPolicy.allowLocalStorySave()) {
                                 ActionBarMenuItem.addItem(popupLayout, R.drawable.msg_gallery, getString(R.string.SaveToGallery), false, resourcesProvider).setOnClickListener(v -> {
                                     saveToGallery();
                                     if (popupMenu != null) {

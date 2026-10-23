@@ -1822,6 +1822,32 @@ remain absent; this is an intentional request omission, not cache clearing.
 Keep the original elapsedRealtime, absolute-difference and five-minute cache
 eligibility together with this removal hook when merging upstream.
 
+## Saving protected media and screenshots
+
+Purple offers Save to gallery and Save to downloads for locally available media,
+including protected chats and disappearing photos, videos and voice messages.
+Open disappearing photos or videos and use their overflow menu to save while
+available. The view-once voice and round-video player also has a save overflow
+menu; the chat context menu offers downloads before playback.
+If the file has not downloaded yet, download or open it before saving.
+
+The existing automatic gallery-save preference also works for regular protected
+chats. Disappearing media still requires an explicit save.
+
+Content screens allow screenshots. Local passcode and payment-screen protection
+keep their separate behavior. Forwarding, server permissions, message timers and
+the deletion of expired source media are unchanged. A save is an explicit export,
+not an automatic archive of disappearing messages.
+
+The content policy and export stream live in `PurpleContentPolicy` and
+`PurpleMediaSave`. `ChatActivity` delegates menu rows and selection eligibility;
+`PhotoViewer` exposes gallery saving; `SecretMediaViewer` delegates an overflow
+menu; `AudioPlayerAlert` adds local downloads; `PeerStoriesView` exposes gallery
+saving. Content-only screenshot hooks are in these viewers, `SecretVoicePlayer`,
+`StoryViewer`, `ProfileActivity`, `ChatMessageCell` and `TranslateAlert2`.
+`FileLoader` delegates only the protection-metadata gates for automatic saving.
+See [the content saving notes](docs/content-saving.md) for export details.
+
 ## Unrestricted copying and Copy as Markdown
 
 Purple allows local message copying in protected chats. Normal Copy and the new

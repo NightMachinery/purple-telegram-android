@@ -2536,7 +2536,7 @@ public class AudioPlayerAlert extends BottomSheet implements NotificationCenter.
                 onReorderTouch = null;
             }
             cell.setBackgroundColor(Theme.getColor(Theme.key_dialogBackground, resourcesProvider));
-            cell.setMessageObject(messageObject, isMyList(), isMyList() || noforwards || messageObject.getId() <= 0 ? null : btn -> showOptions(cell, messageObject), needDivider, onReorderTouch);
+            cell.setMessageObject(messageObject, isMyList(), isMyList() || org.telegram.messenger.purple.PurpleContentPolicy.restrictSaving(noforwards) || messageObject.getId() <= 0 ? null : btn -> showOptions(cell, messageObject), needDivider, onReorderTouch);
         }
 
         @Override
@@ -2873,6 +2873,7 @@ public class AudioPlayerAlert extends BottomSheet implements NotificationCenter.
         }
 
         final ItemOptions o = ItemOptions.makeOptions(container, resourcesProvider, v, true);
+        org.telegram.messenger.purple.PurpleMediaSave.addAudioOption(o, messageObject);
         ItemOptions o2 = buildSaveOptions(o, messageObject);
         if (!isMyList()) {
             o.addIf(!noforwards, R.drawable.msg_stories_save, getString(R.string.AudioSaveTo), () -> o.openSwipeback(o2));
@@ -2948,6 +2949,7 @@ public class AudioPlayerAlert extends BottomSheet implements NotificationCenter.
 
     private void showOptions(AudioPlayerCell cell, MessageObject messageObject) {
         final ItemOptions o = ItemOptions.makeOptions(container, resourcesProvider, cell, true);
+        org.telegram.messenger.purple.PurpleMediaSave.addAudioOption(o, messageObject);
 
         if (isMyList()) {
             o.addIf(!noforwards, R.drawable.msg_forward, getString(R.string.Forward), () -> {

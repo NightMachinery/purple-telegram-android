@@ -4911,6 +4911,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                     }
                     closePhoto(true, false);
                 } else if (id == gallery_menu_save) {
+                    if (org.telegram.messenger.purple.PurpleMediaSave.saveEncrypted(parentActivity, currentMessageObject, true)) return;
                     if (Build.VERSION.SDK_INT >= 23 && (Build.VERSION.SDK_INT <= 28 || BuildVars.NO_SCOPED_STORAGE) && parentActivity.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
                         parentActivity.requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, 4);
                         return;
@@ -14763,8 +14764,8 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             }
             if (isEmbedVideo || newMessageObject.messageOwner.ttl != 0 && newMessageObject.messageOwner.ttl < 60 * 60 || noforwards) {
                 allowShare = false;
-                galleryButton.setVisibility(View.GONE);
-                galleryGap.setVisibility(View.GONE);
+                galleryButton.setVisibility(org.telegram.messenger.purple.PurpleContentPolicy.galleryVisibility(isEmbedVideo));
+                galleryGap.setVisibility(org.telegram.messenger.purple.PurpleContentPolicy.galleryVisibility(isEmbedVideo));
                 menuItem.hideSubItem(gallery_menu_share);
                 setItemVisible(editItem, false, animated);
             } else {
@@ -14843,7 +14844,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 title = getString(R.string.AttachPhoto);
             }
             final boolean noforwards = avatarsDialogId != 0 && MessagesController.getInstance(currentAccount).isPeerNoForwards(avatarsDialogId);
-            if (noforwards) {
+            if (org.telegram.messenger.purple.PurpleContentPolicy.restrictSaving(noforwards)) {
                 galleryButton.setVisibility(View.GONE);
                 galleryGap.setVisibility(View.GONE);
             } else {
@@ -15682,7 +15683,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             }
             if (sharedMediaType == MediaDataController.MEDIA_FILE) {
                 if (canZoom = newMessageObject.canPreviewDocument()) {
-                    if (allowShare) {
+                    if (!org.telegram.messenger.purple.PurpleContentPolicy.restrictSaving(!allowShare)) {
                         galleryButton.setVisibility(View.VISIBLE);
                         galleryGap.setVisibility(View.VISIBLE);
                     } else {
@@ -17434,7 +17435,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 messageObject != null && (MessagesController.getInstance(currentAccount).isPeerNoForwards(messageObject.getDialogId()) ||
                 (messageObject.messageOwner != null && messageObject.messageOwner.noforwards)) || messageObject != null && messageObject.hasRevealedExtendedMedia()
             ) {
-                windowLayoutParams.flags |= WindowManager.LayoutParams.FLAG_SECURE;
+                windowLayoutParams.flags = org.telegram.messenger.purple.PurpleContentPolicy.contentWindowFlags(windowLayoutParams.flags);
                 AndroidUtilities.logFlagSecure();
             } else {
                 windowLayoutParams.flags &=~ WindowManager.LayoutParams.FLAG_SECURE;

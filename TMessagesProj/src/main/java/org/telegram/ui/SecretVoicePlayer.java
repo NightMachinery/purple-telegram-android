@@ -239,7 +239,7 @@ public class SecretVoicePlayer extends Dialog {
             WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS |
             WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION;
         if (!BuildVars.DEBUG_PRIVATE_VERSION) {
-            params.flags |= WindowManager.LayoutParams.FLAG_SECURE;
+            params.flags = org.telegram.messenger.purple.PurpleContentPolicy.contentWindowFlags(params.flags);
             AndroidUtilities.logFlagSecure();
         }
         params.flags |= WindowManager.LayoutParams.FLAG_FULLSCREEN;
@@ -679,6 +679,7 @@ public class SecretVoicePlayer extends Dialog {
             dismiss();
         });
         containerView.addView(closeButton, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.BOTTOM | Gravity.CENTER, 0, 0, 0, 18));
+        org.telegram.messenger.purple.PurpleMediaSave.addVoiceMenu(containerView, () -> messageObject);
 
         if (!isOut && myCell != null && myCell.getMessageObject() != null && myCell.getMessageObject().messageOwner != null) {
             myCell.getMessageObject().messageOwner.media_unread = false;
