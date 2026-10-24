@@ -37,7 +37,7 @@ final class PurpleSyncCheck implements PurpleSyncTelegramTransport.Task,
         if (!operation.proceed()) {
             return;
         }
-        queuedAtStart = holds(copies);
+        queuedAtStart = holds(copies)||operation.client.hasQueuedSync();
         scanner = new PurpleSyncScanner(operation, progress, this::onScanned);
         scanner.start();
     }
@@ -111,7 +111,7 @@ final class PurpleSyncCheck implements PurpleSyncTelegramTransport.Task,
     }
 
     private void onQueue(List<PurpleSyncClient.LocalCopy> copies) {
-        final boolean queuedAtEnd = holds(copies);
+        final boolean queuedAtEnd = holds(copies)||operation.client.hasQueuedSync();
         final boolean queued = queuedAtStart || queuedAtEnd;
         if (!operation.proceed()) {
             return;

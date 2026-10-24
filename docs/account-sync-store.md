@@ -1,12 +1,11 @@
 # Android account sync local store
 
-`PurpleAccountSyncStore` is the device-local store for one opted-in account
-sync owner. Its default root is
-`ApplicationLoader.getFilesDirFixed()/purple/sync`. An off-state `open` does not
-create `purple` or `sync`. The store does no Telegram I/O and is not an
-account-sync runtime. Its owners, `PurpleSyncApply` and `PurpleSyncPublisher`
-under the manual sync screen, provide the selected account, current device
-identity, a core-initialized bound state, and records built by the core.
+`PurpleAccountSyncStore` is the device-local store for an explicitly captured
+originating account. The immutable owner uses `purple/sync`; other accounts use
+`purple/accounts/<key>/sync`. There is no default-root constructor. Its runner
+provides that account, device identity, core-initialized bound state and records
+built by core. See [account-modern-sync.md](account-modern-sync.md) for current
+routing, replacement guards and binding recovery.
 
 The owner must keep one store handle open while using it, close it on logout or
 shutdown, and treat every status other than `Ready` or an expected `NoPending`
@@ -19,7 +18,7 @@ because the user may switch accounts after the store returns. A later transport
 must reconcile its own remote record before publishing; this store's device and
 binding checks do not prove remote ownership. Binding preferences are managed by `PurpleAccountBinding`.
 
-`hasState()` tells an unjoined check whether the device has any sync state
+`hasState(context)` tells an unjoined check whether the device has any sync state
 without opening the store: it creates nothing, answers false when the root
 is missing or holds only the lock file and an empty `pending` directory, and
 answers true for anything else (state, a stage, an artifact, or a root it
@@ -38,7 +37,8 @@ or a disallowed change reports `InvalidTransition`, a malformed state
 `InvalidState`, another device `DeviceMismatch`, and none of them writes. A
 lost binding pauses the store with `AccountUnbound`.
 
-The root admits only `lock`, `state.json`, and `pending`; the pending directory
+The live root admits `lock`, `state.json`, and `pending`, plus recognized
+private orphan archives. An active recovery journal blocks normal setup. The pending directory
 admits only `config.json`. Before it checks names, `open` finishes or undoes
 any write a process death interrupted, for `state.json` and
 `pending/config.json`, the way `AtomicFile.openRead` does: a `.bak` (left by
@@ -84,40 +84,24 @@ this does not promise power-loss durability or parent-directory syncing. The
 store repairs only the interrupted writes and never-sent stages above. It has
 no automatic repair of any other orphan, of a missing or mismatched stage, or
 of an unknown file. The sync screen reports those verdicts as a store error
-that changes nothing; a user-visible recovery route for them is still future
-work. One interrupted write is still not repaired: on Android 10 and lower
+that changes nothing until an explicit, core-authorized Start again archives
+them. See the modern sync recovery contract above. One interrupted write is still not repaired: on Android 10 and lower
 the stage's first write goes straight to `pending/config.json` with no backup,
 so a death partway through a large record leaves a truncated stage, which
 pauses with `OrphanStage`. The first state write is a few hundred bytes, so a
 death there leaves an empty file, which is removed.
 
-Run `TMessagesProj/jni/purple_jni/tests/run_account_sync_store.sh` for the
-host Java state-machine test. It compiles the production store against small
-Android stubs and tests off-state creation, successful reservation and
-confirmation, two handles, replayed stages, missing stages, account and device
-mismatches, malformed state, config data commits (ready, unchanged without a
-write, pending, seen sequence regression, device mismatch and lost binding),
-and `hasState` without creating anything. Its AtomicFile stub follows either
-Android 11 and later or Android 10 and lower, and can stop a write as a
-process death would: before the stream opens, with the file created but
-empty, or with every byte written but not committed. The test stops each
-store write that way (initialize, the stage and the reserved state in
-`stageConfig`, the confirmation, and a config data commit) on both
-behaviours, then reopens and checks that the store is usable and holds the
-version from before the write. It also checks that unknown names and a
-directory where a `.new` would be still pause, that a stage other than the
-next record still pauses as `OrphanStage`, and that `stageConfig` removes its
-stage when the reserved state write runs out of space but keeps it when the
-state file changed. The flow bridge
-harness below repeats the commit cases against the real core. JNI syntax can be checked
-with the macOS Qt Core and JDK headers used by the existing account sync
-acknowledgement test.
+The [production-class host harness](../TMessagesProj/jni/purple_jni/tests/modern_sync/README.md)
+runs the existing store state-machine cases with AtomicFile crash injection and
+also repeats actual initialization, staging, confirmation and recovery against
+JNI. The state-machine suite covers off-state creation, two handles, replayed
+stages, interrupted writes, commit transitions, unknown files and binding loss.
 
 ## Settings History
 
 `PurpleSyncHistory` is a separate store for copies of
 `settings.toml` that sync will keep before it replaces the file. It lives in
-`ApplicationLoader.getFilesDirFixed()/purple/sync-history`, a sibling of the
+the captured account's `sync-history`, a sibling of the
 store root, because the store refuses any name in its root other than its own
 three. The directory is created owner-only (0700) and every file is written
 owner-only (0600) through a temporary sibling and a rename, then read back.
@@ -169,16 +153,10 @@ or key rule is reimplemented in Java. A save with an invalid version key, or
 an entry recording one, is refused. Without the native library every save is
 refused.
 
-Run `TMessagesProj/jni/purple_jni/tests/run_sync_history.sh` on macOS for the
-host test of History and of the settings file helper. It compiles both
-production classes with the flow bridge wrappers against small Android stubs,
-builds the flow bridge as a host dylib against Qt Core, and runs three passes:
-the History and file rules with a fake core (save, list, read, prune with and
-without `keepId`, save order after the clock jumps ahead or goes back, entries
-without a sequence, owner-only modes, symlinked directories, every metadata
-tamper case, settings reads and writes), the same store with the real core's
-fingerprint and version key check, and a pass without the library, where every
-save must be refused and nothing created.
+The production-class harness runs the existing History rules and native
+fingerprint cases. History fault injection supplies its explicit Core/Clock
+ports; settings parsing always uses production JNI. Settings write-failure
+cases supply the writer port rather than shadowing PurpleSettings.
 
 ## Settings sync flow bridge
 
@@ -282,51 +260,13 @@ The calls, in the order a check, apply or publish uses them:
 - `describeApplyFailure` and `undoFinished` give the core's wording choices for
   a failed apply and whether an undo finished.
 
-Every settings file these calls take, including the pre-join file of an
-`afterJoin` request, carries `usingLastGood`. `PurpleSyncSettingsFile.read()`
-sets it when the app runs, or is about to run, from `settings.toml.good`
-because `settings.toml` is missing or does not load (the next paragraph says
-how it decides). The core then refuses to sync: the review has status
-UsingLastGood and no choices, an apply of it is NeedsReview (and of a review
-shown before the fallback, NeedsRecheck), and a new-content post finishes
-with InvalidSettings (or NeedsReview while a record is staged). The one thing
-still allowed is finishing a record staged before the fallback, because
-posting it reads nothing from the file. The review offers Finish sending for
-it (message UsingLastGoodWithPending, verdict Pending) exactly when a working
-`settings.toml` would offer it, and the screen completes it the usual way: a
-fresh check that again offers Finish sending, then a pending-only post.
-Otherwise (an incomplete check, records that need review, an Invalid file) the
-screen shows plain UsingLastGood with no action, and the staged record waits
-until `settings.toml` loads again. History restore and Undo stay available as
-the way out. A restore that loads becomes the new last good copy, so the copy
-the app was running is not kept.
-
-`read()` sets the flag when `PurpleGate.usedLastGood()` is true, and also when
-the bytes this same read returned would make the gate fall back: the file is
-absent, or present but rejected by `PurpleCore.parse` (the same
-`ParseSettings` the gate's load uses), while `settings.toml.good` reads and
-parses. The second rule covers the gap between a bad save and the gate's
-reload. `PurpleWatcher` reloads 400 ms after the last close, rename, create or
-delete it sees and does not watch in-place writes at all, so until then the
-gate's flag still says the app runs from `settings.toml`. Without the second
-rule a check in that gap saw the broken or missing file with the flag clear
-and offered the usual choices; joining then wrote the synced version, and the
-reload parsed it and replaced `settings.toml.good`, so the settings the device
-had been running were lost (reproduced on the emulator). An Invalid file (a
-symlink, not a regular file, over 256 KiB, or unreadable) keeps only the
-gate's flag: the core refuses an Invalid file anyway, and the gate loads a
-symlinked file normally, so calling it a fallback would be wrong. The write of
-an apply, restore or Undo re-reads the file the same way on the UI thread just
-before replacing it, and `Contents.sameAs` compares the flag as well as the
-bytes, so a fallback that starts after the check stops the write with Changed
-(an apply then reports NeedsRecheck).
-
-`run_config_sync_bridge.sh` covers the flag on every call, and
-`run_sync_executors.sh` covers a check, an apply, a publish, a restore and a
-Finish sending while the app runs from the copy, plus a check and a join on a
-broken or missing file before the gate's flag is set and a fallback that
-starts during an update's write. `run_sync_history.sh` covers how `read()`
-decides the flag and the write's re-read.
+Every settings file carries its own `usingLastGood` fact. Reads derive this
+from that primary and its own good copy, never PurpleGate's global flag. Missing
+or invalid TOML beside a valid good copy holds new-content replacement and
+publication. A previously staged Finish may reconcile the retained bytes under
+normal inventory, state and queue checks. Read-only History works with a missing
+or corrupt primary, but a replacement requires a Ready impact of its actual
+opening text. The good copy is not an inferred comparison source.
 
 `settingsFingerprint`, `isConfigVersionKey` and `isSettingsTextWritable`
 answer the core's plain questions about bytes and keys.
@@ -359,27 +299,17 @@ Telegram reports `OutcomeUnknown` instead, since the message may still
 arrive. The Telegram implementation, `PurpleSyncTelegramTransport`, is
 described in `docs/account-sync-transport.md`.
 
-Run `TMessagesProj/jni/purple_jni/tests/run_config_sync_bridge.sh` on macOS
-to build both bridges and the flow sources against Qt Core and exercise
-`PurpleSyncCore` from a host JVM. It needs an org.json jar (the Gradle cache
-copy is found automatically, or set `ORG_JSON_JAR`). The harness ports the
-stateless cases of the core's `tests/test_sync_flow.cpp`: every review
-verdict and failure status, apply and complete for every choice kind, the
-join variants and the joined-stamp rule, stale stamps, the publish truth
-table with ConfirmFound, Finish sending and StillSending, the commit check
-refusals, diff hunks and truncation, and history page classification. A
-second pass puts stand-ins for both `RawReply` classes first on the class
-path, abstract and without members as R8 left them in the `2af13dd5` build,
-so every reply the bridges build fails with `NoSuchMethodError`; each wrapper
-must then answer `NativeUnavailable` without throwing, while the natives that
-build no reply keep working.
+The production-class host harness runs the core bridge cases against the full
+host library. It covers every review verdict and failure status, choice kinds,
+join and stale-stamp rules, publish/Finish truth tables, commit checks, diff
+hunks and history page classification. R8 remains a separate qualification gate.
 
 ## Settings sync executors
 
 `PurpleSyncRunner` runs the manual settings sync for one account, and the
 sync screen holds one. Construct it with `new PurpleSyncRunner(account,
 transport)` and call every method on the main thread; every listener is
-called on the main thread too. The runner captures the account's user id when
+called on the main thread too. The runner captures the full environment, user id and login lifetime when
 it is built, and every step checks again, right before each write, that the
 same user is still active on that account. When the user is gone the step
 stops with an account status and writes nothing more.
@@ -457,16 +387,10 @@ for an apply, `before_restore` and `before_undo` for the others. The settings
 write itself carries `sync apply`, `sync restore` or `sync undo`, which only
 the reload log line shows.
 
-Run `TMessagesProj/jni/purple_jni/tests/run_sync_executors.sh` on macOS to
-drive the runner, apply and publisher through their production constructor
-against the real core, with Android stubs and a fake transport over an
-in-memory Saved Messages. It needs the same Qt and org.json as the bridge
-harness; set `PURPLE_SYNC_DYLIB` to reuse a built library. It walks every
-verdict, and covers a crash after the file write followed by adopt, History
-failure, stale stamps, join failures, Finish sending and StillSending, lost
-receipts, two devices interleaving, the Undo rules, account changes mid-flow,
-stale callbacks, a cancel while the review runs and the main-thread write
-handoff.
+The production-class host harness drives these executors through their shared
+runtime models and real files/JNI, with synthetic transport and Android platform
+ports. The previous accountless executor harness is superseded by that route.
+See its README for the exact qualified boundaries and retained failure cases.
 
 ## Sync across devices screen
 

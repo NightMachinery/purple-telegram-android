@@ -33,8 +33,11 @@ public final class PurpleSendReceipts {
 
         boolean allowed() {
             String owner = PurpleAccountOwner.owner();
-            return origin != null && origin.current() && receipt != null && receipt.current() && PurpleTransferRules.receiptAllowed(
-                    owner, origin.key, legacyStaged, legacyStaged && PurpleAccountOwner.ready());
+            if (origin == null || !origin.current() || receipt == null || !receipt.current()) return false;
+            PurpleAccountFiles.Identity modern = receipt.modernOrigin();
+            if (modern != null) return modern.key.equals(origin.key) && modern.lifetime == origin.lifetime
+                    && PurpleAccountOwner.modernOperation(origin.slot);
+            return PurpleTransferRules.receiptAllowed(owner, origin.key, legacyStaged, legacyStaged && PurpleAccountOwner.ready());
         }
     }
 
@@ -110,6 +113,16 @@ public final class PurpleSendReceipts {
             if (state.pending.get(path) == entry) {
                 state.pending.remove(path);
             }
+        }
+    }
+
+    static boolean hasModernWork(int account) {
+        Account state=accounts.get(account);
+        if(state==null)return false;
+        synchronized(state) {
+            for(Entry entry:state.pending.values())if(!entry.completed&&entry.receipt!=null&&entry.receipt.modernOrigin()!=null&&entry.allowed())return true;
+            for(Entry entry:state.bound.values())if(!entry.completed&&entry.receipt!=null&&entry.receipt.modernOrigin()!=null&&entry.allowed())return true;
+            return false;
         }
     }
 

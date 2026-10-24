@@ -453,7 +453,7 @@ public class PurpleSettingsActivity extends UniversalFragment
         }
         if (!org.telegram.messenger.purple.PurpleAccountOwner.legacyEditorAllowed(currentAccount)
                 && item.id != ROW_PRESET && item.id != ROW_SEND && item.id != ROW_SHARE
-                && item.id != ROW_IMPORT && item.id != ROW_CHECK && item.id != ROW_PATH
+                && item.id != ROW_IMPORT && item.id != ROW_CHECK && item.id != ROW_PATH && item.id != ROW_SYNC
                 && item.id != ROW_SCREEN_TIME && item.id != ROW_DEVICE && item.id != ROW_NOTIFICATIONS
                 && item.id != ROW_LAST_SEEN_SKIP_CONFIRMATION
                 && item.id != ROW_PEEK_DURATION && item.id != ROW_PEEK_DELAY && item.id != ROW_PEEK_EXIT

@@ -163,7 +163,12 @@ directories do, so the media scanner skips it. The manual
 
 ## Send queue
 
-`sendQueued` is true while Saved Messages holds a local copy of a sync
+`sendQueued` includes preparation and bound-receipt work for this originating
+account, even before a database row appears. Check captures that fact at both
+ends of its scan. Modern receipts retain the opening full identity and login
+lifetime, with separate admission from legacy file sends.
+
+It is also true while Saved Messages holds a local copy of a sync
 record that Telegram is still sending, will resend at the next start, or
 failed to send and shows with a Retry action. The client reads
 `messages_v2` rows of the account's own dialog with a negative (local)

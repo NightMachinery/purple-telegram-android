@@ -122,7 +122,7 @@ public final class PurpleAccountOwner {
     }
 
     private static boolean bindingMatches(int slot, byte[] bytes) {
-        PurpleAccountSyncCore.Result checked = PurpleAccountSyncCore.checkAccountBinding(slot, bytes);
+        PurpleAccountSyncCore.Result checked = PurpleAccountSyncCore.checkStartupBinding(slot, bytes);
         return checked.isValid() && "Bound".equals(checked.verdict);
     }
 
@@ -226,6 +226,12 @@ public final class PurpleAccountOwner {
     }
 
     public static boolean legacyEditorAllowed(int slot) { return legacyOperation(slot) && legacyRootFile(); }
+
+    public static boolean modernOperation(int slot) {
+        ensureStarted();
+        PurpleAccountFiles.Identity id = PurpleAccountFiles.capture(slot);
+        return ready() && id != null && id.current();
+    }
 
     public static boolean legacyTransferOperation(int slot) {
         ensureStarted();

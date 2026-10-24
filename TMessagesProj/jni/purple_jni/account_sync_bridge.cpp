@@ -299,6 +299,7 @@ namespace {
 		{ u"space"_q, state.space },
 		{ u"install"_q, state.install },
 		{ u"device"_q, state.createdDevice },
+		{ u"bindingToken"_q, state.bindingToken },
 		{ u"seq"_q, QString::number(state.config.seq) },
 		{ u"pendingSeq"_q, QString::number(state.config.pendingSeq) },
 		{ u"confirmedSeq"_q, QString::number(state.config.confirmedSeq) },
@@ -1319,4 +1320,18 @@ Java_org_telegram_messenger_purple_PurpleAccountSyncCore_compareSpaceIdsNative(
 		{ u"error"_q, u"None"_q },
 		{ u"comparison"_q, *comparison },
 	});
+}
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_org_telegram_messenger_purple_PurpleAccountSyncCore_planSetupBindingTokenNative(
+        JNIEnv *env, jclass, jbyteArray existing, jbyteArray entropy) {
+    auto token = QByteArray(), random = QByteArray();
+    auto error = QString();
+    if ((existing && !ReadBytes(env, existing, token, error))
+        || (entropy && !ReadBytes(env, entropy, random, error))) return Invalid(env, error);
+    const auto plan = Purple::PlanSyncSetupBindingToken(token, random);
+    const auto name = plan.status == Purple::SyncSetupBindingStatus::ReuseExisting ? u"ReuseExisting"_q
+        : plan.status == Purple::SyncSetupBindingStatus::CreateNew ? u"CreateNew"_q
+        : plan.status == Purple::SyncSetupBindingStatus::EntropyRequired ? u"EntropyRequired"_q : u"InvalidPreferenceToken"_q;
+    return Reply(env, {{"status", "Valid"}, {"verdict", name}, {"bindingToken", plan.token}});
 }

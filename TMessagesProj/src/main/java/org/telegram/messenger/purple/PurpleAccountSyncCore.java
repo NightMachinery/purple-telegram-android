@@ -167,6 +167,34 @@ public final class PurpleAccountSyncCore {
         }
     }
 
+    private static native RawReply planSetupBindingTokenNative(byte[] existing, byte[] entropy);
+    public static Result planSetupBindingToken(String existing, byte[] entropy) {
+        try { PurpleCore.ensureLoaded(); return result(planSetupBindingTokenNative(existing != null ? tokenBytes(existing) : null, entropy)); }
+        catch (LinkageError | RuntimeException e) { return new Result("NativeUnavailable"); }
+    }
+
+    static Result initializeBoundLocalState(String install,String device,String space,byte[] entropy) {
+        try { PurpleCore.ensureLoaded(); return result(initializeBoundLocalStateNative(install,device,space,entropy)); }
+        catch(LinkageError|RuntimeException e){return new Result("NativeUnavailable");}
+    }
+    static Result checkAccountBinding(byte[] state,String token) {
+        try { PurpleCore.ensureLoaded(); return result(checkAccountBindingNative(state,tokenBytes(token))); }
+        catch(LinkageError|RuntimeException e){return new Result("NativeUnavailable");}
+    }
+    static Result reserveConfigRecord(byte[] state,byte[] record,String token) {
+        try { PurpleCore.ensureLoaded(); return result(reserveConfigRecordNative(state,record,tokenBytes(token))); }
+        catch(LinkageError|RuntimeException e){return new Result("NativeUnavailable");}
+    }
+
+    static Result checkStartupBinding(int account, byte[] state) {
+        PurpleAccountBinding.Binding binding = PurpleAccountBinding.startupCandidate(account);
+        if (!binding.isValid()) return new Result(binding.error);
+        try {
+            PurpleCore.ensureLoaded(); Result result = result(checkAccountBindingNative(state, tokenBytes(binding.token)));
+            return binding.current() ? result : new Result("AccountChanged");
+        } catch (LinkageError | RuntimeException e) { return new Result("NativeUnavailable"); }
+    }
+
     private static native RawReply inspectConfigRecordNative(byte[] record);
     private static native RawReply inspectStateNative(byte[] state);
     private static native RawReply checkLocalStageNative(byte[] state, byte[] record);
@@ -274,8 +302,7 @@ public final class PurpleAccountSyncCore {
         } catch (LinkageError | RuntimeException e) {
             return new Result("NativeUnavailable");
         }
-        return PurpleAccountBinding.isSameActiveUser(
-                currentAccount, binding.userId)
+        return binding.current()
                 ? reserved
                 : new Result("AccountChanged");
     }
@@ -311,7 +338,7 @@ public final class PurpleAccountSyncCore {
             return initialized;
         }
         final PurpleAccountBinding.Binding binding = PurpleAccountBinding.persist(
-                currentAccount, preparation.userId, initialized.bindingToken);
+                currentAccount, preparation, initialized.bindingToken);
         if (!binding.isValid()) {
             return new Result(binding.error);
         }
@@ -332,8 +359,7 @@ public final class PurpleAccountSyncCore {
         } catch (LinkageError | RuntimeException e) {
             return new Result("NativeUnavailable");
         }
-        return PurpleAccountBinding.isSameActiveUser(
-                currentAccount, binding.userId)
+        return binding.current()
                 ? checked
                 : new Result("AccountChanged");
     }
@@ -353,8 +379,7 @@ public final class PurpleAccountSyncCore {
         } catch (LinkageError | RuntimeException e) {
             return new Result("NativeUnavailable");
         }
-        return PurpleAccountBinding.isSameActiveUser(
-                currentAccount, binding.userId)
+        return binding.current()
                 ? reserved
                 : new Result("AccountChanged");
     }

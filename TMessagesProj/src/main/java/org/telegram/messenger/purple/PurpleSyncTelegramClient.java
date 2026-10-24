@@ -65,6 +65,8 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
     }
 
     @Override
+    public boolean hasQueuedSync() { return PurpleSendReceipts.hasModernWork(account); }
+    @Override
     public long userId() {
         return userId;
     }
@@ -72,7 +74,7 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
     @Override
     public boolean isActive() {
         return userId > 0 && origin != null && origin.userId == userId && origin.current()
-                && PurpleAccountOwner.legacyOperation(account)
+                && PurpleAccountOwner.modernOperation(account)
                 && PurpleAccountBinding.isSameActiveUser(account, userId);
     }
 
@@ -175,7 +177,7 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
         if (!isActive()) { receipt.onReceipt(0, true); return; }
         SendMessagesHelper.prepareSendingPurpleDocument(
                 AccountInstance.getInstance(account), file.getAbsolutePath(),
-                caption, userId, mime, receipt::onReceipt);
+                caption, userId, mime, PurpleSendReceipt.modern(origin, receipt::onReceipt));
     }
 
     private History history(TLObject response, TLRPC.TL_error error) {

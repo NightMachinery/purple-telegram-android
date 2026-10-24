@@ -694,4 +694,15 @@
     <string name="PurpleImpactUnknown">Unrecognized settings</string>
     <string name="PurpleTransferSave">Saves this account’s file with a backup. An existing file sends after the usual delay only if its own Send after save setting is on.</string>
     <string name="PurpleImportCompletionUnverified">The settings file was written, but import completion could not be verified. Reopen settings and review the account file. No automatic send was queued.</string>
+    <string name="PurpleSyncImpactVersion">Changes to the version from %1$s:</string>
+    <string name="PurpleSyncRelink">Relink</string>
+    <string name="PurpleSyncRelinkAbout">%1$s’s link to this device’s sync state was lost, for example by signing out. Relink checks Saved Messages to prove that the state belongs to %1$s, then restores the link. Settings and History stay in place.</string>
+    <string name="PurpleSyncStartAgain">Start again</string>
+    <string name="PurpleSyncResumeArchive">Finish starting again</string>
+    <string name="PurpleSyncStartAgainAbout">Start sync again for %1$s? This moves only this account’s old sync state and pending files into an archive. Settings, good copies, backups, History and device choices stay in place. It waits while a sync post is queued. A partial archive must finish before setup can continue.</string>
+    <string name="PurpleSyncRelinkDone">The link was restored. Review this account’s sync settings below.</string>
+    <string name="PurpleSyncArchiveDone">The old sync state was archived. Join or Publish to set up sync again for this account.</string>
+    <string name="PurpleSyncRecoveryHeld">Recovery could not complete safely. Check this account again. A partial archive remains available to finish.</string>
+    <string name="PurpleSyncRecoveryChecking">Checking this account again before recovery…</string>
+    <string name="PurpleSyncEmptyJoinAbout">This account has no settings file on this device and uses inherited settings. Join only links this account to sync. It creates no settings file and sends nothing. After you create and save this account’s own file, you can publish it.</string>
 </resources>

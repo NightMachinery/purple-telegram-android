@@ -52,9 +52,9 @@ A confirmed upload advances its account’s offered-message watermark even when 
 later save or marker I/O failure prevents publishing its sent fingerprint. Only
 a still-current originating identity may advance either record.
 
-Modern schema-2 sync apply, recovery UI and History remain held for the next
-batch. Bumping core to 32bbf40 makes its reviewed pure recovery plans available,
-but does not enable them in the Android client.
+Modern schema-2 Apply, History/Undo and binding recovery now use the same
+replacement impact contract. See [account-modern-sync.md](account-modern-sync.md)
+for their separate explicit-account pipeline and staged Finish rules.
 
 Headless regressions in `purple_jni/tests/transfers` run the production models,
 shared JNI and isolated files, along with routed/editor, offer, auto-send and

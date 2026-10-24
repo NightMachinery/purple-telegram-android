@@ -15,6 +15,7 @@
 #include <QtCore/QDateTime>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
+#include <QtCore/QFileInfo>
 
 #include <cstdlib>
 
@@ -22,6 +23,10 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <cstdio>
+#if !defined(__APPLE__)
+#include <sys/syscall.h>
+#endif
 
 #include <algorithm>
 #include <map>
@@ -857,4 +862,90 @@ Java_org_telegram_messenger_purple_PurpleLegacySendState_noteNative(
     auto verified = toml::parse(std::string_view(check.constData(), size_t(check.size())));
     if (!verified || verified.table()[key].value<std::string>() != std::optional<std::string>(Purple::SettingsFingerprint(content).toStdString())) return nullptr;
     return env->NewString(reinterpret_cast<const jchar*>(next.utf16()), next.size());
+}
+
+namespace {
+QString RecoveryIdentity(const struct stat &value) {
+    return QString::number(qulonglong(value.st_dev)) + u":"_q + QString::number(qulonglong(value.st_ino));
+}
+int RecoveryDirectory(const QString &path, const QString &identity) {
+    const auto name = QFile::encodeName(path);
+    const auto fd = ::open(name.constData(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    struct stat value {};
+    if (fd >= 0 && ::fstat(fd, &value) == 0 && S_ISDIR(value.st_mode) && RecoveryIdentity(value) == identity) return fd;
+    if (fd >= 0) ::close(fd);
+    return -1;
+}
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_org_telegram_messenger_purple_PurpleSyncRecoveryFiles_moveNative(
+        JNIEnv *env, jclass, jstring sourceText, jstring destinationText, jstring expected,
+        jstring sourceParent, jstring destinationParent) {
+    const auto source = QFileInfo(Text(env, sourceText)), destination = QFileInfo(Text(env, destinationText));
+    const auto from = RecoveryDirectory(source.path(), Text(env, sourceParent));
+    const auto to = RecoveryDirectory(destination.path(), Text(env, destinationParent));
+    if (from < 0 || to < 0) { if (from >= 0) ::close(from); if (to >= 0) ::close(to); return false; }
+    const auto old = QFile::encodeName(source.fileName()), next = QFile::encodeName(destination.fileName());
+    struct stat value {}, absent {};
+    auto moved = false;
+    if (::fstatat(from, old.constData(), &value, AT_SYMLINK_NOFOLLOW) == 0
+        && (S_ISREG(value.st_mode) || S_ISDIR(value.st_mode)) && RecoveryIdentity(value) == Text(env, expected)
+        && ::fstatat(to, next.constData(), &absent, AT_SYMLINK_NOFOLLOW) < 0 && errno == ENOENT) {
+#if defined(__APPLE__)
+        moved = ::renameatx_np(from, old.constData(), to, next.constData(), RENAME_EXCL) == 0;
+#else
+#ifdef SYS_renameat2
+        moved = ::syscall(SYS_renameat2, from, old.constData(), to, next.constData(), 1) == 0;
+#endif
+#endif
+    }
+    const auto durable = moved && ::fsync(from) == 0 && ::fsync(to) == 0;
+    ::close(from); ::close(to);
+    return durable;
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_org_telegram_messenger_purple_PurpleSyncRecoveryFiles_syncNative(
+        JNIEnv *env, jclass, jstring path, jstring expected) {
+    const auto fd = RecoveryDirectory(Text(env, path), Text(env, expected));
+    if (fd < 0) return false;
+    const auto ok = ::fsync(fd) == 0; ::close(fd); return ok;
+}
+extern "C" JNIEXPORT jint JNICALL
+Java_org_telegram_messenger_purple_PurpleSyncRecoveryFiles_lockNative(
+        JNIEnv *env, jclass, jstring path, jstring expected) {
+    const auto parent = RecoveryDirectory(Text(env, path), Text(env, expected));
+    if (parent < 0) return -1;
+    const auto fd = ::openat(parent, "lock", O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0600);
+    ::close(parent);
+    if (fd < 0) return -1;
+    struct stat value {}; struct flock lock {};
+    lock.l_type = F_WRLCK; lock.l_whence = SEEK_SET;
+    if (::fstat(fd, &value) != 0 || !S_ISREG(value.st_mode) || value.st_nlink != 1 || ::fcntl(fd, F_SETLK, &lock) != 0) {
+        ::close(fd); return -1;
+    }
+    return fd;
+}
+extern "C" JNIEXPORT void JNICALL
+Java_org_telegram_messenger_purple_PurpleSyncRecoveryFiles_closeNative(JNIEnv*, jclass, jint fd) {
+    if (fd >= 0) ::close(fd);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_org_telegram_messenger_purple_PurpleSyncRecoveryFiles_writeNative(
+        JNIEnv *env, jclass, jstring path, jstring expected, jbyteArray input) {
+    if (!path || !expected || !input || env->GetArrayLength(input) > 64 * 1024 * 1024) return false;
+    const auto name = QFile::encodeName(Text(env, path));
+    const auto fd = ::open(name.constData(), O_WRONLY | O_NOFOLLOW | O_CLOEXEC);
+    struct stat stat {};
+    if (fd < 0) return false;
+    if (::fstat(fd, &stat) != 0 || !S_ISREG(stat.st_mode) || stat.st_nlink != 1
+        || RecoveryIdentity(stat) != Text(env, expected) || ::fchmod(fd, 0600) != 0 || ::ftruncate(fd, 0) != 0) { ::close(fd); return false; }
+    const auto size = env->GetArrayLength(input); auto bytes = QByteArray(size, Qt::Uninitialized);
+    env->GetByteArrayRegion(input, 0, size, reinterpret_cast<jbyte*>(bytes.data()));
+    if (env->ExceptionCheck()) { ::close(fd); return false; }
+    auto offset = 0;
+    while (offset < size) { const auto count = ::write(fd, bytes.constData() + offset, size - offset);
+        if (count < 0 && errno == EINTR) continue;
+        if (count <= 0) { ::close(fd); return false; } offset += count; }
+    const auto ok = ::fsync(fd) == 0; const auto closed = ::close(fd) == 0; return ok && closed;
 }

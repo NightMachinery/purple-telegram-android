@@ -75,9 +75,8 @@ public final class PurpleSyncHistory {
     private static final String METADATA_SUFFIX = ".json";
     private static final String TEMPORARY_SUFFIX = ".tmp";
 
-    // One process, one History: saves, lists and reads never interleave, so
-    // a prune cannot remove an entry a read is in the middle of.
-    private static final Object LOCK = new Object();
+    private static final java.util.concurrent.ConcurrentHashMap<String, Object> LOCKS = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Object lock;
 
     public enum Reason {
         BeforeUpdate("before_update"),
@@ -187,20 +186,22 @@ public final class PurpleSyncHistory {
     private boolean production;
     private PurpleSyncFileContext context;
 
-    public PurpleSyncHistory() {
-        this(new PurpleSyncFileContext(org.telegram.messenger.UserConfig.selectedAccount));
-    }
-
     PurpleSyncHistory(PurpleSyncFileContext context) {
-        this(context.files == null ? PurpleAccountFiles.rootHistory() : context.files.history,
+        this(requireFiles(context).history,
                 NATIVE, System::currentTimeMillis);
         this.context = context;
         production = true;
         origin = context.origin;
     }
 
+    private static PurpleAccountFiles requireFiles(PurpleSyncFileContext context) {
+        if (context == null || !context.current()) throw new IllegalArgumentException("sync account unavailable");
+        return context.files;
+    }
+
     PurpleSyncHistory(File directory, Core core, Clock clock) {
         this.directory = directory;
+        lock = LOCKS.computeIfAbsent(directory.getAbsolutePath(), ignored -> new Object());
         this.core = core;
         this.clock = clock;
     }
@@ -239,7 +240,7 @@ public final class PurpleSyncHistory {
             FileLog.e("Purple: settings history has no core fingerprint.");
             return null;
         }
-        synchronized (LOCK) {
+        synchronized (lock) {
             if (!accessible() || !prepareDirectories()) {
                 return null;
             }
@@ -279,12 +280,12 @@ public final class PurpleSyncHistory {
     /** Every valid entry, newest first. */
     private boolean accessible() {
         return !production || (context != null && context.current() && origin != null && origin.current()
-                && PurpleAccountOwner.legacyOperation(origin.slot));
+                && PurpleAccountOwner.modernOperation(origin.slot));
     }
 
     public List<Entry> list() {
         if (!accessible()) return java.util.Collections.emptyList();
-        synchronized (LOCK) {
+        synchronized (lock) {
             if (!existingDirectories()) {
                 return Collections.emptyList();
             }
@@ -310,7 +311,7 @@ public final class PurpleSyncHistory {
     /** The exact bytes of a valid entry, or null. */
     public byte[] read(String id) {
         if (!accessible()) return null;
-        synchronized (LOCK) {
+        synchronized (lock) {
             if (!isHistoryId(id) || !existingDirectories()) {
                 FileLog.e("Purple: no settings history entry " + id + ".");
                 return null;

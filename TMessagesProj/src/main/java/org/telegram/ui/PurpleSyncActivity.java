@@ -48,6 +48,7 @@ public class PurpleSyncActivity extends UniversalFragment {
     private static final int ROW_CHECK = 4;
     private static final int ROW_CANCEL = 5;
     private static final int ROW_HISTORY = 6;
+    private static final int ROW_RECOVERY = 7;
 
     private enum Followup { None, Publish, PublishChanges, FinishSending, Share }
 
@@ -77,7 +78,7 @@ public class PurpleSyncActivity extends UniversalFragment {
     public boolean onFragmentCreate() {
         final UserConfig config = UserConfig.getInstance(currentAccount);
         final long userId = config.isClientActivated() ? config.getClientUserId() : 0;
-        if (userId > 0 && org.telegram.messenger.purple.PurpleAccountOwner.legacyOperation(currentAccount)) {
+        if (userId > 0 && org.telegram.messenger.purple.PurpleAccountOwner.modernOperation(currentAccount)) {
             runner = new PurpleSyncRunner(currentAccount,
                     new PurpleSyncTelegramTransport(currentAccount, userId));
             status = getString(R.string.PurpleSyncReady);
@@ -130,6 +131,15 @@ public class PurpleSyncActivity extends UniversalFragment {
             statusItem.id = ROW_STATUS;
             items.add(statusItem);
         }
+        if(shown!=null&&runner()!=null&&!runner.busy()) {
+            PurpleSyncRunner.RecoveryAction recovery=shown.recoveryAction;
+            if(recovery==PurpleSyncRunner.RecoveryAction.Relink||recovery==PurpleSyncRunner.RecoveryAction.StartAgain||recovery==PurpleSyncRunner.RecoveryAction.ResumeArchive) {
+                items.add(UItem.asButton(ROW_RECOVERY,getString(recovery==PurpleSyncRunner.RecoveryAction.Relink?R.string.PurpleSyncRelink
+                        :recovery==PurpleSyncRunner.RecoveryAction.ResumeArchive?R.string.PurpleSyncResumeArchive:R.string.PurpleSyncStartAgain)));
+                items.add(UItem.asShadow(formatString(recovery==PurpleSyncRunner.RecoveryAction.Relink?R.string.PurpleSyncRelinkAbout
+                        :R.string.PurpleSyncStartAgainAbout,accountLabel())));
+            }
+        }
         if (actionVisible()) {
             final UItem item = UItem.asButton(ROW_ACTION, PurpleSyncText.actionText(action));
             item.accent = true;
@@ -154,6 +164,9 @@ public class PurpleSyncActivity extends UniversalFragment {
     @Override
     protected void onClick(UItem item, View view, int position, float x, float y) {
         switch (item.id) {
+            case ROW_RECOVERY:
+                confirmRecovery();
+                break;
             case ROW_ACTION:
                 runCurrentAction();
                 break;
@@ -234,9 +247,9 @@ public class PurpleSyncActivity extends UniversalFragment {
 
     private void showReview(PurpleSyncRunner.Check check, String prefix) {
         shown = check;
-        action = check.review.action;
+        action = check.action();
         setStatus(PurpleSyncText.joined(prefix,
-                PurpleSyncText.describe(check.review, checkedAt)));
+                check.setupOnlyJoin?getString(R.string.PurpleSyncEmptyJoinAbout):PurpleSyncText.describe(check.review, checkedAt)));
     }
 
     private void reviewAgain(String prefix, PurpleSyncRunner.Check next) {
@@ -373,13 +386,13 @@ public class PurpleSyncActivity extends UniversalFragment {
                 return;
             }
             startPublish(prefix, getString(R.string.PurpleSyncSharing),
-                    () -> runner.publish(check, ticket.request, result -> onPublished(result, prefix)));
+                    () -> runner.publish(check, ticket, result -> onPublished(result, prefix)));
             return;
         }
         final String failure = adoptFailureText(check);
         final PurpleSyncCore.Action expected = followupAction(followup);
         final boolean matches = expected != PurpleSyncCore.Action.None
-                && check.review.action == expected;
+                && check.action() == expected;
         final String prefix = (expected == PurpleSyncCore.Action.None || matches)
                 ? failure
                 : PurpleSyncText.joined(getString(
@@ -452,8 +465,25 @@ public class PurpleSyncActivity extends UniversalFragment {
             return;
         }
         final AlertDialog.Builder builder = new AlertDialog.Builder(activity);
-        builder.setTitle(PurpleSyncText.actionText(confirmed));
-        builder.setMessage(PurpleSyncText.confirmText(confirmed, at.review));
+        builder.setTitle(formatString(R.string.PurpleImpactTitle, accountLabel()));
+        String impact = "";
+        boolean ready = !at.requiresChoice(confirmed);
+        for (PurpleSyncCore.Choice choice : at.review.choices) {
+            if (at.requiresChoice(confirmed) && choice.key == null) {
+                ready = choice.impactReady;
+                impact = runner.impactNotes(at, choice);
+                break;
+            }
+        }
+        if (!ready) {
+            builder.setMessage(getString(R.string.PurpleImpactHeld));
+            builder.setNegativeButton(getString(R.string.Close), null);
+            showDialog(builder.create());
+            return;
+        }
+        builder.setMessage(at.setupOnlyJoin&&confirmed==PurpleSyncCore.Action.Join
+                ?getString(R.string.PurpleSyncEmptyJoinAbout)
+                :PurpleSyncText.joined(PurpleSyncText.confirmText(confirmed, at.review), impact));
         builder.setPositiveButton(PurpleSyncText.actionText(confirmed), (dialog, which) -> {
             if (!available()) {
                 stopForLostAccount();
@@ -465,7 +495,7 @@ public class PurpleSyncActivity extends UniversalFragment {
             }
         });
         builder.setNegativeButton(getString(R.string.Cancel), null);
-        showDialog(builder.create());
+        AlertDialog confirmation=builder.create();showDialog(confirmation);PurpleSyncReviewDialog.focusCancel(confirmation);
     }
 
     private void runAction(PurpleSyncCore.Action confirmed, PurpleSyncRunner.Check at) {
@@ -582,6 +612,29 @@ public class PurpleSyncActivity extends UniversalFragment {
         }
     }
 
+    private void confirmRecovery() {
+        Activity activity=getParentActivity();
+        PurpleSyncRunner.Check at=shown;
+        if(activity==null||at==null||runner()==null||runner.busy()||!stillCurrent(at))return;
+        boolean archive=at.recoveryAction!=PurpleSyncRunner.RecoveryAction.Relink;
+        int label=archive?(at.recoveryAction==PurpleSyncRunner.RecoveryAction.ResumeArchive?R.string.PurpleSyncResumeArchive:R.string.PurpleSyncStartAgain):R.string.PurpleSyncRelink;
+        AlertDialog.Builder builder=new AlertDialog.Builder(activity);
+        builder.setTitle(formatString(R.string.PurpleImpactTitle,accountLabel()));
+        builder.setMessage(formatString(archive?R.string.PurpleSyncStartAgainAbout:R.string.PurpleSyncRelinkAbout,accountLabel()));
+        builder.setPositiveButton(getString(label),(dialog,which)->{
+            if(runner()==null)return;
+            PurpleSyncRunner.Start started=runner.recover(at,archive,outcome->{
+                clearReview();
+                if(outcome.ok)reviewAgain(getString(archive?R.string.PurpleSyncArchiveDone:R.string.PurpleSyncRelinkDone),outcome.next);
+                else setStatus(getString(R.string.PurpleSyncRecoveryHeld));
+            });
+            if(started!=PurpleSyncRunner.Start.Started) { refused(started);return; }
+            clearReview();setStatus(getString(R.string.PurpleSyncRecoveryChecking));
+        });
+        builder.setNegativeButton(getString(R.string.Cancel),null);
+        AlertDialog dialog=builder.create();showDialog(dialog);PurpleSyncReviewDialog.focusCancel(dialog);
+    }
+
     private void confirmUndo() {
         final Activity activity = getParentActivity();
         if (activity == null || runner() == null) {
@@ -594,17 +647,26 @@ public class PurpleSyncActivity extends UniversalFragment {
         if (offer == null) {
             return;
         }
+        runner.preview(offer.historyId, preview -> {
+            if (preview != null && preview.impactReady && !isPaused() && runner() != null) confirmUndo(offer, preview);
+            else bulletin(getString(R.string.PurpleImpactHeld));
+        });
+    }
+
+    private void confirmUndo(PurpleSyncRunner.UndoOffer offer, PurpleSyncRunner.Preview preview) {
+        Activity activity = getParentActivity();
+        if (activity == null || runner() == null) return;
         final AlertDialog.Builder builder = new AlertDialog.Builder(activity);
-        builder.setTitle(getString(R.string.PurpleSyncUndoLast));
+        builder.setTitle(formatString(R.string.PurpleImpactTitle,accountLabel()));
         builder.setMessage(formatString(R.string.PurpleSyncUndoQuestion,
-                PurpleSyncText.deviceName(offer.device)));
+                PurpleSyncText.deviceName(offer.device)) + "\n\n" + preview.impactNotes);
         builder.setPositiveButton(getString(R.string.PurpleSyncUndo), (dialog, which) -> {
             final PurpleSyncRunner.UndoOffer current = runner.undoOffer();
             if (runner.busy() || current == null || !current.historyId.equals(offer.historyId)) {
                 return;
             }
             final long entryMillis = PurpleSyncText.historyMillis(offer.historyId);
-            final PurpleSyncRunner.Start started = runner.undo(current, outcome -> {
+            final PurpleSyncRunner.Start started = runner.undo(current, preview, outcome -> {
                 if (outcome.result.status == PurpleSyncCore.RestoreStatus.Restored) {
                     bulletin(getString(R.string.PurpleSyncUndone));
                     reviewAgain(getString(R.string.PurpleSyncUndoneStatus), outcome.next);
@@ -621,14 +683,14 @@ public class PurpleSyncActivity extends UniversalFragment {
             refresh();
         });
         builder.setNegativeButton(getString(R.string.Cancel), null);
-        showDialog(builder.create());
+        AlertDialog confirmation=builder.create();showDialog(confirmation);PurpleSyncReviewDialog.focusCancel(confirmation);
     }
 
-    boolean restoreFromHistory(PurpleSyncHistory.Entry entry) {
+    boolean restoreFromHistory(PurpleSyncHistory.Entry entry, PurpleSyncRunner.Preview preview) {
         if (runner() == null || runner.busy()) {
             return false;
         }
-        final PurpleSyncRunner.Start started = runner.restore(entry.id, outcome -> {
+        final PurpleSyncRunner.Start started = runner.restore(preview, outcome -> {
             final String text = PurpleSyncText.restoreText(outcome.result, entry.createdMs);
             if (outcome.result.status == PurpleSyncCore.RestoreStatus.Restored) {
                 bulletin(getString(R.string.PurpleSyncRestoredBulletin));

@@ -84,9 +84,12 @@ public final class PurpleSyncApply {
         final PurpleSyncCore.Review review;
         final PurpleSyncSettingsFile.Contents local;
         final ApplyResult adoptFailure;
+        final PurpleSyncRecoveryModel.Offer recovery;
 
         Reviewed(PurpleSyncCore.Review review,
-                PurpleSyncSettingsFile.Contents local, ApplyResult adoptFailure) {
+                PurpleSyncSettingsFile.Contents local, ApplyResult adoptFailure) { this(review,local,adoptFailure,null); }
+        Reviewed(PurpleSyncCore.Review review,PurpleSyncSettingsFile.Contents local,ApplyResult adoptFailure,PurpleSyncRecoveryModel.Offer recovery) {
+            this.recovery=recovery;
             this.review = review;
             this.local = local;
             this.adoptFailure = adoptFailure;
@@ -159,7 +162,17 @@ public final class PurpleSyncApply {
             return failed(PurpleSyncCore.ReviewStatus.AccountUnavailable);
         }
         final PurpleSyncRunner.Env env = session.env;
-        final PurpleSyncSettingsFile.Contents local = env.readSettings();
+        PurpleSyncSettingsFile.Contents local = env.readSettings();
+        PurpleSyncRecoveryModel.Offer recovery=env.recovery(inventory,local);
+        if(env.requiresRecovery()&&recovery==null)return new Reviewed(PurpleSyncCore.Review.clientFailure(PurpleSyncCore.ReviewStatus.StoreError),local,null,null);
+        if(recovery!=null) {
+            if(recovery.plan.status==PurpleSyncRecoveryCore.Status.AutoRelink&&!recovery.resuming()) {
+                if(!recovery.model.relink(recovery))return new Reviewed(PurpleSyncCore.Review.clientFailure(PurpleSyncCore.ReviewStatus.AccountUnbound),local,null,recovery);
+                local=env.readSettings();recovery=env.recovery(inventory,local);
+            }
+            if(recovery==null||recovery.resuming()||recovery.plan.status!=PurpleSyncRecoveryCore.Status.Bound&&recovery.plan.status!=PurpleSyncRecoveryCore.Status.Setup)
+                return new Reviewed(PurpleSyncCore.Review.clientFailure(PurpleSyncCore.ReviewStatus.AccountUnbound),local,null,recovery);
+        }
         final String device = env.device();
         if (!env.hasState()) {
             return reviewed(session, PurpleSyncCore.review(inventory, null, null,
@@ -211,10 +224,30 @@ public final class PurpleSyncApply {
         return review(session, inventory);
     }
 
+    static boolean setupOnlyJoin(PurpleSyncInventory inventory,PurpleSyncCore.Review review,PurpleSyncSettingsFile.Contents local) {
+        if(inventory==null||review==null||local==null||review.status!=PurpleSyncCore.ReviewStatus.Ready
+                ||review.bound||review.verdict!=PurpleSyncCore.Verdict.Empty||!review.choices.isEmpty()
+                ||local.status!=PurpleSyncSettingsFile.Status.Absent||local.usingLastGood)return false;
+        PurpleSyncCore.ApplyPlan plan=PurpleSyncCore.planApply(PurpleSyncCore.ApplyRequest.unbound(inventory,local,review.stamp,null));
+        return plan.isValid()&&plan.status==PurpleSyncCore.ApplyPlanStatus.Ready&&plan.join&&!plan.writeRemote;
+    }
+
     static ApplyResult apply(PurpleSyncRunner.Session session,
             PurpleSyncInventory inventory, PurpleSyncCore.Review shown,
-            String chosenKey) {
+            String chosenKey) { return apply(session, inventory, shown, chosenKey, null); }
+
+    static ApplyResult apply(PurpleSyncRunner.Session session, PurpleSyncInventory inventory,
+            PurpleSyncCore.Review shown, String chosenKey, PurpleSyncSettingsFile.Contents expected) {
         final Draft draft = new Draft();
+        final boolean setupOnly=chosenKey==null&&setupOnlyJoin(inventory,shown,expected!=null?expected:session.env.readSettings());
+        if (expected != null && (!expected.current() || !session.env.readSettings().sameAs(expected)))
+            return draft.stop(PurpleSyncCore.ApplyStatus.NeedsRecheck);
+        if ((session.env.requiresRecovery() || expected != null && expected.mutation != null) && shown != null && shown.verdict != PurpleSyncCore.Verdict.Adopt
+                &&!setupOnly) {
+            boolean safe = false;
+            for (PurpleSyncCore.Choice choice : shown.choices) if (java.util.Objects.equals(choice.key, chosenKey)) safe = choice.impactReady;
+            if (!safe) return draft.stop(PurpleSyncCore.ApplyStatus.NeedsReview);
+        }
         if (!session.available() || inventory == null || shown == null
                 || inventory.accountUserId != session.userId
                 || shown.accountUserId != inventory.accountUserId) {
@@ -257,6 +290,8 @@ public final class PurpleSyncApply {
                             opened.status);
                 }
             }
+            if(draft.joined&&expected!=null&&expected.mutation!=null
+                    &&!expected.mutation.acceptSetupDirectories(store.createdDirectories()))return draft.stop(PurpleSyncCore.ApplyStatus.NeedsRecheck);
             final byte[] state = store.stateBytes();
             if (state == null) {
                 return draft.stop(PurpleSyncCore.ApplyStatus.StoreError,
@@ -268,6 +303,7 @@ public final class PurpleSyncApply {
                         pending.status);
             }
             final PurpleSyncSettingsFile.Contents local = env.readSettings();
+            if (expected != null && !local.sameAs(expected)) return draft.stop(PurpleSyncCore.ApplyStatus.NeedsRecheck);
             final PurpleSyncCore.ApplyRequest request = shown.bound
                     ? PurpleSyncCore.ApplyRequest.bound(inventory, state,
                             pending.staged, local, shown.stamp, chosenKey)
@@ -281,6 +317,12 @@ public final class PurpleSyncApply {
                 return draft.stop(plan.join
                         ? PurpleSyncCore.ApplyStatus.NeedsRecheck
                         : statusOf(plan.status));
+            }
+            if(setupOnly) {
+                if(!draft.joined||plan.writeRemote||local.status!=PurpleSyncSettingsFile.Status.Absent||local.usingLastGood)
+                    return draft.stop(PurpleSyncCore.ApplyStatus.NeedsRecheck);
+                draft.nextVerdict=PurpleSyncCore.Verdict.Empty;
+                return draft.stop(PurpleSyncCore.ApplyStatus.Applied);
             }
             draft.fingerprint = plan.localFingerprint;
             PurpleSyncSettingsFile.Contents current = local;
@@ -352,7 +394,12 @@ public final class PurpleSyncApply {
     }
 
     static RestoreResult restore(PurpleSyncRunner.Session session, String id,
-            PurpleSyncHistory.Reason reason) {
+            PurpleSyncHistory.Reason reason) { return restore(session, id, reason, null, null); }
+
+    static RestoreResult restore(PurpleSyncRunner.Session session, String id, PurpleSyncHistory.Reason reason,
+            PurpleSyncSettingsFile.Contents expected, byte[] expectedText) {
+        if (expected != null && (!expected.current() || !session.env.readSettings().sameAs(expected)))
+            return restored(PurpleSyncCore.RestoreStatus.WriteError);
         if (session == null || !session.available()) return restored(PurpleSyncCore.RestoreStatus.WriteError);
         final PurpleSyncRunner.Env env = session.env;
         if (reason != PurpleSyncHistory.Reason.BeforeRestore
@@ -373,6 +420,7 @@ public final class PurpleSyncApply {
             return restored(PurpleSyncCore.RestoreStatus.FileDidNotExist);
         }
         final byte[] text = history.read(id);
+        if (expectedText != null && !Arrays.equals(expectedText, text)) return restored(PurpleSyncCore.RestoreStatus.NotFound);
         if (text == null
                 || !entry.fingerprint.equals(PurpleSyncCore.settingsFingerprint(text))) {
             return restored(PurpleSyncCore.RestoreStatus.NotFound);
@@ -386,6 +434,11 @@ public final class PurpleSyncApply {
                 && Arrays.equals(local.bytes, text)) {
             return new RestoreResult(PurpleSyncCore.RestoreStatus.Unchanged, "",
                     entry.fingerprint);
+        }
+        if (expected != null && !local.sameAs(expected)) return restored(PurpleSyncCore.RestoreStatus.WriteError);
+        if (local.mutation != null) {
+            try { if (!PurpleConfigImpact.ready(local.mutation.impact.analyze(text))) return restored(PurpleSyncCore.RestoreStatus.InvalidSettings); }
+            catch (Exception | LinkageError e) { return restored(PurpleSyncCore.RestoreStatus.InvalidSettings); }
         }
         final boolean undo = reason == PurpleSyncHistory.Reason.BeforeUndo;
         final Written write = writeWithHistory(env, session, local, text,
@@ -475,8 +528,7 @@ public final class PurpleSyncApply {
             return new Joined(SetupStatus.AccountUnavailable, null);
         }
         final PurpleAccountSyncCore.Result initialized =
-                PurpleAccountSyncCore.initializeBoundLocalState(session.account,
-                        install.id, device, space);
+                env.initialize(session.account, install.id, device, space);
         if (!initialized.isValid() || initialized.state == null) {
             return new Joined(setupFailure(initialized.error), null);
         } else if (!session.available()) {
@@ -588,6 +640,8 @@ public final class PurpleSyncApply {
         } else if (review.accountUserId != session.userId || !session.available()) {
             return failed(PurpleSyncCore.ReviewStatus.AccountUnavailable);
         }
+        if(session.env.requiresRecovery()&&review.status==PurpleSyncCore.ReviewStatus.Ready&&!review.pending
+                &&(local==null||local.mutation==null))return new Reviewed(PurpleSyncCore.Review.clientFailure(PurpleSyncCore.ReviewStatus.StoreError),local,null);
         return new Reviewed(review, local, null);
     }
 

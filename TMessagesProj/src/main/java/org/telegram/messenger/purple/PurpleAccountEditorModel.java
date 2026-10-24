@@ -32,8 +32,10 @@ final class PurpleAccountEditorModel {
     static final class Preview {
         final byte[] bytes;
         final JSONObject facts;
-        final boolean imported;
-        Preview(byte[] bytes, JSONObject facts, boolean imported) { this.bytes = bytes; this.facts = facts; this.imported = imported; }
+        final boolean imported, allowMissingWhole;
+        Preview(byte[] bytes, JSONObject facts, boolean imported, boolean allowMissingWhole) {
+            this.bytes = bytes; this.facts = facts; this.imported = imported; this.allowMissingWhole = allowMissingWhole;
+        }
     }
     final File target;
     final File backup;
@@ -60,6 +62,11 @@ final class PurpleAccountEditorModel {
     PurpleAccountEditorModel(File root, File target, File backup, String owner, String globalKey,
             String key, List<File> authorities, PurpleGlobalChoiceFiles.Physical physical, Context context,
             PurpleEditorDirectories.Creator directoryCreator) throws Exception {
+        this(root, target, backup, owner, globalKey, key, authorities, physical, context, directoryCreator, false);
+    }
+    PurpleAccountEditorModel(File root, File target, File backup, String owner, String globalKey,
+            String key, List<File> authorities, PurpleGlobalChoiceFiles.Physical physical, Context context,
+            PurpleEditorDirectories.Creator directoryCreator, boolean sync) throws Exception {
         this.target = target; this.backup = backup; importBackup = new File(target.getPath() + ".import.bak");
         this.physical = physical; this.context = context; this.directoryCreator = directoryCreator;
         global = key.equals(globalKey);
@@ -78,7 +85,7 @@ final class PurpleAccountEditorModel {
         needsDirectory = directories.get(target.getParent()).mark.missing();
         original = own.bytes == null ? null : own.bytes.clone();
         missing = own.mark.missing();
-        if (missing && (key.equals(owner) || !capture(root, new File(target.getPath() + ".good")).mark.missing())) {
+        if (missing && (!sync && key.equals(owner) || !capture(root, new File(target.getPath() + ".good")).mark.missing())) {
             throw new IllegalStateException("account file recovery required");
         }
         openedText = missing ? templateNative() : new String(original, StandardCharsets.UTF_8);
@@ -146,20 +153,36 @@ final class PurpleAccountEditorModel {
         }
         return current(result);
     }
+    boolean acceptSetupDirectories(Map<File,PurpleGlobalChoiceFiles.Mark> created) {
+        try {
+            if(!context.current(false))return false;
+            for(PurpleGlobalChoiceFiles.Snapshot value:inputs.values())if(!value.current(physical))return false;
+            for(Map.Entry<String,PurpleGlobalChoiceFiles.Snapshot> entry:directories.entrySet()) {
+                PurpleGlobalChoiceFiles.Snapshot value=entry.getValue();
+                if(value.current(physical))continue;
+                PurpleGlobalChoiceFiles.Mark owned=created.get(value.file);
+                if(!value.mark.missing()||!targetParents.contains(value.file)||owned==null||!owned.same(physical.mark(value.file,true)))return false;
+                entry.setValue(new PurpleGlobalChoiceFiles.Snapshot(value.file,true,0,physical));
+            }
+            return current();
+        }catch(Exception e){return false;}
+    }
     void impact(PurpleConfigImpact.Input input) { impact = input; }
     Preview preview(String text) { return preview(text, false); }
-    Preview preview(String text, boolean imported) {
+    Preview preview(String text, boolean imported) { return preview(text, imported, false); }
+    Preview previewSync(String text, boolean imported) { return preview(text, imported, true); }
+    private Preview preview(String text, boolean imported, boolean sync) {
         try {
             byte[] bytes = encode(text);
             if (bytes == null || !current()) return null;
-            JSONObject facts = new JSONObject(previewNative(original == null && imported ? new byte[0] : original, bytes, target.getPath(), global, workMode));
+            JSONObject facts = new JSONObject(previewNative(original == null && (imported || sync) ? new byte[0] : original, bytes, target.getPath(), global, workMode));
             if (!facts.optBoolean("ok") || !current()) return null;
             if (impact != null) {
                 JSONObject findings = impact.analyze(bytes);
                 if (!PurpleConfigImpact.ready(findings) || !current()) return null;
                 facts.put("impact", findings);
             }
-            return new Preview(bytes, facts, imported);
+            return new Preview(bytes, facts, imported, imported || sync);
         } catch (Exception | UnsatisfiedLinkError e) { return null; }
     }
     static byte[] encode(String text) {
@@ -174,7 +197,7 @@ final class PurpleAccountEditorModel {
         Result result = new Result();
         try {
             if (consumed || preview == null || !current()) return result;
-            JSONObject verified = new JSONObject(previewNative(original == null && preview.imported ? new byte[0] : original, preview.bytes, target.getPath(), global, workMode));
+            JSONObject verified = new JSONObject(previewNative(original == null && preview.allowMissingWhole ? new byte[0] : original, preview.bytes, target.getPath(), global, workMode));
             if (!verified.optBoolean("ok") || !current()) return result;
             if (impact != null && !PurpleConfigImpact.ready(impact.analyze(preview.bytes))) return result;
             consumed = true;

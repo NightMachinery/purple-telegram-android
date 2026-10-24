@@ -36,6 +36,7 @@ public final class PurpleSyncPublisher {
     private final PurpleSyncTransport transport;
     private final PurpleSyncRunner.Poster queue;
     private final Finished finished;
+    private final java.util.function.BooleanSupplier effects;
     private volatile boolean abandoned;
     private PurpleAccountSyncStore store;
     private boolean started;
@@ -47,6 +48,12 @@ public final class PurpleSyncPublisher {
             PurpleSyncInventory inventory, boolean sendQueued,
             PurpleSyncCore.PostRequest request, PurpleSyncTransport transport,
             PurpleSyncRunner.Poster queue, Finished finished) {
+        this(session,inventory,sendQueued,request,transport,queue,()->true,finished);
+    }
+    PurpleSyncPublisher(PurpleSyncRunner.Session session,PurpleSyncInventory inventory,boolean sendQueued,
+            PurpleSyncCore.PostRequest request,PurpleSyncTransport transport,PurpleSyncRunner.Poster queue,
+            java.util.function.BooleanSupplier effects,Finished finished) {
+        this.effects=effects;
         this.session = session;
         this.inventory = inventory;
         this.sendQueued = sendQueued;
@@ -56,6 +63,8 @@ public final class PurpleSyncPublisher {
         this.finished = finished;
     }
 
+    private boolean current() { return session.available()&&(request.pendingOnly||effects.getAsBoolean()); }
+
     void start() {
         if (started || done) {
             return;
@@ -64,7 +73,7 @@ public final class PurpleSyncPublisher {
         if (abandoned) {
             finish(PurpleSyncCore.PublishStatus.Cancelled);
             return;
-        } else if (!session.available()
+        } else if (!current()
                 || inventory.accountUserId != session.userId) {
             finish(PurpleSyncCore.PublishStatus.AccountUnavailable);
             return;
@@ -102,7 +111,7 @@ public final class PurpleSyncPublisher {
                 (entry.entry == PurpleSyncCore.PostEntry.NewContent)
                         ? env.readSettings() : PurpleSyncApply.noFile();
         final long nowSeconds = env.serverTimeMillis(session.account) / 1000L;
-        if (!session.available()) {
+        if (!current()) {
             finish(PurpleSyncCore.PublishStatus.AccountUnavailable);
             return;
         }
@@ -146,7 +155,7 @@ public final class PurpleSyncPublisher {
     }
 
     private void confirm(byte[] record, int messageId) {
-        if (!session.available()) {
+        if (!current()) {
             finish(PurpleSyncCore.PublishStatus.AccountUnavailable);
             return;
         }
@@ -161,7 +170,7 @@ public final class PurpleSyncPublisher {
     }
 
     private void stage(PurpleSyncCore.PostPlan plan) {
-        if (!session.available()) {
+        if (!current()) {
             finish(PurpleSyncCore.PublishStatus.AccountUnavailable);
             return;
         }
@@ -188,7 +197,7 @@ public final class PurpleSyncPublisher {
                 || staged.staged == null) {
             finish(PurpleSyncCore.PublishStatus.StoreError, staged.status);
             return;
-        } else if (!session.available()) {
+        } else if (!current()) {
             finish(PurpleSyncCore.PublishStatus.AccountUnavailable);
             return;
         }
@@ -207,7 +216,7 @@ public final class PurpleSyncPublisher {
         if (abandoned) {
             finish(PurpleSyncCore.PublishStatus.Cancelled);
             return;
-        } else if (!session.available()) {
+        } else if (!current()) {
             finish(PurpleSyncCore.PublishStatus.AccountUnavailable);
             return;
         }
@@ -224,7 +233,7 @@ public final class PurpleSyncPublisher {
         }
         posting = false;
         if (result.status == PurpleSyncTransport.PostStatus.Confirmed) {
-            if (!session.available()) {
+            if (!current()) {
                 finish(PurpleSyncCore.PublishStatus.OutcomeUnknown);
                 return;
             }

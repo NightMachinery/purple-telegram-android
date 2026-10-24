@@ -128,6 +128,11 @@ final class PurpleSyncReviewDialog {
     private PurpleSyncReviewDialog() {
     }
 
+    static void focusCancel(AlertDialog dialog) {
+        View cancel=dialog.getButton(DialogInterface.BUTTON_NEGATIVE);
+        if(cancel!=null) { cancel.setFocusableInTouchMode(true);cancel.requestFocus(); }
+    }
+
     static int gravity() {
         return LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT;
     }
@@ -178,9 +183,11 @@ final class PurpleSyncReviewDialog {
         final LinearLayout layout = new LinearLayout(context);
         layout.setOrientation(LinearLayout.VERTICAL);
         final ArrayList<RadioColorCell> radios = new ArrayList<>();
-        final int[] selected = { 0 };
+        boolean risk = false;
+        for (PurpleSyncCore.Choice choice : choices) risk |= choice.dangerous;
+        final int[] selected = { risk ? -1 : 0 };
         final Runnable[] select = new Runnable[1];
-        if (update) {
+        if (update && !risk) {
             label(context, layout, optionLabel(review, choices.get(0)), false);
         } else {
             for (int i = 0; i != choices.size(); ++i) {
@@ -191,12 +198,12 @@ final class PurpleSyncReviewDialog {
                         Theme.getColor(Theme.key_dialogRadioBackgroundChecked));
                 final PurpleSyncCore.Choice choice = choices.get(i);
                 if (choice.key == null) {
-                    cell.setTextAndValue(getString(R.string.PurpleSyncOptionThisDevice), i == 0);
+                    cell.setTextAndValue(getString(R.string.PurpleSyncOptionThisDevice), i == selected[0]);
                 } else {
                     final PurpleSyncCore.Head head = review.heads.get(choice.head);
                     cell.setTextAndText2AndValue(PurpleSyncText.deviceName(head.name),
                             formatString(R.string.PurpleSyncOptionChanged,
-                                    PurpleSyncText.recordTime(head.at)), i == 0);
+                                    PurpleSyncText.recordTime(head.at)), i == selected[0]);
                 }
                 cell.setBackground(Theme.getSelectorDrawable(false));
                 cell.setOnClickListener(v -> {
@@ -214,6 +221,7 @@ final class PurpleSyncReviewDialog {
                         LayoutHelper.WRAP_CONTENT));
             }
         }
+        final TextView impact = label(context, layout, "", false);
         final TextView compare = label(context, layout, "", false);
         final ChangePreview preview = ChangePreview.add(context, layout, runner);
         final TextView newer = label(context, layout,
@@ -224,7 +232,7 @@ final class PurpleSyncReviewDialog {
         builder.setView(layout);
         builder.setPositiveButton(PurpleSyncText.choiceButton(review,
                 !update && choices.get(0).publishes), (dialog, which) -> {
-            if (done[0]) {
+            if (done[0] || selected[0] < 0 || !choices.get(selected[0]).impactReady) {
                 return;
             }
             done[0] = true;
@@ -232,10 +240,19 @@ final class PurpleSyncReviewDialog {
         });
         builder.setNegativeButton(getString(update
                 ? R.string.PurpleSyncNotNow : R.string.Cancel), null);
+        builder.setTitle(formatString(R.string.PurpleImpactTitle, runner.accountLabel()));
         final AlertDialog dialog = builder.create();
 
         select[0] = () -> {
+            View positive = dialog.getButton(DialogInterface.BUTTON_POSITIVE);
+            if (positive != null) positive.setEnabled(selected[0] >= 0 && choices.get(selected[0]).impactReady);
+            if (selected[0] < 0) {
+                impact.setText(""); compare.setText(""); preview.show(null);
+                newer.setVisibility(View.GONE); disclosure.setVisibility(View.GONE);
+                return;
+            }
             final PurpleSyncCore.Choice choice = choices.get(selected[0]);
+            impact.setText(runner.impactNotes(check, choice));
             if (choice.key != null) {
                 final PurpleSyncCore.Head head = review.heads.get(choice.head);
                 compare.setText(getString(update
@@ -262,6 +279,9 @@ final class PurpleSyncReviewDialog {
         };
         select[0].run();
         fragment.showDialog(dialog);
+        select[0].run();
+        View cancel = dialog.getButton(DialogInterface.BUTTON_NEGATIVE);
+        if (cancel != null) { cancel.setFocusableInTouchMode(true); cancel.requestFocus(); }
     }
 
     private static String optionLabel(PurpleSyncCore.Review review,

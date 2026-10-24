@@ -43,6 +43,8 @@ public final class PurpleAccountEditor {
         public final String accountKey, globalKey, openedText, path;
         public final boolean global, missing, needsDirectory;
         private final PurpleAccountEditorModel model;
+        final PurpleConfigImpact.Input impact;
+        final PurpleSyncImpactGuard effects;
         private final java.util.List<PurpleAccountFiles.Identity> warningAccounts;
         private final PurpleAccountFiles globalFiles;
         private final PurpleAccountFiles files;
@@ -50,7 +52,7 @@ public final class PurpleAccountEditor {
         private volatile boolean retired;
         private volatile Current confirmation;
         Session(PurpleGlobalAccountChoice.Session context, PurpleAccountFiles.Identity origin,
-                String key, PurpleAccountFiles files, PurpleAccountFiles globalFiles) throws Exception {
+                String key, PurpleAccountFiles files, PurpleAccountFiles globalFiles, boolean sync) throws Exception {
             accountKey = key; globalKey = context.global; global = key.equals(globalKey);
             warningAccounts = new java.util.ArrayList<>(context.accounts);
             this.globalFiles = globalFiles; this.files = files;
@@ -73,7 +75,7 @@ public final class PurpleAccountEditor {
                         public void notifyChanged() {
                             NotificationCenter.getInstance(origin.slot).postNotificationName(NotificationCenter.dialogFiltersUpdated);
                         }
-                    }, PurpleEditorDirectories.NATIVE);
+                    }, PurpleEditorDirectories.NATIVE, sync);
             if (model.capturedBytes(globalFiles.settings) == null && model.capturedBytes(globalFiles.good) != null) {
                 throw new IllegalStateException("global last-good recovery requires review");
             }
@@ -93,9 +95,26 @@ public final class PurpleAccountEditor {
             }
             int[] choices = new int[modes.size()];
             for (int i = 0; i < choices.length; ++i) choices[i] = modes.get(i);
-            model.impact(new PurpleConfigImpact.Input(model.capturedBytes(files.settings), global, model.workMode,
-                    model.capturedBytes(globalFiles.settings), keys.toArray(new String[0]), accountBytes.toArray(new byte[0][]), choices));
+            impact = new PurpleConfigImpact.Input(model.capturedBytes(files.settings), global, model.workMode,
+                    model.capturedBytes(globalFiles.settings), keys.toArray(new String[0]), accountBytes.toArray(new byte[0][]), choices);
+            java.util.ArrayList<java.io.File> effectFiles=new java.util.ArrayList<>();
+            for(java.io.File file:authorities)if(!file.equals(files.settings)&&!file.equals(files.good)&&!effectFiles.contains(file))effectFiles.add(file);
+            effectFiles.add(PurpleAccountFiles.file("local.toml"));effectFiles.add(PurpleAccountFiles.file("accounts/root.toml"));
+            final long role=PurpleAccountOwner.roleEpoch();
+            effects=new PurpleSyncImpactGuard(PurpleAccountFiles.root(),effectFiles,files.settings.getParentFile(),PurpleGlobalAccountChoice.PHYSICAL,()->{
+                if(!origin.current()||!PurpleAccountOwner.ready()||role!=PurpleAccountOwner.roleEpoch()
+                        ||!context.owner.equals(PurpleAccountOwner.owner())||!globalKey.equals(PurpleAccountOwner.global()))return false;
+                java.util.List<PurpleAccountFiles.Identity> now=PurpleAccountOwner.signedIn();
+                if(now.size()!=warningAccounts.size())return false;
+                for(int i=0;i<now.size();++i)if(now.get(i).slot!=warningAccounts.get(i).slot||!now.get(i).key.equals(warningAccounts.get(i).key)
+                        ||now.get(i).lifetime!=warningAccounts.get(i).lifetime)return false;
+                return true;
+            });
+            model.impact(impact);
             openedText = model.openedText; missing = model.missing; needsDirectory = model.needsDirectory; path = files.settings.getPath();
+        }
+        boolean acceptSetupDirectories(java.util.Map<java.io.File,PurpleGlobalChoiceFiles.Mark> created) {
+            return !retired && model.acceptSetupDirectories(created) && effects.acceptSetupDirectories(created);
         }
         public boolean current() { return !retired && model.current(); }
         public void retire() { retired = true; }
@@ -120,7 +139,20 @@ public final class PurpleAccountEditor {
             if (result == null) return null;
             return current() ? new Preview(this, result) : null;
         }
+        Preview previewSync(byte[] bytes, boolean imported) {
+            if (bytes == null) return null;
+            String text = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+            if (!Arrays.equals(bytes, PurpleAccountEditorModel.encode(text)) || !current()) return null;
+            PurpleAccountEditorModel.Preview value = model.previewSync(text, imported);
+            return value != null && current() ? new Preview(this, value) : null;
+        }
+        Outcome saveSync(Preview preview, Current confirmation, boolean imported) {
+            return save(preview, confirmation, true, imported);
+        }
         public Outcome save(Preview preview, Current confirmation) {
+            return save(preview, confirmation, false, preview != null && preview.value.imported);
+        }
+        private Outcome save(Preview preview, Current confirmation, boolean sync, boolean imported) {
             if (Looper.myLooper() != Looper.getMainLooper() || preview == null || preview.owner != this || confirmation == null || !confirmation.current()) {
                 return new Outcome(new PurpleAccountEditorModel.Result());
             }
@@ -133,8 +165,8 @@ public final class PurpleAccountEditor {
                             PurpleAccountEditorModel.Result result = model.save(preview.value);
                             if (result.ok && destination != null) {
                                 boolean recorded = PurpleSync.afterFileWrite(destination, files.settings, preview.value.bytes,
-                                        preview.value.imported, !missing && !preview.value.imported);
-                                if (preview.value.imported && !recorded) result.ok = false;
+                                        imported, !sync && !missing && !imported);
+                                if (imported && !recorded) result.ok = false;
                             }
                             return new Outcome(result);
                         }
@@ -145,6 +177,12 @@ public final class PurpleAccountEditor {
         }
     }
     public static Session open(int account, boolean appWide, Current current) {
+        return open(account, appWide, current, false);
+    }
+    static Session openSync(PurpleSyncFileContext context) {
+        return context != null && context.current() ? open(context.origin.slot, false, context::current, true) : null;
+    }
+    private static Session open(int account, boolean appWide, Current current, boolean sync) {
         if (writing || current == null || !current.current()) return null;
         PurpleGlobalAccountChoice.Session context = PurpleGlobalAccountChoice.begin(account, current::current);
         PurpleAccountFiles.Identity origin = PurpleAccountFiles.capture(account);
@@ -154,7 +192,7 @@ public final class PurpleAccountEditor {
         PurpleAccountFiles global = PurpleAccountFiles.resolve(context.global, context.owner);
         if (own == null || global == null) return null;
         try {
-            Session result = new Session(context, origin, key, own, global);
+            Session result = new Session(context, origin, key, own, global, sync);
             return result.current() ? result : null;
         } catch (Exception | UnsatisfiedLinkError e) { return null; }
     }

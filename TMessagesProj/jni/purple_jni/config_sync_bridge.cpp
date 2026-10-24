@@ -1,3 +1,5 @@
+#include "config_recovery_bridge.h"
+#include "config_impact_bridge.h"
 #include <jni.h>
 
 #include "purple/purple_config_diff.h"
@@ -973,7 +975,8 @@ Java_org_telegram_messenger_purple_PurpleSyncCore_reviewConfigNative(
 		jlongArray editDates, jobjectArray records, jbyteArray state,
 		jbyteArray staged, jint localStatus, jbyteArray localText,
 		jboolean localLastGood, jstring device, jstring platform,
-		jstring app) {
+		jstring app, jboolean impactEnabled, jboolean appWide, jint mode,
+        jbyteArray globalFile, jobjectArray accounts, jobjectArray accountFiles, jintArray modes) {
 	auto error = QString();
 	const auto inventory = ReadInventory(env, accountUserId, scanComplete,
 		ids, transport, documentIds, editDates, records, error);
@@ -1020,14 +1023,30 @@ Java_org_telegram_messenger_purple_PurpleSyncCore_reviewConfigNative(
 	for (const auto &name : description.devices) {
 		devices.push_back(NameJson(name));
 	}
-	auto choices = QJsonArray();
-	for (const auto &choice : Purple::SyncConfigChoices(review, publishable)) {
-		choices.push_back(QJsonObject{
-			{ u"key"_q, choice.key ? QJsonValue(*choice.key) : QJsonValue() },
-			{ u"head"_q, choice.head },
-			{ u"publishes"_q, choice.publishes },
-		});
-	}
+    const auto context = impactEnabled
+        ? PurpleAndroid::ReadImpactContext(env, appWide, mode, globalFile, accounts, accountFiles, modes)
+        : std::optional<Purple::ConfigImpactInput>();
+    if (impactEnabled && !context) return Invalid(env, u"InvalidImpactContext"_q);
+    const auto options = context ? Purple::SyncConfigChoices(review, publishable, *context)
+        : Purple::SyncConfigChoices(review, publishable);
+    auto choices = QJsonArray();
+    for (const auto &choice : options) {
+        auto impacts = QJsonArray();
+        const auto after = choice.key ? review.heads[choice.head].text : review.local.text;
+        for (const auto &change : choice.impacts) {
+            auto before = review.local.text;
+            if (change.replacedKey) for (const auto &head : review.heads) {
+                if (head.head.key == *change.replacedKey) before = head.text;
+            }
+            impacts.push_back(QJsonObject{
+                {"replacedKey", change.replacedKey ? QJsonValue(*change.replacedKey) : QJsonValue()},
+                {"impact", PurpleAndroid::ImpactJson(change.impact, before, after)}});
+        }
+        choices.push_back(QJsonObject{
+            {"key", choice.key ? QJsonValue(*choice.key) : QJsonValue()}, {"head", choice.head},
+            {"publishes", choice.publishes}, {"impactReady", choice.impactReady},
+            {"dangerous", choice.dangerous}, {"impacts", impacts}});
+    }
 	auto metadata = Valid();
 	metadata.insert(u"inventory"_q, Name(inventory->status));
 	metadata.insert(u"review"_q, Name(review.status));
@@ -1393,4 +1412,27 @@ Java_org_telegram_messenger_purple_PurpleSyncCore_undoFinishedNative(
 	auto metadata = Valid();
 	metadata.insert(u"finished"_q, Purple::SyncConfigUndoFinished(*parsed));
 	return Reply(env, metadata);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleSyncRecoveryCore_planNative(
+        JNIEnv *env, jclass, jstring request, jlong accountUserId, jboolean scanComplete,
+        jintArray ids, jintArray transport, jlongArray documentIds, jlongArray editDates,
+        jobjectArray records, jint localStatus, jbyteArray localText, jboolean lastGood) {
+    auto text = QString(), error = QString();
+    if (!ReadString(env, request, text) || text.size() > 64 * 1024 * 1024) return nullptr;
+    auto parse = QJsonParseError();
+    const auto json = QJsonDocument::fromJson(text.toUtf8(), &parse);
+    const auto local = ReadLocal(env, localStatus, localText, lastGood, error);
+    if (parse.error != QJsonParseError::NoError || !json.isObject() || !local) return nullptr;
+    if (json.object().value("journalPlan").isObject())
+        return ToString(env, QString::fromUtf8(QJsonDocument(PurpleAndroid::RecoveryJournalResult(json.object(), *local)).toJson(QJsonDocument::Compact)));
+    auto inventory = std::optional<Purple::SyncAccountInventoryResult>();
+    if (json.object().value("cloud").toBool()) {
+        inventory = ReadInventory(env, accountUserId, scanComplete, ids, transport, documentIds, editDates, records, error);
+        if (!inventory) return nullptr;
+    }
+    const auto input = PurpleAndroid::ReadRecovery(json.object(), *local, inventory ? &*inventory : nullptr);
+    if (!input) return nullptr;
+    return ToString(env, QString::fromUtf8(QJsonDocument(PurpleAndroid::RecoveryResult(json.object(), *input)).toJson(QJsonDocument::Compact)));
 }

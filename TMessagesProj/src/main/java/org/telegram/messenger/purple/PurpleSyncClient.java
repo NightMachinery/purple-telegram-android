@@ -119,6 +119,7 @@ interface PurpleSyncClient {
         void onReceipt(int serverId, boolean preparationFailed);
     }
 
+    default boolean hasQueuedSync() { return false; }
     long userId();
 
     boolean isActive();

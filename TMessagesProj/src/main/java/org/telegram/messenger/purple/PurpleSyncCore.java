@@ -167,15 +167,30 @@ public final class PurpleSyncCore {
         }
     }
 
+    public static final class ChoiceImpact {
+        public final String replacedKey;
+        public final JSONObject impact;
+        ChoiceImpact(JSONObject json) throws JSONException {
+            replacedKey = optionalString(json, "replacedKey");
+            impact = object(json, "impact");
+        }
+    }
+
     public static final class Choice {
         public final String key;
         public final int head;
-        public final boolean publishes;
+        public final boolean publishes, impactReady, dangerous;
+        public final List<ChoiceImpact> impacts;
 
         Choice(JSONObject json) throws JSONException {
             key = optionalString(json, "key");
             head = integer(json, "head");
             publishes = bool(json, "publishes");
+            impactReady = json.optBoolean("impactReady"); dangerous = json.optBoolean("dangerous");
+            ArrayList<ChoiceImpact> values = new ArrayList<>();
+            JSONArray list = json.optJSONArray("impacts");
+            if (list != null) for (int i = 0; i < list.length(); ++i) values.add(new ChoiceImpact(element(list, i)));
+            impacts = Collections.unmodifiableList(values);
         }
     }
 
@@ -727,7 +742,9 @@ public final class PurpleSyncCore {
             boolean scanComplete, int[] ids, int[] transport,
             long[] documentIds, long[] editDates, byte[][] records,
             byte[] state, byte[] staged, int localStatus, byte[] localText,
-            boolean localLastGood, String device, String platform, String app);
+            boolean localLastGood, String device, String platform, String app,
+            boolean impactEnabled, boolean appWide, int mode, byte[] globalFile,
+            String[] accounts, byte[][] accountFiles, int[] modes);
     private static native RawReply diffConfigNative(byte[] before, byte[] after);
     private static native RawReply planConfigApplyNative(long accountUserId,
             boolean scanComplete, int[] ids, int[] transport,
@@ -858,6 +875,13 @@ public final class PurpleSyncCore {
     static Review review(PurpleSyncInventory inventory, byte[] state,
             byte[] staged, PurpleSyncSettingsFile.Contents local,
             String device, String platform, String app) {
+        return review(inventory, state, staged, local, device, platform, app,
+                local != null && local.mutation != null ? local.mutation.impact : null);
+    }
+
+    static Review review(PurpleSyncInventory inventory, byte[] state,
+            byte[] staged, PurpleSyncSettingsFile.Contents local, String device,
+            String platform, String app, PurpleConfigImpact.Input impact) {
         if (inventory == null || local == null || device == null) {
             return Review.failure("NullInput");
         }
@@ -866,7 +890,10 @@ public final class PurpleSyncCore {
                         inventory.transport, inventory.documentIds,
                         inventory.editDates, inventory.bytes, state, staged,
                         localStatus(local), localText(local), lastGood(local),
-                        device, platform, app),
+                        device, platform, app, impact != null, impact != null && impact.appWide,
+                        impact != null ? impact.mode : 0, impact != null ? impact.global : null,
+                        impact != null ? impact.accounts : null, impact != null ? impact.files : null,
+                        impact != null ? impact.modes : null),
                 (raw, json) -> new Review(json, raw.texts), Review::failure);
     }
 
@@ -954,8 +981,7 @@ public final class PurpleSyncCore {
                         request.expectedFingerprint, request.parents(), token,
                         nowSeconds, platform, app, sendQueued),
                 (raw, json) -> new PostPlan(json, raw.record), PostPlan::new);
-        return PurpleAccountBinding.isSameActiveUser(currentAccount,
-                binding.userId) ? plan : new PostPlan("AccountChanged");
+        return binding.current() ? plan : new PostPlan("AccountChanged");
     }
 
     public static PostPlan checkStagedPost(int currentAccount,
@@ -978,8 +1004,7 @@ public final class PurpleSyncCore {
                         inventory.documentIds, inventory.editDates,
                         inventory.bytes, state, staged, token),
                 (raw, json) -> new PostPlan(json, raw.record), PostPlan::new);
-        return PurpleAccountBinding.isSameActiveUser(currentAccount,
-                binding.userId) ? plan : new PostPlan("AccountChanged");
+        return binding.current() ? plan : new PostPlan("AccountChanged");
     }
 
     public static ApplyFailure describeApplyFailure(ApplyStatus status,

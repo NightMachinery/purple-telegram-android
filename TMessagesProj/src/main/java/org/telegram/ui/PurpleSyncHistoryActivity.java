@@ -100,7 +100,7 @@ public class PurpleSyncHistoryActivity extends UniversalFragment {
 
     private void showPreview(PurpleSyncHistory.Entry entry, PurpleSyncRunner.Preview preview) {
         final Activity activity = getParentActivity();
-        if (activity == null) {
+        if (activity == null || host.runner() == null) {
             return;
         }
         final LinearLayout layout = new LinearLayout(activity);
@@ -126,11 +126,14 @@ public class PurpleSyncHistoryActivity extends UniversalFragment {
                             : R.string.PurpleSyncEntryChanges), false);
             PurpleSyncReviewDialog.ChangePreview.add(activity, layout, host.runner())
                     .show(preview.diff);
-            restorable = true;
+            PurpleSyncReviewDialog.label(activity, layout, preview.impactNotes, false);
+            restorable = preview.impactReady;
+            if (!restorable) PurpleSyncReviewDialog.label(activity, layout,
+                    getString(R.string.PurpleImpactHeld), false);
         }
 
         final AlertDialog.Builder builder = new AlertDialog.Builder(activity);
-        builder.setTitle(getString(R.string.PurpleSyncSavedSettings));
+        builder.setTitle(formatString(R.string.PurpleImpactTitle,host.runner().accountLabel()));
         builder.setMessage(PurpleSyncText.historyRow(entry));
         builder.setView(layout);
         if (restorable) {
@@ -140,23 +143,24 @@ public class PurpleSyncHistoryActivity extends UniversalFragment {
         final AlertDialog dialog = builder.create();
         if (restorable) {
             dialog.setDismissDialogByButtons(false);
-            dialog.setPositiveButtonListener((d, which) -> confirmRestore(dialog, entry));
+            dialog.setPositiveButtonListener((d, which) -> confirmRestore(dialog, entry, preview));
             dialog.setNegativeButton(getString(R.string.Close), (d, which) -> d.dismiss());
         }
         showDialog(dialog);
+        PurpleSyncReviewDialog.focusCancel(dialog);
     }
 
-    private void confirmRestore(AlertDialog previewDialog, PurpleSyncHistory.Entry entry) {
+    private void confirmRestore(AlertDialog previewDialog, PurpleSyncHistory.Entry entry, PurpleSyncRunner.Preview preview) {
         final Activity activity = getParentActivity();
-        if (activity == null) {
+        if (activity == null || host.runner() == null) {
             return;
         }
         final AlertDialog.Builder builder = new AlertDialog.Builder(activity);
-        builder.setTitle(getString(R.string.PurpleSyncRestore));
+        builder.setTitle(formatString(R.string.PurpleImpactTitle,host.runner().accountLabel()));
         builder.setMessage(formatString(R.string.PurpleSyncRestoreQuestion,
-                PurpleSyncText.moment(entry.createdMs)));
+                PurpleSyncText.moment(entry.createdMs)) + "\n\n" + preview.impactNotes);
         builder.setPositiveButton(getString(R.string.PurpleSyncRestore), (dialog, which) -> {
-            if (host.restoreFromHistory(entry)) {
+            if (host.restoreFromHistory(entry, preview)) {
                 previewDialog.dismiss();
                 finishFragment();
             } else {
@@ -165,7 +169,10 @@ public class PurpleSyncHistoryActivity extends UniversalFragment {
             }
         });
         builder.setNegativeButton(getString(R.string.Cancel), null);
-        builder.create().show();
+        AlertDialog dialog = builder.create();
+        dialog.show();
+        View cancel = dialog.getButton(android.content.DialogInterface.BUTTON_NEGATIVE);
+        if (cancel != null) { cancel.setFocusableInTouchMode(true); cancel.requestFocus(); }
     }
 
     static final class EntryRow extends UItem.UItemFactory<TextDetailSettingsCell> {

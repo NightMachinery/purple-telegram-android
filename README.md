@@ -830,6 +830,11 @@ reload happen, then reads the file back. An apply is stored as an import,
 which the auto-send never posts back; a restore or undo skips the auto-send
 entirely, as on the desktop.
 
+Modern sync uses the opening account throughout Join, Apply, Publish, Finish,
+History/Undo and binding recovery, including schema-2 account files. See
+[account-modern-sync.md](docs/account-modern-sync.md) for replacement impacts,
+per-file fallback and the headless production-class test route.
+
 `PurpleSyncRunner` drives manual settings sync for one account
 over any `PurpleSyncTransport`. It runs one step at a time, drops callbacks
 from a cancelled or superseded step, and checks before every write that the

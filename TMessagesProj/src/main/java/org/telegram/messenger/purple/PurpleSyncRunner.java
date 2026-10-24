@@ -37,6 +37,14 @@ public final class PurpleSyncRunner {
     }
 
     interface Env {
+        default boolean current(int account, long userId) { return PurpleAccountBinding.isSameActiveUser(account, userId); }
+        default String operationKey(int account, long userId) { return account + ":" + userId; }
+        default PurpleAccountSyncCore.Result initialize(int account,String install,String device,String space) {
+            return PurpleAccountSyncCore.initializeBoundLocalState(account,install,device,space);
+        }
+        default boolean requiresRecovery() { return false; }
+        default PurpleSyncRecoveryModel.Offer recovery(PurpleSyncInventory inventory,PurpleSyncSettingsFile.Contents local) { return null; }
+        default boolean sendQueued() { return false; }
         String device();
 
         long serverTimeMillis(int account);
@@ -64,7 +72,7 @@ public final class PurpleSyncRunner {
             this.account = account;
             this.userId = userId;
             this.env = env;
-            this.origin = env instanceof Platform ? ((Platform) env).context.origin : PurpleAccountFiles.capture(account);
+            this.origin = env instanceof Platform ? ((Platform) env).context.origin : null;
         }
 
         boolean writable() {
@@ -72,12 +80,18 @@ public final class PurpleSyncRunner {
         }
 
         boolean available() {
-            return (!(env instanceof Platform) || ((Platform) env).context.current())
-                    && userId > 0 && origin != null && origin.userId == userId && origin.current()
-                    && PurpleAccountBinding.isSameActiveUser(account, userId);
+            return userId > 0 && env.current(account, userId)
+                    && (!(env instanceof Platform) || origin != null && origin.userId == userId && origin.current());
         }
     }
 
+    public enum RecoveryAction { None, Relink, StartAgain, ResumeArchive, Held }
+    public static final class RecoveryOutcome {
+        public final boolean ok;
+        public final boolean startAgain;
+        public final Check next;
+        RecoveryOutcome(boolean ok,boolean startAgain,Check next) { this.ok=ok;this.startAgain=startAgain;this.next=next; }
+    }
     public static final class Check {
         public final PurpleSyncCore.Review review;
         public final PurpleSyncSettingsFile.Contents local;
@@ -85,15 +99,29 @@ public final class PurpleSyncRunner {
         public final boolean sendQueued;
         final PurpleSyncInventory inventory;
         final long generation;
+        final PurpleSyncRecoveryModel.Offer recovery;
+        public final RecoveryAction recoveryAction;
+        public final boolean setupOnlyJoin;
 
         Check(long generation, PurpleSyncApply.Reviewed reviewed,
                 PurpleSyncInventory inventory, boolean sendQueued) {
             this.generation = generation;
+            setupOnlyJoin=PurpleSyncApply.setupOnlyJoin(inventory,reviewed.review,reviewed.local);
+            recovery=reviewed.recovery;
+            recoveryAction=recovery==null?RecoveryAction.None
+                    :recovery.resuming()&&recovery.plan.start==PurpleSyncRecoveryCore.Start.Ready?RecoveryAction.ResumeArchive
+                    :recovery.plan.status==PurpleSyncRecoveryCore.Status.RootRelink?RecoveryAction.Relink
+                    :recovery.plan.offerStartAgain?RecoveryAction.StartAgain:RecoveryAction.Held;
             this.review = reviewed.review;
             this.local = reviewed.local;
             this.adoptFailure = reviewed.adoptFailure;
             this.inventory = inventory;
             this.sendQueued = sendQueued;
+        }
+
+        public PurpleSyncCore.Action action() { return setupOnlyJoin?PurpleSyncCore.Action.Join:review.action; }
+        public boolean requiresChoice(PurpleSyncCore.Action action) {
+            return action!=PurpleSyncCore.Action.FinishSending&&!(action==PurpleSyncCore.Action.Join&&setupOnlyJoin);
         }
 
         public int records() {
@@ -121,10 +149,13 @@ public final class PurpleSyncRunner {
         final PurpleSyncInventory inventory;
         final boolean sendQueued;
         final long generation;
+        final java.util.function.BooleanSupplier effects;
+        final Session owner;
 
         PostTicket(PurpleSyncCore.PostRequest request, boolean freshCheckFirst,
                 PurpleSyncInventory inventory, boolean sendQueued,
-                long generation) {
+                long generation,java.util.function.BooleanSupplier effects,Session owner) {
+            this.effects=effects;this.owner=owner;
             this.request = request;
             this.freshCheckFirst = freshCheckFirst;
             this.inventory = inventory;
@@ -176,6 +207,8 @@ public final class PurpleSyncRunner {
         public final byte[] text;
         public final PurpleSyncSettingsFile.Contents current;
         public final PurpleSyncCore.Diff diff;
+        public final String impactNotes;
+        public final boolean impactReady, dangerous;
 
         Preview(PurpleSyncHistory.Entry entry, byte[] text,
                 PurpleSyncSettingsFile.Contents current, PurpleSyncCore.Diff diff) {
@@ -183,7 +216,15 @@ public final class PurpleSyncRunner {
             this.text = text;
             this.current = current;
             this.diff = diff;
+            org.json.JSONObject impact = null;
+            try { if (current != null && current.mutation != null) impact = current.mutation.impact.analyze(text); }
+            catch (Exception | LinkageError e) { impact = null; }
+            impactReady = PurpleConfigImpact.ready(impact);
+            dangerous = impact != null && impact.optBoolean("dangerous");
+            PurpleAccountEditor.Session editor = current != null && current.mutation != null ? current.mutation.editor : null;
+            impactNotes = editor != null ? PurpleConfigImpactText.describe(impact, editor.global, editor.accountKey, editor.globalKey) : "";
         }
+        boolean current() { return current != null && current.current(); }
     }
 
     private static final class Holder<T> {
@@ -201,7 +242,7 @@ public final class PurpleSyncRunner {
     private boolean checking;
     private boolean closed;
     private Check current;
-    private UndoOffer undo;
+    private final Object operationOwner = new Object();
     private PurpleSyncPublisher publisher;
 
     public PurpleSyncRunner(int account, PurpleSyncTransport transport) {
@@ -220,6 +261,25 @@ public final class PurpleSyncRunner {
         this.ui = ui;
     }
 
+    public String accountLabel() {
+        return session.origin != null ? PurpleConfigImpactText.label(session.origin.key) : Long.toString(session.userId);
+    }
+
+    public String impactNotes(Check check, PurpleSyncCore.Choice choice) {
+        if (check == null || choice == null || check.local == null || check.local.mutation == null) return "";
+        PurpleAccountEditor.Session editor = check.local.mutation.editor;
+        StringBuilder text = new StringBuilder();
+        for (PurpleSyncCore.ChoiceImpact change : choice.impacts) {
+            if (text.length() != 0) text.append("\n\n");
+            if (change.replacedKey != null) for (PurpleSyncCore.Head head : check.review.heads) {
+                if (change.replacedKey.equals(head.key)) text.append(org.telegram.messenger.LocaleController.formatString(
+                        org.telegram.messenger.R.string.PurpleSyncImpactVersion, PurpleSyncApply.deviceLabel(head.name))).append("\n\n");
+            }
+            text.append(PurpleConfigImpactText.describe(change.impact, editor.global, editor.accountKey, editor.globalKey));
+        }
+        return text.toString();
+    }
+
     public int account() {
         return session.account;
     }
@@ -233,7 +293,7 @@ public final class PurpleSyncRunner {
     }
 
     public boolean busy() {
-        return busy;
+        return busy || PurpleSyncOperations.busy(operationKey());
     }
 
     public boolean checking() {
@@ -249,7 +309,7 @@ public final class PurpleSyncRunner {
     }
 
     public UndoOffer undoOffer() {
-        return (busy || closed) ? null : undo;
+        return (busy() || closed || !session.available()) ? null : PurpleSyncOperations.undo(operationKey());
     }
 
     public Start check(PurpleSyncTransport.Progress progress,
@@ -259,7 +319,7 @@ public final class PurpleSyncRunner {
             return refused;
         }
         final long started = ++generation;
-        busy = true;
+        if (!begin()) return Start.Busy;
         checking = true;
         current = null;
         transport.check((phase, count, total) -> {
@@ -270,12 +330,47 @@ public final class PurpleSyncRunner {
         return Start.Started;
     }
 
+    public Start recover(Check shown,boolean archive,Listener<RecoveryOutcome> done) {
+        Start refused=refusal(true);
+        if(refused!=null)return refused;
+        if(shown==null||shown!=current||shown.generation!=generation||shown.recovery==null||!shown.recovery.model.retained())return Start.Stale;
+        if(archive?shown.recoveryAction!=RecoveryAction.StartAgain&&shown.recoveryAction!=RecoveryAction.ResumeArchive:shown.recoveryAction!=RecoveryAction.Relink)return Start.Stale;
+        if(!begin())return Start.Busy;
+        long started=++generation;checking=true;current=null;
+        transport.check(null,result->ui.post(()->{
+            if(!live(started))return;
+            checking=false;
+            if(result.status!=PurpleSyncTransport.CheckStatus.Finished) { end();done.onResult(new RecoveryOutcome(false,archive,null));return; }
+            queue.post(()->{
+                boolean ok=false;
+                PurpleSyncApply.Reviewed next=null;
+                if(session.available()&&shown.recovery.model.retained()) {
+                    PurpleSyncSettingsFile.Contents local=session.env.readSettings();
+                    PurpleSyncRecoveryModel.Offer fresh=session.env.recovery(result.inventory,local);
+                    if(fresh!=null&&shown.recovery.model.retained()) {
+                        if(archive)ok=fresh.model.startAgain(fresh,result.sendQueued||session.env.sendQueued(),()->!session.env.sendQueued());
+                        else if(fresh.plan.status==PurpleSyncRecoveryCore.Status.RootRelink)ok=fresh.model.relink(fresh);
+                    }
+                    if(ok&&archive)PurpleSyncOperations.undo(operationKey(),null);
+                    if(ok&&session.available())next=PurpleSyncApply.reviewWithAdopt(session,result.inventory);
+                }
+                final boolean completed=ok;final PurpleSyncApply.Reviewed reviewed=next;
+                ui.post(()->{
+                    if(!live(started))return;end();
+                    Check issued=reviewed!=null?issue(reviewed,result.inventory,result.sendQueued):null;
+                    done.onResult(new RecoveryOutcome(completed,archive,issued));
+                });
+            });
+        }));
+        return Start.Started;
+    }
+
     public boolean cancel() {
         if (closed || !checking) {
             return false;
         }
         ++generation;
-        busy = false;
+        end();
         checking = false;
         current = null;
         transport.cancel();
@@ -288,16 +383,16 @@ public final class PurpleSyncRunner {
         if (refused != null) {
             return refused;
         } else if (shown == null || shown != current
-                || shown.generation != generation) {
+                || shown.generation != generation || shown.local == null || !shown.local.current()) {
             return Start.Stale;
         }
         final long started = ++generation;
-        busy = true;
+        if (!begin()) return Start.Busy;
         current = null;
         final PurpleSyncCore.Verdict verdict = shown.review.verdict;
         queue.post(() -> {
             final PurpleSyncApply.ApplyResult result = PurpleSyncApply.apply(
-                    session, shown.inventory, shown.review, chosenKey);
+                    session, shown.inventory, shown.review, chosenKey, shown.local);
             final PurpleSyncCore.ApplyFailure failure =
                     PurpleSyncCore.describeApplyFailure(result.status,
                             result.joined, result.wroteFile, result.historyKept(),
@@ -310,15 +405,13 @@ public final class PurpleSyncRunner {
                             : null;
             ui.post(() -> {
                 if (!closed && result.wroteFile) {
-                    undo = result.undoAvailable
-                            ? new UndoOffer(result.historyId,
-                                    result.source != null ? result.source.name : null)
-                            : null;
+                    PurpleSyncOperations.undo(operationKey(), result.undoAvailable
+                            ? new UndoOffer(result.historyId, result.source != null ? result.source.name : null) : null);
                 }
                 if (!live(started)) {
                     return;
                 }
-                busy = false;
+                end();
                 PostTicket ticket = null;
                 Check check = null;
                 if (posts) {
@@ -326,7 +419,7 @@ public final class PurpleSyncRunner {
                             PurpleSyncCore.PostRequest.newContent(result.fingerprint,
                                     result.expectedParents),
                             freshCheckFirst(verdict), shown.inventory,
-                            shown.sendQueued, ++generation);
+                            shown.sendQueued, ++generation, shown.local.mutation!=null?shown.local.mutation::effectCurrent:()->true,session);
                 } else if (next != null) {
                     check = issue(next, shown.inventory, shown.sendQueued);
                 }
@@ -345,7 +438,22 @@ public final class PurpleSyncRunner {
                 || fresh.generation != generation) {
             return Start.Stale;
         }
-        return startPublish(fresh.inventory, fresh.sendQueued, request, done);
+        if(!request.pendingOnly&&(fresh.local==null||fresh.local.mutation==null||!fresh.local.current()||!fresh.local.mutation.effectCurrent()))return Start.Stale;
+        if(!request.pendingOnly) {
+            boolean ready=false;for(PurpleSyncCore.Choice choice:fresh.review.choices)if(choice.key==null&&choice.impactReady)ready=true;
+            if(!ready)return Start.Stale;
+        }
+        return startPublish(fresh.inventory, fresh.sendQueued, request, request.pendingOnly?()->true:fresh.local.mutation::effectCurrent, done);
+    }
+
+    public Start publish(Check fresh,PostTicket ticket,Listener<PurpleSyncPublisher.Result> done) {
+        if(ticket==null||ticket.owner!=session||!ticket.effects.getAsBoolean())return Start.Stale;
+        Start refused=refusal(true);if(refused!=null)return refused;
+        if(fresh==null||fresh!=current||fresh.generation!=generation||fresh.local==null||fresh.local.mutation==null||!fresh.local.current())return Start.Stale;
+        boolean ready=false;for(PurpleSyncCore.Choice choice:fresh.review.choices)if(choice.key==null&&choice.impactReady)ready=true;
+        if(!ready)return Start.Stale;
+        return startPublish(fresh.inventory,fresh.sendQueued,ticket.request,
+                ()->ticket.effects.getAsBoolean()&&fresh.local.mutation.effectCurrent(),done);
     }
 
     public Start publish(PostTicket ticket,
@@ -353,44 +461,47 @@ public final class PurpleSyncRunner {
         final Start refused = refusal(true);
         if (refused != null) {
             return refused;
-        } else if (ticket == null || ticket.freshCheckFirst
-                || ticket.generation != generation) {
+        } else if (ticket == null || ticket.owner!=session || ticket.freshCheckFirst
+                || ticket.generation != generation || !ticket.effects.getAsBoolean()) {
             return Start.Stale;
         }
-        return startPublish(ticket.inventory, ticket.sendQueued, ticket.request,
+        return startPublish(ticket.inventory, ticket.sendQueued, ticket.request, ticket.effects,
                 done);
     }
 
-    public Start undo(UndoOffer offer, Listener<RestoreOutcome> done) {
+    public Start undo(UndoOffer offer, Preview preview, Listener<RestoreOutcome> done) {
+        final UndoOffer undo = PurpleSyncOperations.undo(operationKey());
         final Start refused = refusal(false);
         if (refused != null) {
             return refused;
         } else if (offer == null || undo == null
-                || !undo.historyId.equals(offer.historyId)) {
+                || !undo.historyId.equals(offer.historyId) || preview == null || !preview.current()
+                || !preview.impactReady || !offer.historyId.equals(preview.entry.id)) {
             return Start.Stale;
         }
         return startRestore(offer.historyId, PurpleSyncHistory.Reason.BeforeUndo,
-                done);
+                preview, done);
     }
 
-    public Start restore(String historyId, Listener<RestoreOutcome> done) {
+    public Start restore(Preview preview, Listener<RestoreOutcome> done) {
+        String historyId = preview != null && preview.entry != null ? preview.entry.id : null;
         final Start refused = refusal(false);
         if (refused != null) {
             return refused;
-        } else if (historyId == null) {
+        } else if (historyId == null || !preview.current() || !preview.impactReady) {
             return Start.Stale;
         }
         return startRestore(historyId, PurpleSyncHistory.Reason.BeforeRestore,
-                done);
+                preview, done);
     }
 
     public boolean history(Listener<List<PurpleSyncHistory.Entry>> done) {
-        if (closed || !session.available() || !PurpleAccountOwner.legacyOperation(session.account)) return false;
+        if (closed || !session.available()) return false;
         queue.post(() -> {
-            if (!session.available() || !PurpleAccountOwner.legacyOperation(session.account)) return;
+            if (!session.available()) return;
             final List<PurpleSyncHistory.Entry> entries = session.env.history().list();
             ui.post(() -> {
-                if (!closed && session.available() && PurpleAccountOwner.legacyOperation(session.account)) {
+                if (!closed && session.available()) {
                     done.onResult(Collections.unmodifiableList(entries));
                 }
             });
@@ -400,11 +511,11 @@ public final class PurpleSyncRunner {
 
     public boolean preview(String historyId, Listener<Preview> done) {
         if (closed || historyId == null || !session.available()
-                || !PurpleAccountOwner.legacyOperation(session.account)) {
+               ) {
             return false;
         }
         queue.post(() -> {
-            if (!session.available() || !PurpleAccountOwner.legacyOperation(session.account)) return;
+            if (!session.available()) return;
             final PurpleSyncHistory history = session.env.history();
             PurpleSyncHistory.Entry found = null;
             for (PurpleSyncHistory.Entry entry : history.list()) {
@@ -421,7 +532,7 @@ public final class PurpleSyncRunner {
             final Preview preview = (text != null)
                     ? new Preview(found, text, local, diff) : null;
             ui.post(() -> {
-                if (!closed && session.available() && PurpleAccountOwner.legacyOperation(session.account)) {
+                if (!closed && session.available()) {
                     done.onResult(preview);
                 }
             });
@@ -437,7 +548,7 @@ public final class PurpleSyncRunner {
         queue.post(() -> {
             final PurpleSyncCore.Diff diff = PurpleSyncCore.diff(before, after);
             ui.post(() -> {
-                if (!closed && session.available() && PurpleAccountOwner.legacyOperation(session.account)) {
+                if (!closed && session.available()) {
                     done.onResult(diff);
                 }
             });
@@ -451,9 +562,8 @@ public final class PurpleSyncRunner {
         }
         closed = true;
         ++generation;
-        busy = false;
+        end();
         current = null;
-        undo = null;
         if (checking) {
             checking = false;
             transport.cancel();
@@ -521,12 +631,20 @@ public final class PurpleSyncRunner {
                 readBack.run());
     }
 
+    private String operationKey() { return session.env.operationKey(session.account, session.userId); }
+    private boolean begin() {
+        if (!PurpleSyncOperations.begin(operationKey(), operationOwner,()->!closed&&session.available())) return false;
+        busy = true;
+        return true;
+    }
+    private void end() { busy = false; PurpleSyncOperations.end(operationKey(), operationOwner); }
+
     private Start refusal(boolean needsAccount) {
         if (closed) {
             return Start.Closed;
-        } else if (!session.available() || !PurpleAccountOwner.legacyOperation(session.account)) {
+        } else if (!session.available()) {
             return Start.AccountUnavailable;
-        } else if (busy) {
+        } else if (busy()) {
             return Start.Busy;
         } else if (needsAccount && !session.available()) {
             return Start.AccountUnavailable;
@@ -536,7 +654,7 @@ public final class PurpleSyncRunner {
 
     private boolean live(long started) {
         return !closed && started == generation && session.available()
-                && PurpleAccountOwner.legacyOperation(session.account);
+               ;
     }
 
     private Check issue(PurpleSyncApply.Reviewed reviewed,
@@ -552,7 +670,7 @@ public final class PurpleSyncRunner {
         }
         if (result.status != PurpleSyncTransport.CheckStatus.Finished) {
             checking = false;
-            busy = false;
+            end();
             done.onResult(new CheckOutcome(
                     result.status == PurpleSyncTransport.CheckStatus.AccountChanged
                             ? CheckStatus.AccountUnavailable : CheckStatus.Cancelled,
@@ -572,7 +690,7 @@ public final class PurpleSyncRunner {
                     return;
                 }
                 checking = false;
-                busy = false;
+                end();
                 done.onResult(new CheckOutcome(CheckStatus.Finished,
                         issue(reviewed, inventory, sendQueued)));
             });
@@ -580,14 +698,14 @@ public final class PurpleSyncRunner {
     }
 
     private Start startPublish(PurpleSyncInventory inventory, boolean sendQueued,
-            PurpleSyncCore.PostRequest request,
+            PurpleSyncCore.PostRequest request, java.util.function.BooleanSupplier effects,
             Listener<PurpleSyncPublisher.Result> done) {
         final long started = ++generation;
-        busy = true;
+        if (!begin()) return Start.Busy;
         current = null;
         final Holder<PurpleSyncPublisher> self = new Holder<>();
         final PurpleSyncPublisher running = new PurpleSyncPublisher(session,
-                inventory, sendQueued, request, transport, queue,
+                inventory, sendQueued, request, transport, queue, effects,
                 result -> ui.post(() -> {
                     if (publisher == self.value) {
                         publisher = null;
@@ -595,7 +713,7 @@ public final class PurpleSyncRunner {
                     if (!live(started)) {
                         return;
                     }
-                    busy = false;
+                    end();
                     done.onResult(result);
                 }));
         self.value = running;
@@ -605,20 +723,20 @@ public final class PurpleSyncRunner {
     }
 
     private Start startRestore(String historyId, PurpleSyncHistory.Reason reason,
-            Listener<RestoreOutcome> done) {
+            Preview preview, Listener<RestoreOutcome> done) {
         final PurpleSyncInventory inventory =
                 (current != null) ? current.inventory : null;
         final boolean sendQueued = current != null && current.sendQueued;
         final long started = ++generation;
-        busy = true;
+        if (!begin()) return Start.Busy;
         current = null;
         queue.post(() -> {
             if (!session.available()) {
-                ui.post(() -> { if (!closed && generation == started) busy = false; });
+                ui.post(() -> { if (!closed && generation == started) end(); });
                 return;
             }
             final PurpleSyncApply.RestoreResult result =
-                    PurpleSyncApply.restore(session, historyId, reason);
+                    PurpleSyncApply.restore(session, historyId, reason, preview.current, preview.text);
             final boolean finished = reason == PurpleSyncHistory.Reason.BeforeUndo
                     && undoFinished(result.status);
             final PurpleSyncApply.Reviewed next =
@@ -629,18 +747,19 @@ public final class PurpleSyncRunner {
                 if (!live(started)) return;
                 if (!closed) {
                     if (reason == PurpleSyncHistory.Reason.BeforeUndo) {
+                        UndoOffer undo = PurpleSyncOperations.undo(operationKey());
                         if (finished && undo != null
                                 && undo.historyId.equals(historyId)) {
-                            undo = null;
+                            PurpleSyncOperations.undo(operationKey(), null);
                         }
                     } else if (result.status == PurpleSyncCore.RestoreStatus.Restored) {
-                        undo = null;
+                        PurpleSyncOperations.undo(operationKey(), null);
                     }
                 }
                 if (!live(started)) {
                     return;
                 }
-                busy = false;
+                end();
                 final Check check = (next != null)
                         ? issue(next, inventory, sendQueued) : null;
                 done.onResult(new RestoreOutcome(result, finished, check));
@@ -682,8 +801,26 @@ public final class PurpleSyncRunner {
     static final class Platform implements Env {
         final PurpleSyncFileContext context;
 
-        Platform() { this(org.telegram.messenger.UserConfig.selectedAccount); }
         Platform(int account) { context = new PurpleSyncFileContext(account); }
+
+        @Override
+        public boolean current(int account, long userId) {
+            return context.current() && context.origin.slot == account && context.origin.userId == userId;
+        }
+        @Override
+        public String operationKey(int account, long userId) {
+            return context.origin != null && context.files != null
+                    ? context.origin.key + "\n" + context.files.syncDirectory.getPath() : "unavailable:" + account;
+        }
+
+        @Override
+        public boolean requiresRecovery() { return true; }
+        @Override
+        public PurpleSyncRecoveryModel.Offer recovery(PurpleSyncInventory inventory,PurpleSyncSettingsFile.Contents local) {
+            return PurpleSyncRecovery.check(context,inventory,local);
+        }
+        @Override
+        public boolean sendQueued() { return context.current()&&PurpleSendReceipts.hasModernWork(context.origin.slot); }
 
         @Override
         public String device() {

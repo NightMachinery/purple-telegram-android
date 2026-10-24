@@ -94,6 +94,7 @@ public final class PurpleSyncHistoryTest {
         scratch = Files.createTempDirectory(
                 new File(System.getProperty("scratch")).toPath(), "run").toFile()
                 .getCanonicalFile();
+        org.telegram.messenger.ApplicationLoader.files = scratch;
         switch (args[0]) {
         case "rules":
             historyBasics();
@@ -586,41 +587,58 @@ public final class PurpleSyncHistoryTest {
                 "sameAs rules");
     }
 
+    static final class TestWriter implements PurpleSyncSettingsFile.Writer {
+        File file;
+        int calls;
+        String lastReason;
+        boolean lastFromImport, refuse, throwAfterWrite;
+        byte[] writeInstead;
+        public boolean store(byte[] bytes,String reason,boolean imported) {
+            ++calls;lastReason=reason;lastFromImport=imported;
+            if(refuse)return false;
+            try { Files.write(file.toPath(),writeInstead!=null?writeInstead:bytes); }
+            catch(IOException e){return false;}
+            if(throwAfterWrite)throw new IllegalStateException("injected after write");
+            return true;
+        }
+    }
+
     static void settingsWrite() throws Exception {
         final File dir = fresh("settings-write");
-        PurpleSettings.file = new File(dir, "settings.toml");
+        TestWriter writer = new TestWriter();
+        writer.file = new File(dir, "settings.toml");
         final byte[] text = utf8("version = 1\n");
-        PurpleSyncSettingsFile.WriteResult result = PurpleSyncSettingsFile.write(text, "sync apply", true);
+        PurpleSyncSettingsFile.WriteResult result = PurpleSyncSettingsFile.write(writer.file, text, "sync apply", true, writer);
         check(result.status == PurpleSyncSettingsFile.WriteStatus.Written && result.wrote()
                 && Arrays.equals(result.readBack.bytes, text), "written and read back");
-        check(PurpleSettings.calls == 1 && "sync apply".equals(PurpleSettings.lastReason) && PurpleSettings.lastFromImport,
-                "production path goes through PurpleSettings.storeForSync with the caller's arguments");
-        PurpleSyncSettingsFile.write(text, "sync restore", false);
-        check(!PurpleSettings.lastFromImport, "fromImport false passes through");
+        check(writer.calls == 1 && "sync apply".equals(writer.lastReason) && writer.lastFromImport,
+                "writer port retains the caller's reason and import flag");
+        PurpleSyncSettingsFile.write(writer.file, text, "sync restore", false, writer);
+        check(!writer.lastFromImport, "fromImport false passes through");
 
-        PurpleSettings.refuse = true;
-        result = PurpleSyncSettingsFile.write(utf8("b = 2\n"), "r", true);
+        writer.refuse = true;
+        result = PurpleSyncSettingsFile.write(writer.file, utf8("b = 2\n"), "r", true, writer);
         check(result.status == PurpleSyncSettingsFile.WriteStatus.WriteFailed && !result.wrote(), "refused write");
-        PurpleSettings.refuse = false;
+        writer.refuse = false;
 
-        PurpleSettings.writeInstead = utf8("other = 1\n");
-        result = PurpleSyncSettingsFile.write(utf8("c = 3\n"), "r", true);
+        writer.writeInstead = utf8("other = 1\n");
+        result = PurpleSyncSettingsFile.write(writer.file, utf8("c = 3\n"), "r", true, writer);
         check(result.status == PurpleSyncSettingsFile.WriteStatus.ReadBackMismatch && result.wrote()
                 && Arrays.equals(result.readBack.bytes, utf8("other = 1\n")), "read-back mismatch");
-        PurpleSettings.writeInstead = null;
+        writer.writeInstead = null;
 
-        PurpleSettings.throwAfterWrite = true;
-        result = PurpleSyncSettingsFile.write(utf8("d = 4\n"), "r", true);
+        writer.throwAfterWrite = true;
+        result = PurpleSyncSettingsFile.write(writer.file, utf8("d = 4\n"), "r", true, writer);
         check(result.status == PurpleSyncSettingsFile.WriteStatus.Written, "exception after the write still reads back");
-        PurpleSettings.throwAfterWrite = false;
+        writer.throwAfterWrite = false;
 
-        final int calls = PurpleSettings.calls;
-        check(PurpleSyncSettingsFile.write(new byte[PurpleSyncSettingsFile.MAX_BYTES + 1], "r", true).status
+        final int calls = writer.calls;
+        check(PurpleSyncSettingsFile.write(writer.file, new byte[PurpleSyncSettingsFile.MAX_BYTES + 1], "r", true, writer).status
                 == PurpleSyncSettingsFile.WriteStatus.WriteFailed, "oversized write refused");
-        check(PurpleSyncSettingsFile.write(null, "r", true).status
+        check(PurpleSyncSettingsFile.write(writer.file, null, "r", true, writer).status
                 == PurpleSyncSettingsFile.WriteStatus.WriteFailed, "null write refused");
-        check(PurpleSettings.calls == calls, "refused writes never reach PurpleSettings");
-        check(PurpleSyncSettingsFile.read().status == PurpleSyncSettingsFile.Status.Present, "production read uses settingsFile()");
+        check(writer.calls == calls, "refused writes never reach the writer");
+        check(PurpleSyncSettingsFile.read(writer.file).status == PurpleSyncSettingsFile.Status.Present, "explicit account file read");
     }
 
     static void settingsLastGood() throws Exception {
@@ -629,10 +647,10 @@ public final class PurpleSyncHistoryTest {
         final File good = new File(dir, "settings.toml.good");
         final byte[] working = utf8("version = 1\n");
         final byte[] broken = utf8("version = [\n");
-        PurpleCore.parses = text -> !Arrays.equals(text, broken);
         Files.write(file.toPath(), working);
         check(!PurpleSyncSettingsFile.read(file, good).usingLastGood, "working file, no copy");
         Files.write(good.toPath(), working);
+        Files.setPosixFilePermissions(good.toPath(),PosixFilePermissions.fromString("rw-------"));
         check(!PurpleSyncSettingsFile.read(file, good).usingLastGood, "working file beside a copy");
         Files.write(file.toPath(), broken);
         check(PurpleSyncSettingsFile.read(file, good).usingLastGood,
@@ -642,25 +660,23 @@ public final class PurpleSyncHistoryTest {
         check(read.status == PurpleSyncSettingsFile.Status.Absent && read.usingLastGood,
                 "missing file beside a working copy");
         Files.write(good.toPath(), broken);
+        Files.setPosixFilePermissions(good.toPath(),PosixFilePermissions.fromString("rw-------"));
         check(!PurpleSyncSettingsFile.read(file, good).usingLastGood, "a copy that does not load is no fallback");
         Files.write(file.toPath(), broken);
         check(!PurpleSyncSettingsFile.read(file, good).usingLastGood, "broken file, broken copy");
         Files.delete(good.toPath());
         check(!PurpleSyncSettingsFile.read(file, good).usingLastGood, "broken file, no copy");
         Files.write(good.toPath(), working);
+        Files.setPosixFilePermissions(good.toPath(),PosixFilePermissions.fromString("rw-------"));
         Files.delete(file.toPath());
         Files.createSymbolicLink(file.toPath(), good.toPath());
-        PurpleCore.parses = text -> text.length > 0 && !Arrays.equals(text, broken);
         read = PurpleSyncSettingsFile.read(file, good);
         check(read.status == PurpleSyncSettingsFile.Status.Invalid && !read.usingLastGood,
                 "an invalid file takes only the gate's flag, whatever its empty bytes parse to");
-        PurpleCore.parses = text -> !Arrays.equals(text, broken);
-        PurpleGate.lastGood = true;
-        check(PurpleSyncSettingsFile.read(file, good).usingLastGood, "the gate's flag on an invalid file");
+        check(!PurpleSyncSettingsFile.read(file, good).usingLastGood, "unsafe file is held regardless of another file fallback");
         Files.delete(file.toPath());
         Files.write(file.toPath(), working);
-        check(PurpleSyncSettingsFile.read(file, good).usingLastGood, "the gate's flag on a working file");
-        PurpleGate.lastGood = false;
+        check(!PurpleSyncSettingsFile.read(file, good).usingLastGood, "valid primary has no fallback from another account");
 
         check(!new PurpleSyncSettingsFile.Contents(PurpleSyncSettingsFile.Status.Present, working)
                 .sameAs(new PurpleSyncSettingsFile.Contents(PurpleSyncSettingsFile.Status.Present, working, true)),
@@ -681,24 +697,23 @@ public final class PurpleSyncHistoryTest {
         final PurpleSyncSettingsFile.Contents absent = PurpleSyncSettingsFile.read(file, good);
         check(!absent.usingLastGood, "missing file, no copy");
         Files.write(good.toPath(), working);
+        Files.setPosixFilePermissions(good.toPath(),PosixFilePermissions.fromString("rw-------"));
         check(PurpleSyncSettingsFile.replace(file, good, absent, record, "sync apply", true, writer).status
                 == PurpleSyncSettingsFile.WriteStatus.Changed && stores[0] == 0 && !file.exists(),
                 "a copy that appears before the write stops it");
         Files.write(file.toPath(), working);
         final PurpleSyncSettingsFile.Contents running = PurpleSyncSettingsFile.read(file, good);
-        PurpleGate.lastGood = true;
+        Files.write(file.toPath(), broken);
         final int beforeFallback = stores[0];
         check(PurpleSyncSettingsFile.replace(file, good, running, record, "sync apply", true, writer).status
                 == PurpleSyncSettingsFile.WriteStatus.Changed && stores[0] == beforeFallback,
                 "a fallback that starts before the write stops it");
-        PurpleGate.lastGood = false;
         Files.write(file.toPath(), broken);
         final PurpleSyncSettingsFile.Contents fallen = PurpleSyncSettingsFile.read(file, good);
         final int beforeRestore = stores[0];
         check(PurpleSyncSettingsFile.replace(file, good, fallen, working, "sync restore", false, writer).status
                 == PurpleSyncSettingsFile.WriteStatus.Written && stores[0] == beforeRestore + 1,
                 "a restore still writes while the app runs from the copy");
-        PurpleCore.parses = text -> true;
     }
 
     static void nativeFingerprint() throws Exception {

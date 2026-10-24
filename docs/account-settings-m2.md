@@ -353,6 +353,9 @@ or audit ratchet changes are introduced.
 
 ### Account-targeted editor candidate
 
+This section records the earlier editor candidate. Current modern sync behavior
+is documented in [account-modern-sync.md](account-modern-sync.md).
+
 The settings-file block opens the fragment account explicitly, or its distinct
 app-wide file, including a signed-out global account. The editor title switches
 between those two targets. A dirty switch requires Save, Discard or Cancel.

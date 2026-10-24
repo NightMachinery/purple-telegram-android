@@ -224,26 +224,13 @@ public final class PurpleSettings {
      *                   undo, which stays on this device and never arms the
      *                   auto-send, as on desktop
      */
-    static boolean storeForSync(byte[] bytes, String reason, boolean fromImport) {
-        return fromImport ? store(bytes, reason, true) : replace(bytes, reason, false);
-    }
-
     static boolean storeForSync(PurpleSyncFileContext context, PurpleSyncSettingsFile.Contents expected,
             byte[] bytes, String reason, boolean fromImport) {
-        if (!context.editable() || !PurpleSyncSettingsFile.read(context).sameAs(expected)) return false;
-        try {
-            PurpleCore.ParseResult parsed = PurpleCore.parse(bytes);
-            if (!parsed.ok || parsed.version > 1 || !context.editable()
-                    || !PurpleSyncSettingsFile.read(context).sameAs(expected)) return false;
-            PurpleSettingsBackups.take(context.files.settings, context.files.backup,
-                    context.files.importBackup, fromImport);
-        } catch (IOException | RuntimeException | UnsatisfiedLinkError e) { return false; }
-        if (!context.editable() || !PurpleSyncSettingsFile.read(context).sameAs(expected)
-                || !writeAtomic(context.files.settings, bytes)) return false;
-        if (!context.editable()) return true;
-        PurpleGate.reload(reason);
-        if (fromImport && context.current()) PurpleSync.afterWrite(context, bytes, reason, true);
-        return true;
+        if (context == null || !context.current() || expected == null || expected.mutation == null
+                || !expected.current() || !PurpleSyncSettingsFile.read(context).sameAs(expected)) return false;
+        boolean written = expected.mutation.replace(bytes, fromImport);
+        if (written && context.current()) PurpleGate.reloadAccountFiles(reason);
+        return written;
     }
 
     /**

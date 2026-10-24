@@ -1544,11 +1544,11 @@ public final class PurpleSyncCoreTest {
                 == PurpleSyncCore.PublishStatus.InvalidSettings);
         check(device.pendingSeq() == 0);
 
-        UserConfig.userId = USER + 1;
+        UserConfig.getInstance(ACCOUNT).user = USER + 1;
         check(PurpleSyncCore.planPost(ACCOUNT, cloud.inventory(), device.state,
                 null, device.local, request("f", List.of()), device.now,
                 false).error.equals("BindingUnavailable"));
-        UserConfig.userId = USER;
+        UserConfig.getInstance(ACCOUNT).user = USER;
         final PurpleSyncInventory foreign = new PurpleSyncInventory.Builder(
                 USER + 1).build(true);
         check(PurpleSyncCore.planPost(ACCOUNT, foreign, device.state, null,
@@ -1556,10 +1556,10 @@ public final class PurpleSyncCoreTest {
                 .error.equals("AccountChanged"));
         check(PurpleSyncCore.checkStagedPost(ACCOUNT, foreign, device.state,
                 new byte[0]).error.equals("AccountChanged"));
-        UserConfig.activated = false;
+        UserConfig.getInstance(ACCOUNT).active = false;
         check(PurpleSyncCore.checkStagedPost(ACCOUNT, cloud.inventory(),
                 device.state, new byte[0]).error.equals("AccountUnavailable"));
-        UserConfig.activated = true;
+        UserConfig.getInstance(ACCOUNT).active = true;
     }
 
     private static byte[] bigText() {
@@ -2049,11 +2049,11 @@ public final class PurpleSyncCoreTest {
     private static byte[] newerRecord(String space, Remote remote)
             throws Exception {
         final byte[] oldText = utf8("version = 1\n");
-        final byte[] newText = utf8("version = 2\n");
+        final byte[] newText = utf8("version = 3\n");
         final byte[] record = buildRemote(remote, space, oldText);
         String json = new String(record, StandardCharsets.UTF_8)
-                .replace("\"schema\":1", "\"schema\":2")
-                .replace("version = 1\\n", "version = 2\\n")
+                .replace("\"schema\":1", "\"schema\":3")
+                .replace("version = 1\\n", "version = 3\\n")
                 .replace("1." + fingerprint(oldText), "1." + fingerprint(newText));
         final int payloadStart = json.indexOf("\"payload\":") + 10;
         final int payloadEnd = json.indexOf(",\"payload_sha256\"");
@@ -2431,10 +2431,10 @@ public final class PurpleSyncCoreTest {
             check(Arrays.equals(Files.readAllBytes(stateFile.toPath()),
                     pendingState));
 
-            UserConfig.userId = USER + 1;
+            UserConfig.getInstance(ACCOUNT).user = USER + 1;
             check(store.commitConfigState(next).status
                     == PurpleAccountSyncStore.Status.AccountUnbound);
-            UserConfig.userId = USER;
+            UserConfig.getInstance(ACCOUNT).user = USER;
             check(store.stateBytes() == null);
             check(Arrays.equals(Files.readAllBytes(stateFile.toPath()),
                     pendingState));
@@ -2562,9 +2562,9 @@ public final class PurpleSyncCoreTest {
     }
 
     public static void main(String[] args) throws Exception {
-        UserConfig.activated = true;
-        UserConfig.userId = USER;
-        MessagesController.VALUES.clear();
+        UserConfig.getInstance(ACCOUNT).active = true;
+        UserConfig.getInstance(ACCOUNT).user = USER;
+        MessagesController.reset();
         if (args.length == 1 && args[0].equals("stripped")) {
             testStrippedReplies();
             finish();
