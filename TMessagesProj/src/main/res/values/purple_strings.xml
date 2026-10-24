@@ -717,4 +717,21 @@
     <string name="PurpleSyncAutoReview">use manual Check to review the changes</string>
     <string name="PurpleSyncAutoStopped">network retries stopped; the next account, foreground or save event can try again</string>
     <string name="PurpleSyncAutoRecovery">use manual Check to review the account’s sync state</string>
+    <string name="PurpleArchiveGap">Some content could not be retained. A capture gap is recorded.</string>
+    <string name="PurpleArchiveTitle">Local message archive</string>
+    <string name="PurpleArchivePolicy">Encrypted storage for this account on this device. Retained content has no expiry. Storage is removed at logout and excluded from backup and device transfer.</string>
+    <string name="PurpleArchiveStorageOnly">This preview provides storage only. Message capture and Edit History are not available yet.</string>
+    <string name="PurpleArchiveRequires23">Requires Android 6 or newer (API 23). No archive is created on this device.</string>
+    <string name="PurpleArchiveReady">Encrypted storage: %1$s bytes (estimate)</string>
+    <string name="PurpleArchiveOpening">Checking encrypted storage…</string>
+    <string name="PurpleArchiveUnavailable">Archive unavailable. Existing content is preserved; capture is not acknowledged.</string>
+    <string name="PurpleArchiveKeyUnavailable">The archive key is unavailable. Existing content is preserved. Remove the local archive to prepare a new one.</string>
+    <string name="PurpleArchiveSchemaMismatch">This draft archive has an incompatible storage format. It is preserved unchanged. Remove it explicitly to prepare a new archive.</string>
+    <string name="PurpleArchiveReadOnly">This archive format cannot be opened for writes. Existing content is preserved.</string>
+    <string name="PurpleArchiveRemovalPending">Archive removal is pending. Access stays blocked until cleanup completes.</string>
+    <string name="PurpleArchiveNotPrepared">Tap to prepare or check encrypted storage.</string>
+    <string name="PurpleArchiveSignedOut">No signed-in account.</string>
+    <string name="PurpleArchiveRemove">Remove local archive</string>
+    <string name="PurpleArchiveRemoveConfirm">Remove this account’s archive from this device? Retained content and its encryption key will be deleted. Telegram messages and other accounts are unaffected.</string>
+    <string name="PurpleArchiveRefresh">Check storage</string>
 </resources>

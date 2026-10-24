@@ -460,6 +460,7 @@ public class UserConfig extends BaseController {
     }
 
     public void clearConfig() {
+        org.telegram.messenger.purple.PurpleArchive.beforeLogout(currentAccount);
         org.telegram.messenger.purple.PurpleAccountFiles.identityChanged(currentAccount);
         getPreferences().edit().clear().apply();
 

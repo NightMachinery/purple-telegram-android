@@ -1941,3 +1941,11 @@ for publication ordering, partial outcomes and qualified host coverage.
 The account-targeted editor candidate and its guarded first-save directory
 creation are described in [account settings](docs/account-settings-m2.md). Its
 compiler, JNI/filesystem and UI qualification is still pending.
+
+### Encrypted archive storage preview
+
+Purple settings can prepare and inspect per-account encrypted archive storage on
+Android 6 or newer. Logout removes that account's store and dedicated key.
+Message capture and Edit History are still pending in this storage preview.
+See [archive storage](docs/archive-storage.md) for recovery, compatibility and
+headless checks.

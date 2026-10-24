@@ -14,6 +14,7 @@ add_library(purplecore SHARED
         purple/purple/purple_local_choice.cpp
         purple_jni/account_sync_bridge.cpp
         purple_jni/config_sync_bridge.cpp
+        purple_jni/archive_core_bridge.cpp
         purple/purple/purple_passcode.cpp
         purple/purple/purple_settings.cpp
         purple/purple/purple_splice.cpp
@@ -39,6 +40,13 @@ add_library(purplecore SHARED
         purple/purple/purple_archive_model.cpp
         purple/purple/purple_archive_store.cpp
         purple/purple/purple_archive_source.cpp
+        purple/purple/purple_archive_envelope.cpp
+        purple/purple/purple_archive_lifecycle.cpp
+        purple/purple/purple_archive_media_lifecycle.cpp
+        purple/purple/purple_archive_views.cpp
+        purple/purple/purple_archive_sql.cpp
+        purple/purple/purple_archive_sql_body.cpp
+        purple/purple/purple_archive_sql_maintenance.cpp
         purple/purple/purple_sync_auto.cpp
         purple/purple/purple_sync_auto_state.cpp
         purple/purple/purple_engine.cpp)
@@ -61,3 +69,5 @@ add_custom_command(TARGET purplecore POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 ${PURPLE_QT_ANDROID}/lib/libQt6Core_${ANDROID_ABI}.so
                 $<TARGET_FILE_DIR:purplecore>/libQt6Core_${ANDROID_ABI}.so)
+
+target_sources(${NATIVE_LIB} PRIVATE purple_jni/archive_sqlite_bridge.cpp purple_jni/archive_files_bridge.cpp)

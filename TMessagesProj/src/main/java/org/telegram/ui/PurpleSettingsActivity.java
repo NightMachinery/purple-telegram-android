@@ -201,6 +201,7 @@ public class PurpleSettingsActivity extends UniversalFragment
         // write leave the switch exactly where the file is with no extra code.
         final PurpleCore.Loaded state = PurpleGate.state();
         PurpleAccountSettingsRows.add(items, currentAccount);
+        PurpleArchiveUI.add(items, this);
         PurpleAccountRowWrite.Current current = rowCurrent();
         reasonsIntent = PurpleAccountRowWrite.reasons(currentAccount, current);
         tradeIntent = PurpleAccountRowWrite.trade(currentAccount, current);
@@ -442,6 +443,7 @@ public class PurpleSettingsActivity extends UniversalFragment
     @Override
     protected void onClick(UItem item, View view, int position, float x, float y) {
         final PurpleWriter.Session writer = rowWriter;
+        if (PurpleArchiveUI.click(this, item.id)) return;
         if (PurpleAccountEditorUI.click(this, item.id, rowCurrent())) return;
         if (PurpleAppWideRemovalUI.click(this, item.id, rowCurrent())) return;
         if (PurpleAccountSettingsRows.click(this, item.id, rowCurrent())) return;

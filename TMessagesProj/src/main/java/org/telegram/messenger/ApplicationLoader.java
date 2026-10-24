@@ -262,6 +262,7 @@ public class ApplicationLoader extends Application {
             }
         }
         PurpleLastSeenTrade.start();
+        org.telegram.messenger.purple.PurpleArchive.initialize();
 
         ApplicationLoader app = (ApplicationLoader) ApplicationLoader.applicationContext;
         app.initPushServices();

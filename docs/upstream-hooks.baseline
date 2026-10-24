@@ -21,7 +21,7 @@ file TMessagesProj/build.gradle 1 0 1
 file TMessagesProj/google-services.json 29 0 1
 file TMessagesProj/jni/CMakeLists.txt 3 0 2
 file TMessagesProj/src/main/AndroidManifest.xml 17 1 2
-file TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java 4 1 3
+file TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java 5 1 3
 file TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java 1 0 1
 file TMessagesProj/src/main/java/org/telegram/messenger/ContactsController.java 5 5 5
 file TMessagesProj/src/main/java/org/telegram/messenger/DownloadController.java 13 0 5
@@ -36,7 +36,7 @@ file TMessagesProj/src/main/java/org/telegram/messenger/ScreenReceiver.java 2 0 
 file TMessagesProj/src/main/java/org/telegram/messenger/SendMessagesHelper.java 43 17 29
 file TMessagesProj/src/main/java/org/telegram/messenger/SharedConfig.java 3 1 3
 file TMessagesProj/src/main/java/org/telegram/messenger/TranslateController.java 4 1 4
-file TMessagesProj/src/main/java/org/telegram/messenger/UserConfig.java 2 0 2
+file TMessagesProj/src/main/java/org/telegram/messenger/UserConfig.java 3 0 2
 file TMessagesProj/src/main/java/org/telegram/messenger/video/VideoAds.java 1 0 1
 file TMessagesProj/src/main/java/org/telegram/tgnet/ConnectionsManager.java 3 1 3
 file TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBarMenuItem.java 2 1 1
@@ -95,3 +95,4 @@ file TMessagesProj/src/main/res/xml/sync_contacts.xml 1 1 1
 file TMessagesProj_App/google-services.json 29 0 1
 file TMessagesProj_AppStandalone/build.gradle 1 0 1
 file TMessagesProj_AppStandalone/google-services.json 29 0 1
+file TMessagesProj_AppStandalone/src/main/AndroidManifest.xml 3 1 1

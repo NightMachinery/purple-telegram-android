@@ -672,3 +672,15 @@ expectations are persisted with pending checkpoints. Timeout releases request,
 guard and payload state; bounded weak tombstones recognize late replies. No
 upstream preparation adapter or edit-response hook remains. Retirement uses
 its existing callback-bearing request with the same native error policy.
+
+### Content archive storage
+
+`ApplicationLoader.postInitApplication` calls the Purple recovery scanner after
+account configuration has loaded. `UserConfig.clearConfig` calls the Purple
+logout helper before signed-in identity is erased. Both are single delegated
+calls. Ordinary identity changes close handles without deleting account data.
+
+The standalone application manifest references Purple-owned backup and transfer
+XML rules. They exclude both archive and archive-state roots from cloud backup
+and device transfer. No live Telegram database or ordinary cache path is added
+to the archive store or its removal plan.
