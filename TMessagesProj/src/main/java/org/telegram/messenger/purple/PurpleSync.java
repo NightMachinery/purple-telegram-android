@@ -73,7 +73,7 @@ public final class PurpleSync {
     private PurpleSync() {
     }
 
-    static void refreshFromWatcher(Runnable reload) { saves.refresh(reload); }
+    static void refreshFromWatcher(Runnable reload) { saves.refresh(()->PurpleSyncAuto.refresh(reload)); }
 
     public static byte[] accountBytes(int account) {
         if (!PurpleAccountOwner.legacyTransferOperation(account)) return null;
@@ -94,19 +94,19 @@ public final class PurpleSync {
         if (context == null || bytes == null) return;
         byte[] expected = bytes.clone();
         AndroidUtilities.runOnUIThread(() -> {
-            if (context.current()) afterFileWrite(context.origin, context.files.settings, expected, imported, false);
+            if (context.current()) {PurpleSyncAuto.saved(context.origin,context.files.settings,expected,null,false);afterFileWrite(context.origin, context.files.settings, expected, imported, false);}
         });
     }
     static void afterRoutedWrite(PurpleAccountFiles.Identity actor, File file, byte[] bytes, String reason) {
         if (actor == null || !actor.current()) return;
         for (PurpleAccountFiles.Identity id : PurpleAccountOwner.signedIn()) {
             PurpleAccountFiles files = PurpleAccountFiles.resolve(id.key, PurpleAccountOwner.owner());
-            if (files != null && files.settings.equals(file)) { afterFileWrite(id, file, bytes, false, true); return; }
+            if (files != null && files.settings.equals(file)) { PurpleSyncAuto.saved(id,file,bytes,null,true);afterFileWrite(id, file, bytes, false, true); return; }
         }
     }
     static void afterAccountRowWrite(PurpleAccountFiles.Identity origin, File file,
-            byte[] bytes, PurpleSaveDebounce.Receipt receipt, boolean allowSend) {
-        if (receipt.current()) afterFileWrite(origin, file, bytes, false, allowSend);
+            byte[] bytes, PurpleSaveDebounce.Receipt receipt, boolean allowSend, boolean actualSave) {
+        if (receipt.current()) {PurpleSyncAuto.saved(origin,file,bytes,receipt,actualSave);afterFileWrite(origin, file, bytes, false, allowSend);}
     }
     static boolean afterFileWrite(PurpleAccountFiles.Identity origin, File file, byte[] bytes,
             boolean imported, boolean allowSend) {
@@ -250,6 +250,7 @@ public final class PurpleSync {
     }
 
     public static boolean registerRetry(int account, MessageObject messageObject, boolean unsent) {
+        if (PurpleSyncAutoOutbox.divert(account, messageObject)) return false;
         PurpleSendReceipt receipt = receiptForRetry(account, messageObject, unsent);
         if (receipt != null) {
             PurpleSendReceipts.retry(account, messageObject.getId(), messageObject.getDialogId(), messageObject.messageOwner.attachPath, messageObject.messageOwner, receipt);

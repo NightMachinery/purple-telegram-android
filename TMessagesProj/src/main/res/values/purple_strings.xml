@@ -705,4 +705,16 @@
     <string name="PurpleSyncRecoveryHeld">Recovery could not complete safely. Check this account again. A partial archive remains available to finish.</string>
     <string name="PurpleSyncRecoveryChecking">Checking this account again before recovery…</string>
     <string name="PurpleSyncEmptyJoinAbout">This account has no settings file on this device and uses inherited settings. Join only links this account to sync. It creates no settings file and sends nothing. After you create and save this account’s own file, you can publish it.</string>
+    <string name="PurpleSyncAutoTitle">Automatic settings sync</string>
+    <string name="PurpleSyncAutoOff">Off. Manual Check and History remain available.</string>
+    <string name="PurpleSyncAutoReady">On. Safe changes sync when this account opens, the app returns, or you save an existing file.</string>
+    <string name="PurpleSyncAutoRetry">Waiting to retry in %1$d seconds.</string>
+    <string name="PurpleSyncAutoAttention">Automatic sync needs attention: %1$s</string>
+    <string name="PurpleSyncAutoAccount">confirm this account’s file ownership</string>
+    <string name="PurpleSyncAutoBinding">use manual Check to set up this account’s sync</string>
+    <string name="PurpleSyncAutoChat">sync chat not resolved</string>
+    <string name="PurpleSyncAutoFile">save a valid existing settings file</string>
+    <string name="PurpleSyncAutoReview">use manual Check to review the changes</string>
+    <string name="PurpleSyncAutoStopped">network retries stopped; the next account, foreground or save event can try again</string>
+    <string name="PurpleSyncAutoRecovery">use manual Check to review the account’s sync state</string>
 </resources>

@@ -1710,6 +1710,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
     }
 
     public boolean retrySendMessage(MessageObject messageObject, boolean unsent, long payStars) {
+        if (org.telegram.messenger.purple.PurpleSyncAutoOutbox.divert(currentAccount, messageObject)) return false;
         if (messageObject.getId() >= 0) {
             if (messageObject.isEditing()) {
                 editMessage(messageObject, null, null, null, null, null, null, true, messageObject.hasMediaSpoilers(), messageObject);
@@ -2886,6 +2887,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
     }
 
     public void editMessage(MessageObject messageObject, TLRPC.TL_inputPollAnswer pollToAddOptionMessageObject, TLRPC.TL_photo photo, VideoEditedInfo videoEditedInfo, TLRPC.TL_document document, String path, TLRPC.PhotoSize cover, HashMap<String, String> params, boolean retry, boolean hasMediaSpoilers, Object parentObject) {
+        if (retry && org.telegram.messenger.purple.PurpleSyncAutoOutbox.divert(currentAccount, messageObject)) return;
         if (messageObject == null) {
             return;
         }
@@ -4269,6 +4271,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
     }
 
     public void sendMessage(SendMessageParams sendMessageParams) {
+        if (org.telegram.messenger.purple.PurpleSyncAutoOutbox.divert(currentAccount, sendMessageParams.retryMessageObject)) return;
         final SendMessageChatArguments sendMessageChatArguments = sendMessageParams.sendMessageChatArguments != null ?
                 sendMessageParams.sendMessageChatArguments : SendMessageChatArguments.EMPTY;
         String message = sendMessageParams.message;

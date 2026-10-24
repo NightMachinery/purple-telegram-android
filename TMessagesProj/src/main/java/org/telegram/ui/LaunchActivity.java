@@ -6982,6 +6982,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         ApplicationLoader.mainInterfacePaused = false;
         // Purple: see PurpleScreenTime#foreground
         org.telegram.messenger.purple.PurpleScreenTime.foreground(true);
+        org.telegram.messenger.purple.PurpleSyncAuto.foreground();
         MessagesController.getInstance(currentAccount).sortDialogs(null);
         showLanguageAlert(false);
         Utilities.stageQueue.postRunnable(() -> {

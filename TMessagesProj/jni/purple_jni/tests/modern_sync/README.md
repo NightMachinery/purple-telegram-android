@@ -60,3 +60,23 @@ and `run_account_sync_store.sh` entry points select the matching suite here and
 accept the same required flags. Their former accountless compile recipes are
 removed. The platform ports here do not qualify Android UI, Looper,
 actual Os/AtomicFile, FileObserver, network, devices, emulator, APK or shrinker.
+
+The auto suite uses the actual AutoCore/Engine/Network/Client classes from AGP
+output and real JNI. Only Android/RPC ports are synthetic. It covers the pinned
+policy's backoff and runStopped boundaries, exact counters/opaque records/CAS,
+manual-vs-auto and A/B leases, staged/restarted/late callbacks, safe replacement
+and loss/context holds, typed exact-id absence and bounded own retirement. The
+actual Telegram response decoder is tested for wrong-id/multi-message/not-modified
+absence refusals. The transport entry point now delegates to --suite auto;
+it no longer compiles a shadow parser or policy. core_sources.py derives the host
+source list from purple.cmake and refuses missing/new core translation units.
+
+The default/modern/auto groups also run dedicated outbox admission cases with
+MessageObject/FileLoader data ports. Their business predicates, engine, store
+and native policy come from AGP/JNI, while the ports model persisted row fields
+and a fresh wrapper after restart. They cover pending post/edit plus Disable,
+routing change and newer server body, enabled-but-inactive records, moved stage
+paths and ordinary retries. They do not execute the Android upstream outbox.
+The automatic suite additionally drives the production non-persistent upload
+executor with RPC ports, post-upload exact-body refusal, duplicate responses,
+request cancellation, three timeouts, 200 bounded tombstones and late callbacks.

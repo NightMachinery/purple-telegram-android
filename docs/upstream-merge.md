@@ -610,7 +610,7 @@ The MD label must not be mistaken for ordinary Copy during action-mode merges.
 passcode item's accessibility label. `PurpleDialogsHooks` delegates this row to
 `PurplePeekControls`; the handler and visibility policy stay in Purple code.
 The existing passcode, search, profile and daily controls remain caller-owned.
-No LaunchActivity lifecycle hook is added: the Purple controller observes the
+No LaunchActivity lifecycle hook is needed by Peek: its Purple controller observes the
 owning activity's lifecycle and the existing global account-change event.
 
 `PurpleGate` notifies the controller after restored view filters are rebuilt,
@@ -648,3 +648,27 @@ Their Purple helpers apply the device-local stock choice. The existing folder,
 badge, settings-label and dialog helpers already receive the account; their
 internal readers now use per-account snapshots and caches. These changes add
 no upstream decision logic or hook sites. See account-routed-writers.md.
+
+## Automatic settings sync
+
+LaunchActivity.onResume adds one delegated PurpleSyncAuto.foreground call.
+The existing PurpleDialogsHooks creation seam supplies the opening account for
+SessionReady. USER_PRESENT and passcodeDismissed are observed in Purple code,
+without another lifecycle hook. Native chat/carry/archive sources are linked
+for the pinned shared core; automatic mode does not call their APIs.
+
+SendMessagesHelper delegates to PurpleSyncAutoOutbox before the positive-id
+edit retry branch, the direct edit retry path and retryMessageObject send path.
+The existing negative-id PurpleSync.registerRetry predicate also refuses modern
+staged records. These guards recognize the old reserved stage path or durable
+filename/caption and request captured-account core reconciliation, never a blind
+upstream resend. Ordinary retries keep their existing path.
+
+New automatic effects use a Purple-owned bounded upload and direct Telegram
+sendMedia/editMessage request. They never create upstream outbox rows. Every
+hop checks current core authority, edits repeat an exact-body read after upload,
+and native server/flood errors return to the core retry policy. Routing/impact
+expectations are persisted with pending checkpoints. Timeout releases request,
+guard and payload state; bounded weak tombstones recognize late replies. No
+upstream preparation adapter or edit-response hook remains. Retirement uses
+its existing callback-bearing request with the same native error policy.

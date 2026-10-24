@@ -7,16 +7,13 @@ JavaHome="$(/usr/libexec/java_home)"
 BuildPath="$(mktemp -d "${TMPDIR:-/tmp}/purple-account-sync-jni.XXXXXX")"
 trap 'command rm -rf "$BuildPath"' EXIT
 
+CoreSources=()
+while IFS= read -r file; do CoreSources+=("$file"); done < <(python3 "$Root/TMessagesProj/jni/purple_jni/tests/core_sources.py")
+
 clang++ -std=c++20 -g -O0 -dynamiclib \
     -o "$BuildPath/libpurplecore_smoke.dylib" \
     "$Root/TMessagesProj/jni/purple_jni/account_sync_bridge.cpp" \
-    "$Root/TMessagesProj/jni/purple/purple/purple_settings.cpp" \
-    "$Root/TMessagesProj/jni/purple/purple/purple_state.cpp" \
-    "$Root/TMessagesProj/jni/purple/purple/purple_config_sync.cpp" \
-    "$Root/TMessagesProj/jni/purple/purple/purple_config_payload.cpp" \
-    "$Root/TMessagesProj/jni/purple/purple/purple_sync_json.cpp" \
-    "$Root/TMessagesProj/jni/purple/purple/purple_sync_envelope.cpp" \
-    "$Root/TMessagesProj/jni/purple/purple/purple_sync_local_state.cpp" \
+    "${CoreSources[@]}" \
     -I"$Root/TMessagesProj/jni/purple" \
     -I"$Root/TMessagesProj/jni/purple/tomlplusplus" \
     -I"$JavaHome/include" -I"$JavaHome/include/darwin" \

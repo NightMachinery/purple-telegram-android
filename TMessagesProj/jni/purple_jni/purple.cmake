@@ -30,6 +30,17 @@ add_library(purplecore SHARED
         purple/purple/purple_sync_local_state.cpp
         purple/purple/purple_sync_status.cpp
         purple/purple/purple_screentime.cpp
+        purple/purple/purple_peer_token.cpp
+        purple/purple/purple_sync_chat.cpp
+        purple/purple/purple_sync_chat_carry.cpp
+        purple/purple/purple_sync_chat_carry_codec.cpp
+        purple/purple/purple_sync_chat_journal.cpp
+        purple/purple/purple_archive_codec.cpp
+        purple/purple/purple_archive_model.cpp
+        purple/purple/purple_archive_store.cpp
+        purple/purple/purple_archive_source.cpp
+        purple/purple/purple_sync_auto.cpp
+        purple/purple/purple_sync_auto_state.cpp
         purple/purple/purple_engine.cpp)
 
 target_compile_options(purplecore PRIVATE -std=c++20 -Oz)

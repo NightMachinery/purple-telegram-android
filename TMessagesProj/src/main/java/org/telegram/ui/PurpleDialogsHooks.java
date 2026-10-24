@@ -48,6 +48,7 @@ public final class PurpleDialogsHooks {
      */
     public void onFragmentCreate() {
         PurpleGate.ensureLoaded();
+        org.telegram.messenger.purple.PurpleSyncAuto.sessionReady(fragment.getCurrentAccount());
         PurpleSyncOffer.checkOnLaunch(fragment, fragment.getCurrentAccount());
     }
 

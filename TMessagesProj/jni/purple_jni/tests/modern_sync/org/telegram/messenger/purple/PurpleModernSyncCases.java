@@ -208,5 +208,6 @@ public final class PurpleModernSyncCases {
             check(!fallback.settings(1).exists()==missing,"primary absence retained");fallback.unchangedA();held.close();
         }
     }
-    public static int run(File parent)throws Exception{checks=0;flowCases(parent);missingCases(parent);PurpleSyncRecoveryCases.run(parent);PurpleSyncLifecycleCases.run(parent);PurpleSyncReviewFixCases.run(parent);return checks;}
+    public static int run(File parent)throws Exception{
+        checks=0;PurpleSyncAutoCases.run(parent);flowCases(parent);missingCases(parent);PurpleSyncRecoveryCases.run(parent);PurpleSyncLifecycleCases.run(parent);PurpleSyncReviewFixCases.run(parent);return checks;}
 }

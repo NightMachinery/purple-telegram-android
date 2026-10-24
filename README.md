@@ -835,6 +835,11 @@ History/Undo and binding recovery, including schema-2 account files. See
 [account-modern-sync.md](docs/account-modern-sync.md) for replacement impacts,
 per-file fallback and the headless production-class test route.
 
+Each account can opt into safe automatic checks and publication after manual
+setup. It defaults off and keeps conflicts or destructive changes for manual
+review. Open that account’s Settings sync screen to enable it; see
+[Automatic settings sync](docs/sync-auto.md) for triggers, retries and recovery.
+
 `PurpleSyncRunner` drives manual settings sync for one account
 over any `PurpleSyncTransport`. It runs one step at a time, drops callbacks
 from a cancelled or superseded step, and checks before every write that the

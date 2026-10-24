@@ -148,14 +148,14 @@ public final class PurpleAccountSyncCore {
     }
 
     private static byte[] newerRecord(RawReply remote) throws Exception {
-        final byte[] newerText = "version = 2\nname = 'child'\n"
+        final byte[] newerText = "version = 3\nname = 'child'\n"
                 .getBytes(StandardCharsets.UTF_8);
         final String fingerprint = newerText.length + ":"
                 + HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
                         .digest(newerText));
         String json = new String(remote.record, StandardCharsets.UTF_8)
-                .replace("\"schema\":1", "\"schema\":2")
-                .replace("version = 1", "version = 2")
+                .replace("\"schema\":1", "\"schema\":3")
+                .replace("version = 1", "version = 3")
                 .replace(key(remote), "2." + fingerprint);
         final int payloadStart = json.indexOf("\"payload\":") + 10;
         final int payloadEnd = json.indexOf(",\"payload_sha256\"");
@@ -242,7 +242,7 @@ public final class PurpleAccountSyncCore {
         final byte[] newer = newerRecord(remote);
         expect(inspectConfigRecordNative(newer), "NewerSchema", "None");
         final RawReply newerAcknowledgement = buildConfigAcknowledgementNative(
-                "version = 2\nname = 'child'\n".getBytes(StandardCharsets.UTF_8),
+                "version = 3\nname = 'child'\n".getBytes(StandardCharsets.UTF_8),
                 newer, SPACE, INSTALL_B, "desktop", "macos", "Purple", 2, 0);
         expect(newerAcknowledgement, "Invalid", "RemotePayload");
         if (!newerAcknowledgement.metadataJson.contains(

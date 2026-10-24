@@ -116,6 +116,9 @@ interface PurpleSyncClient {
     }
 
     interface Receipt {
+        default byte[] expectedBytes(){return null;}
+        default boolean current(){return true;}
+        default boolean automatic(){return false;}
         void onReceipt(int serverId, boolean preparationFailed);
     }
 
@@ -149,6 +152,9 @@ interface PurpleSyncClient {
     long nowMillis();
 
     void send(File file, String caption, String mime, Receipt receipt);
+
+    default void edit(int id,File file,byte[] expected,java.util.function.BooleanSupplier current,Reply<PurpleSyncAutoCore.Outcome> reply){reply.onReply(PurpleSyncAutoCore.Outcome.EditRefused);}
+    default void deleteOwn(int id,java.util.function.BooleanSupplier current,Reply<PurpleSyncAutoCore.Outcome> reply){reply.onReply(PurpleSyncAutoCore.Outcome.DeletionRefused);}
 
     final class Operation {
         interface Owner {

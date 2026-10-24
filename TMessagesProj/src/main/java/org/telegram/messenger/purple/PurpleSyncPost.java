@@ -167,10 +167,12 @@ final class PurpleSyncPost implements PurpleSyncTelegramTransport.Task,
         operation.client.log("generation " + operation.generation
                 + ": handing the record to Telegram");
         try {
-            operation.client.send(copy, CAPTION, MIME,
-                    (serverId, preparationFailed) -> operation.client.runOnWorker(
-                            () -> operation.run(
-                                    () -> onReceipt(serverId, preparationFailed))));
+            operation.client.send(copy, CAPTION, MIME, new PurpleSyncClient.Receipt() {
+                public byte[] expectedBytes() { return staged.clone(); }
+                public void onReceipt(int serverId, boolean preparationFailed) {
+                    operation.client.runOnWorker(() -> operation.run(() -> PurpleSyncPost.this.onReceipt(serverId, preparationFailed)));
+                }
+            });
         } catch (RuntimeException failure) {
             operation.client.log("generation " + operation.generation
                     + ": the hand-off threw " + failure);

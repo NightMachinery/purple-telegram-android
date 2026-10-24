@@ -215,6 +215,7 @@ public final class PurpleSendReceipts {
     }
 
     public static void cleanup(int account) {
+        PurpleSyncAutoEdits.cleanup(account);
         Account state = accounts.get(account);
         if (state == null) {
             return;

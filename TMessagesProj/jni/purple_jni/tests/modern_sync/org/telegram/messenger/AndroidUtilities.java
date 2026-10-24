@@ -1,5 +1,8 @@
 package org.telegram.messenger;
 public final class AndroidUtilities {
     public static final java.util.List<Runnable> pending=new java.util.ArrayList<>();
+    public static final java.util.Map<Runnable,Long> delayed=new java.util.LinkedHashMap<>();
     public static void runOnUIThread(Runnable task){pending.add(task);}
+    public static void runOnUIThread(Runnable task,long delay){delayed.put(task,delay);}
+    public static void cancelRunOnUIThread(Runnable task){pending.remove(task);delayed.remove(task);}
 }

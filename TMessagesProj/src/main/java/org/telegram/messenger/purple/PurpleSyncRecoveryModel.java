@@ -76,7 +76,7 @@ final class PurpleSyncRecoveryModel {
                 PurpleSyncRecoveryFiles.Snapshot ownerRecord=tree.capture(new File(root,"accounts/root.toml"),false);
                 JSONObject route=new JSONObject(PurpleGlobalChoiceModel.planNative(localChoice.bytes,ownerRecord.bytes,owner,global,account));
                 if(!route.optBoolean("ok"))throw new IllegalStateException("recovery owner changed");
-                if(!PurpleAccountSyncStore.recoverInterrupted(root,sync,tree.physical,()->live()&&tree.current()))throw new IllegalStateException("interrupted sync recovery refused");
+                if(!PurpleAccountSyncStore.recoverInterrupted(root,sync,account,tree.physical,()->live()&&tree.current()))throw new IllegalStateException("interrupted sync recovery refused");
                 if(PurpleAccountBinding.isToken(preferences.token))targetTokens.add(preferences.token);
                 PurpleSyncRecoveryFiles.Snapshot activeJournal=tree.capture(journalFile,false,PurpleSyncRecoveryFiles.JOURNAL_LIMIT);
                 JSONArray stores=new JSONArray();stores.put(store(new File(root,"sync"),null));
@@ -152,7 +152,7 @@ final class PurpleSyncRecoveryModel {
         PurpleSyncRecoveryFiles.Snapshot folder=tree.capture(directory,true);
         if(folder.entries!=null)for(String name:folder.entries) {
             File entry=new File(directory,name);
-            if(name.equals("state.json")||name.equals("lock"))tree.capture(entry,false);
+            if(name.equals("state.json")||name.equals("lock")||name.equals("auto.json"))tree.capture(entry,false);
             else if(name.equals("pending")||PurpleSyncRecoveryFiles.archiveName(name))tree.capture(entry,true);
             else if(name.equals("start-again.json")&&directory.equals(sync))tree.capture(entry,false,PurpleSyncRecoveryFiles.JOURNAL_LIMIT);
             else throw new IllegalStateException("unknown sync entry");

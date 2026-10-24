@@ -241,7 +241,7 @@ public final class PurpleAccountRowWrite {
                                         public long generation() { return PurpleAccountSettings.generation(); }
                                         public long nativeEpoch() { return PurpleAccountSettings.epochNative(); }
                                     }, revision, generation + 1, nativeEpoch + 1);
-                            PurpleSync.afterAccountRowWrite(origin, target, bytes, receipt, allowSend);
+                            PurpleSync.afterAccountRowWrite(origin, target, bytes, receipt, allowSend, allowSend && purpose != 2);
                             return null;
                         } catch (Exception | UnsatisfiedLinkError e) {
                             return "account row could not be safely written";

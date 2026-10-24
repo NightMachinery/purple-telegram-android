@@ -49,6 +49,9 @@ public class PurpleSyncActivity extends UniversalFragment {
     private static final int ROW_CANCEL = 5;
     private static final int ROW_HISTORY = 6;
     private static final int ROW_RECOVERY = 7;
+    private static final int ROW_AUTO=8;
+    private org.telegram.messenger.purple.PurpleSyncAuto.Control automatic;
+    private CharSequence automaticStatus="";
 
     private enum Followup { None, Publish, PublishChanges, FinishSending, Share }
 
@@ -85,11 +88,13 @@ public class PurpleSyncActivity extends UniversalFragment {
         } else {
             status = getString(R.string.PurpleAccountWriteHeld);
         }
+        automatic=org.telegram.messenger.purple.PurpleSyncAuto.control(currentAccount,value->{automaticStatus=value.text;refresh();});
         return super.onFragmentCreate();
     }
 
     @Override
     public void onFragmentDestroy() {
+        if(automatic!=null)automatic.close();
         if (runner != null) {
             runner.close();
         }
@@ -126,6 +131,9 @@ public class PurpleSyncActivity extends UniversalFragment {
     @Override
     protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
         items.add(UItem.asHeader(accountLabel()));
+        UItem auto=UItem.asCheck(ROW_AUTO,getString(R.string.PurpleSyncAutoTitle));
+        auto.checked=automatic!=null&&automatic.enabled();auto.enabled=automatic!=null&&automatic.current();items.add(auto);
+        items.add(UItem.asShadow(automaticStatus));
         if (statusView != null) {
             final UItem statusItem = UItem.asCustom(statusView, LayoutHelper.WRAP_CONTENT);
             statusItem.id = ROW_STATUS;
@@ -164,6 +172,9 @@ public class PurpleSyncActivity extends UniversalFragment {
     @Override
     protected void onClick(UItem item, View view, int position, float x, float y) {
         switch (item.id) {
+            case ROW_AUTO:
+                if(automatic!=null&&automatic.current())automatic.setEnabled(!automatic.enabled());
+                break;
             case ROW_RECOVERY:
                 confirmRecovery();
                 break;

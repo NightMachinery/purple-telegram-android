@@ -164,6 +164,7 @@ public final class PurpleAccountEditor {
                         try {
                             PurpleAccountEditorModel.Result result = model.save(preview.value);
                             if (result.ok && destination != null) {
+                                PurpleSyncAuto.saved(destination,files.settings,preview.value.bytes,null,!sync&&!missing&&!imported);
                                 boolean recorded = PurpleSync.afterFileWrite(destination, files.settings, preview.value.bytes,
                                         imported, !sync && !missing && !imported);
                                 if (imported && !recorded) result.ok = false;

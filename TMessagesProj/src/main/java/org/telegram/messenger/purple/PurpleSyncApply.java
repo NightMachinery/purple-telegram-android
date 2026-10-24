@@ -144,7 +144,7 @@ public final class PurpleSyncApply {
         }
     }
 
-    private static final class Written {
+    static final class Written {
         PurpleSyncCore.ApplyStatus status = PurpleSyncCore.ApplyStatus.WriteError;
         String historyId = "";
         PurpleSyncSettingsFile.Contents readBack;
@@ -560,7 +560,7 @@ public final class PurpleSyncApply {
         return SetupStatus.InvalidGeneratedState;
     }
 
-    private static Written writeWithHistory(PurpleSyncRunner.Env env,
+    static Written writeWithHistory(PurpleSyncRunner.Env env,
             PurpleSyncRunner.Session account,
             PurpleSyncSettingsFile.Contents current, byte[] text,
             String fingerprint, PurpleSyncHistory.Reason reason, String label,

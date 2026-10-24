@@ -6,6 +6,7 @@ final class PurpleSyncMutation {
     private final PurpleAccountEditor.Current route;
     private final PurpleAccountEditorModel model;
     private final PurpleSyncImpactGuard effects;
+    private volatile java.util.function.BooleanSupplier admission=()->true;
 
     PurpleSyncMutation(PurpleAccountEditor.Session editor, PurpleAccountEditor.Current route) {
         this.editor = editor; this.route = route; model = null; effects=null;
@@ -15,7 +16,8 @@ final class PurpleSyncMutation {
     PurpleSyncMutation(PurpleAccountEditorModel model,PurpleConfigImpact.Input impact,PurpleAccountEditor.Current route,PurpleSyncImpactGuard effects) {
         this.model=model;this.impact=impact;this.route=route;this.effects=effects;editor=null;model.impact(impact);
     }
-    boolean effectCurrent() { return route.current()&&(editor!=null?editor.effects.current():effects==null||effects.current()); }
+    synchronized void require(java.util.function.BooleanSupplier guard) {java.util.function.BooleanSupplier previous=admission;admission=()->previous.getAsBoolean()&&guard.getAsBoolean();}
+    boolean effectCurrent() { return admission.getAsBoolean()&&route.current()&&(editor!=null?editor.effects.current():effects==null||effects.current()); }
     boolean current() { return effectCurrent() && (editor!=null?editor.current():model.current()); }
     boolean acceptSetupDirectories(java.util.Map<java.io.File,PurpleGlobalChoiceFiles.Mark> created) {
         return route.current()&&(editor!=null?editor.acceptSetupDirectories(created):model.acceptSetupDirectories(created)&&(effects==null||effects.acceptSetupDirectories(created)));
@@ -29,7 +31,7 @@ final class PurpleSyncMutation {
         }
         PurpleAccountEditor.Preview preview = editor.previewSync(bytes, imported);
         if (preview == null || !current()) return false;
-        PurpleAccountEditor.Outcome result = editor.saveSync(preview, route, imported);
+        PurpleAccountEditor.Outcome result = editor.saveSync(preview, ()->admission.getAsBoolean()&&route.current(), imported);
         return result.ok;
     }
 }

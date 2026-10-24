@@ -218,10 +218,10 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
             if (!prepareDirectory(pending)) {
                 return fail(Status.IoError);
             }
-            if (!recover(stateFile) || !recover(stageFile)) {
+            if (!safeAutoPaths() || !recover(stateFile) || !recover(stageFile) || !recoverAuto(new File(root,"auto.json"),PurpleAccountFiles.capture(account)!=null?PurpleAccountFiles.capture(account).key:"")) {
                 return fail(Status.IoError);
             }
-            if (!knownFiles(root, "lock", "state.json", "pending")
+            if (!knownFiles(root, "lock", "state.json", "pending", "auto.json")
                     || !knownFiles(pending, "config.json")) {
                 return fail(Status.AmbiguousFiles);
             }
@@ -301,9 +301,10 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
         }
     }
 
-    public synchronized Result stageConfig(byte[] canonicalRecord,
-            byte[] reservedState) {
-        if (status != Status.Ready || canonicalRecord == null
+    public synchronized Result stageConfig(byte[] canonicalRecord,byte[] reservedState){return stageConfig(canonicalRecord,reservedState,()->true);}
+    synchronized Result stageConfig(byte[] canonicalRecord,
+            byte[] reservedState,java.util.function.BooleanSupplier admitted) {
+        if (!admitted.getAsBoolean() || status != Status.Ready || canonicalRecord == null
                 || reservedState == null || stageFile.exists()
                 || canonicalRecord.length > RECORD_LIMIT
                 || reservedState.length > STATE_LIMIT) {
@@ -332,7 +333,9 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
             return result(Status.InvalidRecord);
         }
         try {
+            if(!admitted.getAsBoolean())return result(Status.InvalidTransition);
             write(stageFile, canonicalRecord);
+            if(!admitted.getAsBoolean()){dropUnreservedStage();return result(Status.InvalidTransition);}
             write(stateFile, reservedState);
             state = reservedState.clone();
             if (!bound()) {
@@ -463,6 +466,65 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
         }
     }
 
+    String directoryIdentity() throws Exception {
+        if(physical==null)throw new IOException("automatic store identity unavailable");
+        PurpleGlobalChoiceFiles.Mark mark=physical.mark(root,true);
+        if(mark.missing())throw new IOException("automatic store missing");
+        return mark.identity;
+    }
+    synchronized byte[] autoBytes() throws IOException {
+        if(status!=Status.Ready||!bound())throw new IOException("auto store unavailable");
+        File file=new File(root,"auto.json");
+        if(!file.exists())return null;
+        return read(file,2*1024*1024);
+    }
+    synchronized boolean compareAuto(byte[] expected,byte[] next,java.util.function.BooleanSupplier current) {
+        try {
+            if(next==null||next.length>2*1024*1024||!current.getAsBoolean()||!Arrays.equals(expected,autoBytes()))return false;
+            write(new File(root,"auto.json"),next);
+            return current.getAsBoolean()&&Arrays.equals(next,autoBytes());
+        }catch(IOException e){return false;}
+    }
+    synchronized boolean commitAutomatic(byte[] expected,byte[] next,byte[] checkpoint,boolean clearStage,java.util.function.BooleanSupplier current) {
+        try {
+            if(status!=Status.Ready||!bound()||!current.getAsBoolean()||!Arrays.equals(expected,state)
+                    ||!Arrays.equals(checkpoint,autoBytes())||!Arrays.equals(state,read(stateFile,STATE_LIMIT)))return false;
+            org.json.JSONObject record=new org.json.JSONObject(new String(checkpoint,java.nio.charset.StandardCharsets.UTF_8));
+            if(!record.getBoolean("active")||!Arrays.equals(next,PurpleSyncAutoCore.decode(record.getString("expectedState"))))return false;
+            int action=record.getInt("pending");
+            if(action!=PurpleSyncAutoCore.Action.AutoApply.ordinal()&&action!=PurpleSyncAutoCore.Action.Retire.ordinal()
+                    &&!(action==PurpleSyncAutoCore.Action.Reconcile.ordinal()&&record.getBoolean("commitOnly")))return false;
+            Reply inspected=core.inspectState(next),previous=core.inspectState(state);
+            if(!inspected.valid()||!device.equals(inspected.device)||!Arrays.equals(next,inspected.state)||!bindingMatches(next))return false;
+            PurpleAccountSyncCore.Result old=PurpleAccountSyncCore.inspectState(state),replacement=PurpleAccountSyncCore.inspectState(next);
+            if(!old.isValid()||!replacement.isValid()||!old.install.equals(replacement.install)||!old.space.equals(replacement.space)
+                    ||!old.bindingToken.equals(replacement.bindingToken))return false;
+            if(!current.getAsBoolean())return false;
+            write(stateFile,next);state=next.clone();
+            if(clearStage&&stageFile.exists()&&!stageFile.delete())return false;
+            return current.getAsBoolean()&&bound()&&Arrays.equals(next,read(stateFile,STATE_LIMIT));
+        }catch(Exception e){return false;}
+    }
+    private boolean safeAutoPaths() {
+        try {
+            if(physical!=null)for(String name:new String[]{"auto.json","auto.json.new","auto.json.bak"})physical.mark(new File(root,name),false);
+            return true;
+        }catch(Exception e){return false;}
+    }
+    private static boolean recoverAuto(File file,String accountKey)throws IOException {
+        File backup=new File(file.getPath()+".bak"),temporary=new File(file.getPath()+".new");
+        for(File entry:new File[]{file,backup,temporary})if(entry.exists()&&(!plainFile(entry)||!entry.isFile()))return false;
+        try {
+            if(backup.exists()) {
+                if(PurpleSyncAutoCore.decodeRecord(read(backup,2*1024*1024),accountKey)==null||!backup.renameTo(file))return false;
+            }
+            if(temporary.exists()) {
+                if(!file.exists()||PurpleSyncAutoCore.decodeRecord(read(file,2*1024*1024),accountKey)==null)return false;
+                return temporary.delete();
+            }
+            return true;
+        }catch(Exception e){return false;}
+    }
     public synchronized byte[] stateBytes() {
         return (routeCurrent() && status == Status.Ready && state != null) ? state.clone() : null;
     }
@@ -617,18 +679,18 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
         }
     }
 
-    static boolean recoverInterrupted(File appRoot,File directory,PurpleGlobalChoiceFiles.Physical physical,
+    static boolean recoverInterrupted(File appRoot,File directory,String accountKey,PurpleGlobalChoiceFiles.Physical physical,
             PurpleSyncRecoveryModel.Current current) {
         try {
             if(!current.current())return false;
             PurpleSyncRecoveryFiles.Tree inputs=new PurpleSyncRecoveryFiles.Tree(appRoot,physical);
             PurpleSyncRecoveryFiles.Snapshot folder=inputs.capture(directory,true);
             if(folder.mark.missing())return true;
-            File state=new File(directory,"state.json"),stage=new File(directory,"pending/config.json");
+            File state=new File(directory,"state.json"),stage=new File(directory,"pending/config.json"),auto=new File(directory,"auto.json");
             boolean repair=false;
-            for(File file:new File[]{state,stage})for(String suffix:new String[]{".new",".bak"})
+            for(File file:new File[]{state,stage,auto})for(String suffix:new String[]{".new",".bak"})
                 if(!physical.mark(new File(file.getPath()+suffix),false).missing())repair=true;
-            for(File file:new File[]{state,stage}) {
+            for(File file:new File[]{state,stage,auto}) {
                 PurpleGlobalChoiceFiles.Mark mark=physical.mark(file,false);
                 if(!mark.missing()&&file.length()==0)repair=true;
             }
@@ -636,7 +698,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
             for(String name:folder.entries) {
                 File file=new File(directory,name);
                 if(name.equals("pending")||PurpleSyncRecoveryFiles.archiveName(name))inputs.capture(file,true);
-                else if(java.util.Arrays.asList("lock","state.json","state.json.new","state.json.bak").contains(name))inputs.capture(file,false);
+                else if(java.util.Arrays.asList("lock","state.json","state.json.new","state.json.bak","auto.json","auto.json.new","auto.json.bak").contains(name))inputs.capture(file,false);
                 else return false;
             }
             PurpleSyncRecoveryFiles.Snapshot pending=inputs.capture(new File(directory,"pending"),true);
@@ -652,7 +714,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
                     if(!input.directory&&!input.file.getName().equals("lock")&&!input.current(physical))return false;
                 java.util.TreeSet<String> expected=new java.util.TreeSet<>(java.util.Arrays.asList(folder.entries));expected.add("lock");
                 if(!expected.equals(new java.util.TreeSet<>(java.util.Arrays.asList(PurpleSyncRecoveryFiles.names(directory)))))return false;
-                return current.current()&&recover(state)&&current.current()&&recover(stage)&&current.current();
+                return current.current()&&recover(state)&&current.current()&&recover(stage)&&current.current()&&recoverAuto(auto,accountKey)&&current.current();
             }
         } catch(Exception|LinkageError e){return false;}
     }

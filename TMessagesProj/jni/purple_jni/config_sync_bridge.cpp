@@ -1436,3 +1436,5 @@ Java_org_telegram_messenger_purple_PurpleSyncRecoveryCore_planNative(
     if (!input) return nullptr;
     return ToString(env, QString::fromUtf8(QJsonDocument(PurpleAndroid::RecoveryResult(json.object(), *input)).toJson(QJsonDocument::Compact)));
 }
+
+#include "sync_auto_bridge.h"
