@@ -1,21 +1,17 @@
 #!/usr/bin/env bash
 # Signs an unsigned Purple Telegram APK with the local keystore.
 #
-# Signing is configured locally.
 # Private build-machine notes live in the private purple-build repo; when it is cloned at ~/.purple-build, see ~/.purple-build/readme.md.
 #
 #   purple/sign.sh path/to/app.apk [out.apk]
 #
-# Reads KEYSTORE, KEY_ALIAS, STORE_PASS, KEY_PASS from $PURPLE_ANDROID_KEYS
-# (default: ~/.purple-build/keystore.env) and
-# uses zipalign + apksigner from $ANDROID_SDK_ROOT
-# (default: ~/code/misc/tdesktop-libs/android-sdk).
+# Set PURPLE_ANDROID_KEYS and ANDROID_SDK_ROOT for the signing environment.
 set -euo pipefail
 
 In="${1:?usage: purple/sign.sh unsigned.apk [out.apk]}"
 Out="${2:-${In%.apk}-signed.apk}"
-KeysEnv="${PURPLE_ANDROID_KEYS:-$HOME/code/misc/tdesktop-libs/purple-android-keys/keystore.env}"
-Sdk="${ANDROID_SDK_ROOT:-$HOME/code/misc/tdesktop-libs/android-sdk}"
+KeysEnv="${PURPLE_ANDROID_KEYS:-${HOME}/.purple-build/keystore.env}"
+Sdk="${ANDROID_SDK_ROOT:?Set ANDROID_SDK_ROOT to the Android SDK directory}"
 Tools="$(ls -d "$Sdk"/build-tools/* | sort -V | tail -1)"
 
 # shellcheck disable=SC1090

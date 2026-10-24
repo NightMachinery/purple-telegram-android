@@ -10,11 +10,9 @@ own launcher entry, so both apps can be signed in at the same time.
 
 ### Test infrastructure
 
-Reusable external harness source and synthetic tests are versioned in the
-private [Purple test infrastructure repository](https://github.com/NightMachinery/external-test-tooling);
-its current capture/controller tooling targets macOS desktop testing. Android
-app-specific adapters and product tests remain here. Read that repository's
-README and component status before reusing a helper.
+Private build-machine notes live in the private purple-build repo; when it is cloned at ~/.purple-build, see ~/.purple-build/readme.md.
+
+Android app-specific adapters and product tests remain here.
 
 ### Pinned music
 
@@ -177,12 +175,8 @@ cases remain required; host checks do not establish device behavior.
 
 ### Building
 
-Compile on any machine where the setup below is complete. That can be the
-Apple-silicon laptop, once its checkout has `local.properties`, the native
-submodules and the sparse patterns described below, or the shared Linux build
-box as an optional compile worker, working in an isolated checkout so it never
-disturbs another checkout's work in progress. Acceptance testing runs on the
-laptop's emulator (see **Testing on an emulator**), and release signing stays
+Compile where the required toolchain is available.
+
 Private build-machine notes live in the private purple-build repo; when it is cloned at ~/.purple-build, see ~/.purple-build/readme.md.
 
 Install Android SDK 36 with build-tools 36.0.0, Android NDK 27.2.12479018, a
@@ -1708,50 +1702,7 @@ defaults this fork changes.
 
 ### Testing on an emulator
 
-Run acceptance tests on the Apple-silicon laptop with an **Android 36 arm64**
-Google APIs image and the host GPU. This matches the APK architecture and avoids
-the software-renderer failures seen on the shared Linux box:
-
-```bash
-sdkmanager "emulator" "system-images;android-36;google_apis;arm64-v8a"
-avdmanager create avd -n purple -k "system-images;android-36;google_apis;arm64-v8a" -d pixel_6
-emulator -avd purple -gpu host -no-audio -no-snapshot &
-adb wait-for-device shell 'while [ "$(getprop sys.boot_completed)" != 1 ]; do sleep 2; done'
-adb install -r PurpleTelegram-signed.apk
-adb shell am start -n org.purple.telegram/org.telegram.ui.LaunchActivity
-adb exec-out screencap -p > screen.png
-```
-
-Nothing is translated - the APK's architecture is the host's - and the emulator
-renders through MoltenVK on the Mac's own GPU. That is worth the 4.3 GB image:
-the Linux box's software renderer makes popups and long-press menus unreliable,
-while the laptop path renders them normally. It costs about 6 GB of RAM while
-running, so shut it down with `adb emu kill` afterwards. Sign a disposable test
-APK with a throwaway key if desired; preserve the signer between upgrades. The
-Google APIs image, unlike a Play Store image, allows `adb root` for controlled
-test-state work under `/data/data/org.purple.telegram/`.
-
-Check the AVD's `config.ini`: it must have `hw.gpu.enabled=yes` and
-`hw.gpu.mode=host`. A newly created AVD may disable the GPU, silently losing the
-reason for running on the laptop.
-
-An x86_64 Google APIs image under KVM on a Linux build host can run the arm64
-APK through Android's ARM translation, but this is a non-authoritative fallback
-for compile-adjacent diagnostics. On the current `pi` build box, software GPU
-rendering crashes under ordinary UI drawing and cannot supply acceptance
-evidence. Do final UI verification on the laptop emulator or a suitable real
-device.
-
-The desktop fork's repository carries the longer version of this, including how
-to use the box as an optional compile worker and keep a legacy diagnostic
-emulator session private on a shared machine, in
-`docs/remote-build-and-test/readme.md`.
-
-Telegram's test data centres (the "Test Backend" checkbox is compiled out of the
-standalone build; flip `TEST_BACKEND_IN_STORE` in `LoginActivity` for a
-throwaway build) were rejecting their own documented fixed login codes
-(`99966XYYYY` / `XXXXX`) with `PHONE_CODE_INVALID` on every DC when this was
-last tried, so plan on a real account for anything past the login screen.
+Private build-machine notes live in the private purple-build repo; when it is cloned at ~/.purple-build, see ~/.purple-build/readme.md.
 
 ---
 
