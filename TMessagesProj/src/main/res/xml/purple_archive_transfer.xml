@@ -3,9 +3,13 @@
     <cloud-backup>
         <exclude domain="file" path="purple/content-archive" />
         <exclude domain="file" path="purple/content-archive-state" />
+        <exclude domain="file" path="purple-diagnostics" />
+        <exclude domain="file" path="logs/purple-diagnostics" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="file" path="purple/content-archive" />
         <exclude domain="file" path="purple/content-archive-state" />
+        <exclude domain="file" path="purple-diagnostics" />
+        <exclude domain="file" path="logs/purple-diagnostics" />
     </device-transfer>
 </data-extraction-rules>

@@ -734,4 +734,14 @@
     <string name="PurpleArchiveRemove">Remove local archive</string>
     <string name="PurpleArchiveRemoveConfirm">Remove this account’s archive from this device? Retained content and its encryption key will be deleted. Telegram messages and other accounts are unaffected.</string>
     <string name="PurpleArchiveRefresh">Check storage</string>
+    <!-- Purple: the diagnostic log rows at the end of Purple settings -->
+    <string name="PurpleDiagnosticsHeader">Diagnostics</string>
+    <string name="PurpleDiagnosticsExport">Export diagnostic log</string>
+    <string name="PurpleDiagnosticsClear">Clear diagnostic log</string>
+    <string name="PurpleDiagnosticsInfo">A small log of what Purple features did and why they refused, kept on this device and left out of backups. It holds fixed codes, account slot numbers, versions, counts and error types. Error messages are scrubbed of ids, phone numbers, emails, usernames, paths and quoted text. Export shares it as a text file.</string>
+    <string name="PurpleDiagnosticsClearConfirm">Delete the Purple diagnostic log and any exported copy still on this device? Copies you already shared are not affected.</string>
+    <string name="PurpleDiagnosticsClearAction">Clear</string>
+    <string name="PurpleDiagnosticsCleared">Diagnostic log cleared.</string>
+    <string name="PurpleDiagnosticsClearFailed">Could not delete every diagnostic log file.</string>
+    <string name="PurpleDiagnosticsExportFailed">Could not write the diagnostic log file.</string>
 </resources>

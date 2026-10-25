@@ -334,6 +334,7 @@ public class PurpleSettingsActivity extends UniversalFragment
 
         items.add(UItem.asButton(ROW_NOTIFICATIONS, getString(R.string.PurpleNotificationsRow)));
         items.add(UItem.asShadow(getString(R.string.PurpleNotificationsInfo)));
+        PurpleDiagnosticsUI.add(items);
         items.add(UItem.asCustomShadow(versionFooter));
     }
 
@@ -444,6 +445,7 @@ public class PurpleSettingsActivity extends UniversalFragment
     protected void onClick(UItem item, View view, int position, float x, float y) {
         final PurpleWriter.Session writer = rowWriter;
         if (PurpleArchiveUI.click(this, item.id)) return;
+        if (PurpleDiagnosticsUI.click(this, item.id)) return;
         if (PurpleAccountEditorUI.click(this, item.id, rowCurrent())) return;
         if (PurpleAppWideRemovalUI.click(this, item.id, rowCurrent())) return;
         if (PurpleAccountSettingsRows.click(this, item.id, rowCurrent())) return;

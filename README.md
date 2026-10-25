@@ -643,6 +643,30 @@ Every switch on it is written into `settings.toml` through the same splice the
 desktop uses and read back from it, so a refused write leaves the switch where
 the file is.
 
+**Diagnostics** at the end of the screen has **Export diagnostic log** and
+**Clear diagnostic log**. Purple features record why they did or refused
+something in a small always-on log in app-private storage
+(`files/purple-diagnostics/`, at most 256 KB plus one rotated file). Export
+writes a `.txt` with a header (app version, Purple build commit, Purple core
+commit, Android version and the number of signed-in accounts) followed by the
+lines to `files/logs/purple-diagnostics/`, replacing the previous export, and
+opens the share sheet through the same FileProvider upstream's "Send logs"
+uses, so a bug report needs no USB debugging. Clear deletes the log and the
+exported copy. Both folders are excluded from Android backup and device
+transfer, and a full write queue drops log lines but never an Export or a
+Clear.
+
+Each line holds a UTC time, an area, an event and typed fields: account slot
+indexes, modes, versions, clamped counts, flags, words from a fixed vocabulary
+(areas, events, field names, reason codes), and an exception's class with a
+scrubbed message. Scrubbing replaces quoted text, paths, email addresses,
+`@handles`, hex runs of eight or more characters, phone-like numbers and runs
+of three or more digits; other words of an exception message stay, so Purple
+logs only exceptions whose messages are its own constant text. Lines are
+mirrored to the FileLog as `Purple: ...`. Host cases for the bounds, rotation,
+line format, scrubbing, export header and the full-queue path are in
+`TMessagesProj/jni/purple_jni/tests/diag_log/`.
+
 **Sync across devices** is manual settings sync for the account the settings
 screen belongs to. It names that account at the top; to sync another account,
 switch to it with Telegram's own account switcher first. **Check Saved
