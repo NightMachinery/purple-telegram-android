@@ -372,6 +372,11 @@ public final class PurpleGate {
                 && first.primary.same(second.primary) && first.good.same(second.good);
     }
 
+    /** Whether anything has loaded the gate yet, so a later owner plan knows to reload it. */
+    static boolean everLoaded() {
+        return everLoaded;
+    }
+
     /** Loads settings.toml and state.toml once, the first time anyone asks. */
     public static void ensureLoaded() {
         if (everLoaded) {

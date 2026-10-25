@@ -6,7 +6,9 @@ public final class UserConfig {
     static { for(int i=0;i<accounts.length;++i)accounts[i]=new UserConfig(); }
     public boolean active;
     public long user;
+    public boolean loaded=true;
     public static UserConfig getInstance(int slot){return accounts[slot];}
     public boolean isClientActivated(){return active;}
     public long getClientUserId(){return user;}
+    public boolean isConfigLoaded(){return loaded;}
 }

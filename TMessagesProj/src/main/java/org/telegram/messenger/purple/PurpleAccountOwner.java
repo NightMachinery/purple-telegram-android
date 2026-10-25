@@ -2,6 +2,7 @@ package org.telegram.messenger.purple;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.UserConfig;
 
@@ -23,15 +24,70 @@ public final class PurpleAccountOwner {
     private static volatile long roleEpoch;
     private static String bindingAccount;
 
+    /**
+     * Plans the owner on first use, but only once every account slot's
+     * UserConfig has loaded. Loading fills in the signed-in user without an
+     * identity event, so a plan made earlier would see some accounts or none:
+     * it could wait for a first sign-in that already happened, or make the one
+     * account it saw the owner of a multi-account phone. Until then nothing is
+     * planned, owner() is null and ready() is false, so readers use the
+     * app-wide file and writes are held, and the next call tries again.
+     */
     public static synchronized void ensureStarted() {
-        if (!started) {
+        if (!started && accountsLoaded()) {
             started = true;
             startup(null);
         }
     }
 
+    /** True once every slot's UserConfig.loadConfig() has run. */
+    private static boolean accountsLoaded() {
+        for (int i = 0; i < UserConfig.MAX_ACCOUNT_COUNT; ++i) {
+            if (!UserConfig.getInstance(i).isConfigLoaded()) return false;
+        }
+        return true;
+    }
+
+    /**
+     * Upstream hook: ApplicationLoader.postInitApplication, right after the
+     * loop that loads every slot's UserConfig. Plans the owner now that
+     * signedIn() sees every account, then, if the gate already ran on the
+     * app-wide fallback during that loop, reloads it under the plan.
+     */
+    public static void onAccountsLoaded() {
+        ensureStarted();
+        if (!PurpleGate.everLoaded()) return;
+        AndroidUtilities.runOnUIThread(() -> {
+            PurpleAccountSettings.invalidate();
+            PurpleWatcher.rebind();
+            PurpleGate.reload("accounts loaded");
+        });
+    }
+
+    /** Slots whose UserConfig has a signed-in user, whether or not capture() could name it. */
+    private static int activatedSlots() {
+        int count = 0;
+        for (int i = 0; i < UserConfig.MAX_ACCOUNT_COUNT; ++i) {
+            if (UserConfig.getInstance(i).isClientActivated()) ++count;
+        }
+        return count;
+    }
+
+    private static String stateName(int status) {
+        switch (status) {
+            case 0: return "owned";
+            case 1: return "pending_owner_writes";
+            case 2: return "waiting_for_first_sign_in";
+            case 3: return "needs_choice";
+            case 4: return "single_file_error";
+            default: return "invalid_input";
+        }
+    }
+
     private static void startup(String choice) {
         ready = false;
+        String outcome = "input_unavailable";
+        int seen = -1;
         try {
             PurpleCore.ensureLoaded();
             File localFile = PurpleAccountFiles.file("local.toml");
@@ -46,6 +102,16 @@ public final class PurpleAccountOwner {
                 return;
             }
             List<PurpleAccountFiles.Identity> identities = signedIn();
+            seen = identities.size();
+            if (seen != activatedSlots()) {
+                // A signed-in slot that could not be named: planning from the
+                // rest could make one of them the owner automatically.
+                outcome = "partial_view";
+                plan = null;
+                ++revision;
+                return;
+            }
+            outcome = "plan_stale";
             String[] keys = new String[identities.size()];
             boolean[] dirs = new boolean[keys.length];
             boolean[] bindings = new boolean[keys.length];
@@ -81,6 +147,7 @@ public final class PurpleAccountOwner {
             if (owner != null && !owner.equals(targetOwner)) { plan = null; ++revision; return; }
             if (!confirmed.isEmpty()) owner = confirmed;
             plan = next;
+            outcome = stateName(next.optInt("status", -1));
             recovered |= next.optBoolean("recovered");
             JSONArray writes = next.getJSONArray("writes");
             for (int i = 0; i < writes.length(); ++i) {
@@ -110,14 +177,19 @@ public final class PurpleAccountOwner {
                         || verified.getJSONArray("writes").length() != 0) return;
                 owner = targetOwner;
                 plan = verified;
+                outcome = stateName(verified.optInt("status", -1));
                 ready = verified.optBoolean("automatic");
             }
             reloadGlobal();
         } catch (Exception | UnsatisfiedLinkError e) {
             FileLog.e("Purple: account owner input unavailable; operations held");
+            outcome = "input_unavailable";
             plan = null;
         } finally {
             ++revision;
+            PurpleDiagLog.event("owner", "planned", PurpleDiagLog.count("accounts", seen),
+                    PurpleDiagLog.code("state", outcome), PurpleDiagLog.flag("ready", ready),
+                    PurpleDiagLog.flag("owner", owner != null));
         }
     }
 
@@ -194,7 +266,7 @@ public final class PurpleAccountOwner {
 
     public static synchronized boolean chooseOwner(String key) {
         ensureStarted();
-        if (owner != null || ready) return false;
+        if (!started || owner != null || ready) return false;
         startup(key);
         return ready;
     }

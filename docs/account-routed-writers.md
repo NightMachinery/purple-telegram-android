@@ -39,6 +39,29 @@ files through the same host route as the editor cases. Android UI, actual
 roster/logout dispatch and Android Os behavior require separate device checks;
 these host cases do not claim that coverage. Existing story and channel suggestion hooks now pass their account.
 
+## When the settings owner is planned
+
+`PurpleAccountOwner` plans the settings owner with the core's
+PlanAccountOwnerStartup on first use, but only once every account slot's
+UserConfig has loaded (`isConfigLoaded()`). Until then it plans nothing:
+`owner()` is null and `ready()` is false, so readers use the app-wide file and
+writes are held. Loading fills in the signed-in user without an identity event,
+so a plan made earlier saw only the accounts loaded so far. With none loaded it
+waited for a first sign-in that never came, and every write stayed held for the
+whole process. With one of two loaded it made that account the owner and
+recorded it, and a recorded owner cannot be reassigned. `ApplicationLoader`
+calls `PurpleAccountOwner.onAccountsLoaded()` right after its loading loop,
+which plans at that point and reloads the gate if the gate already ran (see
+[upstream-merge.md](upstream-merge.md)). When a signed-in slot has no account
+key, the planner holds instead of choosing from the rest. Each plan writes an
+`owner planned` line to the diagnostic log with the account count, the
+planner's state and whether the owner is ready.
+
+Host cases: `TMessagesProj/jni/purple_jni/tests/owner_load/`
+(`run_owner_load.py`) drive the production owner against the JNI library
+through the loading order: one of two slots loaded, no slot loaded, and a
+signed-in slot without a key.
+
 ## Work Mode choices and list ownership
 
 Settings offers a device-local choice for each account when at least two

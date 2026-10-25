@@ -21,7 +21,7 @@ file TMessagesProj/build.gradle 1 0 1
 file TMessagesProj/google-services.json 29 0 1
 file TMessagesProj/jni/CMakeLists.txt 3 0 2
 file TMessagesProj/src/main/AndroidManifest.xml 17 1 2
-file TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java 5 1 3
+file TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java 6 1 3
 file TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java 1 0 1
 file TMessagesProj/src/main/java/org/telegram/messenger/ContactsController.java 5 5 5
 file TMessagesProj/src/main/java/org/telegram/messenger/DownloadController.java 13 0 5

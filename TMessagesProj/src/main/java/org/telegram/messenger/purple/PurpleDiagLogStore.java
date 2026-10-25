@@ -57,7 +57,11 @@ public final class PurpleDiagLogStore {
      */
     static final Set<String> VOCABULARY = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
             // diagnostics itself
-            "diag", "export", "exported", "export_failed", "cleared", "clear_failed", "lines"
+            "diag", "export", "exported", "export_failed", "cleared", "clear_failed", "lines",
+            // the settings owner plan (PurpleAccountOwner)
+            "owner", "planned", "accounts", "state", "ready", "owned", "pending_owner_writes",
+            "waiting_for_first_sign_in", "needs_choice", "single_file_error", "invalid_input",
+            "input_unavailable", "partial_view", "plan_stale"
     )));
 
     /** One {@code key=value} pair of a line. Only the factories below make one. */

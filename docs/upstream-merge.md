@@ -684,3 +684,14 @@ The standalone application manifest references Purple-owned backup and transfer
 XML rules. They exclude both archive and archive-state roots from cloud backup
 and device transfer. No live Telegram database or ordinary cache path is added
 to the archive store or its removal plan.
+
+### Settings owner planning
+
+`ApplicationLoader.postInitApplication` calls
+`PurpleAccountOwner.onAccountsLoaded()` on the line right after the loop that
+runs every slot's `UserConfig.loadConfig()`. Loading fills in the signed-in user
+without an identity event, so `PurpleAccountOwner` plans the settings owner only
+once every slot reports `isConfigLoaded()`. This hook plans it at that point
+and reloads the gate if something loaded it during the loop. Keep the call after
+the loop. Inside it, the hook would run while later slots are still unloaded,
+and the plan would wait until the next Purple call.

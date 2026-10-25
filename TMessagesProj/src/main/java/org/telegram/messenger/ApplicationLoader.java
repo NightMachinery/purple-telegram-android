@@ -261,6 +261,7 @@ public class ApplicationLoader extends Application {
                 SendMessagesHelper.getInstance(a).checkUnsentMessages();
             }
         }
+        org.telegram.messenger.purple.PurpleAccountOwner.onAccountsLoaded();
         PurpleLastSeenTrade.start();
         org.telegram.messenger.purple.PurpleArchive.initialize();
 
