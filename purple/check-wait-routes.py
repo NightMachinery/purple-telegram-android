@@ -9,18 +9,29 @@ expected = {
         "org/telegram/messenger/purple/PurpleGlobalAccountChoice.java": 1,
         "org/telegram/messenger/purple/PurpleGate.java": 2,
         "org/telegram/messenger/purple/PurpleCore.java": 1},
-    "startPeek": {"org/telegram/ui/PurplePeekControls.java": 1,
+    "startPeek": {"org/telegram/messenger/purple/PurplePeekStreak.java": 2,
         "org/telegram/messenger/purple/PurpleGate.java": 2,
         "org/telegram/messenger/purple/PurpleCore.java": 1},
     "stopPeek": {"org/telegram/ui/PurplePeekControls.java": 2,
         "org/telegram/messenger/purple/PurpleGate.java": 1,
         "org/telegram/messenger/purple/PurplePeekForeground.java": 1,
         "org/telegram/messenger/purple/PurpleCore.java": 1},
-    "extendPeek": {"org/telegram/ui/PurplePeekControls.java": 1,
+    "extendPeek": {"org/telegram/messenger/purple/PurplePeekStreak.java": 3,
         "org/telegram/messenger/purple/PurpleGate.java": 2,
         "org/telegram/messenger/purple/PurpleCore.java": 1},
     "commitFocusPolicy": {"org/telegram/ui/PurplePeekControls.java": 1,
         "org/telegram/messenger/purple/PurplePeekLocalSettings.java": 1},
+    "commitWaitPolicy": {"org/telegram/ui/PurplePeekControls.java": 1,
+        "org/telegram/messenger/purple/PurplePeekLocalSettings.java": 1},
+    "setPeekExitHidden": {"org/telegram/ui/PurplePeekControls.java": 1,
+        "org/telegram/messenger/purple/PurpleWriter.java": 1},
+    "setPeekStartDelay": {"org/telegram/ui/PurplePeekControls.java": 1,
+        "org/telegram/messenger/purple/PurpleWriter.java": 2,
+        "org/telegram/messenger/purple/PurpleCore.java": 1},
+    "storeStreak": {"org/telegram/messenger/purple/PurplePeekLocalSettings.java": 1,
+        "org/telegram/messenger/purple/PurplePeekStreak.java": 4},
+    "activatePeek": {"org/telegram/messenger/purple/PurplePeekStreak.java": 1,
+        "org/telegram/ui/PurplePeekControls.java": 2},
     "setMode": {"org/telegram/messenger/purple/PurpleWriter.java": 2,
         "org/telegram/ui/PurplePeekControls.java": 1},
     "apply": {"org/telegram/ui/PurplePeekControls.java": 1,
@@ -50,15 +61,17 @@ for path in files:
     if not local and re.search(r'"(?:purple_peek_local|end_on_focus_loss)"', raw):
         violations.append(relative + ": ungated local Peek preference access")
     if local:
-        start, end = method_body(text, "commitFocusPolicy")
-        for write in re.finditer(r"\b(?:edit|putBoolean|putLong|putString|remove|clear)\s*\(", text):
-            if not start <= write.start() < end:
-                violations.append(relative + ": local Peek writer outside commitFocusPolicy")
+        ranges = [method_body(text, name) for name in ["commitFocusPolicy", "commitWaitPolicy", "storeStreak"]]
+        for write in re.finditer(r"\b(?:edit|putBoolean|putInt|putLong|putString|remove|clear)\s*\(", text):
+            if not any(start <= write.start() < end for start, end in ranges):
+                violations.append(relative + ": local Peek writer outside admitted policy/streak methods")
     if relative == "org/telegram/ui/PurplePeekControls.java":
         start, end = method_body(text, "complete")
-        for write in re.finditer(r"\bcommitFocusPolicy\s*\(", text):
+        for write in re.finditer(r"\b(?:commitFocusPolicy|commitWaitPolicy|setPeekStartDelay|setPeekExitHidden|activatePeek)\s*\(", text):
             if not start <= write.start() < end:
                 violations.append(relative + ": local Peek write outside pending completion")
+    if relative != "org/telegram/messenger/purple/PurpleWriter.java" and re.search(r'\bsetTable(?:Bool|String|Int)\s*\([^;]*?"peek"', raw, re.S):
+        violations.append(relative + ": ungated in-app Peek table writer")
     for name in expected:
         if name == "setMode" and "PurpleWriter" not in text:
             continue

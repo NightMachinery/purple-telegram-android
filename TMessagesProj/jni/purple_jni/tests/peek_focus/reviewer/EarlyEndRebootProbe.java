@@ -1,0 +1,2 @@
+import org.telegram.messenger.purple.PurplePeekStreakModel;
+public class EarlyEndRebootProbe {public static void main(String[] a){PurplePeekStreakModel m=new PurplePeekStreakModel();m.started(110000,1000,100000,"oldBoot");m.observe(false,0,1000,105000,"newBoot");long recorded=m.endWall;boolean reset=m.reset(3601000,3705000,"newBoot",60);System.out.println("END at wall105000 before scheduled deadline110000; recordedEndWall="+recorded+" resetAtActualENDplus1h="+reset+" count="+m.count);}}

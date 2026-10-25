@@ -33,7 +33,7 @@ import org.telegram.messenger.purple.PurpleCore;
 import org.telegram.messenger.purple.PurpleDiagLog;
 import org.telegram.messenger.purple.PurpleGate;
 import org.telegram.messenger.purple.PurpleGlobalAccountChoice;
-import org.telegram.messenger.purple.PurplePeekSnapshot;
+import org.telegram.messenger.purple.PurplePeekStreak;
 import org.telegram.messenger.purple.PurplePeekLocalSettings;
 import org.telegram.messenger.purple.PurplePeekForeground;
 import org.telegram.messenger.purple.PurpleArchiveViewerModel;
@@ -61,11 +61,12 @@ public final class PurplePeekControls {
 
     private enum Action {
         START("peek_start"), END("peek_end"), EXTEND("peek_extend"), DELAY("delay_edit"),
-        PRESET("preset_change"), MODE("mode_change"), SOURCE("source_change"), LOCAL_POLICY("peek_focus_policy");
+        PRESET("preset_change"), MODE("mode_change"), SOURCE("source_change"), LOCAL_POLICY("peek_focus_policy"), LOCAL_OPTION("peek_wait_option"), PEEK_EXIT("peek_exit_option");
         final String code;
         Action(String code) { this.code = code; }
         boolean workMode() { return this == PRESET || this == MODE || this == SOURCE; }
-        boolean workModeTitle() { return workMode() || this == LOCAL_POLICY; }
+        boolean local() { return this == LOCAL_POLICY || this == LOCAL_OPTION; }
+        boolean workModeTitle() { return workMode() || local() || this == PEEK_EXIT; }
     }
 
     private PurplePeekControls() { }
@@ -113,6 +114,17 @@ public final class PurplePeekControls {
         request(fragment, Action.LOCAL_POLICY, enabled ? 1 : 0, null, null);
     }
 
+    static void changeWaitOption(BaseFragment fragment, String option, int value, PurplePeekLocalSettings.Snapshot opening) {
+        if (opening == null || !opening.current() || !opening.accepts(option, value)) {
+            PurpleWriterUI.explain(fragment, "session_stale", null); return;
+        }
+        request(fragment, Action.LOCAL_OPTION, value, option, null);
+    }
+
+    static void changeExitHidden(BaseFragment fragment, boolean enabled) {
+        request(fragment, Action.PEEK_EXIT, enabled ? 1 : 0, null, null);
+    }
+
     static void changePreset(BaseFragment fragment, String preset) {
         request(fragment, Action.PRESET, 0, preset, null);
     }
@@ -140,7 +152,12 @@ public final class PurplePeekControls {
             PurpleGate.PeekSettings opening) {
         if (pending != null) {
             cancel();
-            if (action != Action.LOCAL_POLICY || value == 0) return;
+            PurpleGate.PeekSettings current = PurpleGate.peekSettings();
+            boolean tightening = action == Action.LOCAL_POLICY && value == 1
+                    || action == Action.LOCAL_OPTION && value >= PurplePeekLocalSettings.snapshot().value(target)
+                    || action == Action.PEEK_EXIT && value == 1
+                    || action == Action.DELAY && current != null && value >= current.state.clock.peekStartDelay;
+            if (!tightening) return;
         }
         if (action == Action.END) {
             if (PurpleGate.peeking()) {
@@ -157,14 +174,18 @@ public final class PurplePeekControls {
         PurpleGate.PeekSettings settings = PurpleGate.peekSettings();
         observe(activity);
         Pending operation = new Pending(fragment, action, value, target, settings);
-        if (action == Action.LOCAL_POLICY) {
+        if (action.local()) {
             if (!operation.prepare()) {
                 operation.dismiss();
                 PurpleWriterUI.explain(fragment, "session_stale", null);
                 return;
             }
             if (operation.noOp()) { operation.dismiss(); return; }
-            int seconds = operation.waits() ? Math.max(0, settings.state.clock.peekStartDelay) : 0;
+            operation.delay = settings == null ? null : PurplePeekStreak.delay(settings.state.clock.peekStartDelay, settings.state);
+            if (operation.waits() && operation.delay == null) {
+                operation.dismiss(); PurpleWriterUI.explain(fragment, "session_failed", null); return;
+            }
+            int seconds = operation.waits() ? operation.delay.seconds : 0;
             operation.gate = new PurpleWaitGate(SystemClock.elapsedRealtime(), seconds);
             pending = operation;
             operation.log(seconds == 0 ? "instant" : "waiting", null);
@@ -198,8 +219,11 @@ public final class PurplePeekControls {
             operation.dismiss();
             return;
         }
-        int seconds = operation.waits() ? PurplePeekSnapshot.waitSeconds(settings.state.clock.peekStartDelay,
-                action == Action.DELAY ? value : null) : 0;
+        operation.delay = PurplePeekStreak.delay(settings.state.clock.peekStartDelay, settings.state);
+        if (operation.waits() && operation.delay == null) {
+            operation.dismiss(); PurpleWriterUI.explain(fragment, "session_failed", null); return;
+        }
+        int seconds = operation.waits() ? operation.delay.seconds : 0;
         operation.gate = new PurpleWaitGate(SystemClock.elapsedRealtime(), seconds);
         pending = operation;
         operation.log(seconds == 0 ? "instant" : "waiting", null);
@@ -247,6 +271,7 @@ public final class PurplePeekControls {
     }
 
     public static void onGateReload(PurpleCore.Loaded previous, PurpleCore.Loaded next) {
+        PurplePeekStreak.observe(next);
         if (pending != null && !pending.valid()) cancel();
         updateEndButtons();
         if (previous == null || !previous.clock.peeking || next.clock.peeking) return;
@@ -282,6 +307,7 @@ public final class PurplePeekControls {
         PurpleWriter.Session writer;
         PurpleGlobalAccountChoice.Choice choice;
         PurpleWaitGate gate;
+        PurplePeekStreak.Delay delay;
         Dialog dialog;
         boolean alive = true;
         TextView remaining;
@@ -313,13 +339,15 @@ public final class PurplePeekControls {
         }
 
         boolean prepare() {
-            if (action == Action.LOCAL_POLICY) return local.current() && contextCurrent()
-                    && (value == 1 || PurplePeekForeground.canDisable() && settings != null && PurpleGate.currentPeekSettings(settings));
+            if (action.local()) return local.current() && contextCurrent()
+                    && (action == Action.LOCAL_POLICY ? value == 1 || PurplePeekForeground.canDisable()
+                        && settings != null && PurpleGate.currentPeekSettings(settings)
+                        : local.accepts(target, value) && settings != null && PurpleGate.currentPeekSettings(settings));
             if (!writer.current() || !PurpleGate.currentPeekSettings(settings)) return false;
             if (action == Action.START || action == Action.EXTEND) {
                 return value >= 0 && !settings.state.normal && (action != Action.EXTEND || settings.state.clock.peeking);
             }
-            if (action == Action.DELAY) return value >= 0 && PurpleGate.currentPeekEditSettings(settings);
+            if (action == Action.DELAY || action == Action.PEEK_EXIT) return value >= 0 && PurpleGate.currentPeekEditSettings(settings);
             if (action == Action.MODE) return value >= 0 && value <= 2;
             if (action == Action.PRESET) {
                 if (target == null || target.isEmpty() || target.equalsIgnoreCase("normal")) return true;
@@ -335,6 +363,8 @@ public final class PurplePeekControls {
 
         boolean noOp() {
             if (action == Action.LOCAL_POLICY) return local.enabled == (value == 1);
+            if (action == Action.LOCAL_OPTION) return local.value(target) == value;
+            if (action == Action.PEEK_EXIT) return settings.state.clock.peekExitHiddenChats == (value == 1);
             if (action == Action.MODE) return value == writer.mode;
             if (action == Action.DELAY) return value == settings.state.clock.peekStartDelay;
             if (action == Action.SOURCE) return target.equals(writer.globalKey);
@@ -345,6 +375,9 @@ public final class PurplePeekControls {
 
         boolean waits() {
             if (action == Action.LOCAL_POLICY) return local.enabled && value == 0;
+            if (action == Action.LOCAL_OPTION) return value < local.value(target);
+            if (action == Action.PEEK_EXIT) return value == 0;
+            if (action == Action.DELAY) return value < settings.state.clock.peekStartDelay;
             if (action == Action.MODE) return PurpleWaitGate.modeWait(writer.mode, value);
             if (action == Action.PRESET) return PurpleWaitGate.presetWait(settings.state.normal, settings.state.preset, target);
             if (action == Action.SOURCE) return PurpleWaitGate.sourceWait(settings.state.normal, choice.flag("normal"));
@@ -353,8 +386,10 @@ public final class PurplePeekControls {
 
         boolean valid() {
             if (pending != this || !contextCurrent()
-                    || (action == Action.LOCAL_POLICY ? !local.current() || selection != PurpleArchiveViewerModel.selectionGeneration()
-                        || value == 0 && (!PurplePeekForeground.canDisable() || !PurpleGate.currentPeekSettings(settings))
+                    || !local.current() || delay != null && !delay.current()
+                    || (action.local() ? selection != PurpleArchiveViewerModel.selectionGeneration()
+                        || (action == Action.LOCAL_OPTION || value == 0) && (!PurpleGate.currentPeekSettings(settings)
+                            || action == Action.LOCAL_POLICY && !PurplePeekForeground.canDisable())
                         : writer == null || !writer.current() || !PurpleGate.currentPeekSettings(settings))
                     || !Arrays.equals(stateBytes, PurpleState.read())
                     || choice != null && !choice.current()) return false;
@@ -396,6 +431,14 @@ public final class PurplePeekControls {
             remaining.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
             remaining.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
             content.addView(remaining, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            if (delay != null) {
+                TextView detail = new TextView(owner);
+                detail.setGravity(Gravity.CENTER);
+                detail.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+                detail.setText(LocaleController.formatString(R.string.PurplePeekWaitBreakdown,
+                        delay.seconds, delay.base, delay.extra, delay.resetMinutes));
+                content.addView(detail, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            }
             Button abort = new Button(owner);
             abort.setText(getString(action == Action.START ? R.string.PurpleAbortPeek : R.string.PurpleWaitAbort));
             abort.setTextSize(20);
@@ -425,15 +468,17 @@ public final class PurplePeekControls {
 
         void complete() {
             if (!valid()) { cancel(); return; }
-            if (action == Action.LOCAL_POLICY) {
+            if (action.local()) {
                 if (gate.complete(SystemClock.elapsedRealtime(), valid(), true, false, true) != PurpleWaitGate.Outcome.READY) { cancel(); return; }
                 pending = null;
                 closeDialog();
-                boolean saved = PurplePeekLocalSettings.commitFocusPolicy(local, value == 1);
+                boolean saved = action == Action.LOCAL_POLICY
+                        ? PurplePeekLocalSettings.commitFocusPolicy(local, value == 1)
+                        : PurplePeekLocalSettings.commitWaitPolicy(local, target, value);
                 log(saved ? "applied" : "apply_failed", saved ? null : "session_failed");
                 dismiss();
-                if (saved) PurplePeekForeground.policyChanged();
-                else PurpleWriterUI.explain(origin.get(), "session_failed", null);
+                if (saved && action == Action.LOCAL_POLICY) PurplePeekForeground.policyChanged();
+                else if (!saved) PurpleWriterUI.explain(origin.get(), "session_failed", null);
                 updateEndButtons();
                 return;
             }
@@ -464,19 +509,23 @@ public final class PurplePeekControls {
                 if (action == Action.MODE) error = applying.setMode(value);
                 else if (action == Action.PRESET) error = PurpleGate.setPreset(target) ? null : "session_stale";
                 else if (action == Action.DELAY) error = PurpleWriter.setPeekStartDelay(applying, settings, value);
+                else if (action == Action.PEEK_EXIT) error = PurpleWriter.setPeekExitHidden(applying, settings, value == 1);
                 else if (action == Action.SOURCE) {
                     PurpleGlobalAccountChoice.Outcome result = choice.apply();
                     error = result.ok ? null : "session_stale";
                     sourceSaved = result.changed;
                 } else if (action == Action.EXTEND) {
-                    PurpleCore.PeekChange result = PurpleGate.extendPeek(value, settings);
-                    if (result == null) error = "session_stale";
+                    PurpleCore.PeekChange result = PurplePeekStreak.activatePeek(value, settings, true);
+                    if (result == null || result.refused) error = "session_stale";
                     else if (!result.extended) {
                         PurpleGate.stopPeek();
                         Toast.makeText(activity.get(), getString(settings.state.clock.peekUntilStopped
                                 ? R.string.PurplePeekOver : R.string.PurplePeekOverCapped), Toast.LENGTH_SHORT).show();
                     }
-                } else if (PurpleGate.startPeek(value, settings) == null) error = "session_stale";
+                } else {
+                    PurpleCore.PeekChange result = PurplePeekStreak.activatePeek(value, settings, false);
+                    if (result == null || result.refused || !result.peeking) error = "session_stale";
+                }
                 log(error == null ? "applied" : "apply_failed", error == null ? null : "session_failed");
                 if (error != null) {
                     BaseFragment fragment = origin.get();

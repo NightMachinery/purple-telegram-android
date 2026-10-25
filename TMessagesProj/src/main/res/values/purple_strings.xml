@@ -787,4 +787,13 @@
     <string name="PurpleArchiveOlder">Older versions</string>
     <string name="PurpleArchiveUnknownDate">Unknown</string>
     <string name="PurpleShortcutUnavailable">This shortcut is no longer available. Open Telegram to choose the account and chat.</string>
+    <string name="PurplePeekWaitHeader">Peek wait</string>
+    <string name="PurplePeekEscalation">Increase the wait after each Peek</string>
+    <string name="PurplePeekWaitStep">Extra wait per Peek</string>
+    <string name="PurplePeekWaitMax">Maximum extra wait</string>
+    <string name="PurplePeekWaitReset">Reset after the last Peek ends</string>
+    <string name="PurplePeekWaitMinutes">%1$d min</string>
+    <string name="PurplePeekWaitHelp">Successful Peeks and extensions increase every gated wait on this device. The streak resets after the configured time without a Peek, starting when the last Peek ends.</string>
+    <string name="PurplePeekWaitBounds">Step: 1–300 seconds. Maximum extra: 0–3600 seconds. Reset: 1–1440 minutes.</string>
+    <string name="PurplePeekWaitBreakdown">%1$d s (%2$d s + %3$d s from recent Peeks, resets %4$d min after your last Peek)</string>
 </resources>

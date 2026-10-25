@@ -242,6 +242,7 @@ public class PurpleSettingsActivity extends UniversalFragment
         peekFocus.checked = org.telegram.messenger.purple.PurplePeekLocalSettings.snapshot().enabled;
         items.add(peekFocus);
         items.add(UItem.asShadow(getString(R.string.PurplePeekEndOnFocusLossInfo)));
+        PurplePeekWaitOptions.fill(items);
         items.add(UItem.asShadow(getString(R.string.PurplePeekSettingsInfo)));
 
         final UItem premium = UItem.asCheck(ROW_PREMIUM, getString(R.string.PurplePremiumLocal));
@@ -465,6 +466,7 @@ public class PurpleSettingsActivity extends UniversalFragment
             write(intent.set(!item.checked));
             return;
         }
+        if (PurplePeekWaitOptions.click(this, item, this::rebuild)) return;
         if (!org.telegram.messenger.purple.PurpleAccountOwner.legacyEditorAllowed(currentAccount)
                 && item.id != ROW_PRESET && item.id != ROW_SEND && item.id != ROW_SHARE
                 && item.id != ROW_IMPORT && item.id != ROW_CHECK && item.id != ROW_PATH && item.id != ROW_SYNC
@@ -481,7 +483,7 @@ public class PurpleSettingsActivity extends UniversalFragment
         // The switches write through the rows' session, or a fresh one when
         // the rows were built without one; when none can be had, the tap
         // says why rather than passing no session to the writer.
-        final boolean writes = item.id == ROW_PEEK_EXIT || item.id == ROW_PREMIUM
+        final boolean writes = item.id == ROW_PREMIUM
                 || item.id == ROW_SUGGESTIONS || item.id == ROW_FOCUS;
         final PurpleWriter.Session session = writes && writer == null
                 ? PurpleWriterUI.captureOrExplain(this, true, this::rebuild) : writer;
@@ -498,7 +500,8 @@ public class PurpleSettingsActivity extends UniversalFragment
             editPeekDelay();
             break;
         case ROW_PEEK_EXIT:
-            write(PurpleWriter.setTableBool(session, "peek", "exit_hidden_chats_p", !item.checked, "peek exit switch"));
+            PurplePeekControls.changeExitHidden(this, !item.checked);
+            rebuild();
             break;
         case ROW_PRESET:
             PurplePresetPicker.show(this);

@@ -11,7 +11,11 @@ leaving Stock for Own or Follow, ending Peek, and no-ops are instant. Entering
 Normal or Stock, switching presets, and switching Own/Follow wait. **Switching
 between two restrictive presets also waits, even when the new one is stricter.**
 There is no comparison of lists, folders, stories or notification policies.
-The shared delay can be zero. Delay edits wait for the longer of old and new.
+The base delay can be zero. Increasing it is instant; decreasing it waits with
+the current effective delay. Android adds the device-local escalation described
+in [Peek wait](peek-wait.md) to every gated countdown. The countdown shows the
+base, recent-Peek extra and reset interval. Only successful Peeks and extensions
+increase that extra; Work Mode changes do not.
 
 `PurplePeekControls.request` is the one UI request path. It captures a write
 session before classification, explains a refusal immediately, then starts the
@@ -65,3 +69,12 @@ context changes and held writes. Device lifecycle delivery and visual layout
 are not exercised by host tests. No upstream hook changes are needed.
 
 The device-local [Peek visibility option](peek-focus.md) uses the same request/countdown. Enabling is restrictive and immediate; disabling waits for the resolved delay. Its route captures local policy revision, selection generation and the delay source rather than a synced-file write session. Unlike legacy Work Mode source/preset requests, its fragment and selected-account guard remains strict. Screen-off and both passcode paths cancel pending waits directly and quietly. The route inventory includes the sole local preference writer and rejects direct or moved writes.
+
+Dedicated in-app Peek option editors use the same request. Tightening is instant:
+base delay up, exit-hidden on, focus-end on, escalation on, and step/cap/reset up.
+Their reverses wait using the opening policy, never the proposed lower value.
+Pending operations also capture the local policy revision and streak generation.
+The route inventory rejects alternative local policy writers, direct in-app
+`[peek]` table writes, and moved delay/exit writers. Whole-file manual import,
+sync Apply, History Undo/Restore, external file edits and incoming sync remain
+exempt. This is an editor boundary, not a wrapper around every file replacement.

@@ -298,6 +298,13 @@ public final class PurpleWriter {
         return apply(session, PurpleCore.setPeekStartDelay(session.bytes(), seconds), "peek start delay");
     }
 
+    public static String setPeekExitHidden(Session session, PurpleGate.PeekSettings settings, boolean enabled) {
+        if (session == null) return noSession();
+        if (!session.current() || !PurpleGate.currentPeekEditSettings(settings)
+                || !java.util.Arrays.equals(session.bytes(), settings.snapshot.bytes())) return "settings.toml changed";
+        return setTableBool(session, "peek", "exit_hidden_chats_p", enabled, "peek exit switch");
+    }
+
     public static String setTableBool(
             Session session, String table, String key, boolean value, String reason) {
         if (session == null) return noSession();

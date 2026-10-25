@@ -1,0 +1,2 @@
+import org.telegram.messenger.purple.PurplePeekStreakModel;
+public class RebootExpiryProbe {public static void main(String[] a){PurplePeekStreakModel m=new PurplePeekStreakModel();m.started(110000,1000,100000,"oldBoot");m.observe(false,0,1000,3710000,"newBoot");boolean reset=m.reset(1000,3710000,"newBoot",60);System.out.println("naturalExpiryWall=110000 nowWall=3710000 inactiveMs=3600000 reset="+reset+" count="+m.count+" recordedEndElapsed="+m.endElapsed+" boot="+m.boot);}}

@@ -14,7 +14,7 @@ args.output.mkdir(parents=True)
 paths = ["org/telegram/ui/PurplePeekControls.java"]
 paths += ["org/telegram/messenger/purple/" + name + ".java" for name in [
     "PurpleGate", "PurpleCore", "PurpleWriter", "PurpleGlobalAccountChoice", "PurpleAppWideRemoval",
-    "PurplePeekForeground", "PurplePeekLocalSettings"]]
+    "PurplePeekForeground", "PurplePeekLocalSettings", "PurplePeekStreak"]]
 probes = {
     "baseline": None,
     "direct-local-disable": 'package org.telegram.ui; final class Probe { void click(android.content.Context c) { c.getSharedPreferences("purple_peek_local",0).edit().putBoolean("end_on_focus_loss",false).commit(); } }',
@@ -30,6 +30,13 @@ probes = {
     "qualified": "package org.telegram.ui; final class QualifiedProbe { void click() { "
         "org.telegram.messenger.purple.PurpleGate.setPreset(null); } }",
 }
+probes["activation-bypass"] = 'package org.telegram.ui; final class Probe { void click() { org.telegram.messenger.purple.PurplePeekStreak.activatePeek(60,null,false); } }'
+for option in ["escalation", "step", "max_extra", "reset_minutes"]:
+    probes["option-" + option] = 'package org.telegram.ui; final class Probe { void click(org.telegram.messenger.purple.PurplePeekLocalSettings.Snapshot s) { org.telegram.messenger.purple.PurplePeekLocalSettings.commitWaitPolicy(s,"' + option + '",0); } }'
+for writer in ["setPeekStartDelay", "setPeekExitHidden"]:
+    probes[writer] = 'package org.telegram.ui; final class Probe { void click() { org.telegram.messenger.purple.PurpleWriter.' + writer + '(null,null,0); } }'
+for option in ["exit_hidden_chats_p", "tap_mobile", "auto_off", "hotkey_length", "end_on_app_lock_mobile_p"]:
+    probes["table-" + option] = 'package org.telegram.ui; final class Probe { void click() { org.telegram.messenger.purple.PurpleWriter.setTableBool(null,"peek","' + option + '",false,""); } }'
 for name, probe in probes.items():
     fixture = args.output / name
     script = fixture / "purple/check-wait-routes.py"
@@ -57,4 +64,4 @@ for name, probe in probes.items():
     if probe is not None:
         assert "Work Mode writer inventory changed" in result.stderr and ("org/telegram/ui/Probe.java" in result.stdout or name.endswith("writer-moved")), name
     print(name + (": PASS" if probe is None else ": rejected"))
-print("WAIT_ROUTE_TESTS=9")
+print("WAIT_ROUTE_TESTS=" + str(len(probes)))

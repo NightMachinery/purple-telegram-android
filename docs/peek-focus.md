@@ -15,3 +15,5 @@ Host tests execute the actual AGP controller, foreground owner, local policy, Fo
 When automatic ending becomes due, the published gate immediately receives an immutable Peek-off copy of its existing resolution, before any settings routing, disk write or reload. The original preset and resolved policy remain. State cleanup is attempted independently of settings-source admission; failed cleanup retains an ending obligation, holds disabling, and retries on foreground/resume. A refused reload cannot preserve or restore revealing Peek.
 
 Withdrawal also clears the revealing bit on the global native resolution and every existing native account snapshot under their shared mutex, preserving their other policy fields. Row and story caches are cleared under their lookup/fill guard. Publication-generation fences reject old in-flight fills and retry their answers, so they cannot reinstall a revealing answer. The normal refresh follows publication and does not require settings admission.
+
+The focus-end OFF countdown uses the device-local [escalating Peek wait](peek-wait.md). Turning it ON remains immediate.
