@@ -28,6 +28,8 @@ final class PurpleWorkModeModel {
             } finally { lock.writeLock().unlock(); }
         }
     }
+    @androidx.annotation.Keep
+    static native void withdrawPeekNative();
     static native void retireNative(long[] handles);
     static native int visibleNative(long handle, long peer, int kind);
     static native int visibleUnpeekedNative(long handle, long peer, int kind);

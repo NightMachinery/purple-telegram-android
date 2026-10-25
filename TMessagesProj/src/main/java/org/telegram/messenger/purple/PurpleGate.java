@@ -170,15 +170,18 @@ public final class PurpleGate {
      * @return false when the app should behave exactly like stock
      */
     public static boolean filtering() {
+        PurplePeekForeground.beforeUse();
         return filtering;
     }
 
     public static boolean filtering(int currentAccount) {
+        PurplePeekForeground.beforeUse();
         return filtering && !PurpleWorkMode.stock(currentAccount);
     }
 
     /** The resolution now in force, or null if nothing has been loaded yet. */
     public static PurpleCore.Loaded state() {
+        PurplePeekForeground.beforeUse();
         return loaded;
     }
 
@@ -223,6 +226,7 @@ public final class PurpleGate {
 
     /** Whether a peek is currently revealing what the preset hides. */
     public static boolean peeking() {
+        PurplePeekForeground.beforeUse();
         final PurpleCore.Loaded current = loaded;
         return current != null && current.clock.peeking;
     }
@@ -580,6 +584,7 @@ public final class PurpleGate {
         refreshOverrideTimer(next);
         rebuildViewFilters(next);
         PurpleListDiagnostics.afterReload();
+        PurplePeekForeground.published();
         final PurpleCore.Loaded updated = next;
         AndroidUtilities.runOnUIThread(() -> org.telegram.ui.PurplePeekControls.onGateReload(previous, updated));
 
@@ -674,6 +679,7 @@ public final class PurpleGate {
                 PurpleCore.startPeek(PurpleState.read(), seconds);
         if (!currentPeekSettings(settings) || change.text == null
                 || !PurpleState.write(change.text.getBytes(UTF_8))) return null;
+        PurplePeekForeground.replaced();
         reload("peek");
         return change;
     }
@@ -700,13 +706,32 @@ public final class PurpleGate {
         return change;
     }
 
+    static void withdrawPeek() {
+        final PurpleCore.Loaded before;
+        final PurpleCore.Loaded ended;
+        synchronized (cacheLock) {
+            before = loaded;
+            if (before == null) return;
+            PurpleWorkMode.withdrawPeek();
+            if (!before.clock.peeking) return;
+            ended = before.withoutPeek();
+            loaded = ended;
+            ++generation;
+        }
+        AndroidUtilities.runOnUIThread(() -> {
+            try {
+                org.telegram.ui.PurplePeekControls.onGateReload(before, ended);
+                postRefresh();
+                rebuildShortcuts();
+            } catch (RuntimeException | LinkageError e) { FileLog.e(e); }
+        });
+    }
+
     /** Ends a running peek, putting back whatever the preset was hiding. */
     public static PurpleCore.PeekChange stopPeek() {
         ensureLoaded();
-        final PurpleCore.PeekChange change = PurpleCore.stopPeek(PurpleState.read());
-        if (change.text != null && PurpleState.write(change.text.getBytes(UTF_8))) {
-            reload("peek over");
-        }
+        final PurpleCore.PeekChange change = PurplePeekForeground.stopState(PurpleState.read());
+        if (change != null && change.text != null) reload("peek over");
         return change;
     }
 
@@ -730,7 +755,10 @@ public final class PurpleGate {
      * is the answer, not a guess at what the user meant.
      */
     public static void locked() {
-        org.telegram.ui.PurplePeekControls.cancel();
+        PurplePeekForeground.appLocked();
+    }
+
+    static void lockedLegacy() {
         if (!peeking()) {
             // A volatile read of the last load, and deliberately not
             // ensureLoaded(): nothing is peeking, so there is nothing to end,
@@ -2432,29 +2460,28 @@ public final class PurpleGate {
 
     /** The cached half of the answer: what the preset says about this chat. */
     private static int packedFor(int currentAccount, long id) {
-        final PurpleWorkMode.View view = PurpleWorkMode.view(currentAccount);
-        if (view == null || view.mode == 2) return PurpleCore.SHOW_ALWAYS | PurpleCore.NOTIFY_BIT;
-        synchronized (cacheLock) {
-            final Integer cached = view.modes.get(id);
-            if (cached != null) {
-                return cached;
+        for (;;) {
+            final int ticket = generation;
+            final PurpleWorkMode.View view = PurpleWorkMode.view(currentAccount);
+            if (view == null || view.mode == 2) return PurpleCore.SHOW_ALWAYS | PurpleCore.NOTIFY_BIT;
+            synchronized (cacheLock) {
+                if (ticket != generation) continue;
+                final Integer cached = view.modes.get(id);
+                if (cached != null) return cached;
+            }
+            final int packed;
+            try {
+                packed = PurpleWorkMode.visible(currentAccount, bareIdOf(currentAccount, id), kindOf(currentAccount, id));
+            } catch (UnsatisfiedLinkError | RuntimeException e) {
+                FileLog.e(e);
+                return PurpleCore.SHOW_ALWAYS | PurpleCore.NOTIFY_BIT;
+            }
+            synchronized (cacheLock) {
+                if (ticket != generation) continue;
+                view.modes.put(id, packed);
+                return packed;
             }
         }
-        final int packed;
-        try {
-            packed = PurpleWorkMode.visible(currentAccount, bareIdOf(currentAccount, id), kindOf(currentAccount, id));
-        } catch (UnsatisfiedLinkError | RuntimeException e) {
-            FileLog.e(e);
-            // Nothing to decide with, so decide nothing: shown, and allowed to
-            // notify. Both halves have to be spelled out - the notify bit being
-            // clear is what silences a chat, so a bare SHOW_ALWAYS here would
-            // mute the whole account the moment the bridge failed.
-            return PurpleCore.SHOW_ALWAYS | PurpleCore.NOTIFY_BIT;
-        }
-        synchronized (cacheLock) {
-            view.modes.put(id, packed);
-        }
-        return packed;
     }
 
     /**
@@ -2784,39 +2811,44 @@ public final class PurpleGate {
      * @param dialogId a TLRPC.Dialog id, not a bare id
      */
     public static boolean storyShown(int currentAccount, long dialogId, boolean hasUnseen) {
-        if (!filteringStories(currentAccount) || DialogObject.isFolderDialogId(dialogId)) {
-            return true;
+        for (;;) {
+            if (!filteringStories(currentAccount) || DialogObject.isFolderDialogId(dialogId)) {
+                return true;
+            }
+            if (dialogId == UserConfig.getInstance(currentAccount).getClientUserId()) {
+                return addStoryShown(currentAccount);
+            }
+            final int ticket = generation;
+            final PurpleWorkMode.View accountView = PurpleWorkMode.view(currentAccount);
+            final Integer cached = cachedStoryAnswer(accountView, dialogId);
+            if (cached != null && ticket == generation) {
+                return (cached & (hasUnseen ? STORY_SHOWN_UNSEEN : STORY_SHOWN_SEEN)) != 0;
+            }
+            final PurpleCore.Loaded current = loaded;
+            final int folderMode = storyFolderMode(currentAccount, dialogId);
+            final boolean exempt = current != null
+                    && !current.exemptFolders.isEmpty()
+                    && exemptFolderMode(currentAccount, dialogId) != PurpleCore.MODE_UNSET;
+            final boolean answer;
+            try {
+                answer = PurpleWorkMode.story(currentAccount,
+                        bareIdOf(currentAccount, dialogId),
+                        kindOf(currentAccount, dialogId),
+                        hasUnseen,
+                        folderMode,
+                        exempt);
+            } catch (UnsatisfiedLinkError | RuntimeException e) {
+                FileLog.e(e);
+                // Nothing to decide with, so decide nothing: the stock strip.
+                return true;
+            }
+            if (cacheableStoryAnswer(current)) {
+                cacheStoryAnswer(accountView, currentAccount, dialogId, hasUnseen, answer, ticket);
+            }
+            if (ticket != generation) continue;
+            return answer;
+
         }
-        if (dialogId == UserConfig.getInstance(currentAccount).getClientUserId()) {
-            return addStoryShown(currentAccount);
-        }
-        final PurpleWorkMode.View accountView = PurpleWorkMode.view(currentAccount);
-        final Integer cached = cachedStoryAnswer(accountView, dialogId);
-        if (cached != null) {
-            return (cached & (hasUnseen ? STORY_SHOWN_UNSEEN : STORY_SHOWN_SEEN)) != 0;
-        }
-        final PurpleCore.Loaded current = loaded;
-        final int folderMode = storyFolderMode(currentAccount, dialogId);
-        final boolean exempt = current != null
-                && !current.exemptFolders.isEmpty()
-                && exemptFolderMode(currentAccount, dialogId) != PurpleCore.MODE_UNSET;
-        final boolean answer;
-        try {
-            answer = PurpleWorkMode.story(currentAccount,
-                    bareIdOf(currentAccount, dialogId),
-                    kindOf(currentAccount, dialogId),
-                    hasUnseen,
-                    folderMode,
-                    exempt);
-        } catch (UnsatisfiedLinkError | RuntimeException e) {
-            FileLog.e(e);
-            // Nothing to decide with, so decide nothing: the stock strip.
-            return true;
-        }
-        if (cacheableStoryAnswer(current)) {
-            cacheStoryAnswer(accountView, currentAccount, dialogId, hasUnseen, answer);
-        }
-        return answer;
     }
 
     /**
@@ -2887,7 +2919,7 @@ public final class PurpleGate {
     }
 
     private static void cacheStoryAnswer(
-            PurpleWorkMode.View view, int currentAccount, long dialogId, boolean hasUnseen, boolean answer) {
+            PurpleWorkMode.View view, int currentAccount, long dialogId, boolean hasUnseen, boolean answer, int ticket) {
         final boolean other;
         try {
             other = PurpleWorkMode.story(currentAccount,
@@ -2908,7 +2940,7 @@ public final class PurpleGate {
             packed |= STORY_SHOWN_SEEN;
         }
         synchronized (cacheLock) {
-            if (view != null) view.stories.put(dialogId, packed);
+            if (view != null && ticket == generation) view.stories.put(dialogId, packed);
         }
     }
 
@@ -2971,8 +3003,10 @@ public final class PurpleGate {
             // resolves is this device's: which rulesets apply, and therefore
             // which rules run and what the preset is between them, is a
             // question the file cannot answer on its own.
-            return PurpleCore.load(settings, state, PurpleDevice.id(),
+            PurpleCore.Loaded next = PurpleCore.load(settings, state, PurpleDevice.id(),
                     PurpleDevice.PLATFORM, PurpleDevice.CLASS);
+            return PurplePeekForeground.resolve(next, state, safe -> PurpleCore.load(settings, safe, PurpleDevice.id(),
+                    PurpleDevice.PLATFORM, PurpleDevice.CLASS));
         } catch (UnsatisfiedLinkError | RuntimeException e) {
             FileLog.e(e);
             return null;

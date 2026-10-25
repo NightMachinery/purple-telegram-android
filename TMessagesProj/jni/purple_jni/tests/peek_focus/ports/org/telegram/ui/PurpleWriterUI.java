@@ -1,0 +1,1 @@
+package org.telegram.ui;public final class PurpleWriterUI {public static int explanations;public static void explain(org.telegram.ui.ActionBar.BaseFragment f,String s,Runnable r){++explanations;}public static boolean explainHeld(org.telegram.ui.ActionBar.BaseFragment f,String s,Runnable r){++explanations;return true;}}

@@ -1,0 +1,1 @@
+package org.telegram.messenger; public final class LocaleController {public static String getString(int r){return "synthetic label";}public static String formatString(int r,Object...v){return "synthetic message";}}

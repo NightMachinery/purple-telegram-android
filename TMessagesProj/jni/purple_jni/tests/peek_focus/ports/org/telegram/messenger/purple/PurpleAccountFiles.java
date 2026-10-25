@@ -1,0 +1,1 @@
+package org.telegram.messenger.purple;public final class PurpleAccountFiles {public static long lifetime;public static boolean signedIn=true;public static final class Identity {final long opening=lifetime;public boolean current(){return signedIn&&opening==lifetime;}}public static Identity capture(int a){return signedIn?new Identity():null;}}

@@ -1,0 +1,1 @@
+package org.telegram.messenger.purple;public final class PurpleArchiveViewerModel {public static long selection;public static long selectionGeneration(){return selection;}public static void selectionChanged(int a){++selection;org.telegram.messenger.UserConfig.selectedAccount=a;}}

@@ -32,6 +32,18 @@ public final class PurpleWorkMode {
     }
     private static final PurpleWorkModeModel.Publication<Generation> publication =
             new PurpleWorkModeModel.Publication<>(new Generation(new View[UserConfig.MAX_ACCOUNT_COUNT], -1));
+    static void withdrawPeek() {
+        synchronized (PurpleAccountFiles.class) {
+            publication.read(generation -> {
+                PurpleWorkModeModel.withdrawPeekNative();
+                for (View view : generation.views) {
+                    if (view == null) continue;
+                    view.modes.clear(); view.stories.clear();
+                }
+                return null;
+            });
+        }
+    }
     private static byte[] acceptedLocal;
     private static long acceptedLocalRole = -1;
     private static View view(Generation generation, int account) {

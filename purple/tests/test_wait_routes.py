@@ -13,9 +13,14 @@ assert not args.output.exists()
 args.output.mkdir(parents=True)
 paths = ["org/telegram/ui/PurplePeekControls.java"]
 paths += ["org/telegram/messenger/purple/" + name + ".java" for name in [
-    "PurpleGate", "PurpleCore", "PurpleWriter", "PurpleGlobalAccountChoice", "PurpleAppWideRemoval"]]
+    "PurpleGate", "PurpleCore", "PurpleWriter", "PurpleGlobalAccountChoice", "PurpleAppWideRemoval",
+    "PurplePeekForeground", "PurplePeekLocalSettings"]]
 probes = {
     "baseline": None,
+    "direct-local-disable": 'package org.telegram.ui; final class Probe { void click(android.content.Context c) { c.getSharedPreferences("purple_peek_local",0).edit().putBoolean("end_on_focus_loss",false).commit(); } }',
+    "policy-setter": 'package org.telegram.ui; final class Probe { void click(org.telegram.messenger.purple.PurplePeekLocalSettings.Snapshot s) { org.telegram.messenger.purple.PurplePeekLocalSettings.commitFocusPolicy(s,false); } }',
+    "local-writer-moved": "LOCAL_WRITER_MOVED",
+    "controller-writer-moved": "CONTROLLER_WRITER_MOVED",
     "static-import": "package org.telegram.ui; import static org.telegram.messenger.purple.PurpleGate.setPreset; "
         "final class StaticImportProbe { void click() { setPreset(null); } }",
     "renamed-choice": "package org.telegram.ui; import org.telegram.messenger.purple.PurpleGlobalAccountChoice; "
@@ -35,12 +40,21 @@ for name, probe in probes.items():
         target = java / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(root / "TMessagesProj/src/main/java" / relative, target)
-    if probe is not None:
+    if probe == "LOCAL_WRITER_MOVED":
+        path = java / "org/telegram/messenger/purple/PurplePeekLocalSettings.java"
+        text = path.read_text().replace("    private PurplePeekLocalSettings()", "    static void bypass() { preferences().edit().putBoolean(KEY, false).commit(); }\n    private PurplePeekLocalSettings()")
+        path.write_text(text)
+    elif probe == "CONTROLLER_WRITER_MOVED":
+        path = java / "org/telegram/ui/PurplePeekControls.java"
+        text = path.read_text().replace("        boolean saved = PurplePeekLocalSettings.commitFocusPolicy(local, value == 1);", "        boolean saved = bypass(local, value == 1);")
+        text = text.replace("    private PurplePeekControls()", "    static boolean bypass(PurplePeekLocalSettings.Snapshot s, boolean b) { return PurplePeekLocalSettings.commitFocusPolicy(s, b); }\n    private PurplePeekControls()")
+        path.write_text(text)
+    elif probe is not None:
         (java / "org/telegram/ui/Probe.java").write_text(probe + "\n")
     result = subprocess.run([sys.executable, str(script)], capture_output=True, text=True)
     (fixture / "guard.log").write_text(result.stdout + result.stderr)
     assert (result.returncode == 0) == (probe is None), name
     if probe is not None:
-        assert "Work Mode writer inventory changed" in result.stderr and "org/telegram/ui/Probe.java" in result.stdout, name
+        assert "Work Mode writer inventory changed" in result.stderr and ("org/telegram/ui/Probe.java" in result.stdout or name.endswith("writer-moved")), name
     print(name + (": PASS" if probe is None else ": rejected"))
-print("WAIT_ROUTE_TESTS=5")
+print("WAIT_ROUTE_TESTS=9")

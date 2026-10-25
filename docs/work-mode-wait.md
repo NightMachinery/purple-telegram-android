@@ -63,3 +63,5 @@ routed mode writer against the host JNI library. They cover the coarse rule,
 wait completion, exactly-once consumption, abort paths, an account switch,
 context changes and held writes. Device lifecycle delivery and visual layout
 are not exercised by host tests. No upstream hook changes are needed.
+
+The device-local [Peek visibility option](peek-focus.md) uses the same request/countdown. Enabling is restrictive and immediate; disabling waits for the resolved delay. Its route captures local policy revision, selection generation and the delay source rather than a synced-file write session. Unlike legacy Work Mode source/preset requests, its fragment and selected-account guard remains strict. Screen-off and both passcode paths cancel pending waits directly and quietly. The route inventory includes the sole local preference writer and rejects direct or moved writes.

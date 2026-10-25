@@ -12,6 +12,7 @@ import org.telegram.tgnet.TLRPC;
 public final class PurpleArchiveViewerModel implements AutoCloseable {
     private static final java.util.concurrent.atomic.AtomicLong selection = new java.util.concurrent.atomic.AtomicLong();
     private static final java.util.Set<PurpleArchiveViewerModel> viewers = Collections.newSetFromMap(new java.util.WeakHashMap<>());
+    public static long selectionGeneration() { return selection.get(); }
     public static void selectionChanged(int account) {
         selection.incrementAndGet();
         ArrayList<PurpleArchiveViewerModel> old;

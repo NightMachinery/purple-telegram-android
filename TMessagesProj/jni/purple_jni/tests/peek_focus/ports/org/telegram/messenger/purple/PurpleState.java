@@ -1,0 +1,1 @@
+package org.telegram.messenger.purple;public final class PurpleState {public static byte[] bytes;public static boolean fail;public static int writes;public static byte[] read(){return bytes==null?null:bytes.clone();}public static boolean write(byte[] b){++writes;if(fail)return false;bytes=b.clone();return true;}}

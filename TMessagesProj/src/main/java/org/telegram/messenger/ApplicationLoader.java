@@ -344,6 +344,7 @@ public class ApplicationLoader extends Application {
                 }
             }
         };
+        org.telegram.messenger.purple.PurplePeekForeground.init(this);
         if (BuildConfig.DEBUG_VERSION) {
             new ANRDetector(FileLog::dumpANR);
         }

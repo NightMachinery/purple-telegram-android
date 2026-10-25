@@ -1,0 +1,1 @@
+package org.telegram.messenger; public final class FileLog {public static int errors;public static void e(Throwable t){++errors;}public static void e(String s){++errors;}public static void d(String s){}}

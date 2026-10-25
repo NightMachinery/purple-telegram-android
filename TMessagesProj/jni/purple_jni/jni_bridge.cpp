@@ -3441,6 +3441,14 @@ Java_org_telegram_messenger_purple_PurpleWorkModeModel_retireNative(JNIEnv *env,
     for (const auto handle : values) if (handle > 0) gate.accountSettings.erase(handle);
 }
 
+extern "C" JNIEXPORT void JNICALL
+Java_org_telegram_messenger_purple_PurpleWorkModeModel_withdrawPeekNative(JNIEnv *, jclass) {
+    auto &gate = TheGate();
+    const auto lock = std::lock_guard(gate.mutex);
+    gate.resolved.peeking = false;
+    for (auto &[handle, snapshot] : gate.accountSettings) snapshot.resolved.peeking = false;
+}
+
 extern "C" JNIEXPORT jstring JNICALL
 Java_org_telegram_messenger_purple_PurpleWorkModeModel_createNative(
         JNIEnv *env, jclass, jbyteArray local, jstring keyText, jstring globalText,

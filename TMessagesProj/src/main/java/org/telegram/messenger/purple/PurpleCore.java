@@ -482,6 +482,13 @@ public final class PurpleCore {
             this.recentStyle = recentStyle;
         }
 
+        Clock withoutPeek() {
+            return new Clock(false, 0, false, peekTap,
+                    peekStartDelay, peekExitHiddenChats, peekDetents, schedulePaused,
+                    schedulePausedUntil, scheduleConfigured, overrides, nextOverrideDeadline,
+                    hideScope, recentSeconds, recentScope, recentStyle);
+        }
+
         static final Clock NONE = new Clock(false, 0, false, 0, 10, true,
                 Collections.<Integer>emptyList(), false, 0, false,
                 Collections.<Override>emptyList(), 0, SCOPE_UNCOUNTED,
@@ -2183,6 +2190,24 @@ public final class PurpleCore {
 
         /** The state.toml text to write back, or null when it did not change. */
         public final String stateText;
+
+        public Loaded withoutPeek() {
+            return new Loaded(ok, error, warnings, version,
+                    normal, preset, title, lists,
+                    usedCache, cacheReason, activeMissing, snapshotLists,
+                    folders, foldersRestricted, silencedFolders, quietFolders,
+                    exemptFolders, stories, storyFolders, defaultModes,
+                    listCount, presets, views, hideEverywhere,
+                    hideInvisibleSuggestions, recommendedChannels, hideArchive, hideAddStory,
+                    scheduleEnabled, scheduleTarget, scheduleOutside, scheduleOutsideKey,
+                    scheduleNow, scheduleStatus, scheduleRulesets, scheduleChosen,
+                    scheduleRules, focusSyncEnabled, focusSyncEnter, focusSyncExit,
+                    clock.withoutPeek(), premium, sendAfterSave, lastSeenReasons,
+                    lastSeenTrade, lastSeenTradeHold, lastSeenTradeRemember, lastSeenTradeCooldown,
+                    screenTimeEnabled, screenTimeActionSpan, screenTimeActiveGap, screenTimeIdleAfter,
+                    screenTimeRetentionDays, screenTimeBudgets, deviceId, devices,
+                    stateText);
+        }
 
         private Loaded(boolean ok, String error, List<String> warnings, int version,
                 boolean normal, String preset, String title, int lists, boolean usedCache,

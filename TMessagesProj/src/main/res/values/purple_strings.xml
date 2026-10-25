@@ -587,6 +587,9 @@
     <string name="PurplePeekHeader">Peek</string>
     <string name="PurplePeekDuration">Peek duration</string>
     <string name="PurplePeekStartDelay">Start delay (seconds)</string>
+    <string name="PurplePeekCleanupPending">Peek is off here, but saving the change failed. Telegram will retry. Ending Peek on focus loss stays enabled until this is saved.</string>
+    <string name="PurplePeekEndOnFocusLoss">End Peek when Telegram loses focus</string>
+    <string name="PurplePeekEndOnFocusLossInfo">On this device only. Ends Peek after Telegram has no visible activity for 2 seconds, or immediately when locked. Returning sooner keeps Peek. External pickers and viewers end it if Telegram stays in the background.</string>
     <string name="PurplePeekSeconds">%1$d s</string>
     <string name="PurplePeekExitHiddenChats">Exit hidden chats when peek ends</string>
     <string name="PurplePeekSettingsInfo">Peek settings apply across Work Mode presets. Starting Peek shows a full-screen countdown before chats are revealed.</string>

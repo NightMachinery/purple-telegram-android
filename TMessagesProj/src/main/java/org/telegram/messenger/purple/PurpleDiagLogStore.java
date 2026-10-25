@@ -76,7 +76,7 @@ public final class PurpleDiagLogStore {
             "wait", "requested", "waiting", "aborted", "applied", "apply_failed", "held", "instant",
             "archive", "capture_committed", "capture_unchanged", "capture_stale", "capture_gap",
             "capture_overflow", "capture_preimage_failed", "capture_identity_missing", "capture_write_failed", "capture_timeout", "capture_interrupted",
-            "action", "peek_start", "peek_end", "peek_extend", "delay_edit", "preset_change", "mode_change", "source_change"
+            "action", "peek_start", "peek_end", "peek_extend", "delay_edit", "preset_change", "mode_change", "source_change", "peek_focus_policy"
     )));
 
     /** One {@code key=value} pair of a line. Only the factories below make one. */

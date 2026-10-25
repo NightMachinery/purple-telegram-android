@@ -19,6 +19,7 @@ public class ScreenReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
         if (intent.getAction().equals(Intent.ACTION_SCREEN_OFF)) {
+            org.telegram.messenger.purple.PurplePeekForeground.screenOff();
             if (BuildVars.LOGS_ENABLED) {
                 FileLog.d("screen off");
             }

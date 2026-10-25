@@ -207,6 +207,7 @@ public class ExternalActionActivity extends Activity implements INavigationLayou
             return;
         }
         SharedConfig.appLocked = true;
+        org.telegram.messenger.purple.PurpleGate.locked();
         if (SecretMediaViewer.hasInstance() && SecretMediaViewer.getInstance().isVisible()) {
             SecretMediaViewer.getInstance().closePhoto(false, false);
         } else if (PhotoViewer.hasInstance() && PhotoViewer.getInstance().isVisible()) {

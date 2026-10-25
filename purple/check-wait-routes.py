@@ -13,11 +13,14 @@ expected = {
         "org/telegram/messenger/purple/PurpleGate.java": 2,
         "org/telegram/messenger/purple/PurpleCore.java": 1},
     "stopPeek": {"org/telegram/ui/PurplePeekControls.java": 2,
-        "org/telegram/messenger/purple/PurpleGate.java": 2,
+        "org/telegram/messenger/purple/PurpleGate.java": 1,
+        "org/telegram/messenger/purple/PurplePeekForeground.java": 1,
         "org/telegram/messenger/purple/PurpleCore.java": 1},
     "extendPeek": {"org/telegram/ui/PurplePeekControls.java": 1,
         "org/telegram/messenger/purple/PurpleGate.java": 2,
         "org/telegram/messenger/purple/PurpleCore.java": 1},
+    "commitFocusPolicy": {"org/telegram/ui/PurplePeekControls.java": 1,
+        "org/telegram/messenger/purple/PurplePeekLocalSettings.java": 1},
     "setMode": {"org/telegram/messenger/purple/PurpleWriter.java": 2,
         "org/telegram/ui/PurplePeekControls.java": 1},
     "apply": {"org/telegram/ui/PurplePeekControls.java": 1,
@@ -28,9 +31,34 @@ expected = {
 noncode = re.compile(r'""".*?"""|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|/\*.*?\*/|//[^\n]*', re.S)
 found = {name: {} for name in expected}
 files = list(java.rglob("*.java")) + list(java.rglob("*.kt"))
+violations = []
+def method_body(text, name):
+    match = re.search(r"\b" + name + r"\s*\([^;{}]*\)\s*\{", text)
+    if match is None:
+        return (-1, -1)
+    start = match.end(); depth = 1; end = start
+    while depth and end < len(text):
+        depth += (text[end] == "{") - (text[end] == "}")
+        end += 1
+    return start, end - 1
+
 for path in files:
-    text = noncode.sub(" ", path.read_text())
+    raw = path.read_text()
+    text = noncode.sub(lambda match: " " * len(match.group()), raw)
     relative = str(path.relative_to(java))
+    local = relative == "org/telegram/messenger/purple/PurplePeekLocalSettings.java"
+    if not local and re.search(r'"(?:purple_peek_local|end_on_focus_loss)"', raw):
+        violations.append(relative + ": ungated local Peek preference access")
+    if local:
+        start, end = method_body(text, "commitFocusPolicy")
+        for write in re.finditer(r"\b(?:edit|putBoolean|putLong|putString|remove|clear)\s*\(", text):
+            if not start <= write.start() < end:
+                violations.append(relative + ": local Peek writer outside commitFocusPolicy")
+    if relative == "org/telegram/ui/PurplePeekControls.java":
+        start, end = method_body(text, "complete")
+        for write in re.finditer(r"\bcommitFocusPolicy\s*\(", text):
+            if not start <= write.start() < end:
+                violations.append(relative + ": local Peek write outside pending completion")
     for name in expected:
         if name == "setMode" and "PurpleWriter" not in text:
             continue
@@ -42,5 +70,7 @@ for path in files:
 for name, writers in found.items():
     for path, count in sorted(writers.items()):
         print(f"{name}: {path} ({count})")
-assert found == expected, f"Work Mode writer inventory changed: {found}"
+for violation in violations:
+    print(violation)
+assert found == expected and not violations, f"Work Mode writer inventory changed: {found}"
 print("WAIT_ROUTES_OK")

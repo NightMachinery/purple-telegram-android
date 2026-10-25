@@ -88,6 +88,7 @@ public class PurpleSettingsActivity extends UniversalFragment
     private static final int ROW_PEEK_DURATION = 20;
     private static final int ROW_PEEK_DELAY = 21;
     private static final int ROW_PEEK_EXIT = 22;
+    private static final int ROW_PEEK_FOCUS = 0x70750021;
 
     /**
      * Where the trade log's rows start numbering.
@@ -237,6 +238,10 @@ public class PurpleSettingsActivity extends UniversalFragment
         UItem exitHidden = UItem.asCheck(ROW_PEEK_EXIT, getString(R.string.PurplePeekExitHiddenChats));
         exitHidden.checked = state == null || state.clock.peekExitHiddenChats;
         items.add(exitHidden);
+        UItem peekFocus = UItem.asCheck(ROW_PEEK_FOCUS, getString(R.string.PurplePeekEndOnFocusLoss));
+        peekFocus.checked = org.telegram.messenger.purple.PurplePeekLocalSettings.snapshot().enabled;
+        items.add(peekFocus);
+        items.add(UItem.asShadow(getString(R.string.PurplePeekEndOnFocusLossInfo)));
         items.add(UItem.asShadow(getString(R.string.PurplePeekSettingsInfo)));
 
         final UItem premium = UItem.asCheck(ROW_PREMIUM, getString(R.string.PurplePremiumLocal));
@@ -467,7 +472,7 @@ public class PurpleSettingsActivity extends UniversalFragment
                 && item.id != ROW_LAST_SEEN_SKIP_CONFIRMATION
                 && item.id != ROW_PEEK_DURATION && item.id != ROW_PEEK_DELAY && item.id != ROW_PEEK_EXIT
                 && item.id != ROW_SCHEDULE && item.id != ROW_PREMIUM && item.id != ROW_SUGGESTIONS
-                && item.id != ROW_FOCUS) {
+                && item.id != ROW_FOCUS && item.id != ROW_PEEK_FOCUS) {
             String held = PurpleWriter.ownerRefusal();
             if (held != null) PurpleWriterUI.explain(this, held, this::rebuild);
             else error(getString(R.string.PurpleAccountWriteHeld));
@@ -482,6 +487,10 @@ public class PurpleSettingsActivity extends UniversalFragment
                 ? PurpleWriterUI.captureOrExplain(this, true, this::rebuild) : writer;
         if (writes && session == null) return;
         switch (item.id) {
+        case ROW_PEEK_FOCUS:
+            PurplePeekControls.changeFocusPolicy(this, !item.checked);
+            rebuild();
+            break;
         case ROW_PEEK_DURATION:
             PurplePresetPicker.show(this);
             break;

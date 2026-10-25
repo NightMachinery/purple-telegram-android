@@ -65,3 +65,5 @@ for scenario in ["machine", "account", "context", "held", "controller"]:
     run(scenario, [java, "-Xcheck:jni", "-Xmx512m", "-Djava.library.path=" + str(args.library.parent),
                    "-Djava.io.tmpdir=" + str(fixtures), "-cp", str(out) + os.pathsep + classpath,
                    "WaitGateHostMain", classes, scenario, fixtures / scenario])
+
+run("peek-focus", ["python3", tests / "run_peek_focus.py", "--receipt", args.receipt, "--json", args.json, "--library", args.library, "--output", args.output / "peek-focus"])

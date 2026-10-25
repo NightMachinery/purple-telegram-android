@@ -1,0 +1,1 @@
+package org.telegram.messenger.purple;public class PurpleAccountOwner {public static int refusals;public static long observedRoleEpoch(){return 0;}public static String global(){return "synthetic";}public static String owner(){++refusals;throw new IllegalStateException("synthetic unavailable routing source");}}
