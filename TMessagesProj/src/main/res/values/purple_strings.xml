@@ -758,7 +758,7 @@
     <string name="PurpleArchiveRemovalPending">Archive removal is pending. Access stays blocked until cleanup completes.</string>
     <string name="PurpleArchiveNotPrepared">Tap to prepare or check encrypted storage.</string>
     <string name="PurpleArchiveSignedOut">No signed-in account.</string>
-    <string name="PurpleArchiveRemove">Remove local archive</string>
+    <string name="PurpleArchiveRemove">Discard this account’s archive and start fresh</string>
     <string name="PurpleArchiveRemoveConfirm">Remove this account’s archive from this device? Retained content and its encryption key will be deleted. Telegram messages and other accounts are unaffected.</string>
     <string name="PurpleArchiveRefresh">Check storage</string>
     <!-- Purple: the diagnostic log rows at the end of Purple settings -->

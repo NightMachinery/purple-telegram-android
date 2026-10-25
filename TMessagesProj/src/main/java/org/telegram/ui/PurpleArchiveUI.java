@@ -41,7 +41,7 @@ final class PurpleArchiveUI {
             .setTitle(text(R.string.PurpleArchiveTitle))
             .setMessage(summary(status) + "\n\n" + text(R.string.PurpleArchivePolicy) + "\n\n" + text(R.string.PurpleArchiveStorageOnly))
             .setPositiveButton(text(R.string.PurpleArchiveRefresh), (d, which) -> refresh(fragment));
-        if (status.state.equals("KeyUnavailable") || status.state.equals("ReadOnly") || status.state.equals("SchemaMismatch")) {
+        if (!status.state.equals("Signed out") && !status.state.equals("Requires Android 6 (API 23)")) {
             PurpleArchive.RemovalRequest request = PurpleArchive.prepareRemoval(fragment.getCurrentAccount());
             int account = fragment.getCurrentAccount();
             android.view.View view = fragment.getFragmentView();
@@ -51,7 +51,11 @@ final class PurpleArchiveUI {
                     .setTitle(text(R.string.PurpleArchiveRemove)).setMessage(text(R.string.PurpleArchiveRemoveConfirm))
                     .setPositiveButton(text(R.string.PurpleArchiveRemove), (confirmation, button) -> {
                         if (!fragment.isFinished && fragment.getParentActivity() != null && fragment.getCurrentAccount() == account && fragment.getFragmentView() == view)
-                            PurpleArchive.remove(request, () -> refresh(fragment));
+                            if (!PurpleArchive.remove(request, () -> {
+                                if (!request.completed) PurpleWriterUI.explain(fragment, text(R.string.PurpleArchiveTitle), text(R.string.PurpleArchiveUnavailable), "session_stale", () -> refresh(fragment), null);
+                                refresh(fragment);
+                            }))
+                                PurpleWriterUI.explain(fragment, text(R.string.PurpleArchiveTitle), text(R.string.PurpleArchiveUnavailable), "session_stale", () -> refresh(fragment), null);
                     }).setNegativeButton(text(R.string.Cancel), null).create());
             });
         }

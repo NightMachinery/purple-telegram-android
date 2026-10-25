@@ -33,13 +33,16 @@ main.write_text('''import java.io.File;
 public final class ArchiveHostMain {
     public static void main(String[] a) throws Exception {
         File expected = new File(a[0]).getCanonicalFile();
-        for (String name : new String[]{"Sqlite","Files","Paths","Binding","Catalogue","Core","Crypto","Keys","Store","Removal","Usage","Gaps","OwnedMedia",""}) {
+        for (String name : new String[]{"Sqlite","Files","Paths","Binding","Catalogue","Core","Crypto","Keys","Store","Removal","Usage","Gaps","OwnedMedia","Login","Discard",""}) {
             String type = "org.telegram.messenger.purple.PurpleArchive" + name;
             File origin = new File(Class.forName(type).getProtectionDomain().getCodeSource().getLocation().toURI()).getCanonicalFile();
             if (!origin.equals(expected)) throw new AssertionError("business class shadow: " + type);
             System.out.println(type + " origin=" + origin);
         }
-        if (a[1].equals("foundation")) org.telegram.messenger.purple.PurpleArchiveFoundationCases.main(new String[]{a[2],a[3]});
+        if (a[1].startsWith("logout-")) org.telegram.messenger.purple.PurpleArchiveLogoutCrashCases.main(new String[]{a[2],a[3],a[1].substring(7)});
+        else if (a[1].startsWith("refusal-")) org.telegram.messenger.purple.PurpleArchiveRefusalCases.main(new String[]{a[2],a[3],a[1].substring(8)});
+        else if (a[1].startsWith("login-")) org.telegram.messenger.purple.PurpleArchiveLoginRestartCases.main(new String[]{a[2],a[3],a[1].substring(6)});
+        else if (a[1].equals("foundation")) org.telegram.messenger.purple.PurpleArchiveFoundationCases.main(new String[]{a[2],a[3]});
         else if (a[1].startsWith("manager")) org.telegram.messenger.purple.PurpleArchiveManagerCases.main(new String[]{a[2],a[3],a[1].equals("manager-seed")?"seed":a[1].equals("manager-recover")?"recover":"session"});
         else org.telegram.messenger.purple.PurpleArchiveStoreCases.main(new String[]{a[2],a[3]});
     }
@@ -56,5 +59,5 @@ def run(name, command):
     if result.returncode:
         raise SystemExit(result.returncode)
 run("javac", [compiler,"-source","8","-target","8","-proc:none","-sourcepath",empty,"-cp",classpath,"-d",out]+sources)
-for suite in ["foundation", "store", "manager", "manager-seed", "manager-recover"]:
-    run(suite, [compiler.with_name("java"),"-Xcheck:jni","-Xmx512m","-XX:ActiveProcessorCount=2","-Djava.library.path="+str(a.core.parent),"-Dpurple.archive.format1="+str(tests/"archive/format1.sql"),"-cp",str(out)+os.pathsep+classpath,"ArchiveHostMain",production,suite,a.sqlite,a.output/("manager-restart-fixtures" if suite in ["manager-seed", "manager-recover"] else suite+"-fixtures")])
+for suite in ["foundation", "store", "manager", "manager-seed", "manager-recover", "login-seed", "login-same", "login-new", "logout-seed", "logout-restart", "logout-seed-reuse", "logout-reuse", "refusal-fence", "refusal-intent", "refusal-malformed", "refusal-oversized", "refusal-unreadable", "refusal-missing", "refusal-invalid"]:
+    run(suite, [compiler.with_name("java"),"-Xcheck:jni","-Xmx512m","-XX:ActiveProcessorCount=2","-Djava.library.path="+str(a.core.parent),"-Dpurple.archive.format1="+str(tests/"archive/format1.sql"),"-cp",str(out)+os.pathsep+classpath,"ArchiveHostMain",production,suite,a.sqlite,a.output/("logout-reuse-fixtures" if suite in ["logout-seed-reuse", "logout-reuse"] else "logout-crash-fixtures" if suite.startswith("logout-") else "login-restart-fixtures" if suite.startswith("login-") else "manager-restart-fixtures" if suite in ["manager-seed", "manager-recover"] else suite+"-fixtures")])

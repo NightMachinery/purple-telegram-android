@@ -7,6 +7,8 @@ public final class UserConfig {
     public boolean active;
     public long user;
     public boolean loaded=true;
+    public android.content.SharedPreferences preferences;
+    public android.content.SharedPreferences getPreferences(){return preferences;}
     public static UserConfig getInstance(int slot){return accounts[slot];}
     public boolean isClientActivated(){return active;}
     public long getClientUserId(){return user;}

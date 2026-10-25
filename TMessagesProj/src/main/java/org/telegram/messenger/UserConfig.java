@@ -216,6 +216,7 @@ public class UserConfig extends BaseController {
                             currentUser.serializeToStream(data);
                             String string = Base64.encodeToString(data.toByteArray(), Base64.DEFAULT);
                             editor.putString("user", string);
+                            org.telegram.messenger.purple.PurpleArchive.writeLogin(currentAccount, currentUser.id, editor);
                             data.cleanup();
                         }
                     } else {
@@ -262,6 +263,7 @@ public class UserConfig extends BaseController {
         org.telegram.messenger.purple.PurpleAccountFiles.userChanging(currentAccount, user.id);
         synchronized (sync) {
             TLRPC.User oldUser = currentUser;
+            org.telegram.messenger.purple.PurpleArchive.loginChanging(currentAccount, oldUser == null ? 0 : oldUser.id, user.id);
             currentUser = user;
             clientUserId = user.id;
             checkPremiumSelf(oldUser, user);

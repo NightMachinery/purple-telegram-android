@@ -93,6 +93,20 @@ public final class PurpleArchiveManagerCases {
         }, "orphan worker clears removal obligation only after erasure");
         check(Arrays.equals(other, digest(bDb)) && PurpleArchivePlatformProvider.keys.containsKey(b.alias()),
             "orphan manager cleanup leaves account B files and key untouched");
+        account(2, 66); refresh(2);
+        PurpleArchiveBinding malformed = binding("0-66"); File malformedDb = database("0-66", malformed);
+        PurpleArchivePaths malformedPaths = new PurpleArchivePaths(ApplicationLoader.files, "0-66");
+        malformedPaths.metadata.publish("removing.json", malformedPaths.metadata.read("removing.json", 65536), new byte[]{123});
+        PurpleArchive.refresh(2, () -> {});
+        await(() -> PurpleArchive.status(2).state.equals("Unavailable"), "malformed removal refuses automatic open");
+        check(malformedDb.exists() && PurpleArchivePlatformProvider.keys.containsKey(malformed.alias()), "malformed intent never selects deletion");
+        await(() -> PurpleArchive.prepareRemoval(2) != null, "refused account exposes explicit recovery context");
+        PurpleArchive.RemovalRequest discard = PurpleArchive.prepareRemoval(2);
+        check(PurpleArchive.remove(discard, () -> {}), "explicit fenced discard accepts refused record");
+        check(!PurpleArchive.remove(discard, () -> {}), "discard token is single-use");
+        await(() -> !malformedDb.exists(), "explicit discard erases malformed account archive");
+        check(Arrays.equals(other, digest(bDb)) && PurpleArchivePlatformProvider.keys.containsKey(b.alias()), "explicit discard preserves B");
+
     }
     private static void seed(File root) throws Exception {
         ApplicationLoader.files = new File(root, "files"); check(ApplicationLoader.files.mkdir(), "exclusive restart application root");
@@ -131,6 +145,9 @@ public final class PurpleArchiveManagerCases {
             && new File(root, "outside").isDirectory(), "unsafe retained account is refused without blocking or touching another account cleanup");
     }
     public static void main(String[] args) throws Exception {
+        PurpleArchiveLogin.source = new PurpleArchiveLogin.Source() {
+            public String nonce(int slot) { return "11111111111111111111111111111111"; }
+        };
         System.load(args[0]); PurpleCore.ensureLoaded(); Security.addProvider(new PurpleArchivePlatformProvider());
         File root = new File(args[1]); String mode = args[2];
         if (!mode.equals("recover")) check(root.mkdir(), "exclusive manager fixture");

@@ -12,8 +12,11 @@ final class PurpleArchiveRemoval {
     private PurpleArchiveRemoval(PurpleArchivePaths paths, PurpleArchiveBinding binding, JSONObject plan) {
         this.paths = paths; this.binding = binding; this.plan = plan;
     }
+    static PurpleArchiveRemoval discard(PurpleArchivePaths paths) throws Exception { return beginAccount(paths); }
     static PurpleArchiveRemoval begin(PurpleArchivePaths paths) throws Exception {
-        PurpleArchiveFiles.Snapshot pending = paths.metadata.read("removing.json", 65536);
+        PurpleArchiveFiles.Snapshot pending;
+        try { pending = paths.metadata.read("removing.json", 65536); }
+        catch (Exception | LinkageError e) { return beginAccount(paths); }
         if (pending.bytes != null) {
             try { return resume(paths, pending.bytes); }
             catch (Exception | LinkageError e) { return beginAccount(paths); }
@@ -23,7 +26,7 @@ final class PurpleArchiveRemoval {
             bound = paths.metadata.read("binding.json", 65536);
             creating = paths.metadata.read("creating.json", 65536);
         } catch (Exception | LinkageError e) { return beginAccount(paths); }
-        if (bound.bytes == null && creating.bytes == null || paths.metadata.read("recovery.json", 65536).bytes != null)
+        if (bound.bytes == null && creating.bytes == null || PurpleArchiveFiles.markAny(paths.metadata.file("recovery.json")) != null)
             return beginAccount(paths);
         PurpleArchiveBinding binding;
         try {
@@ -60,7 +63,9 @@ final class PurpleArchiveRemoval {
     private static PurpleArchiveRemoval beginAccount(PurpleArchivePaths paths) throws Exception {
         JSONObject durable = new JSONObject().put("format", "purple-archive-account-removal").put("version", 1)
             .put("account", paths.account).put("operation", PurpleArchiveBinding.token());
-        paths.metadata.publish("removing.json", paths.metadata.read("removing.json", 65536), PurpleArchiveCatalogue.bytes(durable));
+        paths.metadata.check();
+        PurpleArchiveFiles.Snapshot old = new PurpleArchiveFiles.Snapshot(PurpleArchiveFiles.mark(paths.metadata.file("removing.json"), false), null);
+        paths.metadata.publish("removing.json", old, PurpleArchiveCatalogue.bytes(durable));
         return new PurpleArchiveRemoval(paths, null, durable);
     }
     private boolean finishAccount(PurpleArchiveStore store, PurpleArchiveKeys.Provider keys) throws Exception {
@@ -170,6 +175,7 @@ final class PurpleArchiveRemoval {
                 if (PurpleArchiveCatalogue.hasUnexpectedStore(paths, null) || PurpleArchiveCatalogue.hasUnexpectedKey(paths.account, keys, null))
                     throw new PurpleArchiveStore.Failure("Archive account cleanup incomplete");
                 paths.metadata.remove("recovery.json", false);
+                paths.metadata.remove("login.json", false);
                 PurpleArchiveCatalogue.acknowledgeCleared(paths);
                 paths.metadata.remove("removing.json", false);
             } else throw new PurpleArchiveStore.Failure("Unknown archive removal action");

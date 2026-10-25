@@ -27,3 +27,7 @@ reader snapshots, uncertain close, revision and identity revocation, forced
 logout drain, exact account isolation and encrypted media integrity. Restart
 seed/recover cases run in separate JVMs and use the production cleanup scanner,
 including an unsafe retained account beside another account's pending removal.
+
+Login admission cases exercise the production nonce hooks with an atomic preference fault port. Separate JVMs seed and reopen the real worker/store, retain all files after failed logout writes, then perform a fresh same-user login. They check authenticated orphan erasure, same-login restart, DC/key identity close, malformed/tampered refusal, explicit discard and account B isolation. Android SharedPreferences persistence is verified against its API contract and AOSP backup-rename protocol.
+
+Separate-JVM review regressions recover a pre-intent logout crash and protect a newer login before queued cleanup. Confirmed discard also covers malformed, oversized and unreadable login metadata plus missing or invalid current nonces, with account B unchanged.

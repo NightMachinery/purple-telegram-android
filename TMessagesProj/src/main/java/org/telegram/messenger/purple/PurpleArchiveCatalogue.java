@@ -41,7 +41,7 @@ final class PurpleArchiveCatalogue {
         try (PurpleArchiveFiles.Listing listing = paths.metadata.listing()) {
             for (;;) {
                 String[] page = listing.next(); if (page.length == 0) break;
-                for (String name : page) if (!name.equals("lock") && !name.equals("fence.json") && !name.equals("cleared.json")) return false;
+                for (String name : page) if (!name.equals("lock") && !name.equals("fence.json") && !name.equals("cleared.json") && !name.equals("login.json")) return false;
             }
         }
         return true;

@@ -695,3 +695,6 @@ once every slot reports `isConfigLoaded()`. This hook plans it at that point
 and reloads the gate if something loaded it during the loop. Keep the call after
 the loop. Inside it, the hook would run while later slots are still unloaded,
 and the plan would wait until the next Purple call.
+
+Archive login admission adds two delegated UserConfig hooks: setCurrentUser prepares a nonce at a login transition under the user lock; saveConfig(true) adds it to the existing editor after the user field. The existing single apply call publishes the pair atomically. No network or transport-key admission hook remains.
+

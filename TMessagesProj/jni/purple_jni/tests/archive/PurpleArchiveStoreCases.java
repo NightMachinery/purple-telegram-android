@@ -341,9 +341,47 @@ public final class PurpleArchiveStoreCases {
         }
         check(outside.exists(), "safe retry leaves unrelated file");
     }
+    private static void loginAdmission(File root) throws Exception {
+        Environment environment = new Environment(root, "login-anchor");
+        PurpleArchivePaths paths = new PurpleArchivePaths(environment.files, "0-11");
+        String nonce = "11111111111111111111111111111111", next = "22222222222222222222222222222222";
+        try (PurpleArchiveFiles.Lock lock = new PurpleArchiveFiles.Lock(paths.metadata)) { PurpleArchiveLogin.admit(paths, nonce, environment.keys); }
+        PurpleArchiveStore first = PurpleArchiveStore.open(environment, "0-11"); PurpleArchiveLogin.bind(first, nonce);
+        String store = first.binding.store; File database = first.directory.file("archive.sqlite"); first.close();
+        byte[] before = paths.metadata.read("login.json", 65536).bytes;
+        try (PurpleArchiveFiles.Lock lock = new PurpleArchiveFiles.Lock(paths.metadata)) { PurpleArchiveLogin.admit(paths, nonce, environment.keys); }
+        PurpleArchiveStore retained = PurpleArchiveStore.open(environment, "0-11");
+        check(retained.binding.store.equals(store), "same-login offline restart retains store"); retained.close();
+        check(Arrays.equals(before, paths.metadata.read("login.json", 65536).bytes), "same-login admission does not rewrite its authenticated record");
+        Environment otherEnvironment = new Environment(root, "login-other");
+        PurpleArchiveStore other = PurpleArchiveStore.open(otherEnvironment, "0-22"); File otherDb = other.directory.file("archive.sqlite"); other.close();
+        byte[] otherBefore = Files.readAllBytes(otherDb.toPath());
+        JSONObject tampered = PurpleArchiveBinding.json(before).put("nonce", next);
+        paths.metadata.publish("login.json", paths.metadata.read("login.json", 65536), PurpleArchiveCatalogue.bytes(tampered));
+        refuses(() -> PurpleArchiveLogin.admit(paths, next, environment.keys), "unauthenticated nonce mismatch cannot erase archive");
+        check(database.exists() && environment.keys.values.size() == 1, "tampered admission keeps database and key");
+        paths.metadata.publish("login.json", paths.metadata.read("login.json", 65536), before);
+        try (PurpleArchiveFiles.Lock lock = new PurpleArchiveFiles.Lock(paths.metadata)) { PurpleArchiveLogin.admit(paths, next, environment.keys); }
+        check(!database.exists() && environment.keys.values.isEmpty(), "new login after all logout writes failed erases authenticated old orphan");
+        check(Arrays.equals(otherBefore, Files.readAllBytes(otherDb.toPath())) && otherEnvironment.keys.values.size() == 1, "orphan cleanup leaves B archive and key untouched");
+        PurpleArchiveStore fresh = PurpleArchiveStore.open(environment, "0-11"); PurpleArchiveLogin.bind(fresh, next);
+        check(!fresh.binding.store.equals(store), "new login cannot reopen old store with retained transport keys");
+        String freshStore = fresh.binding.store; fresh.close();
+        paths.metadata.publish("login.json", paths.metadata.read("login.json", 65536), new byte[]{123});
+        refuses(() -> PurpleArchiveLogin.admit(paths, next, environment.keys), "malformed login record refuses");
+        check(paths.store(freshStore, false).file("archive.sqlite").exists() && environment.keys.values.size() == 1, "malformed admission preserves database and key");
+        paths.metadata.remove("login.json", false);
+        refuses(() -> PurpleArchiveLogin.admit(paths, next, environment.keys), "missing admission refuses retained archive");
+        String seal = PurpleArchiveDiscard.seal(paths);
+        paths.metadata.publish("recovery.json", paths.metadata.read("recovery.json", 65536), new byte[]{123});
+        check(!seal.equals(PurpleArchiveDiscard.seal(paths)), "discard confirmation fences exact malformed catalogue");
+        try (PurpleArchiveFiles.Lock lock = new PurpleArchiveFiles.Lock(paths.metadata)) { PurpleArchiveRemoval.begin(paths).finish(null, environment.keys); }
+        check(!new File(paths.accountsRoot.file("0-11"), freshStore).exists(), "explicit account discard erases refused archive");
+    }
     public static void main(String[] args) throws Exception {
         System.load(args[0]); PurpleCore.ensureLoaded(); File root = new File(args[1]); check(root.mkdir(), "exclusive test root");
         basic(root); readers(root); admission(root); schemaAdmission(root); removalCuts(root); usageAndGaps(root); ownedMedia(root); damagedBindingIsolation(root); missingCatalogue(root); unsafe(root);
+        PurpleArchiveLoginCases.run(); loginAdmission(root);
         System.out.println("ARCHIVE_STORE_CHECKS=" + checks);
     }
 }
