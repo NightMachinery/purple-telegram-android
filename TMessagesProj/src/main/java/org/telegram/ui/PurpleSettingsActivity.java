@@ -557,6 +557,10 @@ public class PurpleSettingsActivity extends UniversalFragment
     protected boolean onLongClick(UItem item, View view, int position, float x, float y) {
         PurpleAccountRowWrite.Intent intent = item.id == ROW_LAST_SEEN_REASONS ? reasonsIntent
                 : item.id == ROW_LAST_SEEN_TRADE ? tradeIntent : null;
+        if (intent == null && (item.id == ROW_LAST_SEEN_REASONS || item.id == ROW_LAST_SEEN_TRADE)) {
+            PurpleWriterUI.explain(this, PurpleAccountRowWrite.refusal(currentAccount, rowCurrent()), this::rebuild);
+            return true;
+        }
         if (intent == null || !intent.canReset() || getParentActivity() == null) return false;
         AlertDialog.Builder dialog = new AlertDialog.Builder(getParentActivity());
         dialog.setItems(new CharSequence[]{PurpleAccountSettingsRows.resetLabel()},

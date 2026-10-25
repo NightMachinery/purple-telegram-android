@@ -216,3 +216,12 @@ keys not used on this device and explain that saved settings still change on
 other devices. Last Seen and other per-account fields keep their own scope.
 Delete-own table paths escape quotes, backslashes and every TOML control
 character, including newline, tab and DEL, matching the core splice helper.
+
+## Held secondary gestures
+
+A read-only or stale list row gives the same refusal feedback on long press
+as on tap. Last Seen Reset long press explains a refused capture, with its
+remedy. The list-names-only notice appears only when there are names to show;
+an unreadable source with zero rows keeps its reason without claiming names
+are listed. The diagnostic settings footer names the scrubber's actual
+patterns and says that other words of error messages remain.

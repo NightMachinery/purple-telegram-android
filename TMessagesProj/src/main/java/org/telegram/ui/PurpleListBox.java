@@ -259,12 +259,12 @@ public final class PurpleListBox {
         }
 
         /** The reason line and its button, or nothing while the rows can be ticked. */
-        private void buildNotice() {
+        private void buildNotice(boolean hasNames) {
             notice.removeAllViews();
             if (reason == null) return;
             notice.addView(note(activity, formatString(R.string.PurpleListsReadOnly, PurpleWriterUI.reasonText(reason)),
                     Theme.getColor(Theme.key_text_RedRegular, resourcesProvider)));
-            if (!membership) {
+            if (!membership && hasNames) {
                 // The names are app-wide in every mode, but the checkmarks
                 // would come from a file the chat list is not using.
                 notice.addView(note(activity, getString(R.string.PurpleListsNoMembership),
@@ -284,7 +284,7 @@ public final class PurpleListBox {
 
         /** One cell per list, replacing whatever was there. */
         void build(List<PurpleCore.ListEntry> lists) {
-            buildNotice();
+            buildNotice(!lists.isEmpty());
             container.removeAllViews();
             final int count = lists.size();
             final PurpleWriter.Session captured = writer;
@@ -310,7 +310,11 @@ public final class PurpleListBox {
                 cell.getTextView().setLines(2);
                 cell.setText(label, null, membership && entry.member, a < count - 1);
                 if (entry.deleteOwn) cell.setOnLongClickListener(v -> {
-                    if (captured == null || !captured.current()) return true;
+                    if (captured == null || !captured.current()) {
+                        Toast.makeText(activity, formatString(R.string.PurpleListsReadOnly,
+                                PurpleWriterUI.reasonText(readOnly == null ? "session_stale" : readOnly)), Toast.LENGTH_LONG).show();
+                        return true;
+                    }
                     AlertDialog.Builder confirmation = new AlertDialog.Builder(activity, resourcesProvider);
                     confirmation.setTitle(formatString(R.string.PurpleListDeleteOwn, own, titleOf(entry)));
                     confirmation.setMessage(formatString(R.string.PurpleListDeleteOwnConfirm, own, titleOf(entry), global));
