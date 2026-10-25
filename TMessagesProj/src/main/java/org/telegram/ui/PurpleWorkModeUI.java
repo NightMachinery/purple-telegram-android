@@ -51,16 +51,11 @@ final class PurpleWorkModeUI {
         dialog.setTitle(LocaleController.formatString(isGlobal ? R.string.PurpleWorkModeGlobalTitle : R.string.PurpleWorkModeListsTitle, own));
         dialog.setItems(labels, (selected, index) -> {
             if (!writer.current()) { PurpleWriterUI.explain(fragment, "session_stale", () -> click(fragment, ROW)); return; }
-            String error = writer.setMode(modes[index]);
-            if (error != null) failed(fragment, error);
+            PurplePeekControls.changeMode(fragment, modes[index]);
         });
         dialog.setNegativeButton(text(R.string.Cancel), null);
         PurpleWriterUI.show(fragment, dialog.create(), writer);
         return true;
-    }
-    private static void failed(BaseFragment fragment, String error) {
-        if (fragment.getParentActivity() != null) android.widget.Toast.makeText(fragment.getParentActivity(),
-                LocaleController.formatString(R.string.PurpleWorkModeFailed, error), android.widget.Toast.LENGTH_LONG).show();
     }
     private static String text(int id) { return LocaleController.getString(id); }
     private PurpleWorkModeUI() { }

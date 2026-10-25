@@ -133,6 +133,7 @@ public final class PurpleGlobalAccountChoice {
     public static final class Choice {
         private final PurpleGlobalChoiceModel model;
         Choice(PurpleGlobalChoiceModel model) { this.model = model; }
+        public String selectedKey() { return model.selected; }
         public String before(String key) { return String.valueOf(model.before.opt(key)); }
         public String after(String key) { return String.valueOf(model.after.opt(key)); }
         public boolean flag(String key) { return model.after.optBoolean(key); }

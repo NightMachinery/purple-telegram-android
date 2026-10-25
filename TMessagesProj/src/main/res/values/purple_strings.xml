@@ -595,6 +595,9 @@
     <string name="PurplePeekStarting">Starting Peek</string>
     <string name="PurplePeekChangingDelay">Changing Peek delay</string>
     <string name="PurpleAbortPeek">Abort Peek</string>
+    <string name="PurpleWaitExtending">Extending Peek</string>
+    <string name="PurpleWaitWorkMode">Changing Work Mode</string>
+    <string name="PurpleWaitAbort">Abort</string>
     <string name="PurpleEndPeek">End Peek</string>
     <string name="PurpleAccountOwner">Root settings file owner</string>
     <string name="PurpleAccountOwnerKnown">Recorded on this device</string>

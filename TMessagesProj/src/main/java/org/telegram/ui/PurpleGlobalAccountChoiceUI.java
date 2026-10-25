@@ -84,9 +84,7 @@ final class PurpleGlobalAccountChoiceUI {
         confirmation.setPositiveButton(text(R.string.PurpleGlobalChoiceConfirm), (dialog, button) -> {
             if (!lifetime.current(token) || !current()) return;
             if (!choice.current()) { lifetime.dismissed(token); error(false); return; }
-            PurpleGlobalAccountChoice.Outcome result = choice.apply();
-            if (!current() || !lifetime.current(token)) return;
-            if (!result.ok) error(result.changed);
+            PurplePeekControls.changeSource(fragment.get(), choice.selectedKey());
             lifetime.dismissed(token);
         });
         confirmation.setNegativeButton(text(R.string.Cancel), null);

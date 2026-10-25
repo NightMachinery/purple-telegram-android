@@ -672,10 +672,9 @@ public final class PurpleGate {
         if (!currentPeekSettings(settings)) return null;
         final PurpleCore.PeekChange change =
                 PurpleCore.startPeek(PurpleState.read(), seconds);
-        if (currentPeekSettings(settings) && change.text != null
-                && PurpleState.write(change.text.getBytes(UTF_8))) {
-            reload("peek");
-        }
+        if (!currentPeekSettings(settings) || change.text == null
+                || !PurpleState.write(change.text.getBytes(UTF_8))) return null;
+        reload("peek");
         return change;
     }
 
@@ -689,13 +688,13 @@ public final class PurpleGate {
      *
      * @return what happened; {@code extended} says whether the deadline moved
      */
-    public static PurpleCore.PeekChange extendPeek(int seconds) {
-        ensureLoaded();
+    public static PurpleCore.PeekChange extendPeek(int seconds, PeekSettings settings) {
+        if (!currentPeekSettings(settings)) return null;
         final PurpleCore.PeekChange change =
                 PurpleCore.extendPeek(PurpleState.read(), seconds);
-        if (change.extended
-                && change.text != null
-                && PurpleState.write(change.text.getBytes(UTF_8))) {
+        if (!currentPeekSettings(settings)) return null;
+        if (change.extended) {
+            if (change.text == null || !PurpleState.write(change.text.getBytes(UTF_8))) return null;
             reload("peek extended");
         }
         return change;

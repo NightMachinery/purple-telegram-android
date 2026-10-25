@@ -72,7 +72,9 @@ public final class PurpleDiagLogStore {
             // the lists box (PurpleListBox, PurpleListSource) and its row sources
             "lists", "box_opened", "box_refreshed", "tick_failed", "new_list_refused", "read_failed",
             "editable", "source", "session_current", "lists_unreadable",
-            "routed", "app_wide_good", "names_only", "none"
+            "routed", "app_wide_good", "names_only", "none",
+            "wait", "requested", "waiting", "aborted", "applied", "apply_failed", "held", "instant",
+            "action", "peek_start", "peek_end", "peek_extend", "delay_edit", "preset_change", "mode_change", "source_change"
     )));
 
     /** One {@code key=value} pair of a line. Only the factories below make one. */

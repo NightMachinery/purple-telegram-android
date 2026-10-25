@@ -164,7 +164,10 @@ Settings offers a device-local choice for each account when at least two
 accounts are known, counting a signed-out app-wide account: own members with
 app-wide fallback, follow app-wide members, or stock Telegram. A global account
 has On and Stock choices. The shared SetAccountWorkMode splice changes only
-local.toml. The opening writer guards the whole dialog and publication.
+local.toml. The opening writer guards the choice dialog. Work Mode requests
+then capture an account-targeted writer, wait under the coarse rule, and
+capture again before publication. Stock to Own/Follow and no-ops are instant;
+other choices wait. See [Work Mode waits](work-mode-wait.md).
 
 Each reload captures native effective list settings for each signed-in identity.
 The global input is the same accepted snapshot used for the shared resolution.

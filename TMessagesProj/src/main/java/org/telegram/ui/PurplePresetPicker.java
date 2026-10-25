@@ -63,9 +63,8 @@ public final class PurplePresetPicker {
     /**
      * Shows the preset picker over {@code fragment}.
      *
-     * Choosing a row is the whole of it: {@link PurpleGate#setPreset(String)}
-     * writes state.toml, reloads and refreshes every chat list on its own, so
-     * nothing here touches the model or the caller's list.
+     * Choices pass through PurplePeekControls, which captures the write,
+     * waits when required, and revalidates before changing state.toml.
      *
      * @param fragment the fragment to attach the dialog to; a null one, or one
      *                 with no activity behind it, is ignored
@@ -161,7 +160,7 @@ public final class PurplePresetPicker {
                 cell.setOnClickListener(v -> {
                     builder.getDismissRunnable().run();
                     if (!alreadyActive) {
-                        PurpleGate.setPreset(name);
+                        PurplePeekControls.changePreset(fragment, name);
                     }
                 });
             } else {
@@ -333,27 +332,11 @@ public final class PurplePresetPicker {
                     PurplePeekControls.toggle(fragment, now.clock.peekTap);
                     return;
                 } else {
-                    PurpleGate.stopPeek();
+                    PurplePeekControls.end(fragment);
                 }
                 restartTick(tick);
             });
 
-            // Extending is the long press, and the grey line under the control
-            // is what says so - it is the one gesture here that nothing about
-            // the control's own shape would suggest. It stays on the phone
-            // because there is no hotkey to give it to, the way the desktop
-            // does, and a tap while the chats are back is often "not yet"
-            // rather than "done".
-            //
-            // It ends the peek when there is nothing left to extend: the hour
-            // cap spent, or no clock on it to move. Those are the tap's two old
-            // sentences, moved across with the branch that says them, because a
-            // control that can start something it cannot stop is worse than one
-            // that means two things.
-            //
-            // Not consumed when nothing is running: a long press that silently
-            // did nothing on a control that is off would read as the gesture
-            // being broken rather than as there being nothing to extend.
             peek.setOnLongClickListener(v -> {
                 final PurpleCore.Loaded now = PurpleGate.state();
                 if (now == null || !now.clock.peeking) {
@@ -361,15 +344,8 @@ public final class PurplePresetPicker {
                 }
                 v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS,
                         HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING);
-                if (!PurpleGate.extendPeek(now.clock.peekTap).extended) {
-                    final boolean untilStopped = now.clock.peekUntilStopped;
-                    PurpleGate.stopPeek();
-                    Toast.makeText(activity, getString(untilStopped
-                                    ? R.string.PurplePeekOver
-                                    : R.string.PurplePeekOverCapped),
-                            Toast.LENGTH_SHORT).show();
-                }
-                restartTick(tick);
+                dismiss.run();
+                PurplePeekControls.extend(fragment, now.clock.peekTap);
                 return true;
             });
 

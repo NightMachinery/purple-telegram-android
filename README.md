@@ -362,8 +362,8 @@ remaining seconds and an **Abort Peek** button. Chats stay hidden until the
 countdown completes; the requested Peek duration starts then. Back, another
 start/toggle, leaving the app, changing account or preset, or locking the app
 cancels a pending start. Pending countdowns are never restored after restart.
-Choosing a new duration while Peek is active ends that Peek before the new
-countdown. **End Peek** appears beside the chat-list lock only while Peek is
+Choosing a new duration while Peek is active keeps that Peek running during
+the countdown and replaces it only after completion. **End Peek** appears beside the chat-list lock only while Peek is
 active and no countdown is running; it ends Peek immediately.
 
 Changing the start delay itself waits for the longer of the old and new values.
@@ -379,6 +379,14 @@ settings do not start Peek. Deliberate hidden-chat exit bypasses recent/open gra
 and prevents that close from granting fresh grace. Ordinary navigation retains its
 close buffer.
 
+The same countdown covers Work Mode preset changes, account Own/Follow/Stock
+changes, and long-press Peek extension. Leaving Normal or Stock for a
+restrictive state, ending Peek, and no-ops are instant; other switches wait,
+including between two restrictive presets even when the new one is stricter.
+Incoming sync, manual settings transfers, and schedule/Focus automation are
+exempt. See [Work Mode waits](docs/work-mode-wait.md) for cancellation,
+account targeting, direct-writer checks and test coverage.
+
 Tapping the row starts a peek of `tap_mobile`, and **tapping it again ends it**,
 the way the desktop's checkbox does: a checkbox that will not uncheck is broken
 however good the reason. A **long press extends** the running peek by another
@@ -389,8 +397,8 @@ gesture here nothing about the control's own shape suggests. Extending is the
 phone's share of what the desktop gives its hotkey, which has no key to be bound
 to here. It stops at an hour - past that it is not a peek any more, it is the
 preset off, and there is a plainer way to say that. A long press that finds the
-cap already spent ends the peek instead and says so, and so does a long press on
-a peek with no clock on it, which has no deadline for an extension to move.
+cap already spent ends the peek after the countdown and says so, and so does a
+long press on a peek with no clock on it, which has no deadline to extend.
 
 Under the row is a row of **chips** - one minute to an hour, and `until I stop`
 one position past the end of them. Tapping one starts a peek of that length, or
