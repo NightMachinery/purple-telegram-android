@@ -15,6 +15,7 @@ public final class PurpleArchiveViewerModel implements AutoCloseable {
     public static long selectionGeneration() { return selection.get(); }
     public static void selectionChanged(int account) {
         selection.incrementAndGet();
+        PurpleArchiveDeletedModel.revoke(-1);
         PurpleArchiveMediaAccess.revoke(-1);
         PurpleArchiveLifecycle.revoke(-1); PurpleArchiveAcquiredSource.revoke(-1);
         ArrayList<PurpleArchiveViewerModel> old;
@@ -100,6 +101,10 @@ public final class PurpleArchiveViewerModel implements AutoCloseable {
     private long epoch;
     private int closeAttempts;
     private boolean readFailed;
+    private PurpleArchive.Worker pinnedWorker;
+    private PurpleArchiveStore pinnedStore;
+    private String pinnedLogin, pinnedVersion, pinnedDigest, pinnedAccountGeneration, pinnedChatGeneration;
+    private java.util.function.BooleanSupplier pinnedPolicy = () -> true;
     private String before = "";
     public PurpleArchiveViewerModel(int slot, TLRPC.Message message) throws Exception {
         openingAccount = UserConfig.selectedAccount; openingSelection = selection.get();
@@ -110,8 +115,30 @@ public final class PurpleArchiveViewerModel implements AutoCloseable {
         synchronized (viewers) { viewers.add(this); }
     }
     private PurpleArchiveViewerModel(PurpleAccountFiles.Identity identity, String key, int openingAccount, long openingSelection) {
+        this(identity,key,openingAccount,openingSelection,true);
+    }
+    private PurpleArchiveViewerModel(PurpleAccountFiles.Identity identity, String key, int openingAccount, long openingSelection, boolean register) {
         this.identity = identity; this.key = key; this.openingAccount = openingAccount; this.openingSelection = openingSelection;
-        synchronized (viewers) { viewers.add(this); }
+        if (register) synchronized (viewers) { viewers.add(this); }
+    }
+    static PurpleArchiveViewerModel pinned(PurpleAccountFiles.Identity identity, String key, long selection, PurpleArchive.Worker worker,
+        PurpleArchiveStore store, String login, String version, String digest, String accountGeneration, String chatGeneration, java.util.function.BooleanSupplier policy) {
+        PurpleArchiveViewerModel model = new PurpleArchiveViewerModel(identity,key,identity.slot,selection,false);
+        model.pinnedWorker = worker; model.pinnedStore = store; model.pinnedLogin = login; model.pinnedVersion = version; model.pinnedDigest = digest; model.pinnedAccountGeneration = accountGeneration; model.pinnedChatGeneration = chatGeneration; model.pinnedPolicy = policy;
+        synchronized (viewers) { viewers.add(model); }
+        if (!model.available()) { model.close(); return null; } return model;
+    }
+    static void committed(PurpleArchiveStore store) {
+        ArrayList<PurpleArchiveViewerModel> retained;
+        synchronized (viewers) { retained = new ArrayList<>(viewers); }
+        for (PurpleArchiveViewerModel viewer : retained) if (viewer.pinnedStore == store && !viewer.closed) {
+            try {
+                JSONObject chat = new JSONObject(viewer.key).getJSONObject("chat");
+                JSONObject scope = new JSONObject().put("chat", chat).put("aliases", new org.json.JSONArray());
+                if (!viewer.available() || !store.admissionCurrent(viewer.pinnedAccountGeneration)
+                    || !PurpleArchiveQueries.generationCurrent(store,scope,chat,viewer.pinnedChatGeneration)) viewer.close();
+            } catch (Exception | LinkageError e) { viewer.close(); }
+        }
     }
     public PurpleArchiveMediaAccess.Capability media(Attachment attachment, PurpleArchiveMediaAccess.Delivered delivered) {
         if (!available()) return null;
@@ -125,10 +152,15 @@ public final class PurpleArchiveViewerModel implements AutoCloseable {
         if (UserConfig.selectedAccount != openingAccount || selection.get() != openingSelection) { close(); return false; }
         return true;
     }
-    public boolean available() { return !closed && selected() && identity.current(); }
+    public boolean available() {
+        if (!pinnedPolicy.getAsBoolean()) { close(); return false; }
+        return !closed && selected() && identity.current() && (pinnedWorker == null || pinnedWorker == PurpleArchive.existing(identity)
+            && !pinnedWorker.closing && !pinnedWorker.retired && pinnedWorker.store == pinnedStore && pinnedLogin.equals(pinnedWorker.loginContext));
+    }
     public PurpleArchiveViewerModel restart() {
         if (!available()) throw new IllegalStateException("Archive account changed");
-        return new PurpleArchiveViewerModel(identity, key, openingAccount, openingSelection);
+        return pinnedWorker == null ? new PurpleArchiveViewerModel(identity, key, openingAccount, openingSelection)
+            : pinned(identity,key,openingSelection,pinnedWorker,pinnedStore,pinnedLogin,pinnedVersion,pinnedDigest,pinnedAccountGeneration,pinnedChatGeneration,pinnedPolicy);
     }
     public boolean next(Delivered delivered) {
         if (!available() || !fetching.compareAndSet(false, true)) return false;
@@ -157,8 +189,13 @@ public final class PurpleArchiveViewerModel implements AutoCloseable {
             if (reader == null) { store = worker.store; reader = store.reader(); epoch = worker.deliveryEpoch; }
             if (!current() || !reader.current()) throw new IllegalStateException("Archive viewer revoked");
             JSONObject key = new JSONObject(this.key); String accountGeneration, chatGeneration;
+            if (pinnedVersion != null) try (PurpleArchiveSlice original = new PurpleArchiveSlice(store,key,null)) {
+                if (!PurpleArchiveNormalize.digest(original.version(pinnedVersion).toString()).equals(pinnedDigest)) throw new PurpleArchiveStore.Failure("Archive opening version changed");
+            }
             try (PurpleArchiveSlice scope = new PurpleArchiveSlice(store, key, null)) {
                 accountGeneration = scope.facts.getString("accountGeneration"); chatGeneration = scope.facts.getString("chatGeneration");
+                if (pinnedAccountGeneration != null && (!pinnedAccountGeneration.equals(accountGeneration) || !pinnedChatGeneration.equals(chatGeneration)))
+                    throw new PurpleArchiveStore.Failure("Archive opening purge generation changed");
             }
             JSONObject messagePlan = PurpleArchiveCore.call("query", store.arguments().put("query", "message").put("key", key), store.crypto());
             String token = messagePlan.getString("id");

@@ -30,9 +30,19 @@ public final class PurpleEditHistoryActivity extends UniversalFragment {
     private PurpleArchiveViewerModel model;
     private PurpleArchiveViewerModel.Page page;
     private boolean loading;
+    private final Runnable authority = new Runnable() {
+        @Override public void run() {
+            if (isFinished) return;
+            if (model != null && !model.available()) { cancelMedia(); page = null; loading = false; update(); }
+            org.telegram.messenger.AndroidUtilities.runOnUIThread(this,1000);
+        }
+    };
     public PurpleEditHistoryActivity(int account, TLRPC.Message message) {
         currentAccount = account;
         try { model = new PurpleArchiveViewerModel(account, message); } catch (Exception | LinkageError ignored) {}
+    }
+    public PurpleEditHistoryActivity(int account, PurpleArchiveViewerModel captured) {
+        currentAccount = account; model = captured;
     }
     @Override protected CharSequence getTitle() { return text(R.string.PurpleArchiveViewHistory); }
     @Override public View createView(Context context) {
@@ -151,8 +161,10 @@ public final class PurpleEditHistoryActivity extends UniversalFragment {
     @Override protected boolean onLongClick(UItem item, View view, int position, float x, float y) { return false; }
     @Override public void onResume() {
         super.onResume();
+        org.telegram.messenger.AndroidUtilities.cancelRunOnUIThread(authority); authority.run();
         if (model != null && !model.available()) { cancelMedia(); page = null; loading = false; if (listView != null) listView.adapter.update(true); }
     }
-    @Override public void onFragmentDestroy() { cancelMedia(); if (model != null) model.close(); super.onFragmentDestroy(); }
+    @Override public void onPause() { org.telegram.messenger.AndroidUtilities.cancelRunOnUIThread(authority); super.onPause(); }
+    @Override public void onFragmentDestroy() { org.telegram.messenger.AndroidUtilities.cancelRunOnUIThread(authority); cancelMedia(); if (model != null) model.close(); super.onFragmentDestroy(); }
     private static String text(int id) { return LocaleController.getString(id); }
 }

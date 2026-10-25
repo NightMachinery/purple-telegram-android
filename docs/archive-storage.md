@@ -61,7 +61,9 @@ sidecars, revision checks, bind limits and durable-commit acknowledgement.
 
 Read snapshots use separate checked read-only connections, bounded pages and a
 maximum of eight leases per account. Delivery is revoked on account/work changes,
-maintenance or header revision/generation changes. Logout drains their handles
+maintenance or addressed generation changes. Ordinary history readers also retain their
+exact revision fence; Deleted views keep ordinary-write snapshots as described below.
+Logout drains their handles
 before the writer connection and crypto state can close. Ordinary identity
 replacement also drains snapshots before releasing the old account worker.
 
@@ -161,3 +163,19 @@ Capability close coalesces repeated revocation into one pending release task. A 
 The history reader retains its original SQLite snapshot. Core transaction revision and generation checks remain unchanged. For a lease transaction initiated by that history view, the native adapter compares the actual expected and next states after clearing only leases and revision. Only an acknowledged committed transition with otherwise equal states, expected revision equal to the view revision and next revision exactly one greater may advance that view's freshness revision. Another view's lease, an interleaved payload write, a failed or uncertain commit, purge, discard, logout and login replacement do not advance it. Core stays at 81e627b; no schema or header change is required.
 
 A Save that fully writes, verifies and closes its destination remains a completed user copy after a late account selection change. Completion and current UI authority are separate facts. The UI describes incomplete output as removed only after successful destination deletion; a failed cleanup is reported explicitly.
+
+
+### Dedicated Deleted messages view
+
+Open a chat's header menu and choose Deleted messages (Android API23 or newer). The view reads this account's retained received/original messages for the captured typed chat, its trusted migration alias and, when opened inside a real topic, that exact parent/topic. It includes Deleted, Expired and Consumed records. It does not fetch history, download media, insert live messages, change search, unread counts or notifications, or infer who deleted something or the server deletion time. Bodyless tombstones and Missing/Partial/Complete attachments remain explicit. View Edit History uses the validated full message key, original store/login, semantic version and purge generations for retained versions and owned Open/Save.
+
+Queries use the shared six-column deleted-view projection, seven scoped counts and unique-blob pages. Every shell/head envelope and body chunk is authenticated from the same BEGIN snapshot that admitted the schema. A missing nonempty head is corruption. Both tuple orders and signed64-bit message IDs are preserved. Error states show Unavailable, SchemaMismatch, ReadOnly, Busy or Refresh required; an error never becomes zero counts. Display previews are bounded to8192 characters per component, with a clipping notice; body authentication still covers the complete stored payload.
+
+There are at most eight simultaneous store read connections and sixteen registered deleted-view models. A query expires after30 seconds without a page, closes on disposal/refresh and is revoked on selection, account/login/store/incarnation, resolved policy, current admission or addressed generation changes. Ordinary captures and leases retain its opening SQLite snapshot and counts, including writes in the same chat; a memory-only indication offers Refresh for later archive data. Queued deliveries cannot revive it after A-to-B-to-A. The separate history reader keeps its exact revision fence and native proof for its own lease transactions. No database or filesystem wait runs on the main or Binder thread.
+
+Logical retained media usage counts each Complete blob once within the captured scope. It is paged128 blobs at a time and uses an unsigned64-bit checked sum. While incomplete it is shown as at least the verified amount. Physical bytes are the worker's last account measurement, labeled as an estimate. Possible freed bytes stay unknown because shared references, leases and pending work can retain bytes. Nothing expires automatically here; logout deletes the account archive as before. Purge/GC controls belong to the next slice.
+
+The menu extends the existing owned PurpleChatHooks header/dispatch path; no new upstream ChatActivity hook is added. Headless fixtures qualify query, lifecycle and rendering decisions, not a live Android layout or hardware Keystore.
+
+
+History opened through a Deleted entry registers its own authority before it can be delivered. Every committed Store transaction checks its admission and addressed generations independently of whether the parent query still exists. Revocation sets its UI-safe closed flag before the executor returns, so queued Ready results, Older, Refresh and shown media actions cannot revive old authority. These checks do no database work on the UI thread.

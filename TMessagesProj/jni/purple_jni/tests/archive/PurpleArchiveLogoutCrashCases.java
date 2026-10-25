@@ -53,7 +53,7 @@ public final class PurpleArchiveLogoutCrashCases {
     PurpleArchiveBinding other=new PurpleArchiveBinding("0-22",state.getJSONObject("b"));check(Arrays.equals(PurpleArchiveCore.unbase64(state.getString("bDbHash")),sha(db(other)))&&Arrays.equals(PurpleArchiveCore.unbase64(state.getString("bWalHash")),sha(new File(db(other)+"-wal"))),"B unchanged after slot reuse");System.out.println("ARCHIVE_LOGOUT_REUSE_CHECKS="+checks);return;
    }
    PurpleArchive.initialize();java.lang.reflect.Field field=PurpleArchive.class.getDeclaredField("recovery");field.setAccessible(true);((ScheduledExecutorService)field.get(null)).submit(()->{}).get(10,TimeUnit.SECONDS);
-   PurpleArchiveBinding a=new PurpleArchiveBinding("0-11",state.getJSONObject("a")),b=new PurpleArchiveBinding("0-22",state.getJSONObject("b"));await(()->!dbSafe(a).exists()&&!PurpleArchivePlatformProvider.keys.containsKey(a.alias()));check(PurpleArchive.status(0).state.equals("Signed out"),"A remains signed out");
+   PurpleArchiveBinding a=new PurpleArchiveBinding("0-11",state.getJSONObject("a")),b=new PurpleArchiveBinding("0-22",state.getJSONObject("b"));await(()->!dbSafe(a).getParentFile().exists()&&!PurpleArchivePlatformProvider.keys.containsKey(a.alias()));check(PurpleArchive.status(0).state.equals("Signed out"),"A remains signed out");
    check(!dbSafe(a).getParentFile().exists(),"restart erases lifecycle and nested staging directories with the old store");
    check(Arrays.equals(PurpleArchiveCore.unbase64(state.getString("bDbHash")),sha(db(b)))&&Arrays.equals(PurpleArchiveCore.unbase64(state.getString("bWalHash")),sha(new File(db(b)+"-wal"))),"B db and WAL unchanged");
    System.out.println("ARCHIVE_LOGOUT_CRASH_CHECKS="+checks);

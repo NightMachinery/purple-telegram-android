@@ -60,6 +60,7 @@ final class PurpleChatHooks {
     private static final int DOWNLOAD_PINNED_MUSIC = 0x70750002;
     private static final int KEEP_MEDIA = 0x70750003;
     private static final int CHAT_STORAGE = 0x70750004;
+    private static final int DELETED_MESSAGES = 0x70750400;
 
     private final ChatActivity chat;
     private final PurpleScreenTimeCover.Host screenTime;
@@ -169,6 +170,8 @@ final class PurpleChatHooks {
             showKeepMedia();
         } else if (id == CHAT_STORAGE) {
             openChatStorage();
+        } else if (id == DELETED_MESSAGES) {
+            openDeletedMessages();
         } else {
             return false;
         }
@@ -194,6 +197,8 @@ final class PurpleChatHooks {
      * keep-media bucket.
      */
     void addHeaderItems(ActionBarMenuItem headerItem) {
+        if (android.os.Build.VERSION.SDK_INT >= 23 && chat.getChatMode() == ChatActivity.MODE_DEFAULT && (!chat.isThreadChat() || chat.isTopic))
+            headerItem.lazilyAddSubItem(DELETED_MESSAGES,R.drawable.msg_delete,getString(R.string.PurpleArchiveDeletedMessages));
         if (chat.currentEncryptedChat == null) {
             headerItem.lazilyAddSubItem(DOWNLOAD_PINNED_MUSIC, R.drawable.msg_download,
                     getString(R.string.PurplePinnedMusicAction));
@@ -273,6 +278,16 @@ final class PurpleChatHooks {
     }
 
     // ---- keep media and chat storage -----------------------------------------
+
+    private void openDeletedMessages() {
+        try {
+            org.telegram.messenger.purple.PurpleArchiveQueries.Scope scope = org.telegram.messenger.purple.PurpleArchiveQueries.Scope.capture(chat.getCurrentAccount(),chat.getDialogId(),
+                chat.getCurrentUser(),chat.getCurrentChat(),chat.getCurrentEncryptedChat(),chat.getCurrentChatInfo(),chat.isTopic ? chat.getTopicId() : 0);
+            chat.presentFragment(new PurpleDeletedMessagesActivity(chat.getCurrentAccount(),scope));
+        } catch (Exception | LinkageError e) {
+            PurpleWriterUI.explain(chat,getString(R.string.PurpleArchiveDeletedMessages),getString(R.string.PurpleArchiveQueryUnavailable),"file_unreadable",null,null);
+        }
+    }
 
     private void openChatStorage() {
         if (keepMediaType() < 0) {

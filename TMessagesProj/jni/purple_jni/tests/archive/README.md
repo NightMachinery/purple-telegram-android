@@ -47,3 +47,11 @@ B3b adds production AGP-class reader/export/provider tests with real core leases
 Release-pressure coverage blocks the account owner and closes one capability 1000 times. Only one release (plus an already queued validation) may be waiting; the durable lease releases after the owner resumes.
 
 OwnedMediaInvariantCases ports the B3b review probes. It checks truthful closed Save delivery, nine-version history continuation after own lease acquire/release, stale payload/interleaved/other-view transitions, the SQL purge maintenance barrier, failed release followed by committed retry, cached-version mutation and login/slot replacement. The purge case installs the production admission barrier in a fixture transaction; it does not exercise a purge UI.
+
+
+PurpleArchiveQueryCases uses actual AGP Queries/DeletedModel classes, the production native bridge, bundled SQLite and the existing Android platform ports. It covers140-row pages, both tuple directions and complete date/id ties, negative64-bit secret IDs, parent/alias/topic/collection/representation filters, bodyless and corrupt/missing-head/body-chunk refusal, count status,130 unique blobs over two usage pages, shared-blob deduplication and unsigned total boundaries, same-snapshot schema admission, reader cap/idle release, queued A-to-B-to-A/logout/discard and login replacement, scoped history identity and account B database/WAL isolation. Optional `--suites query-pages query-model` focuses a run without changing business classes. The complete runner still executes every suite by default.
+
+The B3b full-media case prints initial staging elapsed milliseconds, the unchanged40000ms fixture deadline and completion status. This measures the initial retain call including queue wait, validation, encrypted publication and SQL commit, so disk-pressure timeout margins remain visible.
+
+
+The `boundary-*` cases exercise the actual Store executor boundary for queued and already-shown linked history, including a disposed parent, and verify that ordinary unrelated/same-chat captures and lease transactions keep the original Deleted snapshot. They port the B4a review probes. History's exact own-lease revision tests remain in the owned-media suite.

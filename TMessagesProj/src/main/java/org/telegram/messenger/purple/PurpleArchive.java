@@ -152,6 +152,7 @@ public final class PurpleArchive {
         return "Unavailable";
     }
     private static Worker worker(String account) { return workers.computeIfAbsent(account, Worker::new); }
+    static Worker queryWorker(PurpleAccountFiles.Identity identity) { return allowed(identity) ? worker(identity.key) : null; }
     public static void initialize() {
         if (initialized) return;
         synchronized (PurpleArchive.class) { if (initialized) return; initialized = true; }
@@ -255,6 +256,7 @@ public final class PurpleArchive {
         if (worker == null || worker.discardSeal == null) return null;
         PurpleArchiveAcquiredSource.revoke(slot);
         PurpleArchiveMediaAccess.revoke(slot);
+        PurpleArchiveDeletedModel.revoke(slot);
         return new RemovalRequest(identity, worker);
     }
     public static boolean remove(RemovalRequest request, Runnable delivered) {
@@ -286,6 +288,7 @@ public final class PurpleArchive {
     }
     public static void beforeLogout(int slot) {
         PurpleArchiveMediaAccess.revoke(slot);
+        PurpleArchiveDeletedModel.revoke(slot);
         PurpleArchiveLifecycle.revoke(slot); PurpleArchiveAcquiredSource.revoke(slot);
         PurpleAccountFiles.Identity captured = PurpleAccountFiles.capture(slot);
         if (captured == null) return;
@@ -311,6 +314,7 @@ public final class PurpleArchive {
     }
     public static void identityChanged(int slot) {
         PurpleArchiveMediaAccess.revoke(slot);
+        PurpleArchiveDeletedModel.revoke(slot);
         PurpleArchiveLifecycle.revoke(slot); PurpleArchiveAcquiredSource.revoke(slot);
         for (Worker worker : workers.values()) {
             PurpleAccountFiles.Identity identity = worker.identity;

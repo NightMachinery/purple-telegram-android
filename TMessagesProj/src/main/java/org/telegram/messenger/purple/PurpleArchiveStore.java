@@ -29,7 +29,7 @@ final class PurpleArchiveStore implements AutoCloseable {
     private PurpleArchiveFiles.Lock lock;
     private PurpleArchiveSqlite database;
     private PurpleArchiveCrypto crypto;
-    private boolean closed;
+    private volatile boolean closed;
     private int readers;
     private final java.util.HashSet<Reader> activeReaders = new java.util.HashSet<>();
     private final boolean creationAllowed;
@@ -241,6 +241,8 @@ final class PurpleArchiveStore implements AutoCloseable {
         checkOwner();
         PurpleArchiveCore.Execution result = PurpleArchiveCore.execute(database, plan, () -> current() && active.getAsBoolean(), environment.publicationLock());
         if (result.committed) PurpleArchiveMediaAccess.committed(this);
+        if (result.committed) PurpleArchiveDeletedModel.committed(this);
+        if (result.committed) PurpleArchiveViewerModel.committed(this);
         return result;
     }
     boolean hasGaps() throws Exception { requireCurrent(); return query(database, "gaps").rows != 0; }
@@ -295,11 +297,32 @@ final class PurpleArchiveStore implements AutoCloseable {
             requireCurrent(); return result;
         }
     }
+    boolean admissionCurrent(String generation) {
+        try {
+            requireCurrent();
+            boolean transaction = database.autocommit();
+            if (transaction) PurpleArchiveCore.requireDone(database.run("BEGIN"));
+            try {
+                admit(database, false); verifyHeader(database);
+                PurpleArchiveSqlite.Value[] now = query(database, "metadata").values[0];
+                boolean matches = generation.equals(now[4].text()) && now[5].text().isEmpty();
+                if (transaction) PurpleArchiveCore.requireDone(database.run("COMMIT"));
+                return matches;
+            } catch (Exception | LinkageError e) {
+                if (transaction && !database.autocommit()) PurpleArchiveCore.requireDone(database.run("ROLLBACK"));
+                throw e;
+            }
+        } catch (Exception | LinkageError e) { return false; }
+    }
     final class Reader implements AutoCloseable {
-        private boolean released;
+        private volatile boolean released;
+        private boolean closing;
         private PurpleArchiveSqlite snapshot;
         private String revision, generation;
-        private Reader() throws Exception {
+        private final boolean retained;
+        private Reader() throws Exception { this(false); }
+        private Reader(boolean retained) throws Exception {
+            this.retained = retained;
             if (activeReaders.size() >= 8) throw new Failure("Archive reader limit");
             activeReaders.add(this); ++readers;
             try {
@@ -311,8 +334,9 @@ final class PurpleArchiveStore implements AutoCloseable {
             } catch (Exception | LinkageError e) { close(); throw e; }
         }
         boolean current() {
-            if (released || Thread.currentThread() != owner || !PurpleArchiveStore.this.current() || database == null || !database.autocommit()) return false;
+            if (released || closing || Thread.currentThread() != owner || !PurpleArchiveStore.this.current() || database == null || !database.autocommit()) return false;
             try {
+                if (retained) return admissionCurrent(generation);
                 PurpleArchiveSqlite.Value[] now = query(database, "metadata").values[0];
                 return now[3].text().equals(revision) && now[4].text().equals(generation) && now[5].text().isEmpty();
             } catch (Exception | LinkageError e) { return false; }
@@ -335,9 +359,11 @@ final class PurpleArchiveStore implements AutoCloseable {
             if (!statement.accepts(result) || !current()) throw new Failure("Archive reader page refused");
             return result;
         }
+        boolean changed() throws Exception { return !query(database, "metadata").values[0][3].text().equals(revision); }
+        boolean released() { return released; }
         @Override public void close() {
             if (released) return;
-            checkOwner();
+            checkOwner(); closing = true;
             if (snapshot != null) {
                 if (!snapshot.autocommit()) PurpleArchiveCore.requireDone(snapshot.run("COMMIT"));
                 snapshot.close(); snapshot = null;
@@ -345,7 +371,10 @@ final class PurpleArchiveStore implements AutoCloseable {
             released = true; --readers; activeReaders.remove(this);
         }
     }
+    boolean closed() { return closed; }
+    void retryClosingReaders() { checkOwner(); for (Reader reader : new java.util.ArrayList<>(activeReaders)) if (reader.closing) reader.close(); }
     Reader reader() throws Exception { requireCurrent(); return new Reader(); }
+    Reader retainedReader() throws Exception { requireCurrent(); return new Reader(true); }
     void drainReaders() {
         checkOwner();
         for (Reader reader : new java.util.ArrayList<>(activeReaders)) reader.close();

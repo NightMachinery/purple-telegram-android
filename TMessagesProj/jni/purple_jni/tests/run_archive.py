@@ -13,6 +13,7 @@ parser.add_argument("--core", required=True, type=Path)
 parser.add_argument("--sqlite", required=True, type=Path)
 parser.add_argument("--output", required=True, type=Path)
 parser.add_argument("--platform-ports", type=Path)
+parser.add_argument("--suites", nargs="+")
 a = parser.parse_args()
 tests = Path(__file__).resolve().parent
 receipt = json.loads(a.receipt.read_text())
@@ -33,13 +34,15 @@ main.write_text('''import java.io.File;
 public final class ArchiveHostMain {
     public static void main(String[] a) throws Exception {
         File expected = new File(a[0]).getCanonicalFile();
-        for (String name : new String[]{"Sqlite","Files","Paths","Binding","Catalogue","Core","Crypto","Keys","Store","Removal","Usage","Gaps","OwnedMedia","Login","Discard","Normalize","Origin","Slice","Sequence","Capture","ViewerModel","Staging","Lifecycle","AcquiredSource","StagingRecovery","Inline","MediaAccess","MediaDataSource","MediaProvider","MediaExport","MediaDestination",""}) {
+        for (String name : new String[]{"Sqlite","Files","Paths","Binding","Catalogue","Core","Crypto","Keys","Store","Removal","Usage","Gaps","OwnedMedia","Login","Discard","Normalize","Origin","Slice","Sequence","Capture","ViewerModel","Staging","Lifecycle","AcquiredSource","StagingRecovery","Inline","MediaAccess","MediaDataSource","MediaProvider","MediaExport","MediaDestination","Queries","DeletedModel",""}) {
             String type = "org.telegram.messenger.purple.PurpleArchive" + name;
             File origin = new File(Class.forName(type).getProtectionDomain().getCodeSource().getLocation().toURI()).getCanonicalFile();
             if (!origin.equals(expected)) throw new AssertionError("business class shadow: " + type);
             System.out.println(type + " origin=" + origin);
         }
-        if (a[1].startsWith("owned-")) org.telegram.messenger.purple.PurpleArchiveOwnedMediaInvariantCases.main(new String[]{a[2],a[3],a[1].substring(6)});
+        if (a[1].startsWith("boundary-")) org.telegram.messenger.purple.PurpleArchiveDeletedBoundaryCases.main(new String[]{a[2],a[3],a[1].substring(9)});
+        else if (a[1].startsWith("query-")) org.telegram.messenger.purple.PurpleArchiveQueryCases.main(new String[]{a[2],a[3],a[1].substring(6)});
+        else if (a[1].startsWith("owned-")) org.telegram.messenger.purple.PurpleArchiveOwnedMediaInvariantCases.main(new String[]{a[2],a[3],a[1].substring(6)});
         else if (a[1].equals("release-pressure")) org.telegram.messenger.purple.PurpleArchiveReleasePressureCases.main(new String[]{a[2],a[3]});
         else if (a[1].startsWith("b3b-")) org.telegram.messenger.purple.PurpleArchiveB3bRestartCases.main(new String[]{a[2],a[3],a[1].substring(4)});
         else if (a[1].equals("b3b")) org.telegram.messenger.purple.PurpleArchiveB3bCases.main(new String[]{a[2],a[3]});
@@ -71,5 +74,5 @@ def run(name, command):
     if result.returncode:
         raise SystemExit(result.returncode)
 run("javac", [compiler,"-source","8","-target","8","-proc:none","-sourcepath",empty,"-cp",classpath,"-d",out]+sources)
-for suite in ["owned-late-save", "owned-history-control", "owned-history-next", "owned-history-payload", "owned-history-purge", "owned-history-interleaved", "owned-history-release-retry", "owned-history-other-view", "owned-release-error", "owned-bound-version", "owned-login-change", "owned-slot-reuse", "foundation", "store", "manager", "manager-seed", "manager-recover", "login-seed", "login-same", "login-new", "logout-seed", "logout-restart", "logout-seed-reuse", "logout-reuse", "refusal-fence", "refusal-intent", "refusal-malformed", "refusal-oversized", "refusal-unreadable", "refusal-missing", "refusal-invalid", "selection-viewer", "selection-hook", "capture", "b3a", "b3b", "release-pressure", "b3b-seed", "b3b-recover", "b3a-seed", "b3a-recover", "provenance", "refused-retry", "seam-discard", "seam-origin", "seam-logout", "torn-between-seed", "torn-between-recover", "torn-during-seed", "torn-during-recover"]:
+for suite in a.suites or ["boundary-queued-history", "boundary-detached-history", "boundary-shown-history", "boundary-queued-deleted", "boundary-ordinary-write", "boundary-same-chat", "boundary-lease-write", "query-pages", "query-usage", "query-corrupt", "query-model", "query-logout", "query-discard", "owned-late-save", "owned-history-control", "owned-history-next", "owned-history-payload", "owned-history-purge", "owned-history-interleaved", "owned-history-release-retry", "owned-history-other-view", "owned-release-error", "owned-bound-version", "owned-login-change", "owned-slot-reuse", "foundation", "store", "manager", "manager-seed", "manager-recover", "login-seed", "login-same", "login-new", "logout-seed", "logout-restart", "logout-seed-reuse", "logout-reuse", "refusal-fence", "refusal-intent", "refusal-malformed", "refusal-oversized", "refusal-unreadable", "refusal-missing", "refusal-invalid", "selection-viewer", "selection-hook", "capture", "b3a", "b3b", "release-pressure", "b3b-seed", "b3b-recover", "b3a-seed", "b3a-recover", "provenance", "refused-retry", "seam-discard", "seam-origin", "seam-logout", "torn-between-seed", "torn-between-recover", "torn-during-seed", "torn-during-recover"]:
     run(suite, [compiler.with_name("java"),"-Xcheck:jni","--add-opens=java.base/sun.nio.fs=ALL-UNNAMED","-Xmx512m","-XX:ActiveProcessorCount=2","-Djava.library.path="+str(a.core.parent),"-Dpurple.archive.format1="+str(tests/"archive/format1.sql"),"-cp",str(out)+os.pathsep+classpath,"ArchiveHostMain",production,suite,a.sqlite,a.output/("torn-"+suite.split("-")[1]+"-fixtures" if suite.startswith("torn-") else "b3b-restart-fixtures" if suite.startswith("b3b-") else "b3a-restart-fixtures" if suite.startswith("b3a-") else "logout-reuse-fixtures" if suite in ["logout-seed-reuse", "logout-reuse"] else "logout-crash-fixtures" if suite.startswith("logout-") else "login-restart-fixtures" if suite.startswith("login-") else "manager-restart-fixtures" if suite in ["manager-seed", "manager-recover"] else suite+"-fixtures")])

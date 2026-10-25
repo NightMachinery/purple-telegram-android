@@ -178,7 +178,10 @@ public final class PurpleArchiveB3bCases {
         ApplicationLoader.files=new File(root,"files");check(ApplicationLoader.files.mkdir(),"fixture files");ApplicationLoader.applicationContext=new android.content.Context();
         UserConfig.selectedAccount=0;UserConfig.getInstance(0).active=true;UserConfig.getInstance(0).user=11;PurpleArchiveLogin.source=slot->"11111111111111111111111111111111";
         PurpleArchive.refresh(0,()->{});await(()->PurpleArchive.status(0).state.equals("Ready"),"offline archive ready");worker=PurpleArchive.existing(PurpleAccountFiles.capture(0));
-        byte[] data=bytes(2*1048576+19);TLRPC.Message first=message(4000,"owned reader",data.length);retain(first,data);reads(first,data);
+        byte[] data=bytes(2*1048576+19);TLRPC.Message first=message(4000,"owned reader",data.length);long initialStageStart=System.nanoTime();boolean initialStageCompleted=false;
+        try{retain(first,data);initialStageCompleted=true;}
+        finally{System.out.println("ARCHIVE_B3B_INITIAL_STAGE_MS="+TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-initialStageStart));System.out.println("ARCHIVE_B3B_INITIAL_STAGE_DEADLINE_MS=40000");System.out.println("ARCHIVE_B3B_INITIAL_STAGE_COMPLETED="+initialStageCompleted);}
+        reads(first,data);
         TLRPC.Message shared=message(4001,"shared canonical blob",data.length);retain(shared,data);provider(shared,data);exports(shared,data);broken(shared);limits(shared);passcode(shared);
         TLRPC.Message empty=message(4002,"known empty",0);retain(empty,new byte[0]);Destination zero=new Destination();check(save(open(empty),zero).saved&&zero.closed&&zero.bytes.size()==0,"zero-byte Save verifies the authenticated empty manifest");
         discard(shared);logout();
