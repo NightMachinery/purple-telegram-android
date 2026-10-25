@@ -153,6 +153,7 @@ final class PurpleArchiveRemoval {
             } else if (action == 10) {
                 if (directory != null) {
                     removeTree(directory, "causal");
+                    removeTree(directory, "lifecycle");
                     try (PurpleArchiveFiles.Listing listing = directory.listing()) {
                         for (;;) {
                             String[] page = listing.next(); if (page.length == 0) break;

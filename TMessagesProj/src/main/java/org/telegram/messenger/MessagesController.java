@@ -8298,6 +8298,7 @@ public class MessagesController extends BaseController implements NotificationCe
         int currentServerTime = getConnectionsManager().getCurrentTime();
 
         if ((currentDeletingTaskMids != null || currentDeletingTaskMediaMids != null) && (runnable || currentDeletingTaskTime != 0 && currentDeletingTaskTime <= currentServerTime)) {
+            org.telegram.messenger.purple.PurpleArchiveLifecycle.expiry(currentAccount, getMessagesStorage(), currentDeletingTaskMids, currentDeletingTaskMediaMids);
             currentDeletingTaskTime = 0;
             if (currentDeleteTaskRunnable != null && !runnable) {
                 Utilities.stageQueue.cancelRunnable(currentDeleteTaskRunnable);
@@ -8323,6 +8324,7 @@ public class MessagesController extends BaseController implements NotificationCe
                             mids.remove((Integer) id);
                             viewerObject.forceExpired = true;
                             final long taskId = createDeleteShowOnceTask(dialogId, id);
+                            org.telegram.messenger.purple.PurpleArchiveLifecycle.pending(currentAccount, getMessagesStorage(), taskId, dialogId, id, true);
                             SecretMediaViewer.getInstance().setOnClose(() -> doDeleteShowOnceTask(taskId, dialogId, id));
                             getNotificationCenter().postNotificationName(NotificationCenter.updateMessageMedia, viewerObject.messageOwner);
                         }
@@ -14494,6 +14496,7 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public void doDeleteShowOnceTask(long taskId, long dialogId, int mid) {
+        org.telegram.messenger.purple.PurpleArchiveLifecycle.replay(currentAccount, getMessagesStorage(), taskId, dialogId, mid);
         getMessagesStorage().removePendingTask(taskId);
         ArrayList<Integer> mids = new ArrayList<>();
         mids.add(mid);

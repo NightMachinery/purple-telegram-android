@@ -4776,6 +4776,7 @@ public class MessagesStorage extends BaseController {
             SQLitePreparedStatement state = null;
             SQLitePreparedStatement state_saved = null;
             try {
+                org.telegram.messenger.purple.PurpleArchiveLifecycle.beforeMediaEmpty(currentAccount, database, dialogId, mids);
                 ArrayList<File> filesToDelete = new ArrayList<>();
                 ArrayList<String> namesToDelete = new ArrayList<>();
                 ArrayList<Pair<Long, Integer>> idsToDelete = new ArrayList<>();
@@ -5926,6 +5927,7 @@ public class MessagesStorage extends BaseController {
                 }
                 state.dispose();
                 state = null;
+                org.telegram.messenger.purple.PurpleArchiveLifecycle.scheduled(currentAccount, database, dialogId, messageId);
                 database.executeFast(String.format(Locale.US, "UPDATE messages_v2 SET ttl = 0 WHERE mid = %d AND uid = %d", messageId, dialogId)).stepThis().dispose();
                 getMessagesController().didAddedNewTask(minDate, dialogId, messages);
             } catch (Exception e) {
@@ -5973,6 +5975,7 @@ public class MessagesStorage extends BaseController {
                 state.dispose();
                 state = null;
                 database.commitTransaction();
+                org.telegram.messenger.purple.PurpleArchiveLifecycle.scheduled(currentAccount, database, dialogId, messages);
                 database.executeFast(String.format(Locale.US, "UPDATE messages_v2 SET ttl = 0 WHERE uid = %d AND mid IN(%s)", dialogId, TextUtils.join(", ", mids))).stepThis().dispose();
                 getMessagesController().didAddedNewTask(minDate, dialogId, messages);
             }
@@ -6057,6 +6060,7 @@ public class MessagesStorage extends BaseController {
                     state.dispose();
                     state = null;
                     database.commitTransaction();
+                    org.telegram.messenger.purple.PurpleArchiveLifecycle.scheduled(currentAccount, database, dialogId, messages);
                     database.executeFast(String.format(Locale.US, "UPDATE messages_v2 SET ttl = 0 WHERE mid IN(%s) AND uid = %d", mids.toString(), dialogId)).stepThis().dispose();
                     getMessagesController().didAddedNewTask(minDate, dialogId, messages);
                 }

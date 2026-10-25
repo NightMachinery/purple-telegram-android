@@ -24,6 +24,15 @@ public final class PurpleArchiveLogoutCrashCases {
   if(seed){
    for(int slot=0;slot<2;slot++){UserConfig.getInstance(slot).active=true;UserConfig.getInstance(slot).user=slot==0?11:22;PurpleArchive.refresh(slot,()->{});final int s=slot;await(()->PurpleArchive.status(s).state.equals("Ready"));}
    PurpleArchiveBinding a=binding("0-11"),b=binding("0-22");PurpleArchive.Worker owner=owner("0-11");
+   owner.queue.submit(()->{
+    try {
+     for(String name:new String[]{"lifecycle","staging"}) {
+      PurpleArchiveFiles.Directory directory=owner.store.directory.child(name,true).child("crash-owned",true);
+      byte[] frame=PurpleArchiveCore.unbase64(PurpleArchiveCore.call("journalSeal",owner.store.arguments().put("token","eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee").put("bytes",PurpleArchiveCore.base64(new byte[]{1,2,3})),owner.store.crypto()).getString("bytes"));
+      directory.publish("retained",directory.read("retained",65536),frame);
+     }
+    }catch(Exception e){throw new RuntimeException(e);}
+   }).get(10,TimeUnit.SECONDS);
    File adb=db(a),bdb=db(b),bwal=new File(bdb+"-wal");JSONObject state=new JSONObject().put("a",a.value).put("b",b.value).put("bDbHash",PurpleArchiveCore.base64(sha(bdb))).put("bWalHash",PurpleArchiveCore.base64(sha(bwal)));JSONObject keys=new JSONObject();for(Map.Entry<String,javax.crypto.SecretKey> e:PurpleArchivePlatformProvider.keys.entrySet())keys.put(e.getKey(),PurpleArchiveCore.base64(e.getValue().getEncoded()));state.put("syntheticKeys",keys);
    CountDownLatch blocked=new CountDownLatch(1);owner.queue.execute(()->{blocked.countDown();try{new CountDownLatch(1).await();}catch(InterruptedException e){throw new AssertionError(e);}});check(blocked.await(5,TimeUnit.SECONDS),"owner blocked");
    long start=System.nanoTime();PurpleArchive.beforeLogout(0);UserConfig.getInstance(0).active=false;UserConfig.getInstance(0).user=0;PurpleAccountFiles.identityChanged(0);check(System.nanoTime()-start<500_000_000L,"logout returns promptly");
@@ -45,6 +54,7 @@ public final class PurpleArchiveLogoutCrashCases {
    }
    PurpleArchive.initialize();java.lang.reflect.Field field=PurpleArchive.class.getDeclaredField("recovery");field.setAccessible(true);((ScheduledExecutorService)field.get(null)).submit(()->{}).get(10,TimeUnit.SECONDS);
    PurpleArchiveBinding a=new PurpleArchiveBinding("0-11",state.getJSONObject("a")),b=new PurpleArchiveBinding("0-22",state.getJSONObject("b"));await(()->!dbSafe(a).exists()&&!PurpleArchivePlatformProvider.keys.containsKey(a.alias()));check(PurpleArchive.status(0).state.equals("Signed out"),"A remains signed out");
+   check(!dbSafe(a).getParentFile().exists(),"restart erases lifecycle and nested staging directories with the old store");
    check(Arrays.equals(PurpleArchiveCore.unbase64(state.getString("bDbHash")),sha(db(b)))&&Arrays.equals(PurpleArchiveCore.unbase64(state.getString("bWalHash")),sha(new File(db(b)+"-wal"))),"B db and WAL unchanged");
    System.out.println("ARCHIVE_LOGOUT_CRASH_CHECKS="+checks);
   }

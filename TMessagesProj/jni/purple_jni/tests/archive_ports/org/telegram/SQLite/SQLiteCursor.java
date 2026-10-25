@@ -4,6 +4,7 @@ public final class SQLiteCursor {
     private final Object[][] rows; private int index = -1;
     public SQLiteCursor(Object[][] rows) { this.rows = rows; }
     public boolean next() { return ++index < rows.length; }
+    public int intValue(int column) { return rows[index][column] == null ? 0 : ((Number) rows[index][column]).intValue(); }
     public long longValue(int column) { return ((Number) rows[index][column]).longValue(); }
     public NativeByteBuffer byteBufferValue(int column) {
         byte[] bytes = (byte[]) rows[index][column]; if (bytes == null) return null;

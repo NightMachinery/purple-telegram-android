@@ -338,9 +338,15 @@ final class PurpleArchiveStore implements AutoCloseable {
     }
     void closeDatabase() {
         checkOwner();
+        try { PurpleArchiveStagingRecovery.close(this); }
+        catch (Exception | LinkageError e) { throw new IllegalStateException("Archive staging recovery not closed", e); }
         if (readers != 0) throw new IllegalStateException("Archive readers still active");
         if (database != null) { database.close(); database = null; }
-        if (crypto != null) { crypto.close(); crypto = null; }
+        if (crypto != null) {
+            try { PurpleArchiveCore.call("stagingCloseAll", binding.arguments().put("workGeneration", binding.generation), crypto); }
+            catch (Exception | LinkageError e) { throw new IllegalStateException("Archive native finalizers not closed", e); }
+            crypto.close(); crypto = null;
+        }
     }
     @Override public void close() {
         if (closed) return;

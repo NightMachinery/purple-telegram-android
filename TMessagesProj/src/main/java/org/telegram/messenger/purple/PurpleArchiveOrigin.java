@@ -8,7 +8,9 @@ public final class PurpleArchiveOrigin {
     public static final class Cause {
         final int origin, pts;
         final String stream, token;
-        Cause(int origin, String stream, int pts, String token) { this.origin = origin; this.stream = stream; this.pts = pts; this.token = token; }
+        final long selection;
+        Cause(int origin, String stream, int pts, String token) { this(origin, stream, pts, token, PurpleArchiveViewerModel.selectionGeneration()); }
+        Cause(int origin, String stream, int pts, String token, long selection) { this.origin = origin; this.stream = stream; this.pts = pts; this.token = token; this.selection = selection; }
     }
     public static final class Batch {
         final PurpleAccountFiles.Identity identity;

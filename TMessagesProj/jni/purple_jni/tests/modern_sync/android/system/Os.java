@@ -21,6 +21,22 @@ public final class Os {
         PosixFilePermission.OTHERS_EXECUTE,
     };
 
+    private static long attribute(Object value, String name) throws Exception {
+        java.lang.reflect.Field field = value.getClass().getDeclaredField(name); field.setAccessible(true); return field.getLong(value);
+    }
+    public static StructStat fstat(java.io.FileDescriptor descriptor) throws ErrnoException {
+        try {
+            java.lang.reflect.Field access = sun.misc.Unsafe.class.getDeclaredField("theUnsafe"); access.setAccessible(true);
+            sun.misc.Unsafe unsafe = (sun.misc.Unsafe) access.get(null);
+            int fd = unsafe.getInt(descriptor, unsafe.objectFieldOffset(java.io.FileDescriptor.class.getDeclaredField("fd")));
+            if (fd < 0) throw new java.io.IOException("closed descriptor");
+            Class<?> type = Class.forName("sun.nio.fs.UnixFileAttributes"); java.lang.reflect.Method get = type.getDeclaredMethod("get", int.class); get.setAccessible(true);
+            Object value = get.invoke(null, fd);
+            return new StructStat((int) attribute(value, "st_mode"), attribute(value, "st_size"), attribute(value, "st_dev"), attribute(value, "st_ino"),
+                attribute(value, "st_nlink"), attribute(value, "st_mtime_sec"), attribute(value, "st_ctime_sec"));
+        } catch (Exception e) { throw new ErrnoException("fstat", OsConstants.EIO); }
+    }
+
     public static StructStat lstat(String path) throws ErrnoException {
         try {
             java.util.Map<String,Object> a=Files.readAttributes(Paths.get(path),"unix:mode,size,dev,ino,nlink,lastModifiedTime,ctime",LinkOption.NOFOLLOW_LINKS);

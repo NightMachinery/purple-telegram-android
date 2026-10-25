@@ -15593,6 +15593,7 @@ public class ChatActivity extends BaseFragment implements
             return null;
         }
         final long taskId = getMessagesController().createDeleteShowOnceTask(dialog_id, messageObject.getId());
+        org.telegram.messenger.purple.PurpleArchiveLifecycle.pending(currentAccount, getMessagesStorage(), taskId, dialog_id, messageObject.getId(), false);
         messageObject.forceExpired = true;
         if (messageObject.isOutOwner() || !messageObject.isRoundOnce() && !messageObject.isVoiceOnce()) {
             ArrayList<MessageObject> msgs = new ArrayList<>();

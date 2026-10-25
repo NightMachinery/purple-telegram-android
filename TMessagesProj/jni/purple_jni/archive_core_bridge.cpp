@@ -1,5 +1,8 @@
 #include <jni.h>
 #include "purple/purple_archive_lifecycle.h"
+#include "purple/purple_archive_staging.h"
+#include <map>
+#include <mutex>
 #include "purple/purple_sync_json.h"
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonArray>
@@ -213,7 +216,9 @@ QJsonObject Removal(const ArchiveRemoval &value) {
     return { {u"status"_q,u"Ready"_q}, {u"tombstone"_q,Encoded(*encoded)}, {u"action"_q,int(value.action)},
         {u"generation"_q,QString::number(value.epoch.generation)}, {u"operation"_q,value.operationId} };
 }
+#include "archive_staging_bridge.inc"
 QJsonObject Dispatch(const QString &operation, const QJsonObject &args, const Crypto &crypto) {
+    if(auto media=ArchiveMediaDispatch(operation,args,crypto))return *media;
     if (operation == u"canonical"_q) {
         auto result = CanonicalizeSyncJson(Bytes(args.value(u"bytes"_q)));
         return result ? QJsonObject{{u"status"_q,u"Ready"_q},{u"bytes"_q,Encoded(result.canonical)}} : QJsonObject{{u"status"_q,u"Invalid"_q}};
@@ -315,6 +320,10 @@ QJsonObject Dispatch(const QString &operation, const QJsonObject &args, const Cr
         return output ? QJsonObject{{u"status"_q,u"Ready"_q},{u"bytes"_q,Encoded(output.bytes)}} : QJsonObject{{u"status"_q,u"Invalid"_q}};
     }
 
+    if (operation == u"causeToken"_q) {
+        auto token=ArchiveSqlToken(account,ArchiveIndexKind::Blob,(u"lifecycle-task/"_q+Text(args,u"task"_q)).toUtf8(),security);
+        return token.isEmpty()?QJsonObject{{u"status"_q,u"Invalid"_q}}:QJsonObject{{u"status"_q,u"Ready"_q},{u"token"_q,token}};
+    }
     if (operation == u"blobToken"_q) {
         auto token=ArchiveSqlToken(account,ArchiveIndexKind::Blob,Text(args,u"blob"_q).toUtf8(),security);
         return token.isEmpty()?QJsonObject{{u"status"_q,u"Invalid"_q}}:QJsonObject{{u"status"_q,u"Ready"_q},{u"token"_q,token}};
@@ -353,6 +362,9 @@ QJsonObject Dispatch(const QString &operation, const QJsonObject &args, const Cr
             auto key = Key(args.value(u"key"_q).toObject()); if (key.account != account) throw std::runtime_error("archive query account");
             if (query == u"message"_q) { statement = ArchiveSqlReadMessage(key,security); id = ArchiveSqlMessageId(key,security); }
             else if (query == u"head"_q) statement = ArchiveSqlReadHead(key,security);
+            else if (query == u"jobs"_q) statement = ArchiveSqlVersionJobs(key,Text(args,u"version"_q),128,security);
+            else if (query == u"job"_q || query == u"blob"_q) statement = ArchiveSqlReadRecord(account,
+                query == u"job"_q ? ArchiveRecordKind::Job : ArchiveRecordKind::Blob,Text(args,u"record"_q),security);
             else if (query == u"versions"_q) statement = ArchiveSqlReadVersions(key,args.value(u"limit"_q).toInt(32),security,args.value(u"before"_q).toString());
             else if (query == u"version"_q) { statement = ArchiveSqlReadVersion(key,Text(args,u"version"_q),security); id = ArchiveSqlChildId(key,ArchiveIndexKind::Version,Text(args,u"version"_q),security); }
             else if (query == u"receipt"_q) { statement = ArchiveSqlReadReceipt(key,Text(args,u"event"_q),security); id = ArchiveSqlChildId(key,ArchiveIndexKind::Event,Text(args,u"event"_q),security); }

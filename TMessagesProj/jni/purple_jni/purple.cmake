@@ -42,6 +42,7 @@ add_library(purplecore SHARED
         purple/purple/purple_archive_source.cpp
         purple/purple/purple_archive_envelope.cpp
         purple/purple/purple_archive_lifecycle.cpp
+        purple/purple/purple_archive_staging.cpp
         purple/purple/purple_archive_media_lifecycle.cpp
         purple/purple/purple_archive_views.cpp
         purple/purple/purple_archive_sql.cpp

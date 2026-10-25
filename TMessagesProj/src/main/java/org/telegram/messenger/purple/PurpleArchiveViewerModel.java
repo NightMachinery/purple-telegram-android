@@ -15,6 +15,7 @@ public final class PurpleArchiveViewerModel implements AutoCloseable {
     public static long selectionGeneration() { return selection.get(); }
     public static void selectionChanged(int account) {
         selection.incrementAndGet();
+        PurpleArchiveLifecycle.revoke(-1); PurpleArchiveAcquiredSource.revoke(-1);
         ArrayList<PurpleArchiveViewerModel> old;
         synchronized (viewers) { old = new ArrayList<>(viewers); }
         for (PurpleArchiveViewerModel viewer : old) {

@@ -28,7 +28,7 @@ final class PurpleArchiveSlice implements AutoCloseable {
                     if (result.rows != 1) throw new PurpleArchiveStore.Failure("Archive head missing");
                     JSONObject decoded = add(3, token + "/" + headId, 0, result.values[0][0].bytes);
                     head = decoded.getJSONObject("value").getJSONObject("snapshot");
-                    receipt(head.getString("id")); receipt(head.getString("revision"));
+                    receipt(head.getString("id")); receipt(head.getString("revision")); dependencies(head);
                 }
                 if (replay != null && !replay.isEmpty()) receipt(replay);
             }
@@ -57,6 +57,42 @@ final class PurpleArchiveSlice implements AutoCloseable {
         PurpleArchiveSqlite.Result result = read(query);
         if (result.rows == 0) return false;
         add(4, query.getString("id"), 0, result.values[0][0].bytes); return true;
+    }
+    void media(JSONObject binding, String blob) throws Exception {
+        JSONObject source = binding.getJSONObject("source");
+        String version = source.getString("version");
+        if (!facts.optString("head").equals(version)) {
+            JSONObject query = PurpleArchiveCore.call("query", store.arguments().put("query", "version").put("key", key).put("version", version), store.crypto());
+            PurpleArchiveSqlite.Result found = read(query);
+            if (found.rows != 1) throw new PurpleArchiveStore.Failure("Archive historical media version missing");
+            JSONObject historical = add(3, query.getString("id"), 0, found.values[0][0].bytes).getJSONObject("value").getJSONObject("snapshot");
+            receipt(historical.getString("id")); receipt(historical.getString("revision")); dependencies(historical);
+        }
+        JSONObject query = PurpleArchiveCore.call("query", store.arguments().put("query", "jobs").put("key", key).put("version", version), store.crypto());
+        PurpleArchiveSqlite.Result jobs = read(query);
+        if (jobs.rows >= 128) throw new PurpleArchiveStore.Failure("Archive media job slice limit");
+        for (PurpleArchiveSqlite.Value[] job : jobs.values) add(6, job[0].text(), 0, job[1].bytes);
+        if (blob != null && !blob.isEmpty()) blob(blob);
+    }
+    void blob(String id) throws Exception {
+        JSONObject query = PurpleArchiveCore.call("query", store.arguments().put("query", "blob").put("key", key).put("record", id), store.crypto());
+        PurpleArchiveSqlite.Result found = read(query);
+        if (found.rows == 1) add(5, found.values[0][0].text(), 0, found.values[0][1].bytes);
+    }
+    private void dependencies(JSONObject version) throws Exception {
+        JSONArray media = version.getJSONArray("media"); boolean staged = false;
+        for (int i = 0; i < media.length(); ++i) {
+            JSONObject ref = media.getJSONObject(i); staged |= ref.getInt("state") == 1;
+            if (ref.getInt("state") == 2) blob(ref.getString("blobId"));
+        }
+        if (!staged) return;
+        JSONObject query = PurpleArchiveCore.call("query", store.arguments().put("query", "jobs").put("key", key).put("version", version.getString("id")), store.crypto());
+        PurpleArchiveSqlite.Result jobs = read(query);
+        if (jobs.rows >= 128) throw new PurpleArchiveStore.Failure("Archive media job slice limit");
+        for (PurpleArchiveSqlite.Value[] job : jobs.values) {
+            JSONObject value = add(6, job[0].text(), 0, job[1].bytes).getJSONObject("value");
+            if (value.getInt("state") == 1 && !value.getString("blobId").isEmpty()) blob(value.getString("blobId"));
+        }
     }
     static JSONObject open(PurpleArchiveStore store, PurpleArchiveStore.Reader reader, JSONObject row) throws Exception {
         if (row.getInt("kind") == 3) {

@@ -97,6 +97,7 @@ public final class PurpleArchive {
                 flushCaptureGap(this);
                 PurpleArchiveGaps.flush(store);
                 status = new Status("Ready", PurpleArchiveUsage.scan(store), store.hasGaps());
+                PurpleArchiveStagingRecovery.start(this);
             } catch (Exception | LinkageError e) {
                 if (store != null) {
                     try { store.drainReaders(); store.close(); store = null; } catch (Exception | LinkageError ignored) {}
@@ -250,13 +251,16 @@ public final class PurpleArchive {
     public static RemovalRequest prepareRemoval(int slot) {
         PurpleAccountFiles.Identity identity = PurpleAccountFiles.capture(slot);
         Worker worker = identity == null ? null : workers.get(identity.key);
-        return worker == null || worker.discardSeal == null ? null : new RemovalRequest(identity, worker);
+        if (worker == null || worker.discardSeal == null) return null;
+        PurpleArchiveAcquiredSource.revoke(slot);
+        return new RemovalRequest(identity, worker);
     }
     public static boolean remove(RemovalRequest request, Runnable delivered) {
         if (Build.VERSION.SDK_INT < 23 || request == null || !request.identity.current()) return false;
         Worker worker = request.worker;
         synchronized (request) { if (request.used || request.epoch != worker.deliveryEpoch || workers.get(request.identity.key) != worker) return false; request.used = true; }
         worker.closing = true;
+        PurpleArchiveAcquiredSource.revoke(request.identity.slot);
         worker.control(() -> {
             try {
                 if (!request.identity.current() || request.epoch != worker.deliveryEpoch)
@@ -278,6 +282,7 @@ public final class PurpleArchive {
         } catch (Exception | LinkageError e) { worker.status = new Status("Removal pending", worker.status.bytes, worker.status.gap); }
     }
     public static void beforeLogout(int slot) {
+        PurpleArchiveLifecycle.revoke(slot); PurpleArchiveAcquiredSource.revoke(slot);
         PurpleAccountFiles.Identity captured = PurpleAccountFiles.capture(slot);
         if (captured == null) return;
         revoked.set(slot, captured);
@@ -301,6 +306,7 @@ public final class PurpleArchive {
         return false;
     }
     public static void identityChanged(int slot) {
+        PurpleArchiveLifecycle.revoke(slot); PurpleArchiveAcquiredSource.revoke(slot);
         for (Worker worker : workers.values()) {
             PurpleAccountFiles.Identity identity = worker.identity;
             if (identity == null || identity.slot != slot) continue;
@@ -349,11 +355,28 @@ public final class PurpleArchive {
                 if (!active.getAsBoolean()) throw new PurpleArchiveStore.Failure("Archive capture cancelled");
                 ++worker.deliveryEpoch;
                 String outcome = PurpleArchiveSequence.capture(worker.store, input, active);
+                PurpleArchiveInline.capture(worker.store, input, active);
                 PurpleDiagLog.event("archive", outcome, PurpleDiagLog.slot(identity.slot));
             }
         }, deadline);
     }
-    private static void runCapture(PurpleAccountFiles.Identity identity, long bytes, ArchiveAction action, long deadline) {
+    static boolean media(PurpleAccountFiles.Identity identity, java.util.function.BooleanSupplier active, ArchiveAction action, Runnable refused) {
+        if (Build.VERSION.SDK_INT < 23 || identity == null || !allowed(identity) || !active.getAsBoolean()) return false;
+        Worker worker = existing(identity);
+        if (worker == null || worker.store == null) return false;
+        PurpleArchiveStore openingStore = worker.store;
+        try {
+            worker.queue.execute(() -> {
+                try {
+                    if (worker.closing || worker.retired || !identity.current() || !active.getAsBoolean()) { refused.run(); return; }
+                    if (workers.get(identity.key) != worker || worker.store != openingStore || !worker.status.state.equals("Ready") || !active.getAsBoolean()) { refused.run(); return; }
+                    action.run(worker, () -> !worker.closing && !worker.retired && identity.current() && active.getAsBoolean());
+                } catch (Exception | LinkageError e) { refused.run(); captureGap(identity, "acquired_media_failed"); }
+            });
+            return true;
+        } catch (java.util.concurrent.RejectedExecutionException e) { return false; }
+    }
+    static void runCapture(PurpleAccountFiles.Identity identity, long bytes, ArchiveAction action, long deadline) {
         if (android.os.Build.VERSION.SDK_INT < 23 || identity == null || !allowed(identity)) return;
         Worker worker = worker(identity.key);
         if (worker.closing || worker.retired || bytes > 8 * 1024 * 1024) { captureGap(identity, "capture_overflow"); return; }

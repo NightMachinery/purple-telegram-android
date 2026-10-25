@@ -33,17 +33,23 @@ main.write_text('''import java.io.File;
 public final class ArchiveHostMain {
     public static void main(String[] a) throws Exception {
         File expected = new File(a[0]).getCanonicalFile();
-        for (String name : new String[]{"Sqlite","Files","Paths","Binding","Catalogue","Core","Crypto","Keys","Store","Removal","Usage","Gaps","OwnedMedia","Login","Discard","Normalize","Origin","Slice","Sequence","Capture","ViewerModel",""}) {
+        for (String name : new String[]{"Sqlite","Files","Paths","Binding","Catalogue","Core","Crypto","Keys","Store","Removal","Usage","Gaps","OwnedMedia","Login","Discard","Normalize","Origin","Slice","Sequence","Capture","ViewerModel","Staging","Lifecycle","AcquiredSource","StagingRecovery","Inline",""}) {
             String type = "org.telegram.messenger.purple.PurpleArchive" + name;
             File origin = new File(Class.forName(type).getProtectionDomain().getCodeSource().getLocation().toURI()).getCanonicalFile();
             if (!origin.equals(expected)) throw new AssertionError("business class shadow: " + type);
             System.out.println(type + " origin=" + origin);
         }
-        if (a[1].startsWith("logout-")) org.telegram.messenger.purple.PurpleArchiveLogoutCrashCases.main(new String[]{a[2],a[3],a[1].substring(7)});
+        if (a[1].equals("provenance")) org.telegram.messenger.purple.PurpleArchiveProvenanceCases.main(new String[]{a[2],a[3]});
+        else if (a[1].equals("refused-retry")) org.telegram.messenger.purple.RefusedRetryAdmissionProbe.main(new String[]{a[2],a[3]});
+        else if (a[1].startsWith("seam-")) org.telegram.messenger.purple.B3aSeamProbe.main(new String[]{a[2],a[3],a[1].substring(5)});
+        else if (a[1].startsWith("torn-")) org.telegram.messenger.purple.TornRecoveryProbe.main(new String[]{a[2],a[3],a[1].split("-")[2],a[1].split("-")[1]});
+        else if (a[1].startsWith("logout-")) org.telegram.messenger.purple.PurpleArchiveLogoutCrashCases.main(new String[]{a[2],a[3],a[1].substring(7)});
         else if (a[1].startsWith("refusal-")) org.telegram.messenger.purple.PurpleArchiveRefusalCases.main(new String[]{a[2],a[3],a[1].substring(8)});
         else if (a[1].startsWith("selection-")) org.telegram.messenger.purple.PurpleArchiveSelectionCases.main(new String[]{a[2],a[3],a[1].substring(10)});
         else if (a[1].startsWith("login-")) org.telegram.messenger.purple.PurpleArchiveLoginRestartCases.main(new String[]{a[2],a[3],a[1].substring(6)});
         else if (a[1].equals("foundation")) org.telegram.messenger.purple.PurpleArchiveFoundationCases.main(new String[]{a[2],a[3]});
+        else if (a[1].startsWith("b3a-")) org.telegram.messenger.purple.PurpleArchiveB3aRestartCases.main(new String[]{a[2],a[3],a[1].substring(4)});
+        else if (a[1].equals("b3a")) org.telegram.messenger.purple.PurpleArchiveB3aCases.main(new String[]{a[2],a[3]});
         else if (a[1].equals("capture")) org.telegram.messenger.purple.PurpleArchiveCaptureCases.main(new String[]{a[2],a[3]});
         else if (a[1].startsWith("manager")) org.telegram.messenger.purple.PurpleArchiveManagerCases.main(new String[]{a[2],a[3],a[1].equals("manager-seed")?"seed":a[1].equals("manager-recover")?"recover":"session"});
         else org.telegram.messenger.purple.PurpleArchiveStoreCases.main(new String[]{a[2],a[3]});
@@ -61,5 +67,5 @@ def run(name, command):
     if result.returncode:
         raise SystemExit(result.returncode)
 run("javac", [compiler,"-source","8","-target","8","-proc:none","-sourcepath",empty,"-cp",classpath,"-d",out]+sources)
-for suite in ["foundation", "store", "manager", "manager-seed", "manager-recover", "login-seed", "login-same", "login-new", "logout-seed", "logout-restart", "logout-seed-reuse", "logout-reuse", "refusal-fence", "refusal-intent", "refusal-malformed", "refusal-oversized", "refusal-unreadable", "refusal-missing", "refusal-invalid", "selection-viewer", "selection-hook", "capture"]:
-    run(suite, [compiler.with_name("java"),"-Xcheck:jni","-Xmx512m","-XX:ActiveProcessorCount=2","-Djava.library.path="+str(a.core.parent),"-Dpurple.archive.format1="+str(tests/"archive/format1.sql"),"-cp",str(out)+os.pathsep+classpath,"ArchiveHostMain",production,suite,a.sqlite,a.output/("logout-reuse-fixtures" if suite in ["logout-seed-reuse", "logout-reuse"] else "logout-crash-fixtures" if suite.startswith("logout-") else "login-restart-fixtures" if suite.startswith("login-") else "manager-restart-fixtures" if suite in ["manager-seed", "manager-recover"] else suite+"-fixtures")])
+for suite in ["foundation", "store", "manager", "manager-seed", "manager-recover", "login-seed", "login-same", "login-new", "logout-seed", "logout-restart", "logout-seed-reuse", "logout-reuse", "refusal-fence", "refusal-intent", "refusal-malformed", "refusal-oversized", "refusal-unreadable", "refusal-missing", "refusal-invalid", "selection-viewer", "selection-hook", "capture", "b3a", "b3a-seed", "b3a-recover", "provenance", "refused-retry", "seam-discard", "seam-origin", "seam-logout", "torn-between-seed", "torn-between-recover", "torn-during-seed", "torn-during-recover"]:
+    run(suite, [compiler.with_name("java"),"-Xcheck:jni","--add-opens=java.base/sun.nio.fs=ALL-UNNAMED","-Xmx512m","-XX:ActiveProcessorCount=2","-Djava.library.path="+str(a.core.parent),"-Dpurple.archive.format1="+str(tests/"archive/format1.sql"),"-cp",str(out)+os.pathsep+classpath,"ArchiveHostMain",production,suite,a.sqlite,a.output/("torn-"+suite.split("-")[1]+"-fixtures" if suite.startswith("torn-") else "b3a-restart-fixtures" if suite.startswith("b3a-") else "logout-reuse-fixtures" if suite in ["logout-seed-reuse", "logout-reuse"] else "logout-crash-fixtures" if suite.startswith("logout-") else "login-restart-fixtures" if suite.startswith("login-") else "manager-restart-fixtures" if suite in ["manager-seed", "manager-recover"] else suite+"-fixtures")])

@@ -853,6 +853,7 @@ public class FileLoader extends BaseController {
         priority = getPriorityValue(priority);
 
         if (operation != null) {
+            org.telegram.messenger.purple.PurpleArchiveAcquiredSource.bind(currentAccount, operation, parentObject, document, imageLocation, locationSize);
             if (cacheType != 10 && operation.isPreloadVideoOperation()) {
                 operation.setIsPreloadVideoOperation(false);
             }
@@ -982,6 +983,7 @@ public class FileLoader extends BaseController {
         } else if (cacheType == ImageLoader.CACHE_TYPE_ENCRYPTED) {
             operation.setEncryptFile(true);
         }
+        org.telegram.messenger.purple.PurpleArchiveAcquiredSource.bind(currentAccount, operation, parentObject, document, imageLocation, locationSize);
         operation.setPaths(currentAccount, fileName, loaderQueue, storeDir, tempDir, storeFileName);
         if (cacheType == 10) {
             operation.setIsPreloadVideoOperation(true);

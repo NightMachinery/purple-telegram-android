@@ -1689,6 +1689,7 @@ public class FileLoadOperation {
                             }
                         }
                     }
+                    org.telegram.messenger.purple.PurpleArchiveAcquiredSource.complete(FileLoadOperation.this, cacheFileFinal, encryptFile, encryptKey, encryptIv);
                     delegate.didFinishLoadingFile(FileLoadOperation.this, cacheFileFinal);
                 });
             });
@@ -1858,6 +1859,7 @@ public class FileLoadOperation {
                 boolean finishedDownloading;
                 boolean finishPreload = false;
                 if (isPreloadVideoOperation) {
+                    org.telegram.messenger.purple.PurpleArchiveAcquiredSource.bytes(this, requestInfo.offset, bytes.buffer, bytes.limit(), !isCdn && key == null);
                     preloadStream.writeLong(requestInfo.offset);
                     preloadStream.writeLong(currentBytesSize);
                     preloadStreamFileOffset += 16;
@@ -1926,6 +1928,7 @@ public class FileLoadOperation {
                             bytes.limit((int) (limit));
                         }
                     }
+                    if (!isCdn) org.telegram.messenger.purple.PurpleArchiveAcquiredSource.bytes(this, requestInfo.offset, bytes.buffer, bytes.limit(), true);
                     if (encryptFile) {
                         long offset = requestInfo.offset / 16;
                         encryptIv[15] = (byte) (offset & 0xff);
@@ -1998,6 +2001,7 @@ public class FileLoadOperation {
                                     cacheFileTemp.delete();
                                     return false;
                                 }
+                                org.telegram.messenger.purple.PurpleArchiveAcquiredSource.verified(this, fileOffset, cdnCheckBytes, (int) availableSize);
                                 cdnHashes.remove(fileOffset);
                                 addPart(notCheckedCdnRanges, cdnCheckPart, cdnCheckPart + 1, false);
                             }
@@ -2114,6 +2118,7 @@ public class FileLoadOperation {
     }
 
     protected void onFail(boolean thread, final int reason) {
+        org.telegram.messenger.purple.PurpleArchiveAcquiredSource.failed(this);
         cleanup();
         state = reason == 1 ? stateCanceled : stateFailed;
         if (delegate != null) {
