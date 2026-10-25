@@ -1,0 +1,1 @@
+package org.telegram.messenger;import java.io.File;import org.telegram.tgnet.TLObject;public final class FileLoader {public static FileLoader getInstance(int i){return new FileLoader();}public File getPathToAttach(TLObject o,boolean b){return null;}}

@@ -1,0 +1,1 @@
+package org.telegram.messenger;import org.telegram.tgnet.TLRPC;public final class DialogObject {public static long makeEncryptedDialogId(long id){return 0x4000000000000000L|(id&0xffffffffL);}public static long getPeerDialogId(TLRPC.Peer p){return p.user_id!=0?p.user_id:p.chat_id!=0?-p.chat_id:-p.channel_id;}}

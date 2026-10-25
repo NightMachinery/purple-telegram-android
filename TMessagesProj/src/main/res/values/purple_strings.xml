@@ -783,4 +783,5 @@
     <string name="PurpleArchiveMediaNotAvailable">Attachment descriptors are retained. Media bytes are not available in this view.</string>
     <string name="PurpleArchiveOlder">Older versions</string>
     <string name="PurpleArchiveUnknownDate">Unknown</string>
+    <string name="PurpleShortcutUnavailable">This shortcut is no longer available. Open Telegram to choose the account and chat.</string>
 </resources>

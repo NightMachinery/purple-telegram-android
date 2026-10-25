@@ -1,0 +1,1 @@
+package androidx.core.graphics.drawable; import android.content.Context; import android.graphics.Bitmap; public final class IconCompat {public static IconCompat createWithResource(Context c,int r){return new IconCompat();} public static IconCompat createWithBitmap(Bitmap b){return new IconCompat();}}

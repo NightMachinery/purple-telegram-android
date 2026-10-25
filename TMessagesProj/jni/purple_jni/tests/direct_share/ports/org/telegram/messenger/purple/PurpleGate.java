@@ -1,0 +1,1 @@
+package org.telegram.messenger.purple;import java.util.*;public final class PurpleGate {public static int generation;public static final Set<String> hidden=new HashSet<>();public static int generation(){return generation;}public static boolean hiddenEverywhere(int s,long p){return hidden.contains(s+":"+p);}public static boolean hiddenFromSuggestions(int s,long p){return false;}}

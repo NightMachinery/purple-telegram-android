@@ -4993,6 +4993,7 @@ public class MediaDataController extends BaseController {
     private static Path roundPath;
 
     public void buildShortcuts() {
+        if (org.telegram.messenger.purple.PurpleDirectShare.request()) return;
         if (Build.VERSION.SDK_INT < 23) {
             return;
         }
@@ -5656,7 +5657,7 @@ public class MediaDataController extends BaseController {
         shortcutIntent.putExtra("currentAccount", currentAccount);
         shortcutIntent.setAction("com.tmessages.openchat" + dialogId);
         shortcutIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        return shortcutIntent;
+        return org.telegram.messenger.purple.PurpleDirectShare.bindShortcut(currentAccount, dialogId, shortcutIntent);
     }
 
     private Intent createIntrnalAttachedBotShortcutIntent(long botId) {
@@ -5672,7 +5673,7 @@ public class MediaDataController extends BaseController {
         shortcutIntent.putExtra("currentAccount", currentAccount);
         shortcutIntent.setAction(OpenAttachedMenuBotReceiver.ACTION + botId);
         shortcutIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        return shortcutIntent;
+        return org.telegram.messenger.purple.PurpleDirectShare.bindShortcut(currentAccount, botId, shortcutIntent);
     }
 
     public final HashMap<String, Utilities.Callback<Boolean>> shortcutCallbacks = new HashMap<>();
@@ -5873,6 +5874,7 @@ public class MediaDataController extends BaseController {
     }
 
     public void uninstallShortcut(long dialogId, int type) {
+        org.telegram.messenger.purple.PurpleDirectShare.removeConversation(currentAccount, dialogId, type == SHORTCUT_TYPE_USER_OR_CHAT);
         try {
             if (Build.VERSION.SDK_INT >= 26) {
                 ArrayList<String> arrayList = new ArrayList<>();

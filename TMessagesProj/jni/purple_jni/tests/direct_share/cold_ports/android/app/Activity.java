@@ -1,0 +1,1 @@
+package android.app;import android.content.*;import android.os.Bundle;public class Activity extends Context {public static Intent incoming,last;public static int starts,finishes;protected void onCreate(Bundle b){}public Intent getIntent(){return incoming;}public void startActivity(Intent i){last=i;++starts;}public void finish(){++finishes;}}

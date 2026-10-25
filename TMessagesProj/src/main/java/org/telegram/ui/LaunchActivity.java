@@ -1529,6 +1529,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         }
         int flags = intent.getFlags();
         String action = intent.getAction();
+        if (!org.telegram.messenger.purple.PurpleDirectShare.admitIncoming(this, intent)) return false;
         final int[] intentAccount = new int[]{intent.getIntExtra("currentAccount", UserConfig.selectedAccount)};
         switchToAccount(intentAccount[0], true);
         final boolean isVoipIntent = action != null && action.equals("voip");
@@ -1558,7 +1559,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         int open_widget_edit = -1;
         int open_widget_edit_type = -1;
         int open_new_dialog = 0;
-        long dialogId = 0;
+        long dialogId = org.telegram.messenger.purple.PurpleDirectShare.shareRecipient(intent);
         boolean showDialogsList = false;
         boolean showPlayer = false;
         boolean showLocations = false;
@@ -2974,6 +2975,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 }
             }
 
+            if (!org.telegram.messenger.purple.PurpleDirectShare.admitIncoming(this, intent)) return false;
             if (push_story_id > 0) {
                 NotificationsController.getInstance(intentAccount[0]).processSeenStoryReactions(UserConfig.getInstance(intentAccount[0]).getClientUserId(), push_story_id);
                 long storyDialogId = UserConfig.getInstance(currentAccount).getClientUserId();

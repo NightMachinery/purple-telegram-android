@@ -1,0 +1,1 @@
+package org.telegram.messenger.purple;import org.telegram.messenger.UserConfig;final class PurpleArchiveLogin {static String context(int slot)throws Exception{UserConfig c=UserConfig.getInstance(slot);if(c.missingLogin)throw new Exception("synthetic missing login");return String.format("%016x%016x",c.user,c.loginSession);}}

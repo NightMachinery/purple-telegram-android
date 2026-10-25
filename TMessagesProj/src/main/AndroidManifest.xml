@@ -223,6 +223,7 @@
             <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
         </activity-alias>
 
+        <activity android:name="org.telegram.messenger.purple.PurpleDirectShareActivity" android:exported="true" android:theme="@android:style/Theme.NoDisplay" />
         <activity
             android:name="org.telegram.ui.LaunchActivity"
             android:theme="@style/Theme.TMessages.Start"

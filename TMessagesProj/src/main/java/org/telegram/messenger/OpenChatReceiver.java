@@ -42,6 +42,7 @@ public class OpenChatReceiver extends Activity {
         Intent intent2 = new Intent(this, LaunchActivity.class);
         intent2.setAction(intent.getAction());
         intent2.putExtras(intent);
+        org.telegram.messenger.purple.PurpleDirectShare.forwardShortcut(intent2);
         startActivity(intent2);
         finish();
 

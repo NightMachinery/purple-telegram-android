@@ -3613,7 +3613,7 @@ public class NotificationsController extends BaseController implements Notificat
             return null;
         }
         try {
-            String id = "ndid_" + did;
+            String id = org.telegram.messenger.purple.PurpleDirectShare.conversationId(currentAccount, did);
 
             Intent shortcutIntent = new Intent(ApplicationLoader.applicationContext, OpenChatReceiver.class);
             shortcutIntent.setAction("com.tmessages.openchat" + Math.random() + Integer.MAX_VALUE);
@@ -3640,7 +3640,7 @@ public class NotificationsController extends BaseController implements Notificat
                 }
             }
             ShortcutInfoCompat shortcut = shortcutBuilder.build();
-            ShortcutManagerCompat.pushDynamicShortcut(ApplicationLoader.applicationContext, shortcut);
+            if (!org.telegram.messenger.purple.PurpleDirectShare.conversation(currentAccount, did, shortcut)) return null;
             builder.setShortcutInfo(shortcut);
             Intent intent = new Intent(ApplicationLoader.applicationContext, BubbleActivity.class);
             intent.setAction("com.tmessages.openchat" + Math.random() + Integer.MAX_VALUE);

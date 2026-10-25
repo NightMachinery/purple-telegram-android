@@ -1,0 +1,1 @@
+package org.telegram.messenger.purple;import java.util.*;import org.telegram.tgnet.TLRPC;import org.telegram.messenger.MediaDataController;public final class PurpleHints {public static ArrayList<TLRPC.TL_topPeer> visibleHints(int s){return new ArrayList<>(MediaDataController.getInstance(s).hints);}}

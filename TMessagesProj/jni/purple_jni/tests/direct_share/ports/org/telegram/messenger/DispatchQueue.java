@@ -1,0 +1,1 @@
+package org.telegram.messenger; import java.util.*; public final class DispatchQueue {public final List<Runnable> pending=new ArrayList<>();public boolean postRunnable(Runnable r){pending.add(r);return true;}public void drain(){while(!pending.isEmpty())pending.remove(0).run();}}
