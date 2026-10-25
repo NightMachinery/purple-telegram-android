@@ -796,4 +796,18 @@
     <string name="PurplePeekWaitHelp">Successful Peeks and extensions increase every gated wait on this device. The streak resets after the configured time without a Peek, starting when the last Peek ends.</string>
     <string name="PurplePeekWaitBounds">Step: 1–300 seconds. Maximum extra: 0–3600 seconds. Reset: 1–1440 minutes.</string>
     <string name="PurplePeekWaitBreakdown">%1$d s (%2$d s + %3$d s from recent Peeks, resets %4$d min after your last Peek)</string>
+    <string name="PurpleArchiveMediaComplete">Retained attachment</string>
+    <string name="PurpleArchiveMediaPartial">Attachment partly retained. Refresh after retention finishes.</string>
+    <string name="PurpleArchiveMediaMissing">Attachment not retained. No download will be started.</string>
+    <string name="PurpleArchiveMediaUnavailable">This archived attachment is unavailable or its access was revoked. Return to history and refresh.</string>
+    <string name="PurpleArchiveOpenMedia">Open retained attachment</string>
+    <string name="PurpleArchiveSaveMedia">Save retained attachment…</string>
+    <string name="PurpleArchiveUnsupportedMedia">This format cannot be opened here. Save it to open it with another app. Audio and video playback requires Android 8 or later.</string>
+    <string name="PurpleArchiveSaveDisclosure">Save writes directly to the file you choose. It is not an atomic export: an interruption may leave a partial file. Telegram attempts to delete incomplete output, but the storage provider may refuse. A completed saved copy remains after archive deletion or logout.</string>
+    <string name="PurpleArchiveSaving">Saving verified archived bytes…</string>
+    <string name="PurpleArchiveSaved">Attachment saved. This copy is outside the archive.</string>
+    <string name="PurpleArchiveSaveFailed">Save did not complete. Incomplete output was removed.</string>
+    <string name="PurpleArchiveSaveCleanupFailed">Save did not complete, and incomplete output could not be removed. Check the file you chose.</string>
+    <string name="PurpleArchiveChooseSave">Choose where to save this archived attachment.</string>
+    <string name="PurpleArchiveMediaPreparing">Verifying the retained attachment…</string>
 </resources>

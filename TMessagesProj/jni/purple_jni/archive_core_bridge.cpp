@@ -8,6 +8,7 @@
 #include <QtCore/QJsonArray>
 #include <stdexcept>
 #include <type_traits>
+#include <limits>
 
 namespace {
 using namespace Purple;
@@ -217,7 +218,9 @@ QJsonObject Removal(const ArchiveRemoval &value) {
         {u"generation"_q,QString::number(value.epoch.generation)}, {u"operation"_q,value.operationId} };
 }
 #include "archive_staging_bridge.inc"
+#include "archive_access_bridge.inc"
 QJsonObject Dispatch(const QString &operation, const QJsonObject &args, const Crypto &crypto) {
+    if (auto result = ArchiveAccessDispatch(operation,args,crypto)) return *result;
     if(auto media=ArchiveMediaDispatch(operation,args,crypto))return *media;
     if (operation == u"canonical"_q) {
         auto result = CanonicalizeSyncJson(Bytes(args.value(u"bytes"_q)));

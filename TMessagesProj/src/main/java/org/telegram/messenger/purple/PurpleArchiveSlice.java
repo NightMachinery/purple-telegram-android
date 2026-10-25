@@ -58,6 +58,23 @@ final class PurpleArchiveSlice implements AutoCloseable {
         if (result.rows == 0) return false;
         add(4, query.getString("id"), 0, result.values[0][0].bytes); return true;
     }
+    JSONObject version(String version) throws Exception {
+        if (head != null && head.getString("id").equals(version)) return head;
+        JSONObject query = PurpleArchiveCore.call("query", store.arguments().put("query", "version").put("key", key).put("version", version), store.crypto());
+        PurpleArchiveSqlite.Result found = read(query);
+        if (found.rows != 1) throw new PurpleArchiveStore.Failure("Archive historical version missing");
+        JSONObject value = add(3, query.getString("id"), 0, found.values[0][0].bytes).getJSONObject("value").getJSONObject("snapshot");
+        receipt(value.getString("id")); receipt(value.getString("revision")); dependencies(value); return value;
+    }
+    JSONObject lease(String id) throws Exception {
+        JSONObject query = PurpleArchiveCore.call("accessLeaseRow", store.arguments().put("lease", id), store.crypto());
+        PurpleArchiveSqlite.Result found = read(query);
+        if (found.rows == 0) return null;
+        JSONObject value = add(7, found.values[0][0].text(), 0, found.values[0][1].bytes).getJSONObject("value");
+        blob(value.getString("blobId"));
+        if (!value.getBoolean("revoked")) version(value.getString("version"));
+        return value;
+    }
     void media(JSONObject binding, String blob) throws Exception {
         JSONObject source = binding.getJSONObject("source");
         String version = source.getString("version");

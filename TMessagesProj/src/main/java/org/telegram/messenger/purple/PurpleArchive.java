@@ -98,6 +98,7 @@ public final class PurpleArchive {
                 PurpleArchiveGaps.flush(store);
                 status = new Status("Ready", PurpleArchiveUsage.scan(store), store.hasGaps());
                 PurpleArchiveStagingRecovery.start(this);
+                PurpleArchiveMediaAccess.recover(this);
             } catch (Exception | LinkageError e) {
                 if (store != null) {
                     try { store.drainReaders(); store.close(); store = null; } catch (Exception | LinkageError ignored) {}
@@ -253,6 +254,7 @@ public final class PurpleArchive {
         Worker worker = identity == null ? null : workers.get(identity.key);
         if (worker == null || worker.discardSeal == null) return null;
         PurpleArchiveAcquiredSource.revoke(slot);
+        PurpleArchiveMediaAccess.revoke(slot);
         return new RemovalRequest(identity, worker);
     }
     public static boolean remove(RemovalRequest request, Runnable delivered) {
@@ -261,6 +263,7 @@ public final class PurpleArchive {
         synchronized (request) { if (request.used || request.epoch != worker.deliveryEpoch || workers.get(request.identity.key) != worker) return false; request.used = true; }
         worker.closing = true;
         PurpleArchiveAcquiredSource.revoke(request.identity.slot);
+        PurpleArchiveMediaAccess.revoke(request.identity.slot);
         worker.control(() -> {
             try {
                 if (!request.identity.current() || request.epoch != worker.deliveryEpoch)
@@ -282,6 +285,7 @@ public final class PurpleArchive {
         } catch (Exception | LinkageError e) { worker.status = new Status("Removal pending", worker.status.bytes, worker.status.gap); }
     }
     public static void beforeLogout(int slot) {
+        PurpleArchiveMediaAccess.revoke(slot);
         PurpleArchiveLifecycle.revoke(slot); PurpleArchiveAcquiredSource.revoke(slot);
         PurpleAccountFiles.Identity captured = PurpleAccountFiles.capture(slot);
         if (captured == null) return;
@@ -306,6 +310,7 @@ public final class PurpleArchive {
         return false;
     }
     public static void identityChanged(int slot) {
+        PurpleArchiveMediaAccess.revoke(slot);
         PurpleArchiveLifecycle.revoke(slot); PurpleArchiveAcquiredSource.revoke(slot);
         for (Worker worker : workers.values()) {
             PurpleAccountFiles.Identity identity = worker.identity;

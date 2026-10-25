@@ -1,6 +1,7 @@
 package android.system;
 
 public final class OsConstants {
+    public static final int F_GETFL = 3, F_SETFL = 4, O_NONBLOCK = 4, EAGAIN = 35;
     public static final int ENOENT = 2;
     public static final int EIO = 5;
     public static final int EEXIST = 17;

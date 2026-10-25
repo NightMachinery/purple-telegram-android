@@ -1,0 +1,2 @@
+package android.os.storage;
+public final class StorageManager {public android.os.ParcelFileDescriptor openProxyFileDescriptor(int mode,android.os.ProxyFileDescriptorCallback cb,android.os.Handler handler){if(mode!=android.os.ParcelFileDescriptor.MODE_READ_ONLY)throw new AssertionError("read only");android.os.ParcelFileDescriptor result=new android.os.ParcelFileDescriptor();result.callback=cb;result.handler=handler;return result;}}

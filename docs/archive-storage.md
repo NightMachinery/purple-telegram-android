@@ -1,9 +1,11 @@
 # Encrypted archive storage
 
-The storage preview prepares one account-specific SQLite store on Android 6
-(API 23) or newer. It retains encrypted owned bytes without expiry and shows
-physical storage as an estimate. Message capture and Edit History are not yet
-active. It does not start downloads or change live Telegram history.
+The archive retains observed message versions and acquired media in one
+account-specific encrypted SQLite store on Android 6 (API 23) or newer. View
+Edit History offers owned Open and Save for authenticated Complete attachments.
+It retains bytes without expiry, shows estimated physical usage and deletes the
+account archive at logout. Capture never starts downloads or changes live
+Telegram history.
 
 ## Ownership and keys
 
@@ -70,11 +72,11 @@ one empty chunk for an empty file. They verify every envelope, exact length and
 whole-file SHA-256 before successful delivery. They stage encrypted files only,
 never hardlink or alias Telegram cache files, and never overwrite an existing
 owned blob. Physical publication alone does not mark a media job Complete.
-Future acquisition/completion callers must use core's exact historical
+Acquisition/completion uses core's exact historical
 version/revision/hash and purge/work-epoch job contracts; old unbound jobs refuse.
 Lifecycle capture carries its original epoch separately from the fresh executor
-epoch. No TTL/view-once/secret-chat capture or media-job effects are active in
-this storage preview.
+epoch. Lifecycle capture distinguishes TTL expiry and view-once consumption from
+ordinary read or player close events. Missing preimages remain explicit gaps.
 
 The gap API retains a bounded account/store/work-bound outbox. It
 retains generic retry metadata when SQL fails and clears only after a checked
@@ -142,3 +144,20 @@ Acquired sources retain the opening worker and store objects plus a complete nor
 Source refusals are terminal: the account worker publishes an AES-GCM sealed `refused` record bound to the job/binding, and commits the core Failed result. Neither append, admission, completion nor reopen accepts that candidate afterward. If a write fails, the surviving obligation and absence of admission keep it incomplete; no fresh partial stream can validate it. Refused encrypted candidate artifacts remain account-owned until removal.
 
 Stream provenance is local to one FileLoadOperation binding, stable normalized media identity and account/store incarnation. That binding must itself observe every byte from zero to the declared length, after the existing plaintext/CDN verification seam. A bounded interval ledger (at most 1024 merged ranges per binding) tracks only those observations; it never imports coverage from a different binding, cached copy or process. The core finalizer authenticates and hashes those exact immutable pieces, and the source validator issues consistency only after this single-session proof holds. Complementary sessions remain gaps even if their combined disk coverage is full. A fresh session can resume an interrupted candidate only by observing the entire coherent source itself and matching every inherited overlap. Cached copies use two agreeing full descriptor-bound passes; inline bytes use their immutable full-content hash. Generic staging completion cannot mint consistency from coverage.
+
+Owned attachment access is available from each retained version in View Edit History. Missing and partial media are labeled explicitly and never trigger downloads. Open supports images on API 23+, and audio/video through checked random-access proxy descriptors on API 26+; other formats retain Save with an explanation. Access preparation verifies all canonical ciphertext chunks and the whole plaintext hash on the account worker before returning an opaque capability. Each capability retains the exact opening account/login/store, semantic version/origin, generations and committed reader lease. The bounded registry permits eight capabilities globally, four per account, and two streams per capability with one 1 MiB plaintext page per stream. Selection/logout/discard revoke memory immediately; every committed archive transaction and every chunk/cache read revalidate against the lease and generation. Orphan leases are released after restart without restoring URI authority.
+
+The private provider exposes only opaque process-local tokens, never archive paths or roots. Query/open/size perform memory admission on Binder; API 26 reads run on an owned HandlerThread. API 23-25 use a bounded, nonblocking pipe pump off Binder with a five-second stall limit. Archive reads refuse main/Binder callers. The owned image decoder samples to at most 2048 by 2048; media codec/OS behavior still needs device qualification. No external Open or foreign URI grant is offered in this slice.
+
+Save explicitly discloses direct, non-atomic SAF writing before opening the picker. The separate private save activity owns picker and export across history navigation and configuration recreation. It streams verified bytes, checks final size/hash/authority and close before reporting success, attempts to delete partial output on failure/cancellation, and reports failed cleanup. Process death or a blocked/broken external provider may leave a partial user-selected file, as the disclosure states. There is no hidden plaintext spool. Completed user exports are outside archive logout/purge cleanup. The only added upstream registration is three private AndroidManifest entries (two owned activities and the opaque provider); all feature logic stays in Purple files.
+
+Media admission also refuses locked, waiting-for-passcode and overdue automatic-lock states. Cached reads and URI lookup obey the same gate; a new explicit access is required after revocation.
+
+Capability close coalesces repeated revocation into one pending release task. A failed durable release remains owned and is retried by the bounded capability monitor, without filling the account queue.
+
+
+### Owned Open and retained history freshness
+
+The history reader retains its original SQLite snapshot. Core transaction revision and generation checks remain unchanged. For a lease transaction initiated by that history view, the native adapter compares the actual expected and next states after clearing only leases and revision. Only an acknowledged committed transition with otherwise equal states, expected revision equal to the view revision and next revision exactly one greater may advance that view's freshness revision. Another view's lease, an interleaved payload write, a failed or uncertain commit, purge, discard, logout and login replacement do not advance it. Core stays at 81e627b; no schema or header change is required.
+
+A Save that fully writes, verifies and closes its destination remains a completed user copy after a late account selection change. Completion and current UI authority are separate facts. The UI describes incomplete output as removed only after successful destination deletion; a failed cleanup is reported explicitly.

@@ -15,6 +15,7 @@ public final class PurpleArchiveViewerModel implements AutoCloseable {
     public static long selectionGeneration() { return selection.get(); }
     public static void selectionChanged(int account) {
         selection.incrementAndGet();
+        PurpleArchiveMediaAccess.revoke(-1);
         PurpleArchiveLifecycle.revoke(-1); PurpleArchiveAcquiredSource.revoke(-1);
         ArrayList<PurpleArchiveViewerModel> old;
         synchronized (viewers) { old = new ArrayList<>(viewers); }
@@ -22,17 +23,62 @@ public final class PurpleArchiveViewerModel implements AutoCloseable {
             if (viewer.openingAccount != account || viewer.openingSelection != selection.get()) viewer.close();
         }
     }
+    public static final class Attachment {
+        public final String identity, name, mime;
+        public final int state;
+        final String key, version, revision, snapshot, accountGeneration, chatGeneration;
+        final long selection;
+        final PurpleArchiveStore store;
+        final String login;
+        Attachment(JSONObject value, JSONObject ref, String key, PurpleArchiveStore store, String login, String accountGeneration, String chatGeneration, long selection) throws Exception {
+            this.store = store; this.login = login;
+            this.key = key; this.accountGeneration = accountGeneration; this.chatGeneration = chatGeneration; this.selection = selection;
+            version = value.getString("id"); revision = value.getString("revision"); snapshot = PurpleArchiveNormalize.digest(value.toString());
+            identity = ref.getString("identity"); state = ref.getInt("state");
+            String type = "application/octet-stream", file = "archive-attachment";
+            org.json.JSONArray descriptors = value.getJSONObject("content").getJSONArray("media");
+            for (int i = 0; i < descriptors.length(); ++i) {
+                JSONObject descriptor = descriptors.getJSONObject(i);
+                if (!descriptor.getString("identity").equals(identity)) continue;
+                JSONObject attributes = descriptor.getJSONObject("attributes");
+                type = attributes.optString("mime", descriptor.getString("kind").equals("photo") || descriptor.getString("kind").equals("thumbnail") ? "image/jpeg" : type);
+                file = attributes.optString("name", file);
+                org.json.JSONArray encoded = attributes.optJSONArray("attributes");
+                if (encoded != null) for (int j = 0; j < encoded.length(); ++j) {
+                    byte[] raw = PurpleArchiveCore.unbase64(encoded.getString(j));
+                    if (raw.length > PurpleArchiveNormalize.RAW_LIMIT) throw new PurpleArchiveStore.Failure("Archive filename metadata too large");
+                    org.telegram.tgnet.SerializedData data = new org.telegram.tgnet.SerializedData(raw);
+                    try {
+                        TLRPC.DocumentAttribute attribute = TLRPC.DocumentAttribute.TLdeserialize(data, data.readInt32(true), true);
+                        if (attribute instanceof TLRPC.TL_documentAttributeFilename) file = attribute.file_name;
+                    } finally { data.cleanup(); }
+                }
+            }
+            mime = type.matches("[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+") ? type : "application/octet-stream";
+            if (file == null || file.equals("archive-attachment")) file = "archive-attachment" + (mime.equals("image/jpeg") ? ".jpg" : mime.equals("image/png") ? ".png" : mime.equals("video/mp4") ? ".mp4" : mime.equals("audio/ogg") ? ".ogg" : "");
+            StringBuilder safe = new StringBuilder();
+            for (int i = 0; i < Math.min(160, file.length()); ++i) {
+                char c = file.charAt(i); safe.append(c == '/' || c == '\\' || Character.isISOControl(c) ? '_' : c);
+            }
+            file = safe.toString();
+            name = file.isEmpty() ? "archive-attachment" : file.substring(0, Math.min(160, file.length()));
+        }
+    }
     public static final class Version {
         public final String text, caption, observedAt, serverTime, format;
         public final int origin, media;
         public final boolean partial, missingPreimage;
-        private Version(JSONObject value) throws Exception {
+        public final List<Attachment> attachments;
+        private Version(JSONObject value, String key, PurpleArchiveStore store, String login, String accountGeneration, String chatGeneration, long selection) throws Exception {
             JSONObject content = value.getJSONObject("content"), observation = value.getJSONObject("observation");
             text = content.getString("text"); caption = content.getString("caption");
             observedAt = value.getString("firstObservedAt"); serverTime = observation.getString("serverTime");
             format = content.getString("opaqueFormat"); origin = value.getInt("origin");
             media = value.getJSONArray("media").length(); partial = value.getInt("completeness") != 1;
             missingPreimage = value.getBoolean("missingPreimage");
+            ArrayList<Attachment> values = new ArrayList<>();
+            for (int i = 0; i < media; ++i) values.add(new Attachment(value, value.getJSONArray("media").getJSONObject(i), key, store, login, accountGeneration, chatGeneration, selection));
+            attachments = Collections.unmodifiableList(values);
         }
     }
     public static final class Page {
@@ -66,6 +112,14 @@ public final class PurpleArchiveViewerModel implements AutoCloseable {
     private PurpleArchiveViewerModel(PurpleAccountFiles.Identity identity, String key, int openingAccount, long openingSelection) {
         this.identity = identity; this.key = key; this.openingAccount = openingAccount; this.openingSelection = openingSelection;
         synchronized (viewers) { viewers.add(this); }
+    }
+    public PurpleArchiveMediaAccess.Capability media(Attachment attachment, PurpleArchiveMediaAccess.Delivered delivered) {
+        if (!available()) return null;
+        return PurpleArchiveMediaAccess.request(identity, attachment, delivered, this::leaseCommitted);
+    }
+    private void leaseCommitted(PurpleArchiveMediaAccess.Capability capability, JSONObject transition) {
+        if (current() && reader != null && capability.worker == worker && capability.store == store
+            && capability.login != null && capability.login.equals(worker.loginContext)) reader.advanceLease(transition);
     }
     private boolean selected() {
         if (UserConfig.selectedAccount != openingAccount || selection.get() != openingSelection) { close(); return false; }
@@ -102,7 +156,10 @@ public final class PurpleArchiveViewerModel implements AutoCloseable {
             if (readFailed || !available() || worker.closing || worker.retired) throw new IllegalStateException("Archive viewer revoked");
             if (reader == null) { store = worker.store; reader = store.reader(); epoch = worker.deliveryEpoch; }
             if (!current() || !reader.current()) throw new IllegalStateException("Archive viewer revoked");
-            JSONObject key = new JSONObject(this.key);
+            JSONObject key = new JSONObject(this.key); String accountGeneration, chatGeneration;
+            try (PurpleArchiveSlice scope = new PurpleArchiveSlice(store, key, null)) {
+                accountGeneration = scope.facts.getString("accountGeneration"); chatGeneration = scope.facts.getString("chatGeneration");
+            }
             JSONObject messagePlan = PurpleArchiveCore.call("query", store.arguments().put("query", "message").put("key", key), store.crypto());
             String token = messagePlan.getString("id");
             JSONObject plan = PurpleArchiveCore.call("query", store.arguments().put("query", "versions").put("key", key).put("limit", 32).put("before", before), store.crypto());
@@ -114,7 +171,7 @@ public final class PurpleArchiveViewerModel implements AutoCloseable {
                 JSONObject decoded = PurpleArchiveSlice.open(store, reader, row).getJSONObject("value");
                 if (!PurpleArchiveNormalize.digest(decoded.getJSONObject("key").toString()).equals(PurpleArchiveNormalize.digest(this.key)))
                     throw new PurpleArchiveStore.Failure("Archive viewer identity mismatch");
-                Version version = new Version(decoded.getJSONObject("snapshot"));
+                Version version = new Version(decoded.getJSONObject("snapshot"), this.key, store, worker.loginContext, accountGeneration, chatGeneration, openingSelection);
                 long size = (version.text.length() + version.caption.length()) * 2L;
                 if (!versions.isEmpty() && bytes + size > 2 * 1024 * 1024) { more = true; break; }
                 versions.add(version); bytes += size; before = values[1].text();

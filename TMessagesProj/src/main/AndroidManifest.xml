@@ -612,6 +612,14 @@
 
         <receiver android:name=".ShortcutResultReceiver" android:exported="false"/>
 
+        <activity android:name="org.telegram.ui.PurpleArchiveMediaActivity" android:exported="false" />
+        <activity android:name="org.telegram.ui.PurpleArchiveSaveActivity" android:exported="false" />
+        <provider
+            android:name="org.telegram.messenger.purple.PurpleArchiveMediaProvider"
+            android:authorities="${applicationId}.purple_archive_media"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.provider"

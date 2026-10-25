@@ -184,10 +184,11 @@ final class PurpleArchiveStore implements AutoCloseable {
         directory.child("blobs", true); directory.child("staging", true);
     }
     private boolean admit(PurpleArchiveSqlite db, boolean allowEmpty) throws Exception {
-        PurpleArchiveCore.requireDone(db.run("BEGIN"));
+        boolean ownTransaction = db.autocommit();
+        if (ownTransaction) PurpleArchiveCore.requireDone(db.run("BEGIN"));
         try {
             if (allowEmpty && query(db, "tables").rows == 0) {
-                PurpleArchiveCore.requireDone(db.run("COMMIT")); return true;
+                if (ownTransaction) PurpleArchiveCore.requireDone(db.run("COMMIT")); return true;
             }
             PurpleArchiveSqlite.Result versionRow = query(db, "schemaVersion");
             if (versionRow.values[0][0].type != PurpleArchiveSqlite.INTEGER) throw new Failure("Archive schema unreadable");
@@ -204,14 +205,15 @@ final class PurpleArchiveStore implements AutoCloseable {
             String admission = PurpleArchiveCore.call("admit", arguments().put("version", version)
                 .put("fingerprint", fingerprint).put("definitions", definitions), null).getString("status");
             if (!admission.equals("Ready")) throw new Failure("Archive schema " + admission);
-            PurpleArchiveCore.requireDone(db.run("COMMIT")); return false;
+            if (ownTransaction) PurpleArchiveCore.requireDone(db.run("COMMIT")); return false;
         } catch (Exception | LinkageError e) {
-            if (!db.autocommit()) PurpleArchiveCore.requireDone(db.run("ROLLBACK"));
+            if (ownTransaction && !db.autocommit()) PurpleArchiveCore.requireDone(db.run("ROLLBACK"));
             throw e;
         }
     }
     private void verifyHeader(PurpleArchiveSqlite db) throws Exception {
-        PurpleArchiveCore.requireDone(db.run("BEGIN"));
+        boolean ownTransaction = db.autocommit();
+        if (ownTransaction) PurpleArchiveCore.requireDone(db.run("BEGIN"));
         try {
             JSONObject query = queryPlan("metadata");
             PurpleArchiveSqlite.Result metadata = runQuery(db, query);
@@ -225,19 +227,21 @@ final class PurpleArchiveStore implements AutoCloseable {
                 .put("id", header[0].text()).put("position", Long.toString(header[1].integer)).put("frame", PurpleArchiveCore.base64(header[2].bytes))), crypto);
             if (!opened.getString("status").equals("Ready") || !values[3].text().equals(opened.getString("revision"))
                 || !values[4].text().equals(opened.getString("accountGeneration"))) throw new Failure("Archive header mismatch");
-            PurpleArchiveCore.requireDone(db.run("COMMIT"));
+            if (ownTransaction) PurpleArchiveCore.requireDone(db.run("COMMIT"));
         } catch (Exception | LinkageError e) {
-            if (!db.autocommit()) PurpleArchiveCore.requireDone(db.run("ROLLBACK"));
+            if (ownTransaction && !db.autocommit()) PurpleArchiveCore.requireDone(db.run("ROLLBACK"));
             throw e;
         }
     }
     PurpleArchiveCore.Execution execute(PurpleArchiveCore.Program plan) {
         checkOwner();
-        return PurpleArchiveCore.execute(database, plan, this::current, environment.publicationLock());
+        return execute(plan, () -> true);
     }
     PurpleArchiveCore.Execution execute(PurpleArchiveCore.Program plan, BooleanSupplier active) {
         checkOwner();
-        return PurpleArchiveCore.execute(database, plan, () -> current() && active.getAsBoolean(), environment.publicationLock());
+        PurpleArchiveCore.Execution result = PurpleArchiveCore.execute(database, plan, () -> current() && active.getAsBoolean(), environment.publicationLock());
+        if (result.committed) PurpleArchiveMediaAccess.committed(this);
+        return result;
     }
     boolean hasGaps() throws Exception { requireCurrent(); return query(database, "gaps").rows != 0; }
     PurpleArchiveCrypto crypto() { checkOwner(); return crypto; }
@@ -300,8 +304,8 @@ final class PurpleArchiveStore implements AutoCloseable {
             activeReaders.add(this); ++readers;
             try {
                 snapshot = new PurpleArchiveSqlite(directory.file("archive.sqlite").getAbsolutePath(), false, true);
-                admit(snapshot, false); verifyHeader(snapshot);
                 PurpleArchiveCore.requireDone(snapshot.run("BEGIN"));
+                admit(snapshot, false); verifyHeader(snapshot);
                 PurpleArchiveSqlite.Value[] facts = query(snapshot, "metadata").values[0];
                 revision = facts[3].text(); generation = facts[4].text();
             } catch (Exception | LinkageError e) { close(); throw e; }
@@ -312,6 +316,17 @@ final class PurpleArchiveStore implements AutoCloseable {
                 PurpleArchiveSqlite.Value[] now = query(database, "metadata").values[0];
                 return now[3].text().equals(revision) && now[4].text().equals(generation) && now[5].text().isEmpty();
             } catch (Exception | LinkageError e) { return false; }
+        }
+        void advanceLease(JSONObject transition) {
+            if (released || Thread.currentThread() != owner || !PurpleArchiveStore.this.current()
+                || database == null || !database.autocommit()) return;
+            try {
+                if (!transition.getBoolean("leaseOnly") || !transition.getString("from").equals(revision)) return;
+                String to = transition.getString("to");
+                if (!PurpleArchiveBinding.next(revision).equals(to)) return;
+                PurpleArchiveSqlite.Value[] now = query(database, "metadata").values[0];
+                if (now[3].text().equals(to) && now[4].text().equals(generation) && now[5].text().isEmpty()) revision = to;
+            } catch (Exception | LinkageError e) { }
         }
         PurpleArchiveSqlite.Result read(PurpleArchiveCore.Statement statement) throws Exception {
             checkOwner();
@@ -352,6 +367,6 @@ final class PurpleArchiveStore implements AutoCloseable {
         if (closed) return;
         closeDatabase();
         if (lock != null) { lock.close(); lock = null; }
-        closed = true;
+        closed = true; PurpleArchiveMediaAccess.closed(this);
     }
 }

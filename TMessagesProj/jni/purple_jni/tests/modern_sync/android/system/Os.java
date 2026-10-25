@@ -13,6 +13,15 @@ import java.util.EnumSet;
 import java.util.Set;
 
 public final class Os {
+    public static int fcntlInt(java.io.FileDescriptor fd,int command,int flags)throws ErrnoException{return flags;}
+    public static int write(java.io.FileDescriptor fd,byte[] bytes,int at,int length)throws ErrnoException {
+        try {
+            Class<?> type=Class.forName("android.os.ParcelFileDescriptor");
+            java.util.Map<?,?> map=(java.util.Map<?,?>)type.getField("writers").get(null);Object stream=map.get(fd);
+            if(stream==null)throw new java.io.IOException("closed fixture pipe");
+            ((java.io.ByteArrayOutputStream)stream).write(bytes,at,length);return length;
+        }catch(Exception e){throw new ErrnoException("write",OsConstants.EIO);}
+    }
     private static final PosixFilePermission[] ORDER = {
         PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE,
         PosixFilePermission.OWNER_EXECUTE, PosixFilePermission.GROUP_READ,
