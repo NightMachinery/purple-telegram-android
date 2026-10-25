@@ -3,6 +3,7 @@
 #include <dirent.h>
 #include <cstdio>
 #include <atomic>
+#include <array>
 #include <algorithm>
 #include <memory>
 #include <mutex>
@@ -12,6 +13,8 @@
 
 namespace {
 using namespace ArchiveFiles;
+thread_local std::array<jlong, 5> operationCounts{};
+int Sync(int descriptor) { ++operationCounts[2]; return ::fsync(descriptor); }
 void Failure(JNIEnv *env) {
     auto cls = env->FindClass("java/lang/IllegalStateException");
     if (cls) env->ThrowNew(cls, "archive file operation refused");
@@ -54,6 +57,7 @@ jlong Next() { auto value = sequence.fetch_add(1); return value > 0 ? value : 0;
 }
 
 static jobjectArray Mark(JNIEnv *env,jbyteArray input,int kind) {
+    ++operationCounts[3];
     std::string path; if (!Bytes(env,input,path) || path.find('\0') != std::string::npos) { Failure(env); return nullptr; }
     auto slash = path.find_last_of('/'); if (slash == std::string::npos) { Failure(env); return nullptr; }
     auto name = path.substr(slash+1); Fd parent(OpenDirectory(path.substr(0,slash)));
@@ -86,13 +90,14 @@ Java_org_telegram_messenger_purple_PurpleArchiveFiles_mkdirNative(JNIEnv *env,jc
         Failure(env); return nullptr;
     }
     Fd opened(::openat(parent.value,name.c_str(),O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC));
-    if (opened.value < 0 || ::fchmod(opened.value,0700) != 0 || ::fsync(opened.value) != 0 || ::fsync(parent.value) != 0
+    if (opened.value < 0 || ::fchmod(opened.value,0700) != 0 || Sync(opened.value) != 0 || Sync(parent.value) != 0
         || !opened.close() || !parent.close()) { Failure(env); return nullptr; }
     return Strings(env,{Identity(value),Stamp(value),std::to_string(value.st_size)});
 }
 
 extern "C" JNIEXPORT jbyteArray JNICALL
 Java_org_telegram_messenger_purple_PurpleArchiveFiles_readNative(JNIEnv *env,jclass,jbyteArray input,jstring identity,jstring child,jstring expected,jint limit) {
+    ++operationCounts[4];
     std::string path; auto name = Text(env,child);
     if (!Bytes(env,input,path) || !Leaf(name) || limit < 0 || limit > 4*1024*1024) { Failure(env); return nullptr; }
     Fd parent(OpenDirectory(path,Text(env,identity))); if (parent.value < 0) { Failure(env); return nullptr; }
@@ -117,6 +122,7 @@ extern "C" JNIEXPORT jboolean JNICALL
 Java_org_telegram_messenger_purple_PurpleArchiveFiles_publishNative(JNIEnv *env,jclass,jbyteArray input,jstring identity,
         jstring child,jstring expected,jstring temporary,jbyteArray data) {
     std::string path,bytes; auto name=Text(env,child),temp=Text(env,temporary),stamp=Text(env,expected);
+    ++operationCounts[0]; if (name.compare(0,2,"n-")==0) ++operationCounts[1];
     if (!Bytes(env,input,path) || !Bytes(env,data,bytes,4*1024*1024) || !Leaf(name) || !Leaf(temp)
         || temp.compare(0,5,".new-")!=0 || name==temp) return false;
     Fd parent(OpenDirectory(path,Text(env,identity))); if (parent.value<0) return false;
@@ -132,12 +138,12 @@ Java_org_telegram_messenger_purple_PurpleArchiveFiles_publishNative(JNIEnv *env,
         if (count<0 && errno==EINTR) continue;
         if (count<=0) { cleanup(); return false; } offset+=count;
     }
-    if (::fsync(file.value)!=0 || !file.close()) { cleanup(); return false; }
+    if (Sync(file.value)!=0 || !file.close()) { cleanup(); return false; }
     struct stat target{}; auto exists=::fstatat(parent.value,name.c_str(),&target,AT_SYMLINK_NOFOLLOW)==0;
     if ((exists && (!Regular(target) || Stamp(target)!=stamp)) || (!exists && (errno!=ENOENT || !stamp.empty()))) { cleanup(); return false; }
     if (stamp.empty() ? !RenameNew(parent.value,temp,name)
         : ::renameat(parent.value,temp.c_str(),parent.value,name.c_str())!=0) { cleanup(); return false; }
-    return ::fsync(parent.value)==0 && parent.close();
+    return Sync(parent.value)==0 && parent.close();
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
@@ -148,9 +154,9 @@ Java_org_telegram_messenger_purple_PurpleArchiveFiles_removeNative(JNIEnv *env,j
     Fd parent(OpenDirectory(path,Text(env,identity))); if (parent.value<0) return false;
     struct stat value{};
     if (::fstatat(parent.value,name.c_str(),&value,AT_SYMLINK_NOFOLLOW)!=0)
-        return errno==ENOENT && ::fsync(parent.value)==0 && parent.close();
+        return errno==ENOENT && Sync(parent.value)==0 && parent.close();
     if (Stamp(value)!=stamp || (directory ? (!S_ISDIR(value.st_mode)||value.st_uid!=getuid()) : !Regular(value))) return false;
-    return ::unlinkat(parent.value,name.c_str(),directory?AT_REMOVEDIR:0)==0 && ::fsync(parent.value)==0 && parent.close();
+    return ::unlinkat(parent.value,name.c_str(),directory?AT_REMOVEDIR:0)==0 && Sync(parent.value)==0 && parent.close();
 }
 
 extern "C" JNIEXPORT jlong JNICALL
@@ -199,4 +205,13 @@ Java_org_telegram_messenger_purple_PurpleArchiveFiles_unlockNative(JNIEnv *,jcla
     std::lock_guard<std::mutex> lock(registryMutex); auto found=locks.find(id);
     if (found==locks.end() || found->second->owner!=std::this_thread::get_id()) return false;
     auto fd=found->second->fd; found->second->fd=-1; locks.erase(found); return ::close(fd)==0;
+}
+
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_org_telegram_messenger_purple_PurpleArchiveFiles_operationsNative(JNIEnv *env,jclass,jboolean reset) {
+    auto result = env->NewLongArray(operationCounts.size());
+    if (!result) return nullptr;
+    env->SetLongArrayRegion(result,0,operationCounts.size(),operationCounts.data());
+    if (reset && !env->ExceptionCheck()) operationCounts.fill(0);
+    return result;
 }

@@ -21,7 +21,20 @@ final class PurpleArchiveStaging {
     private BooleanSupplier cleanupActive;
     interface ConsistencyValidator { void admit(String hash) throws Exception; }
     ConsistencyValidator validator;
-    final String initialHash;
+    final String initialHash, initialRoot;
+    static final class CacheRebuilding extends Exception {}
+    private Repair repair;
+    private final class Repair {
+        final long count;
+        final String expectedHash, expectedRoot;
+        long checkpoint = 1;
+        String previous = initialHash, root;
+        Repair(JSONObject inspection) throws Exception {
+            count = Long.parseLong(inspection.getString("checkpoint")); expectedHash = inspection.getString("hash");
+            expectedRoot = inspection.getString("root"); root = initialRoot;
+        }
+    }
+    private final java.util.LinkedHashMap<String, JSONObject> bundles = new java.util.LinkedHashMap<>(16, 0.75f, true);
     final long selection = PurpleArchiveViewerModel.selectionGeneration();
 
     static JSONObject source(PurpleArchiveStore store, PurpleArchiveSlice slice, String media) throws Exception {
@@ -95,7 +108,8 @@ final class PurpleArchiveStaging {
             }
             head = begin.getJSONObject("header"); publishHead(head, headSnapshot);
         } else head = PurpleArchiveBinding.json(headSnapshot.bytes);
-        ready(call("stagingInspect", new JSONObject().put("header", head)));
+        JSONObject inspection = call("stagingInspect", new JSONObject().put("header", head)); ready(inspection);
+        initialRoot = inspection.getString("emptyRoot");
         if (!allowRefused && terminal()) throw new PurpleArchiveStore.Failure("Archive staging terminal refusal");
     }
     static JSONObject readBinding(PurpleArchiveStore store, String id) throws Exception {
@@ -130,6 +144,7 @@ final class PurpleArchiveStaging {
         return true;
     }
     void current() throws Exception { if (cleanupActive != null ? !cleanupActive.getAsBoolean() : selection != PurpleArchiveViewerModel.selectionGeneration() || !active.getAsBoolean()) throw new PurpleArchiveStore.Failure("Archive staging revoked"); store.requireCurrent(); }
+    void effectCurrent() throws Exception { current(); store.requireAuthoritativeCurrent(); }
     JSONObject call(String operation, JSONObject extra) throws Exception {
         current(); JSONObject args = store.arguments().put("binding", binding);
         try (PurpleArchiveSlice slice = new PurpleArchiveSlice(store, binding.getJSONObject("source").getJSONObject("key"), null)) {
@@ -176,7 +191,7 @@ final class PurpleArchiveStaging {
                 JSONObject seal = PurpleArchiveCore.call("journalSeal", store.arguments().put("token", journalToken(name)).put("bytes", PurpleArchiveCore.base64(plain)), store.crypto());
                 frame = new JSONObject().put("frame", seal.getString("bytes")).toString().getBytes(StandardCharsets.UTF_8);
             } else frame = plain;
-            synchronized (store.environment.publicationLock()) { current(); directory.publish(name, old, frame); }
+            synchronized (store.environment.publicationLock()) { effectCurrent(); directory.publish(name, old, frame); }
         } finally { Arrays.fill(plain, (byte) 0); }
     }
     private String journalToken(String name) throws Exception {
@@ -225,81 +240,129 @@ final class PurpleArchiveStaging {
             throw new PurpleArchiveStore.Failure("Archive consistency admission changed");
         return hash;
     }
-    void cache(String name, JSONObject value) throws Exception {
-        if (!name.matches("n-[0-9]{1,2}-[0-9a-f]{64}")) throw new PurpleArchiveStore.Failure("Archive cache address");
-        synchronized (store.environment.publicationLock()) {
-            current(); PurpleArchiveFiles.Snapshot old = directory.read(name, 131072);
-            byte[] bytes = value.toString().getBytes(StandardCharsets.UTF_8);
-            if (!Arrays.equals(old.bytes, bytes)) directory.publish(name, old, bytes);
+    private JSONObject bundle(String checkpoint) throws Exception {
+        if (!checkpoint.matches("[1-9][0-9]{0,19}")) throw new PurpleArchiveStore.Failure("Archive cache checkpoint");
+        JSONObject value = bundles.get(checkpoint);
+        if (value != null) return value;
+        byte[] bytes = directory.read("cache-" + checkpoint, 32768).bytes;
+        if (bytes == null) return null;
+        value = PurpleArchiveBinding.json(bytes);
+        if (value.getInt("format") != 1 || !checkpoint.equals(value.getString("checkpoint")) || value.getJSONArray("nodes").length() != 46)
+            throw new PurpleArchiveStore.Failure("Archive cache shape");
+        remember(checkpoint, value); return value;
+    }
+    private void remember(String checkpoint, JSONObject value) {
+        bundles.put(checkpoint, value);
+        while (bundles.size() > 16) bundles.remove(bundles.keySet().iterator().next());
+    }
+    private JSONObject node(String checkpoint, int level, String hash) throws Exception {
+        if (!hash.matches("[0-9a-f]{64}") || level < 1 || level > 46) throw new PurpleArchiveStore.Failure("Archive cache address");
+        JSONObject value = checkpoint.equals("legacy") ? null : bundle(checkpoint);
+        if (value == null) {
+            JSONObject legacy = read("n-" + level + "-" + hash, 1024);
+            return new JSONObject(legacy.toString()).put("leftCache", "legacy").put("rightCache", "legacy");
         }
+        JSONObject result = value.getJSONArray("nodes").getJSONObject(level - 1);
+        if (!hash.equals(result.getString("hash"))) throw new PurpleArchiveStore.Failure("Archive cache hash changed");
+        return result;
     }
     void publishHead(JSONObject value, PurpleArchiveFiles.Snapshot expected) throws Exception {
         synchronized (store.environment.publicationLock()) {
-            current(); headSnapshot = directory.publish("head", expected, value.toString().getBytes(StandardCharsets.UTF_8)); head = value;
+            effectCurrent(); headSnapshot = directory.publish("head", expected, value.toString().getBytes(StandardCharsets.UTF_8)); head = value;
         }
     }
     static final class Page {
         final JSONArray proof;
         final JSONObject value;
-        Page(JSONArray proof, JSONObject value) { this.proof = proof; this.value = value; }
+        final String[] locations;
+        Page(JSONArray proof, JSONObject value, String[] locations) { this.proof = proof; this.value = value; this.locations = locations; }
     }
     Page page(long index) throws Exception {
+        if (repair != null) {
+            repairStep(); if (repair != null) throw new CacheRebuilding();
+        }
         try { return indexedPage(index); }
         catch (Exception failure) {
-            rebuild(); return indexedPage(index);
+            JSONObject inspection = call("stagingInspect", new JSONObject().put("header", head)); ready(inspection);
+            bundles.clear(); repair = new Repair(inspection); repairStep();
+            if (repair != null) throw new CacheRebuilding();
+            return indexedPage(index);
         }
+    }
+    private Page walk(long index, String root, String checkpoint) throws Exception {
+        JSONArray proof = new JSONArray(); String[] locations = new String[46];
+        for (int i = 0; i < 46; ++i) { proof.put(empty.getString(i)); locations[i] = "0"; }
+        String hash = root;
+        boolean absent = hash.equals(initialRoot);
+        for (int level = 46; level > 0 && !absent; --level) {
+            JSONObject value = node(checkpoint, level, hash);
+            boolean right = ((index >>> (level - 1)) & 1) != 0;
+            proof.put(level - 1, value.getString(right ? "left" : "right"));
+            locations[level - 1] = value.getString(right ? "leftCache" : "rightCache");
+            checkpoint = value.getString(right ? "rightCache" : "leftCache");
+            hash = value.getString(right ? "right" : "left");
+            absent = hash.equals(empty.getString(level - 1));
+        }
+        JSONObject leaf = null;
+        if (!absent) {
+            byte[] bytes = directory.read("page-" + hash, 131072).bytes;
+            leaf = bytes == null ? read("n-0-" + hash, 131072) : PurpleArchiveBinding.json(bytes);
+        }
+        return new Page(proof, leaf, locations);
     }
     private Page indexedPage(long index) throws Exception {
         JSONObject inspection = call("stagingInspect", new JSONObject().put("header", head)); ready(inspection);
-        String hash = null; JSONObject node = null;
-        String root = readRoot(); JSONArray proof = new JSONArray();
-        for (int i = 0; i < 46; ++i) proof.put(empty.getString(i));
-        hash = root;
-        boolean absent = hash.equals(emptyRoot());
-        for (int level = 46; level > 0 && !absent; --level) {
-            node = read("n-" + level + "-" + hash, 1024);
-            boolean right = ((index >>> (level - 1)) & 1) != 0;
-            proof.put(level - 1, node.getString(right ? "left" : "right"));
-            hash = node.getString(right ? "right" : "left");
-            absent = hash.equals(empty.getString(level - 1));
-        }
-        JSONObject leaf = absent ? null : read("n-0-" + hash, 131072);
-        JSONObject validation = new JSONObject().put("header", head).put("index", Long.toString(index)).put("proof", proof);
-        if (leaf != null) validation.put("page", leaf.getJSONObject("page"));
-        ready(call("stagingPage", validation));
-        return new Page(proof, leaf);
+        Page page = walk(index, inspection.getString("root"), inspection.getString("checkpoint"));
+        JSONObject validation = new JSONObject().put("header", head).put("index", Long.toString(index)).put("proof", page.proof);
+        if (page.value != null) validation.put("page", page.value.getJSONObject("page"));
+        ready(call("stagingPage", validation)); return page;
     }
-    private void cacheNodes(JSONArray nodes, JSONArray proof, long index) throws Exception {
-        if (nodes.length() != 47 || proof.length() != 46) throw new PurpleArchiveStore.Failure("Archive staging node shape");
+    private void cacheNodes(JSONArray nodes, JSONArray proof, long index, String[] locations, String checkpoint) throws Exception {
+        if (nodes.length() != 47 || proof.length() != 46 || locations.length != 46) throw new PurpleArchiveStore.Failure("Archive staging node shape");
+        JSONArray values = new JSONArray();
         for (int level = 1; level <= 46; ++level) {
             String own = nodes.getJSONObject(level - 1).getString("hash"), sibling = proof.getString(level - 1);
             boolean right = ((index >>> (level - 1)) & 1) != 0;
-            cache("n-" + level + "-" + nodes.getJSONObject(level).getString("hash"),
-                new JSONObject().put("left", right ? sibling : own).put("right", right ? own : sibling));
+            values.put(new JSONObject().put("hash", nodes.getJSONObject(level).getString("hash"))
+                .put("left", right ? sibling : own).put("right", right ? own : sibling)
+                .put("leftCache", right ? locations[level - 1] : checkpoint).put("rightCache", right ? checkpoint : locations[level - 1]));
         }
+        JSONObject value = new JSONObject().put("format", 1).put("checkpoint", checkpoint).put("nodes", values);
+        byte[] bytes = value.toString().getBytes(StandardCharsets.UTF_8);
+        if (bytes.length > 32768) throw new PurpleArchiveStore.Failure("Archive cache size");
+        synchronized (store.environment.publicationLock()) {
+            PurpleArchiveFiles.Snapshot old = directory.read("cache-" + checkpoint, 32768);
+            if (!Arrays.equals(old.bytes, bytes)) { effectCurrent(); directory.publish("cache-" + checkpoint, old, bytes); }
+        }
+        remember(checkpoint, value);
     }
-    private void rebuild() throws Exception {
-        JSONObject inspection = call("stagingInspect", new JSONObject().put("header", head)); ready(inspection);
-        long count = Long.parseLong(inspection.getString("checkpoint")); String previous = initialHash;
-        for (long checkpoint = 1; checkpoint <= count; ++checkpoint) {
-            current(); JSONObject delta = read("delta-" + checkpoint, 131072);
+    private void repairStep() throws Exception {
+        Repair work = repair; if (work == null) return;
+        current();
+        if (!Arrays.equals(directory.read("head", 70000).bytes, headSnapshot.bytes)) throw new PurpleArchiveStore.Failure("Archive cache repair header changed");
+        if (work.checkpoint <= work.count) {
+            long checkpoint = work.checkpoint;
+            JSONObject delta = read("delta-" + checkpoint, 131072);
             JSONObject recovered = call("stagingRecover", new JSONObject().put("header", head).put("checkpoint", delta).put("expectedCheckpoint", Long.toString(checkpoint))); ready(recovered);
-            if (!previous.equals(recovered.getString("previous"))) throw new PurpleArchiveStore.Failure("Archive staging checkpoint chain changed");
-            previous = recovered.getString("headerHash");
+            if (!work.previous.equals(recovered.getString("previous"))) throw new PurpleArchiveStore.Failure("Archive staging checkpoint chain changed");
             long index = Long.parseLong(recovered.getString("page"));
             JSONObject leaf = read("page-" + recovered.getString("pageHash"), 131072);
             ready(call("stagingRecover", new JSONObject().put("header", head).put("checkpoint", delta)
                 .put("expectedCheckpoint", Long.toString(checkpoint)).put("page", leaf.getJSONObject("page"))));
-            cache("n-0-" + recovered.getString("pageHash"), leaf);
-            cacheNodes(recovered.getJSONArray("nodes"), recovered.getJSONArray("proof"), index);
+            Page before = walk(index, work.root, Long.toString(checkpoint - 1));
+            if (!before.proof.toString().equals(recovered.getJSONArray("proof").toString())) throw new PurpleArchiveStore.Failure("Archive recovered cache proof changed");
+            cacheNodes(recovered.getJSONArray("nodes"), recovered.getJSONArray("proof"), index, before.locations, Long.toString(checkpoint));
+            work.root = recovered.getJSONArray("nodes").getJSONObject(46).getString("hash"); work.previous = recovered.getString("headerHash"); ++work.checkpoint;
         }
-        if (count != 0 && !inspection.getString("hash").equals(previous)) throw new PurpleArchiveStore.Failure("Archive staging recovered head mismatch");
+        if (work.checkpoint > work.count) {
+            if (!work.expectedHash.equals(work.previous) || !work.expectedRoot.equals(work.root)) throw new PurpleArchiveStore.Failure("Archive staging recovered head mismatch");
+            repair = null;
+        }
     }
-    private String readRoot() throws Exception {
-        JSONObject header = call("stagingInspect", new JSONObject().put("header", head)); ready(header); return header.getString("root");
-    }
-    private String emptyRoot() throws Exception { return call("stagingInspect", new JSONObject().put("header", head)).getString("emptyRoot"); }
     void piece(long offset, byte[] bytes) throws Exception {
+        try (PurpleArchiveStore.StagingStep step = store.stagingStep()) { pieceStep(offset, bytes); }
+    }
+    private void pieceStep(long offset, byte[] bytes) throws Exception {
         current(); if (refused || directory.read("refused", 70000).bytes != null) throw new PurpleArchiveStore.Failure("Archive refused source cannot append");
         if (offset < 0 || bytes.length == 0 || bytes.length > WINDOW || offset % WINDOW + bytes.length > WINDOW)
             throw new PurpleArchiveStore.Failure("Archive staging range limit");
@@ -316,7 +379,7 @@ final class PurpleArchiveStaging {
         String piece = update.getString("pieceId"); if (!piece.matches("[0-9a-f]{64}")) throw new PurpleArchiveStore.Failure("Archive staging image identity");
         byte[] frame = PurpleArchiveCore.unbase64(update.getString("pieceFrame"));
         synchronized (store.environment.publicationLock()) {
-            current(); PurpleArchiveFiles.Snapshot old = directory.read(piece, WINDOW + 4608);
+            effectCurrent(); PurpleArchiveFiles.Snapshot old = directory.read(piece, WINDOW + 4608);
             if (old.bytes == null) old = directory.publish(piece, old, frame);
             update.put("pieceFrame", PurpleArchiveCore.base64(old.bytes));
         }
@@ -324,8 +387,7 @@ final class PurpleArchiveStaging {
         if (nodes.length() != 47) throw new PurpleArchiveStore.Failure("Archive staging node limit");
         JSONObject leaf = new JSONObject().put("page", update.getJSONObject("page")).put("piece", piece);
         writeImmutable("page-" + nodes.getJSONObject(0).getString("hash"), leaf);
-        cache("n-0-" + nodes.getJSONObject(0).getString("hash"), leaf);
-        cacheNodes(nodes, previous.proof, index);
+        cacheNodes(nodes, previous.proof, index, previous.locations, update.getJSONObject("delta").getString("checkpoint"));
         writeImmutable("delta-" + update.getJSONObject("delta").getString("checkpoint"), update.getJSONObject("delta"));
         JSONObject oldHead = head; PurpleArchiveFiles.Snapshot expected = headSnapshot;
         extra.put("oldHeader", oldHead).put("update", update).put("pieceDurable", true).put("checkpointDurable", false);
@@ -353,6 +415,9 @@ final class PurpleArchiveStaging {
         for (;;) { int status = finishStep(); if (status == 0) return false; if (status == 2) return true; }
     }
     int finishStep() throws Exception {
+        try (PurpleArchiveStore.StagingStep step = store.stagingStep()) { return finishPart(); }
+    }
+    private int finishPart() throws Exception {
         current(); if (refused || directory.read("refused", 70000).bytes != null) throw new PurpleArchiveStore.Failure("Archive refused source cannot complete");
         if (finalStep == null) {
             JSONObject freeze = call("stagingFreeze", new JSONObject().put("header", head));
@@ -388,10 +453,11 @@ final class PurpleArchiveStaging {
                 blobHash = publication.getString("blobHash");
                 writeImmutable("canonical-" + blob, new JSONObject().put("blob", blob));
                 if (!blob.matches("[0-9a-f]{64}")) throw new PurpleArchiveStore.Failure("Archive canonical blob identity");
+                effectCurrent();
                 PurpleArchiveFiles.Directory target = store.directory.child("blobs", true).child(blob, true);
                 String name = "chunk-" + publication.getString("chunk");
                 synchronized (store.environment.publicationLock()) {
-                    current(); ready(call("stagingPublication", new JSONObject().put("header", head).put("handle", handle).put("publication", publication)));
+                    effectCurrent(); ready(call("stagingPublication", new JSONObject().put("header", head).put("handle", handle).put("publication", publication)));
                     PurpleArchiveFiles.Snapshot old = target.read(name, 1024 * 1024 + 4608);
                     if (old.bytes == null) old = target.publish(name, old, PurpleArchiveCore.unbase64(publication.getString("frame")));
                     input.put("publication", publication).put("durable", true).put("frameHash", hash(old.bytes));
@@ -400,6 +466,7 @@ final class PurpleArchiveStaging {
             } else if (kind != 3) throw new PurpleArchiveStore.Failure("Archive finalizer request");
             finalStep = call("stagingAdvance", new JSONObject().put("header", head).put("handle", handle).put("input", input));
             return finalStep.getInt("kind") >= 3 ? finishStep() : 1;
-        } catch (Exception | LinkageError e) { closeFinalizer(); throw e; }
+        } catch (CacheRebuilding pending) { throw pending; }
+        catch (Exception | LinkageError e) { closeFinalizer(); throw e; }
     }
 }

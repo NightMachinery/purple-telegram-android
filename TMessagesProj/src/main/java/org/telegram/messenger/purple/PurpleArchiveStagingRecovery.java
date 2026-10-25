@@ -52,7 +52,8 @@ final class PurpleArchiveStagingRecovery {
                     }
                     else if (status != 14) PurpleArchiveGaps.record(store, "staging_source_no_longer_admitted", System.currentTimeMillis() / 1000);
                 }
-            } catch (Exception | LinkageError e) {
+            } catch (PurpleArchiveStaging.CacheRebuilding pending) { }
+            catch (Exception | LinkageError e) {
                 try { if (current() && store.current()) PurpleArchiveGaps.record(store, "staging_recovery_refused", System.currentTimeMillis() / 1000); }
                 catch (Exception | LinkageError ignored) {}
                 PurpleArchiveStaging failed = job; job = null;

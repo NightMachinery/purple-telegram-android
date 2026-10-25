@@ -9,6 +9,7 @@ import java.util.UUID;
 
 @androidx.annotation.Keep
 final class PurpleArchiveFiles {
+    static final ThreadLocal<java.util.function.Consumer<String>> publicationObserver = new ThreadLocal<>();
     static final class Mark {
         final String identity, stamp;
         final long bytes;
@@ -70,6 +71,7 @@ final class PurpleArchiveFiles {
                 throw new IllegalStateException("archive publication failed");
             Snapshot actual = read(name, bytes.length);
             if (!Arrays.equals(bytes, actual.bytes)) throw new IllegalStateException("archive publication readback failed");
+            java.util.function.Consumer<String> observer = publicationObserver.get(); if (observer != null) observer.accept(name);
             return actual;
         }
         void remove(String name, boolean directory) {
@@ -138,6 +140,7 @@ final class PurpleArchiveFiles {
             throw new IllegalArgumentException("archive leaf name");
     }
     private static byte[] path(File value) { return value.getAbsolutePath().getBytes(StandardCharsets.UTF_8); }
+    static native long[] operationsNative(boolean reset);
     private static native String[] markAnyNative(byte[] path);
     private static native String[] markNative(byte[] path, boolean directory);
     private static native String[] mkdirNative(byte[] path, String identity, String name, boolean exclusive);

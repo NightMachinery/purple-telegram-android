@@ -55,3 +55,6 @@ The B3b full-media case prints initial staging elapsed milliseconds, the unchang
 
 
 The `boundary-*` cases exercise the actual Store executor boundary for queued and already-shown linked history, including a disposed parent, and verify that ordinary unrelated/same-chat captures and lease transactions keep the original Deleted snapshot. They port the B4a review probes. History's exact own-lease revision tests remain in the owned-media suite.
+
+
+`staging-perf` uses actual native operation counters and production staging to bound node publications, total publications, fsyncs and full authority reads per piece. It also covers consolidated-cache repair across bounded turns, legacy node-cache resume, each durable-publication cut, source/fence revocation, directory replacement and the final SQL COMMIT fence. The completed-file case counts full-window image writes and retains two-pass validation. Existing torn-source, mixed-provenance, terminal-refusal, stale-generation, logout and discard suites remain in the full runner. Neither the operation assertions nor the original 40 s deadline depend on elapsed-time thresholds added for this optimization.

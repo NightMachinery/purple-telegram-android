@@ -179,3 +179,14 @@ The menu extends the existing owned PurpleChatHooks header/dispatch path; no new
 
 
 History opened through a Deleted entry registers its own authority before it can be delivered. Every committed Store transaction checks its admission and addressed generations independently of whether the parent query still exists. Revocation sets its UI-safe closed flag before the executor returns, so queued Ready results, Older, Refresh and shown media actions cannot revive old authority. These checks do no database work on the UI thread.
+
+
+### Bounded staging work
+
+A staging piece publishes one encrypted image, one authenticated page, one consolidated proof-cache bundle, one durable checkpoint and the head, rather than a separate file for each Merkle node. The untrusted cache contains only opaque hashes and links; at most sixteen bundles of at most 32 KiB stay in memory. Page proofs are still checked by core against the authenticated current header. Legacy node caches remain readable. Missing or corrupt caches reconstruct from authenticated delta/page chains, one checkpoint per worker turn. Pending acquired buffers, source file positions and finalizer requests survive those retries; cancellation still drops authority immediately.
+
+Within a bounded piece or finalizer step the store reuses its initial external authority admission. It still checks immediate account/source revocation in memory, revalidates the complete durable authority before every file publication and directory creation, and revalidates immediately before SQL COMMIT. No positive decision crosses a worker step. Durable image/page/checkpoint/head/consistency fsync ordering stays intact. The existing native directory identity and no-follow checks remain in place; no cross-step directory handle is retained.
+
+Streaming observations remain at most 64 KiB per queued piece with the same account backlog bound. Already-completed files use one full 256 KiB core window per worker step, plus a final short window, avoiding repeated growing-image rewrites on that route. Both completed-file passes and their agreement are still required. Arbitrary small streaming fragments can still rewrite their current core window; the adapter does not invent a second staging protocol to avoid that.
+
+The staging performance fixture counts actual owned-filesystem publication/fsync calls and full Store.current authority reads. Normal 64 KiB pieces target zero node-file publications, at most five total publications, ten fsync calls and six full authority reads. SQLite performs no writer transaction per ordinary piece, so its fsyncs are not part of those per-piece adapter counters. Crash cuts, source/refusal recovery, directory replacement and final-COMMIT revocation are separate invariants. Timing is diagnostic; the original 40 s fixture deadline is unchanged.

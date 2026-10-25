@@ -80,8 +80,10 @@ public final class PurpleArchiveB3aCases {
         PurpleArchiveStaging recovered = PurpleArchiveStaging.reopen(worker.store, stage.id, active::get);
         check(recovered.binding.getJSONObject("source").getString("version").equals(originalVersion), "reopen retains the encrypted original version binding");
         JSONObject inspection = recovered.call("stagingInspect", new JSONObject().put("header", recovered.head));
-        File cache = recovered.directory.file("n-46-" + inspection.getString("root")); Files.write(cache.toPath(), "{}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        check(recovered.page(0).value != null, "tampered untrusted index rebuilds from authenticated checkpoints");
+        File cache = recovered.directory.file("cache-" + inspection.getString("checkpoint")); Files.write(cache.toPath(), "{}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        PurpleArchiveStaging.Page repaired;
+        for (;;) { try { repaired = recovered.page(0); break; } catch (PurpleArchiveStaging.CacheRebuilding pending) { } }
+        check(repaired.value != null, "tampered untrusted index rebuilds from authenticated checkpoints");
         for (int i = 65536; i < 262144; i += 65536) recovered.piece(i, Arrays.copyOfRange(data, i, i + 65536));
         m.message = "new caption"; ++m.edit_date; JSONObject newer = capture(m);
         check(!newer.getString("head").equals(originalVersion), "a newer body has a distinct version before old media finishes");

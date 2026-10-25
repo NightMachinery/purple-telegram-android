@@ -79,6 +79,9 @@ final class PurpleArchiveCore {
         return execute(database, program, current, new Object());
     }
     static Execution execute(PurpleArchiveSqlite database, Program program, BooleanSupplier current, Object publicationLock) {
+        return execute(database, program, current, publicationLock, () -> true);
+    }
+    static Execution execute(PurpleArchiveSqlite database, Program program, BooleanSupplier current, Object publicationLock, BooleanSupplier beforeCommit) {
         List<PurpleArchiveSqlite.Result> results = new ArrayList<>();
         if (!program.status.equals("Ready") || !current.getAsBoolean() || !database.autocommit()) return new Execution(false, results);
         if (program.statements.isEmpty()) return new Execution(acknowledgeNative(true, true), results);
@@ -91,6 +94,7 @@ final class PurpleArchiveCore {
                 PurpleArchiveSqlite.Result result;
                 synchronized (publicationLock) {
                     if (!current.getAsBoolean()) throw new IllegalStateException("archive work revoked");
+                    if (i == program.statements.size() - 1 && !beforeCommit.getAsBoolean()) throw new IllegalStateException("Archive commit authority changed");
                     result = database.run(statement.sql, statement.binds);
                 }
                 if (!statement.accepts(result)) throw new IllegalStateException("archive statement refused");

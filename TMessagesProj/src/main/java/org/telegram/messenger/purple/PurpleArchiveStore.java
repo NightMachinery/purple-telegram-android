@@ -31,6 +31,23 @@ final class PurpleArchiveStore implements AutoCloseable {
     private PurpleArchiveCrypto crypto;
     private volatile boolean closed;
     private int readers;
+    private StagingStep stagingStep;
+    long authorityReads;
+    final class StagingStep implements AutoCloseable {
+        private final StagingStep previous;
+        private boolean ended;
+        private StagingStep() throws Failure {
+            requireAuthoritativeCurrent(); previous = stagingStep; stagingStep = this;
+        }
+        boolean current() { return !ended && !closed && Thread.currentThread() == owner && environment.current(); }
+        @Override public void close() {
+            if (ended || Thread.currentThread() != owner || stagingStep != this) throw new IllegalStateException("Archive staging step ownership");
+            ended = true; stagingStep = previous;
+        }
+    }
+    StagingStep stagingStep() throws Failure { checkOwner(); return new StagingStep(); }
+    private boolean authorityCurrent() { return stagingStep == null ? current() : stagingStep.current(); }
+    void requireAuthoritativeCurrent() throws Failure { checkOwner(); if (!current()) throw new Failure("Archive work revoked"); }
     private final java.util.HashSet<Reader> activeReaders = new java.util.HashSet<>();
     private final boolean creationAllowed;
     private PurpleArchiveStore(Environment environment, PurpleArchivePaths paths, PurpleArchiveBinding binding,
@@ -239,7 +256,7 @@ final class PurpleArchiveStore implements AutoCloseable {
     }
     PurpleArchiveCore.Execution execute(PurpleArchiveCore.Program plan, BooleanSupplier active) {
         checkOwner();
-        PurpleArchiveCore.Execution result = PurpleArchiveCore.execute(database, plan, () -> current() && active.getAsBoolean(), environment.publicationLock());
+        PurpleArchiveCore.Execution result = PurpleArchiveCore.execute(database, plan, () -> authorityCurrent() && active.getAsBoolean(), environment.publicationLock(), () -> stagingStep == null || current() && active.getAsBoolean());
         if (result.committed) PurpleArchiveMediaAccess.committed(this);
         if (result.committed) PurpleArchiveDeletedModel.committed(this);
         if (result.committed) PurpleArchiveViewerModel.committed(this);
@@ -271,6 +288,7 @@ final class PurpleArchiveStore implements AutoCloseable {
         return bytes != null && same(binding, new PurpleArchiveBinding(binding.account, PurpleArchiveBinding.json(bytes)));
     }
     boolean current() {
+        ++authorityReads;
         if (closed || !environment.current()) return false;
         try {
             paths.check(); directory.check();
@@ -284,7 +302,7 @@ final class PurpleArchiveStore implements AutoCloseable {
             return matches(binding, paths.metadata.read("fence.json", 65536).bytes);
         } catch (Exception | LinkageError e) { return false; }
     }
-    void requireCurrent() throws Failure { checkOwner(); if (!current()) throw new Failure("Archive work revoked"); }
+    void requireCurrent() throws Failure { checkOwner(); if (!authorityCurrent()) throw new Failure("Archive work revoked"); }
     private void checkOwner() {
         if (Thread.currentThread() != owner || closed) throw new IllegalStateException("Archive queue ownership");
     }
@@ -334,7 +352,7 @@ final class PurpleArchiveStore implements AutoCloseable {
             } catch (Exception | LinkageError e) { close(); throw e; }
         }
         boolean current() {
-            if (released || closing || Thread.currentThread() != owner || !PurpleArchiveStore.this.current() || database == null || !database.autocommit()) return false;
+            if (released || closing || Thread.currentThread() != owner || !PurpleArchiveStore.this.authorityCurrent() || database == null || !database.autocommit()) return false;
             try {
                 if (retained) return admissionCurrent(generation);
                 PurpleArchiveSqlite.Value[] now = query(database, "metadata").values[0];
@@ -342,7 +360,7 @@ final class PurpleArchiveStore implements AutoCloseable {
             } catch (Exception | LinkageError e) { return false; }
         }
         void advanceLease(JSONObject transition) {
-            if (released || Thread.currentThread() != owner || !PurpleArchiveStore.this.current()
+            if (released || Thread.currentThread() != owner || !PurpleArchiveStore.this.authorityCurrent()
                 || database == null || !database.autocommit()) return;
             try {
                 if (!transition.getBoolean("leaseOnly") || !transition.getString("from").equals(revision)) return;

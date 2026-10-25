@@ -20,7 +20,7 @@ import org.telegram.tgnet.NativeByteBuffer;
 import org.telegram.tgnet.TLRPC;
 
 public final class PurpleArchiveAcquiredSource {
-    static final int PIECE = 65536, BUDGET = 4 * 1024 * 1024;
+    static final int PIECE = 65536, FILE_PIECE = PurpleArchiveStaging.WINDOW, BUDGET = 4 * 1024 * 1024;
     private static final IdentityHashMap<FileLoadOperation, ArrayList<Entry>> entries = new IdentityHashMap<>();
     private static final HashMap<String, Integer> buffered = new HashMap<>();
     private static int count;
@@ -137,6 +137,7 @@ public final class PurpleArchiveAcquiredSource {
         }
         void fileStep() throws Exception {
             try { filePartStep(); }
+            catch (PurpleArchiveStaging.CacheRebuilding pending) { throw pending; }
             catch (Exception | LinkageError e) {
                 try { if (staging != null && owned()) staging.refuse(this::owned); } catch (Exception | LinkageError ignored) {}
                 throw e;
@@ -145,15 +146,15 @@ public final class PurpleArchiveAcquiredSource {
         void filePartStep() throws Exception {
             require(); openFile();
             if (position < stamp.st_size) {
-                byte[] bytes = new byte[(int) Math.min(PIECE, stamp.st_size - position)];
+                byte[] bytes = new byte[(int) Math.min(FILE_PIECE, stamp.st_size - position)];
                 try {
-                    file.readFully(bytes);
+                    file.seek(position); file.readFully(bytes);
                     if (completion.key != null) {
                         byte[] iv = completion.iv.clone(); long counter = position / 16;
                         iv[15] = (byte) counter; iv[14] = (byte) (counter >>> 8); iv[13] = (byte) (counter >>> 16); iv[12] = (byte) (counter >>> 24);
                         Utilities.aesCtrDecryptionByteArray(bytes, completion.key, iv, 0, bytes.length, 0); Arrays.fill(iv, (byte) 0);
                     }
-                    require(); digest.update(bytes); if (pass == 0) staging.piece(position, bytes); position += bytes.length;
+                    require(); if (pass == 0) staging.piece(position, bytes); digest.update(bytes); position += bytes.length;
                 } finally { Arrays.fill(bytes, (byte) 0); }
                 return;
             }
@@ -175,8 +176,12 @@ public final class PurpleArchiveAcquiredSource {
             Chunk chunk;
             synchronized (entries) { chunk = chunks.poll(); }
             if (chunk != null) {
+                boolean retained = false;
                 try { staging.piece(chunk.offset, chunk.bytes); observe(chunk.offset, chunk.bytes.length); }
-                finally { release(identity.key, chunk.bytes); }
+                catch (PurpleArchiveStaging.CacheRebuilding pending) {
+                    synchronized (entries) { if (current()) { chunks.addFirst(chunk); retained = true; } }
+                    throw pending;
+                } finally { if (!retained) release(identity.key, chunk.bytes); }
             } else if (completion != null && !complete) fileStep();
             JSONObject inspection = staging.call("stagingInspect", new JSONObject().put("header", staging.head)); PurpleArchiveStaging.ready(inspection);
             boolean covered = inspection.getString("covered").equals(Long.toString(total));
@@ -298,6 +303,7 @@ public final class PurpleArchiveAcquiredSource {
         synchronized (entries) { if (entry.scheduled || entry.cancelled || entry.keyText == null && !entry.initialized) return; entry.scheduled = true; }
         boolean queued = PurpleArchive.media(entry.identity, entry::current, (worker, active) -> {
             try { entry.step(worker); }
+            catch (PurpleArchiveStaging.CacheRebuilding pending) { }
             catch (Exception | LinkageError e) { cancel(entry, true); }
             finally {
                 boolean again; synchronized (entries) { entry.scheduled = false; again = entry.more(); }
