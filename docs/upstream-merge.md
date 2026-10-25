@@ -709,3 +709,26 @@ Direct-share routing: shortcuts.xml targets the registered PurpleDirectShareActi
 Direct-share final routing: MediaDataController's two internal shortcut-intent builders bind the captured account/login/peer. OpenChatReceiver and OpenAttachedMenuBotReceiver only mark shortcut provenance after copying all identity extras; neither reads account inventory. LaunchActivity, after normal initialization, admits it before account selection and again before common dispatch, and initializes the share recipient through the owned helper for SEND and SEND_MULTIPLE. These hooks refuse retained stale pins; dynamic removal cannot revoke a launcher pin. PurpleDirectShare owns validation and the short refusal message.
 
 Peek foreground policy: ApplicationLoader initializes PurplePeekForeground after creating the existing ForegroundDetector. ScreenReceiver delegates screen-off before its normal pause handling; ExternalActionActivity delegates its passcode lock after appLocked is set, matching LaunchActivity's existing PurpleGate.locked hook. The owned helper always cancels countdowns first and optionally ends active Peek. No upstream lifecycle counters are changed.
+
+## Search suggestions visibility refresh
+
+`DialogsActivity` passes its existing account-scoped `dialogFiltersUpdated`
+notification to `PurpleDialogsHooks.refreshSearch` before the filter-tab handler,
+which can return while search is visible. Purple already emits this event after
+preset, Peek and settings visibility changes; the hook adds no observer or
+asynchronous lifetime. The per-screen helper checks the fragment account.
+
+`DialogsSearchAdapter.refreshPurpleVisibility` is a thin bridge carrying its own
+account, current search text and nested hints list to `PurpleSearchRefresh`.
+The owned helper checks the adapter account, re-filters in-memory recent searches
+with the existing query, and notifies both adapters. It preserves the source
+order and scores. It does not load or save recents, change ratings, reload hints
+from disk/server, switch accounts, or send requests. An absent nested adapter is
+safe. Ordinary `reloadHints` notifications retain their existing behavior.
+
+Run `TMessagesProj/jni/purple_jni/tests/run_search_refresh.py --receipt RECEIPT
+--output SCRATCH` after real AGP javac. It executes the production owned helper
+from those classes and the exact production bridge body against in-memory UI
+ports, with account, stable order, current-query and no-write assertions.
+
+The search hook checks logical search state and pager visibility before touching adapters. DialogsActivity delegates once more at the end of showSearch, after either visibility branch, so reopening re-filters a retained pager even if visibility changed while it was closed. No dirty flag or new observer is needed. The host regression ports 100 closed-pager notifications and checks hide/unhide order after reopen.

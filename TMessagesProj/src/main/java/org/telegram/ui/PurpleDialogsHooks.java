@@ -15,6 +15,7 @@ import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBarMenuItem;
 import org.telegram.ui.ActionBar.ActionBarMenuSubItem;
 import org.telegram.ui.ActionBar.ActionBarPopupWindow;
+import org.telegram.ui.Components.SearchViewPager;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -106,6 +107,14 @@ public final class PurpleDialogsHooks {
      */
     public boolean changed(int account) {
         return stripWatch.changed(account, PurpleGate.state());
+    }
+
+    public void refreshSearch(int account, SearchViewPager pager, boolean searching) {
+        if (!searching || account != fragment.getCurrentAccount() || pager == null
+                || pager.getVisibility() != View.VISIBLE || pager.dialogsSearchAdapter == null) {
+            return;
+        }
+        pager.dialogsSearchAdapter.refreshPurpleVisibility(account);
     }
 
     /**

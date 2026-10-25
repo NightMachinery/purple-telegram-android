@@ -1,0 +1,9 @@
+package org.telegram.ui;
+import android.view.View;
+import org.telegram.ui.ActionBar.BaseFragment;
+import org.telegram.ui.Components.SearchViewPager;
+public final class PurpleDialogsHooks {
+    private final BaseFragment fragment;
+    public PurpleDialogsHooks(BaseFragment fragment) { this.fragment = fragment; }
+    __PURPLE_REFRESH_BRIDGE__
+}

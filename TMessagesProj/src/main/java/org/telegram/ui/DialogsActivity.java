@@ -7727,6 +7727,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             setSearchAnimationProgress(show ? 1f : 0, false);
             fragmentView.invalidate();
         }
+        purple.refreshSearch(currentAccount, searchViewPager, searchIsShowed);
         if (initialSearchType >= 0 && searchViewPager != null) {
             searchViewPager.setPosition(searchViewPager.getPositionForType(initialSearchType));
         }
@@ -10778,6 +10779,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 finishFragment();
             }
         } else if (id == NotificationCenter.dialogFiltersUpdated) {
+            purple.refreshSearch(account, searchViewPager, searchIsShowed);
             updateFilterTabs(true, true);
         } else if (id == NotificationCenter.filterSettingsUpdated) {
             showFiltersHint();

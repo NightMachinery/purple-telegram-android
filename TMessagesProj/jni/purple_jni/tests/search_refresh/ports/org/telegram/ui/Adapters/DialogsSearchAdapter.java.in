@@ -1,0 +1,45 @@
+package org.telegram.ui.Adapters;
+import java.util.*;
+import org.telegram.ui.Components.RecyclerListView;
+import org.telegram.ui.SearchRefreshCases;
+public final class DialogsSearchAdapter {
+    private final int currentAccount;
+    private final String lastSearchText;
+    private final RecyclerListView innerListView;
+    public final List<String> rawRecent = new ArrayList<>(Arrays.asList("P", "B", "P2", "A"));
+    public final List<String> rawHints = new ArrayList<>(Arrays.asList("B", "P", "A", "P2"));
+    public final Set<String> hidden = new HashSet<>();
+    public final Map<String, Double> ratings = new LinkedHashMap<>();
+    public List<String> recent = new ArrayList<>();
+    public List<String> hints = new ArrayList<>();
+    public String filteredQuery;
+    public int outerNotifies;
+    public int innerNotifies;
+    public DialogsSearchAdapter(int account, String query, boolean inner, boolean innerAdapter) {
+        currentAccount = account;
+        lastSearchText = query;
+        for (int i=0; i<rawHints.size(); i++) ratings.put(rawHints.get(i), 10.0-i);
+        innerListView = !inner ? null : new RecyclerListView(!innerAdapter ? null : new androidx.recyclerview.widget.RecyclerView.Adapter() {
+            @Override public void notifyDataSetChanged() {
+                innerNotifies++;
+                SearchRefreshCases.events.add("inner");
+                hints = project(rawHints, null);
+            }
+        });
+    }
+    private List<String> project(List<String> source, String query) {
+        List<String> out = new ArrayList<>();
+        for (String peer : source) if (!hidden.contains(peer) && (query == null || query.isEmpty() || peer.startsWith(query))) out.add(peer);
+        return out;
+    }
+    public void filterRecent(String query) {
+        SearchRefreshCases.events.add("filter");
+        filteredQuery = query;
+        recent = project(rawRecent, query);
+    }
+    public void notifyDataSetChanged() {
+        SearchRefreshCases.events.add("outer");
+        outerNotifies++;
+    }
+    __PURPLE_REFRESH_BRIDGE__
+}

@@ -2331,6 +2331,11 @@ public class DialogsSearchAdapter extends RecyclerListView.SelectionAdapter {
         return currentItemCount;
     }
 
+    public void refreshPurpleVisibility(int account) {
+        org.telegram.messenger.purple.PurpleSearchRefresh.refresh(
+                account, currentAccount, lastSearchText, this, innerListView);
+    }
+
     public void filterRecent(String query) {
         filteredRecentQuery = query;
         filtered2RecentSearchObjects.clear();
