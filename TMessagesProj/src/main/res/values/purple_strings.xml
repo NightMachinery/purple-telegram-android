@@ -744,10 +744,10 @@
     <string name="PurpleSyncAutoReview">use manual Check to review the changes</string>
     <string name="PurpleSyncAutoStopped">network retries stopped; the next account, foreground or save event can try again</string>
     <string name="PurpleSyncAutoRecovery">use manual Check to review the account’s sync state</string>
-    <string name="PurpleArchiveGap">Some content could not be retained. A capture gap is recorded.</string>
+    <string name="PurpleArchiveGap">Some content could not be retained. Archive capture is incomplete.</string>
     <string name="PurpleArchiveTitle">Local message archive</string>
     <string name="PurpleArchivePolicy">Encrypted storage for this account on this device. Retained content has no expiry. Storage is removed at logout and excluded from backup and device transfer.</string>
-    <string name="PurpleArchiveStorageOnly">This preview provides storage only. Message capture and Edit History are not available yet.</string>
+    <string name="PurpleArchiveStorageOnly">Received content and accepted edits are retained locally when archive admission succeeds. Open a message menu and choose View Edit History. Earlier content may be missing; media bytes are not available in this view.</string>
     <string name="PurpleArchiveRequires23">Requires Android 6 or newer (API 23). No archive is created on this device.</string>
     <string name="PurpleArchiveReady">Encrypted storage: %1$s bytes (estimate)</string>
     <string name="PurpleArchiveOpening">Checking encrypted storage…</string>
@@ -771,4 +771,16 @@
     <string name="PurpleDiagnosticsCleared">Diagnostic log cleared.</string>
     <string name="PurpleDiagnosticsClearFailed">Could not delete every diagnostic log file.</string>
     <string name="PurpleDiagnosticsExportFailed">Could not write the diagnostic log file.</string>
+    <string name="PurpleArchiveViewHistory">View Edit History</string>
+    <string name="PurpleArchiveHistoryPolicy">History starts when this device first observes a message. An observation is not proof of an edit. Dates are message dates or local observation times, not verified edit or deletion times.</string>
+    <string name="PurpleArchiveHistoryUnavailable">History is unavailable or changed while this page was open. Refresh to read a new snapshot. For a damaged archive, use Discard this account’s archive and start fresh in Purple settings.</string>
+    <string name="PurpleArchiveHistoryEmpty">No retained versions on this device. Earlier edits may not have been observed.</string>
+    <string name="PurpleArchiveEditObserved">Edit observed:</string>
+    <string name="PurpleArchiveBodyObserved">Body observed:</string>
+    <string name="PurpleArchiveServerDate">Message date:</string>
+    <string name="PurpleArchiveMissingPreimage">The earlier body was not observed.</string>
+    <string name="PurpleArchivePartialBody">Some content is partial or unsupported. The original payload is retained when available.</string>
+    <string name="PurpleArchiveMediaNotAvailable">Attachment descriptors are retained. Media bytes are not available in this view.</string>
+    <string name="PurpleArchiveOlder">Older versions</string>
+    <string name="PurpleArchiveUnknownDate">Unknown</string>
 </resources>

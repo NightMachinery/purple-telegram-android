@@ -416,6 +416,7 @@ public class ExternalActionActivity extends Activity implements INavigationLayou
         }
         ConnectionsManager.getInstance(UserConfig.selectedAccount).setAppPaused(true, false);
         UserConfig.selectedAccount = account;
+        org.telegram.messenger.purple.PurpleArchiveViewerModel.selectionChanged(account);
         UserConfig.getInstance(0).saveConfig(false);
         if (!ApplicationLoader.mainInterfacePaused) {
             ConnectionsManager.getInstance(UserConfig.selectedAccount).setAppPaused(false, false);

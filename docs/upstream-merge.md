@@ -698,3 +698,6 @@ and the plan would wait until the next Purple call.
 
 Archive login admission adds two delegated UserConfig hooks: setCurrentUser prepares a nonce at a login transition under the user lock; saveConfig(true) adds it to the existing editor after the user field. The existing single apply call publishes the pair atomically. No network or transport-key admission hook remains.
 
+Capture hooks: MessagesController records typed accepted edit/delete causes and schedules explicit local deletion capture. MessagesStorage passes immutable batches across its queue and delegates preimage capture before its existing mutations. SecretChatHelper delegates accepted random-id deletions before flattening. ChatActivity delegates the reserved View Edit History menu id. Every upstream SQL, transaction and destructive call is retained unchanged.
+
+Viewer selection hooks: LaunchActivity.switchToAccount, ExternalActionActivity.switchToAccount and MessagesController logout selection call PurpleArchiveViewerModel.selectionChanged immediately after assigning selectedAccount. These three delegated calls invalidate archive viewers and their pending deliveries even when the main fragment survives.

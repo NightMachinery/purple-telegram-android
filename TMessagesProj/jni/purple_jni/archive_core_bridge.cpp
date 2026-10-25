@@ -276,7 +276,45 @@ QJsonObject Dispatch(const QString &operation, const QJsonObject &args, const Cr
         if (!result) return {{u"status"_q,u"Invalid"_q}};
         return {{u"status"_q,u"Ready"_q},{u"bytes"_q,QString::number(result->bytes)},{u"cursor"_q,result->cursor},{u"complete"_q,result->complete}};
     }
+    if (operation == u"snapshot"_q) {
+        auto value = args.value(u"body"_q).toObject();
+        auto snapshot = ArchiveVersionSnapshot(); snapshot.key = Key(args.value(u"key"_q).toObject());
+        auto &version = snapshot.version; version.id = u"snapshot"_q; version.revision = version.id;
+        version.origin = ArchiveOrigin::Baseline; version.completeness = ArchiveCompleteness(value.value(u"completeness"_q).toInt(0));
+        version.content.text = value.value(u"text"_q).toString(); version.content.caption = value.value(u"caption"_q).toString();
+        version.content.entities = value.value(u"entities"_q).toArray(); version.content.rich = value.value(u"rich"_q);
+        version.content.opaqueFormat = value.value(u"opaqueFormat"_q).toString(); version.content.opaque = Bytes(value.value(u"opaque"_q));
+        for (const auto &item : value.value(u"media"_q).toArray()) {
+            auto descriptor = item.toObject(); auto id = Text(descriptor,u"identity"_q);
+            version.content.media.push_back({id,Text(descriptor,u"kind"_q),descriptor.value(u"attributes"_q).toObject()});
+            version.media.push_back({id});
+        }
+        version.observation.observedAt = Signed(value.value(u"observedAt"_q)); version.firstObservedAt = version.observation.observedAt;
+        version.observation.serverTime = Signed(value.value(u"serverTime"_q)); version.observation.topicId = Signed(value.value(u"topicId"_q));
+        version.observation.representation = snapshot.key.representation;
+        version.observation.context = value.value(u"context"_q).toObject(); version.observation.transport = value.value(u"transport"_q).toObject();
+        version.observation.payloadFormat = Text(value,u"payloadFormat"_q); version.observation.payload = Bytes(value.value(u"payload"_q));
+        version.missing.revision = version.revision;
+        for (const auto &item : value.value(u"missing"_q).toArray()) {
+            auto slot = ArchiveMissingSlot(); for (const auto &part : item.toArray()) slot.path.push_back(part.toString());
+            version.missing.content.push_back(std::move(slot));
+        }
+        auto bytes = EncodeArchiveVersionSnapshot(snapshot);
+        if (!bytes || bytes->size() > kArchiveCodecByteLimit) return {{u"status"_q,u"RetentionGap"_q}};
+        return {{u"status"_q,u"Ready"_q},{u"snapshot"_q,Encoded(*bytes)},{u"hash"_q,ArchiveContentHash(version.content)}};
+    }
     auto security = Security(args, crypto);
+    if (operation == u"journalSeal"_q || operation == u"journalOpen"_q) {
+        auto token = Text(args,u"token"_q);
+        if (!IsArchiveHash(token)) throw std::runtime_error("archive journal identity");
+        auto context = ArchiveEnvelopeContext{account,security.storeId,ArchiveRecordKind::Maintenance,(u"capture-journal/"_q+token).toUtf8()};
+        auto input = Bytes(args.value(u"bytes"_q));
+        if (input.size() > 65536) throw std::runtime_error("archive journal size");
+        auto output = operation == u"journalSeal"_q ? SealArchiveEnvelope(context,security.keyId,input,security.crypto)
+            : OpenArchiveEnvelope(context,security.keyId,input,security.crypto);
+        return output ? QJsonObject{{u"status"_q,u"Ready"_q},{u"bytes"_q,Encoded(output.bytes)}} : QJsonObject{{u"status"_q,u"Invalid"_q}};
+    }
+
     if (operation == u"blobToken"_q) {
         auto token=ArchiveSqlToken(account,ArchiveIndexKind::Blob,Text(args,u"blob"_q).toUtf8(),security);
         return token.isEmpty()?QJsonObject{{u"status"_q,u"Invalid"_q}}:QJsonObject{{u"status"_q,u"Ready"_q},{u"token"_q,token}};
@@ -297,6 +335,20 @@ QJsonObject Dispatch(const QString &operation, const QJsonObject &args, const Cr
         else if (query == u"journalMode"_q) statement = ArchiveSqlStatement{u"PRAGMA journal_mode"_q,{},ArchiveSqlExpectation::OneRow};
         else if (query == u"synchronous"_q) statement = ArchiveSqlStatement{u"PRAGMA synchronous"_q,{},ArchiveSqlExpectation::OneRow};
         else if (query == u"gaps"_q) statement = ArchiveSqlReadCaptureGaps(args.value(u"limit"_q).toInt(128));
+        else if (query == u"lookup"_q) {
+            auto dialog = Signed(args.value(u"dialog"_q)); auto message = Signed(args.value(u"messageId"_q));
+            auto representation = ArchiveSqlToken(account,ArchiveIndexKind::Representation,"original",security);
+            if (message <= 0 || representation.isEmpty()) throw std::runtime_error("archive lookup identity");
+            auto sql = u"SELECT message_key,envelope FROM messages WHERE message_id=? AND collection=0 AND representation_token=? AND EXISTS(SELECT 1 FROM archive_meta WHERE maintenance_id='')"_q;
+            auto binds = std::vector<ArchiveSqlValue>{message,representation};
+            if (dialog == 0) sql += u" AND chat_kind IN(0,1)"_q;
+            else {
+                auto tokens = QJsonArray();
+                for (auto kind : {ArchiveChatKind::Group,ArchiveChatKind::Channel}) tokens.push_back(ArchiveSqlChatId({kind,-dialog},account,security));
+                sql += u" AND chat_token IN(?,?)"_q; binds.push_back(tokens[0].toString()); binds.push_back(tokens[1].toString());
+            }
+            statement = ArchiveSqlStatement{sql + u" LIMIT 2"_q,std::move(binds),ArchiveSqlExpectation::Rows}; statement.rows.maximum = 2;
+        }
         else {
             auto key = Key(args.value(u"key"_q).toObject()); if (key.account != account) throw std::runtime_error("archive query account");
             if (query == u"message"_q) { statement = ArchiveSqlReadMessage(key,security); id = ArchiveSqlMessageId(key,security); }
@@ -369,7 +421,7 @@ QJsonObject Dispatch(const QString &operation, const QJsonObject &args, const Cr
             if (!decoded.snapshot) throw std::runtime_error("archive capture snapshot");
             const auto &snapshot = *decoded.snapshot; event.key = snapshot.key; event.content = snapshot.version.content;
             event.completeness = snapshot.version.completeness; event.missing = snapshot.version.missing;
-            event.observation = snapshot.version.observation; event.source = snapshot.version.source;
+            event.observation = snapshot.version.observation; event.source = snapshot.version.source; event.missing.revision.clear();
         } else {
             event.key = Key(input.value(u"key"_q).toObject()); event.observation.observedAt = Signed(input.value(u"observedAt"_q));
             event.observation.serverTime = Signed(input.value(u"serverTime"_q)); event.observation.representation = event.key.representation;

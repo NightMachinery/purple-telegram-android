@@ -1944,10 +1944,12 @@ The account-targeted editor candidate and its guarded first-save directory
 creation are described in [account settings](docs/account-settings-m2.md). Its
 compiler, JNI/filesystem and UI qualification is still pending.
 
-### Encrypted archive storage preview
+### Local Edit History
 
-Purple settings can prepare and inspect per-account encrypted archive storage on
-Android 6 or newer. Logout removes that account's store and dedicated key.
-Message capture and Edit History are still pending in this storage preview.
-See [archive storage](docs/archive-storage.md) for recovery, compatibility and
-headless checks.
+On Android 6 or newer, open a message menu and choose **View Edit History**.
+History starts when this device observes content. The read-only pages distinguish
+observations from accepted edits and show missing or unsupported content honestly.
+Purple settings shows archive usage and retention gaps, plus explicit account
+recovery. Logout deletes that account’s archive and dedicated keys.
+See [capture and history](docs/archive-capture.md) and
+[archive storage](docs/archive-storage.md) for limits and recovery.

@@ -51,6 +51,7 @@ final class PurpleChatHooks {
 
     static final int SAVE_TO_GALLERY = org.telegram.messenger.purple.PurpleMediaSave.GALLERY;
     static final int SAVE_TO_DOWNLOADS = org.telegram.messenger.purple.PurpleMediaSave.DOWNLOADS;
+    static final int VIEW_EDIT_HISTORY = 0x70750330;
     static final int COPY_AS_MARKDOWN = PurpleMarkdownCopy.OPTION;
     static final int COPY_SELECTION_AS_MARKDOWN = 0x70750008;
 
@@ -123,6 +124,9 @@ final class PurpleChatHooks {
     void addCopyOptions(MessageObject message, MessageObject.GroupedMessages group,
             ArrayList<CharSequence> items, ArrayList<Integer> options, ArrayList<Integer> icons, int copy) {
         PurpleMarkdownCopy.addMenuOptions(message, group, items, options, icons, copy);
+        if (android.os.Build.VERSION.SDK_INT >= 23 && message != null && !message.scheduled && !message.isQuickReply() && (message.getId() > 0 || message.messageOwner.random_id != 0)) {
+            items.add(getString(R.string.PurpleArchiveViewHistory)); options.add(VIEW_EDIT_HISTORY); icons.add(R.drawable.msg_edit);
+        }
     }
 
     void addSaveOptions(MessageObject message, ArrayList<CharSequence> items,
@@ -132,6 +136,10 @@ final class PurpleChatHooks {
 
     void saveMedia(MessageObject message, int option) {
         org.telegram.messenger.purple.PurpleMediaSave.save(chat.getParentActivity(), message, option == SAVE_TO_GALLERY);
+    }
+
+    void viewEditHistory(MessageObject message) {
+        if (message != null) chat.presentFragment(new PurpleEditHistoryActivity(chat.getCurrentAccount(), message.messageOwner));
     }
 
     void copyAsMarkdown(MessageObject message, MessageObject.GroupedMessages group) {

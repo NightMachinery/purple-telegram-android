@@ -11921,7 +11921,8 @@ public class MessagesStorage extends BaseController {
 
     }
 
-    private void putMessagesInternal(ArrayList<TLRPC.Message> messages, boolean withTransaction, boolean doNotUpdateDialogDate, int downloadMask, boolean ifNoLastMessage, int mode, long threadMessageId) {
+    private void putMessagesInternal(ArrayList<TLRPC.Message> messages, boolean withTransaction, boolean doNotUpdateDialogDate, int downloadMask, boolean ifNoLastMessage, int mode, long threadMessageId, org.telegram.messenger.purple.PurpleArchiveOrigin.Batch purpleArchive) {
+        org.telegram.messenger.purple.PurpleArchiveCapture.beforeWrite(currentAccount, database, purpleArchive);
         if (messages != null) {
             ArrayList<TL_ephemeral.EphemeralMessage> ephemeralMessages = null;
             for (TLRPC.Message message : messages) {
@@ -13417,13 +13418,14 @@ public class MessagesStorage extends BaseController {
     }
 
     public void putMessages(ArrayList<TLRPC.Message> messages, boolean withTransaction, boolean useQueue, boolean doNotUpdateDialogDate, int downloadMask, boolean ifNoLastMessage, int mode, long threadMessageId) {
+        final org.telegram.messenger.purple.PurpleArchiveOrigin.Batch purpleArchive = org.telegram.messenger.purple.PurpleArchiveCapture.observations(currentAccount, messages, mode);
         if (messages == null || messages.isEmpty()) {
             return;
         }
         if (useQueue) {
-            storageQueue.postRunnable(() -> putMessagesInternal(messages, withTransaction, doNotUpdateDialogDate, downloadMask, ifNoLastMessage, mode, threadMessageId));
+            storageQueue.postRunnable(() -> putMessagesInternal(messages, withTransaction, doNotUpdateDialogDate, downloadMask, ifNoLastMessage, mode, threadMessageId, purpleArchive));
         } else {
-            putMessagesInternal(messages, withTransaction, doNotUpdateDialogDate, downloadMask, ifNoLastMessage, mode, threadMessageId);
+            putMessagesInternal(messages, withTransaction, doNotUpdateDialogDate, downloadMask, ifNoLastMessage, mode, threadMessageId, purpleArchive);
         }
     }
 
@@ -16138,7 +16140,13 @@ public class MessagesStorage extends BaseController {
 
     // put messages in data base while load history
     public void putMessages(TLRPC.messages_Messages messages, long dialogId, int load_type, int max_id, boolean createDialog, int mode, long threadMessageId) {
+        putMessages(messages, dialogId, load_type, max_id, createDialog, mode, threadMessageId,
+                org.telegram.messenger.purple.PurpleArchiveCapture.observations(currentAccount, messages, mode));
+    }
+
+    public void putMessages(TLRPC.messages_Messages messages, long dialogId, int load_type, int max_id, boolean createDialog, int mode, long threadMessageId, org.telegram.messenger.purple.PurpleArchiveOrigin.Batch purpleArchive) {
         storageQueue.postRunnable(() -> {
+            org.telegram.messenger.purple.PurpleArchiveCapture.beforeWrite(currentAccount, database, purpleArchive, dialogId);
             SQLitePreparedStatement state_messages = null;
             SQLitePreparedStatement state_messages_topics = null;
             SQLitePreparedStatement state_media = null;

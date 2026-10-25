@@ -33387,6 +33387,9 @@ public class ChatActivity extends BaseFragment implements
             case PurpleChatHooks.SAVE_TO_DOWNLOADS:
                 purple.saveMedia(selectedObject, option);
                 break;
+            case PurpleChatHooks.VIEW_EDIT_HISTORY:
+                purple.viewEditHistory(selectedObject);
+                break;
             case PurpleChatHooks.COPY_AS_MARKDOWN: {
                 purple.copyAsMarkdown(selectedObject, selectedObjectGroup);
                 break;

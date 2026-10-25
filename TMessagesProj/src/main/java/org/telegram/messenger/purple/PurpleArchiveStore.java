@@ -235,6 +235,10 @@ final class PurpleArchiveStore implements AutoCloseable {
         checkOwner();
         return PurpleArchiveCore.execute(database, plan, this::current, environment.publicationLock());
     }
+    PurpleArchiveCore.Execution execute(PurpleArchiveCore.Program plan, BooleanSupplier active) {
+        checkOwner();
+        return PurpleArchiveCore.execute(database, plan, () -> current() && active.getAsBoolean(), environment.publicationLock());
+    }
     boolean hasGaps() throws Exception { requireCurrent(); return query(database, "gaps").rows != 0; }
     PurpleArchiveCrypto crypto() { checkOwner(); return crypto; }
     JSONObject arguments() throws Exception { requireCurrent(); return binding.arguments().put("workGeneration", binding.generation); }

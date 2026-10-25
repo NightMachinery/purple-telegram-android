@@ -40,6 +40,8 @@ public final class PurpleArchive {
         boolean retryScheduled;
         String loginContext;
         String discardSeal;
+        final java.util.concurrent.atomic.AtomicLong captureBytes = new java.util.concurrent.atomic.AtomicLong();
+        final java.util.concurrent.atomic.AtomicBoolean gapScheduled = new java.util.concurrent.atomic.AtomicBoolean();
         volatile long deliveryEpoch;
         Worker(String account) {
             this.account = account;
@@ -91,6 +93,8 @@ public final class PurpleArchive {
                     }, account, context);
                 }
                 status = new Status("Opening", status.bytes, status.gap || store.paths.metadata.read("gap-outbox.json", 65536).bytes != null);
+                PurpleArchiveSequence.recover(store);
+                flushCaptureGap(this);
                 PurpleArchiveGaps.flush(store);
                 status = new Status("Ready", PurpleArchiveUsage.scan(store), store.hasGaps());
             } catch (Exception | LinkageError e) {
@@ -308,6 +312,111 @@ public final class PurpleArchive {
             });
         }
     }
+    interface ArchiveAction { void run(Worker worker, java.util.function.BooleanSupplier active) throws Exception; }
+    private static final class CaptureTask implements Runnable {
+        final Worker worker;
+        final PurpleAccountFiles.Identity identity;
+        final java.util.concurrent.atomic.AtomicReference<ArchiveAction> action;
+        final java.util.concurrent.atomic.AtomicBoolean active = new java.util.concurrent.atomic.AtomicBoolean(true), released = new java.util.concurrent.atomic.AtomicBoolean();
+        final java.util.concurrent.CompletableFuture<Boolean> result = new java.util.concurrent.CompletableFuture<>();
+        final long bytes;
+        CaptureTask(Worker worker, PurpleAccountFiles.Identity identity, long bytes, ArchiveAction action) {
+            this.worker = worker; this.identity = identity; this.bytes = bytes; this.action = new java.util.concurrent.atomic.AtomicReference<>(action);
+        }
+        void release() { if (released.compareAndSet(false, true)) worker.captureBytes.addAndGet(-bytes); }
+        void cancel() { active.set(false); action.set(null); release(); }
+        public void run() {
+            ArchiveAction work = action.getAndSet(null);
+            try {
+                if (work == null || !active.get() || worker.retired || worker.closing || !identity.current()) return;
+                if (worker.store == null) worker.open(identity);
+                if (!active.get() || worker.store == null || !worker.status.state.equals("Ready") || worker.closing || !identity.current()) return;
+                work.run(worker, () -> active.get() && !worker.closing && identity.current());
+                result.complete(active.get());
+            } catch (Exception | LinkageError e) { captureGap(identity, "capture_write_failed"); }
+            finally { release(); result.complete(false); }
+        }
+    }
+    static void capture(PurpleAccountFiles.Identity identity, java.util.ArrayList<PurpleArchiveCapture.Input> inputs) {
+        capture(identity, inputs, System.nanoTime() + 250_000_000L);
+    }
+    static void capture(PurpleAccountFiles.Identity identity, java.util.ArrayList<PurpleArchiveCapture.Input> inputs, long deadline) {
+        if (inputs.isEmpty()) return;
+        long bytes = 0;
+        for (PurpleArchiveCapture.Input input : inputs) bytes += input.key.length() * 2L + (input.body == null ? 0 : input.body.length() * 2L);
+        runCapture(identity, bytes, (worker, active) -> {
+            for (PurpleArchiveCapture.Input input : inputs) {
+                if (!active.getAsBoolean()) throw new PurpleArchiveStore.Failure("Archive capture cancelled");
+                ++worker.deliveryEpoch;
+                String outcome = PurpleArchiveSequence.capture(worker.store, input, active);
+                PurpleDiagLog.event("archive", outcome, PurpleDiagLog.slot(identity.slot));
+            }
+        }, deadline);
+    }
+    private static void runCapture(PurpleAccountFiles.Identity identity, long bytes, ArchiveAction action, long deadline) {
+        if (android.os.Build.VERSION.SDK_INT < 23 || identity == null || !allowed(identity)) return;
+        Worker worker = worker(identity.key);
+        if (worker.closing || worker.retired || bytes > 8 * 1024 * 1024) { captureGap(identity, "capture_overflow"); return; }
+        if (worker.captureBytes.addAndGet(bytes) > 16 * 1024 * 1024) {
+            worker.captureBytes.addAndGet(-bytes); captureGap(identity, "capture_overflow"); return;
+        }
+        CaptureTask task = new CaptureTask(worker, identity, bytes, action);
+        try {
+            if (System.nanoTime() >= deadline) throw new java.util.concurrent.TimeoutException();
+            worker.queue.execute(task);
+            if (!task.result.get(Math.max(1, deadline - System.nanoTime()), TimeUnit.NANOSECONDS)) captureGap(identity, "capture_write_failed");
+        } catch (Exception | LinkageError e) { task.cancel(); captureGap(identity, "capture_timeout"); }
+    }
+    static void captureLookup(PurpleAccountFiles.Identity identity, long dialog, long id, PurpleArchiveOrigin.Cause cause, long deadline) {
+        runCapture(identity, 0, (worker, active) -> {
+            PurpleArchiveStore store = worker.store;
+            org.json.JSONObject query = PurpleArchiveCore.call("query", store.arguments().put("query", "lookup")
+                .put("dialog", Long.toString(dialog)).put("messageId", Long.toString(id)), store.crypto());
+            org.json.JSONObject key;
+            try (PurpleArchiveStore.Reader reader = store.reader()) {
+                PurpleArchiveSqlite.Result found = reader.read(new PurpleArchiveCore.Statement(query.getJSONObject("statement")));
+                if (found.rows != 1) throw new PurpleArchiveStore.Failure("Archive missing or ambiguous identity");
+                org.json.JSONObject row = new org.json.JSONObject().put("kind", 2).put("id", found.values[0][0].text())
+                    .put("position", "0").put("frame", PurpleArchiveCore.base64(found.values[0][1].bytes));
+                key = PurpleArchiveSlice.open(store, reader, row).getJSONObject("value").getJSONObject("key");
+            }
+            ++worker.deliveryEpoch;
+            String outcome = PurpleArchiveSequence.capture(store, new PurpleArchiveCapture.Input(key.toString(), null, cause, false), active);
+            PurpleDiagLog.event("archive", outcome, PurpleDiagLog.slot(identity.slot));
+        }, deadline);
+    }
+    static void captureGap(PurpleAccountFiles.Identity identity, String reason) {
+        if (Build.VERSION.SDK_INT < 23 || identity == null || !allowed(identity)) return;
+        Worker worker = worker(identity.key);
+        worker.status = new Status(worker.status.state, worker.status.bytes, true);
+        PurpleDiagLog.event("archive", "capture_gap", PurpleDiagLog.slot(identity.slot), PurpleDiagLog.reason(reason));
+        if (worker.closing || worker.retired || !worker.gapScheduled.compareAndSet(false, true)) return;
+        recovery.execute(() -> {
+            try {
+                synchronized (worker.publication) {
+                    if (worker.closing || worker.retired || !identity.current()) return;
+                    PurpleArchivePaths paths = new PurpleArchivePaths(ApplicationLoader.getFilesDirFixed(), identity.key);
+                    PurpleArchiveFiles.Snapshot old = paths.metadata.read("capture-gap.json", 65536);
+                    if (old.bytes == null) paths.metadata.publish("capture-gap.json", old, PurpleArchiveCatalogue.bytes(new org.json.JSONObject()
+                        .put("account", identity.key).put("reason", reason).put("observedAt", Long.toString(System.currentTimeMillis() / 1000))));
+                }
+                worker.submit(() -> {
+                    try { if (worker.store != null && !worker.closing) flushCaptureGap(worker); }
+                    catch (Exception | LinkageError e) { worker.status = new Status(worker.status.state, worker.status.bytes, true); }
+                });
+            } catch (Exception | LinkageError e) { worker.status = new Status(worker.status.state, worker.status.bytes, true); }
+            finally { worker.gapScheduled.set(false); }
+        });
+    }
+    private static void flushCaptureGap(Worker worker) throws Exception {
+        PurpleArchiveFiles.Snapshot pending = worker.store.paths.metadata.read("capture-gap.json", 65536);
+        if (pending.bytes == null) return;
+        org.json.JSONObject value = PurpleArchiveBinding.json(pending.bytes);
+        if (!value.getString("account").equals(worker.account)) throw new PurpleArchiveStore.Failure("Archive gap account changed");
+        PurpleArchiveGaps.record(worker.store, value.getString("reason"), Long.parseLong(value.getString("observedAt")));
+        worker.store.paths.metadata.remove("capture-gap.json", false);
+    }
+    static Worker existing(PurpleAccountFiles.Identity identity) { return identity == null ? null : workers.get(identity.key); }
     public static void loginChanging(int slot, long before, long after) { PurpleArchiveLogin.changing(slot, before, after); }
     public static void writeLogin(int slot, long user, android.content.SharedPreferences.Editor editor) { PurpleArchiveLogin.write(slot, user, editor); }
     private PurpleArchive() {}

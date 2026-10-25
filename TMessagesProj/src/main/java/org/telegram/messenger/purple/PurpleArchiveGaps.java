@@ -5,6 +5,10 @@ import org.json.JSONObject;
 
 final class PurpleArchiveGaps {
     static void record(PurpleArchiveStore store, String reason, long observedAt) throws Exception {
+        record(store, reason, observedAt, PurpleArchiveBinding.token());
+    }
+    static void record(PurpleArchiveStore store, String reason, long observedAt, String id) throws Exception {
+        if (!PurpleArchiveKeys.token(id)) throw new IllegalArgumentException("Archive gap identity");
         if (reason == null || !reason.matches("[A-Za-z0-9_-]{1,128}") || observedAt < 0)
             throw new IllegalArgumentException("Archive gap reason");
         synchronized (store.environment.publicationLock()) {
@@ -12,7 +16,7 @@ final class PurpleArchiveGaps {
             PurpleArchiveFiles.Snapshot old = store.paths.metadata.read("gap-outbox.json", 65536);
             if (old.bytes == null) {
                 JSONObject gap = new JSONObject().put("account", store.binding.account).put("store", store.binding.store)
-                    .put("generation", store.binding.generation).put("id", PurpleArchiveBinding.token())
+                    .put("generation", store.binding.generation).put("id", id)
                     .put("reason", reason).put("observedAt", Long.toString(observedAt));
                 store.paths.metadata.publish("gap-outbox.json", old, PurpleArchiveBinding.canonical(gap.toString().getBytes(StandardCharsets.UTF_8)));
             }

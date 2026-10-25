@@ -1197,6 +1197,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
         ConnectionsManager.getInstance(currentAccount).setAppPaused(true, false);
         UserConfig.selectedAccount = account;
+        org.telegram.messenger.purple.PurpleArchiveViewerModel.selectionChanged(account);
         UserConfig.getInstance(0).saveConfig(false);
 
         checkCurrentAccount();

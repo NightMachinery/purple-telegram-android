@@ -9375,6 +9375,7 @@ public class MessagesController extends BaseController implements NotificationCe
                 } else {
                     markDialogMessageAsDeleted(dialogId, messages);
                 }
+                org.telegram.messenger.purple.PurpleArchiveCapture.localDelete(currentAccount, getMessagesStorage(), dialogId, messages, !cacheOnly && !movedToScheduled);
                 getMessagesStorage().markMessagesAsDeleted(dialogId, messages, true, forAll, 0, topicId);
                 getMessagesStorage().updateDialogsWithDeletedMessages(dialogId, channelId, messages, null);
             }
@@ -16191,6 +16192,7 @@ public class MessagesController extends BaseController implements NotificationCe
                 }
                 if (account != -1) {
                     UserConfig.selectedAccount = account;
+                    org.telegram.messenger.purple.PurpleArchiveViewerModel.selectionChanged(account);
                     UserConfig.getInstance(0).saveConfig(false);
                     if (LaunchActivity.instance != null) {
                         LaunchActivity.instance.clearFragments();
@@ -18439,6 +18441,7 @@ public class MessagesController extends BaseController implements NotificationCe
         ArrayList<TLRPC.TL_sendMessageEmojiInteraction> emojiInteractions = null;
         ArrayList<TLRPC.Message> scheduledMessagesArr = null;
         LongSparseArray<ArrayList<MessageObject>> editingMessages = null;
+        final org.telegram.messenger.purple.PurpleArchiveOrigin.Batch purpleArchive = new org.telegram.messenger.purple.PurpleArchiveOrigin.Batch(currentAccount);
         LongSparseArray<SparseIntArray> channelViews = null;
         LongSparseArray<SparseIntArray> channelForwards = null;
         LongSparseArray<SparseArray<TLRPC.MessageReplies>> channelReplies = null;
@@ -18837,6 +18840,7 @@ public class MessagesController extends BaseController implements NotificationCe
                 dialogs_read_outbox_max.put(dialogId, Math.max(value, update.max_id));
             } else if (baseUpdate instanceof TL_update.TL_updateDeleteMessages) {
                 TL_update.TL_updateDeleteMessages update = (TL_update.TL_updateDeleteMessages) baseUpdate;
+                purpleArchive.delete(0, update.messages, update.pts);
                 if (deletedMessages == null) {
                     deletedMessages = new LongSparseArray<>();
                 }
@@ -19359,6 +19363,7 @@ public class MessagesController extends BaseController implements NotificationCe
                 dialogs_read_outbox_max.put(dialogId, Math.max(value, update.max_id));
             } else if (baseUpdate instanceof TL_update.TL_updateDeleteChannelMessages) {
                 TL_update.TL_updateDeleteChannelMessages update = (TL_update.TL_updateDeleteChannelMessages) baseUpdate;
+                purpleArchive.delete(-update.channel_id, update.messages, update.pts);
                 if (BuildVars.LOGS_ENABLED) {
                     FileLog.d(baseUpdate + " channelId = " + update.channel_id);
                 }
@@ -19528,6 +19533,7 @@ public class MessagesController extends BaseController implements NotificationCe
                     array.put(message.dialog_id, arr);
                 }
                 arr.add(obj);
+                purpleArchive.edit(message, getUpdatePts(baseUpdate));
             } else if (baseUpdate instanceof TL_update.TL_updatePinnedChannelMessages) {
                 TL_update.TL_updatePinnedChannelMessages update = (TL_update.TL_updatePinnedChannelMessages) baseUpdate;
                 if (BuildVars.LOGS_ENABLED) {
@@ -19846,7 +19852,7 @@ public class MessagesController extends BaseController implements NotificationCe
                 for (int a = 0, size2 = messageObjects.size(); a < size2; a++) {
                     messagesRes.messages.add(messageObjects.get(a).messageOwner);
                 }
-                getMessagesStorage().putMessages(messagesRes, editingMessages.keyAt(b), -2, 0, false, 0, 0);
+                getMessagesStorage().putMessages(messagesRes, editingMessages.keyAt(b), -2, 0, false, 0, 0, purpleArchive);
             }
             LongSparseArray<ArrayList<MessageObject>> editingMessagesFinal = editingMessages;
             getMessagesStorage().getStorageQueue().postRunnable(() -> AndroidUtilities.runOnUIThread(() -> {
@@ -21235,6 +21241,7 @@ public class MessagesController extends BaseController implements NotificationCe
                 long key = deletedMessages.keyAt(a);
                 ArrayList<Integer> arrayList = deletedMessages.valueAt(a);
                 getMessagesStorage().getStorageQueue().postRunnable(() -> {
+                    org.telegram.messenger.purple.PurpleArchiveCapture.beforeDelete(currentAccount, getMessagesStorage().getDatabase(), key, arrayList, purpleArchive);
                     ArrayList<Long> dialogIds = getMessagesStorage().markMessagesAsDeleted(key, arrayList, false, true, 0, 0);
                     getMessagesStorage().updateDialogsWithDeletedMessages(key, -key, arrayList, dialogIds);
                 });

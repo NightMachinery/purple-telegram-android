@@ -1158,6 +1158,7 @@ public class SecretChatHelper extends BaseController {
                     return null;
                 } else if (serviceMessage.action instanceof TLRPC.TL_decryptedMessageActionDeleteMessages) {
                     if (!serviceMessage.action.random_ids.isEmpty()) {
+                        org.telegram.messenger.purple.PurpleArchiveCapture.secretDelete(currentAccount, getMessagesStorage(), chat.id, serviceMessage.random_id, serviceMessage.action.random_ids);
                         pendingEncMessagesToDelete.addAll(serviceMessage.action.random_ids);
                     }
                     return null;

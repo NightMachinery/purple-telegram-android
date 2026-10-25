@@ -152,6 +152,7 @@ final class PurpleArchiveRemoval {
                 if (keys.find(binding.alias()) != null) throw new PurpleArchiveStore.Failure("Archive key removal incomplete");
             } else if (action == 10) {
                 if (directory != null) {
+                    removeTree(directory, "causal");
                     try (PurpleArchiveFiles.Listing listing = directory.listing()) {
                         for (;;) {
                             String[] page = listing.next(); if (page.length == 0) break;
@@ -176,6 +177,8 @@ final class PurpleArchiveRemoval {
                     throw new PurpleArchiveStore.Failure("Archive account cleanup incomplete");
                 paths.metadata.remove("recovery.json", false);
                 paths.metadata.remove("login.json", false);
+                paths.metadata.remove("capture-gap.json", false);
+                paths.metadata.remove("capture-inflight.json", false);
                 PurpleArchiveCatalogue.acknowledgeCleared(paths);
                 paths.metadata.remove("removing.json", false);
             } else throw new PurpleArchiveStore.Failure("Unknown archive removal action");
