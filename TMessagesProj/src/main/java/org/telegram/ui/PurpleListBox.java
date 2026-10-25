@@ -27,8 +27,10 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.purple.PurpleCore;
+import org.telegram.messenger.purple.PurpleDiagLog;
 import org.telegram.messenger.purple.PurpleGate;
 import org.telegram.messenger.purple.PurpleListMenu;
+import org.telegram.messenger.purple.PurpleListSource;
 import org.telegram.messenger.purple.PurpleSettings;
 import org.telegram.messenger.purple.PurpleWriter;
 import org.telegram.ui.ActionBar.AlertDialog;
@@ -57,6 +59,12 @@ public final class PurpleListBox {
      * while the primary file has no live lists. The box still explains the
      * chat and offers temporary overrides and explicit New list creation;
      * saved definitions never become editable checkbox rows.
+     *
+     * When no write session can be had, the rows are still shown, read-only,
+     * from the file the running resolution uses, under a line saying why they
+     * cannot be ticked and a button for what fixes it. The box used to read
+     * its rows only through the session, so a refused one left it with no
+     * rows and a New list row that did nothing, with nothing said anywhere.
      */
     public static void show(BaseFragment fragment, int currentAccount, long dialogId) {
         if (fragment == null) {
@@ -71,10 +79,11 @@ public final class PurpleListBox {
         PurpleGate.ensureLoaded();
         final PurpleCore.Loaded state = PurpleGate.state();
         final boolean filtering = PurpleGate.filtering(currentAccount);
-        final PurpleWriter.Session writer = PurpleWriterUI.capture(fragment, false);
-        final List<PurpleCore.ListEntry> lists = writer == null ? java.util.Collections.emptyList()
-                : writer.lists(PurpleGate.bareIdOf(currentAccount, dialogId));
-        if (lists.isEmpty() && !filtering) {
+        final Source source = Source.read(fragment, currentAccount, dialogId);
+        final PurpleWriter.Session writer = source.writer;
+        final List<PurpleCore.ListEntry> lists = source.lists;
+        source.log(currentAccount, "box_opened");
+        if (lists.isEmpty() && !filtering && source.reason == null) {
             final AlertDialog.Builder empty = new AlertDialog.Builder(activity, resourcesProvider);
             empty.setTitle(getString(R.string.PurpleLists));
             empty.setMessage(formatString(R.string.PurplePresetNotConfigured,
@@ -107,12 +116,18 @@ public final class PurpleListBox {
         // list, which changes how many there are, and rebuilding the cells
         // inside the open box is what keeps that from being a dismiss and a
         // fresh trip through the chat menu.
+        final LinearLayout notice = new LinearLayout(activity);
+        notice.setOrientation(LinearLayout.VERTICAL);
+        layout.addView(notice);
+
         final LinearLayout listRows = new LinearLayout(activity);
         listRows.setOrientation(LinearLayout.VERTICAL);
         layout.addView(listRows);
 
-        final Rows rows = new Rows(activity, resourcesProvider, listRows, verdictView,
+        final Rows rows = new Rows(activity, resourcesProvider, listRows, notice, verdictView,
                 builder, fragment, currentAccount, dialogId, writer);
+        rows.reason = source.reason;
+        rows.membership = source.membership;
         rows.build(lists);
 
         // After the lists and before the "until" decisions, because that is
@@ -159,6 +174,45 @@ public final class PurpleListBox {
     }
 
     /**
+     * The rows for one chat and how they were read: through a write session,
+     * so they can be ticked, or read-only with the code of the refusal. A
+     * read-only source may have the list names without their membership,
+     * when the running resolution used a file this read cannot reproduce.
+     */
+    private static final class Source {
+        final PurpleWriter.Session writer;
+        final List<PurpleCore.ListEntry> lists;
+        final String reason;
+        final String origin;
+        final boolean membership;
+
+        private Source(PurpleWriter.Session writer, List<PurpleCore.ListEntry> lists, String reason, String origin,
+                boolean membership) {
+            this.writer = writer; this.lists = lists; this.reason = reason; this.origin = origin;
+            this.membership = membership;
+        }
+
+        static Source read(BaseFragment fragment, int account, long dialogId) {
+            final long peer = PurpleGate.bareIdOf(account, dialogId);
+            final PurpleWriter.Capture capture = PurpleWriterUI.captureResult(fragment, false);
+            String reason = capture.reason;
+            if (capture.session != null) {
+                final List<PurpleCore.ListEntry> lists = capture.session.listsOrNull(peer);
+                if (lists != null) return new Source(capture.session, lists, null, PurpleListSource.ROUTED, true);
+                reason = "lists_unreadable";
+            }
+            final PurpleListSource.Lists fallback = PurpleListSource.read(account, peer, PurpleGate.usedLastGood());
+            return new Source(null, fallback.entries, reason, fallback.source, fallback.membership());
+        }
+
+        void log(int account, String event) {
+            PurpleDiagLog.event("lists", event, PurpleDiagLog.slot(account), PurpleDiagLog.flag("editable", writer != null),
+                    reason == null ? null : PurpleDiagLog.reason(reason), PurpleDiagLog.count("lists", lists.size()),
+                    PurpleDiagLog.code("source", origin), PurpleDiagLog.mode(writer == null ? -1 : writer.mode));
+        }
+    }
+
+    /**
      * The checkbox rows, and the one thing that puts the file's answer back
      * into them.
      *
@@ -175,34 +229,66 @@ public final class PurpleListBox {
         private final Activity activity;
         private final Theme.ResourcesProvider resourcesProvider;
         private final LinearLayout container;
+        private final LinearLayout notice;
         private final TextView verdictView;
         private final AlertDialog.Builder builder;
         private final int currentAccount;
         private final BaseFragment fragment;
         private PurpleWriter.Session writer;
+        /** Why the rows are read-only, or null when {@link #writer} can tick them. */
+        private String reason;
+        /** Whether the rows' checkmarks say which lists hold the chat, or only the names are known. */
+        private boolean membership = true;
         private final long dialogId;
 
         private PurpleCore.ListEntry[] entries = new PurpleCore.ListEntry[0];
         private CheckBoxCell[] cells = new CheckBoxCell[0];
 
         Rows(Activity activity, Theme.ResourcesProvider resourcesProvider,
-                LinearLayout container, TextView verdictView, AlertDialog.Builder builder,
+                LinearLayout container, LinearLayout notice, TextView verdictView, AlertDialog.Builder builder,
                 BaseFragment fragment, int currentAccount, long dialogId, PurpleWriter.Session writer) {
             this.fragment = fragment; this.writer = writer;
             this.activity = activity;
             this.resourcesProvider = resourcesProvider;
             this.container = container;
+            this.notice = notice;
             this.verdictView = verdictView;
             this.builder = builder;
             this.currentAccount = currentAccount;
             this.dialogId = dialogId;
         }
 
+        /** The reason line and its button, or nothing while the rows can be ticked. */
+        private void buildNotice() {
+            notice.removeAllViews();
+            if (reason == null) return;
+            notice.addView(note(activity, formatString(R.string.PurpleListsReadOnly, PurpleWriterUI.reasonText(reason)),
+                    Theme.getColor(Theme.key_text_RedRegular, resourcesProvider)));
+            if (!membership) {
+                // The names are app-wide in every mode, but the checkmarks
+                // would come from a file the chat list is not using.
+                notice.addView(note(activity, getString(R.string.PurpleListsNoMembership),
+                        Theme.getColor(Theme.key_text_RedRegular, resourcesProvider)));
+            }
+            final int remedy = PurpleWriterUI.remedy(reason);
+            final TextCell action = new TextCell(activity, resourcesProvider);
+            action.setText(PurpleWriterUI.remedyLabel(remedy), true);
+            action.setColors(Theme.key_windowBackgroundWhiteBlueText4, Theme.key_windowBackgroundWhiteBlueText4);
+            action.setOnClickListener(v -> {
+                builder.getDismissRunnable().run();
+                AndroidUtilities.runOnUIThread(() -> PurpleWriterUI.runRemedy(fragment, remedy,
+                        () -> show(fragment, currentAccount, dialogId)));
+            });
+            notice.addView(action);
+        }
+
         /** One cell per list, replacing whatever was there. */
         void build(List<PurpleCore.ListEntry> lists) {
+            buildNotice();
             container.removeAllViews();
             final int count = lists.size();
             final PurpleWriter.Session captured = writer;
+            final String readOnly = captured == null ? reason : null;
             entries = lists.toArray(new PurpleCore.ListEntry[0]);
             cells = new CheckBoxCell[count];
             for (int a = 0; a < count; ++a) {
@@ -211,7 +297,9 @@ public final class PurpleListBox {
                 final PurpleCore.ListEntry entry = entries[a];
                 final String own = PurpleSettings.accountLabel(currentAccount);
                 final String global = captured == null ? "" : PurpleAccountSettingsRows.globalLabel(captured.globalKey);
-                final String subtitle = captured != null && (entry.ownMembers || captured.key.equals(captured.globalKey))
+                final String subtitle = captured == null ? getString(membership ? R.string.PurpleListReadOnlyRow
+                        : R.string.PurpleListUnknownRow)
+                        : entry.ownMembers || captured.key.equals(captured.globalKey)
                         ? formatString(R.string.PurpleListOwn, own) : formatString(R.string.PurpleListSame, global);
                 String title = titleOf(entry);
                 android.text.SpannableStringBuilder label = new android.text.SpannableStringBuilder(title + "\n" + subtitle);
@@ -220,7 +308,7 @@ public final class PurpleListBox {
                         title.length() + 1, label.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 cell.setMultiline(true);
                 cell.getTextView().setLines(2);
-                cell.setText(label, null, entry.member, a < count - 1);
+                cell.setText(label, null, membership && entry.member, a < count - 1);
                 if (entry.deleteOwn) cell.setOnLongClickListener(v -> {
                     if (captured == null || !captured.current()) return true;
                     AlertDialog.Builder confirmation = new AlertDialog.Builder(activity, resourcesProvider);
@@ -240,6 +328,15 @@ public final class PurpleListBox {
                 cell.setBackground(Theme.createSelectorDrawable(
                         Theme.getColor(Theme.key_listSelector, resourcesProvider),
                         Theme.RIPPLE_MASK_ALL));
+                if (readOnly != null) {
+                    // Shown so the user can see which lists hold the chat;
+                    // a tap says why it cannot change rather than nothing.
+                    cell.setAlpha(0.6f);
+                    cell.setOnClickListener(v -> Toast.makeText(activity, formatString(R.string.PurpleListsReadOnly,
+                            PurpleWriterUI.reasonText(readOnly)), Toast.LENGTH_LONG).show());
+                    container.addView(cell);
+                    continue;
+                }
                 cell.setOnClickListener(v -> {
                     // The box stays open. Filing a chat is usually more than one
                     // decision - out of one list and into another - and closing
@@ -259,10 +356,14 @@ public final class PurpleListBox {
                     if (error != null) {
                         // The file is unchanged and so is the running
                         // resolution; the detail is in the log, which is where a
-                        // TOML problem belongs.
+                        // TOML problem belongs. The rows are read again so the
+                        // next tap uses a fresh session, or says why there is none.
+                        PurpleDiagLog.event("lists", "tick_failed", PurpleDiagLog.slot(currentAccount),
+                                PurpleDiagLog.flag("session_current", captured != null && captured.current()));
                         Toast.makeText(activity,
                                 getString(R.string.PurpleListsFailed),
                                 Toast.LENGTH_SHORT).show();
+                        refresh();
                         return;
                     }
                     if (captured != null) {
@@ -284,13 +385,16 @@ public final class PurpleListBox {
          * box with zero editable rows; this is not a general reload observer.
          */
         void refresh() {
-            writer = PurpleWriterUI.capture(fragment, false);
+            final Source source = Source.read(fragment, currentAccount, dialogId);
+            writer = source.writer;
+            reason = source.reason;
+            membership = source.membership;
             PurpleWriterUI.bind(writer, fragment);
-            final List<PurpleCore.ListEntry> fresh = writer == null ? java.util.Collections.emptyList()
-                    : writer.lists(PurpleGate.bareIdOf(currentAccount, dialogId));
+            if (reason != null) source.log(currentAccount, "box_refreshed");
+            final List<PurpleCore.ListEntry> fresh = source.lists;
             final PurpleCore.Loaded state = PurpleGate.state();
             final boolean filtering = PurpleGate.filtering(currentAccount);
-            if (fresh.isEmpty() && !filtering) {
+            if (fresh.isEmpty() && !filtering && reason == null) {
                 builder.getDismissRunnable().run();
                 return;
             }
@@ -320,9 +424,18 @@ public final class PurpleListBox {
     private static void showNewList(BaseFragment fragment, Activity activity,
             Theme.ResourcesProvider resourcesProvider, Rows rows,
             int currentAccount, long dialogId) {
-        if (rows.writer == null || !rows.writer.current()) return;
-        final PurpleWriter.Session writer = PurpleWriterUI.capture(fragment);
-        if (writer == null) return;
+        // A session of its own, opened at the tap: the box's may have gone
+        // stale while it was open, and a list is app-wide structure, so the
+        // box's account-routed session was never the one this needed. When
+        // none can be had, the reason is the answer to the tap.
+        final PurpleWriter.Capture capture = PurpleWriterUI.captureResult(fragment, true);
+        final PurpleWriter.Session writer = capture.session;
+        if (writer == null) {
+            PurpleDiagLog.event("lists", "new_list_refused", PurpleDiagLog.slot(currentAccount),
+                    PurpleDiagLog.reason(capture.reason));
+            explainBlocked(fragment, activity, resourcesProvider, currentAccount, dialogId, capture.reason);
+            return;
+        }
         final AlertDialog.Builder builder = new AlertDialog.Builder(activity, resourcesProvider);
         builder.setTitle(getString(R.string.PurpleNewListTitle));
 
@@ -354,6 +467,24 @@ public final class PurpleListBox {
         });
         builder.setNegativeButton(getString(R.string.Cancel), (dialog, which) -> reopen.run());
         PurpleWriterUI.show(fragment, builder.create(), writer);
+    }
+
+    /**
+     * Says why a new list cannot be made, with the button for what fixes it.
+     * Showing it closes the lists box, as the name box does, so Close opens
+     * the lists box again.
+     */
+    private static void explainBlocked(BaseFragment fragment, Activity activity,
+            Theme.ResourcesProvider resourcesProvider, int currentAccount, long dialogId, String reason) {
+        final Runnable reopen = () -> AndroidUtilities.runOnUIThread(() -> show(fragment, currentAccount, dialogId));
+        final int remedy = PurpleWriterUI.remedy(reason);
+        final AlertDialog.Builder builder = new AlertDialog.Builder(activity, resourcesProvider);
+        builder.setTitle(getString(R.string.PurpleNewListTitle));
+        builder.setMessage(formatString(R.string.PurpleListsNewBlocked, PurpleWriterUI.reasonText(reason)));
+        builder.setPositiveButton(PurpleWriterUI.remedyLabel(remedy), (dialog, which) -> AndroidUtilities.runOnUIThread(
+                () -> PurpleWriterUI.runRemedy(fragment, remedy, () -> show(fragment, currentAccount, dialogId))));
+        builder.setNegativeButton(getString(R.string.Close), (dialog, which) -> reopen.run());
+        fragment.showDialog(builder.create());
     }
 
     /**

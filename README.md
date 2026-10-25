@@ -468,6 +468,18 @@ file; New list explicitly creates a live definition. The refresh after a tick
 or a new list also keeps zero rows while filtering continues. Opening the box
 does not select Normal. Under Normal with no live lists, the entry is omitted.
 
+When the box cannot write, it still shows the chat's lists, dimmed and
+read-only, from the files the running preset uses. The commonest cause is a
+phone with two or more accounts where no account has been chosen yet to own
+`settings.toml`. A red line says why the lists can't be edited, with a short
+code in brackets that a bug report can quote, and the button under it does
+what can fix it: **Choose settings owner**, **Open Purple settings** or **Try
+again**. Tapping a read-only row or **New list…** gives the same reason
+instead of doing nothing. When the account's own settings file has to be
+recovered or can't be read, the box lists the names without checkmarks and
+says so, rather than showing membership from another file. Every refusal is
+also written to the diagnostic log.
+
 The settings and state files live in the app's private storage, at
 `/data/data/org.purple.telegram/files/purple/`. `settings.toml` is yours,
 imported from Saved Messages. `state.toml` is the app's: the active preset,

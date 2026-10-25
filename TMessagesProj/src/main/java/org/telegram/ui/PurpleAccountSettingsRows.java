@@ -179,6 +179,9 @@ public final class PurpleAccountSettingsRows {
         return true;
     }
 
+    /** Opens the owner choice from another Purple screen, as tapping its settings row does. */
+    static boolean chooseOwner(BaseFragment fragment) { return click(fragment, OWNER); }
+
     public static void requestOwner(android.content.Context context) {
         BaseFragment fragment = LaunchActivity.getSafeLastFragment();
         if (fragment != null && fragment.getParentActivity() == context) click(fragment, OWNER);

@@ -925,6 +925,11 @@ public final class PurpleCore {
             this.ownMembers = ownMembers;
             this.deleteOwn = deleteOwn;
         }
+
+        /** The same list with no members: for showing a list whose membership could not be read. */
+        ListEntry withoutMembers() {
+            return new ListEntry(name, title, false, new long[0], false, false);
+        }
     }
 
     /**

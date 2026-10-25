@@ -154,11 +154,23 @@ public final class PurpleGlobalAccountChoice {
             }
         }
     }
-    public static Session begin(int account, Current ui) {
+    public static Session begin(int account, Current ui) { return begin(account, ui, null); }
+    /**
+     * As {@link #begin(int, Current)}, and when it refuses, {@code reason[0]}
+     * names the check that did: a diagnostic code, never shown with an id.
+     */
+    static Session begin(int account, Current ui, String[] reason) {
         PurpleAccountOwner.ensureStarted(); PurpleGate.ensureLoaded();
-        if (applying || ui == null || !ui.current() || !PurpleAccountOwner.ready()) return null;
-        Session session = new Session(account, ui);
-        return session.owner != null && session.global != null && PurpleGate.state() != null && session.current() ? session : null;
+        String refused = applying ? "choice_applying" : ui == null || !ui.current() ? "view_not_current"
+                : !PurpleAccountOwner.ready() ? "owner_not_ready" : null;
+        Session session = null;
+        if (refused == null) {
+            session = new Session(account, ui);
+            refused = session.owner == null ? "owner_missing" : session.global == null ? "global_missing"
+                    : PurpleGate.state() == null ? "gate_not_loaded" : !session.current() ? "choice_stale" : null;
+        }
+        if (reason != null && reason.length > 0) reason[0] = refused;
+        return refused == null ? session : null;
     }
     private PurpleGlobalAccountChoice() { }
 }

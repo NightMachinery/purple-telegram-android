@@ -61,7 +61,18 @@ public final class PurpleDiagLogStore {
             // the settings owner plan (PurpleAccountOwner)
             "owner", "planned", "accounts", "state", "ready", "owned", "pending_owner_writes",
             "waiting_for_first_sign_in", "needs_choice", "single_file_error", "invalid_input",
-            "input_unavailable", "partial_view", "plan_stale"
+            "input_unavailable", "partial_view", "plan_stale",
+            // write sessions (PurpleWriter) and their refusal codes, PurpleWriter.REASONS
+            "writer", "capture_refused", "app_wide",
+            "not_ui_thread", "write_in_progress", "view_not_current", "accounts_loading", "owner_not_ready",
+            "choice_refused", "choice_applying", "owner_missing", "global_missing", "gate_not_loaded", "choice_stale",
+            "account_signed_out", "choice_changed", "session_stale", "native_unavailable", "file_not_utf8",
+            "route_missing", "local_choice_invalid", "route_changed", "files_changed", "recovery_required",
+            "unsafe_file", "file_too_large", "file_unreadable", "session_failed",
+            // the lists box (PurpleListBox, PurpleListSource) and its row sources
+            "lists", "box_opened", "box_refreshed", "tick_failed", "new_list_refused", "read_failed",
+            "editable", "source", "session_current", "lists_unreadable",
+            "routed", "app_wide_good", "names_only", "none"
     )));
 
     /** One {@code key=value} pair of a line. Only the factories below make one. */

@@ -70,11 +70,87 @@ final class PurpleWriterUI {
         };
     }
     static PurpleWriter.Session capture(BaseFragment fragment, boolean appWide) {
+        return captureOnce(fragment, appWide).session;
+    }
+    private static PurpleWriter.Capture captureOnce(BaseFragment fragment, boolean appWide) {
         PurpleWriter.Current current = current(fragment);
         WeakReference<BaseFragment> view = new WeakReference<>(fragment);
         String key = PurpleAccountOwner.global();
-        return PurpleWriter.capture(fragment.getCurrentAccount(), appWide, current,
+        return PurpleWriter.captureResult(fragment.getCurrentAccount(), appWide, current,
                 () -> offlineEdit(view.get(), key, current));
+    }
+    /**
+     * {@link #capture(BaseFragment, boolean)}, saying why when it refuses.
+     * The settings owner is planned once every account slot has loaded (see
+     * PurpleAccountOwner.onAccountsLoaded), so a held owner here is the
+     * running answer and is not planned again.
+     */
+    static PurpleWriter.Capture captureResult(BaseFragment fragment, boolean appWide) {
+        return captureOnce(fragment, appWide);
+    }
+
+    /** What a refused capture means, for a reason line, followed by its code so a report can quote it. */
+    static String reasonText(String code) {
+        final int text;
+        switch (code == null ? "" : code) {
+            case "owner_not_ready": text = R.string.PurpleWriteReasonOwner; break;
+            case "write_in_progress": text = R.string.PurpleWriteReasonBusy; break;
+            case "account_signed_out": text = R.string.PurpleWriteReasonSignedOut; break;
+            case "route_missing":
+            case "local_choice_invalid": text = R.string.PurpleWriteReasonLocal; break;
+            case "recovery_required": text = R.string.PurpleWriteReasonRecovery; break;
+            case "unsafe_file":
+            case "file_too_large":
+            case "file_not_utf8":
+            case "file_unreadable": text = R.string.PurpleWriteReasonFile; break;
+            case "native_unavailable": text = R.string.PurpleWriteReasonNative; break;
+            case "accounts_loading":
+            case "gate_not_loaded": text = R.string.PurpleWriteReasonLoading; break;
+            case "lists_unreadable": text = R.string.PurpleWriteReasonLists; break;
+            case "view_not_current":
+            case "choice_applying":
+            case "choice_changed":
+            case "choice_stale":
+            case "files_changed":
+            case "route_changed":
+            case "session_stale": text = R.string.PurpleWriteReasonChanged; break;
+            default: text = R.string.PurpleWriteReasonOther; break;
+        }
+        return LocaleController.formatString(R.string.PurpleWriteReasonCoded, LocaleController.getString(text),
+                code == null ? "unknown" : code);
+    }
+
+    static final int REMEDY_RETRY = 0, REMEDY_OWNER = 1, REMEDY_SETTINGS = 2;
+
+    /** What can be done about a refusal from where it was met. */
+    static int remedy(String code) {
+        switch (code == null ? "" : code) {
+            case "owner_not_ready": return REMEDY_OWNER;
+            case "route_missing":
+            case "local_choice_invalid":
+            case "recovery_required":
+            case "unsafe_file":
+            case "file_too_large":
+            case "file_not_utf8":
+            case "file_unreadable":
+            case "native_unavailable":
+            case "lists_unreadable": return REMEDY_SETTINGS;
+            default: return REMEDY_RETRY;
+        }
+    }
+
+    static String remedyLabel(int remedy) {
+        final int label = remedy == REMEDY_OWNER ? R.string.PurpleWriteActionOwner
+                : remedy == REMEDY_SETTINGS ? R.string.PurpleWriteActionSettings : R.string.PurpleWriteActionRetry;
+        return LocaleController.getString(label);
+    }
+
+    /** Runs a remedy; {@code retry} is what trying again means at the caller. */
+    static void runRemedy(BaseFragment fragment, int remedy, Runnable retry) {
+        if (fragment == null || fragment.getParentActivity() == null) return;
+        if (remedy == REMEDY_OWNER) PurpleAccountSettingsRows.chooseOwner(fragment);
+        else if (remedy == REMEDY_SETTINGS) fragment.presentFragment(new PurpleSettingsActivity());
+        else if (retry != null) retry.run();
     }
     private static void offlineEdit(BaseFragment fragment, String key, PurpleWriter.Current current) {
         if (offlineNoticeShown || key == null || !current.current() || !PurpleAccountOwner.ready()

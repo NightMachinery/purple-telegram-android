@@ -33,6 +33,67 @@ exports now use each account’s captured file, as described in
 [account transfers](account-transfers.md). Eligible existing-file saves arm only
 the file owner’s independent countdown. First file creation never sends.
 
+## When no write session can be opened
+
+`PurpleWriter.captureResult` opens the same session as `capture` and, when it
+refuses, names the refusing check with a reason code: `not_ui_thread`,
+`write_in_progress`, `view_not_current`, `accounts_loading` (the owner is not
+planned yet because the account slots are still loading), `owner_not_ready`,
+the global-choice checks (`choice_applying`, `owner_missing`, `global_missing`,
+`gate_not_loaded`, `choice_stale`, or `choice_refused` when none is named),
+`account_signed_out`, `choice_changed`, `session_stale`, or a code for the
+exception the session constructor threw (`route_missing`,
+`local_choice_invalid`, `route_changed`, `files_changed`, `recovery_required`,
+`unsafe_file`, `file_too_large`, `file_not_utf8`, `file_unreadable`,
+`native_unavailable`, `session_failed`). The list is `PurpleWriter.REASONS`,
+and every code in it is a word of the diagnostic log's vocabulary. `capture`
+keeps returning null. Every refusal goes to the Purple diagnostic log with the
+account slot and the code, never an id or a path.
+
+The Work Mode lists box used to read its rows only through that session, so
+any refusal left it with no rows and a **New list…** row that returned without
+a word. Before an owner is established writes are held by design (above), so
+on a phone with two or more accounts and no owner record the box showed no
+lists at all. It now reads its rows through `PurpleListSource` when the
+session is refused, from the inputs the running Work Mode view reads:
+
+- with no owner yet, the app-wide file the gate runs on, or its last good
+  copy when the gate runs from that;
+- with a ready owner, the account's routed view: `local.toml`'s Work Mode
+  choice, the account's own file layered over the app-wide file, or the
+  app-wide file alone for an account that follows it or is the app-wide
+  account. An own file that was never written adds no layer, as in the running
+  view;
+- names only, with no membership (`names_only`), when the running view used
+  an input this read cannot reproduce: the own file has to be recovered (it is
+  gone and its `.good` copy is not, or it is the root file), cannot be read,
+  or does not parse; `local.toml` cannot be read or parsed; or the gate runs
+  from the app-wide good copy. The box then says that membership can't be
+  shown and leaves every row unticked, rather than showing checkmarks from a
+  file the chat list is not using. For an own file that has to be recovered
+  this is stricter than the running view, which layers nothing for a missing
+  file.
+
+The rows are read-only, a reason line names the code, and a button opens the
+owner choice, Purple settings or the box again. **New list…** opens its own
+app-wide session at the tap and explains a refusal. A failed tick rereads the
+rows, so the next tap uses a fresh session.
+
+The settings owner is planned only after every account slot has loaded (see
+"When the settings owner is planned" below), so the box no longer plans
+again on `owner_not_ready`: a held owner is the running answer.
+
+Host cases for these paths live in
+`TMessagesProj/jni/purple_jni/tests/list_capture/` (`run_list_capture.py`).
+They drive the production owner, writer, list source and diagnostic log
+against the real JNI library: the held two-account owner, the automatic
+single-account owner, a session asked for while the slots load (planned by
+`PurpleAccountOwner.onAccountsLoaded()`, the hook `ApplicationLoader` calls),
+the read-only membership cases (own file, never written, unparseable, to
+recover, `local.toml` unparseable, the gate on the good copy, a following
+account), the exception-to-code mapping, and that every refusal code is a
+vocabulary word.
+
 Headless cases live in `TMessagesProj/jni/purple_jni/tests/routed_writes/`.
 They use the production routed/editor models, actual core JNI and real isolated
 files through the same host route as the editor cases. Android UI, actual

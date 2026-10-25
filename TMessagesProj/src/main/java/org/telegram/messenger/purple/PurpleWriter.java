@@ -77,10 +77,15 @@ public final class PurpleWriter {
         public void guard(Current action) { this.action = action; }
         private byte[] bytes() { return current() ? model.bytes() : null; }
         public java.util.List<PurpleCore.ListEntry> lists(long peer) {
+            java.util.List<PurpleCore.ListEntry> lists = listsOrNull(peer);
+            return lists == null ? java.util.Collections.<PurpleCore.ListEntry>emptyList() : lists;
+        }
+        /** The lists as the routed files say, or null when they cannot be read, so a caller can tell none from failure. */
+        public java.util.List<PurpleCore.ListEntry> listsOrNull(long peer) {
             try {
                 org.json.JSONObject result = model.lists(peer);
-                return result == null ? java.util.Collections.emptyList() : PurpleCore.listEntries(result.getJSONArray("lists"));
-            } catch (Exception | UnsatisfiedLinkError e) { return java.util.Collections.emptyList(); }
+                return result == null ? null : PurpleCore.listEntries(result.getJSONArray("lists"));
+            } catch (Exception | UnsatisfiedLinkError e) { return null; }
         }
         public String toggle(String list, long peer, boolean add, String title) {
             try {
@@ -148,22 +153,105 @@ public final class PurpleWriter {
         }
     }
 
+    /**
+     * A write session, or the reason there is none. The reason is a short
+     * diagnostic code such as {@code owner_not_ready}; it names the check that
+     * refused and never carries an id, a path or file text.
+     */
+    public static final class Capture {
+        public final Session session;
+        public final String reason;
+        public final Throwable error;
+        private Capture(Session session, String reason, Throwable error) {
+            this.session = session; this.reason = reason; this.error = error;
+        }
+    }
+
     public static Session capture(int account, boolean appWide, Current current, Runnable offlineNotice) {
-        if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) return null;
+        return captureResult(account, appWide, current, offlineNotice).session;
+    }
+
+    /**
+     * {@link #capture}, saying why when it refuses. Every refusal is recorded
+     * in the Purple diagnostic log, and so in FileLog, with the account slot,
+     * the reason and the exception class only.
+     */
+    public static Capture captureResult(int account, boolean appWide, Current current, Runnable offlineNotice) {
+        Capture result = open(account, appWide, current, offlineNotice);
+        if (result.session == null) {
+            PurpleDiagLog.event("writer", "capture_refused", PurpleDiagLog.slot(account),
+                    PurpleDiagLog.flag("app_wide", appWide), PurpleDiagLog.reason(result.reason),
+                    result.error == null ? null : PurpleDiagLog.error(result.error));
+        }
+        return result;
+    }
+
+    private static Capture refused(String reason, Throwable error) { return new Capture(null, reason, error); }
+
+    /**
+     * Every code {@link #captureResult} can refuse with, including the ones
+     * PurpleGlobalAccountChoice.begin and {@link #failure} name. Each is a word
+     * of the diagnostic log's vocabulary, which the host cases check.
+     */
+    static final String[] REASONS = {
+            "not_ui_thread", "write_in_progress", "view_not_current", "accounts_loading", "owner_not_ready",
+            "choice_refused", "choice_applying", "owner_missing", "global_missing", "gate_not_loaded", "choice_stale",
+            "account_signed_out", "choice_changed", "session_stale", "native_unavailable", "file_not_utf8",
+            "route_missing", "local_choice_invalid", "route_changed", "files_changed", "recovery_required",
+            "unsafe_file", "file_too_large", "file_unreadable", "session_failed"};
+
+    private static Capture open(int account, boolean appWide, Current current, Runnable offlineNotice) {
+        if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) return refused("not_ui_thread", null);
         synchronized (PurpleAccountOwner.class) {
             synchronized (PurpleAccountFiles.class) {
                 synchronized (PurpleAccountSettings.class) {
-                    if (writing || current == null || !current.current()) return null;
-                    PurpleGlobalAccountChoice.Session context = PurpleGlobalAccountChoice.begin(account, current::current);
+                    if (writing) return refused("write_in_progress", null);
+                    if (current == null || !current.current()) return refused("view_not_current", null);
+                    // Asked here as well as inside begin(), so the commonest
+                    // refusal is named without loading the running preset.
+                    if (!PurpleAccountOwner.ready()) {
+                        return refused(PurpleAccountOwner.started() ? "owner_not_ready" : "accounts_loading", null);
+                    }
+                    String[] reason = new String[1];
+                    PurpleGlobalAccountChoice.Session context = PurpleGlobalAccountChoice.begin(account, current::current, reason);
+                    if (context == null) return refused(reason[0] == null ? "choice_refused" : reason[0], null);
                     PurpleAccountFiles.Identity origin = PurpleAccountFiles.capture(account);
-                    if (context == null || origin == null || !context.current()) return null;
+                    if (origin == null) return refused("account_signed_out", null);
+                    if (!context.current()) return refused("choice_changed", null);
                     try {
                         Session result = new Session(context, origin, appWide, offlineNotice, current);
-                        return result.current() ? result : null;
-                    } catch (Exception | UnsatisfiedLinkError e) { return null; }
+                        return result.current() ? new Capture(result, null, null) : refused("session_stale", null);
+                    } catch (Exception | UnsatisfiedLinkError e) { return refused(failure(e), e); }
                 }
             }
         }
+    }
+
+    /**
+     * Names a session that could not be opened by the check that threw. The
+     * messages are the ones PurpleRoutedWriteModel, PurpleAccountEditorModel
+     * and PurpleGlobalChoiceFiles throw; anything else is session_failed.
+     */
+    static String failure(Throwable e) {
+        if (e instanceof UnsatisfiedLinkError) return "native_unavailable";
+        if (e instanceof java.nio.charset.CharacterCodingException) return "file_not_utf8";
+        String message = e.getMessage() == null ? "" : e.getMessage();
+        switch (message) {
+            case "missing settings route": return "route_missing";
+            case "invalid Work Mode choice":
+            case "editor Work Mode choice unavailable": return "local_choice_invalid";
+            case "write route changed":
+            case "editor target changed":
+            case "editor context changed": return "route_changed";
+            case "input changed during read": return "files_changed";
+            case "account file recovery required": return "recovery_required";
+            case "unsafe choice path":
+            case "editor path outside account root": return "unsafe_file";
+            case "input exceeds bound": return "file_too_large";
+            default: break;
+        }
+        if (e instanceof java.io.IOException || "ErrnoException".equals(e.getClass().getSimpleName())) return "file_unreadable";
+        return "session_failed";
     }
 
     public static String apply(Session session, PurpleCore.SpliceResult result, String reason) {
