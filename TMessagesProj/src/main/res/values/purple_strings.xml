@@ -65,6 +65,8 @@
     <string name="PurpleWriteActionOwner">Choose settings owner</string>
     <string name="PurpleWriteActionSettings">Open Purple settings</string>
     <string name="PurpleWriteActionRetry">Try again</string>
+    <string name="PurpleWriteHeldTitle">Settings can’t be changed</string>
+    <string name="PurpleWriteHeld">This can’t be changed right now: %1$s</string>
     <string name="PurplePresetNormal">Normal</string>
     <string name="PurplePresetNormalInfo">stock Telegram, nothing is hidden</string>
     <string name="PurplePresetUnresolved">does not resolve, so it cannot be chosen</string>
@@ -666,6 +668,8 @@
     <string name="PurpleMediaSaved">Media saved</string>
     <string name="PurpleAppWideOfflineEdit">Work Mode and the other app-wide settings are in %1$s’s file, which cannot sync while that account is signed out.</string>
     <string name="PurpleWorkModeDevice">Work Mode on this device</string>
+    <string name="PurpleWorkModeHeld">Can’t be changed yet: %1$s</string>
+    <string name="PurpleWorkModeFailed">Could not change Work Mode: %1$s</string>
     <string name="PurpleWorkModeOwn">%1$s’s own, else %2$s’s</string>
     <string name="PurpleWorkModeFollow">%1$s’s lists</string>
     <string name="PurpleWorkModeStock">Off: stock Telegram</string>

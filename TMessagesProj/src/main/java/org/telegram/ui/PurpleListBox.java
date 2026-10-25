@@ -477,14 +477,9 @@ public final class PurpleListBox {
     private static void explainBlocked(BaseFragment fragment, Activity activity,
             Theme.ResourcesProvider resourcesProvider, int currentAccount, long dialogId, String reason) {
         final Runnable reopen = () -> AndroidUtilities.runOnUIThread(() -> show(fragment, currentAccount, dialogId));
-        final int remedy = PurpleWriterUI.remedy(reason);
-        final AlertDialog.Builder builder = new AlertDialog.Builder(activity, resourcesProvider);
-        builder.setTitle(getString(R.string.PurpleNewListTitle));
-        builder.setMessage(formatString(R.string.PurpleListsNewBlocked, PurpleWriterUI.reasonText(reason)));
-        builder.setPositiveButton(PurpleWriterUI.remedyLabel(remedy), (dialog, which) -> AndroidUtilities.runOnUIThread(
-                () -> PurpleWriterUI.runRemedy(fragment, remedy, () -> show(fragment, currentAccount, dialogId))));
-        builder.setNegativeButton(getString(R.string.Close), (dialog, which) -> reopen.run());
-        fragment.showDialog(builder.create());
+        PurpleWriterUI.explain(fragment, getString(R.string.PurpleNewListTitle),
+                formatString(R.string.PurpleListsNewBlocked, PurpleWriterUI.reasonText(reason)), reason,
+                () -> show(fragment, currentAccount, dialogId), reopen);
     }
 
     /**
@@ -508,10 +503,17 @@ public final class PurpleListBox {
             return;
         }
         if (writer == null || !writer.forAccount(currentAccount) || !writer.sameRoute()) return;
-        final PurpleCore.ListEntry created =
-                find(PurpleListMenu.listsFor(currentAccount, dialogId), name);
-        if (created != null
-                && PurpleListMenu.toggle(PurpleWriterUI.capture(fragment, false), currentAccount, dialogId, created, true) != null) {
+        // The chat goes in through the account's own session. When that is
+        // refused the list still exists, so the reason is said rather than
+        // the chat being left out without a word.
+        final PurpleWriter.Capture member = PurpleWriterUI.captureResult(fragment, false);
+        final List<PurpleCore.ListEntry> lists = PurpleListMenu.listsFor(member.session, currentAccount, dialogId);
+        final PurpleCore.ListEntry created = lists == null ? null : find(lists, name);
+        if (member.session == null || lists == null) {
+            Toast.makeText(activity, formatString(R.string.PurpleListsReadOnly, PurpleWriterUI.reasonText(
+                    member.session == null ? member.reason : "lists_unreadable")), Toast.LENGTH_LONG).show();
+        } else if (created != null
+                && PurpleListMenu.toggle(member.session, currentAccount, dialogId, created, true) != null) {
             // The list exists and the chat is not in it, which the rebuilt rows
             // below will show honestly: an empty checkbox on a row that is there.
             Toast.makeText(activity, getString(R.string.PurpleListsFailed),

@@ -220,8 +220,18 @@ public class PurpleRulesetActivity extends UniversalFragment
 
     @Override
     protected void onClick(UItem item, View view, int position, float x, float y) {
-        final PurpleWriter.Session writer = item.id == ROW_DEVICE || item.id == ROW_OUTSIDE
-                ? PurpleWriterUI.capture(this) : rowWriter;
+        // Pickers ask for a session of their own at the tap; the switches use
+        // the rows' session, or a fresh one when the rows were built without
+        // one. When none can be had the tap says why, before anything opens,
+        // rather than passing no session to the writer.
+        final boolean picker = item.id == ROW_DEVICE || item.id == ROW_OUTSIDE;
+        final boolean writes = picker || item.id == ROW_MODE_DISABLED || item.id == ROW_MODE_ENABLED
+                || item.id == ROW_MODE_ALWAYS || item.id >= RULE_BASE && PurpleScheduleActivity.onSwitch(view, x);
+        final PurpleWriter.Session writer = picker || writes && rowWriter == null
+                ? PurpleWriterUI.captureOrExplain(this, true, this::refresh) : rowWriter;
+        if (writes && writer == null) {
+            return;
+        }
         final PurpleCore.Loaded state = PurpleGate.state();
         final PurpleCore.ScheduleRuleset ruleset = ruleset(state);
         if (ruleset == null) {
@@ -308,7 +318,8 @@ public class PurpleRulesetActivity extends UniversalFragment
     }
 
     private void write(String error) {
-        if (error != null && BulletinFactory.canShowBulletin(this)) {
+        if (error != null && !PurpleWriterUI.explainHeld(this, error, this::refresh)
+                && BulletinFactory.canShowBulletin(this)) {
             BulletinFactory.of(this)
                     .createErrorBulletin(formatString(R.string.PurpleWriteFailed, error))
                     .show();
@@ -323,9 +334,12 @@ public class PurpleRulesetActivity extends UniversalFragment
     }
 
     private void confirmDeleteRuleset(PurpleCore.ScheduleRuleset ruleset) {
-        final PurpleWriter.Session writer = PurpleWriterUI.capture(this);
         final Context context = getParentActivity();
         if (context == null) {
+            return;
+        }
+        final PurpleWriter.Session writer = PurpleWriterUI.captureOrExplain(this, true, this::refresh);
+        if (writer == null) {
             return;
         }
         final AlertDialog.Builder builder = new AlertDialog.Builder(context);
@@ -356,9 +370,13 @@ public class PurpleRulesetActivity extends UniversalFragment
      * instead of being quietly overwritten.
      */
     private void editRule(PurpleCore.Loaded state, PurpleCore.ScheduleRule existing) {
-        final PurpleWriter.Session writer = PurpleWriterUI.capture(this);
         final Context context = getParentActivity();
         if (context == null || state == null) {
+            return;
+        }
+        // Asked before the rule is filled in, so a held write is not refused only at Save.
+        final PurpleWriter.Session writer = PurpleWriterUI.captureOrExplain(this, true, this::refresh);
+        if (writer == null) {
             return;
         }
 
@@ -529,9 +547,13 @@ public class PurpleRulesetActivity extends UniversalFragment
                 "schedule rule edited"));
     }
 
-    private void confirmDeleteRule(PurpleWriter.Session writer, PurpleCore.ScheduleRule rule) {
-        if (writer == null || !writer.current()) {
-            write(getString(R.string.PurpleAccountWriteHeld));
+    private void confirmDeleteRule(PurpleWriter.Session editor, PurpleCore.ScheduleRule rule) {
+        // The editor's session, or a fresh one when it went stale while the
+        // editor stood open; the delete is fenced on what the rule says, so a
+        // fresh session cannot remove a different rule.
+        final PurpleWriter.Session writer = editor != null && editor.current() ? editor
+                : PurpleWriterUI.captureOrExplain(this, true, this::refresh);
+        if (writer == null) {
             return;
         }
         final Context context = getParentActivity();

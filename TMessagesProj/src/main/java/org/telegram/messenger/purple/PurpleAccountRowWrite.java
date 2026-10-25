@@ -259,6 +259,26 @@ public final class PurpleAccountRowWrite {
     public static Intent trade(int account, Current view) { return capture(account, view, 1); }
     public static Intent sendAfterSave(int account, Current view) { return capture(account, view, 2); }
 
+    /**
+     * Why {@link #reasons}, {@link #trade} or {@link #sendAfterSave} return
+     * null for this account and view, as a PurpleWriter refusal code, checked
+     * in the same order; {@code session_failed} when they would not.
+     */
+    public static String refusal(int account, Current view) {
+        synchronized (PurpleAccountOwner.class) {
+            synchronized (PurpleAccountFiles.class) {
+                synchronized (PurpleAccountSettings.class) {
+                    if (writing) return "write_in_progress";
+                    if (view == null || !view.current()) return "view_not_current";
+                    String held = PurpleWriter.ownerRefusal();
+                    if (held != null) return held;
+                    if (PurpleAccountFiles.capture(account) == null) return "account_signed_out";
+                    return "session_failed";
+                }
+            }
+        }
+    }
+
     private static Intent capture(int account, Current view, int purpose) {
         synchronized (PurpleAccountOwner.class) {
             synchronized (PurpleAccountFiles.class) {

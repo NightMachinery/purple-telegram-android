@@ -83,6 +83,40 @@ The settings owner is planned only after every account slot has loaded (see
 "When the settings owner is planned" below), so the box no longer plans
 again on `owner_not_ready`: a held owner is the running answer.
 
+## When a settings write is held
+
+Every settings screen answers a held write the way the lists box does: with
+the refusal's reason line and the button for what fixes it (**Choose settings
+owner**, **Open Purple settings** or **Try again**), shown by
+`PurpleWriterUI.explain`. Nothing is dropped silently, and no screen blames a
+missing file for a held owner.
+
+- Screens ask before they open a dialog or write
+  (`PurpleWriterUI.captureOrExplain`): peek start delay, Name this device,
+  the Purple settings switches (peek exit, Premium, Suggestions, Focus sync),
+  the schedule switch, outside preset and new ruleset, a ruleset's mode,
+  device and outside rows, its rule switches, rule editor and delete, the
+  screen time switch and budget editor, and the Work Mode choice. A dialog
+  that would fail only after it was filled in is not opened.
+- The **Work Mode on this device** row is shown while the owner is held, with
+  the reason as its value, instead of being hidden.
+- The last-seen and auto-send rows name their refusal with
+  `PurpleAccountRowWrite.refusal`, and the legacy editor row names a held
+  owner, instead of the sync and History note.
+- The `PurpleWriter` helpers (`setTableBool`, `addRuleset`, `setBudget` and
+  the rest) answer a null session with the code of the last refusal, which
+  `PurpleWriter.heldReason` reads back so the screen shows the same box; a
+  session that went stale is "settings context changed". They used to say
+  "settings.toml is missing" for both.
+- `PurpleListMenu.listsFor` reads through a session it is given and returns
+  null on a refusal, and a new list whose chat could not be put in it says
+  why.
+- `PurpleWriter.ownerRefusal()` is the one place that names a held owner:
+  `accounts_loading` before the plan, `owner_not_ready` after it.
+
+There is no startup prompt for the owner choice; the button appears where a
+write is attempted.
+
 Host cases for these paths live in
 `TMessagesProj/jni/purple_jni/tests/list_capture/` (`run_list_capture.py`).
 They drive the production owner, writer, list source and diagnostic log
@@ -91,8 +125,9 @@ single-account owner, a session asked for while the slots load (planned by
 `PurpleAccountOwner.onAccountsLoaded()`, the hook `ApplicationLoader` calls),
 the read-only membership cases (own file, never written, unparseable, to
 recover, `local.toml` unparseable, the gate on the good copy, a following
-account), the exception-to-code mapping, and that every refusal code is a
-vocabulary word.
+account), held writes (every helper handed no session names the refusal,
+the account row refusal, `listsFor` without a session), the
+exception-to-code mapping, and that every refusal code is a vocabulary word.
 
 Headless cases live in `TMessagesProj/jni/purple_jni/tests/routed_writes/`.
 They use the production routed/editor models, actual core JNI and real isolated

@@ -200,6 +200,10 @@ public final class PurpleListCaptureCases {
         PurpleWriter.Capture refused = capture(0, false);
         check(refused.session == null && "accounts_loading".equals(refused.reason),
                 "the session is refused as accounts_loading: " + refused.reason);
+        check("accounts_loading".equals(PurpleWriter.ownerRefusal()), "held writes say the accounts are loading");
+        check("accounts_loading".equals(PurpleAccountRowWrite.refusal(0, () -> true)), "the account rows say so too");
+        check("accounts_loading".equals(PurpleWriter.heldReason(PurpleWriter.setTableBool(null, "premium", "enabled_p", true, "case"))),
+                "and so does a helper handed no session");
         PurpleListSource.Lists loading = PurpleListSource.read(0, 11, false);
         check(PurpleListSource.APP_WIDE.equals(loading.source) && loading.membership(), "rows from the app-wide file meanwhile");
         listsMatch(loading.entries, "loading accounts");
@@ -286,6 +290,71 @@ public final class PurpleListCaptureCases {
         return checks;
     }
 
+    /** Every settings helper handed no session, as a screen that skipped its check would call it. */
+    static String[] helpers() {
+        return new String[]{
+                PurpleWriter.setTableBool(null, "premium", "enabled_p", true, "case"),
+                PurpleWriter.setTableString(null, "devices", "a", "b", "case"),
+                PurpleWriter.addRuleset(null, "r", "any", "enabled", "case"),
+                PurpleWriter.addRuleset(null, "r", "any", "enabled", "work", "case"),
+                PurpleWriter.removeRuleset(null, "r", "case"),
+                PurpleWriter.setRulesetString(null, "r", "mode", "always", "case"),
+                PurpleWriter.addList(null, "l", "case"),
+                PurpleWriter.setScheduleRule(null, "", 0, 0, 60, "work", true, new int[]{1}, 0, 60, "work", "case"),
+                PurpleWriter.appendScheduleRule(null, "", true, new int[]{1}, 0, 60, "work", "case"),
+                PurpleWriter.removeScheduleRule(null, "", 0, 0, 60, "work", "case"),
+                PurpleWriter.appendBudget(null, "all", 60, "soft", 60, 1, "case"),
+                PurpleWriter.setBudget(null, 0, "all", "all", 60, "soft", 60, 1, "case"),
+                PurpleWriter.removeBudget(null, 0, "all", "case"),
+                PurpleWriter.setPeekStartDelay(null, null, 5)};
+    }
+
+    /**
+     * Held writes say why. With two accounts and no owner every session is
+     * refused as owner_not_ready; the settings helpers handed no session
+     * name that refusal instead of "settings.toml is missing", the account
+     * row writes name it too, and the lists of a chat read through no
+     * session are null rather than an empty list.
+     */
+    static int held(File parent) throws Exception {
+        checks = 0;
+        root(parent);
+        signedIn(A, B);
+        check("owner_not_ready".equals(PurpleWriter.ownerRefusal()), "the owner is held: " + PurpleWriter.ownerRefusal());
+        PurpleWriter.Capture refused = capture(0, true);
+        check(refused.session == null && "owner_not_ready".equals(refused.reason), "the session is refused");
+        String[] errors = helpers();
+        check(errors.length == 14, "every helper is called");
+        for (String error : errors) {
+            check(error != null && !error.contains("missing"), "no missing-file reason: " + error);
+            check("owner_not_ready".equals(PurpleWriter.heldReason(error)), "the helper names the refusal: " + error);
+        }
+        check(PurpleWriter.heldReason("settings context changed") == null && PurpleWriter.heldReason(null) == null,
+                "other errors are not held refusals");
+        check(PurpleListMenu.listsFor(null, 0, 11) == null, "no session reads no lists, not an empty list");
+        check("owner_not_ready".equals(PurpleAccountRowWrite.refusal(0, () -> true)), "the account row writes name the owner");
+        check("view_not_current".equals(PurpleAccountRowWrite.refusal(0, () -> false)), "a gone view is named first");
+        check(PurpleAccountRowWrite.reasons(0, () -> true) == null, "and those writes are refused");
+
+        check(PurpleAccountOwner.chooseOwner(PurpleAccountFiles.capture(0).key), "choosing the owner releases the hold");
+        check(PurpleWriter.ownerRefusal() == null, "no owner refusal once ready");
+        check(!"owner_not_ready".equals(PurpleAccountRowWrite.refusal(0, () -> true)), "nor for the account rows");
+        for (String code : PurpleWriter.REASONS) check(code.equals(PurpleWriter.heldReason(heldError(code))), "round trip: " + code);
+        return checks;
+    }
+
+    /** The error a helper returns after a refusal with {@code code}. */
+    static String heldError(String code) {
+        try {
+            java.lang.reflect.Field field = PurpleWriter.class.getDeclaredField("lastRefusal");
+            field.setAccessible(true);
+            field.set(null, code);
+            return PurpleWriter.noSession();
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError(e);
+        }
+    }
+
     /** The exception-to-code mapping for refusals inside the session constructor. */
     static int failures(File parent) throws Exception {
         checks = 0;
@@ -325,6 +394,7 @@ public final class PurpleListCaptureCases {
             case "single": return single(root);
             case "early": return early(root);
             case "names": return names(root);
+            case "held": return held(root);
             case "failures": return failures(root);
             default: throw new IllegalArgumentException(scenario);
         }

@@ -452,7 +452,12 @@ public class PurpleSettingsActivity extends UniversalFragment
         if (item.id == ROW_LAST_SEEN_REASONS || item.id == ROW_LAST_SEEN_TRADE || item.id == ROW_AUTOSEND) {
             PurpleAccountRowWrite.Intent intent = item.id == ROW_LAST_SEEN_REASONS ? reasonsIntent
                     : item.id == ROW_LAST_SEEN_TRADE ? tradeIntent : sendIntent;
-            write(intent == null ? getString(R.string.PurpleAccountWriteHeld) : intent.set(!item.checked));
+            if (intent == null) {
+                // Held: say why, with the button for what fixes it.
+                PurpleWriterUI.explain(this, PurpleAccountRowWrite.refusal(currentAccount, rowCurrent()), this::rebuild);
+                return;
+            }
+            write(intent.set(!item.checked));
             return;
         }
         if (!org.telegram.messenger.purple.PurpleAccountOwner.legacyEditorAllowed(currentAccount)
@@ -463,9 +468,19 @@ public class PurpleSettingsActivity extends UniversalFragment
                 && item.id != ROW_PEEK_DURATION && item.id != ROW_PEEK_DELAY && item.id != ROW_PEEK_EXIT
                 && item.id != ROW_SCHEDULE && item.id != ROW_PREMIUM && item.id != ROW_SUGGESTIONS
                 && item.id != ROW_FOCUS) {
-            error(getString(R.string.PurpleAccountWriteHeld));
+            String held = PurpleWriter.ownerRefusal();
+            if (held != null) PurpleWriterUI.explain(this, held, this::rebuild);
+            else error(getString(R.string.PurpleAccountWriteHeld));
             return;
         }
+        // The switches write through the rows' session, or a fresh one when
+        // the rows were built without one; when none can be had, the tap
+        // says why rather than passing no session to the writer.
+        final boolean writes = item.id == ROW_PEEK_EXIT || item.id == ROW_PREMIUM
+                || item.id == ROW_SUGGESTIONS || item.id == ROW_FOCUS;
+        final PurpleWriter.Session session = writes && writer == null
+                ? PurpleWriterUI.captureOrExplain(this, true, this::rebuild) : writer;
+        if (writes && session == null) return;
         switch (item.id) {
         case ROW_PEEK_DURATION:
             PurplePresetPicker.show(this);
@@ -474,7 +489,7 @@ public class PurpleSettingsActivity extends UniversalFragment
             editPeekDelay();
             break;
         case ROW_PEEK_EXIT:
-            write(PurpleWriter.setTableBool(writer, "peek", "exit_hidden_chats_p", !item.checked, "peek exit switch"));
+            write(PurpleWriter.setTableBool(session, "peek", "exit_hidden_chats_p", !item.checked, "peek exit switch"));
             break;
         case ROW_PRESET:
             PurplePresetPicker.show(this);
@@ -486,14 +501,14 @@ public class PurpleSettingsActivity extends UniversalFragment
             presentFragment(new PurpleScreenTimeActivity(0, currentAccount));
             break;
         case ROW_PREMIUM:
-            write(PurpleWriter.setTableBool(writer, "premium", "enabled_p", !item.checked, "premium switch"));
+            write(PurpleWriter.setTableBool(session, "premium", "enabled_p", !item.checked, "premium switch"));
             break;
         case ROW_SUGGESTIONS:
-            write(PurpleWriter.setTableBool(writer,
+            write(PurpleWriter.setTableBool(session,
                     "suggestions", "hide_invisible_p", !item.checked, "suggestions switch"));
             break;
         case ROW_FOCUS:
-            write(PurpleWriter.setTableBool(writer,
+            write(PurpleWriter.setTableBool(session,
                     "focus_sync", "enabled_p", !item.checked, "focus sync switch"));
             break;
         case ROW_EDIT:
@@ -558,11 +573,17 @@ public class PurpleSettingsActivity extends UniversalFragment
      * the gate again, so a refused write needs no undo of its own.
      */
     private void write(String error) {
-        if (error != null && BulletinFactory.canShowBulletin(this)) {
+        if (error != null && !PurpleWriterUI.explainHeld(this, error, this::rebuild)
+                && BulletinFactory.canShowBulletin(this)) {
             BulletinFactory.of(this)
                     .createErrorBulletin(formatString(R.string.PurpleWriteFailed, error))
                     .show();
         }
+        rebuild();
+    }
+
+    /** Rebuilds the rows from the file, which is also what trying a held write again means here. */
+    private void rebuild() {
         if (listView != null) {
             listView.adapter.update(true);
         }
@@ -581,10 +602,20 @@ public class PurpleSettingsActivity extends UniversalFragment
      */
     private void editPeekDelay() {
         Activity activity = getParentActivity();
+        if (activity == null) return;
+        PurpleWriter.Session writer = PurpleWriterUI.captureOrExplain(this, true, this::editPeekDelay);
+        if (writer == null) return;
         PurpleGate.PeekSettings settings = PurpleGate.peekSettings();
-        PurpleWriter.Session writer = PurpleWriterUI.capture(this);
-        if (activity == null || writer == null || settings == null
-                || !PurpleGate.currentPeekEditSettings(settings) || !writer.current()) return;
+        if (settings == null) {
+            // The session read the files a moment ago, so this is a file
+            // that changed or became unreadable since.
+            PurpleWriterUI.explain(this, "files_changed", this::editPeekDelay);
+            return;
+        }
+        if (!PurpleGate.currentPeekEditSettings(settings) || !writer.current()) {
+            PurpleWriterUI.explain(this, "session_stale", this::editPeekDelay);
+            return;
+        }
         PurpleCore.Loaded state = settings.state;
         EditTextBoldCursor field = new EditTextBoldCursor(activity);
         field.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
@@ -612,9 +643,13 @@ public class PurpleSettingsActivity extends UniversalFragment
     }
 
     private void nameDevice() {
-        final PurpleWriter.Session writer = PurpleWriterUI.capture(this);
         final Activity activity = getParentActivity();
         if (activity == null) {
+            return;
+        }
+        // Asked before the name is typed, so a held write is not refused only at Save.
+        final PurpleWriter.Session writer = PurpleWriterUI.captureOrExplain(this, true, this::nameDevice);
+        if (writer == null) {
             return;
         }
         final PurpleCore.Loaded state = PurpleGate.state();

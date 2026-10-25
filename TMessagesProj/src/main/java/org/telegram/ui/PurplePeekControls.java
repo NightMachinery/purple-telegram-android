@@ -108,8 +108,14 @@ public final class PurplePeekControls {
 
     static void changeDelay(BaseFragment fragment, int seconds,
             PurpleWriter.Session writer, PurpleGate.PeekSettings settings) {
-        if (seconds < 0 || writer == null || !writer.current()
-                || settings == null || !PurpleGate.currentPeekEditSettings(settings)) return;
+        if (seconds < 0) return;
+        if (writer == null || !writer.current() || settings == null || !PurpleGate.currentPeekEditSettings(settings)) {
+            // The box was opened on a session and settings that have since
+            // changed; say so rather than closing as if it had been saved.
+            String held = PurpleWriter.ownerRefusal();
+            PurpleWriterUI.explain(fragment, writer != null ? "session_stale" : held != null ? held : "session_failed", null);
+            return;
+        }
         if (pending != null) {
             cancel();
             return;

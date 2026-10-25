@@ -602,7 +602,12 @@ public class PurpleScheduleActivity extends UniversalFragment
     protected void onClick(UItem item, View view, int position, float x, float y) {
         final PurpleWriter.Session writer = rowWriter;
         if (item.id == ROW_ENABLED) {
-            write(PurpleWriter.setTableBool(writer, "schedule", "enabled_p", !item.checked,
+            // The rows' session, or a fresh one; when none can be had the tap
+            // says why rather than passing no session to the writer.
+            final PurpleWriter.Session session = writer != null ? writer
+                    : PurpleWriterUI.captureOrExplain(this, true, this::refresh);
+            if (session == null) return;
+            write(PurpleWriter.setTableBool(session, "schedule", "enabled_p", !item.checked,
                     "schedule switch"));
             return;
         }
@@ -653,7 +658,8 @@ public class PurpleScheduleActivity extends UniversalFragment
     }
 
     private void write(String error) {
-        if (error != null && BulletinFactory.canShowBulletin(this)) {
+        if (error != null && !PurpleWriterUI.explainHeld(this, error, this::refresh)
+                && BulletinFactory.canShowBulletin(this)) {
             BulletinFactory.of(this)
                     .createErrorBulletin(formatString(R.string.PurpleWriteFailed, error))
                     .show();
@@ -724,10 +730,14 @@ public class PurpleScheduleActivity extends UniversalFragment
      * ruleset's preset would offer to copy it into a key nobody reads.
      */
     private void pickOutside() {
-        final PurpleWriter.Session writer = PurpleWriterUI.capture(this);
         final Context context = getParentActivity();
         final PurpleCore.Loaded state = PurpleGate.state();
         if (context == null || state == null) {
+            return;
+        }
+        // Asked before the picker opens, so a held write is not refused only after a choice.
+        final PurpleWriter.Session writer = PurpleWriterUI.captureOrExplain(this, true, this::pickOutside);
+        if (writer == null) {
             return;
         }
         showPresetPicker(this, context, state, getString(R.string.PurpleScheduleOutsideRow),
@@ -740,10 +750,14 @@ public class PurpleScheduleActivity extends UniversalFragment
     // ---- a new ruleset --------------------------------------------------------
 
     private void addRuleset() {
-        final PurpleWriter.Session writer = PurpleWriterUI.capture(this);
         final Context context = getParentActivity();
         final PurpleCore.Loaded state = PurpleGate.state();
         if (context == null || state == null) {
+            return;
+        }
+        // Asked before the name is typed, so a held write is not refused only at Save.
+        final PurpleWriter.Session writer = PurpleWriterUI.captureOrExplain(this, true, this::addRuleset);
+        if (writer == null) {
             return;
         }
         final String[] device = { "any" };

@@ -480,6 +480,13 @@ recovered or can't be read, the box lists the names without checkmarks and
 says so, rather than showing membership from another file. Every refusal is
 also written to the diagnostic log.
 
+Every other settings change held for the same reason answers the same way:
+the Purple settings switches, peek start delay, Name this device, the Work
+Mode choice (its row now stays visible with the reason), schedules, rulesets
+and screen time. They show the reason and the same button when tapped, before
+any dialog is filled in, instead of doing nothing or saying `settings.toml` is
+missing.
+
 The settings and state files live in the app's private storage, at
 `/data/data/org.purple.telegram/files/purple/`. `settings.toml` is yours,
 imported from Saved Messages. `state.toml` is the app's: the active preset,

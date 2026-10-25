@@ -3,10 +3,12 @@ package org.telegram.ui;
 import android.app.Activity;
 import android.app.Dialog;
 import android.view.View;
+import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.purple.PurpleAccountOwner;
 import org.telegram.messenger.purple.PurpleWriter;
+import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.Components.Bulletin;
 import org.telegram.ui.Components.BulletinFactory;
@@ -143,6 +145,62 @@ final class PurpleWriterUI {
         final int label = remedy == REMEDY_OWNER ? R.string.PurpleWriteActionOwner
                 : remedy == REMEDY_SETTINGS ? R.string.PurpleWriteActionSettings : R.string.PurpleWriteActionRetry;
         return LocaleController.getString(label);
+    }
+
+    /**
+     * A write session for a tap, or null after {@link #explain} has said why
+     * there is none. Screens call this before they open a dialog or write, so
+     * a held write is answered with its reason and remedy at the tap, never
+     * dropped silently or refused only after a dialog was filled in.
+     */
+    static PurpleWriter.Session captureOrExplain(BaseFragment fragment, boolean appWide, Runnable retry) {
+        PurpleWriter.Capture result = captureResult(fragment, appWide);
+        if (result.session == null) explain(fragment, result.reason, retry);
+        return result.session;
+    }
+
+    /**
+     * Shows a write helper's error as the refusal box when the helper was
+     * handed no session ({@link PurpleWriter#heldReason}), and returns false
+     * for any other error, which the caller shows as before.
+     */
+    static boolean explainHeld(BaseFragment fragment, String error, Runnable retry) {
+        String reason = PurpleWriter.heldReason(error);
+        if (reason == null) return false;
+        explain(fragment, reason, retry);
+        return true;
+    }
+
+    /** The refusal box for a held settings write: why, and the button for what fixes it. */
+    static void explain(BaseFragment fragment, String reason, Runnable retry) {
+        explain(fragment, LocaleController.getString(R.string.PurpleWriteHeldTitle),
+                LocaleController.formatString(R.string.PurpleWriteHeld, reasonText(reason)), reason, retry, null);
+    }
+
+    /**
+     * The refusal box the lists box and every settings screen share: a title,
+     * the reason line, the remedy button ({@link #remedy}) and Close. The
+     * remedy is left out when it has nothing to do here: Try again without a
+     * {@code retry}, or Open Purple settings from Purple settings itself.
+     */
+    static void explain(BaseFragment fragment, String title, String message, String reason, Runnable retry, Runnable closed) {
+        if (fragment == null || fragment.getParentActivity() == null) return;
+        final int remedy = remedy(reason);
+        final boolean offered = remedy == REMEDY_OWNER || remedy == REMEDY_RETRY && retry != null
+                || remedy == REMEDY_SETTINGS && !(fragment instanceof PurpleSettingsActivity);
+        AlertDialog.Builder builder = new AlertDialog.Builder(fragment.getParentActivity(), fragment.getResourceProvider());
+        builder.setTitle(title);
+        builder.setMessage(message);
+        if (offered) builder.setPositiveButton(remedyLabel(remedy), (dialog, which) ->
+                AndroidUtilities.runOnUIThread(() -> runRemedy(fragment, remedy, retry)));
+        builder.setNegativeButton(LocaleController.getString(R.string.Close),
+                closed == null ? null : (dialog, which) -> closed.run());
+        // Posted, because it is often asked for from another dialog's button,
+        // and a fragment holds one dialog: shown in the same turn, the box
+        // would be dismissed with the dialog that asked for it.
+        AndroidUtilities.runOnUIThread(() -> {
+            if (fragment.getParentActivity() != null && !fragment.isFinished) fragment.showDialog(builder.create());
+        });
     }
 
     /** Runs a remedy; {@code retry} is what trying again means at the caller. */

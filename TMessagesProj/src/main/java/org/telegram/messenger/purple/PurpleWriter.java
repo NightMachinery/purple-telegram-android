@@ -178,6 +178,7 @@ public final class PurpleWriter {
      */
     public static Capture captureResult(int account, boolean appWide, Current current, Runnable offlineNotice) {
         Capture result = open(account, appWide, current, offlineNotice);
+        lastRefusal = result.session == null ? result.reason : null;
         if (result.session == null) {
             PurpleDiagLog.event("writer", "capture_refused", PurpleDiagLog.slot(account),
                     PurpleDiagLog.flag("app_wide", appWide), PurpleDiagLog.reason(result.reason),
@@ -187,6 +188,36 @@ public final class PurpleWriter {
     }
 
     private static Capture refused(String reason, Throwable error) { return new Capture(null, reason, error); }
+
+    /**
+     * Why writes that need the settings owner are held, or null when the
+     * owner is ready: {@code accounts_loading} until every account slot has
+     * loaded and the owner is planned, {@code owner_not_ready} after that.
+     */
+    public static String ownerRefusal() {
+        return PurpleAccountOwner.ready() ? null : PurpleAccountOwner.started() ? "owner_not_ready" : "accounts_loading";
+    }
+
+    private static final String HELD = "write session refused: ";
+    /** The code of the last refusal {@link #captureResult} returned, or null after it opened a session. */
+    private static volatile String lastRefusal;
+
+    /**
+     * What a write helper handed no session returns: the code of the refusal
+     * that left its caller without one, which {@link #heldReason} reads back
+     * so a screen can show the refusal's own reason and remedy. Screens check
+     * for a session before they write; this is what a missed check says,
+     * instead of blaming a missing file.
+     */
+    static String noSession() {
+        String code = lastRefusal;
+        return HELD + (code == null ? "session_failed" : code);
+    }
+
+    /** The refusal code in a helper's error, or null when the error is about the write itself. */
+    public static String heldReason(String error) {
+        return error != null && error.startsWith(HELD) ? error.substring(HELD.length()) : null;
+    }
 
     /**
      * Every code {@link #captureResult} can refuse with, including the ones
@@ -209,9 +240,8 @@ public final class PurpleWriter {
                     if (current == null || !current.current()) return refused("view_not_current", null);
                     // Asked here as well as inside begin(), so the commonest
                     // refusal is named without loading the running preset.
-                    if (!PurpleAccountOwner.ready()) {
-                        return refused(PurpleAccountOwner.started() ? "owner_not_ready" : "accounts_loading", null);
-                    }
+                    String held = ownerRefusal();
+                    if (held != null) return refused(held, null);
                     String[] reason = new String[1];
                     PurpleGlobalAccountChoice.Session context = PurpleGlobalAccountChoice.begin(account, current::current, reason);
                     if (context == null) return refused(reason[0] == null ? "choice_refused" : reason[0], null);
@@ -262,16 +292,19 @@ public final class PurpleWriter {
     }
 
     public static String setPeekStartDelay(Session session, PurpleGate.PeekSettings settings, int seconds) {
-        if (session == null || !session.current() || !PurpleGate.currentPeekEditSettings(settings)
+        if (session == null) return noSession();
+        if (!session.current() || !PurpleGate.currentPeekEditSettings(settings)
                 || !java.util.Arrays.equals(session.bytes(), settings.snapshot.bytes())) return "settings.toml changed";
         return apply(session, PurpleCore.setPeekStartDelay(session.bytes(), seconds), "peek start delay");
     }
 
     public static String setTableBool(
             Session session, String table, String key, boolean value, String reason) {
-        final byte[] settings = session == null ? null : session.bytes();
+        if (session == null) return noSession();
+        final byte[] settings = session.bytes();
         if (settings == null) {
-            return "settings.toml is missing";
+            // A session reads its files when it opens, so no bytes means it is no longer current.
+            return "settings context changed";
         }
         return apply(session,
                 PurpleCore.setTableBool(settings, table, key, value),
@@ -280,9 +313,11 @@ public final class PurpleWriter {
 
     public static String setTableString(
             Session session, String table, String key, String value, String reason) {
-        final byte[] settings = session == null ? null : session.bytes();
+        if (session == null) return noSession();
+        final byte[] settings = session.bytes();
         if (settings == null) {
-            return "settings.toml is missing";
+            // A session reads its files when it opens, so no bytes means it is no longer current.
+            return "settings context changed";
         }
         return apply(session,
                 PurpleCore.setTableString(settings, table, key, value),
@@ -297,9 +332,11 @@ public final class PurpleWriter {
      */
     public static String addRuleset(
             Session session, String name, String device, String mode, String reason) {
-        final byte[] settings = session == null ? null : session.bytes();
+        if (session == null) return noSession();
+        final byte[] settings = session.bytes();
         if (settings == null) {
-            return "settings.toml is missing";
+            // A session reads its files when it opens, so no bytes means it is no longer current.
+            return "settings context changed";
         }
         return apply(session,
                 PurpleCore.addRuleset(settings, name, device, mode),
@@ -308,7 +345,8 @@ public final class PurpleWriter {
 
     public static String addRuleset(Session session, String name, String device, String mode,
             String outside, String reason) {
-        byte[] settings = session == null ? null : session.bytes();
+        if (session == null) return noSession();
+        byte[] settings = session.bytes();
         if (settings == null) return "settings context changed";
         PurpleCore.SpliceResult result = PurpleCore.addRuleset(settings, name, device, mode);
         if (result != null && result.ok() && outside != null) {
@@ -319,9 +357,11 @@ public final class PurpleWriter {
     }
 
     public static String removeRuleset(Session session, String name, String reason) {
-        final byte[] settings = session == null ? null : session.bytes();
+        if (session == null) return noSession();
+        final byte[] settings = session.bytes();
         if (settings == null) {
-            return "settings.toml is missing";
+            // A session reads its files when it opens, so no bytes means it is no longer current.
+            return "settings context changed";
         }
         return apply(session, PurpleCore.removeRuleset(settings, name), reason);
     }
@@ -335,9 +375,11 @@ public final class PurpleWriter {
      */
     public static String setRulesetString(
             Session session, String name, String key, String value, String reason) {
-        final byte[] settings = session == null ? null : session.bytes();
+        if (session == null) return noSession();
+        final byte[] settings = session.bytes();
         if (settings == null) {
-            return "settings.toml is missing";
+            // A session reads its files when it opens, so no bytes means it is no longer current.
+            return "settings context changed";
         }
         return apply(session,
                 PurpleCore.setRulesetString(settings, name, key, value),
@@ -355,9 +397,11 @@ public final class PurpleWriter {
      *         starting with {@code *}, or a name already taken
      */
     public static String addList(Session session, String name, String reason) {
-        final byte[] settings = session == null ? null : session.bytes();
+        if (session == null) return noSession();
+        final byte[] settings = session.bytes();
         if (settings == null) {
-            return "settings.toml is missing";
+            // A session reads its files when it opens, so no bytes means it is no longer current.
+            return "settings context changed";
         }
         return apply(session, PurpleCore.addList(settings, name, ""), reason);
     }
@@ -378,9 +422,11 @@ public final class PurpleWriter {
             Session session, String ruleset, int index, int expectedFrom, int expectedTill,
             String expectedPreset, boolean enabled, int[] days, int from, int till,
             String preset, String reason) {
-        final byte[] settings = session == null ? null : session.bytes();
+        if (session == null) return noSession();
+        final byte[] settings = session.bytes();
         if (settings == null) {
-            return "settings.toml is missing";
+            // A session reads its files when it opens, so no bytes means it is no longer current.
+            return "settings context changed";
         }
         return apply(session,
                 PurpleCore.setScheduleRule(settings, ruleset, index, expectedFrom,
@@ -392,9 +438,11 @@ public final class PurpleWriter {
     public static String appendScheduleRule(
             Session session, String ruleset, boolean enabled, int[] days, int from, int till,
             String preset, String reason) {
-        final byte[] settings = session == null ? null : session.bytes();
+        if (session == null) return noSession();
+        final byte[] settings = session.bytes();
         if (settings == null) {
-            return "settings.toml is missing";
+            // A session reads its files when it opens, so no bytes means it is no longer current.
+            return "settings context changed";
         }
         return apply(session,
                 PurpleCore.appendScheduleRule(
@@ -406,9 +454,11 @@ public final class PurpleWriter {
     public static String removeScheduleRule(
             Session session, String ruleset, int index, int expectedFrom, int expectedTill,
             String expectedPreset, String reason) {
-        final byte[] settings = session == null ? null : session.bytes();
+        if (session == null) return noSession();
+        final byte[] settings = session.bytes();
         if (settings == null) {
-            return "settings.toml is missing";
+            // A session reads its files when it opens, so no bytes means it is no longer current.
+            return "settings context changed";
         }
         return apply(session,
                 PurpleCore.removeScheduleRule(settings, ruleset, index, expectedFrom,
@@ -431,9 +481,11 @@ public final class PurpleWriter {
     public static String appendBudget(
             Session session, String target, int perDaySeconds, String mode, int snoozeSeconds,
             int snoozesPerDay, String reason) {
-        final byte[] settings = session == null ? null : session.bytes();
+        if (session == null) return noSession();
+        final byte[] settings = session.bytes();
         if (settings == null) {
-            return "settings.toml is missing";
+            // A session reads its files when it opens, so no bytes means it is no longer current.
+            return "settings context changed";
         }
         return apply(session,
                 PurpleCore.appendBudget(settings, target, perDaySeconds, mode,
@@ -453,9 +505,11 @@ public final class PurpleWriter {
     public static String setBudget(
             Session session, int index, String expectedTarget, String target, int perDaySeconds,
             String mode, int snoozeSeconds, int snoozesPerDay, String reason) {
-        final byte[] settings = session == null ? null : session.bytes();
+        if (session == null) return noSession();
+        final byte[] settings = session.bytes();
         if (settings == null) {
-            return "settings.toml is missing";
+            // A session reads its files when it opens, so no bytes means it is no longer current.
+            return "settings context changed";
         }
         return apply(session,
                 PurpleCore.setBudget(settings, index, expectedTarget, target,
@@ -465,9 +519,11 @@ public final class PurpleWriter {
 
     /** Takes one budget out, on the same expectation as {@link #setBudget}. */
     public static String removeBudget(Session session, int index, String expectedTarget, String reason) {
-        final byte[] settings = session == null ? null : session.bytes();
+        if (session == null) return noSession();
+        final byte[] settings = session.bytes();
         if (settings == null) {
-            return "settings.toml is missing";
+            // A session reads its files when it opens, so no bytes means it is no longer current.
+            return "settings context changed";
         }
         return apply(session, PurpleCore.removeBudget(settings, index, expectedTarget), reason);
     }

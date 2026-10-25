@@ -19,8 +19,13 @@ final class PurpleWorkModeUI {
         HashSet<String> accounts = new HashSet<>();
         for (PurpleAccountFiles.Identity id : PurpleAccountOwner.signedIn()) accounts.add(id.key);
         if (PurpleAccountOwner.global() != null) accounts.add(PurpleAccountOwner.global());
-        if (!PurpleAccountOwner.ready() || accounts.size() < 2) return;
-        items.add(UItem.asButton(ROW, text(R.string.PurpleWorkModeDevice), value(account)));
+        if (accounts.size() < 2) return;
+        // Shown while writes are held too, with the reason as its value, so
+        // the choice is not simply missing; the tap says the same with the
+        // button for what fixes it.
+        String held = PurpleWriter.ownerRefusal();
+        items.add(UItem.asButton(ROW, text(R.string.PurpleWorkModeDevice), held == null ? value(account)
+                : LocaleController.formatString(R.string.PurpleWorkModeHeld, PurpleWriterUI.reasonText(held))));
     }
     private static String value(int account) {
         int mode = PurpleWorkMode.mode(account);
@@ -32,7 +37,7 @@ final class PurpleWorkModeUI {
     }
     static boolean click(BaseFragment fragment, int row) {
         if (row != ROW) return false;
-        PurpleWriter.Session writer = PurpleWriterUI.capture(fragment, false);
+        PurpleWriter.Session writer = PurpleWriterUI.captureOrExplain(fragment, false, () -> click(fragment, ROW));
         if (writer == null) return true;
         String own = PurpleSettings.accountLabel(fragment.getCurrentAccount());
         String global = PurpleAccountSettingsRows.globalLabel(writer.globalKey);
@@ -45,16 +50,17 @@ final class PurpleWorkModeUI {
         AlertDialog.Builder dialog = new AlertDialog.Builder(fragment.getParentActivity(), fragment.getResourceProvider());
         dialog.setTitle(LocaleController.formatString(isGlobal ? R.string.PurpleWorkModeGlobalTitle : R.string.PurpleWorkModeListsTitle, own));
         dialog.setItems(labels, (selected, index) -> {
-            if (!writer.current()) { failed(fragment); return; }
-            if (writer.setMode(modes[index]) != null) failed(fragment);
+            if (!writer.current()) { PurpleWriterUI.explain(fragment, "session_stale", () -> click(fragment, ROW)); return; }
+            String error = writer.setMode(modes[index]);
+            if (error != null) failed(fragment, error);
         });
         dialog.setNegativeButton(text(R.string.Cancel), null);
         PurpleWriterUI.show(fragment, dialog.create(), writer);
         return true;
     }
-    private static void failed(BaseFragment fragment) {
+    private static void failed(BaseFragment fragment, String error) {
         if (fragment.getParentActivity() != null) android.widget.Toast.makeText(fragment.getParentActivity(),
-                text(R.string.PurpleAccountWriteHeld), android.widget.Toast.LENGTH_LONG).show();
+                LocaleController.formatString(R.string.PurpleWorkModeFailed, error), android.widget.Toast.LENGTH_LONG).show();
     }
     private static String text(int id) { return LocaleController.getString(id); }
     private PurpleWorkModeUI() { }

@@ -593,9 +593,13 @@ public class PurpleScreenTimeActivity extends UniversalFragment
      * about, and everything else in the block is what this dialog is for.
      */
     private void editBudget(PurpleCore.Budget existing) {
-        final PurpleWriter.Session writer = PurpleWriterUI.capture(this);
         final Context context = getParentActivity();
         if (context == null) {
+            return;
+        }
+        // Asked before the budget is filled in, so a held write is not refused only at Save.
+        final PurpleWriter.Session writer = PurpleWriterUI.captureOrExplain(this, true, this::refresh);
+        if (writer == null) {
             return;
         }
         final PurpleCore.Loaded state = PurpleGate.state();
@@ -697,7 +701,8 @@ public class PurpleScreenTimeActivity extends UniversalFragment
      * showing the budgets that were there before the edit.
      */
     private void afterWrite(String error) {
-        if (error != null && BulletinFactory.canShowBulletin(this)) {
+        if (error != null && !PurpleWriterUI.explainHeld(this, error, this::refresh)
+                && BulletinFactory.canShowBulletin(this)) {
             BulletinFactory.of(this)
                     .createErrorBulletin(formatString(R.string.PurpleWriteFailed, error))
                     .show();
@@ -1072,9 +1077,15 @@ public class PurpleScreenTimeActivity extends UniversalFragment
     protected void onClick(UItem item, View view, int position, float x, float y) {
         final PurpleWriter.Session writer = rowWriter;
         if (item.id == ROW_ENABLED) {
-            final String error = PurpleWriter.setTableBool(writer,
+            // The rows' session, or a fresh one; when none can be had the tap
+            // says why rather than passing no session to the writer.
+            final PurpleWriter.Session session = writer != null ? writer
+                    : PurpleWriterUI.captureOrExplain(this, true, this::refresh);
+            if (session == null) return;
+            final String error = PurpleWriter.setTableBool(session,
                     "screen_time", "enabled_p", !item.checked, "screen time switch");
-            if (error != null && BulletinFactory.canShowBulletin(this)) {
+            if (error != null && !PurpleWriterUI.explainHeld(this, error, this::refresh)
+                    && BulletinFactory.canShowBulletin(this)) {
                 BulletinFactory.of(this)
                         .createErrorBulletin(formatString(R.string.PurpleWriteFailed, error))
                         .show();

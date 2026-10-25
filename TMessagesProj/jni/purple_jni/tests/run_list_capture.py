@@ -41,7 +41,8 @@ classpath = os.pathsep.join([str(classes), str(args.json)] + [item["path"] for k
 adapters = [path for path in (tests / "modern_sync").rglob("*.java") if "/messenger/purple/" not in str(path)]
 adapters += list((tests / "list_capture/android").rglob("*.java"))
 business = ["PurpleAccountOwner", "PurpleAccountFiles", "PurpleAccountSettings", "PurpleWriter", "PurpleGlobalAccountChoice",
-            "PurpleRoutedWriteModel", "PurpleListSource", "PurpleCore", "PurpleDiagLog", "PurpleDiagLogStore"]
+            "PurpleRoutedWriteModel", "PurpleListSource", "PurpleListMenu", "PurpleAccountRowWrite", "PurpleCore",
+            "PurpleDiagLog", "PurpleDiagLogStore"]
 main = args.output / "ListCaptureHostMain.java"
 main.write_text('import java.io.File;public final class ListCaptureHostMain{public static void main(String[] a)throws Exception{'
                 'org.telegram.messenger.purple.PurpleCore.ensureLoaded();File expected=new File(a[0]).getCanonicalFile();'
@@ -66,7 +67,7 @@ def run(name, command):
 
 
 run("javac", [compiler, "-source", "8", "-target", "8", "-proc:none", "-sourcepath", empty, "-cp", classpath, "-d", out] + sources)
-for scenario in ["multi", "single", "early", "names", "failures"]:
+for scenario in ["multi", "single", "early", "names", "held", "failures"]:
     run(scenario, [java, "-Xcheck:jni", "-Xmx512m", "-Djava.library.path=" + str(args.library.parent),
                    "-Djava.io.tmpdir=" + str(fixtures), "-cp", str(out) + os.pathsep + classpath,
                    "ListCaptureHostMain", classes, scenario, fixtures / scenario])

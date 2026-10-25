@@ -37,10 +37,16 @@ public final class PurpleListMenu {
         return state != null && (state.listCount > 0 || !state.normal);
     }
 
-    public static List<PurpleCore.ListEntry> listsFor(int currentAccount, long dialogId) {
-        PurpleWriter.Session session = PurpleWriter.capture(currentAccount, false, () -> true, null);
-        return session == null ? java.util.Collections.emptyList()
-                : session.lists(PurpleGate.bareIdOf(currentAccount, dialogId));
+    /**
+     * The lists for one chat as {@code session} reads them, or null when
+     * there is no session for this account or the lists cannot be read, so a
+     * caller can tell no lists from a refusal. It used to open a session of
+     * its own and answer a refusal with an empty list, which a caller could
+     * not tell from a file with no lists.
+     */
+    public static List<PurpleCore.ListEntry> listsFor(PurpleWriter.Session session, int currentAccount, long dialogId) {
+        if (session == null || !session.forAccount(currentAccount)) return null;
+        return session.listsOrNull(PurpleGate.bareIdOf(currentAccount, dialogId));
     }
 
     public static String toggle(
