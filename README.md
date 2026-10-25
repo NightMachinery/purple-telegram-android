@@ -683,6 +683,8 @@ exported copy. Both folders are excluded from Android backup and device
 transfer, and a full write queue drops log lines but never an Export or a
 Clear.
 
+Export also includes **Frequent contacts**, an anonymous snapshot for each signed-in account (index and selected flag only). It shows raw slot order, ratings, current visibility and user flags, sync/anchor ages and timestamps, clock offset, decay and loading state. Local read-only queries use captured server time for outgoing windows and ages, and compute the next increment from the same MAX(mid), MAX(date) and anchor inputs as Telegram. Deferred reads are bound to the opening login in RAM and revalidated before/after reads and before formatting; changed accounts are replaced with a fixed note. Visibility sampling uses the quiet folder projection. Missing DB reads are marked unavailable; local retention is not a lifetime total, and a future send can change the increment. Up to 50 numeric hint events across accounts stay in memory since process start or Clear, never in the always-on log. No peer identifiers, names, phones, text or hashes enter this section; it makes no requests and changes no ratings, database rows or config. The existing user-triggered export file is its only durable output.
+
 Each line holds a UTC time, an area, an event and typed fields: account slot
 indexes, modes, versions, clamped counts, flags, words from a fixed vocabulary
 (areas, events, field names, reason codes), and an exception's class with a

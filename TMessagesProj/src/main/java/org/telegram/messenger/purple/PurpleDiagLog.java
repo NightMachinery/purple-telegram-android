@@ -159,6 +159,7 @@ public final class PurpleDiagLog {
      * is gone.
      */
     public static void clear(Cleared done) {
+        PurpleHintHistory.clear();
         submit(() -> {
             PurpleDiagLogStore target = store();
             boolean cleared = target == null || target.clear();
@@ -195,13 +196,17 @@ public final class PurpleDiagLog {
      * removed first, so at most one copy stays on the device until Clear.
      */
     public static void export(Exported done) {
+        export(done, "");
+    }
+
+    static void export(Exported done, String section) {
         String computed;
         try {
             computed = header();
         } catch (Throwable e) {
             computed = "Purple Telegram diagnostic log\n----\n";
         }
-        final String header = computed;
+        final String header = computed + section;
         submit(() -> {
             File file = null;
             Throwable failure = null;

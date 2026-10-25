@@ -187,6 +187,10 @@ public class ConnectionsManager extends BaseController {
     private static int lastClassGuid = 1;
     
     private static final ConnectionsManager[] Instance = new ConnectionsManager[UserConfig.MAX_ACCOUNT_COUNT];
+    public static ConnectionsManager getExistingInstance(int num) {
+        return Instance[num];
+    }
+
     public static ConnectionsManager getInstance(int num) {
         ConnectionsManager localInstance = Instance[num];
         if (localInstance == null) {

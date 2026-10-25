@@ -2297,6 +2297,16 @@ public final class PurpleGate {
 
     public static ArrayList<MessagesController.DialogFilter> shownFilters(
             int currentAccount, ArrayList<MessagesController.DialogFilter> raw) {
+        return shownFilters(currentAccount, raw, true);
+    }
+
+    public static ArrayList<MessagesController.DialogFilter> shownFiltersQuiet(
+            int currentAccount, ArrayList<MessagesController.DialogFilter> raw) {
+        return shownFilters(currentAccount, raw, false);
+    }
+
+    private static ArrayList<MessagesController.DialogFilter> shownFilters(
+            int currentAccount, ArrayList<MessagesController.DialogFilter> raw, boolean log) {
         final PurpleCore.Loaded current = loaded;
         if (!filtering(currentAccount) || current == null || raw == null || raw.isEmpty()) {
             return raw;
@@ -2332,7 +2342,7 @@ public final class PurpleGate {
             // Logged on the same line as every other answer, and not skipped
             // along with the work: the count is the only readable evidence that
             // the strip followed the peek rather than staying where it was.
-            logStrip(result.size(), raw.size() + views.size(), null, true);
+            if (log) logStrip(result.size(), raw.size() + views.size(), null, true);
             return result;
         }
         StringBuilder missing = null;
@@ -2378,7 +2388,7 @@ public final class PurpleGate {
                 result.add(found);
             }
         }
-        logStrip(result.size(), raw.size() + views.size(), missing, false);
+        if (log) logStrip(result.size(), raw.size() + views.size(), missing, false);
         return result;
     }
 

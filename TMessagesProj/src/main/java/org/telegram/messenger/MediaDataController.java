@@ -55,6 +55,8 @@ import org.telegram.SQLite.SQLitePreparedStatement;
 import org.telegram.messenger.ringtone.RingtoneDataStore;
 import org.telegram.messenger.ringtone.RingtoneUploader;
 import org.telegram.messenger.utils.EphemeralMessagesHelper;
+import org.telegram.messenger.purple.PurpleHintHistory;
+import org.telegram.messenger.purple.PurpleRankingDiag;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.NativeByteBuffer;
 import org.telegram.tgnet.RequestDelegate;
@@ -153,6 +155,10 @@ public class MediaDataController extends BaseController {
             }
         }
         return localInstance;
+    }
+
+    public static MediaDataController getExistingInstance(int num) {
+        return Instance[num];
     }
 
     public MediaDataController(int num) {
@@ -402,6 +408,7 @@ public class MediaDataController extends BaseController {
         loading = false;
         loaded = false;
         hints.clear();
+        PurpleRankingDiag.reset(currentAccount);
         inlineBots.clear();
         guestBots.clear();
         webapps.clear();
@@ -5249,6 +5256,7 @@ public class MediaDataController extends BaseController {
                         loading = false;
                         loaded = true;
                         hints = hintsNew;
+                        PurpleRankingDiag.event(currentAccount, PurpleHintHistory.Source.CACHE_LOAD, hints.size());
                         inlineBots = inlineBotsNew;
                         guestBots = guestsBotsNew;
                         webapps = webappsNew;
@@ -5279,6 +5287,7 @@ public class MediaDataController extends BaseController {
             req.bots_app = true;
             req.offset = 0;
             req.limit = 20;
+            PurpleRankingDiag.event(currentAccount, PurpleHintHistory.Source.SERVER_START, hints.size());
             getConnectionsManager().sendRequestTyped(req, AndroidUtilities::runOnUIThread, (response, error) -> {
                 if (response instanceof TLRPC.TL_contacts_topPeers) {
                     TLRPC.TL_contacts_topPeers topPeers = (TLRPC.TL_contacts_topPeers) response;
@@ -5364,12 +5373,14 @@ public class MediaDataController extends BaseController {
                     getUserConfig().saveConfig(false);
                     clearTopPeers();
                 }
+                PurpleRankingDiag.serverResult(currentAccount, response, hints.size());
             });
         }
     }
 
     public void clearTopPeers() {
         hints.clear();
+        PurpleRankingDiag.event(currentAccount, PurpleHintHistory.Source.REMOVE, hints.size());
         inlineBots.clear();
         guestBots.clear();
         webapps.clear();
@@ -5532,6 +5543,7 @@ public class MediaDataController extends BaseController {
         for (int a = 0; a < hints.size(); a++) {
             if (hints.get(a).peer.user_id == uid) {
                 hints.remove(a);
+                PurpleRankingDiag.event(currentAccount, PurpleHintHistory.Source.REMOVE, hints.size());
                 getNotificationCenter().postNotificationName(NotificationCenter.reloadHints);
                 TLRPC.TL_contacts_resetTopPeerRating req = new TLRPC.TL_contacts_resetTopPeerRating();
                 req.category = new TLRPC.TL_topPeerCategoryCorrespondents();
@@ -5575,6 +5587,7 @@ public class MediaDataController extends BaseController {
             }
             double dtFinal = dt;
             AndroidUtilities.runOnUIThread(() -> {
+                int purpleRankBefore = PurpleRankingDiag.rank(hints, dialogId);
                 TLRPC.TL_topPeer peer = null;
                 for (int a = 0; a < hints.size(); a++) {
                     TLRPC.TL_topPeer p = hints.get(a);
@@ -5599,6 +5612,7 @@ public class MediaDataController extends BaseController {
                     return 0;
                 });
 
+                PurpleRankingDiag.increment(currentAccount, purpleRankBefore, hints, dialogId, dtFinal, getMessagesController().ratingDecay);
                 savePeer(dialogId, 0, peer.rating);
 
                 getNotificationCenter().postNotificationName(NotificationCenter.reloadHints);

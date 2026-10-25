@@ -61,7 +61,7 @@ final class PurpleDiagnosticsUI {
     private static void export(UniversalFragment fragment) {
         WeakReference<UniversalFragment> weak = new WeakReference<>(fragment);
         PurpleDiagLog.event("diag", "export");
-        PurpleDiagLog.export(file -> {
+        org.telegram.messenger.purple.PurpleRankingDiag.export(file -> {
             UniversalFragment current = weak.get();
             Activity activity = current == null ? null : current.getParentActivity();
             if (activity == null) return;

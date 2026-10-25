@@ -1520,6 +1520,10 @@ public class MessagesController extends BaseController implements NotificationCe
         }
     }
 
+    public static MessagesController getExistingInstance(int num) {
+        return Instance[num];
+    }
+
     public static MessagesController getInstance(int num) {
         MessagesController localInstance = Instance[num];
         if (localInstance == null) {

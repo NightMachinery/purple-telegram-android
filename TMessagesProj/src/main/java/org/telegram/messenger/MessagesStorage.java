@@ -133,6 +133,10 @@ public class MessagesStorage extends BaseController {
     private final LongSparseIntArray dialogIsForumTyped = new LongSparseIntArray();
 
 
+    public static MessagesStorage getExistingInstance(int num) {
+        return Instance[num];
+    }
+
     public static MessagesStorage getInstance(int num) {
         MessagesStorage localInstance = Instance[num];
         if (localInstance == null) {
