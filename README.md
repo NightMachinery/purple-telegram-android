@@ -696,6 +696,10 @@ mirrored to the FileLog as `Purple: ...`. Host cases for the bounds, rotation,
 line format, scrubbing, export header and the full-queue path are in
 `TMessagesProj/jni/purple_jni/tests/diag_log/`.
 
+The typed sync-chat bridge and Android native fact mapping are described in
+[Sync-chat discovery](docs/sync-chat.md), including the restricted ownership
+policy, unknown-fact handling and source/host JNI validation boundary.
+
 **Sync across devices** is manual settings sync for the account the settings
 screen belongs to. It names that account at the top; to sync another account,
 switch to it with Telegram's own account switcher first. **Check Saved
