@@ -1968,3 +1968,5 @@ Purple settings shows archive usage and retention gaps, plus explicit account
 recovery. Logout deletes that account’s archive and dedicated keys.
 See [capture and history](docs/archive-capture.md) and
 [archive storage](docs/archive-storage.md) for limits and recovery.
+
+The per-account Sync chat screen and reader disclosures are described in [sync-chat.md](docs/sync-chat.md). Fresh setup remains behind native qualification; automatic sync remains Saved Messages only.

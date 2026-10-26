@@ -1,0 +1,176 @@
+package org.telegram.ui;
+
+import android.content.Context;
+import android.os.Bundle;
+import android.view.View;
+
+import org.telegram.messenger.DialogObject;
+import org.telegram.messenger.LocaleController;
+import org.telegram.messenger.MessagesController;
+import org.telegram.messenger.UserConfig;
+import org.telegram.messenger.purple.PurpleSyncChat;
+import org.telegram.messenger.purple.PurpleSyncChatCore;
+import org.telegram.messenger.purple.PurpleSyncChatScreen;
+import org.telegram.tgnet.TLRPC;
+import org.telegram.ui.ActionBar.AlertDialog;
+import org.telegram.ui.Components.UItem;
+import org.telegram.ui.Components.UniversalAdapter;
+import org.telegram.ui.Components.UniversalFragment;
+
+import java.util.ArrayList;
+import java.util.Locale;
+
+public final class PurpleSyncChatActivity extends UniversalFragment {
+    private static final int REFRESH=0x70750110, SELF=REFRESH+1, EXISTING=REFRESH+2, CREATE=REFRESH+3, CONSENT=REFRESH+4;
+    private PurpleSyncChatScreen.Control control;
+    private PurpleSyncChatScreen.Frame frame;
+    private PurpleSyncChatCore.Peer pending;
+    private org.telegram.messenger.purple.PurpleAccountFiles.Identity identity;
+    private boolean visible;
+
+    public PurpleSyncChatActivity(int account) { setCurrentAccount(account); }
+    @Override public boolean onFragmentCreate() {
+        identity=org.telegram.messenger.purple.PurpleAccountFiles.capture(currentAccount);
+        return identity!=null&&identity.current()&&super.onFragmentCreate();
+    }
+    static String text(String key,Object... args) {
+        String value=LocaleController.getString("PurpleSyncChat"+key);
+        return args.length==0?value:String.format(Locale.getDefault(),value,args);
+    }
+    private static String title(PurpleSyncChatScreen.Candidate candidate) {
+        return candidate.chat.kind==PurpleSyncChatCore.PeerKind.Self?text("Saved"):candidate.title;
+    }
+    @Override protected CharSequence getTitle() { return text("Title"); }
+    @Override public View createView(Context context) { return super.createView(context); }
+    @Override public void onResume() {
+        super.onResume();visible=true;
+        if(identity==null||!identity.current()){finishFragment();return;}
+        if(control==null||!control.current())control=PurpleSyncChat.screen(currentAccount);
+        reload();
+    }
+    @Override public void onPause() {
+        visible=false;if(control!=null){control.close();control=null;}super.onPause();
+    }
+    @Override public void onFragmentDestroy() {
+        visible=false;if(control!=null){control.close();control=null;}super.onFragmentDestroy();
+    }
+    private void update() { if(visible&&listView!=null)listView.adapter.update(true); }
+    private void reload() {
+        PurpleSyncChatScreen.Control opening=control;
+        if(opening==null||!visible)return;
+        opening.refresh(value->{
+            if(!visible||control!=opening)return;
+            frame=value;update();
+            if(pending!=null){PurpleSyncChatCore.Peer chat=pending;pending=null;inspect(chat);}
+        });
+    }
+    @Override protected void fillItems(ArrayList<UItem> items,UniversalAdapter adapter) {
+        items.add(UItem.asHeader(text("Title")));
+        if(frame==null)items.add(UItem.asShadow(text("Searching")));
+        else {
+            String line;
+            switch(frame.status.phase) {
+                case Unset:line=text("Unset");break;
+                case Searching:line=text("Searching");break;
+                case Lost:line=text("Lost");break;
+                case Use:line=text("Using",frame.current!=null?title(frame.current):text("UnknownChat"));break;
+                default:line=text("Paused",reason(frame.status.reason));
+            }
+            items.add(UItem.asShadow(line));
+            if(frame.status.phase==PurpleSyncChat.Phase.Use&&frame.status.postingHeld)items.add(UItem.asShadow(reason(frame.status.reason)));
+            if(frame.current!=null)items.add(UItem.asShadow(disclosure(frame.current)));
+            for(PurpleSyncChatScreen.Refused refused:frame.refused)
+                items.add(UItem.asShadow(text("RefusedMark",refused.title,refusal(refused.reason))));
+            if(frame.newReaders) {
+                String members=frame.current!=null&&frame.current.eligibility.readers.otherMembers!=null?frame.current.eligibility.readers.otherMembers.toString():text("UnknownCount");
+                String baseline=frame.originalOtherMembers!=null?frame.originalOtherMembers.toString():text("UnknownCount");
+                items.add(UItem.asShadow(text("NewReaders",frame.current!=null?title(frame.current):text("UnknownChat"),members,baseline)
+                        +"\n"+text(frame.current!=null&&frame.current.hiddenPrehistory?"NewReadersFuture":"NewReadersEarlier")+"\n"+text("ReaderBlindSpot")));
+            }
+            if(frame.status.reason.equals("ReaderConsent")&&frame.current!=null&&frame.current.allowed)
+                items.add(UItem.asButton(CONSENT,text("ReviewReaders")));
+            if(frame.canSetup) {
+                items.add(UItem.asButton(CREATE,text("Create")));
+                items.add(UItem.asButton(SELF,text("Saved")));
+                items.add(UItem.asButton(EXISTING,text("Choose")));
+            } else if(frame.bound)items.add(UItem.asShadow(text("Bound")));
+        }
+        items.add(UItem.asButton(REFRESH,text("Refresh")));
+        items.add(UItem.asShadow(text("QualificationHeld")));
+    }
+    @Override protected void onClick(UItem item,View view,int position,float x,float y) {
+        if(!visible||control==null||!control.current())return;
+        if(item.id==REFRESH)reload();
+        else if(item.id==CONSENT&&frame!=null&&frame.current!=null)inspect(frame.current.chat);
+        else if(frame!=null&&frame.canSetup) {
+            if(item.id==SELF)inspect(PurpleSyncChatCore.Peer.self());
+            else if(item.id==EXISTING)choose();
+            else if(item.id==CREATE)confirmCreate();
+        }
+    }
+    @Override protected boolean onLongClick(UItem item,View view,int position,float x,float y) { return false; }
+    private void choose() {
+        final long self=UserConfig.getInstance(currentAccount).getClientUserId();
+        Bundle args=new Bundle();args.putBoolean("onlySelect",true);args.putInt("dialogsType",0);args.putBoolean("allowSwitchAccount",false);
+        DialogsActivity picker=new DialogsActivity(args);picker.setCurrentAccount(currentAccount);
+        picker.setDelegate((fragment,dids,message,param,notify,schedule,repeat,topics)->{
+            if(identity==null||!identity.current())return false;
+            if(dids==null||dids.size()!=1||topics!=null)return false;
+            long did=dids.get(0).dialogId;
+            if(DialogObject.isEncryptedDialog(did)||DialogObject.isFolderDialogId(did)||dids.get(0).topicId!=0)return false;
+            if(did==self)pending=PurpleSyncChatCore.Peer.self();
+            else if(did>0)pending=PurpleSyncChatCore.Peer.of(PurpleSyncChatCore.PeerKind.User,did);
+            else {
+                TLRPC.Chat chat=MessagesController.getInstance(currentAccount).getChat(-did);
+                if(chat==null)return false;
+                pending=PurpleSyncChatCore.Peer.of(org.telegram.messenger.ChatObject.isChannel(chat)?PurpleSyncChatCore.PeerKind.Channel:PurpleSyncChatCore.PeerKind.Chat,-did);
+            }
+            fragment.finishFragment();return true;
+        });
+        presentFragment(picker);
+    }
+    private void inspect(PurpleSyncChatCore.Peer chat) {
+        PurpleSyncChatScreen.Control opening=control;
+        if(opening==null)return;
+        opening.inspect(chat,candidate->{
+            if(!visible||control!=opening)return;
+            if(candidate==null){message(text("Changed"));reload();return;}
+            if(!candidate.allowed){message(text("Refused",title(candidate),refusal(candidate.eligibility.refusal)));return;}
+            AlertDialog.Builder dialog=new AlertDialog.Builder(getParentActivity());dialog.setTitle(text("UseTitle",title(candidate)));
+            dialog.setMessage(disclosure(candidate));
+            dialog.setPositiveButton(text("Use"),(ignored,which)->opening.accept(candidate,true,true,selected->{
+                if(!visible||control!=opening)return;
+                message(text(selected==null?"Changed":opening.frame()!=null&&opening.frame().canSetup?"QualificationHeld":"ConsentSaved"));reload();
+            }));
+            dialog.setNegativeButton(LocaleController.getString(org.telegram.messenger.R.string.Cancel),null);showDialog(dialog.create());
+        });
+    }
+    private void confirmCreate() {
+        PurpleSyncChatScreen.Control opening=control;
+        AlertDialog.Builder dialog=new AlertDialog.Builder(getParentActivity());dialog.setTitle(text("Create"));dialog.setMessage(text("CreateAbout")+"\n\n"+text("Cloud",text("NewChannel")));
+        dialog.setPositiveButton(text("Continue"),(ignored,which)->opening.create(true,selected->{if(visible&&control==opening){message(text(selected!=null?"QualificationHeld":"Changed"));reload();}}));
+        dialog.setNegativeButton(LocaleController.getString(org.telegram.messenger.R.string.Cancel),null);showDialog(dialog.create());
+    }
+    private void message(String text) {
+        if(!visible||getParentActivity()==null)return;
+        new AlertDialog.Builder(getParentActivity()).setTitle(PurpleSyncChatActivity.text("Title")).setMessage(text)
+                .setPositiveButton(LocaleController.getString(org.telegram.messenger.R.string.OK),null).show();
+    }
+    static String disclosure(PurpleSyncChatScreen.Candidate candidate) {
+        String value=text("Cloud",title(candidate));
+        if(candidate.eligibility.readers.warningRequired) {
+            value+="\n\n"+text(candidate.eligibility.readers.botOwner?"BotReader":candidate.eligibility.readers.privateRecipient?"PrivateReader":"MembersReader",
+                    title(candidate),candidate.eligibility.readers.otherMembers!=null?candidate.eligibility.readers.otherMembers.toString():text("UnknownCount"));
+            value+="\n"+text("SettingsReaders")+"\n"+text("ReaderConsequences");
+        }
+        return value;
+    }
+    private static String refusal(PurpleSyncChatCore.Refusal value) { return text("Refusal"+value.name()); }
+    private static String reason(String value) {
+        if(value.equals("ReaderConsent"))return text("ConsentNeeded");
+        if(value.equals("UnknownReaders"))return text("ReadersUnknown");
+        if(value.equals("NewerMark"))return text("NewerMark");
+        if(value.equals("FollowRequired")||value.equals("FillRequired"))return text("MoveHeld");
+        return text("Retry");
+    }
+}

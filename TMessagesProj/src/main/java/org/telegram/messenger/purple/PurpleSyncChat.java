@@ -57,6 +57,59 @@ public final class PurpleSyncChat {
         AndroidUtilities.runOnUIThread(()->{Holder holder=account(slot);if(holder==null){done.accept(unavailable());return;}holder.service.checkBeforePost(stream,null,status->done.accept(new Status(status)));});
     }
     public static Status status(int slot) { Holder holder=accounts.get(slot);return holder!=null&&holder.env.current()?new Status(holder.service.status()):unavailable(); }
+    public static PurpleSyncChatScreen.Control screen(int slot) {
+        Holder holder=account(slot);
+        return holder!=null?new PurpleSyncChatScreen.Control(new ScreenPort(holder)):null;
+    }
+    private static final class ScreenPort implements PurpleSyncChatScreen.Port {
+        final Holder holder;
+        PurpleSyncChatClient reader;
+        volatile Object owner;
+        volatile boolean closed;
+        ScreenPort(Holder holder) { this.holder=holder; }
+        public PurpleSyncChatOrigin origin() { return holder.env.origin; }
+        public boolean current() { return !closed&&holder.env.current(); }
+        public boolean begin(Object owner) {
+            if(!current()||this.owner!=null||!PurpleSyncOperations.begin(holder.env.operationKey(),owner,this::current))return false;
+            this.owner=owner;return true;
+        }
+        public void end(Object owner) {
+            if(this.owner!=owner)return;
+            this.owner=null;PurpleSyncOperations.end(holder.env.operationKey(),owner);
+        }
+        public void resolve(Object owner,Consumer<PurpleSyncChatScreen.Frame> done) {
+            PurpleSyncChatService.Borrowed borrowed=new PurpleSyncChatService.Borrowed(holder.env.operationKey(),owner,this::current);
+            holder.service.ensureResolved(true,"config",borrowed,ignored->{if(current())done.accept(holder.service.screen());});
+        }
+        public void inspect(Peer chat,Consumer<PurpleSyncChatClient.Info> done) {
+            if(reader!=null)reader.cancel();
+            PurpleSyncChatClient captured=holder.env.client();reader=captured;
+            captured.info(chat,info->{if(reader!=captured||!current())return;reader=null;captured.cancel();done.accept(info);});
+        }
+        public void remember(PurpleSyncChatScreen.Frame frame,PurpleSyncChatScreen.Candidate candidate,Consumer<Boolean> done) {
+            Object captured=owner;
+            holder.env.worker(()->{
+                boolean saved=false;
+                try {
+                    PurpleSyncChatService.Binding binding=holder.env.binding();
+                    if(current()&&captured!=null&&captured==owner&&PurpleSyncOperations.owned(holder.env.operationKey(),captured)
+                            &&binding.ok&&binding.bound==frame.binding.bound&&binding.chat.equals(frame.binding.chat)
+                            &&frame.canConsent(candidate.chat)&&candidate.allowed) {
+                        PurpleSyncChatCache.Data old=frame.opening.data;
+                        java.util.Set<String> warned=new java.util.HashSet<>(old.warned);warned.add("config");
+                        PurpleSyncChatCache.Data next=new PurpleSyncChatCache.Data(old.location,candidate.title,
+                                old.readers!=null?old.readers:PurpleSyncChatCache.ReadersSnapshot.from(candidate.info),warned,old.journal,old.newReaders);
+                        saved=PurpleSyncChatCache.save(holder.env.cache,frame.opening,origin(),holder.env.authority,next,
+                                ()->current()&&captured==owner&&PurpleSyncOperations.owned(holder.env.operationKey(),captured));
+                    }
+                } catch(RuntimeException|LinkageError error) { saved=false; }
+                boolean result=saved;holder.env.ui(()->{if(current()&&captured==owner)done.accept(result);});
+            });
+        }
+        public void cancel(Object owner) {
+            closed=true;if(reader!=null){reader.cancel();reader=null;}holder.service.cancelBorrowed(owner);
+        }
+    }
     static void underLock(PurpleSyncFileContext context,Object owner,String key,boolean beforePost,BooleanSupplier current,Consumer<Status> done) {
         underLock(context,owner,key,beforePost,current,current,done);
     }

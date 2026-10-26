@@ -67,6 +67,10 @@ final class PurpleSyncChatService {
         status=new PurpleSyncChatDiscovery.Status(PurpleSyncChatDiscovery.Phase.Paused,resolve(input),"NotStarted",false,true,0);
     }
     PurpleSyncChatDiscovery.Status status() { return status; }
+    PurpleSyncChatScreen.Frame screen() {
+        return new PurpleSyncChatScreen.Frame(env.origin(),new PurpleSyncChat.Status(status),binding,opening,
+                model!=null?model.readInfo():null,model!=null?model.refused():Collections.emptyList());
+    }
     void startSession() {
         if(started||closed)return;
         started=true;ensureResolved(false,"config",null,ignored->{});

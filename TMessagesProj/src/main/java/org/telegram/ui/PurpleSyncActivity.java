@@ -50,6 +50,7 @@ public class PurpleSyncActivity extends UniversalFragment {
     private static final int ROW_HISTORY = 6;
     private static final int ROW_RECOVERY = 7;
     private static final int ROW_AUTO=8;
+    private static final int ROW_CHAT=0x7075010f;
     private org.telegram.messenger.purple.PurpleSyncAuto.Control automatic;
     private CharSequence automaticStatus="";
 
@@ -132,6 +133,7 @@ public class PurpleSyncActivity extends UniversalFragment {
     @Override
     protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
         items.add(UItem.asHeader(accountLabel()));
+        items.add(UItem.asButton(ROW_CHAT,PurpleSyncChatActivity.text("Title")));
         UItem auto=UItem.asCheck(ROW_AUTO,getString(R.string.PurpleSyncAutoTitle));
         auto.checked=automatic!=null&&automatic.enabled();auto.enabled=automatic!=null&&automatic.current();items.add(auto);
         items.add(UItem.asShadow(automaticStatus));
@@ -173,6 +175,9 @@ public class PurpleSyncActivity extends UniversalFragment {
     @Override
     protected void onClick(UItem item, View view, int position, float x, float y) {
         switch (item.id) {
+            case ROW_CHAT:
+                presentFragment(new PurpleSyncChatActivity(currentAccount));
+                break;
             case ROW_AUTO:
                 if(automatic!=null&&automatic.current())automatic.setEnabled(!automatic.enabled());
                 break;

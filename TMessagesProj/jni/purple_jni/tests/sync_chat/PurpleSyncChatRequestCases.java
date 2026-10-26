@@ -78,7 +78,7 @@ final class PurpleSyncChatRequestCases {
         for(Peer chat:new Peer[]{SELF,CHANNEL,GROUP,USER}){
             Cache at=new Cache(chat,7,50);TLRPC.TL_message mark=mark(chat,7,50);PurpleSyncChatClient.Info facts=info(chat);
             check(PurpleSyncChatTelegram.classify(ORIGIN,at,messages(mark),null,facts).state==DirectRead.Valid,"R3 valid "+chat.token());
-            check(PurpleSyncChatTelegram.classify(ORIGIN,at,messages(),null,facts).state==DirectRead.MarkGone,"independent readable empty");
+            check(PurpleSyncChatTelegram.classify(ORIGIN,at,messages(),null,facts).state==DirectRead.Unknown,"zero-row R3 unknown");
             check(PurpleSyncChatTelegram.classify(ORIGIN,at,messages(mark(chat,7,999)),null,facts).state==DirectRead.Unknown,"contradictory immutable mark date held");
             TLRPC.TL_messageEmpty missing=new TLRPC.TL_messageEmpty();missing.id=7;missing.flags=1;missing.peer_id=peer(chat);
             check(PurpleSyncChatTelegram.classify(ORIGIN,at,messages(missing),null,facts).state==DirectRead.MarkGone,"matching empty peer control");

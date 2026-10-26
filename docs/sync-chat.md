@@ -24,7 +24,7 @@ The origin captures slot, environment, user and a RAM UUID, with separate run/ti
 
 The private device-local cache is `purple/sync-chat/<environment>-<user>.json`. Its admission authority is a domain-separated SHA-256 of the existing persisted B3 login anchor, separate from the RAM origin. Neither authority nor anchor is logged. An old-login cache is an unadmitted miss with its bytes retained for compare-and-swap; it cannot authorize a read or post. Logout deletes only matching admitted bytes, so an old deferred logout cannot delete a new login's cache. The B3 file snapshot adapter enforces private plain parents, bounded UTF-8 and compare-and-swap, including unchanged-byte saves. State/cache chat mismatches and pending journals hold.
 
-The cache retains mark/title, typed chat, reader snapshot, stream warning receipts and pending journal. Full-info eligibility/readers are checked at resolution and before each post. A known new-reader change keeps the original baseline and exposes a persistent warning; it adds no posting pause after prior stream consent (C6). Unknown readers and newly ineligible rights still hold. Without a member list, only a higher count can reveal a change. With a list hash, a changed population warns conservatively. Chooser/reader-warning UI and setup execution belong to A3.
+The cache retains mark/title, typed chat, reader snapshot, stream warning receipts and pending journal. Full-info eligibility/readers are checked at resolution and before each post. A known new-reader change keeps the original baseline and exposes a persistent warning; it adds no posting pause after prior stream consent (C6). Unknown readers and newly ineligible rights still hold. Without a member list, only a higher count can reveal a change. With a list hash, a changed population warns conservatively. The owned per-account Sync chat screen presents this warning and the current settings reader disclosure.
 
 Follow, Fill and ReadWinnerInventory never post or commit a moved cache/settings state. Complete winner inventory is supplied back to core with the original cache. Carry and established-stream switching remain separate work.
 
@@ -38,7 +38,7 @@ These are deterministic source/host checks. They do not qualify native Android r
 
 ## Typed chat I/O
 
-The I/O route captures the opening account/login origin, typed peer and full-info ownership facts. History uses that peer and channel exact reads use `channels.getMessages`; ordinary exact reads use `messages.getMessages`. Rows, document downloads, local queued-copy queries and account inventories carry or validate this scope. Wrong-peer/id replies, contradictory empty-message metadata, inexact/flood/NotModified results and incomplete counts remain Unknown. An ordinary non-self empty reply without peer evidence stays Unknown.
+The I/O route captures the opening account/login origin, typed peer and full-info ownership facts. History uses that peer and channel exact reads use `channels.getMessages`; ordinary exact reads use `messages.getMessages`. Rows, document downloads, local queued-copy queries and account inventories carry or validate this scope. Wrong-peer/id replies, contradictory empty-message metadata, inexact/flood/NotModified results and incomplete counts remain Unknown. See the exact-absence rule below.
 
 Candidate reads follow exact metadata, download, exact metadata again. Both metadata reads must retain peer, id, ownership, caption, filename, document id, size and edit date. The bytes must match the stated size. A vanished, changed or unknown second read cannot confirm Present or PendingFound.
 
@@ -59,3 +59,19 @@ Receipts are hints for readback. New sends require the matching random-id mappin
 The typed post result must match the inventory origin and chat before ledger confirmation. Exact readback checks candidate metadata, downloads the document, then repeats exact metadata and compares the bytes with the staged record. The automatic exact reader uses the same second-metadata defense. Uncertain outcomes preserve the durable pending record for reconciliation rather than blindly posting again.
 
 Injected host controls cover serialized send/edit/receipt forms, post-upload denial, stale tickets, duplicate approval, timeout/cleanup, the real runner-to-upload-to-reader-to-ledger sequence, and typed exact reads changing during download. Transport deliveries are substituted; these checks do not execute native Telegram I/O or grant outward posting permission.
+
+## Exact absence and native qualification
+
+All zero-row exact replies are Unknown, for Self, ordinary peers and channel-scoped replies alike. Record exact reads and history/inventory pages require an explicit matching typed peer on messageEmpty. A peerless empty row holds the inventory; it cannot establish Empty or confirm a vanished pending record. A matching-peer empty is a recognized absence control.
+
+The sole exception is R3, the single-id reread of a cached mark: a scoped request for that exact id/chat, answered by a same-id peerless messageEmpty plus independent readable current full info, is MarkGone. A contradictory peer, dangling peer flag, wrong id, unreadable chat, flood or uncertain response is Unknown. This keeps the A1 discovery behavior supported by S7/S11 while record inventories remain conservative.
+
+N3: record whether the server sets peer_id on MessageEmpty for deleted Self/channel marks. Host cases cover zero-row exact replies, peerless inventory holds, the R3 readable-chat exception and contradicting-peer/wrong-id controls; they make no native qualification claim.
+
+## Per-account screen and consent
+
+Sync across devices opens the Purple-owned Sync chat screen for its captured account. Refresh uses the account service and lock; the opening login fences the picker and all deferred work. Closing or leaving the screen cancels owned work and releases its lock. No background setup or warning dialog is started.
+
+Candidate display and fresh acceptance both call the shared restricted core eligibility predicate through the same Candidate projection. Unknown rights, broadcast admin counts or readers refuse. Acceptance resolves again, checks the binding and rereads full info; a changed reader snapshot requires review again. Settings disclosure uses account-settings r3: settings can include chat names/IDs, the account itself, and user IDs and settings assigned to other accounts. There is no synced account roster. The reader consent receipt records only the config stream in the local admitted cache, preserving the original C6 baseline and warning. A known new-reader warning remains visible and does not add a posting hold after prior consent. Its text distinguishes hidden pre-history and explains the count-only blind spot. Refused own marks are listed with their eligibility reason.
+
+Saved Messages, an existing candidate and a new private Purple channel are offered only after complete Unset resolution with a valid unbound state and no effective cache. Bound changes and carry remain unavailable. The picker checks topics and secret chats before preview, then refuses ineligible selections with the same verdict used by acceptance. Setup confirmation is source-prepared but outward execution stays unavailable until the user's separate native GO (D-M2B4-4). This screen does not activate non-Self automatic sync or change the existing Self-only publishing gate.

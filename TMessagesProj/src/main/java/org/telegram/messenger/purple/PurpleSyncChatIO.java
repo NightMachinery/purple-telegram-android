@@ -39,8 +39,7 @@ final class PurpleSyncChatIO {
 
     boolean empty(TLRPC.Message message,int id) {
         return message!=null && message.getClass()==TLRPC.TL_messageEmpty.class && message.id==id
-                && ((message.flags&1)==0 || message.peer_id!=null)
-                && (message.peer_id==null || matches(message));
+                && message.peer_id!=null && matches(message);
     }
 
     private boolean exactPage(TLRPC.messages_Messages page) {
@@ -77,12 +76,10 @@ final class PurpleSyncChatIO {
         TLRPC.messages_Messages page=(TLRPC.messages_Messages)response;
         if(response.getClass()!=TLRPC.TL_messages_messages.class && !channelPage(response) || !exactPage(page)
                 || channelPage(response) && page.count<page.messages.size())return PurpleSyncClient.Lookup.failed("IncompleteExact");
-        if(page.messages.isEmpty())return chat.equals(Peer.self()) || channelPage(response)
-                ? PurpleSyncClient.Lookup.missing() : PurpleSyncClient.Lookup.failed("UnscopedAbsence");
+        if(page.messages.isEmpty())return PurpleSyncClient.Lookup.failed("UnscopedAbsence");
         if(page.messages.size()!=1)return PurpleSyncClient.Lookup.failed("AmbiguousExact");
         TLRPC.Message message=page.messages.get(0);
-        if(empty(message,id))return message.peer_id!=null || chat.equals(Peer.self()) || channelPage(response)
-                ? PurpleSyncClient.Lookup.missing() : PurpleSyncClient.Lookup.failed("UnscopedAbsence");
+        if(empty(message,id))return PurpleSyncClient.Lookup.missing();
         if(message==null || message.id!=id || !matches(message)
                 || message.getClass()!=TLRPC.TL_message.class && message.getClass()!=TLRPC.TL_messageService.class)
             return PurpleSyncClient.Lookup.failed("WrongExactScope");

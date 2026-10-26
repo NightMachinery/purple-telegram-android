@@ -797,14 +797,20 @@ public final class PurpleSyncAutoCases {
         lookup.setAccessible(true);
         org.telegram.tgnet.TLRPC.TL_messages_messages messages = new org.telegram.tgnet.TLRPC.TL_messages_messages();
         check(((PurpleSyncClient.Lookup) lookup.invoke(client, messages, null, 17)).status
-                == PurpleSyncClient.LookupStatus.Missing,
-            "exact single-id empty response proves absence");
+                == PurpleSyncClient.LookupStatus.Failed,
+            "zero-row exact response remains Unknown under D8");
         org.telegram.tgnet.TLRPC.TL_messageEmpty missing = new org.telegram.tgnet.TLRPC.TL_messageEmpty();
         missing.id = 17;
         messages.messages.add(missing);
         check(((PurpleSyncClient.Lookup) lookup.invoke(client, messages, null, 17)).status
+                == PurpleSyncClient.LookupStatus.Failed,
+            "peerless record exact remains Unknown under D8");
+        missing.peer_id = new org.telegram.tgnet.TLRPC.TL_peerUser();
+        missing.peer_id.user_id = 202;
+        missing.flags = 1;
+        check(((PurpleSyncClient.Lookup) lookup.invoke(client, messages, null, 17)).status
                 == PurpleSyncClient.LookupStatus.Missing,
-            "matching explicit messageEmpty proves absence");
+            "matching explicit scoped messageEmpty proves absence");
         missing.id = 18;
         check(((PurpleSyncClient.Lookup) lookup.invoke(client, messages, null, 17)).status
                 == PurpleSyncClient.LookupStatus.Failed,

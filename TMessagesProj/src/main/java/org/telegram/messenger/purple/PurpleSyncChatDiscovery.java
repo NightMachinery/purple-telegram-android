@@ -100,6 +100,15 @@ final class PurpleSyncChatDiscovery {
     Command command() { return command; }
     Status status() { return status; }
     PurpleSyncChatCache.Data cache() { return cache; }
+    PurpleSyncChatClient.Info readInfo() { return facts.get(status.resolution.readChat); }
+    List<PurpleSyncChatScreen.Refused> refused() {
+        List<PurpleSyncChatScreen.Refused> result=new ArrayList<>();Set<Peer> seen=new HashSet<>();
+        for(Mark mark:input.marks)if(!mark.eligibility.allowed()&&seen.add(mark.location.chat)) {
+            PurpleSyncChatClient.Info info=facts.get(mark.location.chat);
+            result.add(new PurpleSyncChatScreen.Refused(info!=null?info.title:"",mark.eligibility.refusal));
+        }
+        return result;
+    }
     ResolveInput input() { return input; }
     private void begin(long now, boolean retry) {
         ++run; hits.clear(); facts.clear(); verified.clear(); gone.clear(); inventories.clear();

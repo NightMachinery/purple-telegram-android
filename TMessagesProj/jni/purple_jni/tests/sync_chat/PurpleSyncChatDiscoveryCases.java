@@ -17,6 +17,7 @@ public final class PurpleSyncChatDiscoveryCases {
         PurpleA1ReviewCases.main(new String[]{new File(root,"review-control").getPath()});
         PurpleSyncChatIOCases.run(root);
         PurpleSyncChatUploadCases.run();
+        PurpleSyncChatScreenCases.run();
         PurpleSyncChatRecordCases.run(root);System.out.println("SYNC_CHAT_TOTAL_CHECKS="+checks);
     }
 }

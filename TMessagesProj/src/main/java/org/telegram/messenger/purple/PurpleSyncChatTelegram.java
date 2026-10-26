@@ -96,6 +96,7 @@ final class PurpleSyncChatTelegram implements PurpleSyncChatClient {
                 TLRPC.TL_users_userFull data = (TLRPC.TL_users_userFull) response; input.userFull = data.full_user;
                 long expected = target.kind == PeerKind.Self ? origin.userId : target.id;
                 for (TLRPC.User user : data.users) if (user.id == expected) { if (input.user != null) { done.accept(unavailable(target,null)); return; } input.user = user; }
+                title = input.user != null ? ((input.user.first_name!=null?input.user.first_name:"")+" "+(input.user.last_name!=null?input.user.last_name:"")).trim() : "";
                 input.canSendFiles = input.userFull != null && !input.userFull.blocked;
                 input.chosenSendAs = Peer.self();
             } else if (response != null && response.getClass() == TLRPC.TL_messages_chatFull.class && (target.kind == PeerKind.Chat || target.kind == PeerKind.Channel)) {
@@ -114,7 +115,7 @@ final class PurpleSyncChatTelegram implements PurpleSyncChatClient {
             Readers readers = mapped.eligibility().readers;
             boolean countsKnown = mapped.kind == Kind.Self || mapped.kind == Kind.Private || mapped.kind == Kind.Bot
                 || !readers.populationUnknown && readers.otherMembers != null && readers.otherAdmins != null && readers.otherAdmins <= readers.otherMembers;
-            Info result = new Info(origin,target,mapped,Error.None,title,mapped.memberIds,countsKnown);
+            Info result = new Info(origin,target,mapped,Error.None,title,mapped.memberIds,countsKnown,input.groupFull!=null&&input.groupFull.hidden_prehistory);
             if (target.kind == PeerKind.Channel && mapped.eligibility().allowed() && countsKnown && readers.otherMembers != null && readers.otherMembers < 200
                 && input.groupFull != null && !input.groupFull.participants_hidden && input.groupFull.can_view_participants) members(result,done);
             else done.accept(result);
@@ -128,7 +129,7 @@ final class PurpleSyncChatTelegram implements PurpleSyncChatClient {
                 acceptPeers(response); if (!current()) return; TLRPC.TL_channels_channelParticipants data = (TLRPC.TL_channels_channelParticipants) response;
                 ids = memberIds(data, info.peer.facts.otherMembers, origin.userId);
             }
-            done.accept(new Info(origin,info.chat,info.peer,info.error,info.title,ids,ids != null));
+            done.accept(new Info(origin,info.chat,info.peer,info.error,info.title,ids,ids != null,info.hiddenPrehistory));
         });
     }
 
@@ -168,7 +169,7 @@ final class PurpleSyncChatTelegram implements PurpleSyncChatClient {
             return new Exact(DirectRead.Unknown,null,info);
         TLRPC.messages_Messages data = (TLRPC.messages_Messages) response;
         if (data.inexact || (data.flags & (1 << 1)) != 0 || data.search_flood != null || (data.flags & (1 << 3)) != 0 || data.messages.size() > 1) return new Exact(DirectRead.Unknown,null,info);
-        if (data.messages.isEmpty()) return new Exact(DirectRead.MarkGone,null,info);
+        if (data.messages.isEmpty()) return new Exact(DirectRead.Unknown,null,info);
         TLRPC.Message message = data.messages.get(0);
         if (message == null || message.id != location.markId) return new Exact(DirectRead.Unknown,null,info);
         if (message.getClass() == TLRPC.TL_messageEmpty.class) {
