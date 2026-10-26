@@ -9,7 +9,7 @@ package org.telegram.messenger.purple;
 public interface PurpleSyncTransport {
     enum Phase { Scanning, Reading }
 
-    enum CheckStatus { Finished, Cancelled, AccountChanged }
+    enum CheckStatus { Finished, Cancelled, AccountChanged, SyncChatHeld }
 
     enum PostStatus { Confirmed, OutcomeUnknown, NeedsReview, Cancelled, InvalidRecord }
 

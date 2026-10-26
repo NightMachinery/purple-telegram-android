@@ -44,7 +44,11 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
     }
 
     static PurpleSyncClient create(int account, long userId) {
-        return new PurpleSyncTelegramClient(account, userId);
+        PurpleSyncTelegramClient client = new PurpleSyncTelegramClient(account, userId);
+        PurpleSyncChatOrigin facts = client.origin != null && client.origin.userId == userId
+            ? new PurpleSyncChatOrigin(account,client.origin.key.startsWith("1-") ? 1 : 0,userId,java.util.UUID.randomUUID().toString()) : null;
+        return new PurpleSyncChatRecordClient(client,message -> client.isActive() && message.remote instanceof Remote
+            ? PurpleSyncChatRecordClient.selfOwnership(facts,((Remote)message.remote).message) : PurpleSyncChatCore.Ownership.Unknown);
     }
 
     private static synchronized DispatchQueue queue() {
@@ -280,19 +284,7 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
     }
 
     private History history(TLObject response, TLRPC.TL_error error) {
-        if (error != null) {
-            return History.failed(error.text);
-        }
-        if (!(response instanceof TLRPC.messages_Messages)
-                || response instanceof TLRPC.TL_messages_messagesNotModified) {
-            return History.failed("InvalidResponse");
-        }
-        final TLRPC.messages_Messages page = (TLRPC.messages_Messages) response;
-        final List<Message> messages = new ArrayList<>(page.messages.size());
-        for (TLRPC.Message message : page.messages) {
-            messages.add(meta(message));
-        }
-        return History.of(messages, Math.max(page.count, messages.size()));
+        return PurpleSyncChatRecordClient.history(response,error,userId,this::meta);
     }
 
     private Lookup lookup(TLObject response, TLRPC.TL_error error, int expectedId) {
@@ -303,7 +295,8 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
             return Lookup.failed("InvalidResponse");
         }
         final TLRPC.messages_Messages found = (TLRPC.messages_Messages) response;
-        if(response instanceof TLRPC.TL_messages_messagesNotModified)return Lookup.failed("not an exact absence read");
+        if(response.getClass()!=TLRPC.TL_messages_messages.class||found.inexact||found.search_flood!=null
+            ||(found.flags&((1<<1)|(1<<3)))!=0)return Lookup.failed("not an exact absence read");
         if(found.messages.isEmpty())return Lookup.missing();
         if(found.messages.size()==1&&found.messages.get(0) instanceof TLRPC.TL_messageEmpty)return found.messages.get(0).id==expectedId?Lookup.missing():Lookup.failed("wrong exact-id absence");
         if(found.messages.size()!=1||found.messages.get(0)==null||found.messages.get(0).id!=expectedId)return Lookup.failed("ambiguous exact-id response");

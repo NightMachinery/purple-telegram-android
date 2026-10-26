@@ -20,6 +20,7 @@ final class PurpleSyncOperations {
         if(value.owner!=null&&value.current!=null&&!value.current.getAsBoolean()){value.owner=null;value.current=null;}
         return value;
     }
+    static synchronized boolean owned(String key,Object owner) { return live(key).owner == owner; }
     static synchronized boolean busy(String key) { return live(key).owner != null; }
     static synchronized boolean begin(String key, Object owner,java.util.function.BooleanSupplier current) {
         State value = live(key);
@@ -31,6 +32,7 @@ final class PurpleSyncOperations {
         State value = state(key);
         if (value.owner == owner) { value.owner = null;value.current=null;java.util.ArrayList<Runnable> waiting=new java.util.ArrayList<>(value.idle.values());value.idle.clear();for(Runnable task:waiting)task.run(); }
     }
+    static synchronized void forgetIdle(String key,Object owner) { state(key).idle.remove(owner); }
     static synchronized void whenIdle(String key,Object owner,Runnable callback) {State value=live(key);if(value.owner==null)callback.run();else value.idle.put(owner,callback);}
     static synchronized PurpleSyncRunner.UndoOffer undo(String key) { return state(key).undo; }
     static synchronized void undo(String key, PurpleSyncRunner.UndoOffer undo) { state(key).undo = undo; }

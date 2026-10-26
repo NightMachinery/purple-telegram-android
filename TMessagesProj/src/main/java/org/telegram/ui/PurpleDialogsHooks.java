@@ -49,6 +49,8 @@ public final class PurpleDialogsHooks {
      */
     public void onFragmentCreate() {
         PurpleGate.ensureLoaded();
+        if(fragment.getArguments()==null||!fragment.getArguments().getBoolean("onlySelect",false))
+            org.telegram.messenger.purple.PurpleSyncChat.startSession(fragment.getCurrentAccount());
         org.telegram.messenger.purple.PurpleSyncAuto.sessionReady(fragment.getCurrentAccount());
         PurpleSyncOffer.checkOnLaunch(fragment, fragment.getCurrentAccount());
     }

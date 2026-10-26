@@ -102,6 +102,7 @@ public final class PurpleAccountFiles {
             if (slot >= 0 && slot < lifetimes.length) ++lifetimes[slot];
         }
         PurpleArchive.identityChanged(slot);
+        PurpleSyncChat.identityChanged(slot);
         PurpleAccountSettings.invalidate();
         org.telegram.messenger.AndroidUtilities.runOnUIThread(() -> {
             PurpleAccountOwner.accountsChanged();

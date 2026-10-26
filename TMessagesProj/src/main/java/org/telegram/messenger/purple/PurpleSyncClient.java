@@ -47,22 +47,27 @@ interface PurpleSyncClient {
     final class History {
         final List<Message> messages;
         final int total;
+        final Integer declaredTotal;
         final String error;
 
-        private History(List<Message> messages, int total, String error) {
+        private History(List<Message> messages, int total, String error, Integer declaredTotal) {
             this.messages = messages;
             this.total = total;
+            this.declaredTotal = declaredTotal;
             this.error = error;
         }
 
         static History of(List<Message> messages, int total) {
-            return new History(
-                    Collections.unmodifiableList(new ArrayList<>(messages)),
-                    total, null);
+            return page(messages,total);
+        }
+
+        static History page(List<Message> messages, Integer declaredTotal) {
+            return new History(Collections.unmodifiableList(new ArrayList<>(messages)),
+                    declaredTotal != null ? declaredTotal : messages.size(), null, declaredTotal);
         }
 
         static History failed(String error) {
-            return new History(null, 0, error != null ? error : "Failed");
+            return new History(null, 0, error != null ? error : "Failed", null);
         }
     }
 

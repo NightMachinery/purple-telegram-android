@@ -791,6 +791,7 @@ public final class PurpleSyncAutoCases {
     static void exactAbsenceDecoder(File parent) throws Exception {
         Port p = bound(parent, "exact-absence-decoder");
         PurpleSyncClient client = PurpleSyncTelegramClient.create(1, 202);
+        if(client instanceof PurpleSyncChatRecordClient){java.lang.reflect.Field nativeClient=client.getClass().getDeclaredField("client");nativeClient.setAccessible(true);client=(PurpleSyncClient)nativeClient.get(client);}
         java.lang.reflect.Method lookup = client.getClass().getDeclaredMethod(
             "lookup", org.telegram.tgnet.TLObject.class, org.telegram.tgnet.TLRPC.TL_error.class, int.class);
         lookup.setAccessible(true);

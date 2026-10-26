@@ -111,6 +111,7 @@ public final class PurpleSyncAuto {
             long generation = ++intent;
             if (!enabled) {
                 paused = true;
+                PurpleSyncChat.cancelOperation(account.account,engine);
                 engine.suspend();
             }
             engine.enabled(enabled, () -> generation == intent && opening.current());
@@ -123,6 +124,7 @@ public final class PurpleSyncAuto {
                 && !MessagesController.getMainSettings(account.account).edit().putBoolean(preference, enabled).commit())
                 reason = PurpleSyncAutoCore.Reason.StateChanged;
             if (!enabled) {
+                PurpleSyncChat.cancelOperation(account.account,engine);
                 network.cancel();
                 PurpleSyncAutoEdits.cleanup(account.account);
             }
@@ -194,15 +196,24 @@ public final class PurpleSyncAuto {
         public void check(
             String ticket, int[] exactIds, java.util.function.BooleanSupplier current,
             PurpleSyncAutoEngine.Reply<PurpleSyncAutoEngine.Observed> reply) {
-            network.check(exactIds, current, reply);
+            PurpleSyncChat.underLock(env.context,engine,env.operationKey(account.account,account.userId),false,current,status->queue(()->{
+                if(!current.getAsBoolean())return;
+                if(status.selfReadable())network.check(exactIds,current,reply);else reply.done(null);
+            }));
         }
         public void send(boolean edit, int id, byte[] bytes, byte[] previous,
             java.util.function.BooleanSupplier current, PurpleSyncAutoEngine.Reply<PurpleSyncAutoCore.Outcome> reply) {
-            network.send(edit, id, bytes, previous, current, reply);
+            PurpleSyncChat.underLock(env.context,engine,env.operationKey(account.account,account.userId),true,current,status->queue(()->{
+                if(!current.getAsBoolean())return;
+                if(status.selfPostable())network.send(edit,id,bytes,previous,current,reply);else reply.done(PurpleSyncAutoCore.Outcome.OutcomeUnknown);
+            }));
         }
         public void retire(int id, byte[] exact, java.util.function.BooleanSupplier current,
             PurpleSyncAutoEngine.Reply<PurpleSyncAutoCore.Outcome> reply) {
-            network.retire(id, exact, current, reply);
+            PurpleSyncChat.underLock(env.context,engine,env.operationKey(account.account,account.userId),true,current,status->queue(()->{
+                if(!current.getAsBoolean())return;
+                if(status.selfPostable())network.retire(id,exact,current,reply);else reply.done(PurpleSyncAutoCore.Outcome.DeletionRefused);
+            }));
         }
     }
     private static synchronized DispatchQueue work() {

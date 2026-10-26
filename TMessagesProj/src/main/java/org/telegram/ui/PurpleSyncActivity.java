@@ -84,6 +84,7 @@ public class PurpleSyncActivity extends UniversalFragment {
         if (userId > 0 && org.telegram.messenger.purple.PurpleAccountOwner.modernOperation(currentAccount)) {
             runner = new PurpleSyncRunner(currentAccount,
                     new PurpleSyncTelegramTransport(currentAccount, userId));
+            org.telegram.messenger.purple.PurpleSyncChat.ensureResolved(currentAccount,false,ignored->{});
             status = getString(R.string.PurpleSyncReady);
         } else {
             status = getString(R.string.PurpleAccountWriteHeld);
@@ -380,7 +381,7 @@ public class PurpleSyncActivity extends UniversalFragment {
             share = null;
             sharePrefix = null;
             clearReview();
-            setStatus(getString(sharing
+            setStatus(getString(outcome.status==PurpleSyncRunner.CheckStatus.SyncChatHeld?R.string.PurpleSyncIncomplete:sharing
                     ? R.string.PurpleSyncShareCancelled : R.string.PurpleSyncCheckCancelled));
             return;
         }

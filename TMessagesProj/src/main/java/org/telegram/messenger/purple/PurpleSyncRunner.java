@@ -22,7 +22,7 @@ public final class PurpleSyncRunner {
 
     public enum Start { Started, Busy, Stale, AccountUnavailable, Closed }
 
-    public enum CheckStatus { Finished, Cancelled, AccountUnavailable }
+    public enum CheckStatus { Finished, Cancelled, AccountUnavailable, SyncChatHeld }
 
     public interface Listener<T> {
         void onResult(T result);
@@ -42,6 +42,8 @@ public final class PurpleSyncRunner {
         default PurpleAccountSyncCore.Result initialize(int account,String install,String device,String space) {
             return PurpleAccountSyncCore.initializeBoundLocalState(account,install,device,space);
         }
+        default void resolveChat(boolean beforePost,Object owner,String key,java.util.function.BooleanSupplier current,java.util.function.Consumer<Boolean> done) { done.accept(true); }
+        default void cancelChat(Object owner) { }
         default boolean requiresRecovery() { return false; }
         default PurpleSyncRecoveryModel.Offer recovery(PurpleSyncInventory inventory,PurpleSyncSettingsFile.Contents local) { return null; }
         default boolean sendQueued() { return false; }
@@ -322,7 +324,7 @@ public final class PurpleSyncRunner {
         if (!begin()) return Start.Busy;
         checking = true;
         current = null;
-        transport.check((phase, count, total) -> {
+        checkTransport(started,(phase, count, total) -> {
             if (live(started) && progress != null) {
                 progress.onProgress(phase, count, total);
             }
@@ -337,7 +339,7 @@ public final class PurpleSyncRunner {
         if(archive?shown.recoveryAction!=RecoveryAction.StartAgain&&shown.recoveryAction!=RecoveryAction.ResumeArchive:shown.recoveryAction!=RecoveryAction.Relink)return Start.Stale;
         if(!begin())return Start.Busy;
         long started=++generation;checking=true;current=null;
-        transport.check(null,result->ui.post(()->{
+        checkTransport(started,null,result->ui.post(()->{
             if(!live(started))return;
             checking=false;
             if(result.status!=PurpleSyncTransport.CheckStatus.Finished) { end();done.onResult(new RecoveryOutcome(false,archive,null));return; }
@@ -637,7 +639,7 @@ public final class PurpleSyncRunner {
         busy = true;
         return true;
     }
-    private void end() { busy = false; PurpleSyncOperations.end(operationKey(), operationOwner); }
+    private void end() { session.env.cancelChat(operationOwner); busy = false; PurpleSyncOperations.end(operationKey(), operationOwner); }
 
     private Start refusal(boolean needsAccount) {
         if (closed) {
@@ -663,6 +665,14 @@ public final class PurpleSyncRunner {
         return current;
     }
 
+    private void checkTransport(long started,PurpleSyncTransport.Progress progress,PurpleSyncTransport.CheckDone done) {
+        session.env.resolveChat(false,operationOwner,operationKey(),()->live(started),ready->{
+            if(!live(started))return;
+            if(ready)transport.check(progress,done);
+            else done.onCheckDone(new PurpleSyncTransport.CheckResult(PurpleSyncTransport.CheckStatus.SyncChatHeld,null,false));
+        });
+    }
+
     private void onChecked(long started, PurpleSyncTransport.CheckResult result,
             Listener<CheckOutcome> done) {
         if (!live(started)) {
@@ -673,7 +683,7 @@ public final class PurpleSyncRunner {
             end();
             done.onResult(new CheckOutcome(
                     result.status == PurpleSyncTransport.CheckStatus.AccountChanged
-                            ? CheckStatus.AccountUnavailable : CheckStatus.Cancelled,
+                            ? CheckStatus.AccountUnavailable : result.status==PurpleSyncTransport.CheckStatus.SyncChatHeld ? CheckStatus.SyncChatHeld : CheckStatus.Cancelled,
                     null));
             return;
         }
@@ -718,7 +728,11 @@ public final class PurpleSyncRunner {
                 }));
         self.value = running;
         publisher = running;
-        queue.post(running::start);
+        session.env.resolveChat(true,operationOwner,operationKey(),()->live(started),ready->{
+            if(!live(started))return;
+            if(ready)queue.post(running::start);
+            else { publisher=null;end();if(live(started))done.onResult(new PurpleSyncPublisher.Result(PurpleSyncCore.PublishStatus.NeedsReview,null,0,0)); }
+        });
         return Start.Started;
     }
 
@@ -802,6 +816,10 @@ public final class PurpleSyncRunner {
         final PurpleSyncFileContext context;
 
         Platform(int account) { context = new PurpleSyncFileContext(account); }
+        public void resolveChat(boolean beforePost,Object owner,String key,java.util.function.BooleanSupplier current,java.util.function.Consumer<Boolean> done) {
+            PurpleSyncChat.underLock(context,owner,key,beforePost,current,status->done.accept(beforePost?status.selfPostable():status.selfReadable()));
+        }
+        public void cancelChat(Object owner) { if(context.origin!=null)PurpleSyncChat.cancelOperation(context.origin.slot,owner); }
 
         @Override
         public boolean current(int account, long userId) {
