@@ -28,7 +28,7 @@ final class PurpleSyncChatRecordClient implements PurpleSyncClient {
             new boolean[]{message.isDocument},new String[]{message.caption},new String[]{message.fileName});
         return !page.isValid() || page.candidates.length != 0;
     }
-    private Message ignored(Message m) { return new Message(m.id,false,m.forwarded,false,"",null,m.selfDialog,0,0,m.editDate,null); }
+    private Message ignored(Message m) { return new Message(m.id,false,m.forwarded,false,"",null,m.chat,0,0,m.editDate,null); }
     @Override public int requestHistory(int offset, int limit, Reply<History> done) {
         if(offset==0){historyPages=0;historyCount=0;historyTotal=null;}
         final long ticket=++historyTicket;
@@ -75,6 +75,8 @@ final class PurpleSyncChatRecordClient implements PurpleSyncClient {
     }
     @Override public boolean hasQueuedSync() { return client.hasQueuedSync(); }
     @Override public long userId() { return client.userId(); }
+    @Override public Peer chat() { return client.chat(); }
+    @Override public PurpleSyncChatOrigin origin() { return client.origin(); }
     @Override public boolean isActive() { return client.isActive(); }
     @Override public void runOnMain(Runnable task) { client.runOnMain(task); }
     @Override public void runOnWorker(Runnable task) { client.runOnWorker(task); }

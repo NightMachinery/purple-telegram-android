@@ -44,7 +44,7 @@ final class PurpleSyncCheck implements PurpleSyncTelegramTransport.Task,
 
     private boolean holds(List<PurpleSyncClient.LocalCopy> copies) {
         return copies == null
-                || PurpleSyncPost.holdsSyncRecord(operation.client.userId(),
+                || PurpleSyncPost.holdsSyncRecord(operation.client.dialogId(),
                         copies);
     }
 
@@ -67,7 +67,7 @@ final class PurpleSyncCheck implements PurpleSyncTelegramTransport.Task,
         stopWork();
         finish(new PurpleSyncTransport.CheckResult(
                 PurpleSyncTransport.CheckStatus.Finished,
-                new PurpleSyncInventory.Builder(operation.client.userId())
+                new PurpleSyncInventory.Builder(operation.client.userId(),operation.client.chat(),operation.client.origin())
                         .build(false),
                 true));
     }
@@ -79,7 +79,7 @@ final class PurpleSyncCheck implements PurpleSyncTelegramTransport.Task,
                 + (scan.complete ? scan.candidates.length + " candidates"
                         : "scan incomplete"));
         if (!scan.complete) {
-            askQueue(new PurpleSyncInventory.Builder(operation.client.userId())
+            askQueue(new PurpleSyncInventory.Builder(operation.client.userId(),operation.client.chat(),operation.client.origin())
                     .build(false));
             return;
         }
@@ -91,7 +91,7 @@ final class PurpleSyncCheck implements PurpleSyncTelegramTransport.Task,
     private void onRead(List<PurpleSyncReader.Row> rows) {
         reader = null;
         final PurpleSyncInventory.Builder builder =
-                new PurpleSyncInventory.Builder(operation.client.userId());
+                new PurpleSyncInventory.Builder(operation.client.userId(),operation.client.chat(),operation.client.origin());
         for (PurpleSyncReader.Row row : rows) {
             if (row.outcome == PurpleSyncInventory.FETCHED) {
                 builder.fetched(row.id, row.documentId, row.editDate, row.bytes);

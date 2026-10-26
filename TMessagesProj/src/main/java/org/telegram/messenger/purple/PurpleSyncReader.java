@@ -101,7 +101,7 @@ final class PurpleSyncReader {
             return;
         }
         final PurpleSyncClient.Message message = lookup.message;
-        if (message.id != id || !message.isMessage || !message.selfDialog) {
+        if (message.id != id || !message.isMessage || !operation.client.contains(message)) {
             complete(new Row(id, PurpleSyncInventory.CHANGED, 0, 0, null));
             return;
         }
@@ -161,8 +161,19 @@ final class PurpleSyncReader {
         } else {
             outcome = PurpleSyncInventory.FETCHED;
         }
-        complete(new Row(message.id, outcome, documentId, editDate,
-                outcome == PurpleSyncInventory.FETCHED ? bytes : null));
+        if(outcome!=PurpleSyncInventory.FETCHED) {
+            complete(new Row(message.id,outcome,documentId,editDate,null));
+            return;
+        }
+        if(!operation.proceed())return;
+        requesting=true;
+        token=operation.client.requestMessage(message.id,operation.guard(fresh->{
+            requesting=false;
+            boolean unchanged=fresh!=null && fresh.status==PurpleSyncClient.LookupStatus.Found
+                    && operation.client.contains(fresh.message) && PurpleSyncChatIO.same(message,fresh.message);
+            complete(new Row(message.id,unchanged?PurpleSyncInventory.FETCHED:PurpleSyncInventory.CHANGED,
+                    documentId,editDate,unchanged?bytes:null));
+        }));
     }
 
     private void complete(Row row) {

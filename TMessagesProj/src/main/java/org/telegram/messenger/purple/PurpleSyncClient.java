@@ -21,6 +21,7 @@ interface PurpleSyncClient {
         final String caption;
         final String fileName;
         final boolean selfDialog;
+        final PurpleSyncChatCore.Peer chat;
         final long documentId;
         final long size;
         final long editDate;
@@ -30,13 +31,22 @@ interface PurpleSyncClient {
                 boolean isDocument, String caption, String fileName,
                 boolean selfDialog, long documentId, long size, long editDate,
                 Object remote) {
+            this(id,isMessage,forwarded,isDocument,caption,fileName,
+                    selfDialog ? PurpleSyncChatCore.Peer.self() : null,documentId,size,editDate,remote);
+        }
+
+        Message(int id, boolean isMessage, boolean forwarded,
+                boolean isDocument, String caption, String fileName,
+                PurpleSyncChatCore.Peer chat, long documentId, long size, long editDate,
+                Object remote) {
             this.id = id;
             this.isMessage = isMessage;
             this.forwarded = forwarded;
             this.isDocument = isDocument;
             this.caption = caption != null ? caption : "";
             this.fileName = fileName;
-            this.selfDialog = selfDialog;
+            this.chat = chat;
+            this.selfDialog = PurpleSyncChatCore.Peer.self().equals(chat);
             this.documentId = documentId;
             this.size = size;
             this.editDate = editDate;
@@ -129,6 +139,10 @@ interface PurpleSyncClient {
 
     default boolean hasQueuedSync() { return false; }
     long userId();
+    default PurpleSyncChatCore.Peer chat() { return PurpleSyncChatCore.Peer.self(); }
+    default PurpleSyncChatOrigin origin() { return null; }
+    default long dialogId() { return PurpleSyncChatIO.dialogId(chat(),userId()); }
+    default boolean contains(Message message) { return message != null && chat().equals(message.chat); }
 
     boolean isActive();
 

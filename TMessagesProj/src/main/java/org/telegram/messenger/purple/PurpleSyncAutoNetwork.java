@@ -127,7 +127,7 @@ final class PurpleSyncAutoNetwork {
                 return;
             }
             PurpleSyncClient.Message message = lookup.message;
-            if (message == null || message.id != id || !message.isMessage || !message.selfDialog || message.forwarded
+            if (message == null || message.id != id || !message.isMessage || !client.contains(message) || message.forwarded
                 || !message.isDocument || message.size <= 0 || message.size > PurpleSyncPost.MAX_STAGED_BYTES) {
                 reply.done(row(id, 1, null, false));
                 return;

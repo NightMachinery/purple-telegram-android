@@ -134,6 +134,8 @@ final class PurpleSyncAutoCore {
         final JSONObject json;
         Inventory(PurpleSyncInventory inventory, String session, String ticket, long readAt, JSONArray reads)
             throws Exception {
+            if(inventory==null || !PurpleSyncChatCore.Peer.self().equals(inventory.chat))
+                throw new IllegalArgumentException("AutomaticNonSelfHeld");
             this.inventory = inventory;
             json = new JSONObject()
                        .put("session", session)

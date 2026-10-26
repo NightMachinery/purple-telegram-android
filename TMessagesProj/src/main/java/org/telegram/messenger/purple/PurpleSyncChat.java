@@ -81,6 +81,7 @@ public final class PurpleSyncChat {
         final String authority;
         final PurpleSyncChatCache.IO cache;
         volatile PurpleSyncTelegramTransport inventory;
+        volatile PurpleSyncChatClient inventoryFacts;
         Platform(int slot) throws Exception {
             context=new PurpleSyncFileContext(slot);
             if(context.origin==null||context.files==null)throw new IllegalStateException("sync chat context");
@@ -121,17 +122,34 @@ public final class PurpleSyncChat {
         }
         public PurpleSyncChatClient client(){return new PurpleSyncChatTelegram(origin,PurpleSyncChatTelegram.platform(origin,this::current));}
         public void inventory(Peer target,BooleanSupplier current,Consumer<RecordPresence> done){
-            if(!Peer.self().equals(target)||!current.getAsBoolean()){done.accept(RecordPresence.Unknown);return;}
-            PurpleSyncTelegramTransport transport=new PurpleSyncTelegramTransport(origin.slot,origin.userId);inventory=transport;
-            transport.check(null,result->{
-                RecordPresence presence=result.status==PurpleSyncTransport.CheckStatus.Finished?recordPresence(result.inventory,origin.userId):RecordPresence.Unknown;
-                ui(()->{if(inventory==transport)inventory=null;if(current.getAsBoolean()&&this.current())done.accept(presence);});
+            if(target==null || !current.getAsBoolean() || !this.current()){done.accept(RecordPresence.Unknown);return;}
+            PurpleSyncChatClient reader=client();inventoryFacts=reader;
+            reader.info(target,info->{
+                if(inventoryFacts!=reader || !current.getAsBoolean() || !this.current())return;
+                inventoryFacts=null;reader.cancel();
+                if(info==null || !info.readable() || !origin.equals(info.origin) || !target.equals(info.chat)){
+                    done.accept(RecordPresence.Unknown);return;
+                }
+                PurpleSyncClient scoped=PurpleSyncTelegramClient.create(info,()->current.getAsBoolean()&&this.current());
+                PurpleSyncTelegramTransport transport=new PurpleSyncTelegramTransport(scoped);inventory=transport;
+                transport.check(null,result->{
+                    RecordPresence presence=result.status==PurpleSyncTransport.CheckStatus.Finished
+                            && result.inventory!=null && result.inventory.sameOrigin(scoped)
+                            ? recordPresence(result.inventory,origin.userId,target):RecordPresence.Unknown;
+                    ui(()->{if(inventory==transport)inventory=null;if(current.getAsBoolean()&&this.current())done.accept(presence);});
+                });
             });
         }
-        public void cancelInventory(){PurpleSyncTelegramTransport running=inventory;inventory=null;if(running!=null)running.cancel();}
+        public void cancelInventory(){
+            PurpleSyncChatClient facts=inventoryFacts;inventoryFacts=null;if(facts!=null)facts.cancel();
+            PurpleSyncTelegramTransport running=inventory;inventory=null;if(running!=null)running.cancel();
+        }
     }
     static RecordPresence recordPresence(PurpleSyncInventory inventory,long expectedUserId){
-        if(inventory==null||inventory.accountUserId!=expectedUserId||!inventory.scanComplete)return RecordPresence.Unknown;
+        return recordPresence(inventory,expectedUserId,Peer.self());
+    }
+    static RecordPresence recordPresence(PurpleSyncInventory inventory,long expectedUserId,Peer chat){
+        if(inventory==null||inventory.accountUserId!=expectedUserId||!chat.equals(inventory.chat)||!inventory.scanComplete)return RecordPresence.Unknown;
         for(int i=0;i<inventory.count();++i){
             if(inventory.transport[i]!=PurpleSyncInventory.FETCHED)return RecordPresence.Unknown;
             PurpleAccountSyncCore.Result parsed=PurpleAccountSyncCore.inspectConfigRecord(inventory.bytes[i]);

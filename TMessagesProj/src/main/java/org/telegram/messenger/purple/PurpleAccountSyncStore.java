@@ -56,6 +56,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
         Reply confirm(byte[] state, byte[] staged, String device,
                 byte[] serverRecord, int messageId);
         Reply checkCommit(byte[] state, byte[] next);
+        default Reply checkCommit(byte[] state,byte[] next,PurpleSyncChatCore.Peer chat) { return checkCommit(state,next); }
     }
 
     static final class Reply {
@@ -67,9 +68,16 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
         final long pendingSeq;
         final boolean changed;
         final byte[] state;
+        final String chat;
 
         Reply(String status, String error, String verdict, String device,
                 long seq, long pendingSeq, boolean changed, byte[] state) {
+            this(status,error,verdict,device,seq,pendingSeq,changed,state,"self");
+        }
+
+        private Reply(String status,String error,String verdict,String device,long seq,long pendingSeq,
+                boolean changed,byte[] state,String chat) {
+            this.chat=chat;
             this.status = status;
             this.error = error;
             this.verdict = verdict;
@@ -83,13 +91,22 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
         static Reply from(PurpleAccountSyncCore.Result value) {
             return new Reply(value.status, value.error, value.verdict,
                     value.device, value.seq, value.pendingSeq,
-                    value.changed, value.state);
+                    value.changed, value.state,chatOf(value.state));
         }
 
         static Reply from(PurpleSyncCore.CommitCheck value) {
             return new Reply(value.isValid() ? "Valid" : "BridgeError",
                     value.isValid() ? "None" : value.error,
-                    value.status.name(), "", 0, 0, false, value.state);
+                    value.status.name(), "", 0, 0, false, value.state,chatOf(value.state));
+        }
+
+        private static String chatOf(byte[] state) {
+            if(state==null)return "";
+            try {
+                org.json.JSONObject value=new org.json.JSONObject(new String(state,java.nio.charset.StandardCharsets.UTF_8));
+                return value.optInt("version")==1 && !value.has("chat") ? "self"
+                        : value.optInt("version")==2 && value.opt("chat") instanceof String ? value.getString("chat") : "";
+            } catch(Exception error) { return ""; }
         }
 
         boolean valid() {
@@ -132,6 +149,9 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
         public Reply checkCommit(byte[] state, byte[] next) {
             return Reply.from(PurpleSyncCore.checkCommit(state, next));
         }
+        @Override public Reply checkCommit(byte[] state,byte[] next,PurpleSyncChatCore.Peer chat) {
+            return Reply.from(PurpleSyncCore.checkCommit(chat,state,next));
+        }
     };
 
     private final File root;
@@ -153,15 +173,24 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
     private boolean production;
     private PurpleAccountFiles.Identity origin;
     private PurpleSyncFileContext context;
+    private PurpleSyncChatCore.Peer chat=PurpleSyncChatCore.Peer.self();
 
     PurpleAccountSyncStore(PurpleSyncFileContext context) {
+        this(context,PurpleSyncChatCore.Peer.self());
+    }
+
+    PurpleAccountSyncStore(PurpleSyncFileContext context,PurpleSyncChatCore.Peer chat) {
         this(requireFiles(context).syncDirectory, NATIVE, PurpleGlobalAccountChoice.PHYSICAL, PurpleEditorDirectories.NATIVE);
+        this.chat=java.util.Objects.requireNonNull(chat);
         this.context = context;
         origin = context.origin;
         production = true;
     }
 
     PurpleAccountSyncStore(File root, Core core) { this(root, core, null, null); }
+    PurpleAccountSyncStore(File root,Core core,PurpleSyncChatCore.Peer chat) {
+        this(root,core,null,null);this.chat=java.util.Objects.requireNonNull(chat);
+    }
     PurpleAccountSyncStore(File root, Core core, PurpleGlobalChoiceFiles.Physical physical, PurpleEditorDirectories.Creator directoryCreator) {
         this.physical = physical; this.directoryCreator = directoryCreator;
         this.root = root;
@@ -218,7 +247,20 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
             if (!prepareDirectory(pending)) {
                 return fail(Status.IoError);
             }
-            if (!safeAutoPaths() || !recover(stateFile) || !recover(stageFile) || !recoverAuto(new File(root,"auto.json"),PurpleAccountFiles.capture(account)!=null?PurpleAccountFiles.capture(account).key:"")) {
+            if (!safeAutoPaths())return fail(Status.IoError);
+            for(File candidate:new File[]{stateFile,new File(stateFile.getPath()+".bak"),new File(stateFile.getPath()+".new")}) {
+                if(plainFile(candidate) && candidate.length()>0) {
+                    Reply inspected=core.inspectState(read(candidate,STATE_LIMIT));
+                    if(inspected.valid() && !chat.token().equals(inspected.chat))return fail(Status.AccountUnbound);
+                }
+            }
+            if(!recover(stateFile))return fail(Status.IoError);
+            if(stateFile.exists()) {
+                byte[] opening=read(stateFile,STATE_LIMIT);
+                Reply inspected=core.inspectState(opening);
+                if(inspected.valid() && !scopeMatches(opening))return fail(Status.AccountUnbound);
+            }
+            if (!recover(stageFile) || !recoverAuto(new File(root,"auto.json"),PurpleAccountFiles.capture(account)!=null?PurpleAccountFiles.capture(account).key:"")) {
                 return fail(Status.IoError);
             }
             if (!knownFiles(root, "lock", "state.json", "pending", "auto.json")
@@ -380,6 +422,11 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
 
     public synchronized Result confirmConfigReadBack(byte[] serverRecord,
             int messageId) {
+        return confirmConfigReadBack(PurpleSyncChatCore.Peer.self(),serverRecord,messageId);
+    }
+
+    synchronized Result confirmConfigReadBack(PurpleSyncChatCore.Peer observedChat,byte[] serverRecord,int messageId) {
+        if(!chat.equals(observedChat))return result(Status.Unconfirmed);
         final Result pendingResult = readPendingConfig();
         if (pendingResult.status != Status.Ready) {
             return pendingResult;
@@ -440,7 +487,8 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
         if (!device.equals(inspected.device)) {
             return result(Status.DeviceMismatch);
         }
-        final Reply checked = core.checkCommit(state, next);
+        if(!scopeMatches(next))return result(Status.AccountUnbound);
+        final Reply checked = core.checkCommit(state, next,chat);
         if (!checked.valid()) {
             return result(Status.InvalidState);
         }
@@ -610,8 +658,13 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
                 && PurpleAccountOwner.modernOperation(origin.slot));
     }
 
+    private boolean scopeMatches(byte[] bytes) {
+        Reply inspected=core.inspectState(bytes);
+        return inspected.valid() && chat.token().equals(inspected.chat);
+    }
+
     private boolean bindingMatches(byte[] bytes) {
-        if (!routeCurrent()) return false;
+        if (!routeCurrent() || !scopeMatches(bytes)) return false;
         final Reply checked = core.checkBinding(account, bytes);
         return checked.valid() && "Bound".equals(checked.verdict);
     }

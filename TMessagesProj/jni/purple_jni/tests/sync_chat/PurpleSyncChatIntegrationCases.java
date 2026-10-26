@@ -33,10 +33,57 @@ public final class PurpleSyncChatIntegrationCases {
         check(checked[0]==null&&frame.clouds[1].checking==null&&!PurpleSyncOperations.busy(gate.operationKey(1,202)),"late gate callback after cancel cannot read or retain lock");
         check(gate.cancels>0,"runner ends cancel its owned discovery operation");frame.unchangedA();runner.close();return checks-before;
     }
+    static void ledger(File root)throws Exception {
+        Frame frame=new Frame(root,"typed-ledger",true);byte[] original=frame.initialize(1);
+        PurpleSyncChatCore.Peer chat=PurpleSyncChatCore.Peer.of(PurpleSyncChatCore.PeerKind.Channel,44);
+        org.json.JSONObject changed=new org.json.JSONObject(new String(original,java.nio.charset.StandardCharsets.UTF_8));
+        changed.put("version",2).put("chat",chat.token());
+        PurpleAccountSyncCore.Result inspected=PurpleAccountSyncCore.inspectState(changed.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        check(inspected.isValid()&&inspected.state!=null,"real core v2 typed ledger canonical state");
+        File state=new File(frame.sync(1),"state.json");Files.write(state.toPath(),inspected.state);
+        try(PurpleAccountSyncStore ordinary=frame.env(1).store()) {
+            check(ordinary.open(true,1,device(1)).status==PurpleAccountSyncStore.Status.AccountUnbound,"default Self store refuses nonself v2");
+        }
+        check(java.util.Arrays.equals(Files.readAllBytes(state.toPath()),inspected.state),"wrong scope leaves actual ledger bytes unchanged");
+        try(PurpleAccountSyncStore typed=new PurpleAccountSyncStore(frame.sync(1),PurpleAccountSyncStore.NATIVE,chat)) {
+            check(typed.open(true,1,device(1)).status==PurpleAccountSyncStore.Status.Ready,"explicit typed ledger opens matching v2 state");
+            check(typed.commitConfigState(original).status==PurpleAccountSyncStore.Status.AccountUnbound,"typed commit cannot move chat back to Self");
+            check(typed.confirmConfigReadBack(new byte[]{1},7).status==PurpleAccountSyncStore.Status.Unconfirmed,"unscoped readback cannot confirm typed ledger id");
+            check(typed.confirmConfigReadBack(PurpleSyncChatCore.Peer.of(PurpleSyncChatCore.PeerKind.Chat,44),new byte[]{1},7).status==PurpleAccountSyncStore.Status.Unconfirmed,"same number other peer kind cannot confirm");
+        }
+        for(String artifact:new String[]{".bak",".new"})for(boolean primary:new boolean[]{false,true}) {
+            File recovery=new File(frame.app,"scope-recovery-"+artifact+"-"+primary);check(recovery.mkdir(),"exclusive scope artifact fixture");
+            File pending=new File(recovery,"pending");check(pending.mkdir(),"exclusive pending artifact fixture");
+            if(primary)Files.write(new File(recovery,"state.json").toPath(),original);
+            Files.write(new File(recovery,"state.json"+artifact).toPath(),inspected.state);
+            Files.write(new File(pending,"config.json.bak").toPath(),bytes("unchanged stage backup"));
+            Files.write(new File(recovery,"auto.json.bak").toPath(),bytes("unchanged checkpoint backup"));
+            java.util.Map<File,byte[]> before=PurpleSyncRecoveryCases.files(recovery);
+            try(PurpleAccountSyncStore ordinary=new PurpleAccountSyncStore(recovery,PurpleAccountSyncStore.NATIVE)) {
+                check(ordinary.open(true,1,device(1)).status==PurpleAccountSyncStore.Status.AccountUnbound,"foreign typed atomic artifact refuses before recovery");
+            }
+            PurpleSyncRecoveryCases.retained(before);
+            check(primary==new File(recovery,"state.json").exists(),"foreign backup cannot replace or create primary state");
+        }
+        File recovery=new File(frame.app,"matching-typed-backup");check(recovery.mkdir(),"matching typed recovery fixture");
+        Files.write(new File(recovery,"state.json.bak").toPath(),inspected.state);
+        try(PurpleAccountSyncStore typed=new PurpleAccountSyncStore(recovery,PurpleAccountSyncStore.NATIVE,chat)) {
+            check(typed.open(true,1,device(1)).status==PurpleAccountSyncStore.Status.Ready,"matching typed backup recovery still works");
+            check(java.util.Arrays.equals(typed.stateBytes(),inspected.state),"matching backup exact canonical bytes");
+        }
+        check(!PurpleSyncCore.checkCommit(inspected.state,inspected.state).isValid(),"raw Self commit refuses typed ledger");
+        check(PurpleSyncCore.checkCommit(chat,inspected.state,inspected.state).isValid(),"scoped core commit control");
+        PurpleSyncInventory inventory=new PurpleSyncInventory.Builder(202,chat,null).build(true);
+        boolean refused=false;try { new PurpleSyncAutoCore.Inventory(inventory,"synthetic","1",1,new org.json.JSONArray()); }
+        catch(IllegalArgumentException expected){refused=true;}
+        check(refused,"typed inventory cannot enter Self-only automatic bridge");
+        frame.unchangedA();
+    }
     public static void main(String[] args)throws Exception {
         PurpleCore.ensureLoaded();File overlay=new File(args[0]).getCanonicalFile();
         for(String name:new String[]{"PurpleSyncRunner","PurpleSyncOperations","PurpleSyncAuto","PurpleAccountFiles","PurpleSyncTelegramClient","PurpleSyncChat"})if(!new File(Class.forName("org.telegram.messenger.purple."+name).getProtectionDomain().getCodeSource().getLocation().toURI()).getCanonicalFile().equals(overlay))throw new AssertionError("production source overlay "+name);
         File root=Files.createTempDirectory(new File(args[1]).toPath(),"integration-").toFile();
+        ledger(root);
         System.out.println("MODERN_AFFECTED_CHECKS="+PurpleModernSyncCases.run(root));System.out.println("RUNNER_GATE_CHECKS="+run(root));
     }
 }

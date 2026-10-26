@@ -36,6 +36,8 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
     private final int account;
     private final long userId;
     private final PurpleAccountFiles.Identity origin;
+    private PurpleSyncChatIO io;
+    private java.util.function.BooleanSupplier scopeCurrent=()->true;
 
     private PurpleSyncTelegramClient(int account, long userId) {
         this.account = account;
@@ -47,9 +49,31 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
         PurpleSyncTelegramClient client = new PurpleSyncTelegramClient(account, userId);
         PurpleSyncChatOrigin facts = client.origin != null && client.origin.userId == userId
             ? new PurpleSyncChatOrigin(account,client.origin.key.startsWith("1-") ? 1 : 0,userId,java.util.UUID.randomUUID().toString()) : null;
-        return new PurpleSyncChatRecordClient(client,message -> client.isActive() && message.remote instanceof Remote
-            ? PurpleSyncChatRecordClient.selfOwnership(facts,((Remote)message.remote).message) : PurpleSyncChatCore.Ownership.Unknown);
+        if(facts!=null)client.io=new PurpleSyncChatIO(facts,PurpleSyncChatCore.Peer.self(),
+                new PurpleSyncChatFacts.MappedPeer(facts,PurpleSyncChatCore.Peer.self(),PurpleSyncChatCore.Kind.Self,
+                        PurpleSyncChatCore.Truth.Unknown,PurpleSyncChatCore.Truth.Unknown,null,null));
+        return owned(client);
     }
+
+    static PurpleSyncClient create(PurpleSyncChatClient.Info info,java.util.function.BooleanSupplier current) {
+        if(info==null || !info.readable())throw new IllegalArgumentException("UnreadableChat");
+        PurpleSyncTelegramClient client=new PurpleSyncTelegramClient(info.origin.slot,info.origin.userId);
+        client.io=new PurpleSyncChatIO(info.origin,info.chat,info.peer);
+        client.scopeCurrent=current;
+        return owned(client);
+    }
+
+    private static PurpleSyncClient owned(PurpleSyncTelegramClient client) {
+        return new PurpleSyncChatRecordClient(client,message -> client.isActive() && message.remote instanceof Remote
+                && client.contains(message) ? client.io.ownership(((Remote)message.remote).message) : PurpleSyncChatCore.Ownership.Unknown);
+    }
+
+    private TLRPC.InputPeer input() {
+        return io!=null ? PurpleSyncChatTelegram.platform(io.origin,this::isActive).input(io.chat) : null;
+    }
+
+    @Override public PurpleSyncChatCore.Peer chat() { return io!=null?io.chat:PurpleSyncChatCore.Peer.self(); }
+    @Override public PurpleSyncChatOrigin origin() { return io!=null?io.origin:null; }
 
     private static synchronized DispatchQueue queue() {
         if (queue == null) {
@@ -77,7 +101,8 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
 
     @Override
     public boolean isActive() {
-        return userId > 0 && origin != null && origin.userId == userId && origin.current()
+        return io != null && scopeCurrent.getAsBoolean() && userId > 0 && origin != null
+                && io.origin.environment==(origin.key.startsWith("1-")?1:0) && origin.userId == userId && origin.current()
                 && PurpleAccountOwner.modernOperation(account)
                 && PurpleAccountBinding.isSameActiveUser(account, userId);
     }
@@ -100,10 +125,8 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
     @Override
     public int requestHistory(int offsetId, int limit, Reply<History> reply) {
         if (!isActive()) { reply.onReply(History.failed("AccountUnavailable")); return 0; }
-        final TLRPC.TL_messages_getHistory request = new TLRPC.TL_messages_getHistory();
-        request.peer = new TLRPC.TL_inputPeerSelf();
-        request.offset_id = offsetId;
-        request.limit = limit;
+        final TLRPC.TL_messages_getHistory request = PurpleSyncChatIO.history(chat(),input(),offsetId,limit);
+        if(request==null){reply.onReply(History.failed("ChatUnavailable"));return 0;}
         return ConnectionsManager.getInstance(account).sendRequest(request,
                 (response, error) -> {
                     History history;
@@ -113,15 +136,15 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
                         FileLog.e(e);
                         history = History.failed("UnreadableResponse");
                     }
-                    reply.onReply(history);
+                    reply.onReply(isActive()?history:History.failed("AccountUnavailable"));
                 });
     }
 
     @Override
     public int requestMessage(int id, Reply<Lookup> reply) {
         if (!isActive()) { reply.onReply(Lookup.failed("AccountUnavailable")); return 0; }
-        final TLRPC.TL_messages_getMessages request = new TLRPC.TL_messages_getMessages();
-        request.id.add(id);
+        final TLObject request=PurpleSyncChatRequests.exact(chat(),id,input());
+        if(request==null){reply.onReply(Lookup.failed("ChatUnavailable"));return 0;}
         return ConnectionsManager.getInstance(account).sendRequest(request,
                 (response, error) -> {
                     Lookup lookup;
@@ -131,7 +154,7 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
                         FileLog.e(e);
                         lookup = Lookup.failed("UnreadableResponse");
                     }
-                    reply.onReply(lookup);
+                    reply.onReply(isActive()?lookup:Lookup.failed("AccountUnavailable"));
                 });
     }
 
@@ -142,7 +165,8 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
 
     @Override
     public Object download(Message message, Reply<File> reply) {
-        if (!isActive()) { reply.onReply(null); return null; }
+        if (!isActive() || !contains(message) || !(message.remote instanceof Remote)
+                || !io.matches(((Remote)message.remote).message)) { reply.onReply(null); return null; }
         final Download download = new Download((Remote) message.remote, reply);
         AndroidUtilities.runOnUIThread(download::start);
         return download;
@@ -284,23 +308,11 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
     }
 
     private History history(TLObject response, TLRPC.TL_error error) {
-        return PurpleSyncChatRecordClient.history(response,error,userId,this::meta);
+        return io.history(response,error,this::meta);
     }
 
     private Lookup lookup(TLObject response, TLRPC.TL_error error, int expectedId) {
-        if (error != null) {
-            return Lookup.failed(error.text);
-        }
-        if (!(response instanceof TLRPC.messages_Messages)) {
-            return Lookup.failed("InvalidResponse");
-        }
-        final TLRPC.messages_Messages found = (TLRPC.messages_Messages) response;
-        if(response.getClass()!=TLRPC.TL_messages_messages.class||found.inexact||found.search_flood!=null
-            ||(found.flags&((1<<1)|(1<<3)))!=0)return Lookup.failed("not an exact absence read");
-        if(found.messages.isEmpty())return Lookup.missing();
-        if(found.messages.size()==1&&found.messages.get(0) instanceof TLRPC.TL_messageEmpty)return found.messages.get(0).id==expectedId?Lookup.missing():Lookup.failed("wrong exact-id absence");
-        if(found.messages.size()!=1||found.messages.get(0)==null||found.messages.get(0).id!=expectedId)return Lookup.failed("ambiguous exact-id response");
-        return Lookup.found(meta(found.messages.get(0)));
+        return io.lookup(response,error,expectedId,this::meta);
     }
 
     private Message meta(TLRPC.Message message) {
@@ -316,8 +328,7 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
                 isDocument,
                 isMessage ? message.message : "",
                 isDocument ? firstFileName(document) : null,
-                message.peer_id != null
-                        && MessageObject.getDialogId(message) == userId,
+                PurpleSyncChatFacts.token(message.peer_id,userId),
                 isDocument ? document.id : 0,
                 isDocument ? document.size : 0,
                 isMessage ? message.edit_date : 0,
@@ -357,7 +368,7 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
             final List<LocalCopy> copies = new ArrayList<>();
             cursor = database.queryFinalized(String.format(Locale.US,
                     "SELECT uid, mid, send_state, data FROM messages_v2 WHERE uid = %d AND mid < 0",
-                    userId));
+                    dialogId()));
             while (cursor.next()) {
                 final NativeByteBuffer data = cursor.byteBufferValue(3);
                 if (data == null) {
@@ -465,7 +476,7 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
             }
             finished = true;
             release();
-            reply.onReply(file);
+            reply.onReply(isActive()?file:null);
         }
 
         private void cancelLoad() {

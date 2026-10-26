@@ -19,6 +19,8 @@ public final class PurpleSyncInventory {
     public static final int INVALID = 7;
 
     public final long accountUserId;
+    public final PurpleSyncChatCore.Peer chat;
+    final PurpleSyncChatOrigin origin;
     public final boolean scanComplete;
     final int[] ids;
     final int[] transport;
@@ -30,6 +32,13 @@ public final class PurpleSyncInventory {
     PurpleSyncInventory(long accountUserId, boolean scanComplete, int[] ids,
             int[] transport, long[] documentIds, long[] editDates,
             byte[][] bytes) {
+        this(accountUserId,PurpleSyncChatCore.Peer.self(),null,scanComplete,ids,transport,documentIds,editDates,bytes);
+    }
+
+    PurpleSyncInventory(long accountUserId,PurpleSyncChatCore.Peer chat,PurpleSyncChatOrigin origin,
+            boolean scanComplete,int[] ids,int[] transport,long[] documentIds,long[] editDates,byte[][] bytes) {
+        if(chat==null || origin!=null && origin.userId!=accountUserId)throw new IllegalArgumentException("InventoryOrigin");
+        this.chat=chat;this.origin=origin;
         final int count = ids.length;
         if (transport.length != count || documentIds.length != count
                 || editDates.length != count || bytes.length != count) {
@@ -59,6 +68,15 @@ public final class PurpleSyncInventory {
         this.totalBytes = total;
     }
 
+    boolean matchesState(byte[] state) {
+        return PurpleSyncChatIO.ledgerMatches(chat,state);
+    }
+
+    boolean sameOrigin(PurpleSyncClient client) {
+        return client!=null && accountUserId==client.userId() && chat.equals(client.chat())
+                && java.util.Objects.equals(origin,client.origin());
+    }
+
     public int count() {
         return ids.length;
     }
@@ -82,6 +100,8 @@ public final class PurpleSyncInventory {
 
     public static final class Builder {
         private final long accountUserId;
+        private final PurpleSyncChatCore.Peer chat;
+        private final PurpleSyncChatOrigin origin;
         private int[] ids = new int[8];
         private int[] transport = new int[8];
         private long[] documentIds = new long[8];
@@ -90,7 +110,11 @@ public final class PurpleSyncInventory {
         private int count;
 
         public Builder(long accountUserId) {
-            this.accountUserId = accountUserId;
+            this(accountUserId,PurpleSyncChatCore.Peer.self(),null);
+        }
+
+        Builder(long accountUserId,PurpleSyncChatCore.Peer chat,PurpleSyncChatOrigin origin) {
+            this.accountUserId=accountUserId;this.chat=chat;this.origin=origin;
         }
 
         public Builder fetched(int id, long documentId, long editDate,
@@ -110,7 +134,7 @@ public final class PurpleSyncInventory {
         }
 
         public PurpleSyncInventory build(boolean scanComplete) {
-            return new PurpleSyncInventory(accountUserId, scanComplete,
+            return new PurpleSyncInventory(accountUserId,chat,origin,scanComplete,
                     Arrays.copyOf(ids, count),
                     Arrays.copyOf(transport, count),
                     Arrays.copyOf(documentIds, count),

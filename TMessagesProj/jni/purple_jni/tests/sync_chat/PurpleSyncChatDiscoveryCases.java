@@ -15,6 +15,7 @@ public final class PurpleSyncChatDiscoveryCases {
         PurpleSyncChatModelCases.run();System.out.println("MODEL_CHECKS="+checks);
         PurpleSyncChatServiceCases.run(root);System.out.println("CACHE_SERVICE_CHECKS="+checks);
         PurpleA1ReviewCases.main(new String[]{new File(root,"review-control").getPath()});
+        PurpleSyncChatIOCases.run(root);
         PurpleSyncChatRecordCases.run(root);System.out.println("SYNC_CHAT_TOTAL_CHECKS="+checks);
     }
 }

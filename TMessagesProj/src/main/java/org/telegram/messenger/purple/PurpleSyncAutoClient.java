@@ -17,6 +17,8 @@ final class PurpleSyncAutoClient implements PurpleSyncClient {
     public boolean hasQueuedSync() {
         return delegate.hasQueuedSync();
     }
+    public PurpleSyncChatCore.Peer chat() { return delegate.chat(); }
+    public PurpleSyncChatOrigin origin() { return delegate.origin(); }
     public long userId() {
         return delegate.userId();
     }

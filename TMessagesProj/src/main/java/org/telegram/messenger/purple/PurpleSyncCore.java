@@ -885,6 +885,7 @@ public final class PurpleSyncCore {
         if (inventory == null || local == null || device == null) {
             return Review.failure("NullInput");
         }
+        if(!inventoryScope(inventory,state))return Review.failure("ChatMismatch");
         return answer(() -> reviewConfigNative(inventory.accountUserId,
                         inventory.scanComplete, inventory.ids,
                         inventory.transport, inventory.documentIds,
@@ -904,6 +905,7 @@ public final class PurpleSyncCore {
 
     public static ApplyPlan planApply(ApplyRequest request) {
         final PurpleSyncInventory inventory = request.inventory;
+        if(!inventoryScope(inventory,request.state))return new ApplyPlan("ChatMismatch");
         return answer(() -> planConfigApplyNative(inventory.accountUserId,
                         inventory.scanComplete, inventory.ids,
                         inventory.transport, inventory.documentIds,
@@ -922,6 +924,7 @@ public final class PurpleSyncCore {
             return new ApplyCompletion("NullInput");
         }
         final PurpleSyncInventory inventory = request.inventory;
+        if(!inventoryScope(inventory,request.state))return new ApplyCompletion("ChatMismatch");
         return answer(() -> completeConfigApplyNative(inventory.accountUserId,
                         inventory.scanComplete, inventory.ids,
                         inventory.transport, inventory.documentIds,
@@ -936,7 +939,22 @@ public final class PurpleSyncCore {
                 ApplyCompletion::new);
     }
 
+    private static boolean stateScope(PurpleSyncChatCore.Peer chat,byte[] state) {
+        return state!=null && !PurpleAccountSyncCore.inspectState(state).isValid()
+                || PurpleSyncChatIO.ledgerMatches(chat,state);
+    }
+
+    private static boolean inventoryScope(PurpleSyncInventory inventory,byte[] state) {
+        return stateScope(inventory.chat,state);
+    }
+
     public static CommitCheck checkCommit(byte[] current, byte[] next) {
+        return checkCommit(PurpleSyncChatCore.Peer.self(),current,next);
+    }
+
+    static CommitCheck checkCommit(PurpleSyncChatCore.Peer chat,byte[] current,byte[] next) {
+        if(!stateScope(chat,current)||!stateScope(chat,next))
+            return new CommitCheck("ChatMismatch");
         return answer(() -> checkConfigCommitNative(current, next),
                 (raw, json) -> new CommitCheck(json, raw.state),
                 CommitCheck::new);
@@ -963,6 +981,7 @@ public final class PurpleSyncCore {
         if (inventory == null || local == null || request == null) {
             return new PostPlan("NullInput");
         }
+        if(!inventoryScope(inventory,state))return new PostPlan("ChatMismatch");
         final PurpleAccountBinding.Binding binding =
                 PurpleAccountBinding.read(currentAccount);
         if (!binding.isValid()) {
@@ -989,6 +1008,7 @@ public final class PurpleSyncCore {
         if (inventory == null) {
             return new PostPlan("NullInput");
         }
+        if(!inventoryScope(inventory,state))return new PostPlan("ChatMismatch");
         final PurpleAccountBinding.Binding binding =
                 PurpleAccountBinding.read(currentAccount);
         if (!binding.isValid()) {
