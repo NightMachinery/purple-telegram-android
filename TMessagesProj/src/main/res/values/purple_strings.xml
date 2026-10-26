@@ -754,6 +754,16 @@
     <string name="PurpleArchiveRequires23">Requires Android 6 or newer (API 23). No archive is created on this device.</string>
     <string name="PurpleArchiveReady">Encrypted storage: %1$s bytes (estimate)</string>
     <string name="PurpleArchiveOpening">Checking encrypted storage…</string>
+    <string name="PurpleArchiveClosePending">The archive could not close safely. Refresh to retry; existing content is preserved.</string>
+    <string name="PurpleArchiveRecoveryUnavailable">Archive recovery could not finish. Refresh to retry; existing content is preserved.</string>
+    <string name="PurpleArchiveLoginUnavailable">Archive login setup failed. Restart to retry; existing content is preserved.</string>
+    <string name="PurpleArchiveLoginRecordUnavailable">This archive cannot be matched to this login. Existing content is preserved; discard it to start fresh.</string>
+    <string name="PurpleArchiveCatalogueUnavailable">Archive storage records are ambiguous. Existing content is preserved; discard it to start fresh.</string>
+    <string name="PurpleArchiveCaptureRecoveryUnavailable">An interrupted capture could not be recovered. Refresh to retry; existing content is preserved.</string>
+    <string name="PurpleArchiveStorageUnavailable">Archive storage cannot be accessed. Refresh to retry; existing content is preserved.</string>
+    <string name="PurpleArchiveDatabaseUnavailable">The archive database cannot be verified. Refresh to retry; existing content is preserved.</string>
+    <string name="PurpleArchiveMetadataUnavailable">Archive records cannot be read. Refresh to retry; existing content is preserved.</string>
+    <string name="PurpleArchiveNativeUnavailable">The archive engine could not load. Restart to retry; existing content is preserved.</string>
     <string name="PurpleArchiveUnavailable">Archive unavailable. Existing content is preserved; capture is not acknowledged.</string>
     <string name="PurpleArchiveKeyUnavailable">The archive key is unavailable. Existing content is preserved. Remove the local archive to prepare a new one.</string>
     <string name="PurpleArchiveSchemaMismatch">This draft archive has an incompatible storage format. It is preserved unchanged. Remove it explicitly to prepare a new archive.</string>

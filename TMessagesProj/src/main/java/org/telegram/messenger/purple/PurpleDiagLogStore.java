@@ -74,6 +74,13 @@ public final class PurpleDiagLogStore {
             "editable", "source", "session_current", "lists_unreadable",
             "routed", "app_wide_good", "names_only", "none",
             "wait", "requested", "waiting", "aborted", "applied", "apply_failed", "held", "instant",
+            "open_failed", "recovery_failed", "step", "paths", "login_context", "login_bootstrap", "removal_recovery",
+            "catalogue_admission", "login_admission", "store_open", "store_close", "gap_read", "sequence_recovery",
+            "capture_gap_recovery", "gap_recovery", "usage_scan", "gap_query", "staging_recovery", "media_recovery",
+            "retained_paths", "retained_inspect", "retained_removal", "account_inventory", "native_load", "retained_root", "retained_aliases",
+            "archive_schema_mismatch", "archive_schema_unsupported", "archive_login_persist_failed", "archive_login_nonce_missing",
+            "archive_login_admission_failed", "archive_catalogue_ambiguous", "archive_capture_recovery_failed", "archive_key_failed",
+            "archive_removal_failed", "archive_metadata_invalid", "archive_storage_failed", "archive_lock_failed", "archive_database_failed", "archive_open_failed",
             "archive", "capture_committed", "capture_unchanged", "capture_stale", "capture_gap",
             "capture_overflow", "capture_preimage_failed", "capture_identity_missing", "capture_write_failed", "capture_timeout", "capture_interrupted",
             "action", "peek_start", "peek_end", "peek_extend", "delay_edit", "preset_change", "mode_change", "source_change", "peek_focus_policy"

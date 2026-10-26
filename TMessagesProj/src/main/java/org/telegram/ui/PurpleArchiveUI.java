@@ -23,6 +23,16 @@ final class PurpleArchiveUI {
         switch (status.state) {
             case "Ready": return LocaleController.formatString(R.string.PurpleArchiveReady, status.bytes);
             case "Opening": case "Busy": return text(R.string.PurpleArchiveOpening);
+            case "Close pending": return text(R.string.PurpleArchiveClosePending);
+            case "Recovery unavailable": return text(R.string.PurpleArchiveRecoveryUnavailable);
+            case "LoginUnavailable": return text(R.string.PurpleArchiveLoginUnavailable);
+            case "LoginRecordUnavailable": return text(R.string.PurpleArchiveLoginRecordUnavailable);
+            case "CatalogueUnavailable": return text(R.string.PurpleArchiveCatalogueUnavailable);
+            case "CaptureRecoveryUnavailable": return text(R.string.PurpleArchiveCaptureRecoveryUnavailable);
+            case "StorageUnavailable": return text(R.string.PurpleArchiveStorageUnavailable);
+            case "DatabaseUnavailable": return text(R.string.PurpleArchiveDatabaseUnavailable);
+            case "MetadataUnavailable": return text(R.string.PurpleArchiveMetadataUnavailable);
+            case "NativeUnavailable": return text(R.string.PurpleArchiveNativeUnavailable);
             case "KeyUnavailable": return text(R.string.PurpleArchiveKeyUnavailable);
             case "SchemaMismatch": return text(R.string.PurpleArchiveSchemaMismatch);
             case "ReadOnly": return text(R.string.PurpleArchiveReadOnly);

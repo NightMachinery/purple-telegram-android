@@ -56,7 +56,8 @@ final class PurpleArchiveStore implements AutoCloseable {
         directory = paths.store(binding.store, creationAllowed);
     }
     static PurpleArchiveStore open(Environment environment, String account) throws Exception { return open(environment, account, null); }
-    static PurpleArchiveStore open(Environment environment, String account, String loginNonce) throws Exception {
+    static PurpleArchiveStore open(Environment environment, String account, String loginNonce) throws Exception { return open(environment, account, loginNonce, true); }
+    static PurpleArchiveStore open(Environment environment, String account, String loginNonce, boolean removeOrphan) throws Exception {
         if (environment.api() < 23) throw new Failure("Requires Android 6 (API 23)");
         if (!environment.current()) throw new Failure("Account changed");
         PurpleArchivePaths paths = new PurpleArchivePaths(environment.files(), account);
@@ -67,7 +68,8 @@ final class PurpleArchiveStore implements AutoCloseable {
             synchronized (environment.publicationLock()) {
                 if (!environment.current()) throw new Failure("Account changed");
                 if (paths.metadata.read("removing.json", 65536).bytes != null) throw new Failure("Archive removal pending");
-                if (loginNonce != null) PurpleArchiveLogin.admit(paths, loginNonce, environment.keys());
+                if (loginNonce != null && !removeOrphan) PurpleArchiveLogin.prepareBootstrap(paths, environment.keys(), environment::current);
+                if (loginNonce != null) PurpleArchiveLogin.admit(paths, loginNonce, environment.keys(), removeOrphan);
                 PurpleArchiveCatalogue.requireAdmission(paths, environment.keys());
                 PurpleArchiveFiles.Snapshot bound = paths.metadata.read("binding.json", 65536);
                 PurpleArchiveFiles.Snapshot creating = paths.metadata.read("creating.json", 65536);

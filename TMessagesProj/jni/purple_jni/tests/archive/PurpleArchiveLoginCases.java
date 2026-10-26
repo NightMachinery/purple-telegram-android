@@ -14,6 +14,7 @@ public final class PurpleArchiveLoginCases {
         boolean fail;
         final SharedPreferences value = (SharedPreferences) Proxy.newProxyInstance(SharedPreferences.class.getClassLoader(), new Class[]{SharedPreferences.class}, (proxy, method, args) -> {
             if (method.getName().equals("getString")) return memory.containsKey(args[0]) ? memory.get(args[0]) : args[1];
+            if (method.getName().equals("getBoolean")) return memory.containsKey(args[0]) ? Boolean.parseBoolean(memory.get(args[0])) : args[1];
             if (method.getName().equals("edit")) return editor();
             throw new UnsupportedOperationException(method.getName());
         });
@@ -22,6 +23,7 @@ public final class PurpleArchiveLoginCases {
             return (SharedPreferences.Editor) Proxy.newProxyInstance(SharedPreferences.Editor.class.getClassLoader(), new Class[]{SharedPreferences.Editor.class}, (proxy, method, args) -> {
                 switch (method.getName()) {
                     case "putString": changes.put((String) args[0], (String) args[1]); return proxy;
+                    case "putBoolean": changes.put((String) args[0], args[1].toString()); return proxy;
                     case "remove": changes.put((String) args[0], null); return proxy;
                     case "clear": clear[0] = true; return proxy;
                     case "commit": case "apply":

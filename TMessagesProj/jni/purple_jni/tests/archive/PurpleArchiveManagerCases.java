@@ -98,7 +98,7 @@ public final class PurpleArchiveManagerCases {
         PurpleArchivePaths malformedPaths = new PurpleArchivePaths(ApplicationLoader.files, "0-66");
         malformedPaths.metadata.publish("removing.json", malformedPaths.metadata.read("removing.json", 65536), new byte[]{123});
         PurpleArchive.refresh(2, () -> {});
-        await(() -> PurpleArchive.status(2).state.equals("Unavailable"), "malformed removal refuses automatic open");
+        await(() -> PurpleArchive.status(2).state.equals("MetadataUnavailable"), "malformed removal refuses automatic open");
         check(malformedDb.exists() && PurpleArchivePlatformProvider.keys.containsKey(malformed.alias()), "malformed intent never selects deletion");
         await(() -> PurpleArchive.prepareRemoval(2) != null, "refused account exposes explicit recovery context");
         PurpleArchive.RemovalRequest discard = PurpleArchive.prepareRemoval(2);

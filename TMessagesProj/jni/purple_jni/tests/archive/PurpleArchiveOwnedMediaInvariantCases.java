@@ -96,7 +96,7 @@ public final class PurpleArchiveOwnedMediaInvariantCases {
             }else if(mode.equals("login-change")){
                 PurpleArchiveViewerModel.Attachment old=cap.attachment;String openingStore=worker.store.binding.store;
                 try(PurpleArchiveMediaDataSource source=new PurpleArchiveMediaDataSource(cap)){
-                    source.readAt(0,new byte[1],0,1);PurpleArchiveLogin.source=s->"22222222222222222222222222222222";PurpleArchive.refresh(0,()->{});settle();
+                    source.readAt(0,new byte[1],0,1);PurpleArchive.loginChanging(0,0,UserConfig.getInstance(0).getClientUserId());PurpleArchiveLogin.source=s->"22222222222222222222222222222222";java.util.concurrent.atomic.AtomicBoolean refreshed=new java.util.concurrent.atomic.AtomicBoolean();PurpleArchive.refresh(0,()->refreshed.set(true));await(refreshed::get,"replacement login Refresh completes");settle();
                     if(cap.available()||worker.store.binding.store.equals(openingStore))throw new AssertionError("new login retained old authority/store");
                     boolean refused=false;try{source.readAt(0,new byte[1],0,1);}catch(java.io.IOException expected){refused=true;}
                     if(!refused||PurpleArchiveMediaAccess.request(PurpleAccountFiles.capture(0),old,(v,e)->{})!=null)throw new AssertionError("old descriptor adopted new login");

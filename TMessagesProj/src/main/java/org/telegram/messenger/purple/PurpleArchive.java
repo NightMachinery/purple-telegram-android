@@ -61,14 +61,17 @@ public final class PurpleArchive {
             catch (java.util.concurrent.RejectedExecutionException e) { status = new Status("Busy", status.bytes, status.gap); }
         }
         void open(PurpleAccountFiles.Identity captured) {
+            String step = "paths";
             try {
                 if (retired || !allowed(captured)) return;
                 if (store != null && (identity == null || identity.lifetime != captured.lifetime || closing)) { store.drainReaders(); store.close(); store = null; }
                 identity = captured;
                 PurpleArchivePaths paths = new PurpleArchivePaths(ApplicationLoader.getFilesDirFixed(), account);
+                step = "login_context";
                 String context = PurpleArchiveLogin.context(captured.slot);
                 if (store != null && !context.equals(loginContext)) { store.drainReaders(); store.close(); store = null; }
                 loginContext = context;
+                step = "removal_recovery";
                 if (paths.metadata.read("removing.json", 65536).bytes != null) {
                     PurpleArchiveRemoval.resume(paths, paths.metadata.read("removing.json", 65536).bytes);
                     closing = true;
@@ -78,30 +81,37 @@ public final class PurpleArchive {
                 if (!captured.current()) return;
                 if (store != null) {
                     synchronized (publication) {
+                        step = "catalogue_admission";
                         PurpleArchiveCatalogue.requireAdmission(paths, new PurpleArchiveKeys.RemovalProvider());
+                        step = "login_admission";
                         PurpleArchiveLogin.admit(paths, context, new PurpleArchiveKeys.RemovalProvider(), false);
                     }
                 }
                 closing = false;
                 if (store == null) {
+                    step = "store_open";
                     store = PurpleArchiveStore.open(new PurpleArchiveStore.Environment() {
                         public File files() { return ApplicationLoader.getFilesDirFixed(); }
                         public int api() { return Build.VERSION.SDK_INT; }
                         public boolean current() { return !closing && identity != null && identity.lifetime == captured.lifetime && allowed(captured); }
                         public Object publicationLock() { return publication; }
                         public PurpleArchiveKeys.Provider keys() { return new PurpleArchiveKeys.AndroidProvider(); }
-                    }, account, context);
+                    }, account, context, PurpleArchiveLogin.orphanRemovalAllowed(captured.slot));
                 }
+                step = "gap_read";
                 status = new Status("Opening", status.bytes, status.gap || store.paths.metadata.read("gap-outbox.json", 65536).bytes != null);
-                PurpleArchiveSequence.recover(store);
-                flushCaptureGap(this);
-                PurpleArchiveGaps.flush(store);
-                status = new Status("Ready", PurpleArchiveUsage.scan(store), store.hasGaps());
-                PurpleArchiveStagingRecovery.start(this);
-                PurpleArchiveMediaAccess.recover(this);
+                step = "sequence_recovery"; PurpleArchiveSequence.recover(store);
+                step = "capture_gap_recovery"; flushCaptureGap(this);
+                step = "gap_recovery"; PurpleArchiveGaps.flush(store);
+                step = "usage_scan"; String bytes = PurpleArchiveUsage.scan(store);
+                step = "gap_query"; status = new Status("Ready", bytes, store.hasGaps());
+                step = "staging_recovery"; PurpleArchiveStagingRecovery.start(this);
+                step = "media_recovery"; PurpleArchiveMediaAccess.recover(this);
             } catch (Exception | LinkageError e) {
+                PurpleArchiveFailures.record(captured.slot, step, e);
                 if (store != null) {
-                    try { store.drainReaders(); store.close(); store = null; } catch (Exception | LinkageError ignored) {}
+                    try { store.drainReaders(); store.close(); store = null; }
+                    catch (Exception | LinkageError close) { PurpleArchiveFailures.record(captured.slot, "store_close", close); }
                 }
                 status = new Status(failureState(e), status.bytes, status.gap);
             } finally {
@@ -133,6 +143,7 @@ public final class PurpleArchive {
                 status = new Status("Removed", "0", false);
                 retire();
             } catch (Exception | LinkageError e) {
+                PurpleArchiveFailures.record(-1, "removal_recovery", e);
                 status = new Status("Removal pending", status.bytes, status.gap);
                 if (expected == null && !retryScheduled) {
                     retryScheduled = true;
@@ -141,16 +152,7 @@ public final class PurpleArchive {
             }
         }
     }
-    private static String failureState(Throwable error) {
-        if (error instanceof PurpleArchiveStore.Failure) {
-            String reason = ((PurpleArchiveStore.Failure) error).reason;
-            if (reason.contains("SchemaMismatch")) return "SchemaMismatch";
-            if (reason.contains("schema")) return "ReadOnly";
-            if (reason.contains("key")) return "KeyUnavailable";
-            if (reason.contains("removal")) return "Removal pending";
-        }
-        return "Unavailable";
-    }
+    private static String failureState(Throwable error) { return PurpleArchiveFailures.state(error); }
     private static Worker worker(String account) { return workers.computeIfAbsent(account, Worker::new); }
     static Worker queryWorker(PurpleAccountFiles.Identity identity) { return allowed(identity) ? worker(identity.key) : null; }
     public static void initialize() {
@@ -169,40 +171,46 @@ public final class PurpleArchive {
         }
         return true;
     }
-    private static void recoverAccount(String account) {
-        if (!PurpleSyncRecoveryFiles.key(account)) return;
+    private static boolean recoverAccount(String account) {
+        if (!PurpleSyncRecoveryFiles.key(account)) return true;
+        String step = "retained_paths";
         try {
             PurpleArchivePaths paths = new PurpleArchivePaths(ApplicationLoader.getFilesDirFixed(), account);
             if (inactive(account)) {
                 try {
                     PurpleArchiveKeys.Provider keys = new PurpleArchiveKeys.RemovalProvider();
                     if (PurpleArchiveCatalogue.cleared(paths) && !PurpleArchiveCatalogue.hasUnexpectedStore(paths, null)
-                        && !PurpleArchiveCatalogue.hasUnexpectedKey(account, keys, null)) return;
-                } catch (Exception | LinkageError e) {}
+                        && !PurpleArchiveCatalogue.hasUnexpectedKey(account, keys, null)) return true;
+                } catch (Exception | LinkageError e) { PurpleArchiveFailures.record(-1, "retained_inspect", e); }
                 Worker worker = worker(account);
                 worker.control(() -> {
                     if (!inactive(account)) { if (worker.identity == null) worker.retire(); return; }
                     worker.closing = true; worker.remove();
                 });
             } else {
+                step = "retained_removal";
                 byte[] pending = paths.metadata.read("removing.json", 65536).bytes;
                 if (pending != null) {
                     PurpleArchiveRemoval.resume(paths, pending);
                     Worker worker = worker(account); worker.closing = true; worker.control(worker::remove);
                 }
             }
-        } catch (Exception | LinkageError e) { startupProblem = true; }
+            return true;
+        } catch (Exception | LinkageError e) { PurpleArchiveFailures.record(-1, step, e); return false; }
     }
     private static void recoverRetained() {
+        boolean complete = true;
+        String step = "account_inventory";
         try {
             for (int slot = 0; slot < UserConfig.MAX_ACCOUNT_COUNT; ++slot) {
                 if (!UserConfig.getInstance(slot).isConfigLoaded()) {
                     recovery.schedule(PurpleArchive::recoverRetained, 1, TimeUnit.SECONDS); return;
                 }
             }
-            PurpleCore.ensureLoaded();
+            step = "native_load"; PurpleCore.ensureLoaded();
+            step = "retained_root";
             File purple = new File(ApplicationLoader.getFilesDirFixed().getCanonicalFile(), "purple");
-            if (PurpleArchiveFiles.mark(purple, true) == null) return;
+            if (PurpleArchiveFiles.mark(purple, true) == null) { startupProblem = false; return; }
             PurpleArchiveFiles.Directory root = new PurpleArchiveFiles.Directory(purple, false);
             for (String name : new String[]{"content-archive-state", "content-archive"}) {
                 if (PurpleArchiveFiles.mark(root.file(name), true) == null) continue;
@@ -210,18 +218,20 @@ public final class PurpleArchive {
                 try (PurpleArchiveFiles.Listing listing = directory.listing()) {
                     for (;;) {
                         String[] page = listing.next(); if (page.length == 0) break;
-                        for (String account : page) recoverAccount(account);
+                        for (String account : page) complete &= recoverAccount(account);
                     }
                 }
             }
+            step = "retained_aliases";
             String prefix = "purple.archive.";
             java.util.Enumeration<String> aliases = new PurpleArchiveKeys.RemovalProvider().aliases();
             while (aliases.hasMoreElements()) {
                 String alias = aliases.nextElement();
                 int end = alias.indexOf('.', prefix.length());
-                if (alias.startsWith(prefix) && end > prefix.length()) recoverAccount(alias.substring(prefix.length(), end));
+                if (alias.startsWith(prefix) && end > prefix.length()) complete &= recoverAccount(alias.substring(prefix.length(), end));
             }
-        } catch (Exception | LinkageError e) { startupProblem = true; }
+            startupProblem = !complete;
+        } catch (Exception | LinkageError e) { startupProblem = true; PurpleArchiveFailures.record(-1, step, e); }
     }
     private static volatile boolean startupProblem;
     public static Status status(int slot) {
@@ -235,10 +245,14 @@ public final class PurpleArchive {
         initialize();
         PurpleAccountFiles.Identity captured = PurpleAccountFiles.capture(slot);
         if (Build.VERSION.SDK_INT < 23 || captured == null) { AndroidUtilities.runOnUIThread(delivered); return; }
-        Worker worker = worker(captured.key);
-        worker.submit(() -> {
-            worker.open(captured);
-            AndroidUtilities.runOnUIThread(() -> { if (captured.current()) delivered.run(); });
+        recovery.execute(() -> {
+            recoverRetained();
+            if (!captured.current()) return;
+            Worker worker = worker(captured.key);
+            worker.control(() -> {
+                worker.open(captured);
+                AndroidUtilities.runOnUIThread(() -> { if (captured.current()) delivered.run(); });
+            });
         });
     }
     public static final class RemovalRequest {
@@ -322,7 +336,7 @@ public final class PurpleArchive {
             worker.submit(() -> {
                 if (!worker.closing && worker.identity == identity && !identity.current()) {
                     try { if (worker.store != null) { worker.store.drainReaders(); worker.store.close(); worker.store = null; } worker.status = new Status("Closed", worker.status.bytes, false); worker.retire(); }
-                    catch (Exception | LinkageError e) { worker.status = new Status("Close pending", worker.status.bytes, worker.status.gap); }
+                    catch (Exception | LinkageError e) { PurpleArchiveFailures.record(identity.slot, "store_close", e); worker.status = new Status("Close pending", worker.status.bytes, worker.status.gap); }
                 }
             });
         }
@@ -449,6 +463,7 @@ public final class PurpleArchive {
         worker.store.paths.metadata.remove("capture-gap.json", false);
     }
     static Worker existing(PurpleAccountFiles.Identity identity) { return identity == null ? null : workers.get(identity.key); }
+    public static void loginLoaded(int slot, android.content.SharedPreferences preferences, String serializedUser) { PurpleArchiveLogin.loaded(slot, preferences, serializedUser); }
     public static void loginChanging(int slot, long before, long after) { PurpleArchiveLogin.changing(slot, before, after); }
     public static void writeLogin(int slot, long user, android.content.SharedPreferences.Editor editor) { PurpleArchiveLogin.write(slot, user, editor); }
     private PurpleArchive() {}
