@@ -897,11 +897,11 @@
     <string name="PurpleSyncChatCreateAbout">Purple creates a private broadcast channel named Purple sync, posts its mark silently, then pins the mark without notifying anyone, mutes the channel and archives it.</string>
     <string name="PurpleSyncChatNewChannel">a private Purple sync channel</string>
     <string name="PurpleSyncChatContinue">Continue</string>
-    <string name="PurpleSyncChatCloud">The settings file may contain chat IDs and names. With several accounts, it also holds their user IDs and any settings you set for them. It is kept in %1$s, a Telegram cloud chat: it is not end-to-end encrypted, and every signed-in session of this account can read it. state.toml stays on this device.</string>
+    <string name="PurpleSyncChatCloud">The settings file may contain chat IDs and names, including chats from your other accounts that you added to Work Mode lists. It is kept in %1$s, a Telegram cloud chat: it is not end-to-end encrypted, and every signed-in session of this account can read it. state.toml stays on this device.</string>
     <string name="PurpleSyncChatBotReader">%1$s and the bot’s owner can read everything Purple posts in this chat.</string>
     <string name="PurpleSyncChatPrivateReader">%1$s can read everything Purple posts in this chat.</string>
     <string name="PurpleSyncChatMembersReader">%1$s has %2$s other members. They can read everything Purple posts there.</string>
-    <string name="PurpleSyncChatSettingsReaders">This includes your settings file, which names chats and people by ID and name, your own account, and the user IDs and settings of other accounts if you give them their own settings.</string>
+    <string name="PurpleSyncChatSettingsReaders">This includes your settings file, which lists chats and people by id and name, including chats from your other accounts that you added to Work Mode lists.</string>
     <string name="PurpleSyncChatReaderConsequences">Admins can delete Purple’s messages, and each sync adds a file message everyone there sees. The Purple mark also tells them that this account uses Purple.</string>
     <string name="PurpleSyncChatConsentNeeded">Review who can read the settings before posting.</string>
     <string name="PurpleSyncChatReadersUnknown">The current readers could not be established. Posting is held.</string>

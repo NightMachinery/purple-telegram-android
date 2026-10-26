@@ -9,6 +9,19 @@ import java.util.function.Consumer;
 import static org.telegram.messenger.purple.PurpleSyncChatCore.*;
 
 public final class PurpleSyncChatScreen {
+    public interface Text {
+        String get(String key,Object... args);
+    }
+    public static String disclosure(Candidate candidate,Text text) {
+        String title=candidate.chat.kind==PeerKind.Self?text.get("Saved"):candidate.title;
+        String value=text.get("Cloud",title);
+        if(candidate.eligibility.readers.warningRequired) {
+            value+="\n\n"+text.get(candidate.eligibility.readers.botOwner?"BotReader":candidate.eligibility.readers.privateRecipient?"PrivateReader":"MembersReader",
+                    title,candidate.eligibility.readers.otherMembers!=null?candidate.eligibility.readers.otherMembers.toString():text.get("UnknownCount"));
+            value+="\n"+text.get("SettingsReaders")+"\n"+text.get("ReaderConsequences");
+        }
+        return value;
+    }
     public static final class Refused {
         public final String title;
         public final Refusal reason;

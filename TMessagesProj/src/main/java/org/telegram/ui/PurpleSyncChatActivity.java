@@ -157,13 +157,7 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
                 .setPositiveButton(LocaleController.getString(org.telegram.messenger.R.string.OK),null).show();
     }
     static String disclosure(PurpleSyncChatScreen.Candidate candidate) {
-        String value=text("Cloud",title(candidate));
-        if(candidate.eligibility.readers.warningRequired) {
-            value+="\n\n"+text(candidate.eligibility.readers.botOwner?"BotReader":candidate.eligibility.readers.privateRecipient?"PrivateReader":"MembersReader",
-                    title(candidate),candidate.eligibility.readers.otherMembers!=null?candidate.eligibility.readers.otherMembers.toString():text("UnknownCount"));
-            value+="\n"+text("SettingsReaders")+"\n"+text("ReaderConsequences");
-        }
-        return value;
+        return PurpleSyncChatScreen.disclosure(candidate,PurpleSyncChatActivity::text);
     }
     private static String refusal(PurpleSyncChatCore.Refusal value) { return text("Refusal"+value.name()); }
     private static String reason(String value) {

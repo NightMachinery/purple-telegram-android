@@ -81,12 +81,42 @@ final class PurpleSyncChatScreenCases {
         check(p.held,"refresh owns shared operation");control.close();p.drain();check(!p.held&&p.ends==1,"retained callback cannot outlive screen");
         p=new Port();control=new PurpleSyncChatScreen.Control(p);PurpleSyncChatScreen.Control closing=control;
         control.refresh(v->{closing.close();++called[0];});check(!p.held&&p.ends==1,"reentrant close during delivery releases once");
-        parity();
+        parity();disclosure();
         PurpleSyncChatModelCases.World world=new PurpleSyncChatModelCases.World();world.add(mark(SELF,7,50));
         PurpleSyncChatFacts.Input refused=input(SELF);refused.userFull.ttl_period=5;world.peers.put(SELF,info(SELF,refused));
         PurpleSyncChatDiscovery discovery=PurpleSyncChatModelCases.model(null);discovery.start(1000);world.drain(discovery,1000);
         check(discovery.refused().size()==1&&discovery.refused().get(0).reason==Refusal.AutoDelete,"owned refused mark survives to screen reason line");
         System.out.println("SYNC_CHAT_SCREEN_CHECKS="+(checks-before));
+    }
+    static void disclosure() {
+        try {
+            org.w3c.dom.Document strings=javax.xml.parsers.DocumentBuilderFactory.newInstance().newDocumentBuilder()
+                    .parse(new java.io.File(System.getProperty("purple.test.strings","TMessagesProj/src/main/res/values/purple_strings.xml")));
+            java.util.Map<String,String> values=new java.util.HashMap<>();
+            org.w3c.dom.NodeList rows=strings.getElementsByTagName("string");
+            for(int i=0;i<rows.getLength();++i) {
+                org.w3c.dom.Element row=(org.w3c.dom.Element)rows.item(i);values.put(row.getAttribute("name"),row.getTextContent());
+            }
+            String line="This includes your settings file, which lists chats and people by id and name, including chats from your other accounts that you added to Work Mode lists.";
+            String cloud="The settings file may contain chat IDs and names, including chats from your other accounts that you added to Work Mode lists. It is kept in %1$s, a Telegram cloud chat: it is not end-to-end encrypted, and every signed-in session of this account can read it. state.toml stays on this device.";
+            check(line.equals(values.get("PurpleSyncChatSettingsReaders")),"r3 reader settings line verbatim");
+            check(cloud.equals(values.get("PurpleSyncChatCloud")),"r3 sync-chat disclosure verbatim");
+            PurpleSyncChatScreen.Text text=(key,args)->{
+                String value=values.get("PurpleSyncChat"+key);check(value!=null,"disclosure string exists "+key);
+                return args.length==0?value:String.format(java.util.Locale.ROOT,value,args);
+            };
+            for(int slot:new int[]{0,1,3})for(Peer chat:new Peer[]{SELF,USER,GROUP,CHANNEL}) {
+                PurpleSyncChatOrigin origin=new PurpleSyncChatOrigin(slot,ORIGIN.environment,ORIGIN.userId,"disclosure-origin-"+slot);
+                PurpleSyncChatClient.Info old=info(chat);
+                PurpleSyncChatFacts.MappedPeer mapped=new PurpleSyncChatFacts.MappedPeer(origin,chat,old.peer.kind,old.peer.creator,old.peer.soleAdmin,old.peer.facts,old.members);
+                PurpleSyncChatClient.Info scoped=new PurpleSyncChatClient.Info(origin,chat,mapped,old.error,"synthetic target",old.members,true);
+                PurpleSyncChatScreen.Candidate candidate=new PurpleSyncChatScreen.Candidate(origin,chat,scoped);
+                String rendered=PurpleSyncChatScreen.disclosure(candidate,text);
+                check(rendered.contains("state.toml stays on this device."),"cloud disclosure in each captured account "+slot);
+                check(rendered.contains(line)==candidate.eligibility.readers.warningRequired,"settings line for every config reader warning, regardless of home/active slot "+slot+" "+chat.token());
+                check(!rendered.contains("user IDs and settings of other accounts")&&!rendered.contains("With several accounts"),"pre-r3 linkage clause absent");
+            }
+        } catch(Exception error) { throw new AssertionError(error); }
     }
     static void parity() {
         for(Peer chat:new Peer[]{SELF,USER,GROUP,CHANNEL}) {
