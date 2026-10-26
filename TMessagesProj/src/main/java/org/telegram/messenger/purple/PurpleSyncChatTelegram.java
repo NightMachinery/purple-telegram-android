@@ -173,7 +173,7 @@ final class PurpleSyncChatTelegram implements PurpleSyncChatClient {
         TLRPC.Message message = data.messages.get(0);
         if (message == null || message.id != location.markId) return new Exact(DirectRead.Unknown,null,info);
         if (message.getClass() == TLRPC.TL_messageEmpty.class) {
-            boolean peerPresent=message.peer_id!=null||(message.flags&1)!=0;
+            boolean peerPresent=(message.flags&1)!=0;
             return new Exact(peerPresent&&!location.chat.equals(PurpleSyncChatFacts.token(message.peer_id,origin.userId))?DirectRead.Unknown:DirectRead.MarkGone,null,info);
         }
         if (message.getClass() != TLRPC.TL_message.class || !location.chat.equals(PurpleSyncChatFacts.token(message.peer_id,origin.userId))) return new Exact(DirectRead.Unknown,null,info);

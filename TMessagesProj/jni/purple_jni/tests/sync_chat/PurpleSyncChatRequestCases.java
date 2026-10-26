@@ -72,7 +72,7 @@ final class PurpleSyncChatRequestCases {
         pages=new PurpleSyncChatRequests.Pages(ORIGIN,PurpleSyncChatRequests.Search.Global);for(int n=0;n<20;n++)check(pages.add(page(21,n,mark(CHANNEL,100-n,100-n)))==(n==19?PurpleSyncChatRequests.PageStatus.Capped:PurpleSyncChatRequests.PageStatus.Next),"20-page cap "+n);
         pages=new PurpleSyncChatRequests.Pages(ORIGIN,PurpleSyncChatRequests.Search.Global);pages.add(page(3,null,mark(SELF,1,50)));check(pages.add(page(4,null,mark(SELF,2,51)))==PurpleSyncChatRequests.PageStatus.Incomplete,"changing count held");
         pages=new PurpleSyncChatRequests.Pages(ORIGIN,PurpleSyncChatRequests.Search.Global);check(pages.add(page(1,null))==PurpleSyncChatRequests.PageStatus.Incomplete,"empty nonzero count held");
-        classify();nativeClient();
+        classify();messageEmptyPeerFlag();nativeClient();
     }
     static void classify(){
         for(Peer chat:new Peer[]{SELF,CHANNEL,GROUP,USER}){
@@ -97,6 +97,28 @@ final class PurpleSyncChatRequestCases {
         TLRPC.messages_Messages wrong=messages(mark(SELF,7,50));check(PurpleSyncChatTelegram.classify(ORIGIN,at,wrong,null,info(CHANNEL)).state==DirectRead.Unknown,"R3 wrong dialog Unknown");
         TLRPC.TL_messages_messagesNotModified unchanged=new TLRPC.TL_messages_messagesNotModified();check(PurpleSyncChatTelegram.classify(ORIGIN,at,unchanged,null,info(CHANNEL)).state==DirectRead.Unknown,"R3 NotModified Unknown");
         PurpleSyncChatFacts.Input migrated=input(GROUP);migrated.group.deactivated=true;check(PurpleSyncChatTelegram.classify(ORIGIN,new Cache(GROUP,7,50),messages(),null,info(GROUP,migrated)).state==DirectRead.Migrated,"qualified deactivation migration");
+    }
+    static void messageEmptyPeerFlag(){
+        for(Peer chat:new Peer[]{SELF,CHANNEL}){
+            Cache at=new Cache(chat,7,50);
+            for(boolean flagged:new boolean[]{false,true}){
+                SerializedData output=new SerializedData();
+                output.writeInt32(TLRPC.TL_messageEmpty.constructor);output.writeInt32(flagged?1:0);output.writeInt32(7);
+                if(flagged)peer(chat).serializeToStream(output);
+                SerializedData bytes=new SerializedData(output.toByteArray());
+                TLRPC.Message missing=TLRPC.Message.TLdeserialize(bytes,bytes.readInt32(true),true);
+                check(missing.getClass()==TLRPC.TL_messageEmpty.class&&missing.peer_id!=null,"real TL Empty has a peer object even when absent");
+                check((missing.flags&1)==(flagged?1:0),"real TL Empty preserves wire peer flag");
+                check(flagged?chat.equals(PurpleSyncChatFacts.token(missing.peer_id,ORIGIN.userId)):PurpleSyncChatFacts.token(missing.peer_id,ORIGIN.userId)==null,"real TL Empty flagged peer versus synthetic default");
+                check(PurpleSyncChatTelegram.classify(ORIGIN,at,messages(missing),null,info(chat)).state==DirectRead.MarkGone,"real TL Empty scoped readable MarkGone "+chat.token()+"/"+flagged);
+                PurpleSyncChatClient.Info unreadable=new PurpleSyncChatClient.Info(ORIGIN,chat,null,PurpleSyncChatClient.Error.Unknown,"",null,false);
+                check(PurpleSyncChatTelegram.classify(ORIGIN,at,messages(missing),null,unreadable).state==DirectRead.Unknown,"real TL Empty still needs independent readable facts");
+                if(flagged){
+                    missing.peer_id=peer(Peer.of(PeerKind.User,99));
+                    check(PurpleSyncChatTelegram.classify(ORIGIN,at,messages(missing),null,info(chat)).state==DirectRead.Unknown,"real TL Empty contradicting flagged peer remains Unknown");
+                }
+            }
+        }
     }
     static final class Native implements PurpleSyncChatTelegram.Platform {
         boolean active=true,logoutOnPeers;int sent,accepted,cancelled;final Map<Integer,PurpleSyncChatTelegram.Reply> replies=new LinkedHashMap<>();final Map<Runnable,Long> timers=new LinkedHashMap<>();final List<TLObject> requests=new ArrayList<>();
