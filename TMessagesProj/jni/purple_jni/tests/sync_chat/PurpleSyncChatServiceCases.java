@@ -31,7 +31,7 @@ final class PurpleSyncChatServiceCases {
         PurpleSyncChatClient injectedClient;java.util.function.Supplier<PurpleSyncChatClient> injectedFactory;
         Consumer<RecordPresence> inventoryDone;
         Runnable pending;int clients,cancelled,inventories;String authority=AUTH;
-        public PurpleSyncChatOrigin origin(){return ORIGIN;}public String authority(){return authority;}public String operationKey(){return key;}public boolean current(){return active;}public long now(){return clock;}
+        public PurpleSyncChatOrigin origin(){return ORIGIN;}public String authority(){return authority;}public String operationKey(){return key;}public boolean current(){return active;}boolean setupHeld;public boolean setupPostingHeld(){return setupHeld;}public long now(){return clock;}
         public void ui(Runnable task){task.run();}public void worker(Runnable task){if(throwWorker)throw new IllegalStateException("injected");if(heldWorker)tasks.add(task);else task.run();}
         public void delay(Runnable task,long millis){timers.put(task,clock+millis);}public void cancelDelay(Runnable task){timers.remove(task);}public PurpleSyncChatCache.IO cache(){return file;}
         public PurpleSyncChatService.Binding binding(){if(throwBinding)throw new IllegalStateException("injected");return binding;}

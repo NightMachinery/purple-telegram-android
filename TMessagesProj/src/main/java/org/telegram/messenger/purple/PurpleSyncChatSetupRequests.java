@@ -46,8 +46,8 @@ final class PurpleSyncChatSetupRequests {
         return PurpleSyncChatSetup.Error.Unknown;
     }
     static int floodSeconds(TLRPC.TL_error error) {
-        if(error==null||error.text==null||!error.text.matches("FLOOD_WAIT_[0-9]+"))return 0;
-        try { return Math.max(0,Integer.parseInt(error.text.substring("FLOOD_WAIT_".length()))); }
+        if(error==null||error.text==null||!error.text.matches("FLOOD_(?:PREMIUM_)?WAIT_[0-9]+"))return 0;
+        try { return Math.max(1,Integer.parseInt(error.text.substring(error.text.lastIndexOf('_')+1))); }
         catch(NumberFormatException failure) { return 0; }
     }
     static PurpleSyncChatSetup.Created created(TLObject response) {

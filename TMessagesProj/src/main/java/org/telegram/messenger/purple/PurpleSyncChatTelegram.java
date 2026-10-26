@@ -156,6 +156,13 @@ final class PurpleSyncChatTelegram implements PurpleSyncChatClient {
         });
     }
 
+    void readBack(Cache mark,Consumer<PurpleSyncChatSetup.ReadBack> done) {
+        request(PurpleSyncChatRequests.exact(mark.chat,mark.markId,platform.input(mark.chat)),(response,error)->{
+            if(error==null)acceptPeers(response);
+            if(current())info(mark.chat,info->done.accept(new PurpleSyncChatSetup.ReadBack(response,error,info)));
+        });
+    }
+
     static Exact classify(PurpleSyncChatOrigin origin, Cache location, TLObject response, TLRPC.TL_error error, Info info) {
         if (origin == null || location == null || location.markId <= 0 || location.markDate <= 0 || info == null || !origin.equals(info.origin) || !location.chat.equals(info.chat)) return new Exact(DirectRead.Unknown,null,info);
         if (error != null) return new Exact(location.chat.kind == PeerKind.Channel && "CHANNEL_PRIVATE".equals(error.text)

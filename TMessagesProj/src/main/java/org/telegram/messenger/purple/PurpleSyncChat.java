@@ -29,14 +29,14 @@ public final class PurpleSyncChat {
         public boolean selfReadable() { return complete&&phase==Phase.Use&&resolution.action==Action.Use&&Peer.self().equals(resolution.readChat); }
         public boolean selfPostable() { return selfReadable()&&!postingHeld; }
     }
-    private static final class Holder {
+    static final class Holder {
         final Platform env;
         final PurpleSyncChatService service;
         Holder(Platform env) { this.env=env;service=new PurpleSyncChatService(env); }
     }
     private static final java.util.concurrent.ConcurrentHashMap<Integer,Holder> accounts=new java.util.concurrent.ConcurrentHashMap<>();
     private static DispatchQueue queue;
-    private static synchronized DispatchQueue queue(){if(queue==null)queue=new DispatchQueue("purpleSyncChat");return queue;}
+    static synchronized DispatchQueue queue(){if(queue==null)queue=new DispatchQueue("purpleSyncChat");return queue;}
     private static Holder account(int slot) {
         if(slot<0||slot>=UserConfig.MAX_ACCOUNT_COUNT)return null;
         Holder holder=accounts.get(slot);
@@ -60,6 +60,10 @@ public final class PurpleSyncChat {
     public static PurpleSyncChatScreen.Control screen(int slot) {
         Holder holder=account(slot);
         return holder!=null?new PurpleSyncChatScreen.Control(new ScreenPort(holder)):null;
+    }
+    public static PurpleSyncChatSetupFlow setup(int slot,java.util.function.BooleanSupplier foreground,Consumer<PurpleSyncChatSetupFlow.State> changed) {
+        Holder holder=accounts.get(slot);
+        return holder!=null&&holder.env.context.current()?new PurpleSyncChatSetupFlow(holder,foreground,changed):null;
     }
     private static final class ScreenPort implements PurpleSyncChatScreen.Port {
         final Holder holder;
@@ -133,7 +137,7 @@ public final class PurpleSyncChat {
     }
     private static Status unavailable(){return new Status(new PurpleSyncChatDiscovery.Status(PurpleSyncChatDiscovery.Phase.Paused,resolve(new ResolveInput(1)),"AccountUnavailable",false,true,0));}
 
-    private static final class Platform implements PurpleSyncChatService.Env {
+    static final class Platform implements PurpleSyncChatService.Env {
         final PurpleSyncFileContext context;
         final PurpleSyncChatOrigin origin;
         final String authority;
@@ -141,6 +145,8 @@ public final class PurpleSyncChat {
         volatile PurpleSyncTelegramTransport inventory;
         volatile PurpleSyncChatClient inventoryFacts;
         Consumer<PurpleRpcRetry.Transient> waiting=ignored->{};
+        volatile boolean setupPostingHeld;
+        public boolean setupPostingHeld(){return setupPostingHeld;}
         public void transientWait(Consumer<PurpleRpcRetry.Transient> observer){waiting=observer;}
         Platform(int slot) throws Exception {
             context=new PurpleSyncFileContext(slot);
@@ -168,6 +174,7 @@ public final class PurpleSyncChat {
         public void cancelDelay(Runnable task){AndroidUtilities.cancelRunOnUIThread(task);}
         public PurpleSyncChatCache.IO cache(){return cache;}
         public PurpleSyncChatService.Binding binding(){
+            setupPostingHeld=PurpleSyncChatSetupFlow.postingHeld(new File(context.files.syncDirectory,"sync-chat-setup.json"));
             if(!current())return new PurpleSyncChatService.Binding(false,false,Peer.self());
             File file=new File(context.files.syncDirectory,"state.json");PurpleAccountFileSnapshot state=PurpleAccountFileSnapshot.read(file);
             if(state.status==PurpleAccountFileSnapshot.Status.Missing)return new PurpleSyncChatService.Binding(true,false,Peer.self());

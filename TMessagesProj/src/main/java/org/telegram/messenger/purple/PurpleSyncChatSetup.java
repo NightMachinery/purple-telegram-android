@@ -14,6 +14,26 @@ final class PurpleSyncChatSetup implements AutoCloseable {
     enum Phase { Ready, Resolve, Create, ReconcileCreate, ApplyUpdates, PeerInfo, Inventory, PostMark, ReadMark, Pin, Mute, Archive, Complete, Adopted, Held, Limit, Cancelled }
     enum Step { Ready, CreateStarted, PeerInfo, MarkStarted, ReadMark, Commit, Pin, Mute, Archive, Complete }
     enum Error { None, Limit, Flood, Restricted, Unknown }
+    enum Effect { Create, Mark, Pin, Mute, Archive }
+    static final class Command {
+        final PurpleSyncChatOrigin origin;
+        final String operation;
+        final long run,ticket,random;
+        final Effect effect;
+        final Step step;
+        final Peer chat;
+        final Cache mark;
+        Command(PurpleSyncChatOrigin origin,Journal journal,long run,long ticket,Effect effect) {
+            this.origin=origin;operation=journal.operation;this.run=run;this.ticket=ticket;this.effect=effect;
+            step=journal.step;chat=journal.chat;mark=journal.mark;random=journal.random;
+        }
+    }
+    static final class ResumeProof {
+        PurpleSyncChatScreen.Frame resolution;
+        PurpleSyncChatClient.Info first,second;
+        PurpleSyncInventory inventory;
+        ReadBack mark;
+    }
     static final class Reply<T> {
         final PurpleSyncChatOrigin origin;
         final Error error;
@@ -76,7 +96,7 @@ final class PurpleSyncChatSetup implements AutoCloseable {
     }
     static final class Journal {
         Step step=Step.Ready;
-        boolean create,created,newReaders;
+        boolean create,created,newReaders,deferred;
         Peer chat;
         Cache mark;
         long random;
@@ -87,7 +107,7 @@ final class PurpleSyncChatSetup implements AutoCloseable {
             return PurpleSyncChatCore.json("version",1,"account",origin.accountKey(),"authority",authority,"step",step.name(),
                     "create",create,"created",created,"chat",chat!=null?chat.token():"","markId",mark!=null?mark.markId:0,
                     "markDate",Long.toString(mark!=null?mark.markDate:0),"random",Long.toString(random),"readers",readers,"binding",binding,
-                    "operation",operation,"attempts",attempts,"retryAt",Long.toString(retryAt),"newReaders",newReaders);
+                    "operation",operation,"attempts",attempts,"retryAt",Long.toString(retryAt),"newReaders",newReaders,"deferred",deferred);
         }
         PurpleSyncChatCache.ReadersSnapshot baseline() throws Exception {
             int suffix=readers.lastIndexOf(':');
@@ -115,6 +135,7 @@ final class PurpleSyncChatSetup implements AutoCloseable {
                 Object warning=value.get("newReaders");if(!(warning instanceof Boolean))throw new IllegalArgumentException("SetupJournalWarning");
                 result.newReaders=(Boolean)warning;
             }
+            if(value.has("deferred")){Object deferred=value.get("deferred");if(!(deferred instanceof Boolean))throw new IllegalArgumentException("SetupJournalDeferred");result.deferred=(Boolean)deferred;}
             result.operation=value.getString("operation");Object attempts=value.get("attempts");
             result.retryAt=Long.parseLong(value.getString("retryAt"));
             if(!(attempts instanceof Integer)||(Integer)attempts<0||(Integer)attempts>3||result.retryAt<0||!Long.toString(result.retryAt).equals(value.getString("retryAt"))
@@ -141,11 +162,16 @@ final class PurpleSyncChatSetup implements AutoCloseable {
     private long run,ticket;
     private boolean busy,closed,warningCommitted;
     private Runnable timeout;
+    private long timeoutEpoch;
+    private Command issued;
 
     PurpleSyncChatSetup(Env env,PurpleSyncChatScreen.Selection selection,Consumer<Phase> observer) {
         this.env=env;this.origin=env.origin();this.authority=authority(env.authority());this.selection=selection;this.observer=observer;
     }
     Phase phase() { return phase; }
+    boolean busy() { return busy; }
+    Command command() { return issued; }
+    Journal journal() { return journal; }
     String reason() { return reason; }
     boolean newReaders() { return journal!=null&&journal.newReaders; }
     boolean live() { return !closed&&busy&&origin.equals(env.origin())&&env.current()&&env.foreground()&&env.owned(this); }
@@ -187,14 +213,18 @@ final class PurpleSyncChatSetup implements AutoCloseable {
             Cache winner=frame.opening!=null&&frame.opening.data!=null?frame.opening.data.location:null;
             observedWinner=winner;
             if(frame.status.phase==PurpleSyncChat.Phase.Use&&winner!=null) {
-                boolean reconcileOwn=journal.step==Step.MarkStarted&&journal.chat!=null&&journal.chat.equals(winner.chat);
+                boolean reconcileOwn=!journal.deferred&&journal.step==Step.MarkStarted&&journal.chat!=null&&journal.chat.equals(winner.chat);
                 if(!reconcileOwn&&(journal.mark==null||!journal.mark.equals(winner))) {
-                    boolean started=journal.created||journal.mark!=null||journal.step==Step.CreateStarted||journal.step==Step.MarkStarted;
+                    boolean started=journal.created||journal.mark!=null||!journal.deferred&&(journal.step==Step.CreateStarted||journal.step==Step.MarkStarted);
                     finish(started?Phase.Held:Phase.Adopted,started?"WinnerChangedAfterSetupStarted":"ExistingWinner");return;
                 }
             } else if(!frame.canSetup){finish(Phase.Held,"NotFresh");return;}
             if(journal.step==Step.Complete){finish(Phase.Complete,"");return;}
-            if(journal.step==Step.CreateStarted)reconcileCreate();
+            if(journal.deferred&&(journal.step==Step.CreateStarted||journal.step==Step.MarkStarted)){
+                journal.deferred=false;journal.retryAt=0;
+                if(journal.step==Step.CreateStarted){journal.attempts=Math.max(0,journal.attempts-1);if(persist(Step.Ready))create();}
+                else if(persist(Step.PeerInfo))inspect();
+            } else if(journal.step==Step.CreateStarted)reconcileCreate();
             else if(journal.step==Step.Ready&&journal.create)create();
             else inspect();
         }));
@@ -204,7 +234,7 @@ final class PurpleSyncChatSetup implements AutoCloseable {
         ++journal.attempts;
         if(!persist(Step.CreateStarted))return;
         emit(Phase.Create);if(!checkWritable())return;
-        env.create(callback(reply->{
+        env.create(effectCallback(Effect.Create,reply->{
             if(reply.error==Error.Limit||reply.error==Error.Flood||reply.error==Error.Restricted) {
                 if(reply.error==Error.Flood)journal.retryAt=retryDeadline(reply.retryAfterSeconds);
                 if(!persist(Step.Ready))return;
@@ -232,7 +262,10 @@ final class PurpleSyncChatSetup implements AutoCloseable {
             if(journal.created&&(candidate.info.peer.kind!=Kind.Broadcast
                     ||!candidate.info.peer.facts.creator||!candidate.info.peer.facts.soleAdmin)){finish(Phase.Held,"CreationRightsChanged");return;}
             if(journal.readers.isEmpty()) {
-                if(!journal.created&&!journal.chat.equals(Peer.self())||candidate.eligibility.readers.warningRequired){finish(Phase.Held,"ReaderConsentRequired");return;}
+                boolean accepted=journal.mark==null&&journal.step.ordinal()<=Step.PeerInfo.ordinal()&&selection!=null
+                        &&!selection.createChannel&&origin.equals(selection.origin)&&journal.chat.equals(selection.chat)
+                        &&selection.candidate!=null&&selection.candidate.same(candidate);
+                if((!journal.created&&!journal.chat.equals(Peer.self())||candidate.eligibility.readers.warningRequired)&&!accepted){finish(Phase.Held,"ReaderConsentRequired");return;}
                 journal.readers=candidate.readers;if(!persist(journal.step))return;
             } else if(journal.step.ordinal()<Step.MarkStarted.ordinal()&&!journal.readers.equals(candidate.readers)) {
                 if(journal.mark==null&&journal.step.ordinal()<=Step.PeerInfo.ordinal()&&selection!=null&&origin.equals(selection.origin)
@@ -271,7 +304,7 @@ final class PurpleSyncChatSetup implements AutoCloseable {
     private void post(PurpleSyncChatClient.Info info) {
         if(!persist(Step.MarkStarted))return;
         emit(Phase.PostMark);if(!checkWritable())return;
-        env.post(info,journal.random,callback(reply->{
+        env.post(info,journal.random,effectCallback(Effect.Mark,reply->{
             if(reply.error==Error.Flood||reply.error==Error.Restricted) {
                 if(reply.error==Error.Flood)journal.retryAt=retryDeadline(reply.retryAfterSeconds);
                 if(persist(Step.PeerInfo))finish(Phase.Held,reply.error.name());return;
@@ -346,7 +379,7 @@ final class PurpleSyncChatSetup implements AutoCloseable {
     }
     private void decorate(Phase phase,Step next,Consumer<Consumer<Reply<Boolean>>> effect) {
         emit(phase);if(!checkWritable())return;
-        effect.accept(callback(reply->{
+        effect.accept(effectCallback(Effect.valueOf(phase.name()),reply->{
             if(reply.error!=Error.None||!Boolean.TRUE.equals(reply.value)){finish(Phase.Held,phase.name()+"Unknown");return;}
             if(!persist(next))return;
             if(next==Step.Complete)finish(Phase.Complete,"");else inspect();
@@ -360,7 +393,7 @@ final class PurpleSyncChatSetup implements AutoCloseable {
     }
     private <T> Consumer<Reply<T>> callback(Consumer<Reply<T>> done) {
         long capturedRun=run,capturedTicket=++ticket;cancelTimeout();
-        timeout=()->{timeout=null;if(capturedRun==run&&capturedTicket==ticket&&busy)finish(Phase.Held,"RequestTimeout");};env.delay(timeout,30000);
+        armTimeout(capturedRun,capturedTicket,30000);
         return reply->env.dispatch(()->{
             if(capturedRun!=run||capturedTicket!=ticket||!busy)return;
             ++ticket;cancelTimeout();
@@ -369,15 +402,111 @@ final class PurpleSyncChatSetup implements AutoCloseable {
             try { done.accept(reply); } catch(RuntimeException|LinkageError error) { finish(Phase.Held,"StepUnavailable"); }
         });
     }
+    private <T> Consumer<Reply<T>> effectCallback(Effect effect,Consumer<Reply<T>> done) {
+        Consumer<Reply<T>> callback=callback(reply->{issued=null;done.accept(reply);});
+        issued=new Command(origin,journal,run,ticket,effect);
+        return callback;
+    }
+    private void armTimeout(long capturedRun,long capturedTicket,long millis) {
+        cancelTimeout();
+        long capturedEpoch=timeoutEpoch;
+        timeout=()->env.dispatch(()->{
+            if(capturedEpoch!=timeoutEpoch)return;
+            timeout=null;++timeoutEpoch;
+            if(capturedRun==run&&capturedTicket==ticket&&busy)finish(Phase.Held,"RequestTimeout");
+        });
+        env.delay(timeout,millis);
+    }
+    boolean commandCurrent(Command command) {
+        return command!=null&&issued==command&&live()&&command.run==run&&command.ticket==ticket
+                &&origin.equals(command.origin)&&journal.operation.equals(command.operation)&&journal.step==command.step
+                &&journal.random==command.random&&java.util.Objects.equals(journal.chat,command.chat)&&java.util.Objects.equals(journal.mark,command.mark);
+    }
+    boolean prepare(Command command) {
+        if(!commandCurrent(command))return false;
+        if(command.effect!=Effect.Create&&command.effect!=Effect.Mark||journal.deferred)return true;
+        journal.deferred=true;return persist(journal.step)&&commandCurrent(command);
+    }
+    boolean waiting(Command command,long retryAt) {
+        if(!commandCurrent(command)||retryAt<env.nowSeconds())return false;
+        journal.retryAt=retryAt;journal.deferred=true;
+        if(!persist(journal.step))return false;
+        armTimeout(run,ticket,Math.max(30000,Math.addExact(Math.multiplyExact(retryAt-env.nowSeconds(),1000L),120000)));
+        reason="TelegramWait";emit(phase);return commandCurrent(command);
+    }
+    void readWaiting(PurpleRpcRetry.Transient value) {
+        if(!live()||value==null)return;
+        long remaining=Math.max(0,value.retryAt-Math.multiplyExact(env.nowSeconds(),1000L));
+        armTimeout(run,ticket,PurpleRpcRetry.add(remaining,120000));
+    }
+    boolean renew(Command command,ResumeProof proof) {
+        if(!commandCurrent(command)||proof==null||proof.resolution==null||!writable())return false;
+        try {
+            Journal candidate=Journal.parse(journal.json(origin,authority).toString().getBytes(StandardCharsets.UTF_8),origin,authority);
+            if(command.effect==Effect.Create){candidate.step=Step.Ready;candidate.attempts=Math.max(0,candidate.attempts-1);}
+            else if(command.effect==Effect.Mark)candidate.step=Step.PeerInfo;
+            else candidate.step=Step.ReadMark;
+            candidate.retryAt=0;candidate.deferred=false;
+            final byte[][] stored={candidate.json(origin,authority).toString().getBytes(StandardCharsets.UTF_8)};
+            final boolean[] reached={false},committed={false};final int[] peers={0};
+            Env verifierEnv=new Env() {
+                public PurpleSyncChatOrigin origin(){return origin;}
+                public String authority(){return env.authority();}
+                public boolean current(){return commandCurrent(command)&&writable();}
+                public boolean foreground(){return env.foreground();}
+                public PurpleSyncChatService.Binding binding(){return proof.resolution.binding;}
+                public boolean acquire(Object owner){return current();}
+                public boolean owned(Object owner){return current();}
+                public void release(Object owner){}
+                public void dispatch(Runnable task){task.run();}
+                public void delay(Runnable task,long millis){}
+                public void cancelDelay(Runnable task){}
+                public JournalIO journal(){return new JournalIO(){public byte[] read(){return stored[0];}public boolean save(byte[] expected,byte[] next,BooleanSupplier active){if(!active.getAsBoolean()||!java.util.Arrays.equals(expected,stored[0]))return false;stored[0]=next;return true;}};}
+                public long randomId(){return command.random;}
+                public long nowSeconds(){return env.nowSeconds();}
+                public void resolve(Object owner,Consumer<Reply<PurpleSyncChatScreen.Frame>> done){done.accept(new Reply<>(origin,Error.None,proof.resolution));}
+                private void effect(Effect effect){reached[0]=command.effect==effect;}
+                public void create(Consumer<Reply<Created>> done){effect(Effect.Create);}
+                public void reconcileCreate(String operation,Consumer<Reply<Created>> done){done.accept(new Reply<>(origin,Error.Unknown,null));}
+                public void applyUpdates(TLRPC.Updates updates,Consumer<Reply<Boolean>> done){done.accept(new Reply<>(origin,Error.None,true));}
+                public void info(Peer chat,Consumer<Reply<PurpleSyncChatClient.Info>> done){
+                    PurpleSyncChatClient.Info info=peers[0]++==0?proof.first:proof.second!=null?proof.second:proof.mark!=null?proof.mark.info:proof.first;
+                    done.accept(new Reply<>(origin,info!=null?Error.None:Error.Unknown,info));
+                }
+                public void inventory(Peer chat,Consumer<Reply<PurpleSyncInventory>> done){done.accept(new Reply<>(origin,proof.inventory!=null?Error.None:Error.Unknown,proof.inventory));}
+                public void post(PurpleSyncChatClient.Info info,long random,Consumer<Reply<Posted>> done){effect(Effect.Mark);}
+                public void reconcileMark(Peer chat,long random,Consumer<Reply<Posted>> done){done.accept(new Reply<>(origin,Error.Unknown,null));}
+                public void exact(Cache mark,Consumer<Reply<ReadBack>> done){done.accept(new Reply<>(origin,proof.mark!=null?Error.None:Error.Unknown,proof.mark));}
+                public boolean commit(Cache mark,PurpleSyncChatClient.Info info,PurpleSyncChatCache.ReadersSnapshot baseline,boolean warning,BooleanSupplier active){
+                    boolean saved=current()&&env.commit(mark,info,baseline,warning,()->current()&&active.getAsBoolean());committed[0]|=saved;return saved;
+                }
+                public void pin(Cache mark,Consumer<Reply<Boolean>> done){if(command.effect==Effect.Pin)effect(Effect.Pin);else done.accept(new Reply<>(origin,Error.None,true));}
+                public void mute(Peer chat,Consumer<Reply<Boolean>> done){if(command.effect==Effect.Mute)effect(Effect.Mute);else done.accept(new Reply<>(origin,Error.None,true));}
+                public void archive(Peer chat,Consumer<Reply<Boolean>> done){effect(Effect.Archive);}
+                public void cancel(){}
+            };
+            PurpleSyncChatSetup verifier=new PurpleSyncChatSetup(verifierEnv,null,ignored->{});verifier.start();
+            Journal verified=verifier.journal;
+            if(!reached[0]||!commandCurrent(command)||verified==null||!verified.operation.equals(command.operation)
+                    ||verified.random!=command.random||!java.util.Objects.equals(verified.chat,command.chat)||!java.util.Objects.equals(verified.mark,command.mark))return false;
+            journal.readers=verified.readers;journal.newReaders|=verified.newReaders;journal.retryAt=0;journal.deferred=false;
+            if(!persist(command.step))return false;
+            if(committed[0]&&journal.newReaders)warningCommitted=true;
+            reason="";armTimeout(run,ticket,30000);return commandCurrent(command);
+        } catch(Exception|LinkageError error) { if(commandCurrent(command))finish(Phase.Held,"RenewalUnavailable");return false; }
+    }
     private void emit(Phase phase) {
         this.phase=phase;
         try { observer.accept(phase); } catch(RuntimeException error) { close(); }
         if(busy&&!live())finish(Phase.Held,"NotForeground");
     }
-    private void cancelTimeout() { if(timeout!=null){env.cancelDelay(timeout);timeout=null;} }
+    private void cancelTimeout() {
+        ++timeoutEpoch;Runnable cancelled=timeout;timeout=null;
+        if(cancelled!=null)env.cancelDelay(cancelled);
+    }
     private void finish(Phase phase,String reason) {
         if(!busy)return;
-        this.phase=phase;this.reason=reason;busy=false;++run;++ticket;
+        this.phase=phase;this.reason=reason;busy=false;issued=null;++run;++ticket;
         try { cancelTimeout(); } catch(RuntimeException|LinkageError ignored) { timeout=null; }
         try { env.cancel(); } catch(RuntimeException|LinkageError ignored) { }
         finally { env.release(this); }

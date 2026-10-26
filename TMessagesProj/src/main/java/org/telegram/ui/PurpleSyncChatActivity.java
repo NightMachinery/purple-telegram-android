@@ -21,12 +21,15 @@ import java.util.ArrayList;
 import java.util.Locale;
 
 public final class PurpleSyncChatActivity extends UniversalFragment {
-    private static final int REFRESH=0x70750110, SELF=REFRESH+1, EXISTING=REFRESH+2, CREATE=REFRESH+3, CONSENT=REFRESH+4;
+    private static final int REFRESH=0x70750110, SELF=REFRESH+1, EXISTING=REFRESH+2, CREATE=REFRESH+3, CONSENT=REFRESH+4, RESUME=REFRESH+5, CANCEL_SETUP=REFRESH+6;
     private PurpleSyncChatScreen.Control control;
     private PurpleSyncChatScreen.Frame frame;
     private PurpleSyncChatCore.Peer pending;
     private org.telegram.messenger.purple.PurpleAccountFiles.Identity identity;
-    private boolean visible;
+    private volatile boolean visible;
+    private org.telegram.messenger.purple.PurpleSyncChatSetupFlow setup;
+    private org.telegram.messenger.purple.PurpleSyncChatSetupFlow.State setupState;
+    private boolean limitShown;
     private Runnable rpcWatch;
 
     public PurpleSyncChatActivity(int account) { setCurrentAccount(account); }
@@ -49,13 +52,31 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
         rpcWatch=org.telegram.messenger.purple.PurpleRpcRequests.observe(currentAccount,this::update);
         if(identity==null||!identity.current()){finishFragment();return;}
         if(control==null||!control.current())control=PurpleSyncChat.screen(currentAccount);
-        reload();
+        openSetup();reload();
     }
+    private void openSetup() {
+        if(setup!=null)setup.close();
+        setup=PurpleSyncChat.setup(currentAccount,()->visible&&identity!=null&&identity.current(),state->{
+            if(!visible||setup==null||!setup.current())return;
+            setupState=state;update();
+            if(!state.busy&&!state.phase.equals("Opening")&&!state.phase.equals("Ready"))reload();
+            if(state.phase.equals("Limit")&&!limitShown){
+                limitShown=true;
+                org.telegram.messenger.purple.PurpleSyncChatSetupFlow captured=setup;
+                PurpleSyncChatSetupUI.limit(this,currentAccount,()->visible&&setup==captured&&captured.current(),new PurpleSyncChatSetupUI.Actions(){
+                    public void tryAgain(){limitShown=false;captured.tryAgain();}
+                    public void useSavedMessages(){limitShown=false;captured.useSavedMessages();}
+                    public void cancel(){cancelSetup();}
+                });
+            }
+        });
+    }
+    private void cancelSetup(){if(setup!=null)setup.close();setup=null;setupState=null;limitShown=false;if(visible)openSetup();update();}
     @Override public void onPause() {
-        visible=false;if(rpcWatch!=null){rpcWatch.run();rpcWatch=null;}if(control!=null){control.close();control=null;}super.onPause();
+        visible=false;if(setup!=null){setup.close();setup=null;}setupState=null;if(rpcWatch!=null){rpcWatch.run();rpcWatch=null;}if(control!=null){control.close();control=null;}super.onPause();
     }
     @Override public void onFragmentDestroy() {
-        visible=false;if(rpcWatch!=null){rpcWatch.run();rpcWatch=null;}if(control!=null){control.close();control=null;}super.onFragmentDestroy();
+        visible=false;if(setup!=null){setup.close();setup=null;}setupState=null;if(rpcWatch!=null){rpcWatch.run();rpcWatch=null;}if(control!=null){control.close();control=null;}super.onFragmentDestroy();
     }
     private void update() { if(visible&&listView!=null)listView.adapter.update(true); }
     private void reload() {
@@ -94,18 +115,29 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
             }
             if(frame.status.reason.equals("ReaderConsent")&&frame.current!=null&&frame.current.allowed)
                 items.add(UItem.asButton(CONSENT,text("ReviewReaders")));
-            if(frame.canSetup) {
+            if(frame.canSetup&&(setupState==null||!setupState.busy&&!setupState.resumable)) {
                 items.add(UItem.asButton(CREATE,text("Create")));
                 items.add(UItem.asButton(SELF,text("Saved")));
                 items.add(UItem.asButton(EXISTING,text("Choose")));
             } else if(frame.bound)items.add(UItem.asShadow(text("Bound")));
         }
+        if(setupState!=null){
+            if(setupState.busy){items.add(UItem.asShadow(text("SetupWorking")));items.add(UItem.asButton(CANCEL_SETUP,LocaleController.getString(org.telegram.messenger.R.string.Cancel)));}
+            else if(setupState.resumable)items.add(UItem.asButton(RESUME,text("Resume")));
+            if(setupState.canReview&&setupState.target!=null)items.add(UItem.asButton(CONSENT,text("ReviewReaders")));
+            if(setupState.busy&&setupState.reason.equals("TelegramWait"))items.add(UItem.asShadow(text("SetupWait")));
+            if(setupState.phase.equals("Held"))items.add(UItem.asShadow(text(setupState.reason.equals("TelegramWait")?"SetupWait":"SetupHeld")));
+            if(setupState.phase.equals("Complete"))items.add(UItem.asShadow(text("SetupComplete")));
+        }
         items.add(UItem.asButton(REFRESH,text("Refresh")));
-        items.add(UItem.asShadow(text("QualificationHeld")));
+        items.add(UItem.asShadow(text("FirstPostHeld")));
     }
     @Override protected void onClick(UItem item,View view,int position,float x,float y) {
         if(!visible||control==null||!control.current())return;
+        if(item.id==CANCEL_SETUP){cancelSetup();return;}
+        if(item.id==RESUME&&setup!=null){limitShown=false;setup.resume();return;}
         if(item.id==REFRESH)reload();
+        else if(item.id==CONSENT&&setupState!=null&&setupState.canReview&&setupState.target!=null)inspect(setupState.target);
         else if(item.id==CONSENT&&frame!=null&&frame.current!=null)inspect(frame.current.chat);
         else if(frame!=null&&frame.canSetup) {
             if(item.id==SELF)inspect(PurpleSyncChatCore.Peer.self());
@@ -145,7 +177,8 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
             dialog.setMessage(disclosure(candidate));
             dialog.setPositiveButton(text("Use"),(ignored,which)->opening.accept(candidate,true,true,selected->{
                 if(!visible||control!=opening)return;
-                message(text(selected==null?"Changed":opening.frame()!=null&&opening.frame().canSetup?"QualificationHeld":"ConsentSaved"));reload();
+                if(selected!=null&&opening.frame()!=null&&opening.frame().canSetup&&setup!=null){limitShown=false;setup.begin(selected);}
+                else {message(text(selected==null?"Changed":"ConsentSaved"));reload();}
             }));
             dialog.setNegativeButton(LocaleController.getString(org.telegram.messenger.R.string.Cancel),null);showDialog(dialog.create());
         });
@@ -153,7 +186,7 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
     private void confirmCreate() {
         PurpleSyncChatScreen.Control opening=control;
         AlertDialog.Builder dialog=new AlertDialog.Builder(getParentActivity());dialog.setTitle(text("Create"));dialog.setMessage(text("CreateAbout")+"\n\n"+text("Cloud",text("NewChannel")));
-        dialog.setPositiveButton(text("Continue"),(ignored,which)->opening.create(true,selected->{if(visible&&control==opening){message(text(selected!=null?"QualificationHeld":"Changed"));reload();}}));
+        dialog.setPositiveButton(text("Continue"),(ignored,which)->opening.create(true,selected->{if(visible&&control==opening){if(selected!=null&&setup!=null){limitShown=false;setup.begin(selected);}else{message(text("Changed"));reload();}}}));
         dialog.setNegativeButton(LocaleController.getString(org.telegram.messenger.R.string.Cancel),null);showDialog(dialog.create());
     }
     private void message(String text) {
@@ -166,6 +199,7 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
     }
     private static String refusal(PurpleSyncChatCore.Refusal value) { return text("Refusal"+value.name()); }
     private static String reason(String value) {
+        if(value.equals("SetupPostingHeld"))return text("FirstPostHeld");
         if(value.equals("ReaderConsent"))return text("ConsentNeeded");
         if(value.equals("UnknownReaders"))return text("ReadersUnknown");
         if(value.equals("NewerMark"))return text("NewerMark");

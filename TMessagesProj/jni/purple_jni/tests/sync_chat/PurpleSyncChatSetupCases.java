@@ -37,6 +37,7 @@ final class PurpleSyncChatSetupCases {
         else control.accept(new PurpleSyncChatScreen.Candidate(ORIGIN,chat,p.info),true,true,value->selected[0]=value);
         control.close();check(selected[0]!=null,"setup receives actual accepted screen selection");return selected[0];
     }
+    interface WireEffects {void send(TLObject request,Consumer<PurpleSyncChatSetup.Reply<TLObject>> done);}
     static final class Env implements PurpleSyncChatSetup.Env {
         final Memory file;
         final Server server;
@@ -52,6 +53,8 @@ final class PurpleSyncChatSetupCases {
         int creates,posts,commits,pins,mutes,archives,applies,reconciles,releases,inventories;
         PurpleSyncChatSetup.Error createError=PurpleSyncChatSetup.Error.None,postError=PurpleSyncChatSetup.Error.None;
         Cache otherWinner;
+        WireEffects wire;
+        boolean renewing;
         PurpleSyncInventory actualInventory;
         long clock=1700000000;
         Object owner;
@@ -64,7 +67,7 @@ final class PurpleSyncChatSetupCases {
         public boolean owned(Object owner){return this.owner==owner&&PurpleSyncOperations.owned(key,owner);}
         public void release(Object owner){if(this.owner==owner){++releases;this.owner=null;PurpleSyncOperations.end(key,owner);}}
         public void dispatch(Runnable task){tasks.add(task);}
-        public void delay(Runnable task,long millis){check(millis==30000,"setup has bounded per-step request");timers.add(task);}
+        public void delay(Runnable task,long millis){check(millis>=30000,"setup has a bounded per-step or transient wait deadline");timers.add(task);}
         public void cancelDelay(Runnable task){timers.remove(task);}
         public PurpleSyncChatSetup.JournalIO journal(){return file;}
         public long randomId(){return 123456789L;}
@@ -98,6 +101,7 @@ final class PurpleSyncChatSetupCases {
         }
         public void create(Consumer<PurpleSyncChatSetup.Reply<PurpleSyncChatSetup.Created>> done) {
             ++creates;effects.add("create");check(step()==PurpleSyncChatSetup.Step.CreateStarted,"creation intent is durable before dispatch");
+            if(wire!=null){wire.send(PurpleSyncChatSetupRequests.create(),value->done.accept(new PurpleSyncChatSetup.Reply<>(origin,value.error,PurpleSyncChatSetupRequests.created(value.value),value.retryAfterSeconds)));return;}
             deliver("create",()->{if(createError==PurpleSyncChatSetup.Error.None||createError==PurpleSyncChatSetup.Error.Unknown)server.created=true;
                 done.accept(new PurpleSyncChatSetup.Reply<>(origin,createError,createError==PurpleSyncChatSetup.Error.None?PurpleSyncChatSetupRequests.created(createdUpdates()):null));});
         }
@@ -107,7 +111,7 @@ final class PurpleSyncChatSetupCases {
         public void applyUpdates(TLRPC.Updates updates,Consumer<PurpleSyncChatSetup.Reply<Boolean>> done){check(current&&foreground,"updates applied only for live origin foreground operation");++applies;effects.add("updates");deliver("apply",()->done.accept(ok(true)));}
         public void info(Peer chat,Consumer<PurpleSyncChatSetup.Reply<PurpleSyncChatClient.Info>> done){deliver("info",()->done.accept(ok(facts(chat))));}
         public void inventory(Peer chat,Consumer<PurpleSyncChatSetup.Reply<PurpleSyncInventory>> done) {
-            ++inventories;effects.add("inventory");check(file.bytes==null||step().ordinal()<PurpleSyncChatSetup.Step.MarkStarted.ordinal(),"target inventory precedes mark intent/dispatch");
+            ++inventories;effects.add("inventory");check(renewing||file.bytes==null||step().ordinal()<PurpleSyncChatSetup.Step.MarkStarted.ordinal(),"target inventory precedes mark dispatch or renews a definitely deferred effect");
             deliver("inventory",()->{
                 if(actualInventory!=null){done.accept(ok(actualInventory));return;}
                 Peer target=inventoryMode.equals("peer")?USER:chat;
@@ -122,6 +126,7 @@ final class PurpleSyncChatSetupCases {
             ++posts;effects.add("post");check(step()==PurpleSyncChatSetup.Step.MarkStarted&&random==journalState().random,"mark random id/intention durable before dispatch");
             if(server.random!=0)check(server.random==random,"retry retains random id");server.random=random;
             check(PurpleSyncChatSetupRequests.mark(info,inputPeer(info.chat),random).silent,"silent owned mark request");
+            if(wire!=null){wire.send(PurpleSyncChatSetupRequests.mark(info,inputPeer(info.chat),random),value->done.accept(new PurpleSyncChatSetup.Reply<>(origin,value.error,PurpleSyncChatSetupRequests.posted(info,value.value,random),value.retryAfterSeconds)));return;}
             deliver("post",()->{if(postError==PurpleSyncChatSetup.Error.None||postError==PurpleSyncChatSetup.Error.Unknown)server.marked=true;
                 done.accept(new PurpleSyncChatSetup.Reply<>(origin,postError,postError==PurpleSyncChatSetup.Error.None?new PurpleSyncChatSetup.Posted(new Cache(info.chat,7,50),new TLRPC.TL_updates(),random):null));});
         }
@@ -155,9 +160,9 @@ final class PurpleSyncChatSetupCases {
         public boolean commit(Cache mark,PurpleSyncChatClient.Info info,PurpleSyncChatCache.ReadersSnapshot baseline,boolean newReaders,BooleanSupplier current){
             check(current.getAsBoolean()&&step().ordinal()>=PurpleSyncChatSetup.Step.Commit.ordinal(),"exact read precedes guarded cache commit");++commits;effects.add("commit");server.committed=mark;server.baseline=baseline;server.newReaders=newReaders;return true;
         }
-        public void pin(Cache mark,Consumer<PurpleSyncChatSetup.Reply<Boolean>> done){++pins;effects.add("pin");check(PurpleSyncChatSetupRequests.pin(mark,inputPeer(mark.chat)).silent,"silent pin request");deliver("pin",()->done.accept(ok(true)));}
-        public void mute(Peer chat,Consumer<PurpleSyncChatSetup.Reply<Boolean>> done){++mutes;effects.add("mute");check(PurpleSyncChatSetupRequests.mute(chat,inputPeer(chat)).settings.mute_until==Integer.MAX_VALUE,"mute forever request");deliver("mute",()->done.accept(ok(true)));}
-        public void archive(Peer chat,Consumer<PurpleSyncChatSetup.Reply<Boolean>> done){++archives;effects.add("archive");check(PurpleSyncChatSetupRequests.archive(chat,inputPeer(chat)).folder_peers.get(0).folder_id==1,"archive target folder");deliver("archive",()->done.accept(ok(true)));}
+        public void pin(Cache mark,Consumer<PurpleSyncChatSetup.Reply<Boolean>> done){++pins;effects.add("pin");check(PurpleSyncChatSetupRequests.pin(mark,inputPeer(mark.chat)).silent,"silent pin request");if(wire!=null)wire.send(PurpleSyncChatSetupRequests.pin(mark,inputPeer(mark.chat)),value->done.accept(new PurpleSyncChatSetup.Reply<>(origin,value.error,value.error==PurpleSyncChatSetup.Error.None)));else deliver("pin",()->done.accept(ok(true)));}
+        public void mute(Peer chat,Consumer<PurpleSyncChatSetup.Reply<Boolean>> done){++mutes;effects.add("mute");check(PurpleSyncChatSetupRequests.mute(chat,inputPeer(chat)).settings.mute_until==Integer.MAX_VALUE,"mute forever request");if(wire!=null)wire.send(PurpleSyncChatSetupRequests.mute(chat,inputPeer(chat)),value->done.accept(new PurpleSyncChatSetup.Reply<>(origin,value.error,value.error==PurpleSyncChatSetup.Error.None)));else deliver("mute",()->done.accept(ok(true)));}
+        public void archive(Peer chat,Consumer<PurpleSyncChatSetup.Reply<Boolean>> done){++archives;effects.add("archive");check(PurpleSyncChatSetupRequests.archive(chat,inputPeer(chat)).folder_peers.get(0).folder_id==1,"archive target folder");if(wire!=null)wire.send(PurpleSyncChatSetupRequests.archive(chat,inputPeer(chat)),value->done.accept(new PurpleSyncChatSetup.Reply<>(origin,value.error,value.error==PurpleSyncChatSetup.Error.None)));else deliver("archive",()->done.accept(ok(true)));}
         public void cancel(){timers.clear();}
         PurpleSyncChatSetup.Journal journalState(){try{return PurpleSyncChatSetup.Journal.parse(file.bytes,origin,PurpleSyncChatSetup.authority(authority));}catch(Exception e){throw new AssertionError(e);}}
         PurpleSyncChatSetup.Step step(){return journalState().step;}
@@ -270,7 +275,7 @@ final class PurpleSyncChatSetupCases {
         Env env=new Env();env.duplicate=true;PurpleSyncChatSetup setup=new PurpleSyncChatSetup(env,selection(null,true),ignored->{});setup.start();env.drain();
         check(setup.phase()==PurpleSyncChatSetup.Phase.Complete&&env.creates==1&&env.posts==1&&env.commits==1,"literal duplicate callbacks dispatch each effect once");
         env=new Env();env.hold="create";setup=new PurpleSyncChatSetup(env,selection(null,true),ignored->{});setup.start();env.drain();
-        Runnable timeout=env.timers.iterator().next();timeout.run();check(setup.reason().equals("RequestTimeout")&&env.owner==null,"watchdog releases uncertain creation intent");env.pending.run();env.drain();check(env.posts==0,"late timeout response cannot advance setup");
+        Runnable timeout=env.timers.iterator().next();timeout.run();env.drain();check(setup.reason().equals("RequestTimeout")&&env.owner==null,"watchdog releases uncertain creation intent");env.pending.run();env.drain();check(env.posts==0,"late timeout response cannot advance setup");
         env=new Env();final PurpleSyncChatSetup[] closing={null};closing[0]=new PurpleSyncChatSetup(env,selection(null,true),phase->{if(phase==PurpleSyncChatSetup.Phase.Create)closing[0].close();});
         closing[0].start();env.drain();check(env.creates==0&&env.owner==null,"observer can synchronously destroy setup before dispatch");
         env=new Env();env.hold="create";setup=new PurpleSyncChatSetup(env,selection(null,true),ignored->{});setup.start();env.drain();

@@ -32,6 +32,7 @@ if args.suite == 'discovery':
     sources += [owned / (name + '.java') for name in ['PurpleSyncClient','PurpleSyncOperations','PurpleSyncTelegramClient','PurpleSyncRunner','PurpleSyncTransport','PurpleSyncAuto','PurpleAccountFiles','PurpleSyncAutoClient','PurpleSyncAutoNetwork','PurpleSyncManagedReads','PurpleSyncReadScope','PurpleSyncReader','PurpleSyncInventory','PurpleSyncCheck','PurpleSyncCore','PurpleSyncPost','PurpleAccountSyncStore','PurpleSyncAutoCore','PurpleSyncTelegramTransport','PurpleSyncPublisher','PurpleSyncAutoUpload','PurpleSyncAutoEngine']]
     sources += [production / 'org/telegram/ui' / (name + '.java') for name in ['PurpleDialogsHooks','PurpleSyncActivity','PurpleSyncChatActivity','PurpleSyncChatSetupUI']]
     sources += list((tests / 'modern_sync/android/system').glob('*.java'))
+    sources += [tests / 'modern_sync/android/util/Base64.java']
     sources += [p for p in (tests / 'sync_chat').glob('*.java') if not p.name.endswith('IntegrationCases.java')] + list((tests / 'sync_chat/ports').rglob('*.java'))
 if args.suite == 'integration':
     if args.overlay is None or not args.overlay.is_dir():

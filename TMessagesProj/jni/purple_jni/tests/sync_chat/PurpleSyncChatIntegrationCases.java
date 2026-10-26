@@ -88,5 +88,7 @@ public final class PurpleSyncChatIntegrationCases {
         System.out.println("TYPED_UPLOAD_LIFECYCLE_CHECKS="+PurpleSyncChatUploadIntegrationCases.run(root));
         PurpleAccountSyncStoreTest.main(new String[0]);
         PurpleSyncCoreTest.main(new String[0]);
+        int consentBefore=PurpleSyncChatCases.checks;PurpleSyncChatSetupCacheConsentIntegrationCases.run(root);
+        System.out.println("SETUP_CACHE_RESTART_CHECKS="+(PurpleSyncChatCases.checks-consentBefore));
     }
 }

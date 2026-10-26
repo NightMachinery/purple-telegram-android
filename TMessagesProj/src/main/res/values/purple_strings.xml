@@ -928,4 +928,10 @@
     <string name="PurpleSyncChatTryAgain">Try again</string>
     <string name="PurpleTelegramWaitUntil">Telegram asks to wait until %1$s.</string>
     <string name="PurpleTelegramRetryAt">Telegram is temporarily unavailable. Retrying at %1$s.</string>
+    <string name="PurpleSyncChatResume">Resume unfinished setup</string>
+    <string name="PurpleSyncChatSetupWorking">Setting up the sync chat. You can cancel or leave this screen; unfinished steps are kept for an explicit resume.</string>
+    <string name="PurpleSyncChatSetupHeld">Setup is paused. Resume checks the same operation again before continuing.</string>
+    <string name="PurpleSyncChatSetupWait">Telegram asked this setup to wait. Resume is available after the wait ends.</string>
+    <string name="PurpleSyncChatSetupComplete">The sync chat is set up.</string>
+    <string name="PurpleSyncChatFirstPostHeld">Sending settings to a newly set-up sync chat remains held during qualification.</string>
 </resources>

@@ -19,7 +19,11 @@ final class PurpleSyncChatService {
         final String key;
         final Object owner;
         final BooleanSupplier current;
-        Borrowed(String key, Object owner, BooleanSupplier current) { this.key = key; this.owner = owner; this.current = current; }
+        final Consumer<PurpleRpcRetry.Transient> waiting;
+        Borrowed(String key, Object owner, BooleanSupplier current) { this(key,owner,current,ignored->{}); }
+        Borrowed(String key,Object owner,BooleanSupplier current,Consumer<PurpleRpcRetry.Transient> waiting) {
+            this.key=key;this.owner=owner;this.current=current;this.waiting=waiting;
+        }
     }
     interface Env {
         PurpleSyncChatOrigin origin();
@@ -29,6 +33,7 @@ final class PurpleSyncChatService {
         long now();
         default long rpcNow(){return now();}
         default void presentation(PurpleRpcRetry.Transient value){}
+        default boolean setupPostingHeld(){return false;}
         void ui(Runnable task);
         void worker(Runnable task);
         void delay(Runnable task,long millis);
@@ -219,6 +224,8 @@ final class PurpleSyncChatService {
     private void finish(PurpleSyncChatDiscovery.Status next,long run) { finish(next,run,true); }
     private void finish(PurpleSyncChatDiscovery.Status next,long run,boolean remember) {
         if(!live(run)){abandon(run);return;}
+        if(env.setupPostingHeld()&&next.phase==PurpleSyncChatDiscovery.Phase.Use)
+            next=new PurpleSyncChatDiscovery.Status(next.phase,next.resolution,"SetupPostingHeld",next.complete,true,next.retryAt,next.newReaders);
         Request finished=active;active=null;status=next;
         if(next.complete&&remember&&model!=null&&!model.directOnly()) {
             lastResolved=env.now();lastStream=finished.stream;
@@ -262,6 +269,7 @@ final class PurpleSyncChatService {
         status=new PurpleSyncChatDiscovery.Status(PurpleSyncChatDiscovery.Phase.Searching,safe.resolution,"TelegramWait",false,true,PurpleRpcRetry.add(env.now(),remaining),safe.newReaders);
         cancelWatchdog();watchdog=()->{watchdog=null;if(live(run))transientTimeout(run);else abandon(run);};
         env.delay(watchdog,PurpleRpcRetry.add(remaining,120000));
+        if(active!=null&&active.borrowed!=null)active.borrowed.waiting.accept(value);
     }
     private void transientTimeout(long run){
         if(!live(run))return;
