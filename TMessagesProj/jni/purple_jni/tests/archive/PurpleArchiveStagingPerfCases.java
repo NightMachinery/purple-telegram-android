@@ -173,13 +173,34 @@ public final class PurpleArchiveStagingPerfCases {
         PurpleArchiveSqlite.Result metadata = PurpleArchiveQueryCases.database().run("SELECT maintenance_id FROM archive_meta WHERE singleton=1");
         check(metadata.rows == 1 && metadata.values[0][0].text().isEmpty(),"failed commit authority rolls back the uncommitted mutation");
     }
+    static final long PHASE_DEADLINE_MS = 40_000;
+    static void phase(String name, java.util.concurrent.Callable<Void> action) throws Exception {
+        long start = System.nanoTime();
+        try {
+            worker.queue.submit(action).get(PHASE_DEADLINE_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
+        } catch (java.util.concurrent.TimeoutException e) {
+            throw new AssertionError("Staging perf phase " + name + " timed out at " + PHASE_DEADLINE_MS + " ms", e);
+        } finally {
+            System.out.println("STAGING_PERF_PHASE=" + name + " ELAPSED_MS=" + java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start)
+                + " DEADLINE_MS=" + PHASE_DEADLINE_MS);
+        }
+    }
     public static void main(String[] args) throws Exception {
         System.load(args[0]); PurpleCore.ensureLoaded(); Security.addProvider(new PurpleArchivePlatformProvider());
         File root = new File(args[1]); check(root.mkdir(), "exclusive staging performance fixture");
         ApplicationLoader.files = new File(root, "files"); check(ApplicationLoader.files.mkdir(), "fixture files"); ApplicationLoader.applicationContext = new android.content.Context();
         UserConfig.selectedAccount = 0; UserConfig.getInstance(0).active = true; UserConfig.getInstance(0).user = 11; PurpleArchiveLogin.source = slot -> "11111111111111111111111111111111";
         PurpleArchive.refresh(0, () -> {}); await(() -> PurpleArchive.status(0).state.equals("Ready"), "archive opens offline"); worker = PurpleArchive.existing(PurpleAccountFiles.capture(0));
-        on(() -> { counts(); repair(); cuts(); authority(); cachedWindows(root); legacy(); replacement(); commitFence(); worker.store.drainReaders(); worker.store.close(); worker.store = null; return null; }); worker.queue.shutdown();
+        phase("initial-2mib", () -> { counts(); return null; });
+        phase("cache-repair", () -> { repair(); return null; });
+        phase("durable-cuts", () -> { cuts(); return null; });
+        phase("authority", () -> { authority(); return null; });
+        phase("cached-windows", () -> { cachedWindows(root); return null; });
+        phase("legacy-layout", () -> { legacy(); return null; });
+        phase("directory-replacement", () -> { replacement(); return null; });
+        phase("commit-fence", () -> { commitFence(); return null; });
+        phase("cleanup", () -> { worker.store.drainReaders(); worker.store.close(); worker.store = null; return null; });
+        worker.queue.shutdown();
         System.out.println("ARCHIVE_STAGING_PERF_CHECKS=" + checks);
     }
 }

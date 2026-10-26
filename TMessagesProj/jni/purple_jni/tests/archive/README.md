@@ -58,3 +58,5 @@ The `boundary-*` cases exercise the actual Store executor boundary for queued an
 
 
 `staging-perf` uses actual native operation counters and production staging to bound node publications, total publications, fsyncs and full authority reads per piece. It also covers consolidated-cache repair across bounded turns, legacy node-cache resume, each durable-publication cut, source/fence revocation, directory replacement and the final SQL COMMIT fence. The completed-file case counts full-window image writes and retains two-pass validation. Existing torn-source, mixed-provenance, terminal-refusal, stale-generation, logout and discard suites remain in the full runner. Neither the operation assertions nor the original 40 s deadline depend on elapsed-time thresholds added for this optimization.
+
+The staging performance fixture gives each independent phase its own named worker wait of exactly 40,000 ms, including the initial 2 MiB phase. A timeout identifies that phase. Each phase reports elapsed milliseconds and its deadline; the operation-count assertions and fixture data are unchanged.
