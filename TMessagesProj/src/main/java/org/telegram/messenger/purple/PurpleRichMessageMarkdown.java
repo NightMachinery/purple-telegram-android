@@ -22,6 +22,11 @@ public final class PurpleRichMessageMarkdown {
 
     public static String render(TL_iv.RichMessage article) {
         if (article == null || article.part) throw new IllegalArgumentException("A complete article is required");
+        return renderObserved(article);
+    }
+
+    static String renderObserved(TL_iv.RichMessage article) {
+        if (article == null) throw new IllegalArgumentException("Missing observed article");
         return new PurpleRichMessageMarkdown(article).blocks(article.blocks, 0).markdown;
     }
 

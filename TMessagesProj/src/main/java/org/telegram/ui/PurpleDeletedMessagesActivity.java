@@ -21,11 +21,14 @@ public final class PurpleDeletedMessagesActivity extends UniversalFragment {
     private PurpleArchiveDeletedModel model;
     private PurpleArchiveQueries.Page page;
     private boolean loading, freshnessShown;
+    private long copyEpoch;
+    private static final int COPY = 0x70750404;
     private String state = "Opening";
     private static final class Action {
         final PurpleArchiveQueries.Entry entry;
         final PurpleArchiveQueries.Page page;
         final PurpleArchiveDeletedModel model;
+        boolean copy;
         Action(PurpleArchiveQueries.Entry entry, PurpleArchiveQueries.Page page, PurpleArchiveDeletedModel model) { this.entry = entry; this.page = page; this.model = model; }
     }
     private final Runnable authority = new Runnable() {
@@ -54,6 +57,7 @@ public final class PurpleDeletedMessagesActivity extends UniversalFragment {
         });
     }
     private void next() {
+        ++copyEpoch;
         if (loading || isFinished || model == null) return;
         loading = true; state = "Opening"; WeakReference<PurpleDeletedMessagesActivity> weak = new WeakReference<>(this);
         PurpleArchiveDeletedModel opening = model; View openingView = getFragmentView();
@@ -65,6 +69,7 @@ public final class PurpleDeletedMessagesActivity extends UniversalFragment {
         update();
     }
     private void refresh() {
+        ++copyEpoch;
         loading = false; page = null; freshnessShown = false;
         try { if (model == null) throw new IllegalStateException("Archive opening unavailable"); model = model.restart(); bind(); next(); }
         catch (Exception | LinkageError e) { state = "Stale"; update(); }
@@ -102,6 +107,8 @@ public final class PurpleDeletedMessagesActivity extends UniversalFragment {
                 items.add(UItem.asShadow(body.isEmpty() ? text(R.string.PurpleArchivePartialBody) : body));
                 if (entry.truncated) items.add(UItem.asShadow(text(R.string.PurpleArchivePreviewClipped)));
                 for (int media : entry.media) items.add(UItem.asShadow(text(media == 2 ? R.string.PurpleArchiveMediaComplete : media == 1 ? R.string.PurpleArchiveMediaPartial : R.string.PurpleArchiveMediaMissing)));
+                UItem copy = UItem.asButton(COPY,text(R.string.PurpleCopyAsMarkdown));
+                Action copyAction = new Action(entry,page,model); copyAction.copy = true; copy.object = copyAction; items.add(copy);
                 UItem history = UItem.asButton(HISTORY + items.size(),text(R.string.PurpleArchiveViewHistory)); history.object = new Action(entry,page,model); items.add(history);
             }
             if (!loading && page.more) items.add(UItem.asButton(NEXT,text(R.string.PurpleArchiveQueryNext)));
@@ -126,6 +133,17 @@ public final class PurpleDeletedMessagesActivity extends UniversalFragment {
         if (item.object instanceof Action) {
             Action action = (Action)item.object;
             if (model == null || action.model != model || action.page != page || !model.available()) { page = null; state = "Stale"; update(); return; }
+            if (action.copy) {
+                PurpleArchiveDeletedModel opening = model; View openingView = getFragmentView(); long epoch = ++copyEpoch;
+                java.util.function.BooleanSupplier active = () -> !isFinished && !isPaused() && model == opening
+                    && page == action.page && getFragmentView() == openingView && copyEpoch == epoch && getParentActivity() != null;
+                if (!model.copy(action.entry, active, result -> {
+                    if (result == null) { state = "Stale"; update(); return; }
+                    AndroidUtilities.addToClipboard(result);
+                    org.telegram.ui.Components.BulletinFactory.of(this).createCopyBulletin(text(R.string.TextCopied)).show();
+                })) { state = "Stale"; update(); }
+                return;
+            }
             PurpleArchiveViewerModel history = model.history(action.entry);
             if (history != null) presentFragment(new PurpleEditHistoryActivity(currentAccount,history));
             else { page = null; state = "Stale"; update(); }
@@ -136,8 +154,8 @@ public final class PurpleDeletedMessagesActivity extends UniversalFragment {
     }
     @Override protected boolean onLongClick(UItem item, View view, int position, float x, float y) { return false; }
     @Override public void onResume() { super.onResume(); AndroidUtilities.cancelRunOnUIThread(authority); authority.run(); }
-    @Override public void onPause() { AndroidUtilities.cancelRunOnUIThread(authority); super.onPause(); }
+    @Override public void onPause() { ++copyEpoch; AndroidUtilities.cancelRunOnUIThread(authority); super.onPause(); }
     @Override public void onFragmentDestroy() {
-        scopeClosed.run(); AndroidUtilities.cancelRunOnUIThread(authority); if (model != null) model.close(); super.onFragmentDestroy(); }
+        ++copyEpoch; scopeClosed.run(); AndroidUtilities.cancelRunOnUIThread(authority); if (model != null) model.close(); super.onFragmentDestroy(); }
     private static String text(int id) { return LocaleController.getString(id); }
 }

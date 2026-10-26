@@ -20,7 +20,13 @@ public final class PurpleEditHistoryActivity extends UniversalFragment {
     private static final int NEXT = 0x70750331, REFRESH = 0x70750332, CANCEL_MEDIA = 0x70750334, MEDIA = 0x70750340;
     private PurpleArchiveMediaAccess.Capability pendingMedia;
     private boolean preparing;
-    private long mediaEpoch;
+    private long mediaEpoch, copyEpoch;
+    private static final int COPY = 0x70750335;
+    private static final class CopyAction {
+        final PurpleArchiveViewerModel.Version version;
+        final PurpleArchiveViewerModel.Page page;
+        CopyAction(PurpleArchiveViewerModel.Version version, PurpleArchiveViewerModel.Page page) { this.version = version; this.page = page; }
+    }
     private static final class MediaAction {
         final PurpleArchiveViewerModel.Attachment attachment;
         final PurpleArchiveViewerModel.Page page;
@@ -92,6 +98,8 @@ public final class PurpleEditHistoryActivity extends UniversalFragment {
             items.add(UItem.asShadow(detail));
             String body = version.text + (version.caption.isEmpty() ? "" : "\n" + version.caption);
             items.add(UItem.asShadow(body.isEmpty() ? text(R.string.PurpleArchivePartialBody) : body));
+            UItem copy = UItem.asButton(COPY, text(R.string.PurpleCopyAsMarkdown));
+            copy.object = new CopyAction(version, page); items.add(copy);
             for (PurpleArchiveViewerModel.Attachment attachment : version.attachments) {
                 items.add(UItem.asShadow(attachment.name + "\n" + text(attachment.state == 2 ? R.string.PurpleArchiveMediaComplete : attachment.state == 1 ? R.string.PurpleArchiveMediaPartial : R.string.PurpleArchiveMediaMissing)));
                 if (attachment.state != 2) continue;
@@ -110,7 +118,17 @@ public final class PurpleEditHistoryActivity extends UniversalFragment {
         catch (Exception e) { return text(R.string.PurpleArchiveUnknownDate); }
     }
     @Override protected void onClick(UItem item, View view, int position, float x, float y) {
-        if (item.object instanceof MediaAction) {
+        if (item.object instanceof CopyAction) {
+            CopyAction action = (CopyAction) item.object;
+            PurpleArchiveViewerModel request = model; View opening = getFragmentView(); long epoch = ++copyEpoch;
+            java.util.function.BooleanSupplier active = () -> !isFinished && !isPaused() && model == request
+                && page == action.page && getFragmentView() == opening && copyEpoch == epoch && getParentActivity() != null;
+            if (request == null || !active.getAsBoolean() || !request.copy(action.version, active, result -> {
+                if (result == null) { mediaRefused(); return; }
+                org.telegram.messenger.AndroidUtilities.addToClipboard(result);
+                org.telegram.ui.Components.BulletinFactory.of(this).createCopyBulletin(text(R.string.TextCopied)).show();
+            })) mediaRefused();
+        } else if (item.object instanceof MediaAction) {
             MediaAction action = (MediaAction) item.object;
             if (!valid(action)) { mediaRefused(); return; }
             if (action.save) {
@@ -147,6 +165,7 @@ public final class PurpleEditHistoryActivity extends UniversalFragment {
         if (pendingMedia == null) { preparing = false; mediaRefused(); } update();
     }
     private void cancelMedia() {
+        ++copyEpoch;
         ++mediaEpoch; preparing = false;
         if (pendingMedia != null) pendingMedia.close(); pendingMedia = null;
     }
@@ -164,7 +183,7 @@ public final class PurpleEditHistoryActivity extends UniversalFragment {
         org.telegram.messenger.AndroidUtilities.cancelRunOnUIThread(authority); authority.run();
         if (model != null && !model.available()) { cancelMedia(); page = null; loading = false; if (listView != null) listView.adapter.update(true); }
     }
-    @Override public void onPause() { org.telegram.messenger.AndroidUtilities.cancelRunOnUIThread(authority); super.onPause(); }
+    @Override public void onPause() { ++copyEpoch; org.telegram.messenger.AndroidUtilities.cancelRunOnUIThread(authority); super.onPause(); }
     @Override public void onFragmentDestroy() { org.telegram.messenger.AndroidUtilities.cancelRunOnUIThread(authority); cancelMedia(); if (model != null) model.close(); super.onFragmentDestroy(); }
     private static String text(int id) { return LocaleController.getString(id); }
 }

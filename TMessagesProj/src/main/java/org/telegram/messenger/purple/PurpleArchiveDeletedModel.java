@@ -99,6 +99,12 @@ public final class PurpleArchiveDeletedModel implements AutoCloseable {
         PurpleArchiveViewerModel history = PurpleArchiveViewerModel.pinned(scope.identity,entry.key,scope.selection,worker,store,login,entry.version,entry.versionDigest,entry.accountGeneration,entry.chatGeneration,scope.policy);
         if (!available() || query != opening) { if (history != null) history.close(); return null; } return history;
     }
+    public boolean copy(PurpleArchiveQueries.Entry entry, java.util.function.BooleanSupplier active, java.util.function.Consumer<String> delivered) {
+        PurpleArchiveViewerModel history = history(entry);
+        if (history == null) return false;
+        return history.copyPinned(() -> available() && active.getAsBoolean(), delivered);
+    }
+
     private void invalidate(String reason) {
         if (stopped.compareAndSet(false,true)) {
             state = reason; Runnable action = revoked; if (action != null) AndroidUtilities.runOnUIThread(action);

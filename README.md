@@ -1913,6 +1913,9 @@ Genuine source is captured from new ordinary compose parts before Markdown
 parsing and from verified, already acquired Markdown documents. It belongs to
 the exact retained archive version and shares its purge and logout lifetime.
 Received text/entities and rich-editor blocks do not establish original source.
+Archive history and deleted-message viewers can copy their exact retained
+version. Partial content stays explicitly partial; an unavailable structure is
+retained as labelled, lossless JSON rather than fetched from a newer server body.
 See [Markdown provenance](docs/markdown-provenance.md) for capture and copy rules.
 
 The pure structural writer is PurpleArticleMarkdown. PurpleRichMessageMarkdown

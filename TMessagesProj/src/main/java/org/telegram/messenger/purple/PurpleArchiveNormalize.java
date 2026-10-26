@@ -81,7 +81,7 @@ final class PurpleArchiveNormalize {
         int completeness = missing.length() == 0 ? 1 : 0;
         String opaque = "", opaqueFormat = ""; Object rich = JSONObject.NULL;
         if (message.rich_message != null) {
-            rich = new JSONObject().put("format", "android-rich-tl-" + TLRPC.LAYER).put("tl", PurpleArchiveCore.base64(bytes(message.rich_message))); completeness = 2;
+            rich = new JSONObject().put("format", "android-rich-tl-" + TLRPC.LAYER).put("tl", PurpleArchiveCore.base64(bytes(message.rich_message))); completeness = message.rich_message.part ? 2 : 1;
         }
         if (message.action != null && !(message.action instanceof TLRPC.TL_messageActionEmpty)) {
             JSONObject semantic = rich instanceof JSONObject ? (JSONObject) rich : new JSONObject();

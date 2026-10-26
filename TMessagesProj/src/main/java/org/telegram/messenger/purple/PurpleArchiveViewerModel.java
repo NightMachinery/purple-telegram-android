@@ -67,11 +67,14 @@ public final class PurpleArchiveViewerModel implements AutoCloseable {
         }
     }
     public static final class Version {
+        final String id, key, digest;
+        final PurpleArchiveMarkdown.Guard guard;
         public final String text, caption, observedAt, serverTime, format;
         public final int origin, media;
         public final boolean partial, missingPreimage;
         public final List<Attachment> attachments;
-        private Version(JSONObject value, String key, PurpleArchiveStore store, String login, String accountGeneration, String chatGeneration, long selection) throws Exception {
+        private Version(JSONObject value, String key, PurpleArchiveStore store, String login, String accountGeneration, String chatGeneration, long selection, PurpleArchiveMarkdown.Guard guard) throws Exception {
+            this.guard = guard; this.key = key; id = value.getString("id"); digest = PurpleArchiveNormalize.digest(value.toString());
             JSONObject content = value.getJSONObject("content"), observation = value.getJSONObject("observation");
             text = content.getString("text"); caption = content.getString("caption");
             observedAt = value.getString("firstObservedAt"); serverTime = observation.getString("serverTime");
@@ -95,7 +98,7 @@ public final class PurpleArchiveViewerModel implements AutoCloseable {
     private final int openingAccount;
     private final long openingSelection;
     private final AtomicBoolean fetching = new AtomicBoolean();
-    private volatile boolean closed;
+    private final AtomicBoolean closed = new AtomicBoolean();
     private PurpleArchive.Worker worker;
     private PurpleArchiveStore store;
     private PurpleArchiveStore.Reader reader;
@@ -132,7 +135,7 @@ public final class PurpleArchiveViewerModel implements AutoCloseable {
     static void committed(PurpleArchiveStore store) {
         ArrayList<PurpleArchiveViewerModel> retained;
         synchronized (viewers) { retained = new ArrayList<>(viewers); }
-        for (PurpleArchiveViewerModel viewer : retained) if (viewer.pinnedStore == store && !viewer.closed) {
+        for (PurpleArchiveViewerModel viewer : retained) if (viewer.pinnedStore == store && !viewer.closed.get()) {
             try {
                 JSONObject chat = new JSONObject(viewer.key).getJSONObject("chat");
                 JSONObject scope = new JSONObject().put("chat", chat).put("aliases", new org.json.JSONArray());
@@ -145,6 +148,59 @@ public final class PurpleArchiveViewerModel implements AutoCloseable {
         if (!available()) return null;
         return PurpleArchiveMediaAccess.request(identity, attachment, delivered, this::leaseCommitted);
     }
+    public boolean copy(Version version, java.util.function.BooleanSupplier active, java.util.function.Consumer<String> delivered) {
+        if (version == null || !available() || !version.key.equals(key) || !version.guard.current()
+                || version.guard.worker != worker || version.guard.store != store) return false;
+        try {
+            worker.queue.execute(() -> {
+                String text;
+                try {
+                    if (!available() || !version.guard.current()) return;
+                    text = copyVersion(version.id, version.digest);
+                } catch (Exception | LinkageError e) { text = null; }
+                String result = text;
+                AndroidUtilities.runOnUIThread(() -> version.guard.publish(() -> available() && active.getAsBoolean(), () -> delivered.accept(result)));
+            });
+            return true;
+        } catch (java.util.concurrent.RejectedExecutionException e) { return false; }
+    }
+
+    boolean copyPinned(java.util.function.BooleanSupplier active, java.util.function.Consumer<String> delivered) {
+        boolean queued = false;
+        try {
+            if (pinnedVersion == null || !available()) return false;
+            PurpleArchiveMarkdown.Guard guard = PurpleArchiveMarkdown.guard(identity);
+            if (!guard.current() || guard.worker != pinnedWorker || guard.store != pinnedStore) return false;
+            java.util.function.BooleanSupplier policy = pinnedPolicy;
+            worker = pinnedWorker; store = pinnedStore;
+            worker.queue.execute(() -> {
+                String text;
+                try {
+                    if (!available() || !guard.current()) return;
+                    text = copyVersion(pinnedVersion, pinnedDigest);
+                } catch (Exception | LinkageError e) { text = null; }
+                finally { close(); }
+                String result = text;
+                AndroidUtilities.runOnUIThread(() -> guard.publish(() -> policy.getAsBoolean() && active.getAsBoolean(), () -> delivered.accept(result)));
+            });
+            queued = true;
+            return true;
+        } catch (RuntimeException | LinkageError e) { return false; }
+        finally { if (!queued) close(); }
+    }
+
+    private String copyVersion(String version, String digest) throws Exception {
+        try (PurpleArchiveSlice slice = new PurpleArchiveSlice(store, new JSONObject(key), null)) {
+            if (pinnedAccountGeneration != null && (!pinnedAccountGeneration.equals(slice.facts.getString("accountGeneration"))
+                    || !pinnedChatGeneration.equals(slice.facts.getString("chatGeneration"))))
+                throw new PurpleArchiveStore.Failure("Archive copy purge generation changed");
+            JSONObject retained = slice.version(version);
+            if (!PurpleArchiveNormalize.digest(retained.toString()).equals(digest)) throw new PurpleArchiveStore.Failure("Archive copy version changed");
+            PurpleArchiveSource.Choice source = PurpleArchiveSource.choose(new PurpleArchiveSource.Prepared(slice, version), 0, true);
+            return source.genuine ? source.text() : PurpleArchiveMarkdownBody.render(retained);
+        }
+    }
+
     private void leaseCommitted(PurpleArchiveMediaAccess.Capability capability, JSONObject transition) {
         if (current() && reader != null && capability.worker == worker && capability.store == store
             && capability.login != null && capability.login.equals(worker.loginContext)) reader.advanceLease(transition);
@@ -155,7 +211,7 @@ public final class PurpleArchiveViewerModel implements AutoCloseable {
     }
     public boolean available() {
         if (!pinnedPolicy.getAsBoolean()) { close(); return false; }
-        return !closed && selected() && identity.current() && (pinnedWorker == null || pinnedWorker == PurpleArchive.existing(identity)
+        return !closed.get() && selected() && identity.current() && (pinnedWorker == null || pinnedWorker == PurpleArchive.existing(identity)
             && !pinnedWorker.closing && !pinnedWorker.retired && pinnedWorker.store == pinnedStore && pinnedLogin.equals(pinnedWorker.loginContext));
     }
     public PurpleArchiveViewerModel restart() {
@@ -209,7 +265,7 @@ public final class PurpleArchiveViewerModel implements AutoCloseable {
                 JSONObject decoded = PurpleArchiveSlice.open(store, reader, row).getJSONObject("value");
                 if (!PurpleArchiveNormalize.digest(decoded.getJSONObject("key").toString()).equals(PurpleArchiveNormalize.digest(this.key)))
                     throw new PurpleArchiveStore.Failure("Archive viewer identity mismatch");
-                Version version = new Version(decoded.getJSONObject("snapshot"), this.key, store, worker.loginContext, accountGeneration, chatGeneration, openingSelection);
+                Version version = new Version(decoded.getJSONObject("snapshot"), this.key, store, worker.loginContext, accountGeneration, chatGeneration, openingSelection, PurpleArchiveMarkdown.guard(identity));
                 long size = (version.text.length() + version.caption.length()) * 2L;
                 if (!versions.isEmpty() && bytes + size > 2 * 1024 * 1024) { more = true; break; }
                 versions.add(version); bytes += size; before = values[1].text();
@@ -233,7 +289,7 @@ public final class PurpleArchiveViewerModel implements AutoCloseable {
         }
     }
     @Override public void close() {
-        closed = true;
+        if (!closed.compareAndSet(false, true)) return;
         synchronized (viewers) { viewers.remove(this); }
         PurpleArchive.Worker owner = worker;
         if (owner != null) owner.control(this::closeReader);
