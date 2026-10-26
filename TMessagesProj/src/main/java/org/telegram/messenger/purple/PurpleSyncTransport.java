@@ -34,8 +34,15 @@ public interface PurpleSyncTransport {
         public final PostStatus status;
         public final int messageId;
         public final byte[] readBack;
+        public final PurpleSyncChatCore.Peer chat;
+        final PurpleSyncChatOrigin origin;
 
         public PostResult(PostStatus status, int messageId, byte[] readBack) {
+            this(status,messageId,readBack,PurpleSyncChatCore.Peer.self(),null);
+        }
+
+        PostResult(PostStatus status,int messageId,byte[] readBack,PurpleSyncChatCore.Peer chat,PurpleSyncChatOrigin origin) {
+            this.chat=java.util.Objects.requireNonNull(chat);this.origin=origin;
             if ((status == PostStatus.Confirmed)
                     != (messageId > 0 && readBack != null)) {
                 throw new IllegalArgumentException(
@@ -45,6 +52,11 @@ public interface PurpleSyncTransport {
             this.messageId = messageId;
             this.readBack = readBack;
         }
+    }
+
+    interface PostAuthority {
+        boolean current();
+        void check(java.util.function.Consumer<Boolean> done);
     }
 
     interface Progress {
@@ -62,6 +74,16 @@ public interface PurpleSyncTransport {
     void check(Progress progress, CheckDone done);
 
     void post(byte[] staged, PostDone done);
+
+    default void post(byte[] staged,PostAuthority authority,PostDone done) {
+        if(authority==null || !authority.current()){done.onPostDone(new PostResult(PostStatus.OutcomeUnknown,0,null));return;}
+        java.util.concurrent.atomic.AtomicBoolean answered=new java.util.concurrent.atomic.AtomicBoolean();
+        authority.check(ready->{
+            if(!answered.compareAndSet(false,true))return;
+            if(Boolean.TRUE.equals(ready) && authority.current())post(staged,done);
+            else done.onPostDone(new PostResult(PostStatus.OutcomeUnknown,0,null));
+        });
+    }
 
     void cancel();
 }

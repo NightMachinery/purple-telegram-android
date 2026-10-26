@@ -29,17 +29,18 @@ if args.suite == 'discovery':
     production = repo / 'TMessagesProj/src/main/java'
     owned = production / 'org/telegram/messenger/purple'
     sources = list(owned.glob('PurpleSyncChat*.java'))
-    sources += [owned / (name + '.java') for name in ['PurpleSyncClient','PurpleSyncOperations','PurpleSyncTelegramClient','PurpleSyncRunner','PurpleSyncTransport','PurpleSyncAuto','PurpleAccountFiles','PurpleSyncAutoClient','PurpleSyncAutoNetwork','PurpleSyncReader','PurpleSyncInventory','PurpleSyncCheck','PurpleSyncCore','PurpleSyncPost','PurpleAccountSyncStore','PurpleSyncAutoCore']]
+    sources += [owned / (name + '.java') for name in ['PurpleSyncClient','PurpleSyncOperations','PurpleSyncTelegramClient','PurpleSyncRunner','PurpleSyncTransport','PurpleSyncAuto','PurpleAccountFiles','PurpleSyncAutoClient','PurpleSyncAutoNetwork','PurpleSyncReader','PurpleSyncInventory','PurpleSyncCheck','PurpleSyncCore','PurpleSyncPost','PurpleAccountSyncStore','PurpleSyncAutoCore','PurpleSyncTelegramTransport','PurpleSyncPublisher','PurpleSyncAutoUpload','PurpleSyncAutoEngine']]
     sources += [production / 'org/telegram/ui' / (name + '.java') for name in ['PurpleDialogsHooks','PurpleSyncActivity']]
     sources += list((tests / 'modern_sync/android/system').glob('*.java'))
-    sources += [p for p in (tests / 'sync_chat').glob('*.java') if p.name != 'PurpleSyncChatIntegrationCases.java'] + list((tests / 'sync_chat/ports').rglob('*.java'))
+    sources += [p for p in (tests / 'sync_chat').glob('*.java') if not p.name.endswith('IntegrationCases.java')] + list((tests / 'sync_chat/ports').rglob('*.java'))
 if args.suite == 'integration':
     if args.overlay is None or not args.overlay.is_dir():
         parser.error('--overlay compiled production classes required for integration')
     classpath = str(args.overlay) + os.pathsep + classpath
     sources = list((tests / 'modern_sync').rglob('*.java'))
     sources += [tests / path for path in ['account_editor/PurpleAccountEditorCases.java','routed_writes/PurpleRoutedWriteCases.java','transfers/PurpleTransferCases.java']]
-    sources += [tests / 'sync_chat/PurpleSyncChatIntegrationCases.java']
+    sources += list((tests / 'sync_chat').glob('*IntegrationCases.java'))
+    sources += [tests / path for path in ['store_stubs/org/telegram/messenger/purple/PurpleAccountSyncStoreTest.java','config_sync_bridge/org/telegram/messenger/purple/PurpleSyncCoreTest.java']]
 args.output.mkdir(parents=True, exist_ok=True)
 if args.phase == 'compile':
     classes.mkdir(exist_ok=True)

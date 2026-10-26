@@ -78,6 +78,11 @@ final class PurpleSyncAutoClient implements PurpleSyncClient {
         }
         delegate.edit(id, file, expected, () -> isActive() && guard.getAsBoolean(), reply);
     }
+    public void edit(int id,File file,byte[] expected,BooleanSupplier guard,
+            PurpleSyncTransport.PostAuthority authority,Reply<PurpleSyncAutoCore.Outcome> reply) {
+        if(!isActive() || !guard.getAsBoolean()){reply.onReply(PurpleSyncAutoCore.Outcome.OutcomeUnknown);return;}
+        delegate.edit(id,file,expected,()->isActive()&&guard.getAsBoolean(),authority,reply);
+    }
     public void deleteOwn(int id, BooleanSupplier guard, Reply<PurpleSyncAutoCore.Outcome> reply) {
         if (!isActive() || !guard.getAsBoolean()) {
             reply.onReply(PurpleSyncAutoCore.Outcome.OutcomeUnknown);
@@ -92,6 +97,7 @@ final class PurpleSyncAutoClient implements PurpleSyncClient {
         }
         delegate.send(file, caption, mime, new Receipt() {
             public byte[] expectedBytes() { return receipt.expectedBytes(); }
+            public PurpleSyncTransport.PostAuthority authority() { return receipt.authority(); }
             public boolean automatic() {
                 return true;
             }

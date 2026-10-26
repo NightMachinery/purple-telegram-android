@@ -11,6 +11,7 @@ final class PurpleSyncAutoUpload {
         void exact(int id, PurpleSyncClient.Reply<byte[]> reply);
         int send(int id, TLRPC.TL_inputFile file, PurpleSyncClient.Reply<Result> reply);
         void cancel(int token);
+        void beforePost(PurpleSyncClient.Reply<Boolean> done);
     }
     static final class Result {
         final int id;
@@ -29,9 +30,10 @@ final class PurpleSyncAutoUpload {
     private volatile int phase;
     private String error;
     private volatile boolean finished;
+    private boolean authorizing;
     PurpleSyncAutoUpload(int account, int messageId, byte[] bytes, byte[] previous, BooleanSupplier current,
         Port port, PurpleSyncClient.Reply<Result> reply) {
-        this.account = account; this.messageId = messageId; this.bytes = bytes; this.previous = previous;
+        this.account = account; this.messageId = messageId; this.bytes = bytes!=null?bytes.clone():null; this.previous = previous!=null?previous.clone():null;
         this.origin = PurpleAccountFiles.capture(account);
         this.current = current; this.port = port; this.reply = reply;
     }
@@ -39,7 +41,7 @@ final class PurpleSyncAutoUpload {
     void start() {
         PurpleSyncAutoEdits.register(account, token, this::live, outcome -> close(outcome));
         Port issued = port; byte[] data = bytes;
-        if (!live() || issued == null || !PurpleSyncPost.validRecord(data)) { fail(null); return; }
+        if (!live() || issued == null || messageId<0 || !PurpleSyncPost.validRecord(data)) { fail(null); return; }
         long id = randomId();
         final TLRPC.TL_inputFile file = new TLRPC.TL_inputFile();
         file.id = id; file.parts = 1; file.name = PurpleSyncPost.RECORD_FILE_NAME;
@@ -53,20 +55,34 @@ final class PurpleSyncAutoUpload {
             if (active == null) { fail(null); return; }
             if (messageId > 0) active.exact(messageId, observed -> queue(() -> {
                 if (!live() || !Arrays.equals(previous, observed)) { fail(null); return; }
-                dispatch(file);
+                authorize(file);
             }));
-            else dispatch(file);
+            else authorize(file);
         }));
         track(issued, sentRequest, 0);
     }
     private void queue(Runnable task) {
         Port value = port;
-        if (value != null) value.worker(() -> { if (!finished) task.run(); else stale(); });
+        if (value != null) value.worker(() -> {
+            if(finished){stale();return;}
+            try{task.run();}catch(RuntimeException error){fail(null);}
+        });
         else stale();
     }
     private void stale() {
         if (!PurpleSyncAutoEdits.finished(account, token, true, null) && origin != null)
             PurpleSyncAuto.reconcile(origin);
+    }
+    private void authorize(TLRPC.TL_inputFile file) {
+        Port issued=port;
+        if(phase!=1 || authorizing)return;
+        if(!live() || issued==null){fail(null);return;}
+        authorizing=true;
+        issued.beforePost(allowed->queue(()->{
+            if(phase!=1)return;
+            if(!Boolean.TRUE.equals(allowed) || !live()){fail(null);return;}
+            dispatch(file);
+        }));
     }
     private void dispatch(TLRPC.TL_inputFile file) {
         if (phase != 1) return;

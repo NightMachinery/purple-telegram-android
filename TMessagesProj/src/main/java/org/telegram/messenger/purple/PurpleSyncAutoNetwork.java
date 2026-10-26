@@ -132,6 +132,9 @@ final class PurpleSyncAutoNetwork {
                 reply.done(row(id, 1, null, false));
                 return;
             }
+            PurpleSyncCore.Page candidate=PurpleSyncCore.classifyHistoryPage(0,new int[]{id},new boolean[]{message.isMessage},
+                    new boolean[]{message.forwarded},new boolean[]{message.isDocument},new String[]{message.caption},new String[]{message.fileName});
+            if(!candidate.isValid() || candidate.candidates.length!=1 || candidate.candidates[0]!=id){reply.done(row(id,1,null,false));return;}
             client.download(message, file -> client.runOnWorker(() -> {
                 if (!current.getAsBoolean() || !guard.getAsBoolean() || !client.isActive()) {
                     reply.done(row(id, 0, null, false));
@@ -143,7 +146,14 @@ final class PurpleSyncAutoNetwork {
                     reply.done(row(id, 0, null, false));
                     return;
                 }
-                reply.done(row(id, 1, bytes, true));
+                client.requestMessage(id,fresh->client.runOnWorker(()->{
+                    if(!current.getAsBoolean() || !guard.getAsBoolean() || !client.isActive()){
+                        reply.done(row(id,0,null,false));return;
+                    }
+                    boolean same=fresh!=null && fresh.status==PurpleSyncClient.LookupStatus.Found
+                            && client.contains(fresh.message) && PurpleSyncChatIO.same(message,fresh.message);
+                    reply.done(row(id,same?1:0,same?bytes:null,same));
+                }));
             }));
         }));
     }
@@ -161,6 +171,13 @@ final class PurpleSyncAutoNetwork {
     }
     void send(boolean edit, int id, byte[] bytes, byte[] previous, BooleanSupplier guard,
         PurpleSyncAutoEngine.Reply<PurpleSyncAutoCore.Outcome> finished) {
+        send(edit,id,bytes,previous,guard,new PurpleSyncTransport.PostAuthority(){
+            public boolean current(){return guard.getAsBoolean();}
+            public void check(java.util.function.Consumer<Boolean> done){done.accept(current());}
+        },finished);
+    }
+    void send(boolean edit,int id,byte[] bytes,byte[] previous,BooleanSupplier guard,
+            PurpleSyncTransport.PostAuthority authority,PurpleSyncAutoEngine.Reply<PurpleSyncAutoCore.Outcome> finished) {
         Pending<PurpleSyncAutoCore.Outcome> pending =
             new Pending<>(finished, PurpleSyncAutoCore.Outcome.OutcomeUnknown, null);
         PurpleSyncAutoEngine.Reply<PurpleSyncAutoCore.Outcome> reply = pending::finish;
@@ -171,7 +188,7 @@ final class PurpleSyncAutoNetwork {
         }
         if (!edit) {
             PurpleSyncClient guarded = new PurpleSyncAutoClient(client, live);
-            new PurpleSyncTelegramTransport(guarded).post(bytes,
+            new PurpleSyncTelegramTransport(guarded).post(bytes,authority,
                 result
                 -> reply.done(result.status == PurpleSyncTransport.PostStatus.Confirmed
                         ? PurpleSyncAutoCore.Outcome.Sent
@@ -197,7 +214,7 @@ final class PurpleSyncAutoNetwork {
                     || !live.getAsBoolean())
                     throw new IllegalStateException("automatic edit stage changed");
                 client.edit(id, file, previous, () -> live.getAsBoolean()
-                    && Arrays.equals(bytes, PurpleSyncReader.readAtMost(file, PurpleSyncPost.MAX_STAGED_BYTES + 1)),
+                    && Arrays.equals(bytes, PurpleSyncReader.readAtMost(file, PurpleSyncPost.MAX_STAGED_BYTES + 1)),authority,
                     outcome -> reply.done(outcome));
             } catch (Exception e) {
                 reply.done(PurpleSyncAutoCore.Outcome.EditRefused);

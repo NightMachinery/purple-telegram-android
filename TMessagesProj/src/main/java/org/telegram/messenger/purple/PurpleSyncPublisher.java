@@ -43,6 +43,7 @@ public final class PurpleSyncPublisher {
     private boolean done;
     private boolean posting;
     private int posts;
+    private final PurpleSyncTransport.PostAuthority authority;
 
     PurpleSyncPublisher(PurpleSyncRunner.Session session,
             PurpleSyncInventory inventory, boolean sendQueued,
@@ -53,6 +54,12 @@ public final class PurpleSyncPublisher {
     PurpleSyncPublisher(PurpleSyncRunner.Session session,PurpleSyncInventory inventory,boolean sendQueued,
             PurpleSyncCore.PostRequest request,PurpleSyncTransport transport,PurpleSyncRunner.Poster queue,
             java.util.function.BooleanSupplier effects,Finished finished) {
+        this(session,inventory,sendQueued,request,transport,queue,effects,null,finished);
+    }
+    PurpleSyncPublisher(PurpleSyncRunner.Session session,PurpleSyncInventory inventory,boolean sendQueued,
+            PurpleSyncCore.PostRequest request,PurpleSyncTransport transport,PurpleSyncRunner.Poster queue,
+            java.util.function.BooleanSupplier effects,PurpleSyncTransport.PostAuthority authority,Finished finished) {
+        this.authority=authority;
         this.effects=effects;
         this.session = session;
         this.inventory = inventory;
@@ -160,7 +167,7 @@ public final class PurpleSyncPublisher {
             return;
         }
         final PurpleAccountSyncStore.Result confirmed =
-                store.confirmConfigReadBack(record, messageId);
+                store.confirmConfigReadBack(inventory.chat,record, messageId);
         if (confirmed.status == PurpleAccountSyncStore.Status.Ready) {
             finish(new Result(PurpleSyncCore.PublishStatus.Confirmed, null,
                     messageId, posts));
@@ -224,7 +231,11 @@ public final class PurpleSyncPublisher {
         ++posts;
         FileLog.d("Purple: posting a settings sync record of " + staged.length
                 + " bytes.");
-        transport.post(staged, result -> queue.post(() -> onPost(result)));
+        PurpleSyncTransport.PostAuthority gate=authority!=null?authority:new PurpleSyncTransport.PostAuthority(){
+            public boolean current(){return PurpleSyncPublisher.this.current();}
+            public void check(java.util.function.Consumer<Boolean> done){done.accept(current());}
+        };
+        transport.post(staged,gate,result -> queue.post(() -> onPost(result)));
     }
 
     private void onPost(PurpleSyncTransport.PostResult result) {
@@ -233,7 +244,8 @@ public final class PurpleSyncPublisher {
         }
         posting = false;
         if (result.status == PurpleSyncTransport.PostStatus.Confirmed) {
-            if (!current()) {
+            if (!current() || !inventory.chat.equals(result.chat)
+                    || !java.util.Objects.equals(inventory.origin,result.origin)) {
                 finish(PurpleSyncCore.PublishStatus.OutcomeUnknown);
                 return;
             }

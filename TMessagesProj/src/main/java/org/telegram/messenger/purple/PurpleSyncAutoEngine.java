@@ -105,6 +105,10 @@ final class PurpleSyncAutoEngine {
     private boolean current() {
         return !closed && port.current() && account.available();
     }
+    BooleanSupplier borrowedAuthority() {
+        String opening=session;
+        return ()->owned && current() && opening.equals(session) && PurpleSyncOperations.owned(operationKey(),this);
+    }
     private void end() {
         session = UUID.randomUUID().toString();
         running = "";

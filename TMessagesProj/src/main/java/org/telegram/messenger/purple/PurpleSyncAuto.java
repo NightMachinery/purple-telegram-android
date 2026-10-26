@@ -196,21 +196,28 @@ public final class PurpleSyncAuto {
         public void check(
             String ticket, int[] exactIds, java.util.function.BooleanSupplier current,
             PurpleSyncAutoEngine.Reply<PurpleSyncAutoEngine.Observed> reply) {
-            PurpleSyncChat.underLock(env.context,engine,env.operationKey(account.account,account.userId),false,current,status->queue(()->{
+            PurpleSyncChat.underLock(env.context,engine,env.operationKey(account.account,account.userId),false,engine.borrowedAuthority(),current,status->queue(()->{
                 if(!current.getAsBoolean())return;
                 if(status.selfReadable())network.check(exactIds,current,reply);else reply.done(null);
             }));
         }
         public void send(boolean edit, int id, byte[] bytes, byte[] previous,
             java.util.function.BooleanSupplier current, PurpleSyncAutoEngine.Reply<PurpleSyncAutoCore.Outcome> reply) {
-            PurpleSyncChat.underLock(env.context,engine,env.operationKey(account.account,account.userId),true,current,status->queue(()->{
+            PurpleSyncChat.underLock(env.context,engine,env.operationKey(account.account,account.userId),true,engine.borrowedAuthority(),current,status->queue(()->{
                 if(!current.getAsBoolean())return;
-                if(status.selfPostable())network.send(edit,id,bytes,previous,current,reply);else reply.done(PurpleSyncAutoCore.Outcome.OutcomeUnknown);
+                if(status.selfPostable())network.send(edit,id,bytes,previous,current,new PurpleSyncTransport.PostAuthority(){
+                    final java.util.function.BooleanSupplier lock=engine.borrowedAuthority();
+                    public boolean current(){return current.getAsBoolean() && lock.getAsBoolean();}
+                    public void check(Consumer<Boolean> done){
+                        PurpleSyncChat.underLock(env.context,engine,env.operationKey(account.account,account.userId),true,
+                                lock,this::current,fresh->done.accept(fresh.selfPostable() && current()));
+                    }
+                },reply);else reply.done(PurpleSyncAutoCore.Outcome.OutcomeUnknown);
             }));
         }
         public void retire(int id, byte[] exact, java.util.function.BooleanSupplier current,
             PurpleSyncAutoEngine.Reply<PurpleSyncAutoCore.Outcome> reply) {
-            PurpleSyncChat.underLock(env.context,engine,env.operationKey(account.account,account.userId),true,current,status->queue(()->{
+            PurpleSyncChat.underLock(env.context,engine,env.operationKey(account.account,account.userId),true,engine.borrowedAuthority(),current,status->queue(()->{
                 if(!current.getAsBoolean())return;
                 if(status.selfPostable())network.retire(id,exact,current,reply);else reply.done(PurpleSyncAutoCore.Outcome.DeletionRefused);
             }));

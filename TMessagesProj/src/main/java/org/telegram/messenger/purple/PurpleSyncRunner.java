@@ -716,7 +716,12 @@ public final class PurpleSyncRunner {
         final Holder<PurpleSyncPublisher> self = new Holder<>();
         final PurpleSyncPublisher running = new PurpleSyncPublisher(session,
                 inventory, sendQueued, request, transport, queue, effects,
-                result -> ui.post(() -> {
+                new PurpleSyncTransport.PostAuthority(){
+                    public boolean current(){return live(started) && session.available() && (request.pendingOnly || effects.getAsBoolean());}
+                    public void check(java.util.function.Consumer<Boolean> done){
+                        session.env.resolveChat(true,operationOwner,operationKey(),()->live(started),ready->done.accept(ready && current()));
+                    }
+                },result -> ui.post(() -> {
                     if (publisher == self.value) {
                         publisher = null;
                     }

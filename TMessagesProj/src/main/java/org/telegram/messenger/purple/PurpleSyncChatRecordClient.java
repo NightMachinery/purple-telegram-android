@@ -90,5 +90,7 @@ final class PurpleSyncChatRecordClient implements PurpleSyncClient {
     @Override public long nowMillis() { return client.nowMillis(); }
     @Override public void send(File file,String caption,String mime,Receipt receipt) { client.send(file,caption,mime,receipt); }
     @Override public void edit(int id,File file,byte[] expected,BooleanSupplier current,Reply<PurpleSyncAutoCore.Outcome> done) { client.edit(id,file,expected,current,done); }
+    @Override public void edit(int id,File file,byte[] expected,BooleanSupplier current,PurpleSyncTransport.PostAuthority authority,
+            Reply<PurpleSyncAutoCore.Outcome> done) { client.edit(id,file,expected,current,authority,done); }
     @Override public void deleteOwn(int id,BooleanSupplier current,Reply<PurpleSyncAutoCore.Outcome> done) { client.deleteOwn(id,current,done); }
 }

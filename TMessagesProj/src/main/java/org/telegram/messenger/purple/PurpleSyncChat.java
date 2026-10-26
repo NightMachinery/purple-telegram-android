@@ -58,11 +58,15 @@ public final class PurpleSyncChat {
     }
     public static Status status(int slot) { Holder holder=accounts.get(slot);return holder!=null&&holder.env.current()?new Status(holder.service.status()):unavailable(); }
     static void underLock(PurpleSyncFileContext context,Object owner,String key,boolean beforePost,BooleanSupplier current,Consumer<Status> done) {
+        underLock(context,owner,key,beforePost,current,current,done);
+    }
+    static void underLock(PurpleSyncFileContext context,Object owner,String key,boolean beforePost,BooleanSupplier lockCurrent,
+            BooleanSupplier current,Consumer<Status> done) {
         AndroidUtilities.runOnUIThread(()->{
-            if(context==null||context.origin==null||!context.current()||!current.getAsBoolean()){done.accept(unavailable());return;}
+            if(context==null||context.origin==null||!context.current()||!lockCurrent.getAsBoolean()||!current.getAsBoolean()){done.accept(unavailable());return;}
             Holder holder=account(context.origin.slot);
             if(holder==null||holder.env.context.origin.lifetime!=context.origin.lifetime||!holder.env.context.origin.key.equals(context.origin.key)){done.accept(unavailable());return;}
-            PurpleSyncChatService.Borrowed borrowed=new PurpleSyncChatService.Borrowed(key,owner,current);
+            PurpleSyncChatService.Borrowed borrowed=new PurpleSyncChatService.Borrowed(key,owner,lockCurrent);
             Consumer<PurpleSyncChatDiscovery.Status> reply=status->{if(current.getAsBoolean())done.accept(new Status(status));};
             if(beforePost)holder.service.checkBeforePost("config",borrowed,reply);
             else holder.service.ensureResolved(false,"config",borrowed,reply);

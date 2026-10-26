@@ -14,6 +14,7 @@ public final class PurpleSyncAutoReviewCases {
         int uploads, sends, reads, cancels;
         Runnable duringUpload, duringSend;
         public void worker(Runnable task) { task.run(); }
+        public void beforePost(PurpleSyncClient.Reply<Boolean> done) { done.onReply(true); }
         public int upload(long id, byte[] bytes, PurpleSyncClient.Reply<Boolean> reply) {
             ++uploads; source = bytes.clone(); uploaded = reply;
             if (duringUpload != null) duringUpload.run();

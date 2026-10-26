@@ -51,6 +51,10 @@ public final class PurpleSyncTelegramTransport implements PurpleSyncTransport {
 
     @Override
     public void post(byte[] staged, PostDone done) {
+        post(staged,null,done);
+    }
+
+    @Override public void post(byte[] staged,PostAuthority authority,PostDone done) {
         if (done == null) {
             throw new IllegalArgumentException("no post callback");
         }
@@ -61,7 +65,7 @@ public final class PurpleSyncTelegramTransport implements PurpleSyncTransport {
             generation.incrementAndGet();
             task = new PurpleSyncPost(
                     new PurpleSyncClient.Operation(client, generation),
-                    staged, done);
+                    staged,authority,done);
             current = task;
         }
         launch(previous, task);

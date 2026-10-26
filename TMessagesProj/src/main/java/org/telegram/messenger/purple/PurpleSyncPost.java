@@ -33,9 +33,16 @@ final class PurpleSyncPost implements PurpleSyncTelegramTransport.Task,
     private File copy;
     private PurpleSyncReader reader;
     private int messageId;
+    private final PurpleSyncTransport.PostAuthority authority;
 
     PurpleSyncPost(PurpleSyncClient.Operation operation, byte[] staged,
             PurpleSyncTransport.PostDone done) {
+        this(operation,staged,null,done);
+    }
+
+    PurpleSyncPost(PurpleSyncClient.Operation operation,byte[] staged,PurpleSyncTransport.PostAuthority authority,
+            PurpleSyncTransport.PostDone done) {
+        this.authority=authority;
         this.operation = operation;
         this.staged = staged != null ? staged.clone() : null;
         this.done = done;
@@ -169,6 +176,9 @@ final class PurpleSyncPost implements PurpleSyncTelegramTransport.Task,
         try {
             operation.client.send(copy, CAPTION, MIME, new PurpleSyncClient.Receipt() {
                 public byte[] expectedBytes() { return staged.clone(); }
+                public boolean current() { return operation.live() && operation.client.isActive()
+                        && (authority==null || authority.current()); }
+                public PurpleSyncTransport.PostAuthority authority() { return authority; }
                 public void onReceipt(int serverId, boolean preparationFailed) {
                     operation.client.runOnWorker(() -> operation.run(() -> PurpleSyncPost.this.onReceipt(serverId, preparationFailed)));
                 }
@@ -219,7 +229,7 @@ final class PurpleSyncPost implements PurpleSyncTelegramTransport.Task,
             }
             finish(new PurpleSyncTransport.PostResult(
                     PurpleSyncTransport.PostStatus.Confirmed, messageId,
-                    row.bytes));
+                    row.bytes,operation.client.chat(),operation.client.origin()));
             return;
         }
         final boolean unknown = row == null

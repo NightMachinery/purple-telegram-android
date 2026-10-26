@@ -8,7 +8,6 @@ package org.telegram.messenger.purple;
 
 import org.telegram.SQLite.SQLiteCursor;
 import org.telegram.SQLite.SQLiteDatabase;
-import org.telegram.messenger.AccountInstance;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.DispatchQueue;
@@ -18,7 +17,6 @@ import org.telegram.messenger.ImageLoader;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.NotificationCenter;
-import org.telegram.messenger.SendMessagesHelper;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.NativeByteBuffer;
 import org.telegram.tgnet.TLObject;
@@ -99,6 +97,11 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
         return userId;
     }
 
+    private boolean loginCurrent() {
+        return origin!=null && origin.userId==userId && origin.current()
+                && io!=null && io.origin.environment==(origin.key.startsWith("1-")?1:0);
+    }
+
     @Override
     public boolean isActive() {
         return io != null && scopeCurrent.getAsBoolean() && userId > 0 && origin != null
@@ -166,7 +169,8 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
     @Override
     public Object download(Message message, Reply<File> reply) {
         if (!isActive() || !contains(message) || !(message.remote instanceof Remote)
-                || !io.matches(((Remote)message.remote).message)) { reply.onReply(null); return null; }
+                || !io.matches(((Remote)message.remote).message)
+                || io.ownership(((Remote)message.remote).message)!=PurpleSyncChatCore.Ownership.Own) { reply.onReply(null); return null; }
         final Download download = new Download((Remote) message.remote, reply);
         AndroidUtilities.runOnUIThread(download::start);
         return download;
@@ -202,36 +206,49 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
 
     @Override
     public void send(File file, String caption, String mime, Receipt receipt) {
-        if (!isActive()) { receipt.onReceipt(0, true); return; }
-        if (receipt.automatic()) {
-            runOnWorker(() -> {
-                byte[] bytes = PurpleSyncReader.readAtMost(file, PurpleSyncPost.MAX_STAGED_BYTES + 1);
-                if (!java.util.Arrays.equals(bytes, receipt.expectedBytes())) { receipt.onReceipt(0, true); return; }
-                uploadAutomatic(0, bytes, null, receipt::current, result -> receipt.onReceipt(result.id, result.id <= 0));
-            });
-        } else {
-            PurpleSendReceipt guarded = PurpleSendReceipt.modern(origin, PurpleSendReceipt.guarded(receipt::current, receipt::onReceipt));
-            SendMessagesHelper.prepareSendingPurpleDocument(AccountInstance.getInstance(account), file.getAbsolutePath(), caption, userId, mime, guarded);
-        }
+        PurpleSyncTransport.PostAuthority authority=receipt.authority();
+        if(!isActive() || !PurpleSyncChatCore.Peer.self().equals(chat()) || authority==null
+                || !authority.current() || !receipt.current() || !PurpleSyncPost.CAPTION.equals(caption)
+                || !PurpleSyncPost.MIME.equals(mime)){receipt.onReceipt(0,true);return;}
+        runOnWorker(()->{
+            byte[] bytes=PurpleSyncReader.readAtMost(file,PurpleSyncPost.MAX_STAGED_BYTES+1);
+            if(!java.util.Arrays.equals(bytes,receipt.expectedBytes())){receipt.onReceipt(0,true);return;}
+            uploadModern(0,bytes,null,()->receipt.current() && authority.current()
+                    && java.util.Arrays.equals(bytes,PurpleSyncReader.readAtMost(file,PurpleSyncPost.MAX_STAGED_BYTES+1)),
+                    authority,result->receipt.onReceipt(result.id,result.id<=0));
+        });
     }
 
     @Override
     public void edit(int id, File file, byte[] expected, java.util.function.BooleanSupplier current,
-        Reply<PurpleSyncAutoCore.Outcome> reply) {
-        runOnWorker(() -> uploadAutomatic(id, PurpleSyncReader.readAtMost(file, PurpleSyncPost.MAX_STAGED_BYTES + 1),
-            expected, current, result -> reply.onReply(result.id > 0 ? PurpleSyncAutoCore.Outcome.Sent
+            Reply<PurpleSyncAutoCore.Outcome> reply) {
+        reply.onReply(PurpleSyncAutoCore.Outcome.OutcomeUnknown);
+    }
+
+    @Override public void edit(int id,File file,byte[] expected,java.util.function.BooleanSupplier current,
+            PurpleSyncTransport.PostAuthority authority,Reply<PurpleSyncAutoCore.Outcome> reply) {
+        if(id<=0 || !isActive() || !PurpleSyncChatCore.Peer.self().equals(chat()) || authority==null || !authority.current()){
+            reply.onReply(PurpleSyncAutoCore.Outcome.OutcomeUnknown);return;
+        }
+        runOnWorker(() -> uploadModern(id, PurpleSyncReader.readAtMost(file, PurpleSyncPost.MAX_STAGED_BYTES + 1),
+            expected, ()->current.getAsBoolean() && authority.current(),authority,
+            result -> reply.onReply(result.id > 0 ? PurpleSyncAutoCore.Outcome.Sent
                 : result.error != null && (result.error.equals("MESSAGE_EDIT_TIME_EXPIRED")
                     || result.error.equals("MESSAGE_AUTHOR_REQUIRED") || result.error.equals("MESSAGE_ID_INVALID")
                     || result.error.equals("MEDIA_NEW_INVALID")) ? PurpleSyncAutoCore.Outcome.EditRefused
                     : PurpleSyncAutoCore.Outcome.OutcomeUnknown)));
     }
 
-    private void uploadAutomatic(int messageId, byte[] bytes, byte[] previous,
-        java.util.function.BooleanSupplier guard, Reply<PurpleSyncAutoUpload.Result> reply) {
+    private void uploadModern(int messageId, byte[] bytes, byte[] previous,
+        java.util.function.BooleanSupplier guard,PurpleSyncTransport.PostAuthority authority,Reply<PurpleSyncAutoUpload.Result> reply) {
         PurpleSyncAutoUpload[] operation = new PurpleSyncAutoUpload[1];
         PurpleSyncAutoUpload.Port port = new PurpleSyncAutoUpload.Port() {
             public void worker(Runnable task) { runOnWorker(task); }
             public void cancel(int token) { cancelRequest(token); }
+            public void beforePost(Reply<Boolean> done) {
+                if(!operation[0].live() || authority==null || !authority.current()){done.onReply(false);return;}
+                authority.check(ready->done.onReply(Boolean.TRUE.equals(ready) && operation[0].live() && authority.current()));
+            }
             public int upload(long id, byte[] data, Reply<Boolean> callback) {
                 if (!operation[0].live()) { callback.onReply(false); return 0; }
                 try {
@@ -244,49 +261,25 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
                 } catch (Exception e) { callback.onReply(false); return 0; }
             }
             public void exact(int id, Reply<byte[]> callback) {
-                new PurpleSyncAutoNetwork(PurpleSyncTelegramClient.this, "", PurpleSyncTelegramClient.this::isActive)
+                new PurpleSyncAutoNetwork(owned(PurpleSyncTelegramClient.this), "", PurpleSyncTelegramClient.this::isActive)
                     .exact(id, operation[0]::live, row -> callback.onReply(row.optInt("presence") == 1 && row.optBoolean("owned")
                         ? PurpleSyncAutoCore.decode(row.optString("record")) : null));
             }
             public int send(int id, TLRPC.TL_inputFile file, Reply<PurpleSyncAutoUpload.Result> callback) {
                 if (!operation[0].live()) { callback.onReply(new PurpleSyncAutoUpload.Result(0, "OutcomeUnknown")); return 0; }
-                TLRPC.TL_inputMediaUploadedDocument media = new TLRPC.TL_inputMediaUploadedDocument();
-                media.file = file; media.mime_type = PurpleSyncPost.MIME; media.force_file = true;
-                TLRPC.TL_documentAttributeFilename name = new TLRPC.TL_documentAttributeFilename();
-                name.file_name = PurpleSyncPost.RECORD_FILE_NAME; media.attributes.add(name);
-                TLObject request;
                 final long randomId = PurpleSyncAutoUpload.randomId();
-                if (id > 0) {
-                    TLRPC.TL_messages_editMessage edit = new TLRPC.TL_messages_editMessage();
-                    edit.peer = new TLRPC.TL_inputPeerSelf(); edit.id = id; edit.media = media;
-                    edit.message = PurpleSyncPost.CAPTION; edit.flags = (1 << 14) | (1 << 11); request = edit;
-                } else {
-                    TLRPC.TL_messages_sendMedia post = new TLRPC.TL_messages_sendMedia();
-                    post.peer = new TLRPC.TL_inputPeerSelf(); post.media = media; post.message = PurpleSyncPost.CAPTION;
-                    post.random_id = randomId; request = post;
-                }
+                TLObject request=PurpleSyncChatUpload.request(chat(),input(),id,file,randomId);
+                if(request==null){callback.onReply(new PurpleSyncAutoUpload.Result(0,"ChatUnavailable"));return 0;}
                 return ConnectionsManager.getInstance(account).sendRequest(request, (response, error) -> {
-                    int resultId = error == null && response instanceof TLRPC.Updates ? id : 0;
-                    if (error == null && response instanceof TLRPC.Updates && id == 0) {
-                        TLRPC.Updates updates = (TLRPC.Updates) response;
-                        if (updates instanceof TLRPC.TL_updateShortSentMessage) resultId = updates.id;
-                        for (TLRPC.Update update : updates.updates) {
-                            if (update instanceof org.telegram.tgnet.tl.TL_update.TL_updateMessageID) {
-                                org.telegram.tgnet.tl.TL_update.TL_updateMessageID mapped = (org.telegram.tgnet.tl.TL_update.TL_updateMessageID) update;
-                                if (mapped.random_id == randomId) resultId = mapped.id;
-                            } else if (update instanceof org.telegram.tgnet.tl.TL_update.TL_updateNewMessage) {
-                                TLRPC.Message message = ((org.telegram.tgnet.tl.TL_update.TL_updateNewMessage) update).message;
-                                if (message != null && MessageObject.getDialogId(message) == userId) resultId = message.id;
-                            }
-                        }
-                    }
-                    if (error == null && response instanceof TLRPC.Updates && origin != null && origin.current() && operation[0].live()) {
-                        org.telegram.messenger.Utilities.stageQueue.postRunnable(() -> {
-                            if (origin.current()) org.telegram.messenger.MessagesController.getInstance(account)
-                                .processUpdates((TLRPC.Updates) response, false);
+                    int resultId=error==null?PurpleSyncChatUpload.receipt(io,response,randomId,id)
+                            : id>0 && "MESSAGE_NOT_MODIFIED".equals(error.text)?id:0;
+                    if(error==null && response instanceof TLRPC.Updates && loginCurrent()){
+                        org.telegram.messenger.Utilities.stageQueue.postRunnable(()->{
+                            if(loginCurrent())org.telegram.messenger.MessagesController.getInstance(account)
+                                    .processUpdates((TLRPC.Updates)response,false);
                         });
                     }
-                    callback.onReply(new PurpleSyncAutoUpload.Result(resultId, error != null ? error.text : resultId > 0 ? null : "OutcomeUnknown"));
+                    callback.onReply(new PurpleSyncAutoUpload.Result(resultId, resultId>0 ? null : error!=null?error.text:"OutcomeUnknown"));
                 }, ConnectionsManager.RequestFlagFailOnServerErrors);
             }
         };
@@ -297,6 +290,7 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
     @Override
     public void deleteOwn(int id,java.util.function.BooleanSupplier current,Reply<PurpleSyncAutoCore.Outcome> reply){
         runOnMain(()->{
+            if(!PurpleSyncChatCore.Peer.self().equals(chat())){reply.onReply(PurpleSyncAutoCore.Outcome.DeletionRefused);return;}
             if(id<=0||!isActive()||!current.getAsBoolean()){reply.onReply(PurpleSyncAutoCore.Outcome.OutcomeUnknown);return;}
             TLRPC.TL_messages_deleteMessages request=new TLRPC.TL_messages_deleteMessages();request.id.add(id);request.revoke=true;
             ConnectionsManager.getInstance(account).sendRequest(request,(response,error)->{
