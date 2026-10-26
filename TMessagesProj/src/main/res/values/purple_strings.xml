@@ -926,4 +926,6 @@
     <string name="PurpleSyncChatLimitTitle">Channel limit reached</string>
     <string name="PurpleSyncChatLimitAbout">Purple could not create the channel: this account is in as many channels and groups as Telegram allows. Leave some and try again, or sync through Saved Messages.</string>
     <string name="PurpleSyncChatTryAgain">Try again</string>
+    <string name="PurpleTelegramWaitUntil">Telegram asks to wait until %1$s.</string>
+    <string name="PurpleTelegramRetryAt">Telegram is temporarily unavailable. Retrying at %1$s.</string>
 </resources>

@@ -27,6 +27,7 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
     private PurpleSyncChatCore.Peer pending;
     private org.telegram.messenger.purple.PurpleAccountFiles.Identity identity;
     private boolean visible;
+    private Runnable rpcWatch;
 
     public PurpleSyncChatActivity(int account) { setCurrentAccount(account); }
     @Override public boolean onFragmentCreate() {
@@ -44,15 +45,17 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
     @Override public View createView(Context context) { return super.createView(context); }
     @Override public void onResume() {
         super.onResume();visible=true;
+        if(rpcWatch!=null)rpcWatch.run();
+        rpcWatch=org.telegram.messenger.purple.PurpleRpcRequests.observe(currentAccount,this::update);
         if(identity==null||!identity.current()){finishFragment();return;}
         if(control==null||!control.current())control=PurpleSyncChat.screen(currentAccount);
         reload();
     }
     @Override public void onPause() {
-        visible=false;if(control!=null){control.close();control=null;}super.onPause();
+        visible=false;if(rpcWatch!=null){rpcWatch.run();rpcWatch=null;}if(control!=null){control.close();control=null;}super.onPause();
     }
     @Override public void onFragmentDestroy() {
-        visible=false;if(control!=null){control.close();control=null;}super.onFragmentDestroy();
+        visible=false;if(rpcWatch!=null){rpcWatch.run();rpcWatch=null;}if(control!=null){control.close();control=null;}super.onFragmentDestroy();
     }
     private void update() { if(visible&&listView!=null)listView.adapter.update(true); }
     private void reload() {
@@ -66,6 +69,8 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
     }
     @Override protected void fillItems(ArrayList<UItem> items,UniversalAdapter adapter) {
         items.add(UItem.asHeader(text("Title")));
+        org.telegram.messenger.purple.PurpleRpcRetry.Transient rpcWait=org.telegram.messenger.purple.PurpleRpcRequests.waiting(currentAccount);
+        if(rpcWait!=null)items.add(UItem.asShadow(org.telegram.messenger.purple.PurpleRpcRequests.text(rpcWait)));
         if(frame==null)items.add(UItem.asShadow(text("Searching")));
         else {
             String line;

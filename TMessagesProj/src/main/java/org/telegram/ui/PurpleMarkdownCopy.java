@@ -262,13 +262,19 @@ final class PurpleMarkdownCopy {
                 int expectedGeneration = generation;
                 int expectedIndex = next;
                 requestManager = chat.getConnectionsManager();
-                requestId = requestManager.sendRequestTyped(request, AndroidUtilities::runOnUIThread, (response, error) -> {
+                requestId = org.telegram.messenger.purple.PurpleRpcRequests.sendTyped(chat.getCurrentAccount(), "markdown", () -> {
+                    PurpleMarkdownCopy action=weak.get();
+                    return action!=null&&action.generation==expectedGeneration&&action.next==expectedIndex&&action.validOrigin()!=null;
+                }, request, (response, error) -> {
                     PurpleMarkdownCopy action = weak.get();
                     if (action != null && action.generation == expectedGeneration && action.next == expectedIndex) {
                         action.received(response, error);
                     }
+                }, wait -> {
+                    PurpleMarkdownCopy action=weak.get();
+                    ChatActivity owner=action!=null?action.validOrigin():null;
+                    if(owner!=null)BulletinFactory.of(owner).createErrorBulletin(org.telegram.messenger.purple.PurpleRpcRequests.text(wait)).show();
                 });
-                requestManager.bindRequestToGuid(requestId, chat.getClassGuid());
                 return;
             }
         }
@@ -359,7 +365,7 @@ final class PurpleMarkdownCopy {
     void cancel() {
         generation++;
         if (requestId != 0 && requestManager != null) {
-            requestManager.cancelRequest(requestId, true);
+            org.telegram.messenger.purple.PurpleRpcRequests.cancel(requestId);
         }
         requestId = 0;
         snapshots.clear();

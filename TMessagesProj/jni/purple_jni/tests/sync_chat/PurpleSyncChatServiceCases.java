@@ -22,17 +22,20 @@ final class PurpleSyncChatServiceCases {
         void seed(PurpleSyncChatCache.Data data){check(PurpleSyncChatCache.save(this,new PurpleSyncChatCache.Loaded(true,null,null),ORIGIN,AUTH,data,()->true),"seed synthetic private cache");writes=0;reads=0;}
     }
     static final class Env implements PurpleSyncChatService.Env {
-        boolean active=true,heldClient,heldWorker,throwWorker,throwBinding,throwClient;
-        long clock=1000;final String key="synthetic-service:"+UUID.randomUUID();
+        boolean active=true,heldClient,heldWorker,heldInventory,throwWorker,throwBinding,throwClient;
+        PurpleRpcRetry.Transient presentation;public void presentation(PurpleRpcRetry.Transient value){presentation=value;}
+        long clock=1000,rpcClock;public long rpcNow(){return rpcClock!=0?rpcClock:clock;}final String key="synthetic-service:"+UUID.randomUUID();
         final Memory file=new Memory();final PurpleSyncChatModelCases.World world=new PurpleSyncChatModelCases.World();
         final Map<Runnable,Long> timers=new LinkedHashMap<>();final ArrayDeque<Runnable> tasks=new ArrayDeque<>();
         PurpleSyncChatService.Binding binding=new PurpleSyncChatService.Binding(true,false,SELF);
+        PurpleSyncChatClient injectedClient;java.util.function.Supplier<PurpleSyncChatClient> injectedFactory;
+        Consumer<RecordPresence> inventoryDone;
         Runnable pending;int clients,cancelled,inventories;String authority=AUTH;
         public PurpleSyncChatOrigin origin(){return ORIGIN;}public String authority(){return authority;}public String operationKey(){return key;}public boolean current(){return active;}public long now(){return clock;}
         public void ui(Runnable task){task.run();}public void worker(Runnable task){if(throwWorker)throw new IllegalStateException("injected");if(heldWorker)tasks.add(task);else task.run();}
         public void delay(Runnable task,long millis){timers.put(task,clock+millis);}public void cancelDelay(Runnable task){timers.remove(task);}public PurpleSyncChatCache.IO cache(){return file;}
         public PurpleSyncChatService.Binding binding(){if(throwBinding)throw new IllegalStateException("injected");return binding;}
-        public PurpleSyncChatClient client(){if(throwClient)throw new IllegalStateException("injected");++clients;return new PurpleSyncChatClient(){
+        public PurpleSyncChatClient client(){if(throwClient)throw new IllegalStateException("injected");++clients;if(injectedFactory!=null)return injectedFactory.get();if(injectedClient!=null)return injectedClient;return new PurpleSyncChatClient(){
             boolean closed;
             public PurpleSyncChatOrigin origin(){return ORIGIN;}public boolean current(){return active&&!closed;}public void dispatch(Runnable task){task.run();}
             void reply(PurpleSyncChatDiscovery.Command command,Consumer<PurpleSyncChatDiscovery.Reply> done){Runnable work=()->{if(current())done.accept(world.reply(command));};if(heldClient)pending=work;else work.run();}
@@ -41,7 +44,7 @@ final class PurpleSyncChatServiceCases {
             public void exact(Cache location,Consumer<Exact> done){reply(new PurpleSyncChatDiscovery.Command(ORIGIN,1,1,PurpleSyncChatDiscovery.Step.ExactMark,null,null,location.chat,location),reply->done.accept(reply.exact));}
             public void hint(Consumer<SettingsHint> done){done.accept(world.hint);}public List<Peer> fallback(){return Collections.emptyList();}public void cancel(){closed=true;++cancelled;}
         };}
-        public void inventory(Peer peer,BooleanSupplier current,Consumer<RecordPresence> done){++inventories;if(current.getAsBoolean())done.accept(world.records.getOrDefault(peer,RecordPresence.Unknown));}public void cancelInventory(){}
+        public void inventory(Peer peer,BooleanSupplier current,Consumer<RecordPresence> done){++inventories;if(heldInventory){inventoryDone=done;return;}if(current.getAsBoolean())done.accept(world.records.getOrDefault(peer,RecordPresence.Unknown));}public void cancelInventory(){Consumer<RecordPresence> done=inventoryDone;inventoryDone=null;if(done!=null)done.accept(RecordPresence.Unknown);}
         void through(long next){clock=next;for(Map.Entry<Runnable,Long> timer:new ArrayList<>(timers.entrySet()))if(timer.getValue()<=clock&&timers.remove(timer.getKey())!=null)timer.getKey().run();}
     }
     static void cacheCases(File root)throws Exception {
@@ -82,7 +85,30 @@ final class PurpleSyncChatServiceCases {
         env.binding=new PurpleSyncChatService.Binding(true,true,CHANNEL);delivered.clear();service.ensureResolved(false,"config",null,delivered::add);check(env.clients==clients+1&&delivered.get(0).postingHeld&&delivered.get(0).reason.equals("BoundChatMismatch"),"cached15min gate revalidates fresh state binding before self-only I/O");service.close(false);
         env=new Env();env.file.seed(cache(SELF,7,50));env.world.add(mark(SELF,7,50));service=new PurpleSyncChatService(env);service.ensureResolved(false,"config",null,ignored->{});clients=env.clients;
         PurpleSyncChatCache.Loaded externallyLoaded=PurpleSyncChatCache.load(env.file,ORIGIN,AUTH);check(PurpleSyncChatCache.save(env.file,externallyLoaded,ORIGIN,AUTH,cache(CHANNEL,8,60),()->true),"external synthetic cache update");delivered.clear();service.ensureResolved(false,"config",null,delivered::add);check(env.clients==clients+1&&delivered.get(0).postingHeld,"cached15min gate revalidates fresh cache bytes");service.close(false);
-        env=new Env();env.heldClient=true;service=new PurpleSyncChatService(env);delivered.clear();service.ensureResolved(true,"config",null,delivered::add);check(PurpleSyncOperations.owned(env.key,service),"service holds account during in-flight RPC");env.through(121000);check(delivered.size()==1&&delivered.get(0).reason.equals("RequestTimeout")&&!PurpleSyncOperations.busy(env.key),"watchdog releases owned lock with held result");env.pending.run();check(delivered.size()==1,"late timed-out client callback dropped");service.close(false);
+        for(boolean borrowed:new boolean[]{false,true}){
+            env=new Env();env.file.seed(cache(SELF,7,50));env.world.add(mark(SELF,7,50));service=new PurpleSyncChatService(env);
+            service.ensureResolved(true,"config",null,ignored->{});long searches=env.world.searches(PurpleSyncChatRequests.Search.Global);
+            env.heldWorker=true;delivered.clear();Object owner=new Object();List<PurpleSyncAutoCore.Outcome> post=new ArrayList<>(),retire=new ArrayList<>();
+            PurpleSyncChatService.Borrowed loan=null;
+            if(borrowed){check(PurpleSyncOperations.begin(env.key,owner,()->true),"watchdog borrower owns account");loan=new PurpleSyncChatService.Borrowed(env.key,owner,()->true);}
+            service.checkBeforePost("config",loan,result->{delivered.add(result);PurpleSyncChat.Status value=new PurpleSyncChat.Status(result);post.add(value.selfPostable()?PurpleSyncAutoCore.Outcome.Sent:PurpleSyncAutoCore.Outcome.OutcomeUnknown);retire.add(value.selfPostable()?PurpleSyncAutoCore.Outcome.Deleted:PurpleSyncAutoCore.Outcome.DeletionRefused);});
+            check(PurpleSyncOperations.owned(env.key,borrowed?owner:service),"service retains original capability during local open");
+            Runnable late=env.tasks.remove();env.through(121000);
+            check(delivered.isEmpty()&&post.isEmpty()&&retire.isEmpty()&&service.status().phase==PurpleSyncChatDiscovery.Phase.Searching&&service.status().reason.equals("TelegramWait")&&service.status().retryAt==126000,"local watchdog presents wait without final post/retirement outcome");
+            check(env.presentation!=null&&env.presentation.retryAt==126000,"local-open wait presentation independent of completion");
+            List<PurpleSyncChatDiscovery.Status> queued=new ArrayList<>();service.checkBeforePost("config",loan,queued::add);check(queued.isEmpty(),"new borrowed/before-post gate queues during local retry");
+            late.run();check(delivered.isEmpty(),"late timed-out local worker fenced");
+            env.heldWorker=false;env.through(126000);check(delivered.size()==1&&queued.size()==1&&new PurpleSyncChat.Status(delivered.get(0)).selfPostable(),"original and queued before-post completions receive eventual validated result");
+            check(post.equals(Collections.singletonList(PurpleSyncAutoCore.Outcome.Sent))&&retire.equals(Collections.singletonList(PurpleSyncAutoCore.Outcome.Deleted)),"transient local open never becomes OutcomeUnknown or DeletionRefused");
+            check(env.world.searches(PurpleSyncChatRequests.Search.Global)>searches,"watchdog restart renews full discovery rather than cached receipt");
+            check(borrowed?PurpleSyncOperations.owned(env.key,owner):!PurpleSyncOperations.busy(env.key),"watchdog retains borrowed owner and releases only its own lease");
+            service.close(false);if(borrowed)PurpleSyncOperations.end(env.key,owner);
+        }
+
+        env=new Env();env.heldInventory=true;service=new PurpleSyncChatService(env);delivered.clear();service.ensureResolved(true,"config",null,delivered::add);
+        check(env.inventoryDone!=null,"uncovered inventory continuation held after RPC");env.through(121000);
+        check(delivered.isEmpty()&&service.status().phase==PurpleSyncChatDiscovery.Phase.Searching,"watchdog fences synchronous cancellation reply before restarting");
+        env.heldInventory=false;env.through(126000);check(delivered.size()==1&&delivered.get(0).phase==PurpleSyncChatDiscovery.Phase.Unset,"original caller resumes after reentrant inventory cancellation");service.close(false);
         for(String failure:new String[]{"worker","binding","client","cache"}){
             env=new Env();env.throwWorker=failure.equals("worker");env.throwBinding=failure.equals("binding");env.throwClient=failure.equals("client");env.file.throwRead=failure.equals("cache");service=new PurpleSyncChatService(env);delivered.clear();service.ensureResolved(true,"config",null,delivered::add);check(delivered.size()==1&&delivered.get(0).postingHeld&&!PurpleSyncOperations.busy(env.key),"setup exception cleanup "+failure);service.close(false);
         }

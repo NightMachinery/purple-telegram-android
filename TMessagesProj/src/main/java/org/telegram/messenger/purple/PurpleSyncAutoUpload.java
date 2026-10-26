@@ -9,6 +9,7 @@ final class PurpleSyncAutoUpload {
         void worker(Runnable task);
         int upload(long id, byte[] bytes, PurpleSyncClient.Reply<Boolean> reply);
         void exact(int id, PurpleSyncClient.Reply<byte[]> reply);
+        default void cancelReads() {}
         int send(int id, TLRPC.TL_inputFile file, PurpleSyncClient.Reply<Result> reply);
         void cancel(int token);
         void beforePost(PurpleSyncClient.Reply<Boolean> done);
@@ -110,6 +111,7 @@ final class PurpleSyncAutoUpload {
         Port old = port; port = null;
         int pending = request.getAndSet(0);
         if (pending != 0 && old != null) old.cancel(pending);
+        if (old != null) old.cancelReads();
         current = null; bytes = null; previous = null;
         PurpleSyncClient.Reply<Result> callback = reply; reply = null;
         if (callback != null) callback.onReply(new Result(outcome == PurpleSyncAutoCore.Outcome.Sent ? serverId : 0,

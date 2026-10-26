@@ -36,6 +36,8 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
     private final PurpleAccountFiles.Identity origin;
     private PurpleSyncChatIO io;
     private java.util.function.BooleanSupplier scopeCurrent=()->true;
+    private final PurpleSyncManagedReads managedReads=new PurpleSyncManagedReads(this::nowMillis);
+    @Override public ManagedReads managedReads(){return managedReads.state();}
 
     private PurpleSyncTelegramClient(int account, long userId) {
         this.account = account;
@@ -97,6 +99,10 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
         return userId;
     }
 
+    @Override public long transientRetryAt(){PurpleRpcRetry.Transient value=PurpleRpcRequests.waiting(account,"record-read");return value!=null?value.retryAt:0;}
+    private java.util.function.Consumer<PurpleRpcRetry.Transient> waiting=ignored->{};
+    @Override public void transientWait(java.util.function.Consumer<PurpleRpcRetry.Transient> observer){waiting=observer!=null?observer:ignored->{};}
+    private void noteWriteFailure(TLRPC.TL_error error){if(!loginCurrent())return;PurpleRpcRetry.Transient wait=PurpleRpcRequests.writeFailure(account,"sync-write",error);if(wait!=null)runOnMain(()->{if(loginCurrent())waiting.accept(wait);});}
     private boolean loginCurrent() {
         return origin!=null && origin.userId==userId && origin.current()
                 && io!=null && io.origin.environment==(origin.key.startsWith("1-")?1:0);
@@ -130,7 +136,8 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
         if (!isActive()) { reply.onReply(History.failed("AccountUnavailable")); return 0; }
         final TLRPC.TL_messages_getHistory request = PurpleSyncChatIO.history(chat(),input(),offsetId,limit);
         if(request==null){reply.onReply(History.failed("ChatUnavailable"));return 0;}
-        return ConnectionsManager.getInstance(account).sendRequest(request,
+        Runnable retired=managedReads.begin();
+        int token=PurpleRpcRequests.send(account,"record-read",this::isActive,request,
                 (response, error) -> {
                     History history;
                     try {
@@ -140,7 +147,7 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
                         history = History.failed("UnreadableResponse");
                     }
                     reply.onReply(isActive()?history:History.failed("AccountUnavailable"));
-                });
+                },waiting,30000,null,retired);return token;
     }
 
     @Override
@@ -148,7 +155,8 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
         if (!isActive()) { reply.onReply(Lookup.failed("AccountUnavailable")); return 0; }
         final TLObject request=PurpleSyncChatRequests.exact(chat(),id,input());
         if(request==null){reply.onReply(Lookup.failed("ChatUnavailable"));return 0;}
-        return ConnectionsManager.getInstance(account).sendRequest(request,
+        Runnable retired=managedReads.begin();
+        int token=PurpleRpcRequests.send(account,"record-read",this::isActive,request,
                 (response, error) -> {
                     Lookup lookup;
                     try {
@@ -158,12 +166,12 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
                         lookup = Lookup.failed("UnreadableResponse");
                     }
                     reply.onReply(isActive()?lookup:Lookup.failed("AccountUnavailable"));
-                });
+                },waiting,30000,null,retired);return token;
     }
 
     @Override
     public void cancelRequest(int token) {
-        ConnectionsManager.getInstance(account).cancelRequest(token, true);
+        if(token<0)PurpleRpcRequests.cancel(token);else ConnectionsManager.getInstance(account).cancelRequest(token, true);
     }
 
     @Override
@@ -242,6 +250,7 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
     private void uploadModern(int messageId, byte[] bytes, byte[] previous,
         java.util.function.BooleanSupplier guard,PurpleSyncTransport.PostAuthority authority,Reply<PurpleSyncAutoUpload.Result> reply) {
         PurpleSyncAutoUpload[] operation = new PurpleSyncAutoUpload[1];
+        PurpleSyncAutoNetwork[] exactReads = new PurpleSyncAutoNetwork[1];
         PurpleSyncAutoUpload.Port port = new PurpleSyncAutoUpload.Port() {
             public void worker(Runnable task) { runOnWorker(task); }
             public void cancel(int token) { cancelRequest(token); }
@@ -256,21 +265,23 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
                     request.file_id = id; request.file_part = 0;
                     request.bytes = new NativeByteBuffer(data.length); request.bytes.writeBytes(data);
                     return ConnectionsManager.getInstance(account).sendRequest(request,
-                        (response, error) -> callback.onReply(error == null && response instanceof TLRPC.TL_boolTrue),
+                        (response, error) -> {if(operation[0].live())noteWriteFailure(error);callback.onReply(error == null && response instanceof TLRPC.TL_boolTrue);},
                         ConnectionsManager.RequestFlagFailOnServerErrors, ConnectionsManager.ConnectionTypeUpload);
                 } catch (Exception e) { callback.onReply(false); return 0; }
             }
             public void exact(int id, Reply<byte[]> callback) {
-                new PurpleSyncAutoNetwork(owned(PurpleSyncTelegramClient.this), "", PurpleSyncTelegramClient.this::isActive)
-                    .exact(id, operation[0]::live, row -> callback.onReply(row.optInt("presence") == 1 && row.optBoolean("owned")
+                exactReads[0]=new PurpleSyncAutoNetwork(owned(PurpleSyncTelegramClient.this), "", operation[0]::live);
+                exactReads[0].exact(id, operation[0]::live, row -> callback.onReply(row.optInt("presence") == 1 && row.optBoolean("owned")
                         ? PurpleSyncAutoCore.decode(row.optString("record")) : null));
             }
+            public void cancelReads() { if(exactReads[0]!=null)exactReads[0].cancel(); }
             public int send(int id, TLRPC.TL_inputFile file, Reply<PurpleSyncAutoUpload.Result> callback) {
                 if (!operation[0].live()) { callback.onReply(new PurpleSyncAutoUpload.Result(0, "OutcomeUnknown")); return 0; }
                 final long randomId = PurpleSyncAutoUpload.randomId();
                 TLObject request=PurpleSyncChatUpload.request(chat(),input(),id,file,randomId);
                 if(request==null){callback.onReply(new PurpleSyncAutoUpload.Result(0,"ChatUnavailable"));return 0;}
                 return ConnectionsManager.getInstance(account).sendRequest(request, (response, error) -> {
+                    if(operation[0].live())noteWriteFailure(error);
                     int resultId=error==null?PurpleSyncChatUpload.receipt(io,response,randomId,id)
                             : id>0 && "MESSAGE_NOT_MODIFIED".equals(error.text)?id:0;
                     if(error==null && response instanceof TLRPC.Updates && loginCurrent()){
@@ -295,6 +306,7 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
             TLRPC.TL_messages_deleteMessages request=new TLRPC.TL_messages_deleteMessages();request.id.add(id);request.revoke=true;
             ConnectionsManager.getInstance(account).sendRequest(request,(response,error)->{
                 if(!isActive()||!current.getAsBoolean()){reply.onReply(PurpleSyncAutoCore.Outcome.OutcomeUnknown);return;}
+                noteWriteFailure(error);
                 reply.onReply(error==null&&response instanceof TLRPC.TL_messages_affectedMessages?PurpleSyncAutoCore.Outcome.Deleted
                     :error!=null&&("MESSAGE_DELETE_FORBIDDEN".equals(error.text)||"CHAT_ADMIN_REQUIRED".equals(error.text))?PurpleSyncAutoCore.Outcome.DeletionRefused:PurpleSyncAutoCore.Outcome.OutcomeUnknown);
             }, ConnectionsManager.RequestFlagFailOnServerErrors);

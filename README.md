@@ -697,7 +697,7 @@ line format, scrubbing, export header and the full-queue path are in
 `TMessagesProj/jni/purple_jni/tests/diag_log/`.
 
 The typed sync-chat bridge, discovery and record I/O are described in
-[Sync-chat discovery and I/O](docs/sync-chat.md), including scoped readback and
+[Sync-chat discovery and I/O](docs/sync-chat.md), including [transient request waits](docs/rpc-retry.md), scoped readback and
 ledger matching, silent modern sends, restricted ownership and the source/host
 JNI validation boundary.
 

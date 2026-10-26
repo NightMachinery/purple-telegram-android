@@ -19,7 +19,7 @@ receipt = json.loads(args.receipt.read_text())
 classes = Path(receipt["destination"])
 compiler = Path(receipt["compiler"])
 java = compiler.with_name("java")
-assert receipt["task"] == ":TMessagesProj:compileStandaloneJavaWithJavac"
+assert receipt["task"] in [":TMessagesProj:compileStandaloneJavaWithJavac", ":TMessagesProj:compileDebugJavaWithJavac"]
 assert classes.is_dir() and args.json.is_file() and args.library.is_file()
 assert not args.output.exists(), "output must be an unused fixture directory"
 args.output.mkdir(parents=True)

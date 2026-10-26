@@ -89,6 +89,7 @@ public final class PurpleSyncAuto {
             preference = hintKey(origin.key);
             engine = new PurpleSyncAutoEngine(account, origin.key, this);
             PurpleSyncClient client = PurpleSyncTelegramClient.create(origin.slot, origin.userId);
+            client.transientWait(value->AndroidUtilities.runOnUIThread(this::render));
             network = new PurpleSyncAutoNetwork(client, engine.session, () -> current() && enabledHint());
         }
         public boolean current() {
@@ -129,6 +130,8 @@ public final class PurpleSyncAuto {
                 PurpleSyncAutoEdits.cleanup(account.account);
             }
         }
+        public long takeTransientRetryAt(){return PurpleRpcRequests.takeWriteRetryAt(account.account,"sync-write");}
+        public long transientRetryAt(){PurpleRpcRetry.Transient wait=PurpleRpcRequests.writeWaiting(account.account,"sync-write");return wait!=null?wait.retryAt:0;}
         public boolean ownerAnswered() {
             return PurpleAccountOwner.ready();
         }
@@ -190,6 +193,8 @@ public final class PurpleSyncAuto {
                 : shownReason == PurpleSyncAutoCore.Reason.None
                 ? LocaleController.getString(R.string.PurpleSyncAutoReady)
                 : LocaleController.formatString(R.string.PurpleSyncAutoAttention, reasonText(shownReason));
+            PurpleRpcRetry.Transient wait=PurpleRpcRequests.waiting(account.account);
+            if(enabledHint()&&wait!=null)text=PurpleRpcRequests.text(wait);
             Status status = new Status(enabledHint(), text);
             for (Consumer<Status> listener : new ArrayList<>(listeners)) listener.accept(status);
         }

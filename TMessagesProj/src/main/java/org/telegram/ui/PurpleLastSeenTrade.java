@@ -210,6 +210,7 @@ public final class PurpleLastSeenTrade {
         boolean reopenAfterRestore;
         boolean noted;
         int tries;
+        long retryAt;
 
         Restore(int account, long owner, long target,
                 ArrayList<TLRPC.InputPrivacyRule> rules, String expected,
@@ -478,7 +479,8 @@ public final class PurpleLastSeenTrade {
 
         final TL_account.getPrivacy req = new TL_account.getPrivacy();
         req.key = new TLRPC.TL_inputPrivacyKeyStatusTimestamp();
-        ConnectionsManager.getInstance(currentAccount).sendRequest(req,
+        org.telegram.messenger.purple.PurpleRpcRequests.send(currentAccount,"privacy-start",
+                ()->running==userId&&UserConfig.getInstance(currentAccount).getClientUserId()==owner,req,
                 (response, error) -> AndroidUtilities.runOnUIThread(() -> {
                     if (UserConfig.getInstance(currentAccount).getClientUserId() != owner) {
                         if (running == userId) {
@@ -495,7 +497,7 @@ public final class PurpleLastSeenTrade {
                     MessagesController.getInstance(currentAccount).putUsers(rules.users, false);
                     MessagesController.getInstance(currentAccount).putChats(rules.chats, false);
                     open(fragment, currentAccount, owner, user, rules.rules);
-                }), ConnectionsManager.RequestFlagFailOnServerErrors);
+                }),wait->info(fragment,org.telegram.messenger.purple.PurpleRpcRequests.text(wait)),30000,()->{if(running==userId)running=0;});
     }
 
     /** Puts the user through, keeping the rules as they were for the restore. */
@@ -599,7 +601,8 @@ public final class PurpleLastSeenTrade {
         }
         final TLRPC.TL_users_getUsers req = new TLRPC.TL_users_getUsers();
         req.id.add(inputUser);
-        ConnectionsManager.getInstance(currentAccount).sendRequest(req,
+        org.telegram.messenger.purple.PurpleRpcRequests.send(currentAccount,"privacy-poll",
+                ()->pending[currentAccount]==transaction&&!transaction.restoring&&sameOwner(transaction)&&System.currentTimeMillis()<deadlineMs,req,
                 (response, error) -> AndroidUtilities.runOnUIThread(() -> {
                     if (pending[currentAccount] != transaction || transaction.restoring
                             || !sameOwner(transaction)) {
@@ -628,7 +631,7 @@ public final class PurpleLastSeenTrade {
                         FileLog.d("Purple: last seen peek hold ran out for " + user.id);
                         finish(fragment, currentAccount, user, restore, 0);
                     }
-                }));
+                }),wait->info(fragment,org.telegram.messenger.purple.PurpleRpcRequests.text(wait)),30000);
     }
 
     /**
@@ -687,6 +690,7 @@ public final class PurpleLastSeenTrade {
                 || transaction.inFlight || !sameOwner(transaction)) {
             return;
         }
+        if(System.currentTimeMillis()<transaction.retryAt){scheduleRetry();return;}
         transaction.inFlight = true;
         final TL_account.setPrivacy req = new TL_account.setPrivacy();
         req.key = new TLRPC.TL_inputPrivacyKeyStatusTimestamp();
@@ -708,6 +712,7 @@ public final class PurpleLastSeenTrade {
                         verify(transaction);
                         return;
                     }
+                    if(noteWait(transaction,error,"privacy-restore")){scheduleRetry();return;}
                     if (++transaction.tries < RESTORE_TRIES) {
                         FileLog.d("Purple: last seen peek restore failed, retrying");
                         AndroidUtilities.runOnUIThread(() -> restore(transaction), 2000L);
@@ -729,7 +734,8 @@ public final class PurpleLastSeenTrade {
         transaction.inFlight = true;
         final TL_account.getPrivacy req = new TL_account.getPrivacy();
         req.key = new TLRPC.TL_inputPrivacyKeyStatusTimestamp();
-        ConnectionsManager.getInstance(transaction.account).sendRequest(req,
+        org.telegram.messenger.purple.PurpleRpcRequests.send(transaction.account,"privacy-verify",
+                ()->pending[transaction.account]==transaction&&sameOwner(transaction),req,
                 (response, error) -> AndroidUtilities.runOnUIThread(() -> {
                     if (pending[transaction.account] != transaction) {
                         return;
@@ -764,6 +770,7 @@ public final class PurpleLastSeenTrade {
                         return;
                     }
                     FileLog.e("Purple: last seen peek restore verification failed");
+                    if(noteWait(transaction,error,"privacy-restore")){scheduleRetry();return;}
                     if (++transaction.tries < RESTORE_TRIES) {
                         AndroidUtilities.runOnUIThread(() -> restore(transaction), 2000L);
                     } else {
@@ -771,7 +778,7 @@ public final class PurpleLastSeenTrade {
                         error(transaction.fragment.get(), formatString(
                                 R.string.PurpleTradeRestoreFailed, "?"));
                     }
-                }), ConnectionsManager.RequestFlagFailOnServerErrors);
+                }),wait->info(transaction.fragment.get(),org.telegram.messenger.purple.PurpleRpcRequests.text(wait)),30000,()->{transaction.inFlight=false;scheduleRetry();});
     }
 
     private static SharedPreferences journal(int account) {
@@ -856,6 +863,14 @@ public final class PurpleLastSeenTrade {
             }
             scheduleRetry();
         });
+    }
+
+    private static boolean noteWait(Restore transaction,TLRPC.TL_error error,String purpose){
+        org.telegram.messenger.purple.PurpleRpcRetry.Transient value=org.telegram.messenger.purple.PurpleRpcRequests.writeFailure(transaction.account,purpose,error);
+        if(value==null)return false;
+        transaction.retryAt=value.retryAt;
+        info(transaction.fragment.get(),org.telegram.messenger.purple.PurpleRpcRequests.text(value));
+        return true;
     }
 
     private static void scheduleRetry() {

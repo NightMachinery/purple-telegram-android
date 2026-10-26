@@ -26,25 +26,41 @@ final class PurpleSyncAutoNetwork {
         final java.util.concurrent.atomic.AtomicBoolean done = new java.util.concurrent.atomic.AtomicBoolean();
         final PurpleSyncAutoEngine.Reply<T> reply;
         final Runnable timeout;
-        Pending(PurpleSyncAutoEngine.Reply<T> reply, T failure, Runnable cancel) {
-            this.reply = reply;
-            timeout = () -> client.runOnWorker(() -> {
-                if (done.compareAndSet(false, true)) {
-                    pendingOperations.remove(this);
-                    if (cancel != null)
-                        cancel.run();
-                    reply.done(failure);
-                }
-            });
+        final T failure;
+        Runnable cancel;
+        final PurpleSyncReadScope reads;
+        long readRevision,localDeadline;
+        Pending(PurpleSyncAutoEngine.Reply<T> reply,T failure,Runnable cancel,BooleanSupplier guard){
+            this.reply=reply;this.failure=failure;this.cancel=cancel;
+            reads=new PurpleSyncReadScope(client,guard);
+            readRevision=reads.managedReads().revision;localDeadline=PurpleRpcRetry.add(client.nowMillis(),300000);
+            timeout=()->client.runOnWorker(this::expired);
             pendingOperations.add(this);
-            client.runOnMain(() -> {
-                if (!done.get())
-                    org.telegram.messenger.AndroidUtilities.runOnUIThread(timeout, 300000);
-            });
+            client.runOnMain(()->{if(!done.get())org.telegram.messenger.AndroidUtilities.runOnUIThread(timeout,300000);});
         }
+        void expired(){
+            if(done.get())return;
+            long now=client.nowMillis();
+            PurpleSyncClient.ManagedReads state=reads.managedReads();
+            if(reads.isActive()){
+                if(state.active){
+                    long retryAt=client.transientRetryAt();
+                    arm(PurpleRpcRetry.add(Math.max(0,retryAt-now),60000));return;
+                }
+                if(readRevision!=state.revision){
+                    readRevision=state.revision;localDeadline=PurpleRpcRetry.add(state.completedAt,300000);
+                }
+                if(localDeadline>now){arm(localDeadline-now);return;}
+            }
+            if(done.compareAndSet(false,true)){
+                pendingOperations.remove(this);reads.cancel();if(cancel!=null)cancel.run();reply.done(failure);
+            }
+        }
+        private void arm(long delay){client.runOnMain(()->{if(!done.get())org.telegram.messenger.AndroidUtilities.runOnUIThread(timeout,delay);});}
         void finish(T value) {
             if (done.compareAndSet(false, true)) {
                 pendingOperations.remove(this);
+                reads.cancel();
                 client.runOnMain(() -> org.telegram.messenger.AndroidUtilities.cancelRunOnUIThread(timeout));
                 reply.done(value);
             }
@@ -52,8 +68,11 @@ final class PurpleSyncAutoNetwork {
     }
     void cancel() {
         for (Pending<?> operation : pendingOperations)
-            if (operation.done.compareAndSet(false, true))
+            if (operation.done.compareAndSet(false, true)) {
+                operation.reads.cancel();
+                if(operation.cancel!=null)operation.cancel.run();
                 client.runOnMain(() -> org.telegram.messenger.AndroidUtilities.cancelRunOnUIThread(operation.timeout));
+            }
         pendingOperations.clear();
         PurpleSyncTelegramTransport check = transport;
         if (check != null)
@@ -62,16 +81,17 @@ final class PurpleSyncAutoNetwork {
     void check(
         int[] exactIds, BooleanSupplier guard, PurpleSyncAutoEngine.Reply<PurpleSyncAutoEngine.Observed> finished) {
         BooleanSupplier scoped = () -> current.getAsBoolean() && guard.getAsBoolean();
-        PurpleSyncTelegramTransport checker = new PurpleSyncTelegramTransport(new PurpleSyncAutoClient(client, scoped));
+        Pending<PurpleSyncAutoEngine.Observed> pending = new Pending<>(finished, null, null, scoped);
+        PurpleSyncTelegramTransport checker = new PurpleSyncTelegramTransport(pending.reads);
+        pending.cancel=checker::cancel;
         transport = checker;
-        Pending<PurpleSyncAutoEngine.Observed> pending = new Pending<>(finished, null, checker::cancel);
         PurpleSyncAutoEngine.Reply<PurpleSyncAutoEngine.Observed> reply = pending::finish;
         if (!scoped.getAsBoolean()) {
             reply.done(null);
             return;
         }
         checker.check(null, result -> {
-            if (!scoped.getAsBoolean() || result.status != PurpleSyncTransport.CheckStatus.Finished) {
+            if (pending.done.get() || !scoped.getAsBoolean() || result.status != PurpleSyncTransport.CheckStatus.Finished) {
                 reply.done(null);
                 return;
             }
@@ -86,7 +106,7 @@ final class PurpleSyncAutoNetwork {
             int index = 0;
             for (int id : all) requested[index++] = id;
             JSONArray reads = new JSONArray();
-            readMany(requested, 0, reads,
+            readMany(pending, requested, 0, reads,
                 () -> !pending.done.get() && scoped.getAsBoolean(),
                 () -> reply.done(null),
                 () -> reply.done(new PurpleSyncAutoEngine.Observed(
@@ -94,7 +114,7 @@ final class PurpleSyncAutoNetwork {
         });
     }
     private void readMany(
-        int[] ids, int index, JSONArray reads, BooleanSupplier active, Runnable cancelled, Runnable done) {
+        Pending<?> pending, int[] ids, int index, JSONArray reads, BooleanSupplier active, Runnable cancelled, Runnable done) {
         if (!current.getAsBoolean() || !active.getAsBoolean()) {
             cancelled.run();
             return;
@@ -103,12 +123,16 @@ final class PurpleSyncAutoNetwork {
             done.run();
             return;
         }
-        exact(ids[index], active, row -> {
+        exact(pending.reads, ids[index], active, row -> {
             reads.put(row);
-            readMany(ids, index + 1, reads, active, cancelled, done);
+            readMany(pending, ids, index + 1, reads, active, cancelled, done);
         });
     }
     void exact(int id, BooleanSupplier guard, PurpleSyncAutoEngine.Reply<JSONObject> reply) {
+        Pending<JSONObject> pending=new Pending<>(reply,row(id,0,null,false),null,guard);
+        exact(pending.reads,id,()->!pending.done.get()&&guard.getAsBoolean(),pending::finish);
+    }
+    private void exact(PurpleSyncClient client,int id, BooleanSupplier guard, PurpleSyncAutoEngine.Reply<JSONObject> reply) {
         if (!current.getAsBoolean() || !guard.getAsBoolean() || !client.isActive()) {
             reply.done(row(id, 0, null, false));
             return;
@@ -179,7 +203,7 @@ final class PurpleSyncAutoNetwork {
     void send(boolean edit,int id,byte[] bytes,byte[] previous,BooleanSupplier guard,
             PurpleSyncTransport.PostAuthority authority,PurpleSyncAutoEngine.Reply<PurpleSyncAutoCore.Outcome> finished) {
         Pending<PurpleSyncAutoCore.Outcome> pending =
-            new Pending<>(finished, PurpleSyncAutoCore.Outcome.OutcomeUnknown, null);
+            new Pending<>(finished, PurpleSyncAutoCore.Outcome.OutcomeUnknown, null, guard);
         PurpleSyncAutoEngine.Reply<PurpleSyncAutoCore.Outcome> reply = pending::finish;
         BooleanSupplier live = () -> !pending.done.get() && guard.getAsBoolean();
         if (!live.getAsBoolean()) {
@@ -195,7 +219,7 @@ final class PurpleSyncAutoNetwork {
                         : PurpleSyncAutoCore.Outcome.OutcomeUnknown));
             return;
         }
-        exact(id, live, read -> {
+        exact(pending.reads, id, live, read -> {
             if (!live.getAsBoolean() || read.optInt("presence") != 1 || !read.optBoolean("owned")
                 || !Arrays.equals(previous, PurpleSyncAutoCore.decode(read.optString("record")))) {
                 reply.done(PurpleSyncAutoCore.Outcome.OutcomeUnknown);
@@ -224,10 +248,10 @@ final class PurpleSyncAutoNetwork {
     void retire(
         int id, byte[] bytes, BooleanSupplier guard, PurpleSyncAutoEngine.Reply<PurpleSyncAutoCore.Outcome> finished) {
         Pending<PurpleSyncAutoCore.Outcome> pending =
-            new Pending<>(finished, PurpleSyncAutoCore.Outcome.OutcomeUnknown, null);
+            new Pending<>(finished, PurpleSyncAutoCore.Outcome.OutcomeUnknown, null, guard);
         PurpleSyncAutoEngine.Reply<PurpleSyncAutoCore.Outcome> reply = pending::finish;
         BooleanSupplier live = () -> !pending.done.get() && guard.getAsBoolean();
-        exact(id, live, read -> {
+        exact(pending.reads, id, live, read -> {
             if (!live.getAsBoolean() || read.optInt("presence") != 1 || !read.optBoolean("owned")
                 || !Arrays.equals(bytes, PurpleSyncAutoCore.decode(read.optString("record")))) {
                 reply.done(PurpleSyncAutoCore.Outcome.OutcomeUnknown);

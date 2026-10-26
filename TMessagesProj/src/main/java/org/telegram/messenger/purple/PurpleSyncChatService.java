@@ -27,6 +27,8 @@ final class PurpleSyncChatService {
         String operationKey();
         boolean current();
         long now();
+        default long rpcNow(){return now();}
+        default void presentation(PurpleRpcRetry.Transient value){}
         void ui(Runnable task);
         void worker(Runnable task);
         void delay(Runnable task,long millis);
@@ -36,6 +38,7 @@ final class PurpleSyncChatService {
         PurpleSyncChatClient client();
         void inventory(Peer peer,BooleanSupplier current,Consumer<RecordPresence> done);
         void cancelInventory();
+        default void transientWait(Consumer<PurpleRpcRetry.Transient> observer){}
     }
     private static final class Request {
         final boolean beforePost, force;
@@ -83,6 +86,7 @@ final class PurpleSyncChatService {
 
     PurpleSyncChatService(Env env) {
         this.env=env;
+        env.transientWait(value->env.ui(()->transientWait(value)));
         ResolveInput input=new ResolveInput(env.origin().userId);
         status=new PurpleSyncChatDiscovery.Status(PurpleSyncChatDiscovery.Phase.Paused,resolve(input),"NotStarted",false,true,0);
     }
@@ -100,13 +104,16 @@ final class PurpleSyncChatService {
     private void enqueue(Request request) {
         if(closed||!env.current()){request.done.accept(unavailable("AccountUnavailable"));return;}
         if(!request.stream.equals("config")&&!request.stream.equals("library")){request.done.accept(unavailable("InvalidStream"));return;}
+        retireStale();
         if(request.borrowed!=null)waiting.addFirst(request);else waiting.addLast(request);kick();
     }
     private boolean borrowedCurrent(Borrowed borrowed) {
         return borrowed!=null&&env.operationKey().equals(borrowed.key)&&borrowed.current.getAsBoolean()&&PurpleSyncOperations.owned(borrowed.key,borrowed.owner);
     }
     private boolean live(long run) { return !closed&&run==generation&&active!=null&&env.current()&&(owned?PurpleSyncOperations.owned(env.operationKey(),this):borrowedCurrent(active.borrowed)); }
+    private void retireStale(){if(active!=null&&!live(generation))abandon(generation);}
     private void kick() {
+        retireStale();
         if(closed||active!=null||waiting.isEmpty())return;
         Request next=waiting.peekFirst();
         if(!env.current()){waiting.removeFirst().done.accept(unavailable("AccountUnavailable"));kick();return;}
@@ -120,6 +127,7 @@ final class PurpleSyncChatService {
         load(run);
     }
     private void load(long run) {
+        present(null);
         try {
         armWatchdog(run);
         env.worker(()->{
@@ -140,6 +148,7 @@ final class PurpleSyncChatService {
                     finish(status,run,false);return;
                 }
                 client=env.client();
+                if(client!=null)client.transientWait(value->env.ui(()->{if(live(run))transientWait(value);}));
                 if(client==null||!client.current()||!env.origin().equals(client.origin())){finish(unavailable("AccountUnavailable"),run);return;}
                 model=new PurpleSyncChatDiscovery(env.origin(),loaded.data,binding.bound,binding.chat,client.fallback(),active.stream);
                 dispatchedRun=dispatchedTicket=0;
@@ -218,10 +227,10 @@ final class PurpleSyncChatService {
         }
         if(client!=null){client.cancel();client=null;}env.cancelInventory();
         int completedRetries=model!=null?model.retriesCompleted():0;
-        cancelWatchdog();
+        cancelWatchdog();present(null);
         boolean release=owned;owned=false;
         if(next.phase==PurpleSyncChatDiscovery.Phase.Searching&&next.retryAt>0){
-            int retries=completedRetries+1;Cache anchor=next.resolution.cache;
+            int retries=next.reason.equals("TelegramWait")?0:completedRetries+1;Cache anchor=next.resolution.cache;
             retry=()->{
                 retry=null;if(closed||!env.current())return;
                 Request request=new Request(false,true,finished.stream,null,ignored->{});request.retries=retries;request.retryAnchor=anchor;
@@ -234,8 +243,8 @@ final class PurpleSyncChatService {
     }
     private void abandon(long run) {
         if(run!=generation||active==null)return;
-        Request abandoned=active;active=null;cancelWatchdog();
-        if(client!=null){client.cancel();client=null;}env.cancelInventory();
+        Request abandoned=active;active=null;++generation;receipt=null;cancelRetry();cancelWatchdog();present(null);
+        if(client!=null){client.cancel();client=null;}env.cancelInventory();if(model!=null)model.cancel();
         PurpleSyncChatDiscovery.Status next=unavailable("AccountUnavailable");status=next;
         if(owned){owned=false;PurpleSyncOperations.end(env.operationKey(),this);}
         if(!closed&&env.current())abandoned.done.accept(next);kick();
@@ -246,20 +255,41 @@ final class PurpleSyncChatService {
         if(binding!=null&&binding.ok){safe.settingsBound=binding.bound;safe.settingsChat=binding.chat;}
         return new PurpleSyncChatDiscovery.Status(PurpleSyncChatDiscovery.Phase.Paused,resolve(safe),reason,false,true,0,opening!=null&&opening.data!=null&&opening.data.newReaders);
     }
+    private void transientWait(PurpleRpcRetry.Transient value){
+        long run=generation;if(!live(run))return;
+        PurpleSyncChatDiscovery.Status safe=unavailable("TelegramWait");
+        long remaining=Math.max(0,value.retryAt-env.rpcNow());
+        status=new PurpleSyncChatDiscovery.Status(PurpleSyncChatDiscovery.Phase.Searching,safe.resolution,"TelegramWait",false,true,PurpleRpcRetry.add(env.now(),remaining),safe.newReaders);
+        cancelWatchdog();watchdog=()->{watchdog=null;if(live(run))transientTimeout(run);else abandon(run);};
+        env.delay(watchdog,PurpleRpcRetry.add(remaining,120000));
+    }
+    private void transientTimeout(long run){
+        if(!live(run))return;
+        PurpleSyncChatDiscovery.Status safe=unavailable("TelegramWait");
+        cancelWatchdog();cancelRetry();
+        long next=++generation;receipt=null;active.fullRequired=true;
+        if(client!=null){client.cancel();client=null;}env.cancelInventory();if(model!=null)model.cancel();
+        if(!live(next)){abandon(next);return;}
+        status=new PurpleSyncChatDiscovery.Status(PurpleSyncChatDiscovery.Phase.Searching,safe.resolution,"TelegramWait",false,true,PurpleRpcRetry.add(env.now(),5000),safe.newReaders);
+        retry=()->{retry=null;if(live(next))load(next);else abandon(next);};
+        env.delay(retry,5000);
+        present(new PurpleRpcRetry.Transient(PurpleRpcRetry.Kind.Timeout,PurpleRpcRetry.add(env.rpcNow(),5000),false));
+    }
+    private void present(PurpleRpcRetry.Transient value){try{env.presentation(value);}catch(RuntimeException|LinkageError ignored){}}
     private void armWatchdog(long run){
-        cancelWatchdog();watchdog=()->{watchdog=null;if(run==generation&&active!=null){if(live(run))finish(unavailable("RequestTimeout"),run);else abandon(run);}};
+        cancelWatchdog();watchdog=()->{watchdog=null;if(run==generation&&active!=null){if(live(run))transientTimeout(run);else abandon(run);}};
         env.delay(watchdog,120000);
     }
     private void cancelWatchdog(){if(watchdog!=null){env.cancelDelay(watchdog);watchdog=null;}}
     void cancelBorrowed(Object owner){
         waiting.removeIf(request->request.borrowed!=null&&request.borrowed.owner==owner);
         if(active==null||active.borrowed==null||active.borrowed.owner!=owner)return;
-        ++generation;cancelWatchdog();if(client!=null){client.cancel();client=null;}env.cancelInventory();if(model!=null)model.cancel();
-        active=null;status=unavailable("Cancelled");kick();
+        ++generation;cancelRetry();cancelWatchdog();if(client!=null){client.cancel();client=null;}env.cancelInventory();if(model!=null)model.cancel();
+        active=null;present(null);status=unavailable("Cancelled");kick();
     }
     private void cancelRetry(){if(retry!=null){env.cancelDelay(retry);retry=null;}}
     void close(boolean logout) {
-        if(closed)return;closed=true;++generation;cancelRetry();cancelWatchdog();
+        if(closed)return;closed=true;++generation;cancelRetry();cancelWatchdog();present(null);
         PurpleSyncOperations.forgetIdle(env.operationKey(),this);
         if(client!=null){client.cancel();client=null;}env.cancelInventory();if(model!=null)model.cancel();
         if(owned){owned=false;PurpleSyncOperations.end(env.operationKey(),this);}

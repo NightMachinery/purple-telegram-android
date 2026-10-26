@@ -232,7 +232,9 @@ final class PurplePinnedMusicList extends BaseFragment
             emptyView.setText(getString(R.string.PurplePinnedMusicListGone));
             return;
         }
-        actionBar.setSubtitle(formatString(R.string.PurplePinnedMusicBarProgress, snapshot.completed, snapshot.selected));
+        actionBar.setSubtitle(snapshot.rpcWait!=null&&snapshot.rpcWait.retryAt>System.currentTimeMillis()
+                ?org.telegram.messenger.purple.PurpleRpcRequests.text(snapshot.rpcWait)
+                :formatString(R.string.PurplePinnedMusicBarProgress, snapshot.completed, snapshot.selected));
         if (!query.isEmpty()) {
             emptyView.setText(getString(R.string.PurplePinnedMusicListNoMatch));
         } else {

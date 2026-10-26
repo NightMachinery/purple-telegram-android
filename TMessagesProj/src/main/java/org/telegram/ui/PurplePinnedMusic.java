@@ -64,8 +64,10 @@ final class PurplePinnedMusic {
         final int failed;
         final int retryable;
         final long cooldownUntilMs;
+        final org.telegram.messenger.purple.PurpleRpcRetry.Transient rpcWait;
 
         Snapshot(Job job) {
+            rpcWait=job.rpcWait;
             scanning = job.scanning;
             scanFailed = job.scanFailed;
             paused = job.paused;
@@ -384,11 +386,16 @@ final class PurplePinnedMusic {
         private boolean completionToastShown;
         private boolean scanFailureToastShown;
         private Runnable failedRequest;
+        private final org.telegram.messenger.purple.PurpleAccountFiles.Identity identity;
+        private boolean closed;
+        private int readRequest;
+        private org.telegram.messenger.purple.PurpleRpcRetry.Transient rpcWait;
 
         Job(ChatActivity chat, int account, long dialogId, long topicId, long mergeDialogId,
                 int before, int after, boolean albums) {
             this.chat = new WeakReference<>(chat);
             this.account = account;
+            identity=org.telegram.messenger.purple.PurpleAccountFiles.capture(account);
             this.dialogId = dialogId;
             this.topicId = topicId;
             this.mergeDialogId = mergeDialogId;
@@ -408,6 +415,7 @@ final class PurplePinnedMusic {
         }
 
         void close() {
+            closed=true;org.telegram.messenger.purple.PurpleRpcRequests.cancel(readRequest);
             AndroidUtilities.cancelRunOnUIThread(wake);
             NotificationCenter center = NotificationCenter.getInstance(account);
             center.removeObserver(this, NotificationCenter.fileLoaded);
@@ -466,44 +474,14 @@ final class PurplePinnedMusic {
         }
 
         private void requestAttempt(TLObject request, Response callback, int attempt) {
-            ConnectionsManager connection = ConnectionsManager.getInstance(account);
-            boolean[] completed = { false };
-            int[] requestId = { 0 };
-            Runnable failed = () -> {
-                if (attempt < 2) {
-                    AndroidUtilities.runOnUIThread(() -> requestAttempt(request, callback, attempt + 1),
-                            attempt == 0 ? 1000 : 3000);
-                } else {
-                    failedRequest = () -> request(request, callback);
-                    scanFailed = true;
-                    scanning = false;
-                    emit();
-                    pump();
-                }
-            };
-            Runnable timeout = () -> {
-                if (completed[0]) {
-                    return;
-                }
-                completed[0] = true;
-                connection.cancelRequest(requestId[0], false);
-                failed.run();
-            };
-            requestId[0] = connection.sendRequest(request, (response, error) ->
-                    AndroidUtilities.runOnUIThread(() -> {
-                        if (completed[0]) {
-                            return;
-                        }
-                        completed[0] = true;
-                        AndroidUtilities.cancelRunOnUIThread(timeout);
-                        if (error != null || !(response instanceof TLRPC.messages_Messages)
-                                || response instanceof TLRPC.TL_messages_messagesNotModified) {
-                            failed.run();
-                        } else {
-                            callback.accept((TLRPC.messages_Messages) response);
-                        }
-                    }));
-            AndroidUtilities.runOnUIThread(timeout, 60000);
+            if(closed||identity==null||!identity.current())return;
+            readRequest=org.telegram.messenger.purple.PurpleRpcRequests.send(account,"pinned-music",()->!closed&&identity.current(),request,(response,error)->{
+                readRequest=0;rpcWait=null;
+                if(error!=null||!(response instanceof TLRPC.messages_Messages)||response instanceof TLRPC.TL_messages_messagesNotModified){
+                    if(attempt<2)AndroidUtilities.runOnUIThread(()->requestAttempt(request,callback,attempt+1),attempt==0?1000:3000);
+                    else {failedRequest=()->request(request,callback);scanFailed=true;scanning=false;emit();pump();}
+                }else callback.accept((TLRPC.messages_Messages)response);
+            },value->{rpcWait=value;emit();},60000);
         }
 
         private void search(long peerId, TLRPC.MessagesFilter filter, int offsetId,

@@ -13,6 +13,13 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 interface PurpleSyncClient {
+    final class ManagedReads {
+        static final ManagedReads NONE=new ManagedReads(false,0,0);
+        final boolean active;
+        final long revision,completedAt;
+        ManagedReads(boolean active,long revision,long completedAt){this.active=active;this.revision=revision;this.completedAt=completedAt;}
+    }
+    default ManagedReads managedReads(){return ManagedReads.NONE;}
     final class Message {
         final int id;
         final boolean isMessage;
@@ -138,6 +145,8 @@ interface PurpleSyncClient {
         void onReceipt(int serverId, boolean preparationFailed);
     }
 
+    default long transientRetryAt(){return 0;}
+    default void transientWait(java.util.function.Consumer<PurpleRpcRetry.Transient> observer){}
     default boolean hasQueuedSync() { return false; }
     long userId();
     default PurpleSyncChatCore.Peer chat() { return PurpleSyncChatCore.Peer.self(); }

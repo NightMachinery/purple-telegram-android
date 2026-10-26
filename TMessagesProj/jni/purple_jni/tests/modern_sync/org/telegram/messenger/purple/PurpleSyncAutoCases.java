@@ -18,7 +18,9 @@ public final class PurpleSyncAutoCases {
         final ArrayDeque<Runnable> tasks = new ArrayDeque<>();
         boolean draining, enabled, answered = true, available = true, failCheck, holdCheck, editSupported = true;
         PurpleSyncAutoCore.Action stopOn;
-        long clock = 1800000000L, delay;
+        long clock = 1800000000L, delay, transientAt;boolean transientTaken;
+        public long takeTransientRetryAt(){if(transientTaken)return 0;transientTaken=true;return transientAt;}
+        public long transientRetryAt(){return transientAt;}
         Runnable retry, checking;
         int checks, posts, edits, deletes;
         PurpleSyncAutoCore.Record record;
@@ -698,6 +700,7 @@ public final class PurpleSyncAutoCases {
             if (!before.contains(task))
                 timers.add(task);
         check(!timers.isEmpty(), "network operation has a bounded transport deadline");
+        q.clock+=300;
         for (Runnable task : timers) task.run();
         check(q.record.retryAt() > q.clock && new File(q.frame.sync(1), "pending/config.json").isFile(),
             "missing network callback releases lease, retains stage and enters core backoff");
@@ -916,8 +919,24 @@ public final class PurpleSyncAutoCases {
             p.engine.close();
         }
     }
+    static void transientWrite(File parent)throws Exception {
+        for(String failure:new String[]{"FLOOD_WAIT_90","SERVER_503","TRANSPORT","DELAYED_CALLBACK"}){
+            Port p=bound(parent,"transient-write-"+failure);p.enable();p.client.holdSend=true;p.saved(OWN);
+            byte[] checkpoint=Files.readAllBytes(new File(p.frame.sync(1),"auto.json").toPath());
+            byte[] staged=Files.readAllBytes(new File(p.frame.sync(1),"pending/config.json").toPath());
+            p.transientAt=p.clock*1000+90000;if(failure.equals("DELAYED_CALLBACK"))p.clock+=91;p.client.finishSend(true);
+            check(p.retry!=null&&p.delay==(failure.equals("DELAYED_CALLBACK")?1:90000)&&p.posts==1,"transient write reschedules existing reconciliation "+failure);
+            check(Arrays.equals(checkpoint,Files.readAllBytes(new File(p.frame.sync(1),"auto.json").toPath()))&&Arrays.equals(staged,Files.readAllBytes(new File(p.frame.sync(1),"pending/config.json").toPath())),"transient write leaves journal and effect checkpoint exact");
+            if(!failure.equals("DELAYED_CALLBACK")){p.engine.event(PurpleSyncAutoCore.Event.Foreground);check(p.posts==1&&p.delay==90000,"foreground cannot bypass write cooldown");}
+            p.clock+=90;p.fireRetry();check(p.posts==1&&p.reason==PurpleSyncAutoCore.Reason.None,"fresh inventory confirms ambiguous write without repost");
+            check(p.disk().getInt("retries")==0&&!p.disk().getBoolean("runStopped"),"transient write does not exhaust permanent retry budget");
+            p.frame.unchangedA();p.engine.close();
+        }
+    }
     public static int run(File parent) throws Exception {
         int before = PurpleModernSyncCases.checks;
+        PurpleSyncManagedReadCases.run();
+        transientWrite(parent);
         defaults(parent);
         publishAndEdit(parent);
         retries(parent);

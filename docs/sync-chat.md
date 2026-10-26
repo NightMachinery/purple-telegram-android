@@ -117,3 +117,7 @@ Both strings follow account-settings r3 section 11.4. A settings file may name c
 ### Android MessageEmpty peer presence
 
 The cached-mark R3 exception uses TL_messageEmpty.flags bit0 to decide whether peer_id was carried on the wire. Android's generated deserializer fills an absent peer with an empty TL_peerUser object. Non-null therefore does not prove presence. A scoped same-id response with no peer flag and independent readable chat evidence is MarkGone; a flagged peer must match the typed request. The real-TL host cases deserialize both absent and present peers for Self and channels, preserve the channel MarkGone control, and reject contradictory flagged peers or missing readability. History and record inventories keep their stricter Unknown rule.
+
+## Transient read failures
+
+Discovery and typed record reads retain transient Telegram failures as scheduled waits, preserving the read cache and holding posting. See [Transient Telegram requests](rpc-retry.md) for deadlines, retry ownership, dedicated-write reconciliation and the FileLoader boundary.

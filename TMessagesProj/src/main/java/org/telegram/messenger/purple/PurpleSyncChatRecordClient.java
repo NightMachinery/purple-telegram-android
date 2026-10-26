@@ -74,6 +74,8 @@ final class PurpleSyncChatRecordClient implements PurpleSyncClient {
         }
         return History.page(rows,response.getClass()==TLRPC.TL_messages_messagesSlice.class?Integer.valueOf(page.count):null);
     }
+    @Override public ManagedReads managedReads(){return client.managedReads();}
+    @Override public long transientRetryAt(){return client.transientRetryAt();}
     @Override public boolean hasQueuedSync() { return client.hasQueuedSync(); }
     @Override public long userId() { return client.userId(); }
     @Override public Peer chat() { return client.chat(); }
@@ -89,6 +91,7 @@ final class PurpleSyncChatRecordClient implements PurpleSyncClient {
     @Override public File filesDirectory() { return client.filesDirectory(); }
     @Override public File cacheDirectory() { return client.cacheDirectory(); }
     @Override public long nowMillis() { return client.nowMillis(); }
+    @Override public void transientWait(java.util.function.Consumer<PurpleRpcRetry.Transient> observer){client.transientWait(observer);}
     @Override public void send(File file,String caption,String mime,Receipt receipt) { client.send(file,caption,mime,receipt); }
     @Override public void edit(int id,File file,byte[] expected,BooleanSupplier current,Reply<PurpleSyncAutoCore.Outcome> done) { client.edit(id,file,expected,current,done); }
     @Override public void edit(int id,File file,byte[] expected,BooleanSupplier current,PurpleSyncTransport.PostAuthority authority,

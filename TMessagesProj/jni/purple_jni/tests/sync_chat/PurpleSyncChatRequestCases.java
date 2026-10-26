@@ -121,6 +121,7 @@ final class PurpleSyncChatRequestCases {
         }
     }
     static final class Native implements PurpleSyncChatTelegram.Platform {
+        long clock=1000;public long now(){return clock;}
         boolean active=true,logoutOnPeers;int sent,accepted,cancelled;final Map<Integer,PurpleSyncChatTelegram.Reply> replies=new LinkedHashMap<>();final Map<Runnable,Long> timers=new LinkedHashMap<>();final List<TLObject> requests=new ArrayList<>();
         public boolean current(){return active;}public void dispatch(Runnable task){task.run();}public int send(TLObject request,PurpleSyncChatTelegram.Reply done){requests.add(request);replies.put(++sent,done);return sent;}
         public void cancel(int token){++cancelled;}public void delay(Runnable task,long millis){timers.put(task,millis);}public void cancelDelay(Runnable task){timers.remove(task);}public TLRPC.InputPeer input(Peer chat){return inputPeer(chat);}
@@ -131,9 +132,9 @@ final class PurpleSyncChatRequestCases {
         Native platform=new Native();PurpleSyncChatTelegram client=new PurpleSyncChatTelegram(ORIGIN,platform);List<PurpleSyncChatRequests.Page> pages=new ArrayList<>();
         client.search(PurpleSyncChatRequests.Search.Global,PurpleSyncChatRequests.Cursor.first(),null,pages::add);check(platform.sent==1&&platform.timers.size()==1,"read-only request starts timeout");
         platform.reply(1,messages());platform.reply(1,messages());check(pages.size()==1&&platform.timers.isEmpty(),"request once-only completion");
-        client.search(PurpleSyncChatRequests.Search.Global,PurpleSyncChatRequests.Cursor.first(),null,pages::add);Runnable timeout=platform.timers.keySet().iterator().next();platform.timers.remove(timeout);timeout.run();platform.reply(2,messages());check(pages.size()==2&&!pages.get(1).recognized&&platform.cancelled==1,"timeout cancels own request and rejects late reply");
-        client.search(PurpleSyncChatRequests.Search.Global,PurpleSyncChatRequests.Cursor.first(),null,pages::add);client.cancel();platform.reply(3,messages());check(pages.size()==2&&platform.cancelled==2&&platform.timers.isEmpty(),"cancel owns all request lifetimes");
-        platform=new Native();client=new PurpleSyncChatTelegram(ORIGIN,platform);platform.logoutOnPeers=true;client.search(PurpleSyncChatRequests.Search.Global,PurpleSyncChatRequests.Cursor.first(),null,pages::add);platform.reply(1,messages());check(platform.accepted==1&&pages.size()==2,"logout during peer observer suppresses callback");client.cancel();
+        client.search(PurpleSyncChatRequests.Search.Global,PurpleSyncChatRequests.Cursor.first(),null,pages::add);Runnable timeout=platform.timers.keySet().iterator().next();platform.timers.remove(timeout);platform.clock+=30000;timeout.run();platform.reply(2,messages());check(pages.size()==1&&platform.cancelled==1&&platform.timers.size()==1,"timeout keeps transient pending and rejects late reply");
+        client.cancel();check(pages.size()==1&&platform.timers.isEmpty(),"cancel owns pending retry lifetime");
+        platform=new Native();client=new PurpleSyncChatTelegram(ORIGIN,platform);platform.logoutOnPeers=true;client.search(PurpleSyncChatRequests.Search.Global,PurpleSyncChatRequests.Cursor.first(),null,pages::add);platform.reply(1,messages());check(platform.accepted==1&&pages.size()==1,"logout during peer observer suppresses callback");client.cancel();
         platform=new Native();client=new PurpleSyncChatTelegram(ORIGIN,platform);List<PurpleSyncChatClient.Info> infos=new ArrayList<>();client.info(SELF,infos::add);
         TLRPC.TL_users_userFull full=new TLRPC.TL_users_userFull();PurpleSyncChatFacts.Input self=input(SELF);full.full_user=self.userFull;full.users.add(self.user);platform.reply(1,full);check(infos.size()==1&&infos.get(0).eligibility().allowed()&&infos.get(0).readersKnown,"production full-info normalization self");
         client.info(SELF,infos::add);full=new TLRPC.TL_users_userFull();full.full_user=self.userFull;platform.reply(2,full);check(infos.size()==2&&!infos.get(1).readable(),"cached native user cannot replace fresh full-info metadata");client.cancel();

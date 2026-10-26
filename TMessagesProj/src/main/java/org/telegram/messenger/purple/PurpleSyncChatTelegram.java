@@ -27,14 +27,17 @@ final class PurpleSyncChatTelegram implements PurpleSyncChatClient {
         void cancel(int token);
         void delay(Runnable task, long millis);
         void cancelDelay(Runnable task);
+        default long now(){return System.currentTimeMillis();}
+        default void waiting(Object owner,PurpleRpcRetry.Transient value){}
         TLRPC.InputPeer input(Peer peer);
         void peers(List<TLRPC.User> users, List<TLRPC.Chat> chats);
         List<Peer> fallback();
     }
-    private static final class Ticket { int token; boolean finished; Runnable timeout; }
     private final PurpleSyncChatOrigin origin;
     private final Platform platform;
-    private final Set<Ticket> requests = new HashSet<>();
+    private final Set<PurpleRpcRequest> requests = new HashSet<>();
+    private final PurpleRpcRequest.Stream stream=new PurpleRpcRequest.Stream();
+    private Consumer<PurpleRpcRetry.Transient> waiting=ignored->{};
     private boolean closed;
     PurpleSyncChatTelegram(PurpleSyncChatOrigin origin, Platform platform) { this.origin = origin; this.platform = platform; }
     @Override public PurpleSyncChatOrigin origin() { return origin; }
@@ -42,28 +45,22 @@ final class PurpleSyncChatTelegram implements PurpleSyncChatClient {
     @Override public void dispatch(Runnable task) { platform.dispatch(task); }
     @Override public List<Peer> fallback() { return current() ? platform.fallback() : Collections.emptyList(); }
 
-    private void request(TLObject request, Reply done) {
-        if (!current() || request == null) { if (current()) done.accept(null, null); return; }
-        Ticket ticket = new Ticket(); requests.add(ticket);
-        ticket.timeout = () -> {
-            if (ticket.finished) return;
-            ticket.finished = true; requests.remove(ticket);
-            if (ticket.token > 0) platform.cancel(ticket.token);
-            if (current()) done.accept(null,null);
+    @Override public void transientWait(Consumer<PurpleRpcRetry.Transient> observer){waiting=observer!=null?observer:ignored->{};}
+    private void request(TLObject request,Reply done){
+        if(!current()||request==null){if(current())done.accept(null,null);return;}
+        PurpleRpcRequest[] call=new PurpleRpcRequest[1];
+        PurpleRpcRequest.Port port=new PurpleRpcRequest.Port(){
+            public boolean current(){return PurpleSyncChatTelegram.this.current();}
+            public long now(){return platform.now();}
+            public void dispatch(Runnable task){platform.dispatch(task);}
+            public void delay(Runnable task,long millis){platform.delay(task,millis);}
+            public void cancelDelay(Runnable task){platform.cancelDelay(task);}
+            public int send(TLObject value,PurpleRpcRequest.Reply reply){return platform.send(value,reply::accept);}
+            public void cancel(int token){platform.cancel(token);}
+            public void waiting(PurpleRpcRetry.Transient value){platform.waiting(call[0],value);if(current())waiting.accept(value);}
         };
-        platform.delay(ticket.timeout,30000);
-        try {
-            ticket.token = platform.send(request, (object, error) -> platform.dispatch(() -> {
-                if (ticket.finished) return;
-                ticket.finished = true; requests.remove(ticket); platform.cancelDelay(ticket.timeout);
-                if (current()) done.accept(object, error);
-            }));
-            if (ticket.token <= 0 && !ticket.finished) { ticket.finished = true; requests.remove(ticket); platform.cancelDelay(ticket.timeout); if (current()) done.accept(null, null); }
-            else if (!current() && !ticket.finished) { ticket.finished = true; requests.remove(ticket); platform.cancelDelay(ticket.timeout); platform.cancel(ticket.token); }
-        } catch (RuntimeException error) {
-            requests.remove(ticket); platform.cancelDelay(ticket.timeout);
-            if (!ticket.finished) { ticket.finished = true; if (current()) done.accept(null, null); }
-        }
+        call[0]=new PurpleRpcRequest(stream,port,request,30000,(object,error)->{if(current())done.accept(object,error);},ended->{requests.remove(ended);platform.waiting(ended,null);});
+        requests.add(call[0]);call[0].start();
     }
 
     private void acceptPeers(TLObject response) {
@@ -197,7 +194,7 @@ final class PurpleSyncChatTelegram implements PurpleSyncChatClient {
     }
     @Override public void cancel() {
         closed = true;
-        for (Ticket ticket : new ArrayList<>(requests)) { ticket.finished = true; platform.cancelDelay(ticket.timeout); if (ticket.token > 0) platform.cancel(ticket.token); }
+        for(PurpleRpcRequest request:new ArrayList<>(requests))request.cancel();
         requests.clear();
     }
 
@@ -209,6 +206,7 @@ final class PurpleSyncChatTelegram implements PurpleSyncChatClient {
             public void cancel(int token) { ConnectionsManager.getInstance(origin.slot).cancelRequest(token,true); }
             public void delay(Runnable task, long millis) { AndroidUtilities.runOnUIThread(task,millis); }
             public void cancelDelay(Runnable task) { AndroidUtilities.cancelRunOnUIThread(task); }
+            public void waiting(Object owner,PurpleRpcRetry.Transient value){PurpleRpcRequests.waiting(origin.slot,owner,value);}
             public TLRPC.InputPeer input(Peer peer) {
                 if (!current() || peer == null) return null;
                 if (peer.kind == PeerKind.Self) return new TLRPC.TL_inputPeerSelf();

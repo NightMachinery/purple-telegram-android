@@ -127,6 +127,7 @@ public final class PurpleSyncChat {
     }
     static void cancelOperation(int slot,Object owner){AndroidUtilities.runOnUIThread(()->{Holder holder=accounts.get(slot);if(holder!=null)holder.service.cancelBorrowed(owner);});}
     public static void identityChanged(int slot) {
+        PurpleRpcRequests.identityChanged(slot);
         Holder retired=accounts.get(slot);
         AndroidUtilities.runOnUIThread(()->{if(retired!=null){accounts.remove(slot,retired);retired.service.close(true);}});
     }
@@ -139,6 +140,8 @@ public final class PurpleSyncChat {
         final PurpleSyncChatCache.IO cache;
         volatile PurpleSyncTelegramTransport inventory;
         volatile PurpleSyncChatClient inventoryFacts;
+        Consumer<PurpleRpcRetry.Transient> waiting=ignored->{};
+        public void transientWait(Consumer<PurpleRpcRetry.Transient> observer){waiting=observer;}
         Platform(int slot) throws Exception {
             context=new PurpleSyncFileContext(slot);
             if(context.origin==null||context.files==null)throw new IllegalStateException("sync chat context");
@@ -157,6 +160,8 @@ public final class PurpleSyncChat {
             catch(Exception|LinkageError error){return false;}
         }
         public long now(){return android.os.SystemClock.elapsedRealtime();}
+        public long rpcNow(){return System.currentTimeMillis();}
+        public void presentation(PurpleRpcRetry.Transient value){PurpleRpcRequests.waiting(origin.slot,this,value);}
         public void ui(Runnable task){AndroidUtilities.runOnUIThread(task);}
         public void worker(Runnable task){queue().postRunnable(task);}
         public void delay(Runnable task,long millis){AndroidUtilities.runOnUIThread(task,millis);}
@@ -177,7 +182,7 @@ public final class PurpleSyncChat {
                 return new PurpleSyncChatService.Binding(chat!=null,"Bound".equals(binding.verdict),chat!=null?chat:Peer.self(),identity);}
             catch(Exception error){return new PurpleSyncChatService.Binding(false,false,Peer.self());}
         }
-        public PurpleSyncChatClient client(){return new PurpleSyncChatTelegram(origin,PurpleSyncChatTelegram.platform(origin,this::current));}
+        public PurpleSyncChatClient client(){PurpleSyncChatClient client=new PurpleSyncChatTelegram(origin,PurpleSyncChatTelegram.platform(origin,this::current));client.transientWait(waiting);return client;}
         public void inventory(Peer target,BooleanSupplier current,Consumer<RecordPresence> done){
             if(target==null || !current.getAsBoolean() || !this.current()){done.accept(RecordPresence.Unknown);return;}
             PurpleSyncChatClient reader=client();inventoryFacts=reader;
@@ -188,6 +193,7 @@ public final class PurpleSyncChat {
                     done.accept(RecordPresence.Unknown);return;
                 }
                 PurpleSyncClient scoped=PurpleSyncTelegramClient.create(info,()->current.getAsBoolean()&&this.current());
+                scoped.transientWait(waiting);
                 PurpleSyncTelegramTransport transport=new PurpleSyncTelegramTransport(scoped);inventory=transport;
                 transport.check(null,result->{
                     RecordPresence presence=result.status==PurpleSyncTransport.CheckStatus.Finished

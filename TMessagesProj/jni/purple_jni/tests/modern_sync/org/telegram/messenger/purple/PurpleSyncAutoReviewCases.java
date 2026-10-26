@@ -12,7 +12,8 @@ public final class PurpleSyncAutoReviewCases {
         PurpleSyncClient.Reply<PurpleSyncAutoUpload.Result> sent;
         byte[] source, body;
         int uploads, sends, reads, cancels;
-        Runnable duringUpload, duringSend;
+        Runnable duringUpload, duringSend, cancelReads;
+        java.util.function.Consumer<PurpleSyncClient.Reply<byte[]>> exactRead;
         public void worker(Runnable task) { task.run(); }
         public void beforePost(PurpleSyncClient.Reply<Boolean> done) { done.onReply(true); }
         public int upload(long id, byte[] bytes, PurpleSyncClient.Reply<Boolean> reply) {
@@ -20,7 +21,8 @@ public final class PurpleSyncAutoReviewCases {
             if (duringUpload != null) duringUpload.run();
             return 41;
         }
-        public void exact(int id, PurpleSyncClient.Reply<byte[]> reply) { ++reads; reply.onReply(body); }
+        public void exact(int id, PurpleSyncClient.Reply<byte[]> reply) { ++reads; if(exactRead!=null)exactRead.accept(reply);else reply.onReply(body); }
+        public void cancelReads(){if(cancelReads!=null)cancelReads.run();}
         public int send(int id, TLRPC.TL_inputFile file, PurpleSyncClient.Reply<PurpleSyncAutoUpload.Result> reply) {
             check(file.parts == 1 && file.name.equals(PurpleSyncPost.RECORD_FILE_NAME) && file.id != 0,
                 "ephemeral upload uses the canonical one-part document");
@@ -53,6 +55,17 @@ public final class PurpleSyncAutoReviewCases {
             check(replies[0] == 1 && outcome[0].id == 501 && !PurpleSyncAutoEdits.busy(1), "one confirmed callback releases guard");
             port.sent.onReply(new PurpleSyncAutoUpload.Result(501, null));
             check(replies[0] == 1, "late duplicate success cannot apply twice");
+        }
+        for(int phase:new int[]{1,2}) {
+            PurpleSyncReadLifetimeCases.Run scope=new PurpleSyncReadLifetimeCases.Run();
+            UploadPort port=new UploadPort();port.body=canonical;port.cancelReads=scope.network::cancel;
+            port.exactRead=done->scope.network.exact(7,()->true,row->done.onReply(row.optBoolean("owned")?PurpleSyncAutoCore.decode(row.optString("record")):null));
+            int[] replies={0};PurpleSyncAutoUpload operation=new PurpleSyncAutoUpload(1,7,scope.record,scope.record,()->true,port,result->replies[0]++);
+            operation.start();port.uploaded.onReply(true);if(phase==2)scope.reply();
+            check(scope.reads.state().active&&port.sends==0,"upload verification exact phase retained "+phase);
+            PurpleSyncAutoEdits.cleanup(1);
+            check(!scope.reads.state().active&&scope.stream.empty()&&replies[0]==1,"operation cleanup cancels verification exact phase "+phase);
+            scope.reply();check(port.sends==0&&replies[0]==1,"late verification cannot send after operation cleanup "+phase);scope.network.cancel();
         }
         for (String reason : new String[] {"disabled", "routing", "new-server-body"}) {
             UploadPort port = new UploadPort(); port.body = reason.equals("new-server-body") ? new byte[]{1} : canonical;

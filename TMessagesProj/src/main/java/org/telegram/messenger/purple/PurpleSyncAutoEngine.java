@@ -25,6 +25,8 @@ final class PurpleSyncAutoEngine {
         void send(boolean edit, int messageId, byte[] bytes, byte[] previous, BooleanSupplier current,
             Reply<PurpleSyncAutoCore.Outcome> reply);
         void retire(int messageId, byte[] exact, BooleanSupplier current, Reply<PurpleSyncAutoCore.Outcome> reply);
+        default long transientRetryAt(){return 0;}
+        default long takeTransientRetryAt(){return 0;}
         default boolean editSupported() {
             return true;
         }
@@ -269,6 +271,14 @@ final class PurpleSyncAutoEngine {
             end();
             return;
         }
+        long transientAt=port.transientRetryAt();
+        if(event!=PurpleSyncAutoCore.Event.Disable&&event!=PurpleSyncAutoCore.Event.Completed&&transientAt>port.now()*1000){
+            if(event==PurpleSyncAutoCore.Event.LocalSaved)waitingSave=saved!=null?saved.clone():null;
+            if(event==PurpleSyncAutoCore.Event.Enable){waitingToggle=event;waitingToggleAdmission=toggleAdmission;}
+            end();
+            port.retry(()->{idle();event(PurpleSyncAutoCore.Event.SessionReady);},Math.max(1,transientAt-port.now()*1000));
+            return;
+        }
         if (!owned) {
             if (!PurpleSyncOperations.begin(operationKey(), this, this::current)) {
                 if (event == PurpleSyncAutoCore.Event.Enable || event == PurpleSyncAutoCore.Event.Disable) {
@@ -450,6 +460,12 @@ final class PurpleSyncAutoEngine {
             if (!current() || !running.equals(plan.ticket)) {
                 if (!current())
                     end();
+                return;
+            }
+            long retryAt=outcome==PurpleSyncAutoCore.Outcome.OutcomeUnknown?port.takeTransientRetryAt():0;
+            if(retryAt>0){
+                end();
+                port.retry(()->{idle();event(PurpleSyncAutoCore.Event.SessionReady);},Math.max(1,retryAt-port.now()*1000));
                 return;
             }
             transition(PurpleSyncAutoCore.Event.Completed, null, plan.ticket, outcome, observed, facts);

@@ -230,7 +230,7 @@ public final class PurpleSyncOffer {
             callback.run(null);
             return;
         }
-        ConnectionsManager.getInstance(account).sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+        PurpleRpcRequests.send(account,"legacy-offer",()->origin.current()&&PurpleAccountOwner.legacyTransferOperation(account),req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
             if (!origin.current() || !PurpleAccountOwner.legacyTransferOperation(account)) { callback.run(null); return; }
             if (error != null || !(response instanceof TLRPC.messages_Messages)) {
                 // Nothing about this is worth a dialog: the user did not ask for

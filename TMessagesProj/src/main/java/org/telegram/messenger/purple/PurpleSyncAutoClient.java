@@ -4,13 +4,16 @@ import java.io.File;
 import java.util.List;
 import java.util.function.BooleanSupplier;
 
-final class PurpleSyncAutoClient implements PurpleSyncClient {
+class PurpleSyncAutoClient implements PurpleSyncClient {
     private final PurpleSyncClient delegate;
     private final BooleanSupplier current;
     PurpleSyncAutoClient(PurpleSyncClient delegate, BooleanSupplier current) {
         this.delegate = delegate;
         this.current = current;
     }
+    public ManagedReads managedReads(){return delegate.managedReads();}
+    public long transientRetryAt(){return delegate.transientRetryAt();}
+    public void transientWait(java.util.function.Consumer<PurpleRpcRetry.Transient> observer){delegate.transientWait(observer);}
     public boolean isActive() {
         return current.getAsBoolean() && delegate.isActive();
     }

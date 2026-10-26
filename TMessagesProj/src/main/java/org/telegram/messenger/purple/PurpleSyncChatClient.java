@@ -42,5 +42,6 @@ interface PurpleSyncChatClient {
     void exact(Cache location, Consumer<Exact> done);
     void hint(Consumer<SettingsHint> done);
     List<Peer> fallback();
+    default void transientWait(Consumer<PurpleRpcRetry.Transient> observer){}
     void cancel();
 }
