@@ -880,7 +880,7 @@
     <string name="PurpleSyncChatUnknownCount">an unknown number of</string>
     <string name="PurpleSyncChatRefusedMark">You marked %1$s as the sync chat, but Purple can’t sync there: %2$s</string>
     <string name="PurpleSyncChatRefused">Purple can’t sync through %1$s: %2$s</string>
-    <string name="PurpleSyncChatNewReaders">Someone new can read your sync chat. %1$s now has %2$s other members (%3$s when you chose it). Posting continues.</string>
+    <string name="PurpleSyncChatNewReaders">Someone new can read your sync chat. %1$s now has %2$s other members (%3$s when you chose it). This warning does not pause sync.</string>
     <string name="PurpleSyncChatNewReadersFuture">Newcomers can read what Purple posts from now on.</string>
     <string name="PurpleSyncChatNewReadersEarlier">Newcomers may also be able to read earlier posts.</string>
     <string name="PurpleSyncChatReaderBlindSpot">Without a member list, Purple notices only a higher count. One person leaving while another joins can go unseen.</string>
@@ -923,4 +923,7 @@
     <string name="PurpleSyncChatRefusalSlowMode">Slow mode is on.</string>
     <string name="PurpleSyncChatRefusalBroadcastOwnershipUnselected">Channel ownership has not been qualified.</string>
     <string name="PurpleSyncChatRefusalBroadcastNeedsCreatorAndSoleAdmin">You must be its creator and sole admin.</string>
+    <string name="PurpleSyncChatLimitTitle">Channel limit reached</string>
+    <string name="PurpleSyncChatLimitAbout">Purple could not create the channel: this account is in as many channels and groups as Telegram allows. Leave some and try again, or sync through Saved Messages.</string>
+    <string name="PurpleSyncChatTryAgain">Try again</string>
 </resources>
