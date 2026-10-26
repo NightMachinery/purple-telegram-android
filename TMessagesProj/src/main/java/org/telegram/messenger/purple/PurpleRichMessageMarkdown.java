@@ -26,15 +26,15 @@ public final class PurpleRichMessageMarkdown {
     }
 
     private Content blocks(List<TL_iv.PageBlock> input, int depth) {
-        if (depth > 128) return unsupported("nesting limit", null);
+        if (depth > 128) throw new IllegalArgumentException("Article nesting limit");
         List<Content> result = new ArrayList<>();
         if (input != null) for (TL_iv.PageBlock block : input) result.add(block(block, depth + 1));
         return join(result, true);
     }
 
     private Content block(TL_iv.PageBlock b, int depth) {
-        if (b == null) return unsupported("missing block", null);
-        if (depth > 128) return unsupported("nesting limit", null);
+        if (b == null) throw new IllegalArgumentException("Missing article block");
+        if (depth > 128) throw new IllegalArgumentException("Article nesting limit");
         int heading = headingLevel(b);
         if (heading > 0) return heading(heading, inline(b.text, depth));
         if (b instanceof TL_iv.pageBlockParagraph || b instanceof TL_iv.pageBlockFooter || b instanceof TL_iv.pageBlockKicker) {
@@ -57,7 +57,7 @@ public final class PurpleRichMessageMarkdown {
                 Content body;
                 if (item instanceof TL_iv.TL_pageListItemText) body = paragraph(inline(((TL_iv.TL_pageListItemText) item).text, depth));
                 else if (item instanceof TL_iv.TL_pageListItemBlocks) body = blocks(((TL_iv.TL_pageListItemBlocks) item).blocks, depth);
-                else body = unsupported(item.getClass().getSimpleName(), null);
+                else throw new IllegalArgumentException("Unsupported article list item");
                 items.add(new Item(body, null, null, null, item.checkbox, item.checked));
             }
             return list(items, list.ordered, 1, false, null);
@@ -69,7 +69,7 @@ public final class PurpleRichMessageMarkdown {
                 Content body;
                 if (item instanceof TL_iv.TL_pageListOrderedItemText) body = paragraph(inline(((TL_iv.TL_pageListOrderedItemText) item).text, depth));
                 else if (item instanceof TL_iv.TL_pageListOrderedItemBlocks) body = blocks(((TL_iv.TL_pageListOrderedItemBlocks) item).blocks, depth);
-                else body = unsupported(item.getClass().getSimpleName(), null);
+                else throw new IllegalArgumentException("Unsupported article list item");
                 items.add(new Item(body, item.num, (item.flags & 8) != 0 ? item.value : null, item.type, item.checkbox, item.checked));
             }
             int start = (list.flags & 1) != 0 ? list.start : list.reversed ? items.size() : 1;
@@ -159,7 +159,7 @@ public final class PurpleRichMessageMarkdown {
             }
             return join(parts, true);
         }
-        return unsupported(b.getClass().getSimpleName(), join(java.util.Arrays.asList(paragraph(inline(b.text, depth)), caption(b, depth)), true));
+        throw new IllegalArgumentException("Unsupported article block: " + b.getClass().getSimpleName());
     }
 
     private Content caption(TL_iv.PageBlock block, int depth) {
@@ -185,7 +185,7 @@ public final class PurpleRichMessageMarkdown {
 
     private Content inline(TL_iv.RichText input, int depth) {
         if (input == null || input instanceof TL_iv.textEmpty) return text("");
-        if (depth > 128) return text("[Unsupported nested text]");
+        if (depth > 128) throw new IllegalArgumentException("Article nesting limit");
         depth++;
         if (input instanceof TL_iv.textPlain) return text(((TL_iv.textPlain) input).text);
         if (input instanceof TL_iv.textConcat) {
@@ -222,17 +222,18 @@ public final class PurpleRichMessageMarkdown {
         if (input instanceof TL_iv.textDate) return body.markdown.isEmpty() ? text(date(((TL_iv.textDate) input).date)) : body;
         if (input instanceof TL_iv.textButton) return button(body, ((TL_iv.textButton) input).type);
         if (input instanceof TL_iv.textHashtag || input instanceof TL_iv.textBotCommand || input instanceof TL_iv.textCashtag || input instanceof TL_iv.textBankCard) return body;
-        return join(java.util.Arrays.asList(body, text("[Unsupported article text]")), false);
+        throw new IllegalArgumentException("Unsupported article text: " + input.getClass().getSimpleName());
     }
 
     private Content button(Content label, TL_keyboard.InlineButtonType type) {
         if (type instanceof TL_keyboard.TL_inlineButtonTypeUrl) return link(label, ((TL_keyboard.TL_inlineButtonTypeUrl) type).url);
         if (type instanceof TL_keyboard.TL_inlineButtonTypeUrlAuth) return link(label, ((TL_keyboard.TL_inlineButtonTypeUrlAuth) type).url);
-        return join(java.util.Arrays.asList(label, text(" [Button]")), false);
+        throw new IllegalArgumentException("Unsupported article button");
     }
 
     private String plain(TL_iv.RichText input, int depth) {
-        if (input == null || depth > 128) return "";
+        if (depth > 128) throw new IllegalArgumentException("Article nesting limit");
+        if (input == null) return "";
         if (input instanceof TL_iv.textPlain) return value(((TL_iv.textPlain) input).text);
         if (input instanceof TL_iv.textMath) return value(((TL_iv.textMath) input).source);
         if (input instanceof TL_iv.textCustomEmoji) return value(((TL_iv.textCustomEmoji) input).alt);
@@ -242,7 +243,20 @@ public final class PurpleRichMessageMarkdown {
             for (TL_iv.RichText child : input.texts) out.append(plain(child, depth + 1));
             return out.toString();
         }
-        return plain(input.text, depth + 1);
+        if (input instanceof TL_iv.textEmpty) return "";
+        if (input instanceof TL_iv.textBold || input instanceof TL_iv.textItalic
+                || input instanceof TL_iv.textUnderline || input instanceof TL_iv.textStrike
+                || input instanceof TL_iv.textFixed || input instanceof TL_iv.textUrl
+                || input instanceof TL_iv.textEmail || input instanceof TL_iv.textSubscript
+                || input instanceof TL_iv.textSuperscript || input instanceof TL_iv.textMarked
+                || input instanceof TL_iv.textPhone || input instanceof TL_iv.textAnchor
+                || input instanceof TL_iv.textSpoiler || input instanceof TL_iv.textMention
+                || input instanceof TL_iv.textHashtag || input instanceof TL_iv.textBotCommand
+                || input instanceof TL_iv.textCashtag || input instanceof TL_iv.textAutoUrl
+                || input instanceof TL_iv.textAutoEmail || input instanceof TL_iv.textAutoPhone
+                || input instanceof TL_iv.textBankCard || input instanceof TL_iv.textMentionName
+                || input instanceof TL_iv.textDate) return plain(input.text, depth + 1);
+        throw new IllegalArgumentException("Unsupported article code text: " + input.getClass().getSimpleName());
     }
 
     private static int headingLevel(TL_iv.PageBlock b) {

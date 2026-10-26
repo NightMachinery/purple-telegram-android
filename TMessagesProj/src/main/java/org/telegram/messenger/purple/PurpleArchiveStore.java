@@ -33,6 +33,7 @@ final class PurpleArchiveStore implements AutoCloseable {
     private int readers;
     private StagingStep stagingStep;
     long authorityReads;
+    volatile long copyEpoch;
     volatile boolean maintenance;
     final class StagingStep implements AutoCloseable {
         private final StagingStep previous;
@@ -264,7 +265,11 @@ final class PurpleArchiveStore implements AutoCloseable {
     private PurpleArchiveCore.Execution execute(PurpleArchiveCore.Program plan, BooleanSupplier active, boolean privileged) {
         checkOwner();
         if (maintenance && !privileged) return new PurpleArchiveCore.Execution(false, new java.util.ArrayList<>());
-        PurpleArchiveCore.Execution result = PurpleArchiveCore.execute(database, plan, () -> authorityCurrent() && active.getAsBoolean() && (privileged || !maintenance), environment.publicationLock(), () -> stagingStep == null || current() && active.getAsBoolean());
+        PurpleArchiveCore.Execution result = PurpleArchiveCore.execute(database, plan, () -> authorityCurrent() && active.getAsBoolean() && (privileged || !maintenance), environment.publicationLock(), () -> {
+            if (stagingStep != null && (!current() || !active.getAsBoolean())) return false;
+            ++copyEpoch;
+            return true;
+        });
         boolean wasMaintenance = maintenance;
         if (database.autocommit()) {
             try { maintenance = !query(database, "metadata").values[0][5].text().isEmpty(); }

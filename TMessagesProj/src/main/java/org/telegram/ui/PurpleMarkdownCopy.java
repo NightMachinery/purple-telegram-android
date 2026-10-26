@@ -11,7 +11,10 @@ import org.telegram.messenger.CodeHighlighting;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.R;
-import org.telegram.messenger.TranslateController;
+import org.telegram.messenger.UserConfig;
+import org.telegram.messenger.purple.PurpleAccountFiles;
+import org.telegram.messenger.purple.PurpleArchiveViewerModel;
+import org.telegram.messenger.purple.PurpleArchiveMarkdown;
 import org.telegram.messenger.purple.PurpleMarkdown;
 import org.telegram.messenger.purple.PurpleMarkdownLinks;
 import org.telegram.ui.Components.BulletinFactory;
@@ -51,9 +54,15 @@ final class PurpleMarkdownCopy {
     private int generation;
     private int currentAccount;
     private long clientUserId;
-    private long dialogId;
+    private long dialogId, migratedDialogId, selectionGeneration;
+    private PurpleAccountFiles.Identity identity;
+    private MessageObject.GroupedMessages openingGroup;
+    private long openingGroupId;
+    private final ArrayList<MessageObject> groupMembers = new ArrayList<>();
     private int next;
     private boolean destroyed;
+    private boolean fullBody;
+    private PurpleArchiveMarkdown.Guard archiveGuard;
 
     PurpleMarkdownCopy(ChatActivity chat, Lookup lookup) {
         origin = new WeakReference<>(chat);
@@ -66,21 +75,28 @@ final class PurpleMarkdownCopy {
         final TL_iv.RichMessage article;
         final long dialogId;
         final int messageId;
-        final int editDate;
+        final int editDate, date;
+        final long groupId;
+        final String ownerText;
         final boolean translated;
         final String language;
         final TL_iv.RichMessage original;
         final byte[] originalBytes;
         final byte[] richBytes;
         final String ordinary;
+        final byte[] ownerBytes;
+        boolean sourceReady;
+        String source;
 
         Snapshot(MessageObject message) {
             this.message = message;
             owner = message.messageOwner;
+            ownerBytes = serialize(owner);
             article = message.getDisplayRichMessage();
             dialogId = message.getDialogId();
             messageId = message.getId();
-            editDate = owner.edit_date;
+            editDate = owner.edit_date; date = owner.date;
+            groupId = owner.grouped_id; ownerText = owner.message;
             translated = message.translated;
             language = owner.translatedToLanguage;
             original = owner.rich_message;
@@ -93,8 +109,10 @@ final class PurpleMarkdownCopy {
             return current == message && !current.deleted && !current.deletedByThanos
                     && current.currentAccount == account && current.messageOwner == owner
                     && current.getDialogId() == dialogId && current.getId() == messageId
-                    && owner.edit_date == editDate && current.translated == translated
+                    && owner.edit_date == editDate && owner.date == date && owner.grouped_id == groupId
+                    && java.util.Objects.equals(owner.message, ownerText) && current.translated == translated
                     && java.util.Objects.equals(owner.translatedToLanguage, language)
+                    && Arrays.equals(ownerBytes, serialize(owner))
                     && owner.rich_message == original
                     && (original == null || Arrays.equals(originalBytes, serialize(original)))
                     && current.getDisplayRichMessage() == article
@@ -102,7 +120,18 @@ final class PurpleMarkdownCopy {
         }
     }
 
-    private static byte[] serialize(TL_iv.RichMessage article) {
+    private boolean begin(ChatActivity chat) {
+        currentAccount = chat.getCurrentAccount();
+        clientUserId = chat.getUserConfig().getClientUserId();
+        dialogId = chat.getDialogId();
+        migratedDialogId = chat.getMergeDialogId();
+        selectionGeneration = PurpleArchiveViewerModel.selectionGeneration();
+        identity = PurpleAccountFiles.capture(currentAccount);
+        archiveGuard = PurpleArchiveMarkdown.guard(identity);
+        return archiveGuard != null && archiveGuard.current();
+    }
+
+    private static byte[] serialize(org.telegram.tgnet.TLObject article) {
         SerializedData data = new SerializedData();
         try {
             article.serializeToStream(data);
@@ -116,21 +145,14 @@ final class PurpleMarkdownCopy {
         cancel();
         ChatActivity chat = origin.get();
         if (destroyed || chat == null || chat.isFinished || message == null) return;
-        currentAccount = chat.getCurrentAccount();
-        clientUserId = chat.getUserConfig().getClientUserId();
-        dialogId = chat.getDialogId();
-        List<MessageObject> messages = group == null ? java.util.Collections.singletonList(message) : group.messages;
-        boolean hasArticle = message.type == MessageObject.TYPE_ARTICLE || message.getDisplayRichMessage() != null;
-        for (MessageObject item : messages) {
-            if (item != null && (item.type == MessageObject.TYPE_ARTICLE || item.getDisplayRichMessage() != null)) hasArticle = true;
-        }
-        if (!hasArticle) {
-            String markdown = ordinary(message, group);
-            if (!TextUtils.isEmpty(markdown)) {
-                AndroidUtilities.addToClipboard(markdown);
-                BulletinFactory.of(chat).createCopyBulletin(LocaleController.getString(R.string.TextCopied)).show();
-            }
-            return;
+        if (!begin(chat)) return;
+        fullBody = true;
+        List<MessageObject> messages = group == null ? java.util.Collections.singletonList(message) : new ArrayList<>(group.messages);
+        if (group != null) {
+            openingGroup = group;
+            openingGroupId = group.groupId;
+            groupMembers.addAll(messages);
+            if (chat.getGroup(group.groupId) != group) { fail(); return; }
         }
         if (!messages.contains(message)) {
             fail();
@@ -158,9 +180,7 @@ final class PurpleMarkdownCopy {
         cancel();
         ChatActivity chat = origin.get();
         if (destroyed || chat == null || chat.isFinished || messages.isEmpty()) return;
-        currentAccount = chat.getCurrentAccount();
-        clientUserId = chat.getUserConfig().getClientUserId();
-        dialogId = chat.getDialogId();
+        if (!begin(chat)) return;
         try {
             for (MessageObject message : messages) {
                 if (message == null || message.messageOwner == null || message.currentAccount != currentAccount
@@ -179,9 +199,17 @@ final class PurpleMarkdownCopy {
     private ChatActivity validOrigin() {
         ChatActivity chat = origin.get();
         if (destroyed || chat == null || chat.isFinished || chat.isPaused() || chat.getParentActivity() == null
+                || identity == null || !identity.current() || archiveGuard == null || !archiveGuard.current() || UserConfig.selectedAccount != currentAccount
+                || PurpleArchiveViewerModel.selectionGeneration() != selectionGeneration
                 || chat.getCurrentAccount() != currentAccount || chat.getDialogId() != dialogId
+                || chat.getMergeDialogId() != migratedDialogId
                 || !chat.getUserConfig().isClientActivated() || chat.getUserConfig().getClientUserId() != clientUserId) return null;
+        if (openingGroup != null) {
+            if (openingGroup.groupId != openingGroupId || chat.getGroup(openingGroupId) != openingGroup || openingGroup.messages.size() != groupMembers.size()) return null;
+            for (int i = 0; i < groupMembers.size(); ++i) if (openingGroup.messages.get(i) != groupMembers.get(i)) return null;
+        }
         for (Snapshot snapshot : snapshots) {
+            if (snapshot.dialogId != dialogId && snapshot.dialogId != migratedDialogId) return null;
             if (!snapshot.unchanged(lookup.find(chat, snapshot.dialogId, snapshot.messageId), currentAccount)) return null;
         }
         return chat;
@@ -195,7 +223,20 @@ final class PurpleMarkdownCopy {
         }
         while (next < snapshots.size()) {
             Snapshot snapshot = snapshots.get(next);
-            if (snapshot.article == null) {
+            if (fullBody && !snapshot.translated && !snapshot.sourceReady) {
+                snapshot.sourceReady = true;
+                int expected = generation;
+                PurpleArchiveMarkdown.current(archiveGuard, snapshot.owner, source -> {
+                    if (generation != expected || validOrigin() == null) return;
+                    snapshot.source = source;
+                    try { step(); } catch (RuntimeException e) { fail(); }
+                }, () -> { if (generation == expected) fail(); });
+                return;
+            }
+            if (snapshot.source != null) {
+                results.add(snapshot.source);
+                next++;
+            } else if (snapshot.article == null) {
                 results.add(snapshot.ordinary);
                 next++;
             } else if (!snapshot.article.part) {
@@ -241,58 +282,17 @@ final class PurpleMarkdownCopy {
             if (markdown.length() > 0) markdown.append("\n\n");
             markdown.append(result);
         }
-        if (markdown.length() > 0) {
-            AndroidUtilities.addToClipboard(markdown.toString());
-            BulletinFactory.of(chat).createCopyBulletin(LocaleController.getString(R.string.TextCopied)).show();
+        if (markdown.length() > 0 || snapshots.size() == 1 && snapshots.get(0).source != null) {
+            archiveGuard.publish(() -> validOrigin() != null, () -> {
+                AndroidUtilities.addToClipboard(markdown.toString());
+                BulletinFactory.of(chat).createCopyBulletin(LocaleController.getString(R.string.TextCopied)).show();
+            });
         }
         cancel();
     }
 
     private void requestTranslation(ChatActivity chat, Snapshot snapshot) {
-        if (TextUtils.isEmpty(snapshot.language)) {
-            fail();
-            return;
-        }
-        TLRPC.TL_messages_translateRichMessage request = new TLRPC.TL_messages_translateRichMessage();
-        request.flags |= 1;
-        request.peer = chat.getMessagesController().getInputPeer(snapshot.dialogId);
-        request.id.add(snapshot.messageId);
-        request.to_lang = TranslateController.normalizeLanguage(snapshot.language);
-        if (request.peer == null) {
-            fail();
-            return;
-        }
-        WeakReference<PurpleMarkdownCopy> weak = new WeakReference<>(this);
-        int expectedGeneration = generation;
-        int expectedIndex = next;
-        requestManager = chat.getConnectionsManager();
-        requestId = requestManager.sendRequestTyped(request, AndroidUtilities::runOnUIThread, (response, error) -> {
-            PurpleMarkdownCopy action = weak.get();
-            if (action != null && action.generation == expectedGeneration && action.next == expectedIndex) {
-                action.receivedTranslation(response, error);
-            }
-        });
-        requestManager.bindRequestToGuid(requestId, chat.getClassGuid());
-    }
-
-    private void receivedTranslation(TLRPC.TL_messages_translatedRichMessage response, TLRPC.TL_error error) {
-        requestId = 0;
-        try {
-            if (validOrigin() == null) {
-                cancel();
-                return;
-            }
-            if (error != null || response == null || response.result.size() != 1
-                    || response.result.get(0) == null || response.result.get(0).part) {
-                fail();
-                return;
-            }
-            results.add(PurpleRichMessageMarkdown.render(response.result.get(0)));
-            next++;
-            step();
-        } catch (RuntimeException e) {
-            fail();
-        }
+        fail();
     }
 
     private void received(TLRPC.messages_Messages response, TLRPC.TL_error error) {
@@ -310,11 +310,16 @@ final class PurpleMarkdownCopy {
             TL_iv.RichMessage full = null;
             for (TLRPC.Message message : response.messages) {
                 if (message.id == snapshot.messageId && MessageObject.getDialogId(message) == snapshot.dialogId) {
+                    if (message.edit_date != snapshot.editDate || message.date != snapshot.date
+                            || message.grouped_id != snapshot.groupId || !java.util.Objects.equals(message.message, snapshot.ownerText)) {
+                        fail();
+                        return;
+                    }
+                    if (full != null) { fail(); return; }
                     full = message.rich_message;
-                    break;
                 }
             }
-            if (full == null || full.part) {
+            if (full == null || full.part || !matchesPreview(snapshot.article, full)) {
                 fail();
                 return;
             }
@@ -324,6 +329,23 @@ final class PurpleMarkdownCopy {
         } catch (RuntimeException e) {
             fail();
         }
+    }
+
+    private static boolean matchesPreview(TL_iv.RichMessage preview, TL_iv.RichMessage full) {
+        if (preview.blocks.size() > full.blocks.size()) return false;
+        for (int i = 0; i < preview.blocks.size(); ++i)
+            if (!Arrays.equals(serialize(preview.blocks.get(i)), serialize(full.blocks.get(i)))) return false;
+        for (TLRPC.Photo photo : preview.photos) {
+            boolean found = false;
+            for (TLRPC.Photo candidate : full.photos) if (Arrays.equals(serialize(photo), serialize(candidate))) found = true;
+            if (!found) return false;
+        }
+        for (TLRPC.Document document : preview.documents) {
+            boolean found = false;
+            for (TLRPC.Document candidate : full.documents) if (Arrays.equals(serialize(document), serialize(candidate))) found = true;
+            if (!found) return false;
+        }
+        return true;
     }
 
     private void fail() {
@@ -342,6 +364,10 @@ final class PurpleMarkdownCopy {
         requestId = 0;
         snapshots.clear();
         results.clear();
+        identity = null;
+        archiveGuard = null; fullBody = false;
+        openingGroup = null;
+        groupMembers.clear();
         next = 0;
     }
 
@@ -353,7 +379,13 @@ final class PurpleMarkdownCopy {
     static boolean canCopy(MessageObject message) {
         return message != null && (message.type == MessageObject.TYPE_TEXT
                 || message.type == MessageObject.TYPE_ARTICLE || message.isAnimatedEmoji()
-                || message.isAnimatedEmojiStickers() || message.isDice() || message.caption != null);
+                || message.isAnimatedEmojiStickers() || message.isDice() || message.caption != null || markdownDocument(message));
+    }
+
+    private static boolean markdownDocument(MessageObject message) {
+        TLRPC.Document document = message.messageOwner == null || message.messageOwner.media == null ? null : message.messageOwner.media.document;
+        return document != null && org.telegram.messenger.purple.PurpleMarkdownSource.markdown(
+                org.telegram.messenger.FileLoader.getDocumentFileName(document), document.mime_type);
     }
 
     static void addMenuOptions(MessageObject message, MessageObject.GroupedMessages group,
@@ -382,6 +414,10 @@ final class PurpleMarkdownCopy {
         else {
             text = ChatActivity.getMessageCaption(message, group, null);
             if (text == null) text = ChatActivity.getMessageContent(message, 0, false);
+        }
+        if (TextUtils.isEmpty(text) && markdownDocument(message)) {
+            String name = org.telegram.messenger.FileLoader.getDocumentFileName(message.messageOwner.media.document);
+            return PurpleMarkdown.render("[Document: " + name + "]", java.util.Collections.emptyList());
         }
         return formattedText(text);
     }

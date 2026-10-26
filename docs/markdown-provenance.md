@@ -20,3 +20,17 @@ be retained exactly but cannot silently become replacement characters on copy.
 Source attachment and copy selection use existing core contracts. Purge, discard,
 logout and account lifetime changes revoke pending work; version purges own source
 removal. There is no separate source database or download for copying.
+
+Full-body copy uses the shared ChooseCopySource authority only after matching the
+current displayed original to the retained complete body and revision. Selection
+actions never substitute whole stored source. Current-message routing pins login
+lifetime, both history routes, owner/body, grouped membership/order, translation
+and request generation. A publication lock and a store commit counter revoke
+queued source results after archive changes, purge or discard. A source-less
+message still uses the existing structural writer.
+
+D-M3B5-A1: complete displayed translations copy their own blocks. A partial
+translated display refuses because the endpoint supplies no source revision.
+An original full-body response must preserve its observed prefix blocks and
+opening message metadata. Unsupported article blocks, lists, cells or inline
+constructors refuse the entire action.

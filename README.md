@@ -1894,11 +1894,13 @@ including closed details, nested/task lists, quote attributions, tables, code,
 math source and media captions/credits. Merged tables and complex ordered lists
 use escaped HTML when Markdown cannot represent them. Unavailable media retains
 an explicit label and any supplied external link; no download or cache-path URL
-is invented. Unknown blocks retain a visible placeholder.
+is invented. An unsupported block refuses the complete action, so a successful
+copy never silently ends with a placeholder.
 
-A partial article is resolved before copying. Translated partial articles use
-the displayed translation language; original and translated blocks are never
-mixed. Requests belong to the originating chat/account and are cancelled when
+A partial original article is resolved before copying and must preserve the
+opening revision metadata and observed prefix blocks. Partial translated copies
+refuse because the endpoint returns no source revision (D-M3B5-A1). Complete
+displayed translations still copy without substituting original source. Requests belong to the originating chat/account and are cancelled when
 the chat is destroyed or another Markdown copy starts. Deletion, replacement,
 account changes, errors and still-partial replies leave the clipboard unchanged.
 Album messages are composed together and copied only after every member is ready.
