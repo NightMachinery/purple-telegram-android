@@ -17,13 +17,18 @@ public final class PurpleArchiveLifecycle {
         final boolean expiry, whole, pending;
         final String source, order;
         final int lifetime;
+        final PurpleArchiveIngress.Ticket ingress;
         Event(PurpleAccountFiles.Identity identity, boolean expiry, boolean whole) { this(identity, expiry, whole, PurpleArchiveViewerModel.selectionGeneration()); }
         Event(PurpleAccountFiles.Identity identity, boolean expiry, boolean whole, long selection) { this(identity, expiry, whole, selection, false, null, null, 0); }
         Event(PurpleAccountFiles.Identity identity, boolean expiry, boolean whole, long selection, boolean pending, String source, String order, int lifetime) {
+            this(identity, expiry, whole, selection, pending, source, order, lifetime, PurpleArchiveIngress.capture(identity.key));
+        }
+        Event(PurpleAccountFiles.Identity identity, boolean expiry, boolean whole, long selection, boolean pending, String source, String order, int lifetime, PurpleArchiveIngress.Ticket ingress) {
+            this.ingress = ingress;
             this.identity = identity; this.expiry = expiry; this.whole = whole; this.selection = selection;
             this.pending = pending; this.source = source; this.order = order; this.lifetime = lifetime;
         }
-        boolean current() { return identity.current() && selection == PurpleArchiveViewerModel.selectionGeneration(); }
+        boolean current() { return identity.current() && selection == PurpleArchiveViewerModel.selectionGeneration() && ingress.current(); }
     }
     private static final LinkedHashMap<String, Event> causes = new LinkedHashMap<>();
     private static String address(int slot, long dialog, int mid) { return slot + ":" + dialog + ":" + mid; }
@@ -71,7 +76,8 @@ public final class PurpleArchiveLifecycle {
         if (android.os.Build.VERSION.SDK_INT < 23) return;
         PurpleAccountFiles.Identity identity = PurpleAccountFiles.capture(slot); if (identity == null) return;
         long deadline = System.nanoTime() + 250_000_000L;
-        for (int mid : ids) PurpleArchiveCapture.delete(identity, database, dialog, mid, PurpleArchiveOrigin.baseline(), false, deadline);
+        PurpleArchiveOrigin.Cause cause = PurpleArchiveOrigin.baseline().bind(PurpleArchiveIngress.capture(identity.key));
+        for (int mid : ids) PurpleArchiveCapture.delete(identity, database, dialog, mid, cause, false, deadline);
     }
     public static void beforeMediaEmpty(int slot, SQLiteDatabase database, long dialog, ArrayList<Integer> ids) {
         PurpleAccountFiles.Identity identity = PurpleAccountFiles.capture(slot);
@@ -130,7 +136,7 @@ public final class PurpleArchiveLifecycle {
     }
     private static Event bound(Event opening, JSONObject value) throws Exception {
         return new Event(opening.identity, value.getBoolean("expiry"), false, opening.selection, true,
-            value.getJSONObject("source").toString(), value.getString("order"), value.getInt("lifetime"));
+            value.getJSONObject("source").toString(), value.getString("order"), value.getInt("lifetime"), opening.ingress);
     }
     public static void replay(int slot, MessagesStorage storage, long task, long dialog, int mid) {
         PurpleAccountFiles.Identity identity = PurpleAccountFiles.capture(slot);
@@ -183,11 +189,12 @@ public final class PurpleArchiveLifecycle {
             return;
         }
         PurpleArchiveCapture.delete(event.identity, database, dialog, mid,
-            new PurpleArchiveOrigin.Cause(event.expiry ? 4 : 5, event.whole ? "whole_ttl" : "media", 0, "", event.selection), false, deadline);
+            new PurpleArchiveOrigin.Cause(event.expiry ? 4 : 5, event.whole ? "whole_ttl" : "media", 0, "", event.selection).bind(event.ingress), false, deadline);
     }
     static void captured(PurpleAccountFiles.Identity identity, String key, String body, PurpleArchiveOrigin.Cause cause, long deadline) {
         if (body == null) { PurpleArchive.captureGap(identity, "lifecycle_preimage_missing"); return; }
-        Event event = new Event(identity, cause.origin == 4, cause.stream.equals("whole_ttl"), cause.selection);
+        Event event = new Event(identity, cause.origin == 4, cause.stream.equals("whole_ttl"), cause.selection, false, null, null, 0,
+            cause.ingress == null ? PurpleArchiveIngress.capture(identity.key) : cause.ingress);
         PurpleArchive.runCapture(identity, 2L * (body.length() + key.length()), (worker, active) -> {
             BooleanSupplier valid = () -> active.getAsBoolean() && event.current();
             if (!valid.getAsBoolean()) throw new PurpleArchiveStore.Failure("Archive lifecycle revoked");

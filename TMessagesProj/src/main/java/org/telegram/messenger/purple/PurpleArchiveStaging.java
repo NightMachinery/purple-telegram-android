@@ -8,6 +8,13 @@ import org.json.JSONObject;
 
 final class PurpleArchiveStaging {
     static final int WINDOW = 256 * 1024;
+    private static final String PROCESS = PurpleArchiveBinding.token();
+    static boolean orphaned(JSONObject binding) throws Exception {
+        if (!binding.has("producerProcess")) return true;
+        String process = binding.getString("producerProcess");
+        if (!PurpleArchiveKeys.token(process)) throw new PurpleArchiveStore.Failure("Archive producer process binding");
+        return !PROCESS.equals(process);
+    }
     final PurpleArchiveStore store;
     final JSONObject binding;
     final String id;
@@ -76,6 +83,7 @@ final class PurpleArchiveStaging {
         return new PurpleArchiveStaging(store, binding, active, false);
     }
     static String prepare(PurpleArchiveStore store, JSONObject binding, BooleanSupplier active, JSONArray rows) throws Exception {
+        binding.put("producerProcess", PROCESS);
         String id = PurpleArchiveCore.call("stagingId", store.arguments().put("rows", rows).put("binding", binding), store.crypto()).getString("bindingId");
         if (!id.matches("[0-9a-f]{64}")) throw new PurpleArchiveStore.Failure("Archive staging binding identity");
         byte[] plain = PurpleArchiveBinding.canonical(binding.toString().getBytes(StandardCharsets.UTF_8));

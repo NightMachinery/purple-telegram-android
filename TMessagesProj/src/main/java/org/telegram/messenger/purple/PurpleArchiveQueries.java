@@ -30,6 +30,21 @@ public final class PurpleArchiveQueries implements AutoCloseable {
             this.identity = identity; encoded = value.toString(); this.title = title; this.selection = selection; this.policy = policy;
         }
         JSONObject value() throws Exception { return new JSONObject(encoded); }
+        public Scope withAuthority(java.util.function.BooleanSupplier authority) throws Exception {
+            return new Scope(identity, value(), title, selection, () -> policy.getAsBoolean() && authority.getAsBoolean());
+        }
+        public boolean samePurgeScope(Scope other) {
+            try {
+                if (other == null || !identity.key.equals(other.identity.key) || identity.lifetime != other.identity.lifetime) return false;
+                JSONObject left = value(), right = other.value();
+                if (!left.getJSONObject("chat").toString().equals(right.getJSONObject("chat").toString())) return false;
+                java.util.TreeSet<String> aliases = new java.util.TreeSet<>(), current = new java.util.TreeSet<>();
+                for (int i = 0; i < left.getJSONArray("aliases").length(); ++i) aliases.add(left.getJSONArray("aliases").getJSONObject(i).toString());
+                for (int i = 0; i < right.getJSONArray("aliases").length(); ++i) current.add(right.getJSONArray("aliases").getJSONObject(i).toString());
+                return aliases.equals(current);
+            } catch (Exception | LinkageError e) { return false; }
+        }
+
         public String account() { return Long.toString(identity.userId); }
         public String topic() { try { return value().has("topic") ? value().getJSONObject("topic").getString("id") : ""; } catch (Exception e) { return ""; } }
         public static Scope capture(int account, long dialog, TLRPC.User user, TLRPC.Chat chat, TLRPC.EncryptedChat secret, TLRPC.ChatFull info, long topic) throws Exception {

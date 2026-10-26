@@ -849,4 +849,23 @@
     <string name="PurpleArchiveUsageContinue">Continue calculating retained bytes</string>
     <string name="PurpleArchiveQueryRefresh">Refresh</string>
     <string name="PurpleArchiveQueryNewer">Archive data has changed. Refresh to update this snapshot.</string>
+    <string name="PurpleArchiveEmptyTrash">Empty Trashbin</string>
+    <string name="PurpleArchiveClearEdits">Clear Edit History</string>
+    <string name="PurpleArchiveEmptyTrashNotice">Remove all locally retained versions and attachments of deleted, expired or consumed messages. This does not delete messages from Telegram.</string>
+    <string name="PurpleArchiveClearEditsNotice">Remove earlier local versions. Keep each exact latest captured body, including the latest body of deleted messages. This does not change messages in Telegram.</string>
+    <string name="PurpleArchivePurgeScopeNotice">Includes all topics and message forms of these chats. The topic filter does not narrow this action. Files can remain while another retained message or reader needs them. Counts are a snapshot and do not predict disk space freed.</string>
+    <string name="PurpleArchivePurgeCounts">Snapshot: %1$s messages, %2$s deleted, %3$s captured versions, %4$s earlier versions. Confirm this scope to continue.</string>
+    <string name="PurpleArchivePurgeConfirm">Confirm local removal</string>
+    <string name="PurpleArchivePurgeReview">Review again</string>
+    <string name="PurpleArchivePurgeRetry">Retry this account’s pending cleanup</string>
+    <string name="PurpleArchivePurgeRefused">The local archive refused this review. No new removal was confirmed. Check this account’s archive status and try again.</string>
+    <string name="PurpleArchivePurgeStale">The archive or opening context changed. Review a fresh snapshot before confirming.</string>
+    <string name="PurpleArchivePurgeRunning">Local archive cleanup is running. You can close this view; cleanup continues for this account.</string>
+    <string name="PurpleArchivePurgeHeld">Local archive cleanup is held at its saved checkpoint. Check this account’s archive status, then retry its pending cleanup.</string>
+    <string name="PurpleArchivePurgeAdmissionHeld">Capture could not be safely resumed after three admission attempts. Capture stays paused. Check this account’s archive status, then retry its pending cleanup.</string>
+    <string name="PurpleArchivePurgeResumeNotice">An earlier cleanup for this account is unfinished. Retry continues that operation’s original scope rather than the proposed scope above.</string>
+    <string name="PurpleArchivePurgeReady">The local archive is ready. Refresh to see current counts. Files still needed by retained messages or readers remain owned.</string>
+    <string name="PurpleArchivePurgeScope">Account %1$s: %2$s</string>
+    <string name="PurpleArchivePurgeAllChats">all chats</string>
+    <string name="PurpleArchivePurgeAliases">Includes migrated chat identities: %1$s</string>
 </resources>

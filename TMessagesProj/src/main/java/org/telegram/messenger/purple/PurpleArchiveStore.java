@@ -33,6 +33,7 @@ final class PurpleArchiveStore implements AutoCloseable {
     private int readers;
     private StagingStep stagingStep;
     long authorityReads;
+    volatile boolean maintenance;
     final class StagingStep implements AutoCloseable {
         private final StagingStep previous;
         private boolean ended;
@@ -175,7 +176,7 @@ final class PurpleArchiveStore implements AutoCloseable {
         requireCurrent();
         if (!initialize) {
             try (PurpleArchiveSqlite inspection = new PurpleArchiveSqlite(directory.file("archive.sqlite").getAbsolutePath(), false, true)) {
-                verifyHeader(inspection);
+                verifyHeader(inspection, true);
             }
         } else if (!creating) throw new Failure("Existing archive database missing");
         synchronized (environment.publicationLock()) {
@@ -199,7 +200,8 @@ final class PurpleArchiveStore implements AutoCloseable {
             if (!execute(plan).committed) throw new Failure("Archive initialization not committed");
         }
         admit(database, false);
-        verifyHeader(database);
+        verifyHeader(database, true);
+        try (MaintenanceRead opened = maintenanceRead()) { maintenance = opened.inspection.getBoolean("pending"); }
         directory.child("blobs", true); directory.child("staging", true);
     }
     private boolean admit(PurpleArchiveSqlite db, boolean allowEmpty) throws Exception {
@@ -230,7 +232,8 @@ final class PurpleArchiveStore implements AutoCloseable {
             throw e;
         }
     }
-    private void verifyHeader(PurpleArchiveSqlite db) throws Exception {
+    private void verifyHeader(PurpleArchiveSqlite db) throws Exception { verifyHeader(db, false); }
+    private void verifyHeader(PurpleArchiveSqlite db, boolean maintenanceAllowed) throws Exception {
         boolean ownTransaction = db.autocommit();
         if (ownTransaction) PurpleArchiveCore.requireDone(db.run("BEGIN"));
         try {
@@ -240,7 +243,7 @@ final class PurpleArchiveStore implements AutoCloseable {
             if (values[0].type != PurpleArchiveSqlite.INTEGER || !PurpleArchiveCore.call("schema", arguments().put("version", Long.toString(values[0].integer)), null).getString("status").equals("Ready")
                 || !values[1].text().equals(query.getString("accountToken")) || query.getString("accountToken").isEmpty()
                 || !values[2].text().equals(binding.store)) throw new Failure("Archive metadata mismatch");
-            if (!values[5].text().isEmpty()) throw new Failure("Archive maintenance pending");
+            if (!maintenanceAllowed && !values[5].text().isEmpty()) throw new Failure("Archive maintenance pending");
             PurpleArchiveSqlite.Value[] header = query(db, "header").values[0];
             JSONObject opened = PurpleArchiveCore.call("openRow", arguments().put("row", new JSONObject().put("kind", 1)
                 .put("id", header[0].text()).put("position", Long.toString(header[1].integer)).put("frame", PurpleArchiveCore.base64(header[2].bytes))), crypto);
@@ -256,12 +259,23 @@ final class PurpleArchiveStore implements AutoCloseable {
         checkOwner();
         return execute(plan, () -> true);
     }
-    PurpleArchiveCore.Execution execute(PurpleArchiveCore.Program plan, BooleanSupplier active) {
+    PurpleArchiveCore.Execution execute(PurpleArchiveCore.Program plan, BooleanSupplier active) { return execute(plan, active, false); }
+    PurpleArchiveCore.Execution executeMaintenance(PurpleArchiveCore.Program plan, BooleanSupplier active) { return execute(plan, active, true); }
+    private PurpleArchiveCore.Execution execute(PurpleArchiveCore.Program plan, BooleanSupplier active, boolean privileged) {
         checkOwner();
-        PurpleArchiveCore.Execution result = PurpleArchiveCore.execute(database, plan, () -> authorityCurrent() && active.getAsBoolean(), environment.publicationLock(), () -> stagingStep == null || current() && active.getAsBoolean());
-        if (result.committed) PurpleArchiveMediaAccess.committed(this);
-        if (result.committed) PurpleArchiveDeletedModel.committed(this);
-        if (result.committed) PurpleArchiveViewerModel.committed(this);
+        if (maintenance && !privileged) return new PurpleArchiveCore.Execution(false, new java.util.ArrayList<>());
+        PurpleArchiveCore.Execution result = PurpleArchiveCore.execute(database, plan, () -> authorityCurrent() && active.getAsBoolean() && (privileged || !maintenance), environment.publicationLock(), () -> stagingStep == null || current() && active.getAsBoolean());
+        boolean wasMaintenance = maintenance;
+        if (database.autocommit()) {
+            try { maintenance = !query(database, "metadata").values[0][5].text().isEmpty(); }
+            catch (Exception | LinkageError e) { maintenance = true; }
+            if (!wasMaintenance && maintenance) PurpleArchiveIngress.committed(this);
+        }
+        if (result.committed || maintenance) {
+            PurpleArchiveMediaAccess.committed(this);
+            PurpleArchiveDeletedModel.committed(this);
+            PurpleArchiveViewerModel.committed(this);
+        }
         return result;
     }
     boolean hasGaps() throws Exception { requireCurrent(); return query(database, "gaps").rows != 0; }
@@ -317,6 +331,52 @@ final class PurpleArchiveStore implements AutoCloseable {
             requireCurrent(); return result;
         }
     }
+    final class MaintenanceRead implements AutoCloseable {
+        final JSONObject facts;
+        final JSONObject inspection;
+        boolean closed;
+        MaintenanceRead() throws Exception {
+            requireCurrent();
+            if (!database.autocommit()) throw new Failure("Archive maintenance snapshot nested");
+            PurpleArchiveCore.requireDone(database.run("BEGIN"));
+            try {
+                admit(database, false); verifyHeader(database, true);
+                PurpleArchiveSqlite.Value[] meta = query(database, "metadata").values[0];
+                JSONObject metadata = new JSONObject().put("revision", meta[3].text()).put("generation", meta[4].text()).put("maintenance", meta[5].text());
+                PurpleArchiveSqlite.Value[] header = query(database, "header").values[0];
+                JSONObject plan = PurpleArchiveCore.call("maintenanceQuery", PurpleArchiveStore.this.arguments().put("query", "journal"), crypto);
+                PurpleArchiveSqlite.Result journals = read(new PurpleArchiveCore.Statement(plan.getJSONObject("statement")));
+                if (journals.rows > 1) throw new Failure("Archive maintenance journal count");
+                JSONObject journal = null;
+                if (journals.rows == 1) {
+                    PurpleArchiveSqlite.Value[] values = journals.values[0];
+                    if (values.length != 6 || values[1].type != PurpleArchiveSqlite.INTEGER || values[3].type != PurpleArchiveSqlite.INTEGER
+                        || values[5].type != PurpleArchiveSqlite.BLOB) throw new Failure("Archive maintenance journal shape");
+                    journal = new JSONObject().put("id", values[0].text()).put("kind", values[1].integer).put("scope", values[2].text())
+                        .put("phase", values[3].integer).put("cursor", values[4].text()).put("frame", PurpleArchiveCore.base64(values[5].bytes));
+                }
+                facts = PurpleArchiveStore.this.arguments().put("metadata", metadata).put("header", PurpleArchiveQueries.row(1, header[0].text(), header[2]))
+                    .put("journal", journal == null ? JSONObject.NULL : journal);
+                inspection = PurpleArchiveCore.call("maintenanceInspect", facts, crypto);
+                if (!inspection.getString("status").equals("Ready")) throw new Failure("Archive maintenance authentication refused");
+            } catch (Exception | LinkageError e) {
+                if (!database.autocommit()) PurpleArchiveCore.requireDone(database.run("ROLLBACK"));
+                throw e;
+            }
+        }
+        PurpleArchiveSqlite.Result read(PurpleArchiveCore.Statement statement) throws Exception {
+            if (closed) throw new Failure("Archive maintenance snapshot closed");
+            return readStatement(statement);
+        }
+        JSONObject arguments() throws Exception { return new JSONObject(facts.toString()); }
+        @Override public void close() {
+            if (closed) return;
+            closed = true; requireOwnerCurrent();
+            PurpleArchiveCore.requireDone(database.run("COMMIT"));
+        }
+        private void requireOwnerCurrent() { checkOwner(); }
+    }
+    MaintenanceRead maintenanceRead() throws Exception { return new MaintenanceRead(); }
     boolean admissionCurrent(String generation) {
         try {
             requireCurrent();
@@ -402,7 +462,7 @@ final class PurpleArchiveStore implements AutoCloseable {
     }
     void closeDatabase() {
         checkOwner();
-        try { PurpleArchiveStagingRecovery.close(this); }
+        try { PurpleArchiveMaintenance.closed(this); PurpleArchiveStagingRecovery.close(this); }
         catch (Exception | LinkageError e) { throw new IllegalStateException("Archive staging recovery not closed", e); }
         if (readers != 0) throw new IllegalStateException("Archive readers still active");
         if (database != null) { database.close(); database = null; }

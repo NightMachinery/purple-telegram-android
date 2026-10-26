@@ -63,6 +63,7 @@ public final class PurpleArchiveAcquiredSource {
         final String media, photoType, text, openingSemantic;
         final PurpleArchive.Worker openingWorker;
         final PurpleArchiveStore openingStore;
+        final PurpleArchiveIngress.Ticket ingress;
         final long expected;
         final ArrayDeque<Chunk> chunks = new ArrayDeque<>();
         final java.util.TreeMap<Long, Long> observed = new java.util.TreeMap<>();
@@ -84,6 +85,7 @@ public final class PurpleArchiveAcquiredSource {
             dialog = message.getDialogId(); mid = message.getId(); random = message.messageOwner.random_id; edit = message.messageOwner.edit_date;
             text = message.messageOwner.message == null ? "" : message.messageOwner.message;
             this.media = media; this.photoType = photoType; this.expected = expected;
+            ingress = PurpleArchiveIngress.capture(identity.key);
             openingWorker = PurpleArchive.existing(identity);
             openingStore = openingWorker == null ? null : openingWorker.store;
             if (openingStore == null) throw new PurpleArchiveStore.Failure("Archive acquired opening store unavailable");
@@ -91,7 +93,7 @@ public final class PurpleArchiveAcquiredSource {
         }
         boolean owned() { return identity.current()
             && PurpleArchive.existing(identity) == openingWorker && !openingWorker.closing && !openingWorker.retired && openingWorker.store == openingStore; }
-        boolean current() { return !cancelled && selection == PurpleArchiveViewerModel.selectionGeneration() && owned(); }
+        boolean current() { return !cancelled && selection == PurpleArchiveViewerModel.selectionGeneration() && owned() && ingress.current(openingWorker); }
         void require() throws Exception { if (!current()) throw new PurpleArchiveStore.Failure("Archive acquired source revoked"); }
         void initialize(PurpleArchive.Worker worker) throws Exception {
             require(); if (initialized) return;
@@ -299,6 +301,14 @@ public final class PurpleArchiveAcquiredSource {
         Arrays.fill(bytes, (byte) 0);
         synchronized (entries) { int remaining = buffered.getOrDefault(account, 0) - bytes.length; if (remaining <= 0) buffered.remove(account); else buffered.put(account, remaining); }
     }
+    static boolean ownsStaging(PurpleArchiveStore store, String id) {
+        synchronized (entries) {
+            for (ArrayList<Entry> list : entries.values()) for (Entry entry : list) {
+                if (entry.current() && entry.openingStore == store && entry.staging != null && entry.staging.store == store && entry.staging.id.equals(id)) return true;
+            }
+        }
+        return false;
+    }
     static void schedule(Entry entry) {
         synchronized (entries) { if (entry.scheduled || entry.cancelled || entry.keyText == null && !entry.initialized) return; entry.scheduled = true; }
         boolean queued = PurpleArchive.media(entry.identity, entry::current, (worker, active) -> {
@@ -353,8 +363,18 @@ public final class PurpleArchiveAcquiredSource {
             ArrayList<Entry> list = entries.get(entry.operation);
             if (list != null && list.remove(entry)) { --count; if (list.isEmpty()) entries.remove(entry.operation); }
         }
-        if (gap) PurpleArchive.captureGap(entry.identity, "acquired_media_gap");
-        PurpleArchive.Worker worker = PurpleArchive.existing(entry.identity); if (worker != null) worker.control(entry::close);
+        PurpleArchive.Worker worker = PurpleArchive.existing(entry.identity);
+        if (gap) {
+            JSONObject binding = entry.staging == null ? null : entry.staging.binding;
+            if (binding != null && entry.owned() && entry.ingress.epoch != entry.openingWorker.purgeEpoch) {
+                worker.control(() -> {
+                    try { if (worker.store == entry.openingStore && PurpleArchiveMaintenance.purged(entry.openingStore, binding)) return; }
+                    catch (Exception | LinkageError e) { }
+                    PurpleArchive.captureGap(entry.identity, "acquired_media_gap");
+                });
+            } else PurpleArchive.captureGap(entry.identity, "acquired_media_gap");
+        }
+        if (worker != null) worker.control(entry::close);
     }
     public static void failed(FileLoadOperation operation) {
         ArrayList<Entry> targets; synchronized (entries) { ArrayList<Entry> list = entries.get(operation); if (list == null) return; targets = new ArrayList<>(list); }

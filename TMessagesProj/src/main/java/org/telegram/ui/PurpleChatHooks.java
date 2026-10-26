@@ -279,12 +279,53 @@ final class PurpleChatHooks {
 
     // ---- keep media and chat storage -----------------------------------------
 
+    private ArchiveScopeWatcher archiveScope;
+    private static final class ArchiveScopeWatcher implements org.telegram.messenger.NotificationCenter.NotificationCenterDelegate {
+        final java.lang.ref.WeakReference<ChatActivity> owner;
+        final org.telegram.messenger.purple.PurpleArchiveQueries.Scope opening;
+        final org.telegram.messenger.NotificationCenter notifications;
+        final java.util.concurrent.atomic.AtomicBoolean permitted = new java.util.concurrent.atomic.AtomicBoolean(true);
+        final int[] events = {org.telegram.messenger.NotificationCenter.updateInterfaces, org.telegram.messenger.NotificationCenter.chatInfoDidLoad,
+            org.telegram.messenger.NotificationCenter.userInfoDidLoad, org.telegram.messenger.NotificationCenter.encryptedChatUpdated,
+            org.telegram.messenger.NotificationCenter.closeChats};
+        Runnable revoked;
+        boolean closed;
+        ArchiveScopeWatcher(ChatActivity chat, org.telegram.messenger.purple.PurpleArchiveQueries.Scope scope) {
+            owner = new java.lang.ref.WeakReference<>(chat); opening = scope;
+            notifications = org.telegram.messenger.NotificationCenter.getInstance(chat.getCurrentAccount());
+            for (int event : events) notifications.addObserver(this,event);
+        }
+        void invalidate() { if (permitted.compareAndSet(true,false) && revoked != null) revoked.run(); }
+        void verify() {
+            if (closed) return;
+            ChatActivity current = owner.get();
+            if (current == null || current.isFinished) { invalidate(); return; }
+            try {
+                if (!opening.samePurgeScope(org.telegram.messenger.purple.PurpleArchiveQueries.Scope.capture(current.getCurrentAccount(), current.getDialogId(),
+                    current.getCurrentUser(), current.getCurrentChat(), current.getCurrentEncryptedChat(), current.getCurrentChatInfo(), 0))) invalidate();
+            } catch (Exception | LinkageError e) { invalidate(); }
+        }
+        @Override public void didReceivedNotification(int id, int account, Object... args) { verify(); }
+        void close() {
+            if (closed) return; closed = true; invalidate();
+            for (int event : events) notifications.removeObserver(this,event);
+            revoked = null;
+        }
+    }
     private void openDeletedMessages() {
         try {
             org.telegram.messenger.purple.PurpleArchiveQueries.Scope scope = org.telegram.messenger.purple.PurpleArchiveQueries.Scope.capture(chat.getCurrentAccount(),chat.getDialogId(),
                 chat.getCurrentUser(),chat.getCurrentChat(),chat.getCurrentEncryptedChat(),chat.getCurrentChatInfo(),chat.isTopic ? chat.getTopicId() : 0);
-            chat.presentFragment(new PurpleDeletedMessagesActivity(chat.getCurrentAccount(),scope));
+            if (archiveScope != null) archiveScope.close();
+            ArchiveScopeWatcher watcher = new ArchiveScopeWatcher(chat,scope); archiveScope = watcher;
+            org.telegram.messenger.purple.PurpleArchiveQueries.Scope guarded = scope.withAuthority(watcher.permitted::get);
+            PurpleDeletedMessagesActivity deleted = new PurpleDeletedMessagesActivity(chat.getCurrentAccount(),guarded,watcher::close);
+            java.lang.ref.WeakReference<PurpleDeletedMessagesActivity> view = new java.lang.ref.WeakReference<>(deleted);
+            watcher.revoked = () -> { PurpleDeletedMessagesActivity current = view.get(); if (current != null && !current.isFinished) current.scopeRevoked(); };
+            watcher.verify();
+            if (!chat.presentFragment(deleted)) watcher.close();
         } catch (Exception | LinkageError e) {
+            if (archiveScope != null) archiveScope.close();
             PurpleWriterUI.explain(chat,getString(R.string.PurpleArchiveDeletedMessages),getString(R.string.PurpleArchiveQueryUnavailable),"file_unreadable",null,null);
         }
     }
@@ -405,6 +446,7 @@ final class PurpleChatHooks {
      * the first resume the translate-availability log line.
      */
     void onResume() {
+        if (archiveScope != null) archiveScope.verify();
         PurplePeekControls.chatResumed(chat);
         screenTime.onResume();
         if (!resumed) {
@@ -419,6 +461,7 @@ final class PurpleChatHooks {
     }
 
     void onDestroy() {
+        if (archiveScope != null) { archiveScope.close(); archiveScope = null; }
         PurplePeekControls.chatDestroyed(chat);
         markdownCopy.onDestroy();
         if (pinnedMusicBar != null) {

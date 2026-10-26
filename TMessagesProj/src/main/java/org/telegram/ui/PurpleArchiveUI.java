@@ -17,11 +17,14 @@ final class PurpleArchiveUI {
         PurpleArchive.Status status = PurpleArchive.status(fragment.getCurrentAccount());
         items.add(UItem.asButton(ROW, text(R.string.PurpleArchiveTitle), summary(status)));
         if (status.gap) items.add(UItem.asShadow(text(R.string.PurpleArchiveGap)));
+        PurpleArchivePurgeUI.add(items, fragment);
         if (!requested.containsKey(fragment)) { requested.put(fragment, true); refresh(fragment); }
     }
     private static String summary(PurpleArchive.Status status) {
         switch (status.state) {
             case "Ready": return LocaleController.formatString(R.string.PurpleArchiveReady, status.bytes);
+            case "Maintenance": return text(R.string.PurpleArchivePurgeRunning);
+            case "Maintenance held": return text(status.reason.toLowerCase(java.util.Locale.US).contains("admission") ? R.string.PurpleArchivePurgeAdmissionHeld : R.string.PurpleArchivePurgeHeld);
             case "Opening": case "Busy": return text(R.string.PurpleArchiveOpening);
             case "Close pending": return text(R.string.PurpleArchiveClosePending);
             case "Recovery unavailable": return text(R.string.PurpleArchiveRecoveryUnavailable);
@@ -44,6 +47,7 @@ final class PurpleArchiveUI {
         }
     }
     static boolean click(UniversalFragment fragment, int row) {
+        if (PurpleArchivePurgeUI.click(fragment, row)) return true;
         if (row != ROW) return false;
         if (fragment.getParentActivity() == null) return true;
         PurpleArchive.Status status = PurpleArchive.status(fragment.getCurrentAccount());

@@ -2,6 +2,7 @@
 #include "purple/purple_archive_lifecycle.h"
 #include "purple/purple_archive_staging.h"
 #include "purple/purple_archive_views.h"
+#include "purple/purple_archive_sql_maintenance.h"
 #include <map>
 #include <mutex>
 #include "purple/purple_sync_json.h"
@@ -221,7 +222,9 @@ QJsonObject Removal(const ArchiveRemoval &value) {
 #include "archive_staging_bridge.inc"
 #include "archive_access_bridge.inc"
 #include "archive_query_bridge.inc"
+#include "archive_maintenance_bridge.inc"
 QJsonObject Dispatch(const QString &operation, const QJsonObject &args, const Crypto &crypto) {
+    if (auto result = ArchiveMaintenanceDispatch(operation,args,crypto)) return *result;
     if (auto result = ArchiveQueryDispatch(operation,args,crypto)) return *result;
     if (auto result = ArchiveAccessDispatch(operation,args,crypto)) return *result;
     if(auto media=ArchiveMediaDispatch(operation,args,crypto))return *media;

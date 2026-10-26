@@ -184,6 +184,7 @@ public final class PurpleArchiveMediaAccess {
             if (released) return;
             if (!attempted) { finishClose(); return; }
             if (worker.store != store || worker.retired) { finishClose(); return; }
+            if (store.maintenance) return;
             try (PurpleArchiveSlice slice = new PurpleArchiveSlice(store, new JSONObject(attachment.key), null)) {
                 if (slice.lease(token) != null) {
                     JSONObject plan = PurpleArchiveCore.call("accessRelease", arguments(slice), store.crypto());
@@ -191,6 +192,7 @@ public final class PurpleArchiveMediaAccess {
                     if (leaseOwner != null) leaseOwner.committed(this, plan.getJSONObject("leaseAdvance"));
                 }
                 finishClose();
+                if (!worker.closing && !worker.retired && worker.store == store) PurpleArchiveMaintenance.resume(worker);
             } catch (Exception | LinkageError e) {
                 PurpleArchive.captureGap(identity, "archive_reader_release_pending");
             }
@@ -228,7 +230,7 @@ public final class PurpleArchiveMediaAccess {
         class Orphans implements Runnable {
             String after = "";
             public void run() {
-                if (worker.store != opening || worker.closing || worker.retired) return;
+                if (worker.store != opening || worker.closing || worker.retired || opening.maintenance) return;
                 try {
                     JSONObject query = PurpleArchiveCore.call("accessLeases", opening.arguments().put("after", after), opening.crypto());
                     PurpleArchiveSqlite.Result page;

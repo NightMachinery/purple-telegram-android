@@ -14,9 +14,10 @@ import org.telegram.messenger.UserConfig;
 
 public final class PurpleArchive {
     public static final class Status {
-        public final String state, bytes;
+        public final String state, bytes, reason;
         public final boolean gap;
-        private Status(String state, String bytes, boolean gap) { this.state = state; this.bytes = bytes; this.gap = gap; }
+        private Status(String state, String bytes, boolean gap) { this(state, bytes, gap, ""); }
+        private Status(String state, String bytes, boolean gap, String reason) { this.state = state; this.bytes = bytes; this.gap = gap; this.reason = reason; }
     }
     private static final ConcurrentHashMap<String, Worker> workers = new ConcurrentHashMap<>();
     private static final ScheduledExecutorService recovery = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -42,7 +43,7 @@ public final class PurpleArchive {
         String discardSeal;
         final java.util.concurrent.atomic.AtomicLong captureBytes = new java.util.concurrent.atomic.AtomicLong();
         final java.util.concurrent.atomic.AtomicBoolean gapScheduled = new java.util.concurrent.atomic.AtomicBoolean();
-        volatile long deliveryEpoch;
+        volatile long deliveryEpoch, purgeEpoch;
         Worker(String account) {
             this.account = account;
             queue = new ThreadPoolExecutor(1, 1, 30, TimeUnit.SECONDS, new ArrayBlockingQueue<>(64), r -> {
@@ -100,13 +101,17 @@ public final class PurpleArchive {
                 }
                 step = "gap_read";
                 status = new Status("Opening", status.bytes, status.gap || store.paths.metadata.read("gap-outbox.json", 65536).bytes != null);
+                if (store.maintenance) {
+                    ++purgeEpoch; status = new Status("Maintenance", status.bytes, status.gap, "purge_recovery_pending");
+                    PurpleArchiveMaintenance.resume(this); return;
+                }
                 step = "sequence_recovery"; PurpleArchiveSequence.recover(store);
                 step = "capture_gap_recovery"; flushCaptureGap(this);
                 step = "gap_recovery"; PurpleArchiveGaps.flush(store);
                 step = "usage_scan"; String bytes = PurpleArchiveUsage.scan(store);
                 step = "gap_query"; status = new Status("Ready", bytes, store.hasGaps());
-                step = "staging_recovery"; PurpleArchiveStagingRecovery.start(this);
                 step = "media_recovery"; PurpleArchiveMediaAccess.recover(this);
+                PurpleArchiveMaintenance.resume(this);
             } catch (Exception | LinkageError e) {
                 PurpleArchiveFailures.record(captured.slot, step, e);
                 if (store != null) {
@@ -118,6 +123,13 @@ public final class PurpleArchive {
                 try { discardSeal = PurpleArchiveDiscard.seal(new PurpleArchivePaths(ApplicationLoader.getFilesDirFixed(), account)); }
                 catch (Exception | LinkageError e) { discardSeal = null; }
             }
+        }
+        void maintenanceState(String state, String reason) { status = new Status(state, status.bytes, status.gap, reason); }
+        void maintenanceDrain() throws Exception { PurpleArchiveSequence.recover(store); flushCaptureGap(this); PurpleArchiveGaps.flush(store); }
+        void maintenanceReady() throws Exception {
+            flushCaptureGap(this); PurpleArchiveGaps.flush(store);
+            status = new Status("Ready", status.bytes, store.hasGaps());
+            PurpleArchiveMediaAccess.recover(this);
         }
         void retire() {
             ++deliveryEpoch; retired = true; identity = null; workers.remove(account, this); queue.shutdown();
@@ -152,8 +164,14 @@ public final class PurpleArchive {
             }
         }
     }
-    private static String failureState(Throwable error) { return PurpleArchiveFailures.state(error); }
+    private static String failureState(Throwable error) {
+        if (error instanceof PurpleArchiveStore.Failure
+            && ((PurpleArchiveStore.Failure)error).reason.toLowerCase(java.util.Locale.US).contains("maintenance")) return "Maintenance held";
+        return PurpleArchiveFailures.state(error);
+    }
     private static Worker worker(String account) { return workers.computeIfAbsent(account, Worker::new); }
+    static Worker ingressWorker(String account) { return worker(account); }
+    static Worker boundWorker(String account) { return workers.get(account); }
     static Worker queryWorker(PurpleAccountFiles.Identity identity) { return allowed(identity) ? worker(identity.key) : null; }
     public static void initialize() {
         if (initialized) return;
@@ -349,8 +367,10 @@ public final class PurpleArchive {
         final java.util.concurrent.atomic.AtomicBoolean active = new java.util.concurrent.atomic.AtomicBoolean(true), released = new java.util.concurrent.atomic.AtomicBoolean();
         final java.util.concurrent.CompletableFuture<Boolean> result = new java.util.concurrent.CompletableFuture<>();
         final long bytes;
+        final PurpleArchiveIngress.Ticket ingress;
         CaptureTask(Worker worker, PurpleAccountFiles.Identity identity, long bytes, ArchiveAction action) {
             this.worker = worker; this.identity = identity; this.bytes = bytes; this.action = new java.util.concurrent.atomic.AtomicReference<>(action);
+            ingress = PurpleArchiveIngress.capture(identity.key);
         }
         void release() { if (released.compareAndSet(false, true)) worker.captureBytes.addAndGet(-bytes); }
         void cancel() { active.set(false); action.set(null); release(); }
@@ -358,9 +378,10 @@ public final class PurpleArchive {
             ArchiveAction work = action.getAndSet(null);
             try {
                 if (work == null || !active.get() || worker.retired || worker.closing || !identity.current()) return;
+                if (!ingress.current(worker)) throw new PurpleArchiveStore.Failure("Archive capture crossed maintenance");
                 if (worker.store == null) worker.open(identity);
                 if (!active.get() || worker.store == null || !worker.status.state.equals("Ready") || worker.closing || !identity.current()) return;
-                work.run(worker, () -> active.get() && !worker.closing && identity.current());
+                work.run(worker, () -> active.get() && !worker.closing && identity.current() && ingress.current(worker));
                 result.complete(active.get());
             } catch (Exception | LinkageError e) { captureGap(identity, "capture_write_failed"); }
             finally { release(); result.complete(false); }
@@ -375,7 +396,7 @@ public final class PurpleArchive {
         for (PurpleArchiveCapture.Input input : inputs) bytes += input.key.length() * 2L + (input.body == null ? 0 : input.body.length() * 2L);
         runCapture(identity, bytes, (worker, active) -> {
             for (PurpleArchiveCapture.Input input : inputs) {
-                if (!active.getAsBoolean()) throw new PurpleArchiveStore.Failure("Archive capture cancelled");
+                if (!active.getAsBoolean() || !input.ingress.current(worker)) throw new PurpleArchiveStore.Failure("Archive capture cancelled or crossed maintenance");
                 ++worker.deliveryEpoch;
                 String outcome = PurpleArchiveSequence.capture(worker.store, input, active);
                 PurpleArchiveInline.capture(worker.store, input, active);
@@ -402,7 +423,7 @@ public final class PurpleArchive {
     static void runCapture(PurpleAccountFiles.Identity identity, long bytes, ArchiveAction action, long deadline) {
         if (android.os.Build.VERSION.SDK_INT < 23 || identity == null || !allowed(identity)) return;
         Worker worker = worker(identity.key);
-        if (worker.closing || worker.retired || bytes > 8 * 1024 * 1024) { captureGap(identity, "capture_overflow"); return; }
+        if (worker.closing || worker.retired || worker.store != null && worker.store.maintenance || bytes > 8 * 1024 * 1024) { captureGap(identity, "capture_overflow"); return; }
         if (worker.captureBytes.addAndGet(bytes) > 16 * 1024 * 1024) {
             worker.captureBytes.addAndGet(-bytes); captureGap(identity, "capture_overflow"); return;
         }

@@ -17,6 +17,7 @@ import org.telegram.ui.Components.UniversalFragment;
 public final class PurpleDeletedMessagesActivity extends UniversalFragment {
     private static final int REFRESH = 0x70750401, NEXT = 0x70750402, USAGE = 0x70750403, HISTORY = 0x70750410;
     private final PurpleArchiveQueries.Scope scope;
+    private final Runnable scopeClosed;
     private PurpleArchiveDeletedModel model;
     private PurpleArchiveQueries.Page page;
     private boolean loading, freshnessShown;
@@ -35,8 +36,9 @@ public final class PurpleDeletedMessagesActivity extends UniversalFragment {
             AndroidUtilities.runOnUIThread(this,1000);
         }
     };
-    public PurpleDeletedMessagesActivity(int account, PurpleArchiveQueries.Scope scope) {
-        currentAccount = account; this.scope = scope;
+    public PurpleDeletedMessagesActivity(int account, PurpleArchiveQueries.Scope scope) { this(account,scope,() -> {}); }
+    PurpleDeletedMessagesActivity(int account, PurpleArchiveQueries.Scope scope, Runnable scopeClosed) {
+        currentAccount = account; this.scope = scope; this.scopeClosed = scopeClosed;
         try { model = new PurpleArchiveDeletedModel(scope); } catch (Exception | LinkageError e) { state = PurpleArchiveDeletedModel.failure(e); }
     }
     @Override protected CharSequence getTitle() { return text(R.string.PurpleArchiveDeletedMessages); }
@@ -66,6 +68,9 @@ public final class PurpleDeletedMessagesActivity extends UniversalFragment {
         loading = false; page = null; freshnessShown = false;
         try { if (model == null) throw new IllegalStateException("Archive opening unavailable"); model = model.restart(); bind(); next(); }
         catch (Exception | LinkageError e) { state = "Stale"; update(); }
+    }
+    void scopeRevoked() {
+        if (model != null) model.close(); page = null; loading = false; state = "Stale"; update();
     }
     private void update() { if (listView != null) listView.adapter.update(true); }
     @Override protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
@@ -103,6 +108,8 @@ public final class PurpleDeletedMessagesActivity extends UniversalFragment {
             else if (!loading && !page.logicalComplete) items.add(UItem.asButton(USAGE,text(R.string.PurpleArchiveUsageContinue)));
         }
         items.add(UItem.asButton(REFRESH,text(R.string.PurpleArchiveQueryRefresh)));
+        items.add(UItem.asButton(PurpleArchivePurgeUI.TRASH,text(R.string.PurpleArchiveEmptyTrash)));
+        items.add(UItem.asButton(PurpleArchivePurgeUI.EDITS,text(R.string.PurpleArchiveClearEdits)));
     }
     private String sender(PurpleArchiveQueries.Entry entry) {
         if (!entry.senderUser.isEmpty()) return LocaleController.formatString(R.string.PurpleArchiveCapturedUser,entry.senderUser);
@@ -122,11 +129,15 @@ public final class PurpleDeletedMessagesActivity extends UniversalFragment {
             PurpleArchiveViewerModel history = model.history(action.entry);
             if (history != null) presentFragment(new PurpleEditHistoryActivity(currentAccount,history));
             else { page = null; state = "Stale"; update(); }
+        } else if (item.id == PurpleArchivePurgeUI.TRASH || item.id == PurpleArchivePurgeUI.EDITS) {
+            try { PurpleArchivePurgeUI.open(this,org.telegram.messenger.purple.PurpleArchivePurgeModel.Scope.parent(scope),item.id == PurpleArchivePurgeUI.EDITS ? 1 : 0); }
+            catch (Exception | LinkageError e) { page = null; state = "Stale"; update(); }
         } else if (item.id == REFRESH) refresh(); else if (item.id == NEXT || item.id == USAGE) next();
     }
     @Override protected boolean onLongClick(UItem item, View view, int position, float x, float y) { return false; }
     @Override public void onResume() { super.onResume(); AndroidUtilities.cancelRunOnUIThread(authority); authority.run(); }
     @Override public void onPause() { AndroidUtilities.cancelRunOnUIThread(authority); super.onPause(); }
-    @Override public void onFragmentDestroy() { AndroidUtilities.cancelRunOnUIThread(authority); if (model != null) model.close(); super.onFragmentDestroy(); }
+    @Override public void onFragmentDestroy() {
+        scopeClosed.run(); AndroidUtilities.cancelRunOnUIThread(authority); if (model != null) model.close(); super.onFragmentDestroy(); }
     private static String text(int id) { return LocaleController.getString(id); }
 }

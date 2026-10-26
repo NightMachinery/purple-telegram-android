@@ -9,16 +9,22 @@ public final class PurpleArchiveOrigin {
         final int origin, pts;
         final String stream, token;
         final long selection;
+        final PurpleArchiveIngress.Ticket ingress;
         Cause(int origin, String stream, int pts, String token) { this(origin, stream, pts, token, PurpleArchiveViewerModel.selectionGeneration()); }
-        Cause(int origin, String stream, int pts, String token, long selection) { this.origin = origin; this.stream = stream; this.pts = pts; this.token = token; this.selection = selection; }
+        Cause(int origin, String stream, int pts, String token, long selection) { this(origin, stream, pts, token, selection, null); }
+        Cause(int origin, String stream, int pts, String token, long selection, PurpleArchiveIngress.Ticket ingress) {
+            this.origin = origin; this.stream = stream; this.pts = pts; this.token = token; this.selection = selection; this.ingress = ingress;
+        }
+        Cause bind(PurpleArchiveIngress.Ticket ticket) { return new Cause(origin, stream, pts, token, selection, ticket); }
     }
     public static final class Batch {
         final PurpleAccountFiles.Identity identity;
+        final PurpleArchiveIngress.Ticket ingress;
         final ArrayList<PurpleArchiveCapture.Input> inputs = new ArrayList<>();
         final HashMap<String, Cause> deletes = new HashMap<>();
         boolean refused;
         long bytes;
-        public Batch(int slot) { identity = android.os.Build.VERSION.SDK_INT >= 23 ? PurpleAccountFiles.capture(slot) : null; }
+        public Batch(int slot) { identity = android.os.Build.VERSION.SDK_INT >= 23 ? PurpleAccountFiles.capture(slot) : null; ingress = identity == null ? null : PurpleArchiveIngress.capture(identity.key); }
         public void edit(TLRPC.Message message, int pts) {
             if (identity == null) return;
             if (pts <= 0) { refused = true; inputs.clear(); return; }
@@ -27,13 +33,13 @@ public final class PurpleArchiveOrigin {
         }
         public void delete(long dialog, ArrayList<Integer> ids, int pts) {
             if (pts <= 0 || ids == null || ids.size() > 4096 || deletes.size() + ids.size() > 4096) { refused = true; return; }
-            for (int id : ids) deletes.put(dialog + ":" + id, new Cause(2, dialog == 0 ? "global" : "channel_" + -dialog, pts, ""));
+            for (int id : ids) deletes.put(dialog + ":" + id, new Cause(2, dialog == 0 ? "global" : "channel_" + -dialog, pts, "").bind(ingress));
         }
         void add(TLRPC.Message message, Cause cause, boolean preimage) {
             if (identity == null || refused) return;
             try {
                 PurpleArchiveCapture.Input input = new PurpleArchiveCapture.Input(PurpleArchiveNormalize.key(identity.key, message).toString(),
-                    PurpleArchiveNormalize.body(message).toString(), cause, preimage);
+                    PurpleArchiveNormalize.body(message).toString(), cause.bind(ingress), preimage);
                 bytes += input.body.length() * 2L;
                 if (inputs.size() >= 64 || bytes > 8 * 1024 * 1024) { refused = true; inputs.clear(); return; }
                 inputs.add(input);

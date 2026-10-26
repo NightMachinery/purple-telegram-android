@@ -14,8 +14,10 @@ public final class PurpleArchiveCapture {
         final String key, body;
         final PurpleArchiveOrigin.Cause cause;
         final boolean preimage;
+        final PurpleArchiveIngress.Ticket ingress;
         Input(String key, String body, PurpleArchiveOrigin.Cause cause, boolean preimage) {
             this.key = key; this.body = body; this.cause = cause; this.preimage = preimage;
+            ingress = cause.ingress == null ? PurpleArchiveIngress.key(key) : cause.ingress;
         }
     }
     public static PurpleArchiveOrigin.Batch observations(int slot, TLRPC.messages_Messages messages, int mode) {
@@ -66,8 +68,8 @@ public final class PurpleArchiveCapture {
                             } else body = PurpleArchiveNormalize.opaqueBody(raw);
                             if (replacement) {
                                 PurpleArchiveLifecycle.captured(batch.identity, input.key, body.toString(),
-                                    new PurpleArchiveOrigin.Cause(4, "media", 0, "", input.cause.selection), lifecycleDeadline); replaced = true;
-                            } else inputs.add(new Input(input.key, body.toString(), PurpleArchiveOrigin.baseline(), true));
+                                    new PurpleArchiveOrigin.Cause(4, "media", 0, "", input.cause.selection).bind(input.ingress), lifecycleDeadline); replaced = true;
+                            } else inputs.add(new Input(input.key, body.toString(), PurpleArchiveOrigin.baseline().bind(input.ingress), true));
                         }
                         if (cursor.next()) throw new PurpleArchiveStore.Failure("Archive preimage ambiguous");
                     }
@@ -92,7 +94,7 @@ public final class PurpleArchiveCapture {
         PurpleAccountFiles.Identity identity = PurpleAccountFiles.capture(slot);
         if (!eligible || identity == null || ids == null) return;
         if (ids.size() > 64) { PurpleArchive.captureGap(identity, "capture_overflow"); return; }
-        ArrayList<Integer> copy = new ArrayList<>(ids); PurpleArchiveOrigin.Cause cause = PurpleArchiveOrigin.local();
+        ArrayList<Integer> copy = new ArrayList<>(ids); PurpleArchiveOrigin.Cause cause = PurpleArchiveOrigin.local().bind(PurpleArchiveIngress.capture(identity.key));
         storage.getStorageQueue().postRunnable(() -> {
             if (!identity.current()) return;
             long deadline = System.nanoTime() + 250_000_000L;
@@ -108,7 +110,7 @@ public final class PurpleArchiveCapture {
         PurpleAccountFiles.Identity identity = PurpleAccountFiles.capture(slot);
         if (identity == null || ids == null || ids.size() > 64) { if (identity != null) PurpleArchive.captureGap(identity, "capture_overflow"); return; }
         ArrayList<Long> copy = new ArrayList<>(ids);
-        PurpleArchiveOrigin.Cause cause = new PurpleArchiveOrigin.Cause(2, "secret_" + chat, 0, "secret_" + service);
+        PurpleArchiveOrigin.Cause cause = new PurpleArchiveOrigin.Cause(2, "secret_" + chat, 0, "secret_" + service).bind(PurpleArchiveIngress.capture(identity.key));
         storage.getStorageQueue().postRunnable(() -> {
             if (!identity.current()) return;
             long deadline = System.nanoTime() + 250_000_000L;
@@ -171,7 +173,7 @@ public final class PurpleArchiveCapture {
                 return;
             }
             if (key != null) {
-                if (body != null) inputs.add(new Input(key.toString(), body, PurpleArchiveOrigin.baseline(), true));
+                if (body != null) inputs.add(new Input(key.toString(), body, PurpleArchiveOrigin.baseline().bind(cause.ingress), true));
                 inputs.add(new Input(key.toString(), null, cause, false)); PurpleArchive.capture(identity, inputs, deadline);
             } else if (random || DialogObject.isEncryptedDialog(dialog)) {
                 if (random) {

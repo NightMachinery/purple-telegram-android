@@ -10,16 +10,18 @@ final class PurpleArchiveStagingRecovery {
         final PurpleArchiveStore store;
         final PurpleAccountFiles.Identity identity;
         final long selection = PurpleArchiveViewerModel.selectionGeneration();
+        final PurpleArchiveIngress.Ticket ingress;
         PurpleArchiveFiles.Listing listing;
         String[] page = new String[0]; int index;
         PurpleArchiveStaging job;
         boolean closed;
-        Runner(PurpleArchive.Worker worker) { this.worker = worker; store = worker.store; identity = worker.identity; }
-        boolean current() { return !closed && !worker.closing && !worker.retired && worker.store == store && identity.current() && selection == PurpleArchiveViewerModel.selectionGeneration(); }
+        Runner(PurpleArchive.Worker worker) { this.worker = worker; store = worker.store; identity = worker.identity; ingress = PurpleArchiveIngress.capture(identity.key); }
+        boolean current() { return !closed && ingress.current(worker) && !worker.closing && !worker.retired && worker.store == store && identity.current() && selection == PurpleArchiveViewerModel.selectionGeneration(); }
         void run() {
             try {
                 if (!current()) { close(); return; }
                 store.requireCurrent();
+                if (job != null && PurpleArchiveAcquiredSource.ownsStaging(store, job.id)) { job.closeFinalizer(); job = null; }
                 if (job != null) {
                     int status = job.finishStep();
                     if (status == 0) { PurpleArchiveGaps.record(store, "staging_partial_after_restart", System.currentTimeMillis() / 1000); job.closeFinalizer(); job = null; }
@@ -34,7 +36,10 @@ final class PurpleArchiveStagingRecovery {
                     if (index == page.length) { page = listing.next(); index = 0; if (page.length == 0) { close(); return; } }
                     String id = page[index++];
                     if (!id.matches("[0-9a-f]{64}")) throw new PurpleArchiveStore.Failure("Archive retained staging name refused");
-                    JSONObject binding = PurpleArchiveStaging.readBinding(store, id); int status = PurpleArchiveStaging.status(store, binding);
+                    JSONObject binding = PurpleArchiveStaging.readBinding(store, id);
+                    if (PurpleArchiveMaintenance.purged(store, binding)) { worker.control(this::run); return; }
+                    if (!PurpleArchiveStaging.orphaned(binding) || PurpleArchiveAcquiredSource.ownsStaging(store, id)) { worker.control(this::run); return; }
+                    int status = PurpleArchiveStaging.status(store, binding);
                     if (status == 0) {
                         PurpleArchiveStaging retained = PurpleArchiveStaging.retained(store, id, this::current);
                         if (retained.terminal()) { retained.refuse(this::current); PurpleArchiveGaps.record(store, "staging_terminal_after_restart", System.currentTimeMillis() / 1000); worker.control(this::run); return; }
