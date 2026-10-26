@@ -22,10 +22,12 @@ final class PurpleSyncChatCache {
     }
     static final class ReadersSnapshot {
         final String memberHash;
+        final Set<String> memberHashes;
         final Kind kind;
         final Long otherMembers, otherAdmins;
         final boolean creator, admin, canSendFiles, anonymousAdmin, postsAsOther, publicUsername, protectedContent, linkedDiscussion, autoDelete;
-        ReadersSnapshot(String hash, Long members, Long admins, ChatFacts facts) {
+        ReadersSnapshot(String hash, Set<String> memberHashes, Long members, Long admins, ChatFacts facts) {
+            this.memberHashes=memberHashes!=null?Collections.unmodifiableSet(new HashSet<>(memberHashes)):null;
             kind=facts.kind;memberHash = hash; otherMembers = members; otherAdmins = admins; creator = facts.creator; admin = facts.admin;
             canSendFiles = facts.canSendFiles; anonymousAdmin = facts.anonymousAdmin; postsAsOther = facts.postsAsOther;
             publicUsername = facts.publicUsername; protectedContent = facts.protectedContent; linkedDiscussion = facts.linkedDiscussion; autoDelete = facts.autoDelete;
@@ -33,18 +35,30 @@ final class PurpleSyncChatCache {
         static ReadersSnapshot from(PurpleSyncChatClient.Info info) {
             if (info == null || !info.readable() || !info.readersKnown) return null;
             ChatFacts f = info.peer.facts;
-            return new ReadersSnapshot(memberHash(info.members,info.origin.userId),f.otherMembers,f.otherAdmins,f);
+            Set<String> members=null;
+            if(info.members!=null) {
+                members=new HashSet<>();
+                for(Long id:info.members)if(id!=info.origin.userId)members.add(hash(("purple-sync-reader-v1:"+info.origin.userId+":"+id).getBytes(StandardCharsets.UTF_8)));
+            }
+            return new ReadersSnapshot(memberHash(info.members,info.origin.userId),members,f.otherMembers,f.otherAdmins,f);
         }
         boolean newReaders(ReadersSnapshot newer) {
             if (newer == null) return false;
-            return creator && !newer.creator || !memberHash.isEmpty() && !newer.memberHash.isEmpty() && !memberHash.equals(newer.memberHash)
-                || (memberHash.isEmpty() || newer.memberHash.isEmpty()) && otherMembers != null && newer.otherMembers != null && newer.otherMembers > otherMembers;
+            if(creator&&!newer.creator)return true;
+            if(memberHashes!=null&&newer.memberHashes!=null)return !memberHashes.containsAll(newer.memberHashes);
+            if(otherMembers==null||newer.otherMembers==null)return false;
+            return newer.otherMembers>otherMembers || memberHashes==null&&!memberHash.isEmpty()&&!newer.memberHash.isEmpty()
+                    &&!memberHash.equals(newer.memberHash)&&newer.otherMembers.equals(otherMembers);
         }
         JSONObject json() {
             JSONObject out = PurpleSyncChatCore.json("kind",kind.name(),"memberHash",memberHash,"creator",creator,"admin",admin,"canSendFiles",canSendFiles,"anonymousAdmin",anonymousAdmin,
                 "postsAsOther",postsAsOther,"publicUsername",publicUsername,"protectedContent",protectedContent,"linkedDiscussion",linkedDiscussion,"autoDelete",autoDelete);
             if (otherMembers != null) put(out,"otherMembers",otherMembers.toString());
             if (otherAdmins != null) put(out,"otherAdmins",otherAdmins.toString());
+            if(memberHashes!=null) {
+                ArrayList<String> sorted=new ArrayList<>(memberHashes);Collections.sort(sorted);JSONArray values=new JSONArray();
+                for(String member:sorted)values.put(member);put(out,"memberHashes",values);
+            }
             return out;
         }
         static ReadersSnapshot parse(JSONObject value) throws Exception {
@@ -53,7 +67,17 @@ final class PurpleSyncChatCache {
             facts.creator = bool(value,"creator"); facts.admin = bool(value,"admin"); facts.canSendFiles = bool(value,"canSendFiles"); facts.anonymousAdmin = bool(value,"anonymousAdmin");
             facts.postsAsOther = bool(value,"postsAsOther"); facts.publicUsername = bool(value,"publicUsername"); facts.protectedContent = bool(value,"protectedContent");
             facts.linkedDiscussion = bool(value,"linkedDiscussion"); facts.autoDelete = bool(value,"autoDelete");
-            return new ReadersSnapshot(hash,value.has("otherMembers") ? decimal(value,"otherMembers") : null,value.has("otherAdmins") ? decimal(value,"otherAdmins") : null,facts);
+            Set<String> members=null;
+            if(value.has("memberHashes")) {
+                JSONArray array=value.getJSONArray("memberHashes");if(array.length()>200)throw new IllegalArgumentException("readers size");
+                members=new HashSet<>();String previous="";
+                for(int i=0;i<array.length();++i) {
+                    String member=array.getString(i);
+                    if(!member.matches("[0-9a-f]{64}")||previous.compareTo(member)>=0)throw new IllegalArgumentException("readers member");
+                    members.add(member);previous=member;
+                }
+            }
+            return new ReadersSnapshot(hash,members,value.has("otherMembers") ? decimal(value,"otherMembers") : null,value.has("otherAdmins") ? decimal(value,"otherAdmins") : null,facts);
         }
     }
     static final class Data {

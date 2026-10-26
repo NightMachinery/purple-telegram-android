@@ -36,7 +36,7 @@ final class PurpleSyncChatServiceCases {
             boolean closed;
             public PurpleSyncChatOrigin origin(){return ORIGIN;}public boolean current(){return active&&!closed;}public void dispatch(Runnable task){task.run();}
             void reply(PurpleSyncChatDiscovery.Command command,Consumer<PurpleSyncChatDiscovery.Reply> done){Runnable work=()->{if(current())done.accept(world.reply(command));};if(heldClient)pending=work;else work.run();}
-            public void search(PurpleSyncChatRequests.Search search,PurpleSyncChatRequests.Cursor cursor,Peer target,Consumer<PurpleSyncChatRequests.Page> done){reply(new PurpleSyncChatDiscovery.Command(ORIGIN,1,1,PurpleSyncChatDiscovery.Step.Search,search,cursor,target,null),reply->done.accept(reply.page));}
+            public void search(PurpleSyncChatRequests.Search search,PurpleSyncChatRequests.Cursor cursor,Peer target,Consumer<PurpleSyncChatRequests.Page> done){reply(new PurpleSyncChatDiscovery.Command(ORIGIN,1,1,PurpleSyncChatDiscovery.Step.Search,search,cursor,target,null),reply->done.accept(reply.success?reply.page:null));}
             public void info(Peer peer,Consumer<Info> done){reply(new PurpleSyncChatDiscovery.Command(ORIGIN,1,1,PurpleSyncChatDiscovery.Step.PeerInfo,null,null,peer,null),reply->done.accept(reply.info));}
             public void exact(Cache location,Consumer<Exact> done){reply(new PurpleSyncChatDiscovery.Command(ORIGIN,1,1,PurpleSyncChatDiscovery.Step.ExactMark,null,null,location.chat,location),reply->done.accept(reply.exact));}
             public void hint(Consumer<SettingsHint> done){done.accept(world.hint);}public List<Peer> fallback(){return Collections.emptyList();}public void cancel(){closed=true;++cancelled;}

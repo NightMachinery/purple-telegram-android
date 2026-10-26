@@ -10,7 +10,10 @@ final class PurpleSyncChatService {
     static final class Binding {
         final boolean ok, bound;
         final Peer chat;
-        Binding(boolean ok, boolean bound, Peer chat) { this.ok = ok; this.bound = bound; this.chat = chat; }
+        final String identity;
+        Binding(boolean ok, boolean bound, Peer chat) { this(ok,bound,chat,""); }
+        Binding(boolean ok, boolean bound, Peer chat,String identity) { this.ok = ok; this.bound = bound; this.chat = chat;this.identity=identity; }
+        boolean same(Binding other) { return other!=null&&ok&&other.ok&&bound==other.bound&&java.util.Objects.equals(chat,other.chat)&&identity.equals(other.identity); }
     }
     static final class Borrowed {
         final String key;
@@ -40,6 +43,8 @@ final class PurpleSyncChatService {
         final Borrowed borrowed;
         final Consumer<PurpleSyncChatDiscovery.Status> done;
         int retries;
+        int restarts;
+        boolean fullRequired;
         Cache retryAnchor;
         Request(boolean beforePost,boolean force,String stream,Borrowed borrowed,Consumer<PurpleSyncChatDiscovery.Status> done) {
             this.beforePost=beforePost;this.force=force;this.stream=stream;this.borrowed=borrowed;this.done=done;
@@ -58,6 +63,21 @@ final class PurpleSyncChatService {
     private boolean started;
     private volatile long generation;
     private long lastResolved;
+    private DiscoveryReceipt receipt;
+    private static final class DiscoveryReceipt {
+        final PurpleSyncChatOrigin origin;
+        final Binding binding;
+        final Cache location;
+        final String stream;
+        final long completedAt;
+        DiscoveryReceipt(PurpleSyncChatOrigin origin,Binding binding,Cache location,String stream,long completedAt) {
+            this.origin=origin;this.binding=binding;this.location=location;this.stream=stream;this.completedAt=completedAt;
+        }
+        boolean matches(PurpleSyncChatOrigin origin,Binding binding,PurpleSyncChatCache.Loaded loaded,String stream,long now) {
+            return this.origin.equals(origin)&&this.binding.same(binding)&&this.stream.equals(stream)&&now>=completedAt&&now-completedAt<15*60*1000L
+                    &&loaded!=null&&loaded.ok&&loaded.data!=null&&!loaded.data.pendingMove()&&location.equals(loaded.data.location);
+        }
+    }
     private Runnable retry,watchdog;
     private long dispatchedTicket, dispatchedRun;
 
@@ -97,6 +117,9 @@ final class PurpleSyncChatService {
         }
         owned=next.borrowed==null;active=waiting.removeFirst();++generation;cancelRetry();
         final long run=generation;
+        load(run);
+    }
+    private void load(long run) {
         try {
         armWatchdog(run);
         env.worker(()->{
@@ -113,7 +136,7 @@ final class PurpleSyncChatService {
                 if(!active.beforePost&&!active.force&&lastResolved>0&&env.now()-lastResolved>=0&&env.now()-lastResolved<15*60*1000L
                     &&lastStream.equals(active.stream)&&status.complete&&status.phase==PurpleSyncChatDiscovery.Phase.Use
                     &&previous!=null&&previous.data!=null&&loaded.data!=null&&java.util.Arrays.equals(previous.bytes,loaded.bytes)
-                    &&previousBinding!=null&&previousBinding.bound==binding.bound&&java.util.Objects.equals(previousBinding.chat,binding.chat)){
+                    &&previousBinding!=null&&previousBinding.same(binding)){
                     finish(status,run,false);return;
                 }
                 client=env.client();
@@ -122,7 +145,8 @@ final class PurpleSyncChatService {
                 dispatchedRun=dispatchedTicket=0;
                 Cache anchor=loaded.data!=null?loaded.data.location:binding.bound?new Cache(binding.chat,0,0):null;
                 if(active.retries>0&&java.util.Objects.equals(anchor,active.retryAnchor))model.startRetry(env.now(),active.retries);
-                else if(active.beforePost)model.startBeforePost(env.now());else model.start(env.now());
+                else if(active.beforePost&&!active.fullRequired&&recentDiscovery())model.startBeforePost(env.now());
+                else {receipt=null;model.start(env.now());}
                 pump(run);
             }));
             } catch(RuntimeException|LinkageError error) { env.ui(()->failed(run,"LoadUnavailable")); }
@@ -130,11 +154,22 @@ final class PurpleSyncChatService {
         } catch(RuntimeException|LinkageError error) { failed(run,"LoadUnavailable"); }
     }
     private void failed(long run,String reason) { if(live(run))finish(unavailable(reason),run);else abandon(run); }
+    private boolean recentDiscovery() { return receipt!=null&&receipt.matches(env.origin(),binding,opening,active.stream,env.now()); }
+    private void restartFull(long run) {
+        if(!live(run)){abandon(run);return;}
+        if(++active.restarts>3){finish(unavailable("BindingChanged"),run);return;}
+        active.fullRequired=true;cancelWatchdog();
+        if(client!=null){client.cancel();client=null;}env.cancelInventory();if(model!=null)model.cancel();
+        load(++generation);
+    }
     private void guarded(long run,Runnable task) { try { task.run(); } catch(RuntimeException|LinkageError error) { failed(run,"RequestUnavailable"); } }
     private void pump(long run) {
         if(!live(run)){abandon(run);return;}
         PurpleSyncChatDiscovery.Command command=model.command();
-        if(command.step==PurpleSyncChatDiscovery.Step.Idle){saveAndFinish(run);return;}
+        if(command.step==PurpleSyncChatDiscovery.Step.Idle){
+            if(active.beforePost&&model.directOnly()&&!recentDiscovery()){restartFull(run);return;}
+            saveAndFinish(run);return;
+        }
         if(command.run==dispatchedRun&&command.ticket==dispatchedTicket)return;
         dispatchedRun=command.run;dispatchedTicket=command.ticket;
         Consumer<PurpleSyncChatDiscovery.Reply> complete=reply->env.ui(()->{
@@ -159,9 +194,14 @@ final class PurpleSyncChatService {
             try {
                 env.worker(()->{
                     try {
+                        Binding freshBinding=active!=null&&active.beforePost?env.binding():binding;
+                        if(live(run)&&active.beforePost&&!binding.same(freshBinding)){env.ui(()->restartFull(run));return;}
+                        if(live(run)&&active.beforePost&&model.directOnly()&&!recentDiscovery()){env.ui(()->restartFull(run));return;}
                         boolean saved=live(run)&&PurpleSyncChatCache.save(env.cache(),opening,env.origin(),env.authority(),proposed,()->live(run));
                         byte[] written=saved?PurpleSyncChatCache.encode(env.origin(),env.authority(),proposed):null;
-                        env.ui(()->{if(!live(run)){abandon(run);return;}if(saved)opening=new PurpleSyncChatCache.Loaded(true,written,proposed);finish(saved?next:unavailable("CacheWriteUnavailable"),run);});
+                        env.ui(()->{if(!live(run)){abandon(run);return;}if(saved)opening=new PurpleSyncChatCache.Loaded(true,written,proposed);
+                            if(active.beforePost&&model.directOnly()&&!recentDiscovery()){restartFull(run);return;}
+                            finish(saved?next:unavailable("CacheWriteUnavailable"),run);});
                     } catch(RuntimeException|LinkageError error) { env.ui(()->failed(run,"CacheWriteUnavailable")); }
                 });
             } catch(RuntimeException|LinkageError error) { failed(run,"CacheWriteUnavailable"); }
@@ -171,7 +211,11 @@ final class PurpleSyncChatService {
     private void finish(PurpleSyncChatDiscovery.Status next,long run,boolean remember) {
         if(!live(run)){abandon(run);return;}
         Request finished=active;active=null;status=next;
-        if(next.complete&&remember){lastResolved=env.now();lastStream=finished.stream;}
+        if(next.complete&&remember&&model!=null&&!model.directOnly()) {
+            lastResolved=env.now();lastStream=finished.stream;
+            if(next.phase==PurpleSyncChatDiscovery.Phase.Use&&opening!=null&&opening.data!=null)
+                receipt=new DiscoveryReceipt(env.origin(),binding,opening.data.location,finished.stream,env.now());
+        }
         if(client!=null){client.cancel();client=null;}env.cancelInventory();
         int completedRetries=model!=null?model.retriesCompleted():0;
         cancelWatchdog();

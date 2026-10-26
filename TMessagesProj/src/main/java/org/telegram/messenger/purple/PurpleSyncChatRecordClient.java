@@ -35,6 +35,7 @@ final class PurpleSyncChatRecordClient implements PurpleSyncClient {
         if(++historyPages>MAX_HISTORY_PAGES){done.onReply(History.failed("HistoryLimit"));return 0;}
         return client.requestHistory(offset,limit,history -> {
             if(ticket!=historyTicket)return;
+            if(historyPages>=MAX_HISTORY_PAGES){done.onReply(History.failed("HistoryLimit"));return;}
             if (history.messages == null) { done.onReply(history); return; }
             if(history.total<0||history.messages.size()>limit
                 ||history.declaredTotal!=null&&(history.declaredTotal<0||historyTotal!=null&&!historyTotal.equals(history.declaredTotal))){done.onReply(History.failed("IncompleteHistory"));return;}

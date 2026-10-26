@@ -100,6 +100,7 @@ final class PurpleSyncChatDiscovery {
     Command command() { return command; }
     Status status() { return status; }
     PurpleSyncChatCache.Data cache() { return cache; }
+    boolean directOnly() { return directOnly; }
     PurpleSyncChatClient.Info readInfo() { return facts.get(status.resolution.readChat); }
     List<PurpleSyncChatScreen.Refused> refused() {
         List<PurpleSyncChatScreen.Refused> result=new ArrayList<>();Set<Peer> seen=new HashSet<>();

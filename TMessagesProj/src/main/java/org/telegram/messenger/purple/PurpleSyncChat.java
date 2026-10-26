@@ -93,7 +93,7 @@ public final class PurpleSyncChat {
                 try {
                     PurpleSyncChatService.Binding binding=holder.env.binding();
                     if(current()&&captured!=null&&captured==owner&&PurpleSyncOperations.owned(holder.env.operationKey(),captured)
-                            &&binding.ok&&binding.bound==frame.binding.bound&&binding.chat.equals(frame.binding.chat)
+                            &&binding.same(frame.binding)
                             &&frame.canConsent(candidate.chat)&&candidate.allowed) {
                         PurpleSyncChatCache.Data old=frame.opening.data;
                         java.util.Set<String> warned=new java.util.HashSet<>(old.warned);warned.add("config");
@@ -171,10 +171,10 @@ public final class PurpleSyncChat {
             PurpleAccountSyncCore.Result binding=PurpleAccountSyncCore.checkAccountBinding(origin.slot,state.bytes);
             if(!"Valid".equals(inspected.status)||!"None".equals(inspected.error)||!"Valid".equals(binding.status)||!"None".equals(binding.error)
                 ||!state.matches(file)||!current())return new PurpleSyncChatService.Binding(false,false,Peer.self());
-            if("Unbound".equals(binding.verdict))return new PurpleSyncChatService.Binding(true,false,Peer.self());
-            if(!"Bound".equals(binding.verdict))return new PurpleSyncChatService.Binding(false,false,Peer.self());
+            if(!"Bound".equals(binding.verdict)&&!"Unbound".equals(binding.verdict))return new PurpleSyncChatService.Binding(false,false,Peer.self());
             try{JSONObject value=new JSONObject(new String(state.bytes,StandardCharsets.UTF_8));Peer chat=Peer.parse(value.optString("chat","self"),origin.userId);
-                return new PurpleSyncChatService.Binding(chat!=null,true,chat!=null?chat:Peer.self());}
+                String identity=value.getString("install")+":"+value.getString("space")+":"+value.optString("binding_token","")+":"+value.optInt("version");
+                return new PurpleSyncChatService.Binding(chat!=null,"Bound".equals(binding.verdict),chat!=null?chat:Peer.self(),identity);}
             catch(Exception error){return new PurpleSyncChatService.Binding(false,false,Peer.self());}
         }
         public PurpleSyncChatClient client(){return new PurpleSyncChatTelegram(origin,PurpleSyncChatTelegram.platform(origin,this::current));}
