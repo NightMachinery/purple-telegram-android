@@ -7802,6 +7802,7 @@ public class ChatActivityEnterView extends FrameLayout implements
                     part = AndroidUtilities.getTrimmedString(part);
                 }
                 CharSequence[] message = new CharSequence[]{ part };
+                org.telegram.messenger.purple.PurpleComposeSource.Capture purpleMarkdown = org.telegram.messenger.purple.PurpleComposeSource.before(currentAccount, dialog_id, part);
                 ArrayList<TLRPC.MessageEntity> entities = MediaDataController.getInstance(currentAccount).getEntities(message, supportsNewEntities);
                 MessageObject.SendAnimationData sendAnimationData = null;
 
@@ -7859,6 +7860,7 @@ public class ChatActivityEnterView extends FrameLayout implements
                     setWebPage(null, true);
                     parentFragment.fallbackFieldPanel();
                 }
+                org.telegram.messenger.purple.PurpleComposeSource.prepared(purpleMarkdown, params);
                 SendMessagesHelper.getInstance(currentAccount).sendMessage(params);
                 start = end + 1;
             } while (end != text.length());

@@ -73,6 +73,9 @@ public final class PurpleArchiveAcquiredSource {
         boolean scheduled, initialized, complete, published, finishing, unknownReported;
         String keyText, bodyText;
         PurpleArchiveStaging staging;
+        PurpleArchiveSource.Prepared markdownTarget;
+        PurpleMarkdownSource.FileCapture markdown;
+        String markdownHash;
         Completion completion;
         RandomAccessFile file;
         android.system.StructStat stamp;
@@ -90,6 +93,10 @@ public final class PurpleArchiveAcquiredSource {
             openingStore = openingWorker == null ? null : openingWorker.store;
             if (openingStore == null) throw new PurpleArchiveStore.Failure("Archive acquired opening store unavailable");
             openingSemantic = semantic(PurpleArchiveNormalize.body(message.messageOwner));
+            TLRPC.Document document = message.messageOwner.media == null ? null : message.messageOwner.media.document;
+            if (document != null && media.equals("document_" + document.id) && expected >= 0 && expected <= PurpleMarkdownSource.LIMIT
+                    && PurpleMarkdownSource.markdown(org.telegram.messenger.FileLoader.getDocumentFileName(document), document.mime_type))
+                markdown = new PurpleMarkdownSource.FileCapture(org.telegram.messenger.FileLoader.getDocumentFileName(document), document.mime_type, media, expected);
         }
         boolean owned() { return identity.current()
             && PurpleArchive.existing(identity) == openingWorker && !openingWorker.closing && !openingWorker.retired && openingWorker.store == openingStore; }
@@ -115,6 +122,7 @@ public final class PurpleArchiveAcquiredSource {
                     JSONObject ref = slice.head.getJSONArray("media").getJSONObject(i);
                     if (ref.getString("identity").equals(media) && ref.getInt("state") == 2) { complete = true; cancel(this, false); return; }
                 }
+                if (markdown != null) markdownTarget = new PurpleArchiveSource.Prepared(slice, slice.head.getString("id"));
                 JSONObject source = PurpleArchiveStaging.source(store, slice, media);
                 if (expected > 0) { total = expected; staging = PurpleArchiveStaging.begin(store, source, total, this::current); }
                 else {
@@ -156,7 +164,7 @@ public final class PurpleArchiveAcquiredSource {
                         iv[15] = (byte) counter; iv[14] = (byte) (counter >>> 8); iv[13] = (byte) (counter >>> 16); iv[12] = (byte) (counter >>> 24);
                         Utilities.aesCtrDecryptionByteArray(bytes, completion.key, iv, 0, bytes.length, 0); Arrays.fill(iv, (byte) 0);
                     }
-                    require(); if (pass == 0) staging.piece(position, bytes); digest.update(bytes); position += bytes.length;
+                    require(); if (pass == 0) { staging.piece(position, bytes); if (markdown != null) markdown.piece(position, bytes); } digest.update(bytes); position += bytes.length;
                 } finally { Arrays.fill(bytes, (byte) 0); }
                 return;
             }
@@ -170,6 +178,7 @@ public final class PurpleArchiveAcquiredSource {
                 StringBuilder agreed = new StringBuilder();
                 for (byte b : hash) agreed.append(String.format(java.util.Locale.US, "%02x", b & 255));
                 staging.admitConsistency(agreed.toString(), "cached_two_pass:" + session);
+                markdownHash = agreed.toString();
                 file.close(); file = null; completion.clear(); completion = null; complete = true;
             }
         }
@@ -179,7 +188,7 @@ public final class PurpleArchiveAcquiredSource {
             synchronized (entries) { chunk = chunks.poll(); }
             if (chunk != null) {
                 boolean retained = false;
-                try { staging.piece(chunk.offset, chunk.bytes); observe(chunk.offset, chunk.bytes.length); }
+                try { staging.piece(chunk.offset, chunk.bytes); if (markdown != null) markdown.piece(chunk.offset, chunk.bytes); observe(chunk.offset, chunk.bytes.length); }
                 catch (PurpleArchiveStaging.CacheRebuilding pending) {
                     synchronized (entries) { if (current()) { chunks.addFirst(chunk); retained = true; } }
                     throw pending;
@@ -196,7 +205,15 @@ public final class PurpleArchiveAcquiredSource {
             if (finishing) {
                 int status = staging.finishStep();
                 if (status == 0) throw new PurpleArchiveStore.Failure("Archive completed source has staging holes");
-                if (status == 2) { published = complete = true; cancel(this, false); }
+                if (status == 2) {
+                    published = complete = true;
+                    if (markdown != null && markdownTarget != null && markdownHash != null) {
+                        try (PurpleMarkdownSource.Candidate candidate = markdown.finish(markdownHash)) {
+                            if (candidate != null) PurpleArchiveSource.bind(markdownTarget, candidate, null, null, this::current);
+                        } catch (Exception | LinkageError ignored) {}
+                    }
+                    cancel(this, false);
+                }
             }
         }
         void observe(long offset, int length) throws Exception {
@@ -216,10 +233,12 @@ public final class PurpleArchiveAcquiredSource {
             require();
             if (!observedAll() || completion != null || file != null) throw new PurpleArchiveStore.Failure("Archive stream provenance incomplete");
             staging.admitConsistency(hash, "verified_stream_session:" + session);
+            markdownHash = hash;
         }
         boolean more() { return !cancelled && (keyText != null && (expected > 0 || completion != null) || initialized && (!chunks.isEmpty() || completion != null || finishing)); }
         void close() {
             keyText = bodyText = null;
+            if (markdown != null) markdown.close(); markdown = null; markdownTarget = null; markdownHash = null;
             try { if (file != null) file.close(); } catch (Exception ignored) {} file = null;
             try { if (staging != null && !published && owned()) staging.refuse(this::owned); } catch (Exception | LinkageError ignored) {}
             try { if (staging != null) staging.closeFinalizer(); } catch (Exception ignored) {} staging = null;

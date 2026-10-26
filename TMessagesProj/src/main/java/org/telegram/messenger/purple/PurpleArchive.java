@@ -345,6 +345,7 @@ public final class PurpleArchive {
         return false;
     }
     public static void identityChanged(int slot) {
+        PurpleComposeSource.revoke(slot);
         PurpleArchiveMediaAccess.revoke(slot);
         PurpleArchiveDeletedModel.revoke(slot);
         PurpleArchiveLifecycle.revoke(slot); PurpleArchiveAcquiredSource.revoke(slot);

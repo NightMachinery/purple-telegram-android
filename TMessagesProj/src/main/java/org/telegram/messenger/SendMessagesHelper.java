@@ -5155,6 +5155,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             }
             newMsgObj = new MessageObject(currentAccount, newMsg, reply, true, true);
             PurpleSendReceipts.bind(currentAccount, sendMessageParams.path, newMsgObj.getId(), newMsgObj.getDialogId(), newMsgObj.messageOwner);
+            org.telegram.messenger.purple.PurpleComposeSource.bind(currentAccount, sendMessageParams, newMsgObj.messageOwner);
             newMsgObj.sendAnimationData = sendAnimationData;
             newMsgObj.wasJustSent = true;
             newMsgObj.sentHighQuality = sendMessageParams.sendingHighQuality;

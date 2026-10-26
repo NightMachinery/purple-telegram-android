@@ -88,7 +88,7 @@ std::optional<QJsonObject> ArchiveMaintenanceDispatch(const QString &operation, 
         auto query = Text(args,u"query"_q); auto statement = ArchiveSqlStatement(); auto id = QString();
         if (query == u"journal"_q) {
             statement = {u"SELECT operation_id,kind,scope_token,phase,cursor,envelope FROM maintenance WHERE singleton=1"_q,{},ArchiveSqlExpectation::Rows}; statement.rows.maximum = 1;
-        } else if (query == u"counts"_q) statement = ArchiveSqlScopeCounts({MaintenanceScope(args.value(u"scope"_q).toObject(),account)},security);
+        } else if (query == u"counts"_q) statement = ArchiveSqlScopeCounts({MaintenanceScope(args.value(u"scope"_q).toObject(),account),{},{},{}},security);
         else if (query == u"epoch"_q) {
             auto chat = Chat(args.value(u"chat"_q).toObject()); id = ArchiveSqlChatId(chat,account,security); statement = ArchiveSqlReadChatEpoch(account,chat,security);
         } else if (query == u"copies"_q) statement = ArchiveSqlFindOwnedMedia(account,Text(args,u"identity"_q),Text(args,u"mediaKind"_q),security);
@@ -169,7 +169,7 @@ std::optional<QJsonObject> ArchiveMaintenanceDispatch(const QString &operation, 
                     || observed->generation != Unsigned(value.value(u"generation"_q))) throw std::runtime_error("archive purge generation proof");
                 generation = observed->generation;
             }
-            epochs.push_back({chat,generation});
+            epochs.push_back({chat,generation,{}});
         }
         return MaintenanceProgram(BeginArchiveSqlPurge(record.header,*request,epochs,Text(args,u"operationId"_q),security));
     }
@@ -181,7 +181,7 @@ std::optional<QJsonObject> ArchiveMaintenanceDispatch(const QString &operation, 
         auto rows = std::vector<ArchiveSqlPurgeRow>();
         for (const auto &entry : values.toArray()) {
             auto value = entry.toObject(); auto target = value.value(u"row"_q).toObject();
-            auto input = ArchiveSqlPurgeRow{MaintenanceRow(target,account,security,kind),Bytes(target.value(u"frame"_q))};
+            auto input = ArchiveSqlPurgeRow{MaintenanceRow(target,account,security,kind),Bytes(target.value(u"frame"_q)),{},{},{}};
             if (value.value(u"head"_q).isObject()) {
                 auto head = value.value(u"head"_q).toObject(); auto stored = MaintenanceRow(head,account,security,ArchiveRecordKind::Version);
                 input.head = std::get<ArchiveVersionSnapshot>(stored.row.value); input.headFrame = Bytes(head.value(u"frame"_q));

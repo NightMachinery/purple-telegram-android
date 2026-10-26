@@ -1907,8 +1907,11 @@ The multi-message selection toolbar also has an **MD** action, labelled
 orders migrated messages before current messages using Telegram's existing
 message ordering, and resolves the complete selection before one clipboard
 write. Identical numeric IDs in the two histories remain separate messages.
-A received Markdown file's original source is distinct from reconstructed
-article Markdown.
+Genuine source is captured from new ordinary compose parts before Markdown
+parsing and from verified, already acquired Markdown documents. It belongs to
+the exact retained archive version and shares its purge and logout lifetime.
+Received text/entities and rich-editor blocks do not establish original source.
+See [Markdown provenance](docs/markdown-provenance.md) for capture and copy rules.
 
 The pure structural writer is PurpleArticleMarkdown. PurpleRichMessageMarkdown
 adapts the received TL blocks without a UI layout; PurpleMarkdownCopy owns the

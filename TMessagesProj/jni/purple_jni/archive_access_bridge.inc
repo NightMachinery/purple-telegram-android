@@ -41,7 +41,7 @@ std::optional<QJsonObject> ArchiveAccessDispatch(const QString &operation, const
             || Unsigned(expected.value(u"chatGeneration"_q)) != generation.chat) throw std::runtime_error("archive access source changed");
     }
     if (operation == u"accessAcquire"_q) {
-        auto lease = ArchiveReaderLease{leaseId,key,versionId,blob->id,generation};
+        auto lease = ArchiveReaderLease{leaseId,key,versionId,blob->id,generation,false,{}};
         return ArchiveLeaseProgram(PlanArchiveReaderAcquire(slice.state,lease),slice,security);
     }
     if (operation == u"accessCheck"_q) {

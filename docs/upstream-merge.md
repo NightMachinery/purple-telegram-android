@@ -748,3 +748,15 @@ FileLoader binds existing operations to the opening account/session and actual c
 - `TMessagesProj/src/main/AndroidManifest.xml`: B3b registers the non-exported owned archive media/save activities and a non-exported URI-grant-enabled opaque media provider. It adds no archive-root FileProvider mapping or external consumer grant; provider admission/IO stays in PurpleArchiveMediaProvider.
 
 The UserConfig load hook calls PurpleArchive.loginLoaded after a persisted user decodes, under the existing lock. It atomically bootstraps only missing per-login archive state and keeps legacy archive erasure disabled.
+
+### Markdown source capture
+
+ChatActivityEnterView.processSendingText freezes each actual outgoing part before
+getEntities parses it, then delegates the normalized send parameters to
+PurpleComposeSource. SendMessagesHelper delegates local owner binding immediately
+after creating that owner. Existing PurpleSendReceipts.finish supplies the exact
+owner and acknowledged server id; all pending state and validation stay in
+PurpleComposeSource. Verify formatting, split sends, cancelled/failed sends,
+acknowledgements and account/purge changes after upstream merges. Rich-editor
+blocks are not an original Markdown boundary. File capture extends the owned
+PurpleArchiveAcquiredSource path and adds no upstream download hook.

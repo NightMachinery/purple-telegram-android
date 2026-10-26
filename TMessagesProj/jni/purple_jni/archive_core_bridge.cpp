@@ -2,12 +2,14 @@
 #include "purple/purple_archive_lifecycle.h"
 #include "purple/purple_archive_staging.h"
 #include "purple/purple_archive_views.h"
+#include "purple/purple_archive_source.h"
 #include "purple/purple_archive_sql_maintenance.h"
 #include <map>
 #include <mutex>
 #include "purple/purple_sync_json.h"
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonArray>
+#include <QtCore/QCryptographicHash>
 #include <stdexcept>
 #include <type_traits>
 #include <limits>
@@ -223,7 +225,9 @@ QJsonObject Removal(const ArchiveRemoval &value) {
 #include "archive_access_bridge.inc"
 #include "archive_query_bridge.inc"
 #include "archive_maintenance_bridge.inc"
+#include "archive_source_bridge.inc"
 QJsonObject Dispatch(const QString &operation, const QJsonObject &args, const Crypto &crypto) {
+    if (auto result = ArchiveSourceDispatch(operation,args,crypto)) return *result;
     if (auto result = ArchiveMaintenanceDispatch(operation,args,crypto)) return *result;
     if (auto result = ArchiveQueryDispatch(operation,args,crypto)) return *result;
     if (auto result = ArchiveAccessDispatch(operation,args,crypto)) return *result;
@@ -300,8 +304,8 @@ QJsonObject Dispatch(const QString &operation, const QJsonObject &args, const Cr
         version.content.opaqueFormat = value.value(u"opaqueFormat"_q).toString(); version.content.opaque = Bytes(value.value(u"opaque"_q));
         for (const auto &item : value.value(u"media"_q).toArray()) {
             auto descriptor = item.toObject(); auto id = Text(descriptor,u"identity"_q);
-            version.content.media.push_back({id,Text(descriptor,u"kind"_q),descriptor.value(u"attributes"_q).toObject()});
-            version.media.push_back({id});
+            version.content.media.push_back({id,Text(descriptor,u"kind"_q),descriptor.value(u"attributes"_q).toObject(),{}});
+            version.media.push_back({id,ArchiveMediaState::Missing,{},{}});
         }
         version.observation.observedAt = Signed(value.value(u"observedAt"_q)); version.firstObservedAt = version.observation.observedAt;
         version.observation.serverTime = Signed(value.value(u"serverTime"_q)); version.observation.topicId = Signed(value.value(u"topicId"_q));
@@ -362,7 +366,7 @@ QJsonObject Dispatch(const QString &operation, const QJsonObject &args, const Cr
             if (dialog == 0) sql += u" AND chat_kind IN(0,1)"_q;
             else {
                 auto tokens = QJsonArray();
-                for (auto kind : {ArchiveChatKind::Group,ArchiveChatKind::Channel}) tokens.push_back(ArchiveSqlChatId({kind,-dialog},account,security));
+                for (auto kind : {ArchiveChatKind::Group,ArchiveChatKind::Channel}) tokens.push_back(ArchiveSqlChatId({kind,-dialog,{}},account,security));
                 sql += u" AND chat_token IN(?,?)"_q; binds.push_back(tokens[0].toString()); binds.push_back(tokens[1].toString());
             }
             statement = ArchiveSqlStatement{sql + u" LIMIT 2"_q,std::move(binds),ArchiveSqlExpectation::Rows}; statement.rows.maximum = 2;

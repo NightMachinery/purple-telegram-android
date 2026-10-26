@@ -180,6 +180,7 @@ public final class PurpleSendReceipts {
     }
 
     public static void finish(int account, int localId, Object owner, int serverId) {
+        PurpleComposeSource.finish(account, localId, owner, serverId);
         Account state = accounts.get(account);
         if (state == null) {
             return;
@@ -197,6 +198,7 @@ public final class PurpleSendReceipts {
     }
 
     public static void cancel(int account, int localId, long dialogId, String path) {
+        PurpleComposeSource.cancel(account, localId, dialogId);
         Account state = accounts.get(account);
         if (state == null || localId >= 0 || dialogId == 0 || path == null || path.isEmpty()) {
             return;
@@ -215,6 +217,7 @@ public final class PurpleSendReceipts {
     }
 
     public static void cleanup(int account) {
+        PurpleComposeSource.revoke(account);
         PurpleSyncAutoEdits.cleanup(account);
         Account state = accounts.get(account);
         if (state == null) {
