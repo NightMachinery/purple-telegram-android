@@ -119,7 +119,7 @@ final class PurpleAccountEditorModel {
     boolean current() { return current(null); }
     private boolean current(Result result) { return current(result, null, null); }
     private boolean current(Result result, File pending, PurpleGlobalChoiceFiles.Snapshot receipt) {
-        if (!context.current(result != null && result.refreshed)) return false;
+        if (!saveAdmission.getAsBoolean() || !context.current(result != null && result.refreshed)) return false;
         for (PurpleGlobalChoiceFiles.Snapshot value : inputs.values()) {
             PurpleGlobalChoiceFiles.Snapshot expected = value;
             if (result != null && value.file.equals(backup) && result.backup != null) expected = result.backup;
@@ -131,7 +131,7 @@ final class PurpleAccountEditorModel {
             PurpleGlobalChoiceFiles.Snapshot expected = value.file.equals(pending) ? receipt : value;
             if (expected == null || !expected.current(physical)) return false;
         }
-        return context.current(result != null && result.refreshed);
+        return saveAdmission.getAsBoolean() && context.current(result != null && result.refreshed);
     }
     private boolean prepareParents(Result result) throws Exception {
         for (File directory : targetParents) {
@@ -192,6 +192,12 @@ final class PurpleAccountEditorModel {
             if (buffer.remaining() > PurpleGlobalChoiceFiles.LIMIT) return null;
             byte[] bytes = new byte[buffer.remaining()]; buffer.get(bytes); return bytes;
         } catch (Exception e) { return null; }
+    }
+    private java.util.function.BooleanSupplier saveAdmission=()->true;
+    Result save(Preview preview,java.util.function.BooleanSupplier admitted) {
+        java.util.function.BooleanSupplier previous=saveAdmission;
+        saveAdmission=()->previous.getAsBoolean()&&admitted.getAsBoolean();
+        try { return save(preview); } finally { saveAdmission=previous; }
     }
     Result save(Preview preview) {
         Result result = new Result();

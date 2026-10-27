@@ -21,15 +21,15 @@ public final class PurpleSyncAutoEdits {
     private static final class Entry {
         final Tombstone tombstone;
         final long token;
-        BooleanSupplier current;
+        BooleanSupplier current,managed;
         PurpleSyncClient.Reply<PurpleSyncAutoCore.Outcome> reply;
         Runnable timeout;
-        Entry(int account, BooleanSupplier current, PurpleSyncClient.Reply<PurpleSyncAutoCore.Outcome> reply) {
-            token = ++sequence; tombstone = new Tombstone(account, token); this.current = current; this.reply = reply;
+        Entry(int account,BooleanSupplier current,BooleanSupplier managed,PurpleSyncClient.Reply<PurpleSyncAutoCore.Outcome> reply) {
+            token=++sequence;tombstone=new Tombstone(account,token);this.current=current;this.managed=managed;this.reply=reply;
         }
         void deliver(PurpleSyncAutoCore.Outcome outcome) {
             PurpleSyncClient.Reply<PurpleSyncAutoCore.Outcome> callback = reply;
-            reply = null; current = null;
+            reply = null; current = null;managed=null;
             AndroidUtilities.cancelRunOnUIThread(timeout); timeout = null;
             if (callback != null) callback.onReply(outcome);
         }
@@ -46,7 +46,10 @@ public final class PurpleSyncAutoEdits {
     }
     static synchronized void register(int account, Object message, BooleanSupplier current,
         PurpleSyncClient.Reply<PurpleSyncAutoCore.Outcome> reply) {
-        Entry entry = new Entry(account, current, reply);
+        register(account,message,current,()->false,reply);
+    }
+    static synchronized void register(int account,Object message,BooleanSupplier current,BooleanSupplier managed,PurpleSyncClient.Reply<PurpleSyncAutoCore.Outcome> reply){
+        Entry entry=new Entry(account,current,managed,reply);
         Entry previous = entries.put(message, entry);
         if (previous != null) previous.deliver(PurpleSyncAutoCore.Outcome.OutcomeUnknown);
         tombstones.remove(message);
@@ -59,6 +62,9 @@ public final class PurpleSyncAutoEdits {
         Object message = weak.get();
         Entry entry = message != null ? entries.get(message) : null;
         if (entry == null || entry.token != token) return;
+        if(entry.current!=null&&entry.current.getAsBoolean()&&entry.managed!=null&&entry.managed.getAsBoolean()){
+            AndroidUtilities.runOnUIThread(entry.timeout,180000);return;
+        }
         entries.remove(message); remember(message, entry.tombstone);
         entry.deliver(PurpleSyncAutoCore.Outcome.OutcomeUnknown);
     }

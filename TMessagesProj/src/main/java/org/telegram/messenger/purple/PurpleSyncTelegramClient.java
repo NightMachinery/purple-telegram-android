@@ -215,15 +215,17 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
     @Override
     public void send(File file, String caption, String mime, Receipt receipt) {
         PurpleSyncTransport.PostAuthority authority=receipt.authority();
-        if(!isActive() || !PurpleSyncChatCore.Peer.self().equals(chat()) || authority==null
+        if(!isActive() || authority==null || !PurpleSyncChatCore.Peer.self().equals(chat()) && !authority.permits(origin(),chat())
                 || !authority.current() || !receipt.current() || !PurpleSyncPost.CAPTION.equals(caption)
                 || !PurpleSyncPost.MIME.equals(mime)){receipt.onReceipt(0,true);return;}
         runOnWorker(()->{
             byte[] bytes=PurpleSyncReader.readAtMost(file,PurpleSyncPost.MAX_STAGED_BYTES+1);
             if(!java.util.Arrays.equals(bytes,receipt.expectedBytes())){receipt.onReceipt(0,true);return;}
-            uploadModern(0,bytes,null,()->receipt.current() && authority.current()
-                    && java.util.Arrays.equals(bytes,PurpleSyncReader.readAtMost(file,PurpleSyncPost.MAX_STAGED_BYTES+1)),
-                    authority,result->receipt.onReceipt(result.id,result.id<=0));
+            boolean manual=authority.permits(origin(),chat());
+            PurpleSyncAutoUpload sending=uploadModern(0,bytes,null,()->receipt.current()&&authority.current()
+                    &&(manual||java.util.Arrays.equals(bytes,PurpleSyncReader.readAtMost(file,PurpleSyncPost.MAX_STAGED_BYTES+1))),
+                    authority,result->{if(result.waiting!=null)receipt.transientFailure(result.waiting);receipt.onReceipt(result.id,result.id<=0);});
+            receipt.ownSend(()->runOnWorker(sending::cancel));
         });
     }
 
@@ -247,10 +249,12 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
                     : PurpleSyncAutoCore.Outcome.OutcomeUnknown)));
     }
 
-    private void uploadModern(int messageId, byte[] bytes, byte[] previous,
+    private PurpleSyncAutoUpload uploadModern(int messageId, byte[] bytes, byte[] previous,
         java.util.function.BooleanSupplier guard,PurpleSyncTransport.PostAuthority authority,Reply<PurpleSyncAutoUpload.Result> reply) {
         PurpleSyncAutoUpload[] operation = new PurpleSyncAutoUpload[1];
         PurpleSyncAutoNetwork[] exactReads = new PurpleSyncAutoNetwork[1];
+        final boolean manual=authority!=null&&authority.permits(origin(),chat());
+        java.util.Set<PurpleSyncChatPostEffect> effects=java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());
         PurpleSyncAutoUpload.Port port = new PurpleSyncAutoUpload.Port() {
             public void worker(Runnable task) { runOnWorker(task); }
             public void cancel(int token) { cancelRequest(token); }
@@ -258,45 +262,77 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
                 if(!operation[0].live() || authority==null || !authority.current()){done.onReply(false);return;}
                 authority.check(ready->done.onReply(Boolean.TRUE.equals(ready) && operation[0].live() && authority.current()));
             }
-            public int upload(long id, byte[] data, Reply<Boolean> callback) {
-                if (!operation[0].live()) { callback.onReply(false); return 0; }
-                try {
-                    TLRPC.TL_upload_saveFilePart request = new TLRPC.TL_upload_saveFilePart();
-                    request.file_id = id; request.file_part = 0;
-                    request.bytes = new NativeByteBuffer(data.length); request.bytes.writeBytes(data);
-                    return ConnectionsManager.getInstance(account).sendRequest(request,
-                        (response, error) -> {if(operation[0].live())noteWriteFailure(error);callback.onReply(error == null && response instanceof TLRPC.TL_boolTrue);},
-                        ConnectionsManager.RequestFlagFailOnServerErrors, ConnectionsManager.ConnectionTypeUpload);
-                } catch (Exception e) { callback.onReply(false); return 0; }
+            public boolean managedWait(){return manual;}
+            public int upload(long id,byte[] data,Reply<Boolean> callback){return uploadResult(id,data,result->callback.onReply(result.id>0));}
+            public int uploadResult(long id,byte[] data,Reply<PurpleSyncAutoUpload.Result> callback){
+                java.util.function.Function<Reply<PurpleSyncAutoUpload.Result>,Integer> wire=reply->{
+                    if(!operation[0].live()){reply.onReply(new PurpleSyncAutoUpload.Result(0,"AccountUnavailable"));return 0;}
+                    try{
+                        TLRPC.TL_upload_saveFilePart request=new TLRPC.TL_upload_saveFilePart();
+                        request.file_id=id;request.file_part=0;request.bytes=new NativeByteBuffer(data.length);request.bytes.writeBytes(data);
+                        return ConnectionsManager.getInstance(account).sendRequest(request,(response,error)->{
+                            if(operation[0].live())noteWriteFailure(error);
+                            reply.onReply(new PurpleSyncAutoUpload.Result(error==null&&response instanceof TLRPC.TL_boolTrue?1:0,
+                                    error!=null?error.text:"OutcomeUnknown",error!=null?error.code:0));
+                        },ConnectionsManager.RequestFlagFailOnServerErrors,ConnectionsManager.ConnectionTypeUpload);
+                    }catch(Exception error){reply.onReply(new PurpleSyncAutoUpload.Result(0,"Transport",-1));return 0;}
+                };
+                if(!manual)return wire.apply(callback);
+                writeEffect(operation[0]::live,authority,wire,callback,effects,false);return 0;
             }
             public void exact(int id, Reply<byte[]> callback) {
                 exactReads[0]=new PurpleSyncAutoNetwork(owned(PurpleSyncTelegramClient.this), "", operation[0]::live);
                 exactReads[0].exact(id, operation[0]::live, row -> callback.onReply(row.optInt("presence") == 1 && row.optBoolean("owned")
                         ? PurpleSyncAutoCore.decode(row.optString("record")) : null));
             }
-            public void cancelReads() { if(exactReads[0]!=null)exactReads[0].cancel(); }
+            public void cancelReads(){if(exactReads[0]!=null)exactReads[0].cancel();for(PurpleSyncChatPostEffect effect:effects)effect.cancel();effects.clear();}
             public int send(int id, TLRPC.TL_inputFile file, Reply<PurpleSyncAutoUpload.Result> callback) {
                 if (!operation[0].live()) { callback.onReply(new PurpleSyncAutoUpload.Result(0, "OutcomeUnknown")); return 0; }
-                final long randomId = PurpleSyncAutoUpload.randomId();
-                TLObject request=PurpleSyncChatUpload.request(chat(),input(),id,file,randomId);
-                if(request==null){callback.onReply(new PurpleSyncAutoUpload.Result(0,"ChatUnavailable"));return 0;}
-                return ConnectionsManager.getInstance(account).sendRequest(request, (response, error) -> {
-                    if(operation[0].live())noteWriteFailure(error);
-                    int resultId=error==null?PurpleSyncChatUpload.receipt(io,response,randomId,id)
-                            : id>0 && "MESSAGE_NOT_MODIFIED".equals(error.text)?id:0;
-                    if(error==null && response instanceof TLRPC.Updates && loginCurrent()){
-                        org.telegram.messenger.Utilities.stageQueue.postRunnable(()->{
-                            if(loginCurrent())org.telegram.messenger.MessagesController.getInstance(account)
-                                    .processUpdates((TLRPC.Updates)response,false);
-                        });
-                    }
-                    callback.onReply(new PurpleSyncAutoUpload.Result(resultId, resultId>0 ? null : error!=null?error.text:"OutcomeUnknown"));
-                }, ConnectionsManager.RequestFlagFailOnServerErrors);
+                final long randomId=manual?PurpleSyncAutoUpload.identity("send",bytes):PurpleSyncAutoUpload.randomId();
+                java.util.function.Function<Reply<PurpleSyncAutoUpload.Result>,Integer> wire=reply->{
+                    if(!operation[0].live()){reply.onReply(new PurpleSyncAutoUpload.Result(0,"AccountUnavailable"));return 0;}
+                    TLObject request=PurpleSyncChatUpload.request(chat(),input(),id,file,randomId);
+                    if(request==null){reply.onReply(new PurpleSyncAutoUpload.Result(0,"ChatUnavailable"));return 0;}
+                    authority.issued();
+                    return ConnectionsManager.getInstance(account).sendRequest(request,(response,error)->{
+                        if(operation[0].live())noteWriteFailure(error);
+                        int resultId=error==null?PurpleSyncChatUpload.receipt(io,response,randomId,id)
+                                :id>0&&"MESSAGE_NOT_MODIFIED".equals(error.text)?id:0;
+                        if(error==null&&response instanceof TLRPC.Updates&&loginCurrent()){
+                            org.telegram.messenger.Utilities.stageQueue.postRunnable(()->{if(loginCurrent())org.telegram.messenger.MessagesController.getInstance(account).processUpdates((TLRPC.Updates)response,false);});
+                        }
+                        reply.onReply(new PurpleSyncAutoUpload.Result(resultId,resultId>0?null:error!=null?error.text:"OutcomeUnknown",error!=null?error.code:0));
+                    },ConnectionsManager.RequestFlagFailOnServerErrors);
+                };
+                if(!manual)return wire.apply(callback);
+                writeEffect(operation[0]::live,authority,wire,callback,effects,true);return 0;
             }
         };
         operation[0] = new PurpleSyncAutoUpload(account, messageId, bytes, previous,
             () -> isActive() && guard.getAsBoolean(), port, reply);
-        operation[0].start();
+        operation[0].start();return operation[0];
+    }
+    private void writeEffect(java.util.function.BooleanSupplier live,PurpleSyncTransport.PostAuthority authority,
+            java.util.function.Function<Reply<PurpleSyncAutoUpload.Result>,Integer> wire,Reply<PurpleSyncAutoUpload.Result> done,
+            java.util.Set<PurpleSyncChatPostEffect> owned,boolean renewed){
+        PurpleSyncChatPostEffect[] effect=new PurpleSyncChatPostEffect[1];
+        effect[0]=new PurpleSyncChatPostEffect(new PurpleSyncChatPostEffect.Port(){
+            public long now(){return android.os.SystemClock.elapsedRealtime();}
+            public long wall(){return nowMillis();}
+            public PurpleRpcRetry.Transient cooldown(){return PurpleRpcRequests.writeWaiting(account,"sync-write");}
+            public void renew(java.util.function.Consumer<Boolean> done){authority.check(ok->runOnWorker(()->done.accept(ok)));}
+            public int send(java.util.function.Consumer<PurpleSyncAutoUpload.Result> done){return wire.apply(result->runOnWorker(()->done.accept(result)));}
+            public void cancel(int token){cancelRequest(token);}
+            private final java.util.Map<Runnable,Runnable> timers=new java.util.concurrent.ConcurrentHashMap<>();
+            public void delay(Runnable task,long millis){
+                Runnable delayed=()->runOnWorker(()->{if(timers.remove(task)!=null)task.run();});
+                Runnable old=timers.put(task,delayed);if(old!=null)AndroidUtilities.cancelRunOnUIThread(old);
+                AndroidUtilities.runOnUIThread(delayed,millis);
+            }
+            public void cancelDelay(Runnable task){Runnable delayed=timers.remove(task);if(delayed!=null)AndroidUtilities.cancelRunOnUIThread(delayed);}
+            public void waiting(PurpleRpcRetry.Transient value){authority.waiting(value);}
+        },()->live.getAsBoolean()&&authority.current(),result->{owned.remove(effect[0]);done.onReply(result);});
+        owned.add(effect[0]);effect[0].start(renewed,PurpleRpcRequests.writeWaiting(account,"sync-write"));
     }
     @Override
     public void deleteOwn(int id,java.util.function.BooleanSupplier current,Reply<PurpleSyncAutoCore.Outcome> reply){

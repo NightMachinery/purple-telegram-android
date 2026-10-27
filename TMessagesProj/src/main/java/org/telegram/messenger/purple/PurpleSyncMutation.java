@@ -16,6 +16,11 @@ final class PurpleSyncMutation {
     PurpleSyncMutation(PurpleAccountEditorModel model,PurpleConfigImpact.Input impact,PurpleAccountEditor.Current route,PurpleSyncImpactGuard effects) {
         this.model=model;this.impact=impact;this.route=route;this.effects=effects;editor=null;model.impact(impact);
     }
+    private PurpleSyncMutation(PurpleSyncMutation source,java.util.function.BooleanSupplier guard) {
+        editor=source.editor;model=source.model;impact=source.impact;route=source.route;effects=source.effects;
+        admission=()->source.admission.getAsBoolean()&&guard.getAsBoolean();
+    }
+    PurpleSyncMutation scoped(java.util.function.BooleanSupplier guard) { return new PurpleSyncMutation(this,guard); }
     synchronized void require(java.util.function.BooleanSupplier guard) {java.util.function.BooleanSupplier previous=admission;admission=()->previous.getAsBoolean()&&guard.getAsBoolean();}
     boolean effectCurrent() { return admission.getAsBoolean()&&route.current()&&(editor!=null?editor.effects.current():effects==null||effects.current()); }
     boolean current() { return effectCurrent() && (editor!=null?editor.current():model.current()); }
@@ -27,7 +32,7 @@ final class PurpleSyncMutation {
             String text=new String(bytes,java.nio.charset.StandardCharsets.UTF_8);
             if(!java.util.Arrays.equals(bytes,PurpleAccountEditorModel.encode(text))||!current())return false;
             PurpleAccountEditorModel.Preview preview=model.previewSync(text,imported);
-            return preview!=null&&model.save(preview).ok;
+            return preview!=null&&model.save(preview,()->admission.getAsBoolean()&&route.current()).ok;
         }
         PurpleAccountEditor.Preview preview = editor.previewSync(bytes, imported);
         if (preview == null || !current()) return false;

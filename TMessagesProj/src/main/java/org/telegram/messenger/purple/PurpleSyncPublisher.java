@@ -14,10 +14,15 @@ public final class PurpleSyncPublisher {
         public final PurpleAccountSyncStore.Status storeStatus;
         public final int messageId;
         public final int posts;
+        public final PurpleRpcRetry.Transient waiting;
 
         Result(PurpleSyncCore.PublishStatus status,
                 PurpleAccountSyncStore.Status storeStatus, int messageId,
                 int posts) {
+            this(status,storeStatus,messageId,posts,null);
+        }
+        Result(PurpleSyncCore.PublishStatus status,PurpleAccountSyncStore.Status storeStatus,int messageId,int posts,PurpleRpcRetry.Transient waiting){
+            this.waiting=waiting;
             this.status = status;
             this.storeStatus = storeStatus;
             this.messageId = messageId;
@@ -70,7 +75,8 @@ public final class PurpleSyncPublisher {
         this.finished = finished;
     }
 
-    private boolean current() { return session.available()&&(request.pendingOnly||effects.getAsBoolean()); }
+    private boolean current() { return !abandoned&&(authority==null||authority.current())
+            &&session.available()&&(request.pendingOnly||effects.getAsBoolean()); }
 
     void start() {
         if (started || done) {
@@ -91,7 +97,7 @@ public final class PurpleSyncPublisher {
                     PurpleAccountSyncStore.Status.Uninitialized);
             return;
         }
-        store = env.store();
+        store = env.store().require(this::current);
         final PurpleAccountSyncStore.Result opened =
                 store.open(true, session.account, env.device());
         if (opened.status == PurpleAccountSyncStore.Status.AccountUnbound) {
@@ -199,7 +205,7 @@ public final class PurpleSyncPublisher {
             return;
         }
         final PurpleAccountSyncStore.Result staged =
-                store.stageConfig(plan.record, reserved.state);
+                store.stageConfig(plan.record, reserved.state,this::current);
         if (staged.status != PurpleAccountSyncStore.Status.Ready
                 || staged.staged == null) {
             finish(PurpleSyncCore.PublishStatus.StoreError, staged.status);
@@ -254,7 +260,7 @@ public final class PurpleSyncPublisher {
                 || result.status == PurpleSyncTransport.PostStatus.InvalidRecord) {
             finish(PurpleSyncCore.PublishStatus.NeedsReview);
         } else {
-            finish(PurpleSyncCore.PublishStatus.OutcomeUnknown);
+            finish(new Result(PurpleSyncCore.PublishStatus.OutcomeUnknown,null,0,posts,result.waiting));
         }
     }
 

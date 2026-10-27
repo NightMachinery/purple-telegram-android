@@ -8,7 +8,7 @@ import static org.telegram.messenger.purple.PurpleSyncChatCases.*;
 public final class PurpleSyncChatDiscoveryCases {
     public static void main(String[] args)throws Exception {
         PurpleSyncChatCases.main(args);
-        for(String name:new String[]{"PurpleRpcRetry","PurpleRpcRequest","PurpleRpcRequests","PurpleSyncManagedReads","PurpleSyncReadScope","PurpleSyncChatRequests","PurpleSyncChatTelegram","PurpleSyncChatCache","PurpleSyncChatDiscovery","PurpleSyncChatService","PurpleSyncChatRecordClient","PurpleSyncOperations","PurpleSyncRunner","PurpleSyncTelegramClient","PurpleSyncChat","PurpleSyncChatIO","PurpleSyncChatUpload","PurpleSyncChatScreen","PurpleSyncChatSetup","PurpleSyncChatSetupRequests","PurpleSyncChatSetupNative","PurpleSyncChatSetupTransport","PurpleSyncChatSetupReceipts","PurpleSyncChatSetupEnvironment","PurpleSyncChatSetupFlow","PurpleSyncPost","PurpleSyncReader","PurpleSyncCheck","PurpleSyncInventory","PurpleSyncCore","PurpleAccountSyncStore","PurpleSyncPublisher","PurpleSyncAutoUpload","PurpleSyncAutoEngine","PurpleSyncAutoNetwork","PurpleSyncAutoClient","PurpleSyncTelegramTransport"})
+        for(String name:new String[]{"PurpleSyncChatActivation","PurpleSyncChatManual","PurpleSyncChatPostEffect","PurpleSyncApply","PurpleSyncAutoEdits","PurpleAccountSyncCore","PurpleRpcRetry","PurpleRpcRequest","PurpleRpcRequests","PurpleSyncManagedReads","PurpleSyncReadScope","PurpleSyncChatRequests","PurpleSyncChatTelegram","PurpleSyncChatCache","PurpleSyncChatDiscovery","PurpleSyncChatService","PurpleSyncChatRecordClient","PurpleSyncOperations","PurpleSyncRunner","PurpleSyncTelegramClient","PurpleSyncChat","PurpleSyncChatIO","PurpleSyncChatUpload","PurpleSyncChatScreen","PurpleSyncChatSetup","PurpleSyncChatSetupRequests","PurpleSyncChatSetupNative","PurpleSyncChatSetupTransport","PurpleSyncChatSetupReceipts","PurpleSyncChatSetupEnvironment","PurpleSyncChatSetupFlow","PurpleSyncPost","PurpleSyncReader","PurpleSyncCheck","PurpleSyncInventory","PurpleSyncCore","PurpleAccountSyncStore","PurpleSyncPublisher","PurpleSyncAutoUpload","PurpleSyncAutoEngine","PurpleSyncAutoNetwork","PurpleSyncAutoClient","PurpleSyncTelegramTransport"})
             check(new File(Class.forName("org.telegram.messenger.purple."+name).getProtectionDomain().getCodeSource().getLocation().toURI()).getCanonicalFile().equals(new File(args[0]).getCanonicalFile()),"production overlay origin "+name);
         File root=Files.createTempDirectory(Paths.get(args[2]),"cases-").toFile();
         PurpleRpcRetryCases.run();
@@ -24,6 +24,8 @@ public final class PurpleSyncChatDiscoveryCases {
         PurpleSyncChatSetupCases.run(root);
         PurpleSyncChatSetupTransportCases.run(root);
         PurpleSyncChatSetupReviewCases.run(root);
+        PurpleSyncChatPostEffectCases.run();
+        PurpleSyncChatActivationCases.run();
         PurpleSyncChatRecordCases.run(root);System.out.println("SYNC_CHAT_TOTAL_CHECKS="+checks);
     }
 }

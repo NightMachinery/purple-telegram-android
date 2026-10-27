@@ -36,8 +36,8 @@ final class PurpleSyncChatSetupReviewCases {
   if(fresh.phase()!=PurpleSyncChatSetup.Phase.Complete)throw new AssertionError("fresh setup after empty resume blocked");fresh.close();
   for(String phase:new String[]{"resolve","create","post","pin"}){
    Env held=new Env();held.hold=phase;PurpleSyncChatSetup setup=new PurpleSyncChatSetup(held,selection(null,true),p->{});setup.start();held.drain();setup.close();
-   Object other=new Object();if(!PurpleSyncOperations.begin(held.key,other,()->true))throw new AssertionError("cancel retained lease "+phase);
-   PurpleSyncOperations.end(held.key,other);
+   Object other=new Object();PurpleSyncOperations.Capability otherToken=PurpleSyncOperations.acquire(held.key,other,()->true);if(otherToken==null)throw new AssertionError("cancel retained lease "+phase);
+   PurpleSyncOperations.end(held.key,other,otherToken);
   }
   System.out.println("CONTROL empty resume admits fresh choice; cancelled runs release account lease");
  }

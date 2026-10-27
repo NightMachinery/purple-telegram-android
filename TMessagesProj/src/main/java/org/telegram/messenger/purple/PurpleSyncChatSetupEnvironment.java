@@ -22,7 +22,8 @@ final class PurpleSyncChatSetupEnvironment implements PurpleSyncChatSetup.Env {
     final PurpleSyncChatSetupTransport transport;
     PurpleSyncChatSetup setup;
     private volatile Object owner,lease;
-    private volatile long generation;
+    private volatile PurpleSyncOperations.Capability acquisition;
+    private volatile long generation,acquisitionEpoch;
     private final Set<PurpleSyncChatTelegram> readers=Collections.newSetFromMap(new ConcurrentHashMap<>());
     private final Set<PurpleSyncTelegramTransport> scans=Collections.newSetFromMap(new ConcurrentHashMap<>());
     private final ConcurrentHashMap<Integer,Wire> wires=new ConcurrentHashMap<>();
@@ -62,12 +63,23 @@ final class PurpleSyncChatSetupEnvironment implements PurpleSyncChatSetup.Env {
     public PurpleSyncChatService.Binding binding(){return holder.env.binding();}
     public boolean acquire(Object next){
         if(!current()||!foreground()||owner!=null||!holder.env.current())return false;
-        Object capability=new Object();
-        if(!PurpleSyncOperations.begin(holder.env.operationKey(),capability,()->current()&&foreground()))return false;
-        owner=next;lease=capability;return true;
+        Object capability=new Object();long epoch=acquisitionEpoch,run=generation;
+        PurpleSyncOperations.Capability previous=acquisition;
+        PurpleSyncOperations.Capability token=PurpleSyncOperations.acquire(holder.env.operationKey(),capability,()->current()&&foreground());
+        if(token==null)return false;
+        boolean installed=false;
+        try {
+            if(owner!=null||epoch!=acquisitionEpoch||run!=generation||previous!=acquisition||!current()||!foreground()||!holder.env.current())return false;
+            owner=next;lease=capability;acquisition=token;++acquisitionEpoch;installed=true;return true;
+        } finally {if(!installed){token.revoke();PurpleSyncOperations.end(token.key,capability,token);}}
     }
     public boolean owned(Object expected){Object capability=lease;return owner==expected&&capability!=null&&PurpleSyncOperations.owned(holder.env.operationKey(),capability);}
-    public void release(Object expected){if(owner==expected){Object capability=lease;owner=null;lease=null;if(capability!=null)PurpleSyncOperations.end(holder.env.operationKey(),capability);}}
+    public void release(Object expected){if(owner==expected){
+        Object capability=lease;PurpleSyncOperations.Capability token=acquisition;
+        if(token!=null)token.revoke();
+        try {owner=null;lease=null;acquisition=null;++acquisitionEpoch;}
+        finally {if(token!=null)PurpleSyncOperations.end(token.key,capability,token);}
+    }}
     public void dispatch(Runnable task){PurpleSyncChat.queue().postRunnable(task);}
     public void delay(Runnable task,long millis){Runnable timer=()->{delays.remove(task);dispatch(task);};delays.put(task,timer);holder.env.ui(()->{if(delays.get(task)==timer)AndroidUtilities.runOnUIThread(timer,millis);});}
     public void cancelDelay(Runnable task){Runnable timer=delays.remove(task);if(timer!=null)holder.env.ui(()->AndroidUtilities.cancelRunOnUIThread(timer));}

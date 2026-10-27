@@ -155,6 +155,8 @@ public final class PurpleSyncApply {
     private PurpleSyncApply() {
     }
 
+    static ApplyResult refused(PurpleSyncCore.ApplyStatus status) { return new Draft().stop(status); }
+
     static Reviewed review(PurpleSyncRunner.Session session,
             PurpleSyncInventory inventory) {
         if (!session.available() || inventory == null
@@ -178,7 +180,7 @@ public final class PurpleSyncApply {
             return reviewed(session, PurpleSyncCore.review(inventory, null, null,
                     local, device), local);
         }
-        final PurpleAccountSyncStore store = env.store();
+        final PurpleAccountSyncStore store = env.store().require(session::available);
         try {
             final PurpleAccountSyncStore.Result opened =
                     store.open(true, session.account, device);
@@ -256,7 +258,7 @@ public final class PurpleSyncApply {
             return draft.stop(PurpleSyncCore.ApplyStatus.NeedsReview);
         }
         final PurpleSyncRunner.Env env = session.env;
-        final PurpleAccountSyncStore store = env.store();
+        final PurpleAccountSyncStore store = env.store().require(session::available);
         try {
             PurpleSyncSettingsFile.Contents preJoin = null;
             if (!shown.bound) {
@@ -581,7 +583,13 @@ public final class PurpleSyncApply {
         }
         final boolean existed =
                 current.status == PurpleSyncSettingsFile.Status.Present;
-        final PurpleSyncHistory.Entry saved = env.history().save(
+        if(account!=null) {
+            if(!account.writable()){result.status=PurpleSyncCore.ApplyStatus.AccountUnavailable;return result;}
+            if(current.mutation!=null)current=new PurpleSyncSettingsFile.Contents(current.status,current.bytes,
+                    current.usingLastGood,current.mutation.scoped(account::writable));
+        }
+        final PurpleSyncHistory history=env.history().require(()->account==null||account.writable());
+        final PurpleSyncHistory.Entry saved = history.save(
                 existed ? current.bytes : null, reason, label, versionKey, keepId);
         if (saved == null) {
             result.status = PurpleSyncCore.ApplyStatus.HistoryError;

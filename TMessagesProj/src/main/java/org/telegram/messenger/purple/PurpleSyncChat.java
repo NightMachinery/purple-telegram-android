@@ -65,21 +65,48 @@ public final class PurpleSyncChat {
         Holder holder=accounts.get(slot);
         return holder!=null&&holder.env.context.current()?new PurpleSyncChatSetupFlow(holder,foreground,changed):null;
     }
+    public static void manualRunner(int slot,BooleanSupplier foreground,Consumer<PurpleSyncRunner> done) {
+        AndroidUtilities.runOnUIThread(()->{
+            Holder holder=accounts.get(slot);
+            if(holder==null||!holder.env.context.current()){done.accept(null);return;}
+            holder.env.worker(()->{
+                boolean ready=holder.env.current();
+                holder.env.ui(()->{
+                    if(!foreground.getAsBoolean()||!holder.env.context.current()){done.accept(null);return;}
+                    PurpleSyncChatManual route=ready?new PurpleSyncChatManual(holder,foreground):null;
+                    done.accept(route!=null?new PurpleSyncRunner(slot,holder.env.origin.userId,route,route,
+                            task->queue().postRunnable(task),AndroidUtilities::runOnUIThread):null);
+                });
+            });
+        });
+    }
     private static final class ScreenPort implements PurpleSyncChatScreen.Port {
         final Holder holder;
         PurpleSyncChatClient reader;
         volatile Object owner;
+        volatile PurpleSyncOperations.Capability acquisition;
         volatile boolean closed;
+        volatile long acquisitionEpoch;
         ScreenPort(Holder holder) { this.holder=holder; }
         public PurpleSyncChatOrigin origin() { return holder.env.origin; }
         public boolean current() { return !closed&&holder.env.current(); }
         public boolean begin(Object owner) {
-            if(!current()||this.owner!=null||!PurpleSyncOperations.begin(holder.env.operationKey(),owner,this::current))return false;
-            this.owner=owner;return true;
+            if(!current()||this.owner!=null)return false;
+            long epoch=acquisitionEpoch;PurpleSyncOperations.Capability previous=acquisition;
+            PurpleSyncOperations.Capability token=PurpleSyncOperations.acquire(holder.env.operationKey(),owner,this::current);
+            if(token==null)return false;
+            boolean installed=false;
+            try {
+                if(closed||this.owner!=null||epoch!=acquisitionEpoch||previous!=acquisition||!current())return false;
+                this.owner=owner;acquisition=token;++acquisitionEpoch;installed=true;return true;
+            } finally {if(!installed){token.revoke();PurpleSyncOperations.end(token.key,owner,token);}}
         }
         public void end(Object owner) {
             if(this.owner!=owner)return;
-            this.owner=null;PurpleSyncOperations.end(holder.env.operationKey(),owner);
+            PurpleSyncOperations.Capability token=acquisition;
+            if(token!=null)token.revoke();
+            try {this.owner=null;acquisition=null;++acquisitionEpoch;}
+            finally {if(token!=null)PurpleSyncOperations.end(token.key,owner,token);}
         }
         public void resolve(Object owner,Consumer<PurpleSyncChatScreen.Frame> done) {
             PurpleSyncChatService.Borrowed borrowed=new PurpleSyncChatService.Borrowed(holder.env.operationKey(),owner,this::current);

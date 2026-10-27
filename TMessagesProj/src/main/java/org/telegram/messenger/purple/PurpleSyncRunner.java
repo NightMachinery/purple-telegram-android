@@ -44,6 +44,12 @@ public final class PurpleSyncRunner {
         }
         default void resolveChat(boolean beforePost,Object owner,String key,java.util.function.BooleanSupplier current,java.util.function.Consumer<Boolean> done) { done.accept(true); }
         default void cancelChat(Object owner) { }
+        default void prepareApply(Object owner,String key,java.util.function.BooleanSupplier current,java.util.function.Consumer<Boolean> done) { done.accept(true); }
+        default void waiting(java.util.function.Consumer<PurpleRpcRetry.Transient> observer){}
+        default boolean workerEffects(){return false;}
+        default void checkEffects(java.util.function.BooleanSupplier effects,java.util.function.Consumer<Boolean> done){done.accept(effects.getAsBoolean());}
+        default PurpleSyncChatScreen.Candidate recipient() { return null; }
+        default boolean consent(PurpleSyncInventory inventory) { return true; }
         default boolean requiresRecovery() { return false; }
         default PurpleSyncRecoveryModel.Offer recovery(PurpleSyncInventory inventory,PurpleSyncSettingsFile.Contents local) { return null; }
         default boolean sendQueued() { return false; }
@@ -70,7 +76,11 @@ public final class PurpleSyncRunner {
         final Env env;
         final PurpleAccountFiles.Identity origin;
 
-        Session(int account, long userId, Env env) {
+        final java.util.function.BooleanSupplier admission;
+
+        Session(int account, long userId, Env env) { this(account,userId,env,()->true); }
+        Session(int account,long userId,Env env,java.util.function.BooleanSupplier admission) {
+            this.admission=admission;
             this.account = account;
             this.userId = userId;
             this.env = env;
@@ -82,7 +92,7 @@ public final class PurpleSyncRunner {
         }
 
         boolean available() {
-            return userId > 0 && env.current(account, userId)
+            return admission.getAsBoolean() && userId > 0 && env.current(account, userId)
                     && (!(env instanceof Platform) || origin != null && origin.userId == userId && origin.current());
         }
     }
@@ -239,13 +249,17 @@ public final class PurpleSyncRunner {
     private final PurpleSyncTransport transport;
     private final Poster queue;
     private final Poster ui;
-    private long generation;
+    private volatile long generation;
     private boolean busy;
     private boolean checking;
-    private boolean closed;
+    private volatile boolean closed;
     private Check current;
-    private final Object operationOwner = new Object();
+    private volatile Object operationOwner = new Object();
+    private volatile PurpleSyncOperations.Capability operationCapability;
     private PurpleSyncPublisher publisher;
+    private volatile java.util.function.Consumer<PurpleRpcRetry.Transient> waitObserver=ignored->{};
+    public void transientWait(java.util.function.Consumer<PurpleRpcRetry.Transient> observer){waitObserver=observer!=null?observer:ignored->{};}
+    private void waiting(PurpleRpcRetry.Transient value){ui.post(()->{if(!closed&&busy&&session.available())waitObserver.accept(value);});}
 
     public PurpleSyncRunner(int account, PurpleSyncTransport transport) {
         this(account, PurpleAccountBinding.activeUserId(account), transport,
@@ -260,8 +274,10 @@ public final class PurpleSyncRunner {
         this.session = new Session(account, userId, env);
         this.transport = transport;
         this.queue = queue;
-        this.ui = ui;
+        this.ui = ui;env.waiting(this::waiting);
     }
+
+    public PurpleSyncChatScreen.Candidate recipient() { return session.env.recipient(); }
 
     public String accountLabel() {
         return session.origin != null ? PurpleConfigImpactText.label(session.origin.key) : Long.toString(session.userId);
@@ -385,16 +401,26 @@ public final class PurpleSyncRunner {
         if (refused != null) {
             return refused;
         } else if (shown == null || shown != current
-                || shown.generation != generation || shown.local == null || !shown.local.current()) {
+                || shown.generation != generation || shown.local == null || !session.env.workerEffects()&&!shown.local.current()) {
             return Start.Stale;
         }
+        if (!session.env.consent(shown.inventory)) return Start.Stale;
         final long started = ++generation;
         if (!begin()) return Start.Busy;
         current = null;
         final PurpleSyncCore.Verdict verdict = shown.review.verdict;
+        final Object owner=operationOwner;
+        final PurpleSyncOperations.Capability capability=operationCapability;
+        final java.util.function.BooleanSupplier admitted=()->capability.current()&&operationCapability==capability
+                &&operationOwner==owner&&live(started);
+        final Session applying=new Session(session.account,session.userId,session.env,admitted);
+        session.env.prepareApply(owner,operationKey(),admitted,allowed->{
+        if(!admitted.getAsBoolean())return;
         queue.post(() -> {
-            final PurpleSyncApply.ApplyResult result = PurpleSyncApply.apply(
-                    session, shown.inventory, shown.review, chosenKey, shown.local);
+            if(!applying.available())return;
+            final PurpleSyncApply.ApplyResult result = Boolean.TRUE.equals(allowed)
+                    ? PurpleSyncApply.apply(applying,shown.inventory,shown.review,chosenKey,shown.local)
+                    : PurpleSyncApply.refused(PurpleSyncCore.ApplyStatus.NeedsRecheck);
             final PurpleSyncCore.ApplyFailure failure =
                     PurpleSyncCore.describeApplyFailure(result.status,
                             result.joined, result.wroteFile, result.historyKept(),
@@ -403,7 +429,7 @@ public final class PurpleSyncRunner {
                     && result.publishNeeded && publishes(verdict);
             final PurpleSyncApply.Reviewed next =
                     (!posts && result.status == PurpleSyncCore.ApplyStatus.Applied)
-                            ? PurpleSyncApply.reviewWithAdopt(session, shown.inventory)
+                            ? PurpleSyncApply.reviewWithAdopt(applying, shown.inventory)
                             : null;
             ui.post(() -> {
                 if (!closed && result.wroteFile) {
@@ -428,6 +454,7 @@ public final class PurpleSyncRunner {
                 done.onResult(new ApplyOutcome(result, failure, check, ticket));
             });
         });
+        });
         return Start.Started;
     }
 
@@ -440,18 +467,19 @@ public final class PurpleSyncRunner {
                 || fresh.generation != generation) {
             return Start.Stale;
         }
-        if(!request.pendingOnly&&(fresh.local==null||fresh.local.mutation==null||!fresh.local.current()||!fresh.local.mutation.effectCurrent()))return Start.Stale;
+        if(!request.pendingOnly&&(fresh.local==null||fresh.local.mutation==null||!session.env.workerEffects()&&(!fresh.local.current()||!fresh.local.mutation.effectCurrent())))return Start.Stale;
         if(!request.pendingOnly) {
             boolean ready=false;for(PurpleSyncCore.Choice choice:fresh.review.choices)if(choice.key==null&&choice.impactReady)ready=true;
             if(!ready)return Start.Stale;
         }
+        if (!session.env.consent(fresh.inventory)) return Start.Stale;
         return startPublish(fresh.inventory, fresh.sendQueued, request, request.pendingOnly?()->true:fresh.local.mutation::effectCurrent, done);
     }
 
     public Start publish(Check fresh,PostTicket ticket,Listener<PurpleSyncPublisher.Result> done) {
-        if(ticket==null||ticket.owner!=session||!ticket.effects.getAsBoolean())return Start.Stale;
+        if(ticket==null||ticket.owner!=session||!session.env.workerEffects()&&!ticket.effects.getAsBoolean())return Start.Stale;
         Start refused=refusal(true);if(refused!=null)return refused;
-        if(fresh==null||fresh!=current||fresh.generation!=generation||fresh.local==null||fresh.local.mutation==null||!fresh.local.current())return Start.Stale;
+        if(fresh==null||fresh!=current||fresh.generation!=generation||fresh.local==null||fresh.local.mutation==null||!session.env.workerEffects()&&!fresh.local.current())return Start.Stale;
         boolean ready=false;for(PurpleSyncCore.Choice choice:fresh.review.choices)if(choice.key==null&&choice.impactReady)ready=true;
         if(!ready)return Start.Stale;
         return startPublish(fresh.inventory,fresh.sendQueued,ticket.request,
@@ -464,7 +492,7 @@ public final class PurpleSyncRunner {
         if (refused != null) {
             return refused;
         } else if (ticket == null || ticket.owner!=session || ticket.freshCheckFirst
-                || ticket.generation != generation || !ticket.effects.getAsBoolean()) {
+                || ticket.generation != generation || !session.env.workerEffects()&&!ticket.effects.getAsBoolean()) {
             return Start.Stale;
         }
         return startPublish(ticket.inventory, ticket.sendQueued, ticket.request, ticket.effects,
@@ -558,11 +586,11 @@ public final class PurpleSyncRunner {
         return true;
     }
 
-    public void close() {
-        if (closed) {
-            return;
-        }
-        closed = true;
+    public void suspend(){stop(false);}
+    public void close(){stop(true);}
+    private void stop(boolean permanently){
+        if(closed)return;
+        if(permanently)closed=true;
         ++generation;
         end();
         current = null;
@@ -635,11 +663,26 @@ public final class PurpleSyncRunner {
 
     private String operationKey() { return session.env.operationKey(session.account, session.userId); }
     private boolean begin() {
-        if (!PurpleSyncOperations.begin(operationKey(), operationOwner,()->!closed&&session.available())) return false;
-        busy = true;
-        return true;
+        Object owner=new Object(),previousOwner=operationOwner;
+        PurpleSyncOperations.Capability previous=operationCapability;
+        long run=generation;
+        PurpleSyncOperations.Capability capability=PurpleSyncOperations.acquire(operationKey(),owner,()->!closed&&session.available());
+        if(capability==null)return false;
+        boolean installed=false;
+        try {
+            if(closed||busy||generation!=run||operationOwner!=previousOwner||operationCapability!=previous||!session.available())return false;
+            operationOwner=owner;operationCapability=capability;busy=true;installed=true;return true;
+        } finally {
+            if(!installed){capability.revoke();PurpleSyncOperations.end(capability.key,owner,capability);}
+        }
     }
-    private void end() { session.env.cancelChat(operationOwner); busy = false; PurpleSyncOperations.end(operationKey(), operationOwner); }
+    private void end() {
+        Object owner=operationOwner;
+        PurpleSyncOperations.Capability capability=operationCapability;
+        if(capability!=null)capability.revoke();
+        try {session.env.cancelChat(owner);}
+        finally {busy=false;if(capability!=null)PurpleSyncOperations.end(capability.key,owner,capability);}
+    }
 
     private Start refusal(boolean needsAccount) {
         if (closed) {
@@ -692,9 +735,14 @@ public final class PurpleSyncRunner {
         FileLog.d("Purple: settings sync check read " + inventory.summary()
                 + (sendQueued ? ", with a sync post still in Telegram's queue."
                         : "."));
+        final Object owner=operationOwner;
+        final PurpleSyncOperations.Capability capability=operationCapability;
+        final Session reviewing=new Session(session.account,session.userId,session.env,
+                ()->capability.current()&&operationCapability==capability&&operationOwner==owner&&live(started));
         queue.post(() -> {
+            if(!reviewing.available())return;
             final PurpleSyncApply.Reviewed reviewed =
-                    PurpleSyncApply.reviewWithAdopt(session, inventory);
+                    PurpleSyncApply.reviewWithAdopt(reviewing, inventory);
             ui.post(() -> {
                 if (!live(started)) {
                     return;
@@ -713,15 +761,27 @@ public final class PurpleSyncRunner {
         final long started = ++generation;
         if (!begin()) return Start.Busy;
         current = null;
+        final Object owner=operationOwner;
+        final PurpleSyncOperations.Capability capability=operationCapability;
         final Holder<PurpleSyncPublisher> self = new Holder<>();
+        final java.util.concurrent.atomic.AtomicBoolean sourceAdmitted=new java.util.concurrent.atomic.AtomicBoolean();
+        final PurpleSyncTransport.PostAuthority authority=new PurpleSyncTransport.PostAuthority(){
+            public void waiting(PurpleRpcRetry.Transient value){if(live(started))PurpleSyncRunner.this.waiting(value);}
+            public boolean current(){return capability.current()&&operationCapability==capability&&operationOwner==owner&&live(started)&&session.available()
+                    &&(request.pendingOnly||(session.env.workerEffects()?sourceAdmitted.get():effects.getAsBoolean()));}
+            public void check(java.util.function.Consumer<Boolean> done){
+                session.env.checkEffects(effects,source->{
+                    sourceAdmitted.set(Boolean.TRUE.equals(source));
+                    if(!live(started)||!Boolean.TRUE.equals(source)){done.accept(false);return;}
+                    session.env.resolveChat(true,operationOwner,operationKey(),()->live(started),ready->{
+                        if(!Boolean.TRUE.equals(ready)||!live(started)){sourceAdmitted.set(false);done.accept(false);return;}
+                        session.env.checkEffects(effects,fresh->{sourceAdmitted.set(Boolean.TRUE.equals(fresh));done.accept(Boolean.TRUE.equals(fresh)&&current());});
+                    });
+                });
+            }
+        };
         final PurpleSyncPublisher running = new PurpleSyncPublisher(session,
-                inventory, sendQueued, request, transport, queue, effects,
-                new PurpleSyncTransport.PostAuthority(){
-                    public boolean current(){return live(started) && session.available() && (request.pendingOnly || effects.getAsBoolean());}
-                    public void check(java.util.function.Consumer<Boolean> done){
-                        session.env.resolveChat(true,operationOwner,operationKey(),()->live(started),ready->done.accept(ready && current()));
-                    }
-                },result -> ui.post(() -> {
+                inventory, sendQueued, request, transport, queue, effects,authority,result -> ui.post(() -> {
                     if (publisher == self.value) {
                         publisher = null;
                     }
@@ -733,9 +793,9 @@ public final class PurpleSyncRunner {
                 }));
         self.value = running;
         publisher = running;
-        session.env.resolveChat(true,operationOwner,operationKey(),()->live(started),ready->{
+        authority.check(ready->{
             if(!live(started))return;
-            if(ready)queue.post(running::start);
+            if(Boolean.TRUE.equals(ready))queue.post(running::start);
             else { publisher=null;end();if(live(started))done.onResult(new PurpleSyncPublisher.Result(PurpleSyncCore.PublishStatus.NeedsReview,null,0,0)); }
         });
         return Start.Started;
@@ -749,18 +809,22 @@ public final class PurpleSyncRunner {
         final long started = ++generation;
         if (!begin()) return Start.Busy;
         current = null;
+        final Object owner=operationOwner;
+        final PurpleSyncOperations.Capability capability=operationCapability;
+        final Session restoring=new Session(session.account,session.userId,session.env,
+                ()->capability.current()&&operationCapability==capability&&operationOwner==owner&&live(started));
         queue.post(() -> {
-            if (!session.available()) {
+            if (!restoring.available()) {
                 ui.post(() -> { if (!closed && generation == started) end(); });
                 return;
             }
             final PurpleSyncApply.RestoreResult result =
-                    PurpleSyncApply.restore(session, historyId, reason, preview.current, preview.text);
+                    PurpleSyncApply.restore(restoring, historyId, reason, preview.current, preview.text);
             final boolean finished = reason == PurpleSyncHistory.Reason.BeforeUndo
                     && undoFinished(result.status);
             final PurpleSyncApply.Reviewed next =
                     (inventory != null && session.available())
-                            ? PurpleSyncApply.reviewWithAdopt(session, inventory)
+                            ? PurpleSyncApply.reviewWithAdopt(restoring, inventory)
                             : null;
             ui.post(() -> {
                 if (!live(started)) return;
@@ -817,10 +881,11 @@ public final class PurpleSyncRunner {
         return queue::postRunnable;
     }
 
-    static final class Platform implements Env {
+    static class Platform implements Env {
         final PurpleSyncFileContext context;
 
         Platform(int account) { context = new PurpleSyncFileContext(account); }
+        Platform(PurpleSyncFileContext context) { this.context = context; }
         public void resolveChat(boolean beforePost,Object owner,String key,java.util.function.BooleanSupplier current,java.util.function.Consumer<Boolean> done) {
             PurpleSyncChat.underLock(context,owner,key,beforePost,current,status->done.accept(beforePost?status.selfPostable():status.selfReadable()));
         }

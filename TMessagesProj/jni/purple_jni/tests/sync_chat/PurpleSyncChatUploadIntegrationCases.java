@@ -15,7 +15,8 @@ final class PurpleSyncChatUploadIntegrationCases {
         byte[] previous;
         Runnable authorize;
         int uploads,reads,gates,sends,cancels;
-        boolean throwing;
+        boolean throwing,managed;
+        public boolean managedWait(){return managed;}
         public void worker(Runnable task){task.run();}
         public int upload(long id,byte[] bytes,PurpleSyncClient.Reply<Boolean> done){++uploads;uploaded=done;return 41;}
         public void exact(int id,PurpleSyncClient.Reply<byte[]> done){++reads;done.onReply(previous);}
@@ -48,6 +49,27 @@ final class PurpleSyncChatUploadIntegrationCases {
             check(!PurpleSyncAutoEdits.busy(1),"owned upload guard released after "+state);
         }
         setup.frame.unchangedA();setup.engine.close();
+    }
+    static void managed(File root)throws Exception {
+        PurpleSyncAutoCases.Port setup=PurpleSyncAutoCases.bound(root,"q2b-managed-upload");PurpleSyncAutoCases.initialPublish(setup);
+        byte[] bytes=setup.client.messages.values().iterator().next();
+        for(boolean cancel:new boolean[]{false,true}){
+            Port port=new Port();port.managed=true;boolean[] current={true};List<PurpleSyncAutoUpload.Result> results=new ArrayList<>();
+            Set<Runnable> before=new HashSet<>(AndroidUtilities.delayed.keySet());
+            PurpleSyncAutoUpload upload=new PurpleSyncAutoUpload(1,0,bytes,null,()->current[0],port,results::add);upload.start();
+            Runnable timer=PurpleSyncAutoReviewCases.timer(before);
+            AndroidUtilities.delayed.remove(timer);timer.run();
+            check(results.isEmpty()&&PurpleSyncAutoEdits.busy(1)&&AndroidUtilities.delayed.containsKey(timer),"managed upload wait survives aggregate watchdog");
+            port.uploaded.onReply(true);AndroidUtilities.delayed.remove(timer);timer.run();
+            check(results.isEmpty()&&port.gates==1&&port.sends==0,"managed final proof wait retains original upload completion");
+            port.allowed.onReply(true);AndroidUtilities.delayed.remove(timer);timer.run();
+            check(results.isEmpty()&&port.sends==1,"managed in-flight effect retains original completion");
+            if(cancel)upload.cancel();else{current[0]=false;AndroidUtilities.delayed.remove(timer);timer.run();}
+            check(results.size()==1&&results.get(0).id==0&&!PurpleSyncAutoEdits.busy(1)&&!AndroidUtilities.delayed.containsKey(timer),"cancelled or retired managed capability releases guard exactly once");
+            int calls=results.size();port.sent.onReply(new PurpleSyncAutoUpload.Result(501,null));
+            check(results.size()==calls&&port.sends==1,"late receipt after managed cancellation cannot revive delivery or send");
+        }
+        setup.engine.close();setup.frame.unchangedA();
     }
     static final class Client implements PurpleSyncClient {
         final Frame frame;
@@ -167,6 +189,6 @@ final class PurpleSyncChatUploadIntegrationCases {
         setup.engine.close();setup.frame.unchangedA();
     }
     static int run(File root)throws Exception {
-        int before=checks;uploads(root);pipeline(root);borrowed(root);exact(root);variants(root);return checks-before;
+        int before=checks;uploads(root);managed(root);pipeline(root);borrowed(root);exact(root);variants(root);return checks-before;
     }
 }

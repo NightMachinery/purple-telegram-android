@@ -172,7 +172,7 @@ final class PurpleSyncReviewDialog {
             fragment.showDialog(builder.create());
             return;
         }
-        builder.setMessage(PurpleSyncText.choiceIntro(review));
+        builder.setMessage(PurpleSyncText.joined(runner.recipient()!=null?PurpleSyncChatActivity.disclosure(runner.recipient()):"",PurpleSyncText.choiceIntro(review)));
 
         final byte[] local = (check.local != null
                 && check.local.status == PurpleSyncSettingsFile.Status.Present)

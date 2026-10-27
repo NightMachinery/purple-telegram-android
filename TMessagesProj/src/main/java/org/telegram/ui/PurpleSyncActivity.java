@@ -68,7 +68,9 @@ public class PurpleSyncActivity extends UniversalFragment {
     private PurpleSyncRunner.PostTicket share;
     private String sharePrefix;
     private long checkedAt;
-    private boolean lost;
+    private boolean lost,manualOpening;
+    private volatile boolean destroyed,manualForeground;
+    private long manualTicket;
 
     public PurpleSyncActivity(int account) {
         setCurrentAccount(account);
@@ -83,8 +85,7 @@ public class PurpleSyncActivity extends UniversalFragment {
         final UserConfig config = UserConfig.getInstance(currentAccount);
         final long userId = config.isClientActivated() ? config.getClientUserId() : 0;
         if (userId > 0 && org.telegram.messenger.purple.PurpleAccountOwner.modernOperation(currentAccount)) {
-            runner = new PurpleSyncRunner(currentAccount,
-                    new PurpleSyncTelegramTransport(currentAccount, userId));
+            runner = null;
             org.telegram.messenger.purple.PurpleSyncChat.ensureResolved(currentAccount,false,ignored->{});
             status = getString(R.string.PurpleSyncReady);
         } else {
@@ -96,6 +97,7 @@ public class PurpleSyncActivity extends UniversalFragment {
 
     @Override
     public void onFragmentDestroy() {
+        destroyed=true;
         if(automatic!=null)automatic.close();
         if (runner != null) {
             runner.close();
@@ -105,12 +107,29 @@ public class PurpleSyncActivity extends UniversalFragment {
 
     @Override
     public void onResume() {
-        super.onResume();
+        super.onResume();manualForeground=true;
+        if(runner==null&&!manualOpening&&!destroyed){
+            manualOpening=true;long opening=++manualTicket;
+            org.telegram.messenger.purple.PurpleSyncChat.manualRunner(currentAccount,()->!destroyed&&manualForeground,value->{
+                if(opening!=manualTicket){if(value!=null)value.close();return;}
+                manualOpening=false;
+                if(destroyed||!inFront()){if(value!=null)value.close();return;}
+                runner=value;if(value!=null)value.transientWait(wait->setStatus(org.telegram.messenger.purple.PurpleRpcRequests.text(wait)));refresh();
+            });
+        }
         if (runner != null && !lost && !runner.accountAvailable()) {
             stopForLostAccount();
         } else {
             refresh();
         }
+    }
+
+    @Override
+    public void onPause(){
+        manualForeground=false;++manualTicket;
+        super.onPause();
+        if(runner!=null)runner.suspend();
+        manualOpening=false;clearReview();
     }
 
     @Override
@@ -443,7 +462,7 @@ public class PurpleSyncActivity extends UniversalFragment {
 
     private void onPublished(PurpleSyncPublisher.Result result, String prefix) {
         clearReview();
-        setStatus(PurpleSyncText.joined(prefix, PurpleSyncText.publishText(result)));
+        setStatus(PurpleSyncText.joined(prefix,result.waiting!=null?org.telegram.messenger.purple.PurpleRpcRequests.text(result.waiting):PurpleSyncText.publishText(result)));
     }
 
     private void runCurrentAction() {
@@ -498,9 +517,10 @@ public class PurpleSyncActivity extends UniversalFragment {
             showDialog(builder.create());
             return;
         }
-        builder.setMessage(at.setupOnlyJoin&&confirmed==PurpleSyncCore.Action.Join
+        String recipient=runner.recipient()!=null?PurpleSyncChatActivity.disclosure(runner.recipient()):"";
+        builder.setMessage(PurpleSyncText.joined(recipient,at.setupOnlyJoin&&confirmed==PurpleSyncCore.Action.Join
                 ?getString(R.string.PurpleSyncEmptyJoinAbout)
-                :PurpleSyncText.joined(PurpleSyncText.confirmText(confirmed, at.review), impact));
+                :PurpleSyncText.joined(PurpleSyncText.confirmText(confirmed, at.review), impact)));
         builder.setPositiveButton(PurpleSyncText.actionText(confirmed), (dialog, which) -> {
             if (!available()) {
                 stopForLostAccount();

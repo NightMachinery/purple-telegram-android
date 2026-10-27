@@ -142,6 +142,8 @@ interface PurpleSyncClient {
         default boolean current(){return true;}
         default boolean automatic(){return false;}
         default PurpleSyncTransport.PostAuthority authority(){return null;}
+        default void transientFailure(PurpleRpcRetry.Transient waiting){}
+        default void ownSend(Runnable cancel){}
         void onReceipt(int serverId, boolean preparationFailed);
     }
 

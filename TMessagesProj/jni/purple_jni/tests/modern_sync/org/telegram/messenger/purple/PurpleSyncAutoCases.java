@@ -598,12 +598,13 @@ public final class PurpleSyncAutoCases {
         initialPublish(p);
         Object manual = new Object();
         String key = p.env.operationKey(1, 202);
-        check(PurpleSyncOperations.begin(key, manual, () -> true), "manual operation obtains shared lease");
+        PurpleSyncOperations.Capability manualToken=PurpleSyncOperations.acquire(key,manual,()->true);
+        check(manualToken!=null, "manual operation obtains shared lease");
         int checks = p.checks;
         p.saved(REMOTE);
         p.engine.event(PurpleSyncAutoCore.Event.Foreground);
         check(p.checks == checks, "automatic effects wait behind manual account lease");
-        PurpleSyncOperations.end(key, manual);
+        PurpleSyncOperations.end(key,manual,manualToken);
         check(p.edits == 1 && p.reason == PurpleSyncAutoCore.Reason.None,
             "settled saved intent survives later foreground while waiting for manual lease");
         p.frame.unchangedA();
@@ -876,12 +877,13 @@ public final class PurpleSyncAutoCases {
         Port p = bound(parent, "manual-queued-opt-in");
         Object manual = new Object();
         String lease = p.env.operationKey(p.account.account, p.account.userId);
-        check(PurpleSyncOperations.begin(lease, manual, () -> true), "manual lease acquired before UI opt-in");
+        PurpleSyncOperations.Capability manualToken=PurpleSyncOperations.acquire(lease,manual,()->true);
+        check(manualToken!=null, "manual lease acquired before UI opt-in");
         int[] intent = {1};
         p.engine.enabled(true, () -> intent[0] == 1);
         p.draining = true;
         intent[0] = 2;
-        PurpleSyncOperations.end(lease, manual);
+        PurpleSyncOperations.end(lease,manual,manualToken);
         p.engine.suspend();
         p.engine.enabled(false, () -> intent[0] == 2);
         p.draining = false;

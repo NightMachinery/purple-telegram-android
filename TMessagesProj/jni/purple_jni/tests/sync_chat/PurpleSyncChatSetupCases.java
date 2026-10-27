@@ -58,14 +58,15 @@ final class PurpleSyncChatSetupCases {
         PurpleSyncInventory actualInventory;
         long clock=1700000000;
         Object owner;
+        PurpleSyncOperations.Capability acquisition;
         Env(){this(new Memory(),new Server());}
         Env(Memory file,Server server){this.file=file;this.server=server;}
         public PurpleSyncChatOrigin origin(){return origin;}public String authority(){return authority;}
         public boolean current(){return current;}public boolean foreground(){return foreground;}
         public PurpleSyncChatService.Binding binding(){return binding;}
-        public boolean acquire(Object owner){if(!PurpleSyncOperations.begin(key,owner,this::current))return false;this.owner=owner;return true;}
+        public boolean acquire(Object owner){PurpleSyncOperations.Capability token=PurpleSyncOperations.acquire(key,owner,this::current);if(token==null)return false;this.owner=owner;acquisition=token;return true;}
         public boolean owned(Object owner){return this.owner==owner&&PurpleSyncOperations.owned(key,owner);}
-        public void release(Object owner){if(this.owner==owner){++releases;this.owner=null;PurpleSyncOperations.end(key,owner);}}
+        public void release(Object owner){if(this.owner==owner){++releases;PurpleSyncOperations.Capability token=acquisition;this.owner=null;acquisition=null;PurpleSyncOperations.end(key,owner,token);}}
         public void dispatch(Runnable task){tasks.add(task);}
         public void delay(Runnable task,long millis){check(millis>=30000,"setup has a bounded per-step or transient wait deadline");timers.add(task);}
         public void cancelDelay(Runnable task){timers.remove(task);}

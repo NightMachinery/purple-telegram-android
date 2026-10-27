@@ -196,14 +196,14 @@ final class PurpleSyncChatSetupTransportCases {
     static void borrowedWait(){
         PurpleSyncChatServiceCases.Env env=new PurpleSyncChatServiceCases.Env();env.file.seed(PurpleSyncChatModelCases.cache(SELF,7,50));
         Native wire=new Native();env.injectedFactory=()->new PurpleSyncChatTelegram(ORIGIN,wire);
-        Object owner=new Object();check(PurpleSyncOperations.begin(env.key,owner,()->true),"owned setup borrow for wait forwarding");
+        Object owner=new Object();PurpleSyncOperations.Capability ownerToken=PurpleSyncOperations.acquire(env.key,owner,()->true);check(ownerToken!=null,"owned setup borrow for wait forwarding");
         PurpleSyncChatService service=new PurpleSyncChatService(env);List<PurpleRpcRetry.Transient> waiting=new ArrayList<>();
         service.checkBeforePost("config",new PurpleSyncChatService.Borrowed(env.key,owner,()->true,waiting::add),ignored->{});
         int reply=1;while(!(wire.requests.get(reply-1) instanceof TLRPC.TL_users_getFullUser)){check(reply<30,"bounded setup discovery before full info");wire.reply(reply++,messages(mark(SELF,7,50)));}
         TLRPC.TL_error error=new TLRPC.TL_error();error.code=420;error.text="FLOOD_WAIT_90";wire.replies.get(reply).accept(null,error);
         check(waiting.size()==1&&waiting.get(0).retryAt==wire.clock+90000&&PurpleSyncOperations.owned(env.key,owner),
                 "owned service read flood forwards wall-clock wait without completing or replacing the setup borrow");
-        service.cancelBorrowed(owner);service.close(false);PurpleSyncOperations.end(env.key,owner);
+        service.cancelBorrowed(owner);service.close(false);PurpleSyncOperations.end(env.key,owner,ownerToken);
     }
     static void restartDefinite(){
         for(boolean create:new boolean[]{false,true}){

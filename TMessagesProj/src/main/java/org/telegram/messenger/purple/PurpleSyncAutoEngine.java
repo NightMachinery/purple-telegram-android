@@ -63,6 +63,7 @@ final class PurpleSyncAutoEngine {
     volatile String session = UUID.randomUUID().toString();
     final Port port;
     private volatile boolean owned;
+    private volatile PurpleSyncOperations.Capability acquisition;
     private volatile String running = "";
     private volatile boolean closed;
     private boolean observedQueue;
@@ -108,16 +109,14 @@ final class PurpleSyncAutoEngine {
         return !closed && port.current() && account.available();
     }
     BooleanSupplier borrowedAuthority() {
-        String opening=session;
-        return ()->owned && current() && opening.equals(session) && PurpleSyncOperations.owned(operationKey(),this);
+        String opening=session;PurpleSyncOperations.Capability token=acquisition;
+        return ()->owned&&token!=null&&token==acquisition&&token.current()&&current()&&opening.equals(session);
     }
     private void end() {
-        session = UUID.randomUUID().toString();
-        running = "";
-        if (owned) {
-            owned = false;
-            PurpleSyncOperations.end(operationKey(), this);
-        }
+        PurpleSyncOperations.Capability token=owned?acquisition:null;
+        owned=false;acquisition=null;if(token!=null)token.revoke();
+        try {session=UUID.randomUUID().toString();running="";}
+        finally {if(token!=null)PurpleSyncOperations.end(token.key,this,token);}
     }
     void close() {
         closed = true;
@@ -280,7 +279,12 @@ final class PurpleSyncAutoEngine {
             return;
         }
         if (!owned) {
-            if (!PurpleSyncOperations.begin(operationKey(), this, this::current)) {
+            String openingSession=session;PurpleSyncOperations.Capability previous=acquisition;
+            PurpleSyncOperations.Capability token=PurpleSyncOperations.acquire(operationKey(),this,this::current);
+            boolean installed=false;
+            try {
+            if(closed||owned||!openingSession.equals(session)||acquisition!=previous||!current())return;
+            if (token==null) {
                 if (event == PurpleSyncAutoCore.Event.Enable || event == PurpleSyncAutoCore.Event.Disable) {
                     waitingToggle = event;
                     waitingToggleAdmission = toggleAdmission;
@@ -295,7 +299,8 @@ final class PurpleSyncAutoEngine {
                 PurpleSyncOperations.whenIdle(operationKey(), this, () -> port.queue(this::idle));
                 return;
             }
-            owned = true;
+            acquisition=token;owned=true;installed=true;
+            } finally {if(token!=null&&!installed){token.revoke();PurpleSyncOperations.end(token.key,this,token);}}
         }
         try {
             if (!account.env.hasState()) {

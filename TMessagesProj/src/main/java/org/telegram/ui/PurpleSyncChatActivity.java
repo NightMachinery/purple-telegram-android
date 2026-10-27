@@ -21,7 +21,7 @@ import java.util.ArrayList;
 import java.util.Locale;
 
 public final class PurpleSyncChatActivity extends UniversalFragment {
-    private static final int REFRESH=0x70750110, SELF=REFRESH+1, EXISTING=REFRESH+2, CREATE=REFRESH+3, CONSENT=REFRESH+4, RESUME=REFRESH+5, CANCEL_SETUP=REFRESH+6;
+    private static final int REFRESH=0x70750110, SELF=REFRESH+1, EXISTING=REFRESH+2, CREATE=REFRESH+3, CONSENT=REFRESH+4, RESUME=REFRESH+5, CANCEL_SETUP=REFRESH+6, REVIEW_SETTINGS=REFRESH+7;
     private PurpleSyncChatScreen.Control control;
     private PurpleSyncChatScreen.Frame frame;
     private PurpleSyncChatCore.Peer pending;
@@ -127,13 +127,17 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
             if(setupState.canReview&&setupState.target!=null)items.add(UItem.asButton(CONSENT,text("ReviewReaders")));
             if(setupState.busy&&setupState.reason.equals("TelegramWait"))items.add(UItem.asShadow(text("SetupWait")));
             if(setupState.phase.equals("Held"))items.add(UItem.asShadow(text(setupState.reason.equals("TelegramWait")?"SetupWait":"SetupHeld")));
-            if(setupState.phase.equals("Complete"))items.add(UItem.asShadow(text("SetupComplete")));
+            if(setupState.phase.equals("Complete")){
+                items.add(UItem.asShadow(text("SetupComplete")));
+                items.add(UItem.asButton(REVIEW_SETTINGS,text("ReviewSettings")));
+            }
         }
         items.add(UItem.asButton(REFRESH,text("Refresh")));
         items.add(UItem.asShadow(text("FirstPostHeld")));
     }
     @Override protected void onClick(UItem item,View view,int position,float x,float y) {
         if(!visible||control==null||!control.current())return;
+        if(item.id==REVIEW_SETTINGS&&setupState!=null&&setupState.phase.equals("Complete")){presentFragment(new PurpleSyncActivity(currentAccount));return;}
         if(item.id==CANCEL_SETUP){cancelSetup();return;}
         if(item.id==RESUME&&setup!=null){limitShown=false;setup.resume();return;}
         if(item.id==REFRESH)reload();

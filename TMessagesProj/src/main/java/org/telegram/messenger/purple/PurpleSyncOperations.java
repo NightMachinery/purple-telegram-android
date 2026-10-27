@@ -1,40 +1,118 @@
 package org.telegram.messenger.purple;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
+import java.util.function.BooleanSupplier;
 
 final class PurpleSyncOperations {
     private static final HashMap<String, State> accounts = new HashMap<>();
+    /*
+     * Editor publication holds AccountOwner, AccountFiles, then AccountSettings.
+     * Its operation check reads a RAM capability, never the registry monitor.
+     * Account-liveness suppliers and idle callbacks run outside that monitor.
+     * Revalidate the captured owner and token after evaluating account liveness.
+     * Revoke before cancellation callbacks; release must match owner and acquisition token.
+     */
+    static final class Capability {
+        final String key;
+        final Object owner;
+        private volatile boolean revoked;
+        private Capability(String key,Object owner){this.key=key;this.owner=owner;}
+        boolean current() { return !revoked; }
+        void revoke() { revoked=true; }
+    }
     private static final class State {
         Object owner;
+        Capability capability;
         final java.util.LinkedHashMap<Object,Runnable> idle=new java.util.LinkedHashMap<>();
-        java.util.function.BooleanSupplier current;
+        BooleanSupplier current;
         PurpleSyncRunner.UndoOffer undo;
     }
     private static State state(String key) {
-        State value = accounts.get(key);
-        if (value == null) { value = new State(); accounts.put(key, value); }
+        State value=accounts.get(key);
+        if(value==null){value=new State();accounts.put(key,value);}
         return value;
     }
-    private static State live(String key) {
-        State value=state(key);
-        if(value.owner!=null&&value.current!=null&&!value.current.getAsBoolean()){value.owner=null;value.current=null;}
-        return value;
+    private static List<Runnable> retire(State value) {
+        if(value.capability!=null)value.capability.revoke();
+        value.owner=null;value.current=null;value.capability=null;
+        List<Runnable> waiting=new ArrayList<>(value.idle.values());value.idle.clear();
+        return waiting;
     }
-    static synchronized boolean owned(String key,Object owner) { return live(key).owner == owner; }
-    static synchronized boolean busy(String key) { return live(key).owner != null; }
-    static synchronized boolean begin(String key, Object owner,java.util.function.BooleanSupplier current) {
-        State value = live(key);
-        if (value.owner != null) return false;
-        value.owner = owner;value.current=current;
-        return true;
+    private static Capability live(String key) {
+        while(true){
+            final Object owner;
+            final Capability capability;
+            final BooleanSupplier current;
+            synchronized(PurpleSyncOperations.class){
+                State value=state(key);owner=value.owner;capability=value.capability;current=value.current;
+            }
+            if(capability==null)return null;
+            boolean valid=capability.current()&&(current==null||current.getAsBoolean());
+            List<Runnable> waiting=null;
+            synchronized(PurpleSyncOperations.class){
+                State value=state(key);
+                if(value.owner!=owner||value.capability!=capability)continue;
+                if(valid&&capability.current())return capability;
+                waiting=retire(value);
+            }
+            for(Runnable task:waiting)task.run();
+            return null;
+        }
     }
-    static synchronized void end(String key, Object owner) {
-        State value = state(key);
-        if (value.owner == owner) { value.owner = null;value.current=null;java.util.ArrayList<Runnable> waiting=new java.util.ArrayList<>(value.idle.values());value.idle.clear();for(Runnable task:waiting)task.run(); }
+    static boolean owned(String key,Object owner) {
+        while(true){
+            Capability capability=live(key);
+            synchronized(PurpleSyncOperations.class){
+                State value=state(key);
+                if(value.capability==capability&&(capability==null||capability.current()))return value.owner==owner;
+            }
+        }
+    }
+    static boolean busy(String key) {
+        while(true){
+            Capability capability=live(key);
+            synchronized(PurpleSyncOperations.class){
+                State value=state(key);
+                if(value.capability==capability&&(capability==null||capability.current()))return value.owner!=null;
+            }
+        }
+    }
+    static Capability acquire(String key,Object owner,BooleanSupplier current) {
+        while(true){
+            Capability capability=live(key);
+            synchronized(PurpleSyncOperations.class){
+                State value=state(key);
+                if(value.capability!=capability||capability!=null&&!capability.current())continue;
+                if(value.owner!=null)return null;
+                value.owner=owner;value.current=current;value.capability=new Capability(key,owner);
+                return value.capability;
+            }
+        }
+    }
+    static void end(String key,Object owner,Capability acquisition) {
+        List<Runnable> waiting;
+        synchronized(PurpleSyncOperations.class){
+            State value=state(key);
+            if(acquisition==null||value.owner!=owner||value.capability!=acquisition)return;
+            waiting=retire(value);
+        }
+        for(Runnable task:waiting)task.run();
     }
     static synchronized void forgetIdle(String key,Object owner) { state(key).idle.remove(owner); }
-    static synchronized void whenIdle(String key,Object owner,Runnable callback) {State value=live(key);if(value.owner==null)callback.run();else value.idle.put(owner,callback);}
+    static void whenIdle(String key,Object owner,Runnable callback) {
+        while(true){
+            Capability capability=live(key);
+            synchronized(PurpleSyncOperations.class){
+                State value=state(key);
+                if(value.capability!=capability||capability!=null&&!capability.current())continue;
+                if(value.owner!=null){value.idle.put(owner,callback);return;}
+            }
+            callback.run();return;
+        }
+    }
     static synchronized PurpleSyncRunner.UndoOffer undo(String key) { return state(key).undo; }
-    static synchronized void undo(String key, PurpleSyncRunner.UndoOffer undo) { state(key).undo = undo; }
+    static synchronized void undo(String key,PurpleSyncRunner.UndoOffer undo) { state(key).undo=undo; }
     private PurpleSyncOperations() { }
 }

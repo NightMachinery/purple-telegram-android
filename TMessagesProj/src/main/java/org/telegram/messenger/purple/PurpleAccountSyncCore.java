@@ -345,6 +345,36 @@ public final class PurpleAccountSyncCore {
         return initialized;
     }
 
+    static Result initializeBoundLocalState(int account,String install,String device,String space,PurpleSyncChatCore.Peer chat) {
+        Result initialized=initializeBoundLocalState(account,install,device,space);
+        if(!initialized.isValid()||chat==null||PurpleSyncChatCore.Peer.self().equals(chat))return initialized;
+        return freshTypedState(initialized,chat);
+    }
+
+    static Result freshTypedState(Result initialized,PurpleSyncChatCore.Peer chat) {
+        if(initialized==null||!initialized.isValid()||initialized.state==null||chat==null)return new Result("InvalidGeneratedState");
+        if(PurpleSyncChatCore.Peer.self().equals(chat))return initialized;
+        try {
+            JSONObject value=new JSONObject(new String(initialized.state,StandardCharsets.UTF_8));
+            if(value.getInt("version")!=1||value.has("chat")||initialized.seq!=0||initialized.pendingSeq!=0
+                    ||initialized.confirmedSeq!=0||value.optJSONArray("own_messages")!=null&&value.getJSONArray("own_messages").length()!=0)
+                return new Result("ExistingStream");
+            JSONObject streams=value.getJSONObject("streams");
+            for(String stream:new String[]{"config","library"}){
+                JSONObject part=streams.getJSONObject(stream);
+                if(part.getLong("seq")!=0||part.getLong("pending_seq")!=0||part.getLong("confirmed_seq")!=0
+                        ||!part.optString("own_hash").isEmpty()||part.optLong("abandoned_seq")!=0||part.optJSONArray("issued_records")!=null&&part.getJSONArray("issued_records").length()!=0)
+                    return new Result("ExistingStream");
+            }
+            JSONObject config=streams.getJSONObject("config");
+            if(!config.getString("base").isEmpty()||!config.getString("pending").isEmpty()||config.getJSONArray("base_lineage").length()!=0
+                    ||config.getJSONArray("equiv").length()!=0||config.getJSONObject("seen_seq").length()!=0)return new Result("ExistingStream");
+            value.put("version",2);value.put("chat",chat.token());
+            Result typed=inspectState(value.toString().getBytes(StandardCharsets.UTF_8));
+            return typed.isValid()&&PurpleSyncChatIO.ledgerMatches(chat,typed.state)?typed:new Result("InvalidGeneratedState");
+        }catch(Exception|LinkageError error){return new Result("InvalidGeneratedState");}
+    }
+
     public static Result checkAccountBinding(int currentAccount, byte[] state) {
         final PurpleAccountBinding.Binding binding =
                 PurpleAccountBinding.readForCheck(currentAccount);

@@ -36,13 +36,17 @@ public interface PurpleSyncTransport {
         public final byte[] readBack;
         public final PurpleSyncChatCore.Peer chat;
         final PurpleSyncChatOrigin origin;
+        public final PurpleRpcRetry.Transient waiting;
 
         public PostResult(PostStatus status, int messageId, byte[] readBack) {
             this(status,messageId,readBack,PurpleSyncChatCore.Peer.self(),null);
         }
 
         PostResult(PostStatus status,int messageId,byte[] readBack,PurpleSyncChatCore.Peer chat,PurpleSyncChatOrigin origin) {
-            this.chat=java.util.Objects.requireNonNull(chat);this.origin=origin;
+            this(status,messageId,readBack,chat,origin,null);
+        }
+        PostResult(PostStatus status,int messageId,byte[] readBack,PurpleSyncChatCore.Peer chat,PurpleSyncChatOrigin origin,PurpleRpcRetry.Transient waiting){
+            this.chat=java.util.Objects.requireNonNull(chat);this.origin=origin;this.waiting=waiting;
             if ((status == PostStatus.Confirmed)
                     != (messageId > 0 && readBack != null)) {
                 throw new IllegalArgumentException(
@@ -57,6 +61,9 @@ public interface PurpleSyncTransport {
     interface PostAuthority {
         boolean current();
         void check(java.util.function.Consumer<Boolean> done);
+        default boolean permits(PurpleSyncChatOrigin origin,PurpleSyncChatCore.Peer chat) { return false; }
+        default void issued(){}
+        default void waiting(PurpleRpcRetry.Transient value){}
     }
 
     interface Progress {

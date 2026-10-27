@@ -945,7 +945,7 @@ public final class PurpleSyncCore {
     }
 
     private static boolean inventoryScope(PurpleSyncInventory inventory,byte[] state) {
-        return stateScope(inventory.chat,state);
+        return state==null || stateScope(inventory.chat,state);
     }
 
     public static CommitCheck checkCommit(byte[] current, byte[] next) {

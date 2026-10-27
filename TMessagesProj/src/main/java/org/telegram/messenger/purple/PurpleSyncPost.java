@@ -33,6 +33,8 @@ final class PurpleSyncPost implements PurpleSyncTelegramTransport.Task,
     private File copy;
     private PurpleSyncReader reader;
     private int messageId;
+    private PurpleRpcRetry.Transient waiting;
+    private volatile Runnable cancelSend;
     private final PurpleSyncTransport.PostAuthority authority;
 
     PurpleSyncPost(PurpleSyncClient.Operation operation, byte[] staged,
@@ -179,6 +181,11 @@ final class PurpleSyncPost implements PurpleSyncTelegramTransport.Task,
                 public boolean current() { return operation.live() && operation.client.isActive()
                         && (authority==null || authority.current()); }
                 public PurpleSyncTransport.PostAuthority authority() { return authority; }
+                public void transientFailure(PurpleRpcRetry.Transient value){waiting=value;}
+                public void ownSend(Runnable cancel){
+                    if(operation.live()&&operation.client.isActive())cancelSend=cancel;
+                    else cancel.run();
+                }
                 public void onReceipt(int serverId, boolean preparationFailed) {
                     operation.client.runOnWorker(() -> operation.run(() -> PurpleSyncPost.this.onReceipt(serverId, preparationFailed)));
                 }
@@ -244,6 +251,7 @@ final class PurpleSyncPost implements PurpleSyncTelegramTransport.Task,
     }
 
     private void stopWork() {
+        Runnable cancel=cancelSend;cancelSend=null;if(cancel!=null)cancel.run();
         if (reader != null) {
             reader.cancel();
             reader = null;
@@ -252,7 +260,7 @@ final class PurpleSyncPost implements PurpleSyncTelegramTransport.Task,
 
     private PurpleSyncTransport.PostResult result(
             PurpleSyncTransport.PostStatus status) {
-        return new PurpleSyncTransport.PostResult(status, messageId, null);
+        return new PurpleSyncTransport.PostResult(status,0,null,operation.client.chat(),operation.client.origin(),waiting);
     }
 
     private void finishUnsent(PurpleSyncTransport.PostStatus unsent) {

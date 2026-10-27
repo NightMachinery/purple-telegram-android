@@ -263,7 +263,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
             if (!recover(stageFile) || !recoverAuto(new File(root,"auto.json"),PurpleAccountFiles.capture(account)!=null?PurpleAccountFiles.capture(account).key:"")) {
                 return fail(Status.IoError);
             }
-            if (!knownFiles(root, "lock", "state.json", "pending", "auto.json")
+            if (!knownFiles(root, "lock", "state.json", "pending", "auto.json", "sync-chat-setup.json", "sync-chat-setup-create.json", "sync-chat-setup-mark.json")
                     || !knownFiles(pending, "config.json")) {
                 return fail(Status.AmbiguousFiles);
             }
@@ -462,6 +462,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
         try {
             write(stateFile, confirmed.state);
             state = confirmed.state.clone();
+            if (!routeCurrent())return fail(Status.AccountUnbound);
             if (!stageFile.delete()) {
                 return fail(Status.IoError);
             }
@@ -653,9 +654,11 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
         return state != null && bindingMatches(state);
     }
 
+    private java.util.function.BooleanSupplier admission=()->true;
+    PurpleAccountSyncStore require(java.util.function.BooleanSupplier guard) { admission=guard;return this; }
     private boolean routeCurrent() {
-        return !production || ((context == null || context.current()) && origin != null && origin.current()
-                && PurpleAccountOwner.modernOperation(origin.slot));
+        return admission.getAsBoolean() && (!production || ((context == null || context.current()) && origin != null && origin.current()
+                && PurpleAccountOwner.modernOperation(origin.slot)));
     }
 
     private boolean scopeMatches(byte[] bytes) {
@@ -811,13 +814,15 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
         }
     }
 
-    private static void write(File file, byte[] bytes) throws IOException {
+    private void write(File file, byte[] bytes) throws IOException {
         final AtomicFile atomic = new AtomicFile(file);
         FileOutputStream stream = null;
         boolean committed = false;
         try {
+            if(!admission.getAsBoolean())throw new IOException("Sync operation retired");
             stream = atomic.startWrite();
             stream.write(bytes);
+            if(!admission.getAsBoolean())throw new IOException("Sync operation retired");
             atomic.finishWrite(stream);
             committed = true;
             if (!Arrays.equals(bytes, read(file, bytes.length))) {

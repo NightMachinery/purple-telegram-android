@@ -278,9 +278,11 @@ public final class PurpleSyncHistory {
     }
 
     /** Every valid entry, newest first. */
+    private java.util.function.BooleanSupplier admission=()->true;
+    PurpleSyncHistory require(java.util.function.BooleanSupplier guard) { admission=guard;return this; }
     private boolean accessible() {
-        return !production || (context != null && context.current() && origin != null && origin.current()
-                && PurpleAccountOwner.modernOperation(origin.slot));
+        return admission.getAsBoolean() && (!production || (context != null && context.current() && origin != null && origin.current()
+                && PurpleAccountOwner.modernOperation(origin.slot)));
     }
 
     public List<Entry> list() {

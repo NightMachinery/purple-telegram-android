@@ -20,9 +20,13 @@ final class PurpleSyncChatService {
         final Object owner;
         final BooleanSupplier current;
         final Consumer<PurpleRpcRetry.Transient> waiting;
+        final BooleanSupplier setupReleased;
         Borrowed(String key, Object owner, BooleanSupplier current) { this(key,owner,current,ignored->{}); }
         Borrowed(String key,Object owner,BooleanSupplier current,Consumer<PurpleRpcRetry.Transient> waiting) {
-            this.key=key;this.owner=owner;this.current=current;this.waiting=waiting;
+            this(key,owner,current,waiting,()->false);
+        }
+        Borrowed(String key,Object owner,BooleanSupplier current,Consumer<PurpleRpcRetry.Transient> waiting,BooleanSupplier setupReleased) {
+            this.key=key;this.owner=owner;this.current=current;this.waiting=waiting;this.setupReleased=setupReleased;
         }
     }
     interface Env {
@@ -46,6 +50,7 @@ final class PurpleSyncChatService {
         default void transientWait(Consumer<PurpleRpcRetry.Transient> observer){}
     }
     private static final class Request {
+        PurpleSyncOperations.Capability acquisition;
         final boolean beforePost, force;
         final String stream;
         final Borrowed borrowed;
@@ -68,6 +73,7 @@ final class PurpleSyncChatService {
     private Binding binding;
     private String lastStream="";
     private volatile boolean closed, owned;
+    private boolean cleaning, pendingClose, pendingLogout, logoutDrained;
     private boolean started;
     private volatile long generation;
     private long lastResolved;
@@ -115,21 +121,28 @@ final class PurpleSyncChatService {
     private boolean borrowedCurrent(Borrowed borrowed) {
         return borrowed!=null&&env.operationKey().equals(borrowed.key)&&borrowed.current.getAsBoolean()&&PurpleSyncOperations.owned(borrowed.key,borrowed.owner);
     }
-    private boolean live(long run) { return !closed&&run==generation&&active!=null&&env.current()&&(owned?PurpleSyncOperations.owned(env.operationKey(),this):borrowedCurrent(active.borrowed)); }
+    private boolean live(long run) { return !closed&&run==generation&&active!=null&&env.current()&&(owned?active.acquisition!=null&&active.acquisition.current():borrowedCurrent(active.borrowed)); }
     private void retireStale(){if(active!=null&&!live(generation))abandon(generation);}
     private void kick() {
         retireStale();
-        if(closed||active!=null||waiting.isEmpty())return;
+        if(closed||cleaning||active!=null||waiting.isEmpty())return;
         Request next=waiting.peekFirst();
         if(!env.current()){waiting.removeFirst().done.accept(unavailable("AccountUnavailable"));kick();return;}
         if(next.borrowed!=null&&!borrowedCurrent(next.borrowed)){waiting.removeFirst().done.accept(unavailable("OperationChanged"));kick();return;}
 
-        if(next.borrowed==null&&!PurpleSyncOperations.begin(env.operationKey(),this,env::current)) {
-            PurpleSyncOperations.whenIdle(env.operationKey(),this,()->env.ui(this::kick));return;
+        long opening=generation;
+        PurpleSyncOperations.Capability token=next.borrowed==null?PurpleSyncOperations.acquire(env.operationKey(),this,env::current):null;
+        boolean installed=false,restart=false;
+        try {
+            if(closed||cleaning||active!=null||generation!=opening||waiting.peekFirst()!=next||!env.current()){restart=true;return;}
+            if(next.borrowed==null&&token==null){PurpleSyncOperations.whenIdle(env.operationKey(),this,()->env.ui(this::kick));return;}
+            next.acquisition=token;owned=next.borrowed==null;active=waiting.removeFirst();++generation;installed=true;
+            final long run=generation;
+            try {cancelRetry();load(run);}catch(RuntimeException|LinkageError error){failed(run,"RequestUnavailable");}
+        } finally {
+            if(token!=null&&!installed){token.revoke();PurpleSyncOperations.end(token.key,this,token);}
+            if(restart&&!closed&&!cleaning&&active==null&&!waiting.isEmpty())kick();
         }
-        owned=next.borrowed==null;active=waiting.removeFirst();++generation;cancelRetry();
-        final long run=generation;
-        load(run);
     }
     private void load(long run) {
         present(null);
@@ -224,37 +237,53 @@ final class PurpleSyncChatService {
     private void finish(PurpleSyncChatDiscovery.Status next,long run) { finish(next,run,true); }
     private void finish(PurpleSyncChatDiscovery.Status next,long run,boolean remember) {
         if(!live(run)){abandon(run);return;}
-        if(env.setupPostingHeld()&&next.phase==PurpleSyncChatDiscovery.Phase.Use)
-            next=new PurpleSyncChatDiscovery.Status(next.phase,next.resolution,"SetupPostingHeld",next.complete,true,next.retryAt,next.newReaders);
-        Request finished=active;active=null;status=next;
-        if(next.complete&&remember&&model!=null&&!model.directOnly()) {
-            lastResolved=env.now();lastStream=finished.stream;
-            if(next.phase==PurpleSyncChatDiscovery.Phase.Use&&opening!=null&&opening.data!=null)
-                receipt=new DiscoveryReceipt(env.origin(),binding,opening.data.location,finished.stream,env.now());
+        Request finished=active;PurpleSyncOperations.Capability token=owned?finished.acquisition:null;
+        if(token!=null)token.revoke();
+        owned=false;active=null;cleaning=true;boolean cleaned=false;
+        try {
+            if(env.setupPostingHeld()&&next.phase==PurpleSyncChatDiscovery.Phase.Use
+                    &&(finished.borrowed==null||!finished.borrowed.setupReleased.getAsBoolean()))
+                next=new PurpleSyncChatDiscovery.Status(next.phase,next.resolution,"SetupPostingHeld",next.complete,true,next.retryAt,next.newReaders);
+            status=next;
+            if(next.complete&&remember&&model!=null&&!model.directOnly()) {
+                lastResolved=env.now();lastStream=finished.stream;
+                if(next.phase==PurpleSyncChatDiscovery.Phase.Use&&opening!=null&&opening.data!=null)
+                    receipt=new DiscoveryReceipt(env.origin(),binding,opening.data.location,finished.stream,env.now());
+            }
+            PurpleSyncChatClient closing=client;client=null;if(closing!=null)closing.cancel();env.cancelInventory();
+            int completedRetries=model!=null?model.retriesCompleted():0;
+            cancelWatchdog();present(null);
+            if(next.phase==PurpleSyncChatDiscovery.Phase.Searching&&next.retryAt>0){
+                int retries=next.reason.equals("TelegramWait")?0:completedRetries+1;Cache anchor=next.resolution.cache;
+                retry=()->{
+                    retry=null;if(closed||!env.current())return;
+                    Request request=new Request(false,true,finished.stream,null,ignored->{});request.retries=retries;request.retryAnchor=anchor;
+                    waiting.addLast(request);kick();
+                };
+                env.delay(retry,Math.max(1,next.retryAt-env.now()));
+            }
+            cleaned=true;
+        } finally {
+            try {if(token!=null)PurpleSyncOperations.end(token.key,this,token);}
+            finally {cleaning=false;try {drainClose();}finally {if(!cleaned)kick();}}
         }
-        if(client!=null){client.cancel();client=null;}env.cancelInventory();
-        int completedRetries=model!=null?model.retriesCompleted():0;
-        cancelWatchdog();present(null);
-        boolean release=owned;owned=false;
-        if(next.phase==PurpleSyncChatDiscovery.Phase.Searching&&next.retryAt>0){
-            int retries=next.reason.equals("TelegramWait")?0:completedRetries+1;Cache anchor=next.resolution.cache;
-            retry=()->{
-                retry=null;if(closed||!env.current())return;
-                Request request=new Request(false,true,finished.stream,null,ignored->{});request.retries=retries;request.retryAnchor=anchor;
-                waiting.addLast(request);kick();
-            };
-            env.delay(retry,Math.max(1,next.retryAt-env.now()));
-        }
-        if(release)PurpleSyncOperations.end(env.operationKey(),this);
-        if(!closed&&env.current())finished.done.accept(next);kick();
+        try {if(!closed&&env.current())finished.done.accept(next);}finally {kick();}
     }
     private void abandon(long run) {
         if(run!=generation||active==null)return;
-        Request abandoned=active;active=null;++generation;receipt=null;cancelRetry();cancelWatchdog();present(null);
-        if(client!=null){client.cancel();client=null;}env.cancelInventory();if(model!=null)model.cancel();
-        PurpleSyncChatDiscovery.Status next=unavailable("AccountUnavailable");status=next;
-        if(owned){owned=false;PurpleSyncOperations.end(env.operationKey(),this);}
-        if(!closed&&env.current())abandoned.done.accept(next);kick();
+        Request abandoned=active;PurpleSyncOperations.Capability token=owned?abandoned.acquisition:null;
+        if(token!=null)token.revoke();
+        owned=false;active=null;++generation;receipt=null;cleaning=true;boolean cleaned=false;
+        PurpleSyncChatDiscovery.Status next;
+        try {
+            cancelRetry();cancelWatchdog();present(null);
+            PurpleSyncChatClient closing=client;client=null;if(closing!=null)closing.cancel();env.cancelInventory();if(model!=null)model.cancel();
+            next=unavailable("AccountUnavailable");status=next;cleaned=true;
+        } finally {
+            try {if(token!=null)PurpleSyncOperations.end(token.key,this,token);}
+            finally {cleaning=false;try {drainClose();}finally {if(!cleaned)kick();}}
+        }
+        try {if(!closed&&env.current())abandoned.done.accept(next);}finally {kick();}
     }
     private PurpleSyncChatDiscovery.Status unavailable(String reason) {
         ResolveInput safe=new ResolveInput(env.origin().userId);
@@ -288,20 +317,42 @@ final class PurpleSyncChatService {
         cancelWatchdog();watchdog=()->{watchdog=null;if(run==generation&&active!=null){if(live(run))transientTimeout(run);else abandon(run);}};
         env.delay(watchdog,120000);
     }
-    private void cancelWatchdog(){if(watchdog!=null){env.cancelDelay(watchdog);watchdog=null;}}
+    private void cancelWatchdog(){Runnable closing=watchdog;watchdog=null;if(closing!=null)env.cancelDelay(closing);}
     void cancelBorrowed(Object owner){
         waiting.removeIf(request->request.borrowed!=null&&request.borrowed.owner==owner);
         if(active==null||active.borrowed==null||active.borrowed.owner!=owner)return;
         ++generation;cancelRetry();cancelWatchdog();if(client!=null){client.cancel();client=null;}env.cancelInventory();if(model!=null)model.cancel();
         active=null;present(null);status=unavailable("Cancelled");kick();
     }
-    private void cancelRetry(){if(retry!=null){env.cancelDelay(retry);retry=null;}}
+    private void cancelRetry(){Runnable closing=retry;retry=null;if(closing!=null)env.cancelDelay(closing);}
     void close(boolean logout) {
-        if(closed)return;closed=true;++generation;cancelRetry();cancelWatchdog();present(null);
-        PurpleSyncOperations.forgetIdle(env.operationKey(),this);
-        if(client!=null){client.cancel();client=null;}env.cancelInventory();if(model!=null)model.cancel();
-        if(owned){owned=false;PurpleSyncOperations.end(env.operationKey(),this);}
-        active=null;waiting.clear();
-        if(logout)env.worker(()->{PurpleSyncChatCache.Loaded loaded=PurpleSyncChatCache.load(env.cache(),env.origin(),env.authority());if(loaded.ok&&loaded.data!=null&&loaded.bytes!=null)env.cache().remove(loaded.bytes);});
+        if(logout&&!logoutDrained)pendingLogout=true;
+        if(!closed){closed=true;++generation;pendingClose=true;}
+        waiting.clear();
+        drainClose();
+    }
+    private void drainClose() {
+        if(cleaning)return;
+        if(!pendingClose){drainLogout();return;}
+        pendingClose=false;
+        PurpleSyncOperations.Capability token=owned&&active!=null?active.acquisition:null;
+        if(token!=null)token.revoke();
+        owned=false;active=null;cleaning=true;
+        try {
+            cancelRetry();cancelWatchdog();present(null);PurpleSyncOperations.forgetIdle(env.operationKey(),this);
+            PurpleSyncChatClient closing=client;client=null;if(closing!=null)closing.cancel();env.cancelInventory();if(model!=null)model.cancel();
+        } finally {
+            try {if(token!=null)PurpleSyncOperations.end(token.key,this,token);}
+            finally {cleaning=false;drainLogout();}
+        }
+    }
+    private void drainLogout() {
+        if(!pendingLogout||logoutDrained)return;
+        pendingLogout=false;logoutDrained=true;
+        try {
+            env.worker(()->{PurpleSyncChatCache.Loaded loaded=PurpleSyncChatCache.load(env.cache(),env.origin(),env.authority());if(loaded.ok&&loaded.data!=null&&loaded.bytes!=null)env.cache().remove(loaded.bytes);});
+        } catch(RuntimeException|LinkageError error) {
+            pendingLogout=true;logoutDrained=false;throw error;
+        }
     }
 }
