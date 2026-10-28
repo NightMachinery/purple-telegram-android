@@ -332,6 +332,9 @@ public final class PurpleSyncApply {
                 if (plan.source == null) {
                     return draft.stop(PurpleSyncCore.ApplyStatus.NeedsReview);
                 }
+                PurpleAccountSyncStore.Result pinned = store.pinConfigBase(inventory.bytes);
+                if (pinned.status != PurpleAccountSyncStore.Status.Ready)
+                    return draft.stop(PurpleSyncCore.ApplyStatus.StoreError, pinned.status);
                 draft.otherVersionsRemain = plan.otherVersionsRemain;
                 draft.source = plan.source;
                 final Written write = writeWithHistory(env, session, local,
@@ -368,7 +371,7 @@ public final class PurpleSyncApply {
                                 PurpleAccountSyncStore.Status.AccountUnbound);
                     }
                     final PurpleAccountSyncStore.Result committed =
-                            store.commitConfigState(completion.nextState);
+                            store.commitConfigState(completion.nextState, inventory.bytes);
                     if (committed.status != PurpleAccountSyncStore.Status.Ready
                             && committed.status
                                     != PurpleAccountSyncStore.Status.Unchanged) {

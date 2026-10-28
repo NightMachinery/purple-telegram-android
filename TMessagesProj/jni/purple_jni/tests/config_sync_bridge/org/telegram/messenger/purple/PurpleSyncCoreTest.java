@@ -2376,10 +2376,11 @@ public final class PurpleSyncCoreTest {
             check(completion.status == PurpleSyncCore.CompletionStatus.Ready);
             check(completion.adopted
                     && completion.commit == PurpleSyncCore.CommitStatus.Ready);
-            final byte[] next = completion.nextState;
-            check(store.commitConfigState(next).status
+            final byte[] prepared = completion.nextState;
+            check(store.commitConfigState(prepared, cloud.inventory().bytes).status
                     == PurpleAccountSyncStore.Status.Ready);
-            check(Arrays.equals(store.stateBytes(), next));
+            final byte[] next = store.stateBytes();
+            check(Arrays.equals(PurpleSyncRetainedBases.request("prepare", device.state, prepared, cloud.inventory().bytes).state, next));
             check(Arrays.equals(Files.readAllBytes(stateFile.toPath()), next));
             check(inspect(next).key.equals(b1.key));
             check(seenSeq(next, b.install) == 1);

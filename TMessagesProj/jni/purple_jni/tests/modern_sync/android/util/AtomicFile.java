@@ -53,6 +53,8 @@ public final class AtomicFile {
                 super.write(bytes);
             }
         };
+        try { android.system.Os.chmod((legacy ? base : temporary).getPath(), 0600); }
+        catch (android.system.ErrnoException e) { stream.close(); throw new IOException(e); }
         kill(Point.Empty, stream);
         return stream;
     }

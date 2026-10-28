@@ -121,6 +121,56 @@ final class PurpleAccountFileSnapshot {
         }
     }
 
+    static final class Durable {
+        final byte[] token, bytes;
+        final String identity, parent;
+        Durable(byte[] response) throws Exception {
+            org.json.JSONObject value = new org.json.JSONObject(new String(response, StandardCharsets.UTF_8));
+            String status = value.getString("status");
+            if (!"Ready".equals(status)) throw new java.io.IOException(status);
+            token = response;
+            identity = value.getString("identity");
+            parent = value.optString("parent");
+            bytes = "missing".equals(identity) ? null : PurpleSyncRetainedBases.decode(value.getString("bytes"));
+        }
+        boolean same(Durable other) { return other != null && Arrays.equals(token, other.token); }
+    }
+    static void worker() throws java.io.IOException {
+        if (android.os.Looper.getMainLooper() != null
+                && android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) throw new java.io.IOException("WrongThread");
+    }
+    static Durable durable(String operation, File file, Durable expected, byte[] data, int limit, int fault) throws java.io.IOException {
+        worker();
+        PurpleCore.ensureLoaded();
+        try {
+            byte[] response = durableNative(operation, file.getAbsolutePath(), expected == null ? null : expected.token, data, limit, fault);
+            if (response == null) throw new java.io.IOException("IoError");
+            return new Durable(response);
+        } catch (java.io.IOException e) { throw e; }
+        catch (Exception e) { throw new java.io.IOException("IoError", e); }
+    }
+    static String durableDirectoryIdentity(File directory) throws java.io.IOException {
+        worker(); PurpleCore.ensureLoaded();
+        try {
+            byte[] response = durableNative("directoryRead", directory.getAbsolutePath(), null, null, LIMIT, 0);
+            org.json.JSONObject value = new org.json.JSONObject(new String(response, StandardCharsets.UTF_8));
+            if (!"Ready".equals(value.getString("status"))) throw new java.io.IOException(value.getString("status"));
+            return value.getString("identity");
+        } catch (java.io.IOException e) { throw e; }
+        catch (Exception e) { throw new java.io.IOException("IoError", e); }
+    }
+    static void durableDirectory(File directory) throws java.io.IOException {
+        worker(); PurpleCore.ensureLoaded();
+        try {
+            byte[] response = durableNative("directory", directory.getAbsolutePath(), null, null, LIMIT, 0);
+            org.json.JSONObject value = new org.json.JSONObject(new String(response, StandardCharsets.UTF_8));
+            if (!"Ready".equals(value.getString("status"))) throw new java.io.IOException(value.getString("status"));
+        } catch (java.io.IOException e) { throw e; }
+        catch (Exception e) { throw new java.io.IOException("IoError", e); }
+    }
+    @androidx.annotation.Keep
+    private static native byte[] durableNative(String operation, String path, byte[] expected, byte[] data, int limit, int fault);
+
     private static PurpleAccountFileSnapshot error() {
         return new PurpleAccountFileSnapshot(Status.ReadError, null);
     }

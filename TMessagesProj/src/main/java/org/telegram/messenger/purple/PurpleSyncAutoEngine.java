@@ -555,6 +555,11 @@ final class PurpleSyncAutoEngine {
                         == PurpleAccountSyncStore.Status.Ready;
             } else {
                 if (plan.action == PurpleSyncAutoCore.Action.AutoApply) {
+                    PurpleAccountSyncStore.Result pinned = store.pinConfigBase(new byte[0][]);
+                    if (pinned.status != PurpleAccountSyncStore.Status.Ready) {
+                        complete(plan, facts, PurpleSyncAutoCore.Outcome.OutcomeUnknown, null);
+                        return;
+                    }
                     PurpleSyncApply.Written written =
                         PurpleSyncApply.writeWithHistory(account.env, account, facts.local, plan.bytes,
                             PurpleSyncCore.settingsFingerprint(plan.bytes), PurpleSyncHistory.Reason.BeforeUpdate,

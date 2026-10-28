@@ -38,7 +38,7 @@ fixtures.mkdir()
 classpath = os.pathsep.join([str(classes), str(args.json)] + [item["path"] for key in ["classpath", "bootstrapClasspath"] for item in receipt[key]])
 # The modern sync platform ports (accounts, preferences, file root, Os), plus a
 # main Looper; no production class is shadowed.
-adapters = [path for path in (tests / "modern_sync").rglob("*.java") if "/messenger/purple/" not in str(path)]
+adapters = [path for path in (tests / "modern_sync").rglob("*.java") if "/messenger/purple/" not in str(path) and path.relative_to(tests / "modern_sync") != Path("android/os/Looper.java")]
 adapters += list((tests / "list_capture/android").rglob("*.java"))
 business = ["PurpleAccountOwner", "PurpleAccountFiles", "PurpleAccountSettings", "PurpleWriter", "PurpleGlobalAccountChoice",
             "PurpleRoutedWriteModel", "PurpleListSource", "PurpleListMenu", "PurpleAccountRowWrite", "PurpleCore",

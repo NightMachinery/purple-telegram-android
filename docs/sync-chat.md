@@ -188,3 +188,10 @@ Finish and abandon also kick queued work in finally after delivering completion,
 The pure carry/journal JNI surface and its host checks are documented in
 [sync-chat-move.md](sync-chat-move.md). The storage, executor and native
 qualification slices remain separate.
+
+## Durable carry storage
+
+The account-scoped move store now retains canonical journals, immutable state and
+base images, checked directory barriers and stable send identities. Carry artifacts
+fence ordinary recovery and writers across restart. This storage slice sends
+nothing and leaves outward move execution held. See [the storage contract](sync-chat-move.md).

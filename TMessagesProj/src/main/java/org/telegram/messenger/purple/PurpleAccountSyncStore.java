@@ -31,7 +31,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
         InvalidState, NewerState, InvalidRecord, AccountUnbound,
         DeviceMismatch, CloneDetected, PendingMissing, PendingMismatch,
         OrphanStage, AmbiguousFiles, LockBusy, IoError, Unconfirmed,
-        Unchanged
+        Unchanged, CarryPending, MissingLocalVersion, InvalidRetention, NewerRetention, RetentionFull
     }
 
     public static final class Result {
@@ -170,6 +170,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
     private byte[] state;
     private Status status = Status.Disabled;
     private boolean opened;
+    private boolean carryOnly;
     private boolean production;
     private PurpleAccountFiles.Identity origin;
     private PurpleSyncFileContext context;
@@ -198,6 +199,20 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
         this.stateFile = new File(root, "state.json");
         this.stageFile = new File(pending, "config.json");
         this.core = core;
+    }
+
+    synchronized Result openForCarry(int currentAccount, String currentDevice) {
+        if (opened) return result(Status.InvalidTransition);
+        carryOnly = true;
+        return open(true, currentAccount, currentDevice);
+    }
+    synchronized boolean carryLockCurrent() {
+        if (!carryOnly || lock == null || !lock.isValid() || !routeCurrent()) return false;
+        try {
+            android.system.StructStat opened = android.system.Os.fstat(lockStream.getFD());
+            android.system.StructStat named = android.system.Os.lstat(new File(root, "lock").getPath());
+            return opened.st_dev == named.st_dev && opened.st_ino == named.st_ino;
+        } catch (Exception e) { return false; }
     }
 
     public synchronized Result open(boolean optedIn, int currentAccount,
@@ -235,7 +250,12 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
             if (lockFile.exists() && (isLink(lockFile) || !lockFile.isFile())) {
                 return fail(Status.AmbiguousFiles);
             }
+            boolean newLock = !lockFile.exists();
             lockStream = new RandomAccessFile(lockFile, "rw");
+            if (newLock) {
+                try { android.system.Os.chmod(lockFile.getPath(), 0600); }
+                catch (android.system.ErrnoException e) { return fail(Status.IoError); }
+            }
             try {
                 lock = lockStream.getChannel().tryLock();
             } catch (OverlappingFileLockException e) {
@@ -244,6 +264,9 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
             if (lock == null) {
                 return fail(Status.LockBusy);
             }
+            if (carryOnly) return result(Status.Ready);
+            if (PurpleSyncChatMoveStore.artifacts(root)) return fail(Status.CarryPending);
+            if (!PurpleSyncRetainedFiles.valid(root)) return fail(Status.InvalidRetention);
             if (!prepareDirectory(pending)) {
                 return fail(Status.IoError);
             }
@@ -263,7 +286,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
             if (!recover(stageFile) || !recoverAuto(new File(root,"auto.json"),PurpleAccountFiles.capture(account)!=null?PurpleAccountFiles.capture(account).key:"")) {
                 return fail(Status.IoError);
             }
-            if (!knownFiles(root, "lock", "state.json", "pending", "auto.json", "sync-chat-setup.json", "sync-chat-setup-create.json", "sync-chat-setup-mark.json")
+            if (!knownFiles(root, "lock", "state.json", "pending", "auto.json", "sync-chat-setup.json", "sync-chat-setup-create.json", "sync-chat-setup-mark.json", "retained-bases")
                     || !knownFiles(pending, "config.json")) {
                 return fail(Status.AmbiguousFiles);
             }
@@ -288,6 +311,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
             if (stageFile.exists()) {
                 final byte[] bytes = read(stageFile, RECORD_LIMIT);
                 final Reply checked = core.checkStage(state, bytes);
+                boolean removeStage = false;
                 if (!checked.valid()) {
                     if (inspected.pendingSeq != 0) {
                         return fail(Status.PendingMismatch);
@@ -295,18 +319,26 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
                     if (!core.reserve(account, state, bytes).valid()) {
                         return fail(Status.OrphanStage);
                     }
-                    if (!stageFile.delete()) {
-                        return fail(Status.IoError);
-                    }
+                    removeStage = true;
                 } else if ("Confirmed".equals(checked.verdict)) {
-                    if (!stageFile.delete()) {
-                        return fail(Status.IoError);
-                    }
+                    removeStage = true;
                 } else if (!"Pending".equals(checked.verdict)) {
                     return fail(Status.PendingMismatch);
                 }
+                if (removeStage) {
+                    Result retained = pinConfigBase(new byte[][]{bytes});
+                    if (retained.status != Status.Ready) return fail(retained.status);
+                    if (!bound() || !Arrays.equals(state, read(stateFile, STATE_LIMIT))
+                            || !Arrays.equals(bytes, read(stageFile, RECORD_LIMIT))) return fail(Status.InvalidTransition);
+                    if (!stageFile.delete()) return fail(Status.IoError);
+                }
             } else if (inspected.pendingSeq != 0) {
                 return fail(Status.PendingMissing);
+            }
+            if (core == NATIVE && (android.os.Looper.myLooper() == null
+                    || android.os.Looper.myLooper() != android.os.Looper.getMainLooper())) {
+                Result checkpoint = checkpointRetainedBases();
+                if (checkpoint.status != Status.Ready && checkpoint.status != Status.Unchanged) return fail(checkpoint.status);
             }
             return result(Status.Ready);
         } catch (IOException | SecurityException e) {
@@ -315,6 +347,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
     }
 
     public synchronized Result initialize(byte[] boundState) {
+        if (carryOnly || PurpleSyncChatMoveStore.artifacts(root)) return result(Status.CarryPending);
         if (!routeCurrent()) return fail(Status.AccountUnbound);
         if (status != Status.Uninitialized || stateFile.exists()
                 || stageFile.exists() || boundState == null
@@ -460,19 +493,22 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
             return fail(Status.AccountUnbound);
         }
         try {
-            write(stateFile, confirmed.state);
-            state = confirmed.state.clone();
+            byte[] retained = prepareRetention(confirmed.state, new byte[][]{pendingResult.staged});
+            write(stateFile, retained);
+            state = retained.clone();
             if (!routeCurrent())return fail(Status.AccountUnbound);
             if (!stageFile.delete()) {
                 return fail(Status.IoError);
             }
             return new Result(Status.Ready, null, checked.seq, "");
         } catch (IOException e) {
-            return fail(Status.IoError);
+            return fail(e.getMessage() != null && (e.getMessage().contains("Retention") || e.getMessage().equals("MissingLocalVersion")) ? retentionStatus(e) : Status.IoError);
         }
     }
 
-    public synchronized Result commitConfigState(byte[] next) {
+    public synchronized Result commitConfigState(byte[] next) { return commitConfigState(next, new byte[0][]); }
+
+    synchronized Result commitConfigState(byte[] next, byte[][] records) {
         if (status != Status.Ready || next == null
                 || next.length > STATE_LIMIT) {
             return result(Status.InvalidTransition);
@@ -504,15 +540,68 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
             return result(Status.InvalidState);
         }
         try {
-            write(stateFile, next);
-            state = next.clone();
+            byte[] retained = prepareRetention(next, records);
+            write(stateFile, retained);
+            state = retained.clone();
             if (!bound()) {
                 return fail(Status.AccountUnbound);
             }
             return result(Status.Ready);
         } catch (IOException e) {
-            return fail(Status.IoError);
+            return fail(e.getMessage() != null && (e.getMessage().contains("Retention") || e.getMessage().equals("MissingLocalVersion")) ? retentionStatus(e) : Status.IoError);
         }
+    }
+
+    private static Status retentionStatus(Exception error) {
+        try { return Status.valueOf(error.getMessage()); } catch (Exception ignored) { return Status.InvalidRetention; }
+    }
+    private byte[] prepareRetention(byte[] next, byte[][] candidates) throws IOException {
+        if (core != NATIVE) return next.clone();
+        byte[][] files = new byte[0][];
+        if (android.os.Looper.myLooper() == null || android.os.Looper.myLooper() != android.os.Looper.getMainLooper())
+            files = PurpleSyncRetainedFiles.records(root);
+        PurpleSyncRetainedBases.Result prepared = PurpleSyncRetainedBases.request("prepare", state, next,
+                PurpleSyncRetainedFiles.combine(candidates, files));
+        if (!prepared.ready()) throw new IOException(prepared.status);
+        return prepared.state;
+    }
+    synchronized Result pinConfigBase(byte[][] candidates) {
+        if (status != Status.Ready || !bound()) return result(Status.InvalidTransition);
+        if (core != NATIVE) return result(Status.Ready);
+        try {
+            PurpleAccountFileSnapshot.worker();
+            PurpleSyncRetainedBases.Result base = PurpleSyncRetainedBases.request("find", state, null,
+                    PurpleSyncRetainedFiles.combine(candidates, PurpleSyncRetainedFiles.records(root)));
+            if (!base.ready()) throw new IOException(base.status);
+            if (base.record.length != 0) PurpleSyncRetainedFiles.pin(root, base.record);
+            return bound() ? result(Status.Ready) : fail(Status.AccountUnbound);
+        } catch (Exception e) { return result(retentionStatus(e)); }
+    }
+    synchronized Result checkpointRetainedBases() {
+        if (status != Status.Ready || !bound()) return result(Status.InvalidTransition);
+        try {
+            PurpleAccountFileSnapshot.worker();
+            Reply inspected = core.inspectState(state);
+            PurpleSyncRetainedBases.Result compact = PurpleSyncRetainedBases.request("compact", state, null);
+            if (!compact.ready()) throw new IOException(compact.status);
+            if (Arrays.equals(state, compact.state) || inspected.pendingSeq != 0 || stageFile.exists())
+                return result(Status.Unchanged);
+            byte[] automatic = autoBytes();
+            if (automatic != null) {
+                try {
+                    PurpleAccountFiles.Identity identity = origin != null ? origin : PurpleAccountFiles.capture(account);
+                    PurpleSyncAutoCore.Record record = identity == null ? null : PurpleSyncAutoCore.decodeRecord(automatic, identity.key);
+                    if (record == null || record.value.getBoolean("active") || !record.value.optString("expectedState").isEmpty()
+                            || !record.value.optString("record").isEmpty()) return result(Status.Unchanged);
+                } catch (Exception invalid) { return result(Status.Unchanged); }
+            }
+            PurpleSyncRetainedFiles.materialize(root, state);
+            PurpleAccountFileSnapshot.Durable expected = PurpleAccountFileSnapshot.durable("read", stateFile, null, null, STATE_LIMIT, 0);
+            if (!Arrays.equals(expected.bytes, state) || !bound()) return result(Status.InvalidTransition);
+            PurpleAccountFileSnapshot.durable("write", stateFile, expected, compact.state, STATE_LIMIT, 0);
+            state = compact.state.clone();
+            return bound() ? result(Status.Ready) : fail(Status.AccountUnbound);
+        } catch (Exception e) { return result(retentionStatus(e)); }
     }
 
     String directoryIdentity() throws Exception {
@@ -643,6 +732,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
         state = null;
         status = Status.Disabled;
         opened = false;
+        carryOnly = false;
     }
 
     private static PurpleAccountFiles requireFiles(PurpleSyncFileContext context) {
@@ -651,7 +741,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
     }
 
     private boolean bound() {
-        return state != null && bindingMatches(state);
+        return !carryOnly && !PurpleSyncChatMoveStore.artifacts(root) && state != null && bindingMatches(state);
     }
 
     private java.util.function.BooleanSupplier admission=()->true;
@@ -728,7 +818,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
 
     private void dropUnreservedStage() {
         try {
-            if (Arrays.equals(read(stateFile, STATE_LIMIT), state)) {
+            if (!carryOnly && !PurpleSyncChatMoveStore.artifacts(root) && Arrays.equals(read(stateFile, STATE_LIMIT), state)) {
                 stageFile.delete();
             }
         } catch (IOException | SecurityException ignored) {
@@ -738,7 +828,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
     static boolean recoverInterrupted(File appRoot,File directory,String accountKey,PurpleGlobalChoiceFiles.Physical physical,
             PurpleSyncRecoveryModel.Current current) {
         try {
-            if(!current.current())return false;
+            if(PurpleSyncChatMoveStore.artifacts(directory) || !current.current())return false;
             PurpleSyncRecoveryFiles.Tree inputs=new PurpleSyncRecoveryFiles.Tree(appRoot,physical);
             PurpleSyncRecoveryFiles.Snapshot folder=inputs.capture(directory,true);
             if(folder.mark.missing())return true;
@@ -770,7 +860,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
                     if(!input.directory&&!input.file.getName().equals("lock")&&!input.current(physical))return false;
                 java.util.TreeSet<String> expected=new java.util.TreeSet<>(java.util.Arrays.asList(folder.entries));expected.add("lock");
                 if(!expected.equals(new java.util.TreeSet<>(java.util.Arrays.asList(PurpleSyncRecoveryFiles.names(directory)))))return false;
-                return current.current()&&recover(state)&&current.current()&&recover(stage)&&current.current()&&recoverAuto(auto,accountKey)&&current.current();
+                return !PurpleSyncChatMoveStore.artifacts(directory)&&current.current()&&recover(state)&&current.current()&&recover(stage)&&current.current()&&recoverAuto(auto,accountKey)&&current.current();
             }
         } catch(Exception|LinkageError e){return false;}
     }
@@ -819,10 +909,10 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
         FileOutputStream stream = null;
         boolean committed = false;
         try {
-            if(!admission.getAsBoolean())throw new IOException("Sync operation retired");
+            if(carryOnly || PurpleSyncChatMoveStore.artifacts(root) || !admission.getAsBoolean())throw new IOException("Sync operation retired");
             stream = atomic.startWrite();
             stream.write(bytes);
-            if(!admission.getAsBoolean())throw new IOException("Sync operation retired");
+            if(carryOnly || PurpleSyncChatMoveStore.artifacts(root) || !admission.getAsBoolean())throw new IOException("Sync operation retired");
             atomic.finishWrite(stream);
             committed = true;
             if (!Arrays.equals(bytes, read(file, bytes.length))) {

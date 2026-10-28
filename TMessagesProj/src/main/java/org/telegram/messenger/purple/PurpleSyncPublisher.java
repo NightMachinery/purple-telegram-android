@@ -107,6 +107,11 @@ public final class PurpleSyncPublisher {
             finish(PurpleSyncCore.PublishStatus.StoreError, opened.status);
             return;
         }
+        final PurpleAccountSyncStore.Result pinned = store.pinConfigBase(inventory.bytes);
+        if (pinned.status != PurpleAccountSyncStore.Status.Ready) {
+            finish(PurpleSyncCore.PublishStatus.StoreError, pinned.status);
+            return;
+        }
         final byte[] state = store.stateBytes();
         final PurpleSyncApply.Pending pending = PurpleSyncApply.readPending(store);
         if (state == null || !pending.ok()) {

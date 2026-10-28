@@ -1974,4 +1974,7 @@ recovery. Logout deletes that account’s archive and dedicated keys.
 See [capture and history](docs/archive-capture.md) and
 [archive storage](docs/archive-storage.md) for limits and recovery.
 
-The per-account Sync chat screen has resumable mark-only setup. Manual sync can publish to that eligible typed chat after a fresh inventory and explicit settings/reader review; setup alone sends no settings. Automatic sync remains Saved Messages only. The pure [carry JNI bridge](docs/sync-chat-move.md) exposes shared planning and journal APIs for later move slices. See [sync-chat.md](docs/sync-chat.md) for typed ledgers, pending recovery and native qualification limits.
+The per-account Sync chat screen has resumable mark-only setup. Manual sync can publish to that eligible typed chat after a fresh inventory and explicit settings/reader review; setup alone sends no settings. Automatic sync remains Saved Messages only. The [carry storage adapter](docs/sync-chat-move.md) preserves account/login-scoped operation journals, exact state images and retained settings bases for later move execution. It adds no move UI or network calls. See [sync-chat.md](docs/sync-chat.md) for typed ledgers, pending recovery and native qualification limits.
+
+Legacy confirmed-stage startup pins the exact base before cleanup. See
+[carry storage](docs/sync-chat-move.md).

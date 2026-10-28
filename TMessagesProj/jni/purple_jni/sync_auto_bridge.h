@@ -1,5 +1,6 @@
 #pragma once
 #include "purple/purple_sync_auto.h"
+#include "retained_config_bases.h"
 #include "purple/purple_sync_json.h"
 #include <QtCore/QJsonDocument>
 #include <limits>
@@ -165,7 +166,22 @@ extern "C" JNIEXPORT jstring JNICALL Java_org_telegram_messenger_purple_PurpleSy
     }
     if (!ok || env->ExceptionCheck())
         return nullptr;
-    const auto plan = Purple::PlanSyncAuto(input);
+    auto plan = Purple::PlanSyncAuto(input);
+    if (plan.nextState && facts.state) {
+        auto candidates = std::vector<QByteArray>{facts.stagedRecord, plan.record.record};
+        if (input.inventory) for (const auto &read : input.inventory->reads) candidates.push_back(read.record);
+        const auto retained = PurpleAndroid::PrepareRetainedConfig(*facts.state, *plan.nextState, candidates);
+        if (retained != u"Ready"_q) {
+            plan.action = Purple::SyncAutoAction::Hold;
+            plan.reason = Purple::SyncAutoReason::NeedsReview;
+            plan.record.active = false;
+            plan.record.pending = Purple::SyncAutoAction::NoOp;
+            plan.record.held = plan.reason;
+            plan.nextState.reset();
+        } else {
+            plan.record.expectedState = Purple::SerializeSyncLocalState(*plan.nextState).canonical;
+        }
+    }
     const auto encoded = Purple::SerializeSyncAutoRecord(plan.record);
     if (!encoded)
         return nullptr;
