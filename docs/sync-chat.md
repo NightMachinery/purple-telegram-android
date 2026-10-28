@@ -182,3 +182,9 @@ Every acquisition is provisional until its caller revalidates the captured run, 
 Reentrant close records pending close work and a sticky logout request before returning from an active cleanup. Finish and abandon drain that work after exact-token release in their finally blocks, including a throwing cancellation callback. A drained logout is dispatched once on the worker and still loads the captured login authority and removes only matching CAS bytes; close(false) leaves the cache intact. Closed state suppresses completions and queued starts immediately. The close drain cancels any retry scheduled by the unwinding finish. LogoutIntegrationCases exercises finish/abandon, normal/throwing cancellation, inline/queued workers and matching/foreign authority, including replacement before the logout worker runs.
 
 Finish and abandon also kick queued work in finally after delivering completion, so a throwing completion callback cannot strand a request enqueued during cleanup. The logout regression group covers both completion orderings with throwing and normal callbacks, and the unchanged reviewer CleanupReentryProbe exercises the literal service boundary.
+
+## Move bridge
+
+The pure carry/journal JNI surface and its host checks are documented in
+[sync-chat-move.md](sync-chat-move.md). The storage, executor and native
+qualification slices remain separate.

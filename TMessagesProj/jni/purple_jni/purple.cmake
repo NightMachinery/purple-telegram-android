@@ -15,6 +15,7 @@ add_library(purplecore SHARED
         purple_jni/account_sync_bridge.cpp
         purple_jni/config_sync_bridge.cpp
         purple_jni/sync_chat_bridge.cpp
+        purple_jni/sync_chat_move_bridge.cpp
         purple_jni/archive_core_bridge.cpp
         purple/purple/purple_passcode.cpp
         purple/purple/purple_settings.cpp
