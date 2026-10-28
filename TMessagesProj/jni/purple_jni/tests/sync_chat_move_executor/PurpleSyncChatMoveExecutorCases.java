@@ -33,6 +33,7 @@ public final class PurpleSyncChatMoveExecutorCases {
         final PurpleSyncChatMoveStoreCases.Fixture files;
         final Peer target;
         final String mode;
+        PurpleSyncChatClient.Info targetInfo;
         final ArrayDeque<Runnable> tasks=new ArrayDeque<>();
         final List<PurpleSyncChatMove.Command> commands=new ArrayList<>();
         final List<PurpleSyncChatMove.Status> statuses=new ArrayList<>();
@@ -51,9 +52,10 @@ public final class PurpleSyncChatMoveExecutorCases {
         PurpleSyncChatMove.Command deferredCommand;
         Frame(boolean own)throws Exception {this(own,false);}
         Frame(boolean own,boolean pending)throws Exception {this(own,pending,"Switch");}
-        Frame(boolean own,boolean pending,String mode)throws Exception {
+        Frame(boolean own,boolean pending,String mode)throws Exception {this(own,pending,mode,null);}
+        Frame(boolean own,boolean pending,String mode,Peer chosen)throws Exception {
             this.mode=mode;
-            JSONObject plan=copy(rows.get(own?28:43).getJSONObject("input"));target=mode.equals("RepairMark")?O:Peer.parse(plan.getString("target"),777);
+            JSONObject plan=copy(rows.get(own?28:43).getJSONObject("input"));target=chosen!=null?chosen:mode.equals("RepairMark")?O:Peer.parse(plan.getString("target"),777);
             files=new PurpleSyncChatMoveStoreCases.Fixture(root,"executor-"+(++sequence),mode.equals("Fill")?null:unblob(pending?rows.get(120).getJSONObject("input").getString("state"):plan.getString("state")));
             if(pending)PurpleModernSyncCases.write(new File(files.root,"pending/config.json"),unblob(rows.get(121).getJSONObject("input").getJSONObject("event").getString("stagedRecord")));
             access=own?"Protected":"Readable";
@@ -80,7 +82,7 @@ public final class PurpleSyncChatMoveExecutorCases {
             if(status.reason.equals("Running")&&(closeObserver||status.action.equals(stopCore)))move.close();
         }
         PurpleSyncChatMoveIO.Fresh fresh()throws Exception {
-            PurpleSyncChatClient.Info source=info(O,0,access.equals("Protected")),dest=info(target,0,false);
+            PurpleSyncChatClient.Info source=info(O,0,access.equals("Protected")),dest=targetInfo!=null?targetInfo:info(target,0,false);
             ResolveInput r=new ResolveInput(777);r.settingsBound=true;r.settingsChat=O;r.cache=new Cache(O,1,1001);r.cacheRead=DirectRead.Valid;r.cachedEligibility=source.eligibility();r.settingsHint=SettingsHint.Found;
             if(ownWinner)r.marks=Arrays.asList(new Mark(new Cache(target,markId,2000),MarkStatus.Supported,dest.eligibility(),RecordPresence.Present,true,true),new Mark(r.cache,MarkStatus.Supported,source.eligibility(),RecordPresence.Present,true,true));
             else r.marks=Collections.singletonList(new Mark(r.cache,MarkStatus.Supported,source.eligibility(),RecordPresence.Present,true,true));

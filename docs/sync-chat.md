@@ -222,3 +222,13 @@ playlist proof producer is supplied. There is no move screen or live backend.
 See [action order and recovery](sync-chat-move.md#one-worker-carry-executor).
 
 Carry's O-pending reconciliation requires a complete owned scan started after its live read ticket. Retained pre-send or pre-open scans cannot clear the pending stage. See [O-pending chronology](sync-chat-move.md#o-pending-read-chronology).
+
+## Change sync chat: qualification held
+
+The owned Sync chat screen offers Change for a bound account with a complete Use, Searching or Lost resolution and an admitted stable cache. Choose a new channel, Saved Messages or an eligible existing chat. Preview and acceptance use the same Candidate eligibility and reader projection. Acceptance captures this screen's lifetime, account/login, exact opening state/cache, resolver action and winner, target and readers. A changed opening or leaving the screen revokes consent.
+
+The confirmation shows the existing settings/cloud/reader disclosure. Cleanup of old settings defaults checked for an eligible non-Self source, unchecked for Saved Messages, and unavailable for an ineligible source. The Saved Messages warning is: “Older Purple builds read settings from Saved Messages. Deleting them makes those devices pause or offer to start over.” The exact accepted checkbox is durable Carry metadata; message deletion policy remains held for the cleanup slice.
+
+`PurpleSyncChatChange.ACTIVATED` is a production constant false. The public entry checks captured RAM admission and returns a qualification hold. It constructs no worker, provisioning environment, Carry executor or transport and writes no intent. This is a reviewable UI and injected flow, with no real-user move activation. See [the provision-only boundary](sync-chat-move.md#provision-only-change-boundary).
+
+Decoration callbacks retain their step while waiting or held. An unsuccessful pin, mute or archive callback remains held across later Carry Cleanup/Done progress. Only an explicit retry of the held step can continue; successful earlier steps are preserved. Closing the flow revokes retries. Process-restart decoration reconciliation remains unqualified, so an uncertain decoration is never automatically repeated after a restart.

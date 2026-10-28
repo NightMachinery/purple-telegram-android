@@ -57,9 +57,10 @@ public final class PurpleSyncChat {
         AndroidUtilities.runOnUIThread(()->{Holder holder=account(slot);if(holder==null){done.accept(unavailable());return;}holder.service.checkBeforePost(stream,null,status->done.accept(new Status(status)));});
     }
     public static Status status(int slot) { Holder holder=accounts.get(slot);return holder!=null&&holder.env.current()?new Status(holder.service.status()):unavailable(); }
-    public static PurpleSyncChatScreen.Control screen(int slot) {
+    public static PurpleSyncChatScreen.Control screen(int slot) { return screen(slot,()->true); }
+    public static PurpleSyncChatScreen.Control screen(int slot,BooleanSupplier foreground) {
         Holder holder=account(slot);
-        return holder!=null?new PurpleSyncChatScreen.Control(new ScreenPort(holder)):null;
+        return holder!=null?new PurpleSyncChatScreen.Control(new ScreenPort(holder,foreground)):null;
     }
     public static PurpleSyncChatSetupFlow setup(int slot,java.util.function.BooleanSupplier foreground,Consumer<PurpleSyncChatSetupFlow.State> changed) {
         Holder holder=accounts.get(slot);
@@ -87,9 +88,11 @@ public final class PurpleSyncChat {
         volatile PurpleSyncOperations.Capability acquisition;
         volatile boolean closed;
         volatile long acquisitionEpoch;
-        ScreenPort(Holder holder) { this.holder=holder; }
+        final BooleanSupplier foreground;
+        ScreenPort(Holder holder,BooleanSupplier foreground) { this.holder=holder;this.foreground=foreground; }
+        public String authority(){return holder.env.authority;}
         public PurpleSyncChatOrigin origin() { return holder.env.origin; }
-        public boolean current() { return !closed&&holder.env.current(); }
+        public boolean current() { return !closed&&foreground.getAsBoolean()&&holder.env.current(); }
         public boolean begin(Object owner) {
             if(!current()||this.owner!=null)return false;
             long epoch=acquisitionEpoch;PurpleSyncOperations.Capability previous=acquisition;
@@ -140,6 +143,13 @@ public final class PurpleSyncChat {
         public void cancel(Object owner) {
             closed=true;if(reader!=null){reader.cancel();reader=null;}holder.service.cancelBorrowed(owner);
         }
+    }
+    public static void change(int slot,PurpleSyncChatScreen.ChangeSelection selection,BooleanSupplier foreground,Consumer<PurpleSyncChatChange.State> changed) {
+        Holder holder=accounts.get(slot);
+        PurpleSyncChatChange.State result=holder==null?new PurpleSyncChatChange.State("Held","OpeningChanged",false)
+                :PurpleSyncChatChange.production(selection,holder.env.origin,holder.env.authority,()->foreground.getAsBoolean()&&holder.env.context.current());
+        if(!PurpleSyncChatChange.ACTIVATED){changed.accept(result);return;}
+        changed.accept(new PurpleSyncChatChange.State("Held","TransportNotQualified",false));
     }
     static PurpleSyncChatMove move(PurpleSyncChatMove.Port injected) {
         return injected==null?null:new PurpleSyncChatMove(injected);
@@ -223,7 +233,7 @@ public final class PurpleSyncChat {
             if(!"Bound".equals(binding.verdict)&&!"Unbound".equals(binding.verdict))return new PurpleSyncChatService.Binding(false,false,Peer.self());
             try{JSONObject value=new JSONObject(new String(state.bytes,StandardCharsets.UTF_8));Peer chat=Peer.parse(value.optString("chat","self"),origin.userId);
                 String identity=value.getString("install")+":"+value.getString("space")+":"+value.optString("binding_token","")+":"+value.optInt("version");
-                return new PurpleSyncChatService.Binding(chat!=null,"Bound".equals(binding.verdict),chat!=null?chat:Peer.self(),identity);}
+                return new PurpleSyncChatService.Binding(chat!=null,"Bound".equals(binding.verdict),chat!=null?chat:Peer.self(),identity,PurpleSyncRetainedFiles.hash(state.bytes));}
             catch(Exception error){return new PurpleSyncChatService.Binding(false,false,Peer.self());}
         }
         public PurpleSyncChatClient client(){PurpleSyncChatClient client=new PurpleSyncChatTelegram(origin,PurpleSyncChatTelegram.platform(origin,this::current));client.transientWait(waiting);return client;}

@@ -28,10 +28,18 @@ final class PurpleSyncChatMove implements AutoCloseable {
         void cancel(Command command);
         void status(Status status);
     }
+    static final class Committed {
+        final PurpleSyncChatOrigin origin;
+        final String authority,operation;
+        final Cache mark;
+        private Committed(PurpleSyncChatOrigin origin,String authority,String operation,Cache mark){this.origin=origin;this.authority=authority;this.operation=operation;this.mark=mark;}
+    }
     static final class Status {
         final String action,reason;
         final boolean terminal;
-        Status(String action,String reason,boolean terminal){this.action=action;this.reason=reason;this.terminal=terminal;}
+        final Committed committed;
+        Status(String action,String reason,boolean terminal){this(action,reason,terminal,null);}
+        private Status(String action,String reason,boolean terminal,Committed committed){this.action=action;this.reason=reason;this.terminal=terminal;this.committed=committed;}
     }
     static final class Command {
         final String action,operation,account,source,target;
@@ -125,8 +133,15 @@ final class PurpleSyncChatMove implements AutoCloseable {
     }
     private String actionQuiet(){try{return store==null||store.journalBytes()==null?"Open":next();}catch(Exception e){return "Open";}}
     private boolean publish(String reason,boolean terminal)throws Exception {
-        require();long before=run;port.status(new Status(store==null||store.journalBytes()==null?"Open":next(),reason,terminal));
+        require();long before=run;port.status(new Status(store==null||store.journalBytes()==null?"Open":next(),reason,terminal,committed()));
         if(before!=run||!live())return false;require();return true;
+    }
+    private Committed committed()throws Exception {
+        if(store==null||store.journalBytes()==null)return null;JSONObject j=journal();
+        if(!j.optBoolean("destination_verified")||!j.optBoolean("mark_verified")||!j.optBoolean("state_committed")||!j.optBoolean("cache_completed")
+                ||store.stateBytes()==null||!PurpleSyncRetainedFiles.hash(store.stateBytes()).equals(j.optString("next_state_hash")))return null;
+        JSONObject mark=j.getJSONObject("target_mark");
+        return new Committed(origin,authority,j.getString("operation"),new Cache(Peer.parse(mark.getString("chat"),origin.userId),mark.getInt("id"),mark.getLong("date")));
     }
     private void open(boolean resume,boolean foreign)throws Exception {
         require();if(lease!=null)return;
@@ -138,6 +153,11 @@ final class PurpleSyncChatMove implements AutoCloseable {
             if(captured!=run||store!=null)return;
             if(!lease.quiescent()){hold("PublishersNotQuiescent");return;}
             store=port.open(this::live,foreign);require();
+            if(opening!=null&&opening.has("openingStateStamp")){
+                String actual=store.stateBytes()==null?"missing":PurpleSyncRetainedFiles.hash(store.stateBytes());
+                if(!actual.equals(opening.getString("openingStateStamp")))throw new IOException("OpeningChanged");
+            }
+            if(opening!=null&&opening.has("openingCacheBytes")&&!java.util.Arrays.equals(store.openingCacheBytes(),PurpleSyncRetainedBases.decode(opening.getString("openingCacheBytes"))))throw new IOException("OpeningChanged");
             if(foreign){if(discardConfirmed)transition(store.discardInterrupted(true));return;}
             if(resume||store.journalBytes()!=null&&!store.terminal()){
                 if(store.journalBytes()==null){hold("MissingJournal");return;}
@@ -291,7 +311,7 @@ final class PurpleSyncChatMove implements AutoCloseable {
         input.put("mode",new String[]{"Switch","Follow","Fill","RepairMark"}[j.getInt("mode")]).put("access",reply.sourceAccess)
                 .put("state",store.stateBytes()==null?JSONObject.NULL:blob(store.stateBytes())).put("preferenceToken",openingToken())
                 .put("otherStagesPresent",false).put("eligibility",eligibilityJson(fresh.target.eligibility())).put("readerConsentAccepted",true)
-                .put("oldInventory",old).put("newInventory",dest).put("cleanup","None").put("cleanupAuthorized",false)
+                .put("oldInventory",old).put("newInventory",dest).put("cleanup",store.cleanupSettings()?"AllSettings":"None").put("cleanupAuthorized",store.cleanupSettings())
                 .put("playlistsInUse",playlistUse(reply,old,dest));
         if(j.optJSONObject("target_mark")!=null)input.put("winner",cache(j.getJSONObject("target_mark")));
         if(store.stateBytes()!=null){byte[] own=store.ownBase();if(own.length!=0)input.put("ownVersion",core("ownVersion",json("record",blob(own))).fields.getJSONObject("ownVersion"));}

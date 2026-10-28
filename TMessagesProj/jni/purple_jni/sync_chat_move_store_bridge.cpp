@@ -352,6 +352,11 @@ QJsonObject StorageCodec(const QString &op, const QJsonObject &input) {
         Need(input.value(u"objects"_q).isObject());
         wrapper.insert(u"objects"_q, input.value(u"objects"_q));
         if (input.contains(u"send_identities"_q)) wrapper.insert(u"send_identities"_q, input.value(u"send_identities"_q));
+        if (input.contains(u"cleanup_settings"_q)) {
+            const auto consent = input.value(u"cleanup_settings"_q);
+            Need(consent.isBool() && (!wrapper.contains(u"cleanup_settings"_q) || wrapper.value(u"cleanup_settings"_q) == consent));
+            wrapper.insert(u"cleanup_settings"_q, consent);
+        }
         if (input.contains(u"transport"_q)) wrapper.insert(u"transport"_q, input.value(u"transport"_q));
         if (wrapper.contains(u"transport"_q)) wrapper.insert(u"transport_sha256"_q, TransportHash(wrapper));
     } else Need(op == u"inspect"_q);
@@ -360,6 +365,7 @@ QJsonObject StorageCodec(const QString &op, const QJsonObject &input) {
     Need(version.isDouble() && version.toDouble() == 1);
     Need(wrapper.value(u"account"_q) == account && wrapper.value(u"binding_sha256"_q) == RecordHash(binding)
         && wrapper.value(u"login_authority"_q) == authority, u"AccountUnbound"_q);
+    Need(!wrapper.contains(u"cleanup_settings"_q) || wrapper.value(u"cleanup_settings"_q).isBool());
     Need(wrapper.value(u"journal"_q).isObject() && wrapper.value(u"objects"_q).isObject());
     const auto journal = Canonical(wrapper.value(u"journal"_q).toObject());
     const auto parsed = ParseSyncCarryJournal(journal);
@@ -405,7 +411,7 @@ QJsonObject StorageCodec(const QString &op, const QJsonObject &input) {
     }
     auto result = QJsonObject{{u"status"_q, u"Ready"_q}, {u"bytes"_q, Blob(encoded)},
         {u"journal"_q, Blob(journal)}, {u"objects"_q, objects}, {u"send_identities"_q, ids.isUndefined() ? QJsonObject() : ids},
-        {u"holdsWrites"_q, SyncCarryJournalHoldsWrites(j)}, {u"transport"_q, wrapper.value(u"transport"_q).toObject()}, {u"requiredObjects"_q, required}, {u"stateHash"_q, j.stateHash}, {u"writeHash"_q, QString()}, {u"stageHash"_q, QString()}, {u"retireHash"_q, QString()}};
+        {u"cleanupSettings"_q, wrapper.value(u"cleanup_settings"_q).toBool()}, {u"holdsWrites"_q, SyncCarryJournalHoldsWrites(j)}, {u"transport"_q, wrapper.value(u"transport"_q).toObject()}, {u"requiredObjects"_q, required}, {u"stateHash"_q, j.stateHash}, {u"writeHash"_q, QString()}, {u"stageHash"_q, QString()}, {u"retireHash"_q, QString()}};
     const auto action = NextSyncCarryJournalAction(j);
     if (action == SyncCarryJournalAction::WritePendingState) result.insert(u"writeHash"_q, j.pendingStateHash);
     if (action == SyncCarryJournalAction::CommitState) result.insert(u"writeHash"_q, j.nextStateHash);

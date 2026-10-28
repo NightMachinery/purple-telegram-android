@@ -11,8 +11,8 @@ import java.util.function.Consumer;
 import static org.telegram.messenger.purple.PurpleSyncChatCore.*;
 
 final class PurpleSyncChatSetup implements AutoCloseable {
-    enum Phase { Ready, Resolve, Create, ReconcileCreate, ApplyUpdates, PeerInfo, Inventory, PostMark, ReadMark, Pin, Mute, Archive, Complete, Adopted, Held, Limit, Cancelled }
-    enum Step { Ready, CreateStarted, PeerInfo, MarkStarted, ReadMark, Commit, Pin, Mute, Archive, Complete }
+    enum Phase { Ready, Resolve, Create, ReconcileCreate, ApplyUpdates, PeerInfo, Inventory, PostMark, ReadMark, Pin, Mute, Archive, Complete, Provisioned, Adopted, Held, Limit, Cancelled }
+    enum Step { Ready, CreateStarted, PeerInfo, MarkStarted, ReadMark, Commit, Pin, Mute, Archive, Complete, Provisioned }
     enum Error { None, Limit, Flood, Restricted, Unknown }
     enum Effect { Create, Mark, Pin, Mute, Archive }
     static final class Command {
@@ -102,12 +102,12 @@ final class PurpleSyncChatSetup implements AutoCloseable {
         long random;
         long retryAt;
         int attempts;
-        String operation=java.util.UUID.randomUUID().toString(),readers="",binding="";
+        String operation=java.util.UUID.randomUUID().toString(),readers="",binding="",purpose="Setup",openingStamp="";
         JSONObject json(PurpleSyncChatOrigin origin,String authority) {
             return PurpleSyncChatCore.json("version",1,"account",origin.accountKey(),"authority",authority,"step",step.name(),
                     "create",create,"created",created,"chat",chat!=null?chat.token():"","markId",mark!=null?mark.markId:0,
                     "markDate",Long.toString(mark!=null?mark.markDate:0),"random",Long.toString(random),"readers",readers,"binding",binding,
-                    "operation",operation,"attempts",attempts,"retryAt",Long.toString(retryAt),"newReaders",newReaders,"deferred",deferred);
+                    "purpose",purpose,"openingStamp",openingStamp,"operation",operation,"attempts",attempts,"retryAt",Long.toString(retryAt),"newReaders",newReaders,"deferred",deferred);
         }
         PurpleSyncChatCache.ReadersSnapshot baseline() throws Exception {
             int suffix=readers.lastIndexOf(':');
@@ -136,6 +136,10 @@ final class PurpleSyncChatSetup implements AutoCloseable {
                 result.newReaders=(Boolean)warning;
             }
             if(value.has("deferred")){Object deferred=value.get("deferred");if(!(deferred instanceof Boolean))throw new IllegalArgumentException("SetupJournalDeferred");result.deferred=(Boolean)deferred;}
+            result.purpose=value.optString("purpose","Setup");result.openingStamp=value.optString("openingStamp","");
+            boolean provision=result.purpose.equals("MoveProvision");
+            if(!provision&&!result.purpose.equals("Setup")||provision&&!result.openingStamp.matches("[0-9a-f]{64}")
+                    ||!provision&&!result.openingStamp.isEmpty())throw new IllegalArgumentException("SetupJournalPurpose");
             result.operation=value.getString("operation");Object attempts=value.get("attempts");
             result.retryAt=Long.parseLong(value.getString("retryAt"));
             if(!(attempts instanceof Integer)||(Integer)attempts<0||(Integer)attempts>3||result.retryAt<0||!Long.toString(result.retryAt).equals(value.getString("retryAt"))
@@ -143,13 +147,16 @@ final class PurpleSyncChatSetup implements AutoCloseable {
             result.attempts=(Integer)attempts;
             if(result.readers.length()>15500||result.binding.length()>1024||result.step==Step.CreateStarted&&result.attempts==0||result.created&&(!result.create||result.chat==null||result.chat.kind!=PeerKind.Channel)
                     ||!result.create&&result.chat==null||result.step.ordinal()>=Step.PeerInfo.ordinal()&&result.chat==null
-                    ||result.step.ordinal()>=Step.ReadMark.ordinal()&&result.mark==null)throw new IllegalArgumentException("SetupJournalState");
+                    ||!provision&&result.step.ordinal()>=Step.ReadMark.ordinal()&&result.mark==null
+                    ||provision&&(!result.create||result.mark!=null||result.step!=Step.Ready&&result.step!=Step.CreateStarted&&result.step!=Step.PeerInfo&&result.step!=Step.Provisioned)
+                    ||!provision&&result.step==Step.Provisioned)throw new IllegalArgumentException("SetupJournalState");
             if(!result.readers.isEmpty())result.baseline();
             return result;
         }
     }
 
     private final Env env;
+    private final PurpleSyncChatScreen.ChangeSelection change;
     private final PurpleSyncChatOrigin origin;
     private final String authority;
     private final Consumer<Phase> observer;
@@ -166,7 +173,14 @@ final class PurpleSyncChatSetup implements AutoCloseable {
     private Command issued;
 
     PurpleSyncChatSetup(Env env,PurpleSyncChatScreen.Selection selection,Consumer<Phase> observer) {
-        this.env=env;this.origin=env.origin();this.authority=authority(env.authority());this.selection=selection;this.observer=observer;
+        this.env=env;this.origin=env.origin();this.authority=authority(env.authority());this.selection=selection;this.observer=observer;change=null;
+    }
+    static PurpleSyncChatSetup provision(Env env,PurpleSyncChatScreen.ChangeSelection change,Consumer<Phase> observer) {
+        if(change==null||!change.offer.createChannel)throw new IllegalArgumentException("ProvisionConsentRequired");
+        return new PurpleSyncChatSetup(env,change,observer,true);
+    }
+    private PurpleSyncChatSetup(Env env,PurpleSyncChatScreen.ChangeSelection change,Consumer<Phase> observer,boolean provision) {
+        this.env=env;origin=env.origin();authority=authority(env.authority());this.change=change;this.observer=observer;
     }
     Phase phase() { return phase; }
     boolean busy() { return busy; }
@@ -178,6 +192,8 @@ final class PurpleSyncChatSetup implements AutoCloseable {
     private boolean writable() {
         if(!live())return false;
         PurpleSyncChatService.Binding binding=env.binding();
+        if(change!=null)return change.current(origin,env.authority())&&binding!=null&&binding.ok&&change.offer.opening.binding.same(binding)
+                &&change.offer.stateStamp.equals(binding.stateStamp)&&(journal==null||journal.binding.equals(binding.identity));
         return binding!=null&&binding.ok&&!binding.bound&&(journal==null||journal.binding.equals(binding.identity));
     }
     private boolean checkWritable() {
@@ -192,13 +208,16 @@ final class PurpleSyncChatSetup implements AutoCloseable {
             opening=env.journal().read();
             if(opening!=null)journal=Journal.parse(opening,origin,authority);
             else {
-                if(selection==null||!origin.equals(selection.origin)){finish(Phase.Held,"ConsentRequired");return;}
-                journal=new Journal();journal.create=selection.createChannel;journal.chat=selection.chat;
-                journal.readers=selection.candidate!=null?selection.candidate.readers:"";journal.random=env.randomId();
+                if(change==null&&(selection==null||!origin.equals(selection.origin))){finish(Phase.Held,"ConsentRequired");return;}
+                journal=new Journal();journal.create=change!=null||selection.createChannel;journal.chat=change==null?selection.chat:null;
+                if(change!=null){journal.purpose="MoveProvision";journal.openingStamp=change.offer.stamp();}
+                journal.readers=selection!=null&&selection.candidate!=null?selection.candidate.readers:"";journal.random=env.randomId();
                 PurpleSyncChatService.Binding binding=env.binding();
-                if(binding==null||!binding.ok||binding.bound||journal.random==0){finish(Phase.Held,"BindingUnavailable");return;}
+                if(binding==null||!binding.ok||change==null&&binding.bound||journal.random==0){finish(Phase.Held,"BindingUnavailable");return;}
                 journal.binding=binding.identity;
             }
+            if(change==null&&!journal.purpose.equals("Setup")||change!=null&&(!journal.purpose.equals("MoveProvision")
+                    ||!change.current(origin,env.authority())||!journal.openingStamp.equals(change.offer.stamp()))) {finish(Phase.Held,"OpeningOrPurposeChanged");return;}
             if(env.nowSeconds()<0){finish(Phase.Held,"ClockUnavailable");return;}
             if(journal.retryAt>env.nowSeconds()){finish(Phase.Held,"FloodWait");return;}
             resolve();
@@ -209,7 +228,13 @@ final class PurpleSyncChatSetup implements AutoCloseable {
         emit(Phase.Resolve);if(!live())return;
         env.resolve(this,callback(reply->{
             PurpleSyncChatScreen.Frame frame=reply.value;
-            if(reply.error!=Error.None||frame==null||!frame.status.complete||frame.bound||!frame.binding.identity.equals(journal.binding)) {finish(Phase.Held,"ResolutionUnknown");return;}
+            if(reply.error!=Error.None||frame==null||!frame.status.complete||change==null&&frame.bound||!frame.binding.identity.equals(journal.binding)) {finish(Phase.Held,"ResolutionUnknown");return;}
+            if(change!=null){
+                if(!change.offer.matches(frame)){finish(Phase.Held,"OpeningChanged");return;}
+                if(journal.step==Step.CreateStarted)reconcileCreate();
+                else if(journal.step==Step.Ready)create();else inspect();
+                return;
+            }
             Cache winner=frame.opening!=null&&frame.opening.data!=null?frame.opening.data.location:null;
             observedWinner=winner;
             if(frame.status.phase==PurpleSyncChat.Phase.Use&&winner!=null) {
@@ -267,15 +292,15 @@ final class PurpleSyncChatSetup implements AutoCloseable {
                         &&selection.candidate!=null&&selection.candidate.same(candidate);
                 if((!journal.created&&!journal.chat.equals(Peer.self())||candidate.eligibility.readers.warningRequired)&&!accepted){finish(Phase.Held,"ReaderConsentRequired");return;}
                 journal.readers=candidate.readers;if(!persist(journal.step))return;
-            } else if(journal.step.ordinal()<Step.MarkStarted.ordinal()&&!journal.readers.equals(candidate.readers)) {
+            } else if((change!=null||journal.step.ordinal()<Step.MarkStarted.ordinal())&&!journal.readers.equals(candidate.readers)) {
                 if(journal.mark==null&&journal.step.ordinal()<=Step.PeerInfo.ordinal()&&selection!=null&&origin.equals(selection.origin)
                         &&selection.candidate!=null&&journal.chat.equals(selection.chat)&&selection.candidate.same(candidate)) {
                     journal.readers=candidate.readers;if(!persist(journal.step))return;
                 } else {finish(Phase.Held,"ReadersChanged");return;}
             }
-            if(journal.step.ordinal()>=Step.MarkStarted.ordinal()&&!retainConsent(candidate))return;
+            if(change==null&&journal.step.ordinal()>=Step.MarkStarted.ordinal()&&!retainConsent(candidate))return;
             switch(journal.step) {
-                case Ready:case PeerInfo:inventory(candidate);break;
+                case Ready:case PeerInfo:case Provisioned:inventory(candidate);break;
                 case MarkStarted:reconcileMark();break;
                 case ReadMark:case Commit:readMark();break;
                 case Pin:decorate(Phase.Pin,Step.Mute,done->env.pin(journal.mark,done));break;
@@ -297,11 +322,13 @@ final class PurpleSyncChatSetup implements AutoCloseable {
             env.info(journal.chat,callback(fresh->{
                 PurpleSyncChatScreen.Candidate candidate=new PurpleSyncChatScreen.Candidate(origin,journal.chat,fresh.value);
                 if(fresh.error!=Error.None||!disclosed.same(candidate)||!journal.readers.equals(candidate.readers)){finish(Phase.Held,"ReadersOrRightsChanged");return;}
-                post(candidate.info);
+                if(change!=null){if(persist(Step.Provisioned))finish(Phase.Provisioned,"");}
+                else post(candidate.info);
             }));
         }));
     }
     private void post(PurpleSyncChatClient.Info info) {
+        if(change!=null){finish(Phase.Held,"ProvisionOnly");return;}
         if(!persist(Step.MarkStarted))return;
         emit(Phase.PostMark);if(!checkWritable())return;
         env.post(info,journal.random,effectCallback(Effect.Mark,reply->{
@@ -516,7 +543,7 @@ final class PurpleSyncChatSetup implements AutoCloseable {
     }
     void tryAgain() { if(phase==Phase.Limit||phase==Phase.Held)start(); }
     void useSavedMessages() {
-        if(busy||closed||!env.current()||!env.foreground())return;
+        if(change!=null||busy||closed||!env.current()||!env.foreground())return;
         if(journal==null||!journal.create||journal.mark!=null||journal.created||journal.step!=Step.Ready||phase!=Phase.Limit&&phase!=Phase.Held)return;
         if(journal.retryAt>env.nowSeconds())return;
         if(!env.acquire(this))return;busy=true;++run;
@@ -536,7 +563,7 @@ final class PurpleSyncChatSetup implements AutoCloseable {
     @Override public void close() {
         if(closed)return;
         closed=true;
-        if(busy)finish(Phase.Cancelled,"Cancelled");else {phase=Phase.Cancelled;cancelTimeout();env.cancel();env.release(this);}
+        if(busy)finish(Phase.Cancelled,"Cancelled");else {phase=Phase.Cancelled;try{cancelTimeout();}finally{try{env.cancel();}finally{env.release(this);}}}
     }
     static JournalIO file(java.io.File path) {
         PurpleSyncChatCache.IO io=PurpleSyncChatCache.file(path);
@@ -544,6 +571,24 @@ final class PurpleSyncChatSetup implements AutoCloseable {
             public byte[] read()throws Exception { return io.read(); }
             public boolean save(byte[] expected,byte[] next,BooleanSupplier current) {
                 return next.length<=16384&&current.getAsBoolean()&&io.write(expected,next)&&current.getAsBoolean();
+            }
+        };
+    }
+    static JournalIO provisionFile(java.io.File path) {
+        return new JournalIO(){
+            public byte[] read()throws Exception {
+                PurpleAccountFileSnapshot.Durable value=PurpleAccountFileSnapshot.durable("read",path,null,null,16384,0);
+                PurpleAccountFileSnapshot.durable("barrier",path,value,null,16384,0);return value.bytes==null?null:value.bytes.clone();
+            }
+            public boolean save(byte[] expected,byte[] next,BooleanSupplier current) {
+                try {
+                    if(next.length>16384||!current.getAsBoolean())return false;
+                    PurpleAccountFileSnapshot.Durable prior=PurpleAccountFileSnapshot.durable("read",path,null,null,16384,0);
+                    if(!java.util.Arrays.equals(expected,prior.bytes)||!current.getAsBoolean())return false;
+                    PurpleAccountFileSnapshot.Durable written=PurpleAccountFileSnapshot.durable("write",path,prior,next,16384,0);
+                    PurpleAccountFileSnapshot.durable("barrier",path,written,null,16384,0);
+                    return current.getAsBoolean()&&java.util.Arrays.equals(next,PurpleAccountFileSnapshot.durable("read",path,null,null,16384,0).bytes);
+                }catch(Exception|LinkageError e){return false;}
             }
         };
     }

@@ -114,8 +114,8 @@ qualify Android directory durability, Telegram routes, shrinker behavior or UI.
 
 ## Durable operation storage
 
-Android has worker-owned storage and an injected Carry executor. They add no
-move UI or live backend. Existing user-facing Follow/Fill remain held.
+Android has worker-owned storage and an injected Carry executor. The production Change entry is qualification-held. They add no
+live move transport or live backend. Existing user-facing Follow/Fill remain held.
 The adapter delegates journal parsing, transitions, prepared images and hashes
 to the shared core through the existing carry JNI surface.
 
@@ -485,3 +485,17 @@ UI and Telegram-server qualification; none of those native behaviors is claimed.
 A Pending command opens a read ticket after store reopen and after the current scanner sequence. Its sealed, complete O inventory must come from a scan started after that ticket, scoped to the exact account/source and pending bytes. A retained older scan cannot prove an issued pending record absent. The ticket belongs to the store epoch and shared pending-slot generation, and consuming it invalidates sibling tickets. Issuance, renewal and outcome consumption invalidate the shared generation too. A private absence proof admits one pending attempt; a found-record proof feeds one core transition. Renewals retain the same active request and upload claim.
 
 Affirmative Issued observations are persisted before checking inventory or chronology, so invalid evidence cannot erase the conservative floor. A stale scan leaves ResolvePending, its exact stage and the floor intact. A new post-outcome O scan can reconcile the existing record without a duplicate send or deferred record. Definite scoped ChatGone retains its separate R3 path; it is never inferred from an empty inventory.
+
+## Provision-only Change boundary
+
+The injected Change controller revalidates captured source state/cache/winner and target/readers before it starts Carry. Carry opens under its account lease, checks exact state and cache bytes, and obtains fresh resolution before Begin. The foreground screen owner, origin/login and each async callback identity stay live through actual admission. Required playlists and old-message deletion policy retain their existing conservative holds.
+
+Create uses the existing setup engine in a separate `MoveProvision` purpose, bound to the opening fingerprint. Its capped child file is `sync-chat-move-create.json`. A durable CreateStarted journal precedes dispatch. An uncertain creation reconciles the same operation after reopen, with a matched-operation proof; it never adopts by title or blindly creates again. ApplyUpdates precedes full info, a complete Empty inventory, and a second full-info check. Only then is Provisioned durable. Setup and MoveProvision journals refuse each other's purpose.
+
+Provisioned proves a target, not a committed move. This mode cannot post a mark, commit ordinary cache, or pin/mute/archive. Reopening Provisioned revalidates rights/readers and inventory without entering ordinary setup's post-mark consent/cache path. Cancellation keeps the child journal and never deletes an orphan channel. The injected controller passes the proven channel into the existing Carry executor.
+
+Only a private committed receipt from actual destination verification, mark readback, committed exact state and completed cache permits decoration. Only a newly created channel gets silent pin, mute and archive, in that order. Existing chats and Saved Messages never get these effects. A provisioning receipt, phase name or observer callback cannot forge that authority. Production supplies no transport adapter while activation is false.
+
+Host suite `sync-chat-change` uses actual AGP business classes and controlled ports with real child/Carry files. It pins eligibility and reader consent, state/cache/winner changes, foreground revocation, defaults/disclosure, purpose separation, ambiguous creation restart, duplicate callbacks, orphan retention and committed-only decoration. It runs alongside the unchanged Pending chronology regressions. Device lifecycle, Telegram behavior and physical power-loss durability remain unqualified.
+
+Decoration callbacks retain their step while waiting or held. An unsuccessful pin, mute or archive callback remains held across later Carry Cleanup/Done progress. Only an explicit retry of the held step can continue; successful earlier steps are preserved. Closing the flow revokes retries. Process-restart decoration reconciliation remains unqualified, so an uncertain decoration is never automatically repeated after a restart.

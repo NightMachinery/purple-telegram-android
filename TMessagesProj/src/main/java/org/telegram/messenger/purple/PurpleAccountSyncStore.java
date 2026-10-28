@@ -287,7 +287,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
             if (!recover(stageFile) || !recoverAuto(new File(root,"auto.json"),PurpleAccountFiles.capture(account)!=null?PurpleAccountFiles.capture(account).key:"")) {
                 return fail(Status.IoError);
             }
-            if (!knownFiles(root, "lock", "state.json", "pending", "auto.json", "sync-chat-setup.json", "sync-chat-setup-create.json", "sync-chat-setup-mark.json", "retained-bases", "carry.json", "carry-cache.json", "carry-objects", "carry-history")
+            if (!knownFiles(root, "lock", "state.json", "pending", "auto.json", "sync-chat-setup.json", "sync-chat-setup-create.json", "sync-chat-setup-mark.json", "sync-chat-move-create.json", "retained-bases", "carry.json", "carry-cache.json", "carry-objects", "carry-history")
                     || !knownFiles(pending, "config.json")) {
                 return fail(Status.AmbiguousFiles);
             }

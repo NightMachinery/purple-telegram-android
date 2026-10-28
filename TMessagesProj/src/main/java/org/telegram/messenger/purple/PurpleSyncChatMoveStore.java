@@ -42,6 +42,8 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
     boolean slotLive(String key) { return liveSlots.containsKey(key); }
     String loginAuthority() { return authority; }
     String journalLoginAuthority() { return authority.substring(0,32); }
+    private boolean newCleanupSettings;
+    boolean cleanupSettings() throws IOException {unchanged();return metadata!=null&&metadata.optBoolean("cleanupSettings");}
     String accountKey() { return account; }
     boolean terminal() { return metadata!=null&&!metadata.optBoolean("holdsWrites",true); }
     JSONObject transport() throws IOException {
@@ -209,7 +211,7 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
                         || PurpleAccountFileSnapshot.durableDirectoryIdentity(path).equals("missing")) throw new IOException("AmbiguousFiles");
             } else if (name.equals("lock")) {
                 PurpleAccountFileSnapshot.durable("lock", path, null, null, LIMIT, 0);
-            } else if (Arrays.asList("state.json", "auto.json", "carry.json", "carry-cache.json", "sync-chat-setup.json", "sync-chat-setup-create.json", "sync-chat-setup-mark.json").contains(name)) read(path, LIMIT);
+            } else if (Arrays.asList("state.json", "auto.json", "carry.json", "carry-cache.json", "sync-chat-setup.json", "sync-chat-setup-create.json", "sync-chat-setup-mark.json", "sync-chat-move-create.json").contains(name)) read(path, LIMIT);
             else throw new IOException("AmbiguousFiles");
         }
         if (!PurpleSyncRetainedFiles.valid(root)) throw new IOException("InvalidRetention");
@@ -300,7 +302,9 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
     private PurpleSyncChatMoveCore.Result persist(PurpleSyncChatMoveCore.Result next) throws Exception {
         unchanged(); byte[] value = unblob(next.fields, "canonical");
         if (value.length == 0) return next;
-        JSONObject wrapper = codec("wrap", json("wrapper", blob(newEnvelope?null:journal.bytes), "journal", blob(value), "objects", objects, "send_identities", identities));
+        JSONObject request=json("wrapper",blob(newEnvelope?null:journal.bytes),"journal",blob(value),"objects",objects,"send_identities",identities);
+        if(newEnvelope||journal.bytes==null)request.put("cleanup_settings",newCleanupSettings);
+        JSONObject wrapper=codec("wrap",request);
         byte[] encoded = unblob(wrapper, "bytes");
         journal = write(journalFile, journal, encoded, LIMIT); metadata = wrapper; canonical = value; newEnvelope=false;permitEpoch = new Object(); liveSlots.clear();slotGenerations.clear();
         return next;
@@ -326,6 +330,7 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
             input = new JSONObject(input.toString()); input.put("state", state.bytes == null ? JSONObject.NULL : blob(state.bytes));
             input.put("stateAbsentConfirmed", state.bytes == null);
             if (production) input.put("loginAuthority",journalLoginAuthority());
+            newCleanupSettings=input.optBoolean("cleanupSettings");
             String[] pending = new File(root, "pending").list();
             input.put("otherStagesPresent", input.optBoolean("otherStagesPresent") || pending != null && pending.length != 0
                     && (state.bytes == null || PurpleAccountSyncCore.inspectState(state.bytes).pendingSeq == 0));
@@ -533,6 +538,7 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
         barrier(path, cache, 65536);
     }
     byte[] journalBytes() { return canonical == null ? null : canonical.clone(); }
+    byte[] openingCacheBytes() throws IOException {unchanged();PurpleAccountFileSnapshot.Durable value=read(cacheFile,65536);barrier(cacheFile,value,65536);return value.bytes==null?null:value.bytes.clone();}
     byte[] stateBytes() { return state == null || state.bytes == null ? null : state.bytes.clone(); }
     void fault(int point) { fault = point;faultFile=null; }
     void fault(int point,File path){fault=point;faultFile=path;}

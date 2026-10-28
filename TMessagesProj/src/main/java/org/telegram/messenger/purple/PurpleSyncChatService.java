@@ -10,9 +10,10 @@ final class PurpleSyncChatService {
     static final class Binding {
         final boolean ok, bound;
         final Peer chat;
-        final String identity;
+        final String identity,stateStamp;
         Binding(boolean ok, boolean bound, Peer chat) { this(ok,bound,chat,""); }
-        Binding(boolean ok, boolean bound, Peer chat,String identity) { this.ok = ok; this.bound = bound; this.chat = chat;this.identity=identity; }
+        Binding(boolean ok, boolean bound, Peer chat,String identity) { this(ok,bound,chat,identity,identity); }
+        Binding(boolean ok,boolean bound,Peer chat,String identity,String stamp) { this.ok=ok;this.bound=bound;this.chat=chat;this.identity=identity;stateStamp=stamp; }
         boolean same(Binding other) { return other!=null&&ok&&other.ok&&bound==other.bound&&java.util.Objects.equals(chat,other.chat)&&identity.equals(other.identity); }
     }
     static final class Borrowed {
