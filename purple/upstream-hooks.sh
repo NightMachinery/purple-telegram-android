@@ -14,6 +14,9 @@ LibraryRes=TMessagesProj/src/main/res
 AppRes=TMessagesProj_AppStandalone/src/main/res
 export GIT_NO_LAZY_FETCH=1
 export LC_ALL=C
+# Tools are called through env rather than the command builtin: both skip
+# shell functions, but macOS's /bin/bash 3.2 exits under set -e when a
+# command-prefixed call fails, even as an if or || condition.
 
 usage() {
     cat >&2 <<'EOF'
@@ -41,16 +44,16 @@ die() {
 }
 
 g() {
-    command git --no-optional-locks -C "$Root" "$@"
+    env git --no-optional-locks -C "$Root" "$@"
 }
 
 Work="$(mktemp -d "${TMPDIR:-/tmp}/purple-upstream-hooks.XXXXXX")"
-trap 'command rm -rf "$Work"' EXIT
+trap 'env rm -rf "$Work"' EXIT
 
 resolve_base() {
     [ -f "$BaseFile" ] || die "purple/UPSTREAM_BASE is missing"
     local sha
-    sha="$(command tr -d '[:space:]' < "$BaseFile")"
+    sha="$(env tr -d '[:space:]' < "$BaseFile")"
     Base="$(g rev-parse --verify -q "$sha^{commit}")" ||
         die "purple/UPSTREAM_BASE names $sha, which this clone does not have"
 }
@@ -67,7 +70,7 @@ resolve_tree() {
             /*) ;;
             *) index="$Root/$index" ;;
         esac
-        command cp "$index" "$Work/index"
+        env cp "$index" "$Work/index"
         GIT_INDEX_FILE="$Work/index" g add -u
         Tree="$(GIT_INDEX_FILE="$Work/index" g write-tree)"
         head="$(g rev-parse --verify -q HEAD)"
@@ -193,7 +196,7 @@ stats() {
     g -c core.quotePath=false diff --no-color --no-ext-diff --no-textconv --no-renames \
         --no-relative --diff-algorithm=myers --inter-hunk-context=0 \
         --src-prefix=a/ --dst-prefix=b/ -U3 --diff-filter=MDT "$Base" "$Tree" -- |
-        command awk "$StatsAwk" > "$Work/stats"
+        env awk "$StatsAwk" > "$Work/stats"
 }
 
 callers() {
@@ -217,17 +220,17 @@ callers() {
 current() {
     printf 'base %s\n' "$Base"
     {
-        command awk -F '\t' -v readme="$Readme" '
+        env awk -F '\t' -v readme="$Readme" '
             $1 == "F" && $2 != readme { print "file", $2, $3, $4, $5 }
             $1 == "A" { n[$2 " " $4]++ }
             END { for (k in n) print "account", k, n[k] }
         ' "$Work/stats"
-        command cat "$Work/callers"
-    } | command sort
+        env cat "$Work/callers"
+    } | env sort
 }
 
 counter_fields() {
-    g show "$Tree:$Storage" | command awk '
+    g show "$Tree:$Storage" | env awk '
         { line[NR] = $0 }
         !at && $0 ~ /[ \t]dialogsWithUnread[ \t]*(=|;)/ { at = NR }
         function field(s) { return s ~ /^[ \t]*(private|protected|public)[ \t].*;[ \t]*$/ }
@@ -243,7 +246,7 @@ counter_fields() {
             for (i = at; i >= 1 && field(line[i]); i--) emit(line[i])
             for (i = at + 1; i <= NR && field(line[i]); i++) emit(line[i])
         }
-    ' | command sort
+    ' | env sort
 }
 
 has() {
@@ -257,11 +260,11 @@ files_with() {
     local status=0
     g grep -l -F -e "$1" "$Tree" -- '*.java' > "$Work/grep" || status=$?
     [ "$status" -le 1 ] || die "git grep failed while looking for $1"
-    command sed "s|^$Tree:||" "$Work/grep" | command sort
+    env sed "s|^$Tree:||" "$Work/grep" | env sort
 }
 
 edited() {
-    command awk -F '\t' -v p="$1" '$1 == "F" && $2 == p { found = 1 } END { exit !found }' "$Work/stats"
+    env awk -F '\t' -v p="$1" '$1 == "F" && $2 == p { found = 1 } END { exit !found }' "$Work/stats"
 }
 
 fail() {
@@ -271,7 +274,7 @@ fail() {
 check_app_names() {
     local f dir
     g ls-tree -r --name-only "$Tree" -- "$LibraryRes" |
-        command grep -E "^$LibraryRes/values[^/]*/strings\\.xml\$" > "$Work/strings" || true
+        env grep -E "^$LibraryRes/values[^/]*/strings\\.xml\$" > "$Work/strings" || true
     while IFS= read -r f; do
         has 'name="AppName"' "$f" || continue
         edited "$f" && continue
@@ -289,7 +292,7 @@ check_privacy() {
     fi
     files_with TL_inputPrivacyKeyStatusTimestamp > "$Work/status"
     files_with TL_inputPrivacyValueAllowAll > "$Work/allowall"
-    command comm -12 "$Work/status" "$Work/allowall" > "$Work/pairs"
+    env comm -12 "$Work/status" "$Work/allowall" > "$Work/pairs"
     while IFS= read -r f; do
         case " $PrivacyOk " in
             *" $f "*) continue ;;
@@ -308,7 +311,7 @@ check_counters() {
     fi
     g show "$Tree:$Mirror" > "$Work/mirror"
     while IFS= read -r name; do
-        command grep -q -E "(^|[^A-Za-z0-9_])$name([^A-Za-z0-9_]|\$)" "$Work/mirror" ||
+        env grep -q -E "(^|[^A-Za-z0-9_])$name([^A-Za-z0-9_]|\$)" "$Work/mirror" ||
             fail "counters: $Storage declares $name next to dialogsWithUnread, and $Mirror does not name it"
     done < "$Work/counters"
 }
@@ -330,7 +333,7 @@ cmd_report() {
     Rev="${1:-}"
     prepare
     printf 'Upstream files edited since %s, in %s.\n\n' "$(g log -1 --format='%h (%s)' "$Base")" "$Label"
-    command awk -F '\t' -v readme="$Readme" -v lines="$lines" '
+    env awk -F '\t' -v readme="$Readme" -v lines="$lines" '
         FILENAME == ARGV[1] && $1 == "F" && $2 == readme { rma = $3; rmd = $4; next }
         FILENAME == ARGV[1] && $1 == "F" {
             order[++n] = $2
@@ -377,7 +380,7 @@ cmd_report() {
         }
     ' "$Work/stats" "$Work/callers"
     if counter_fields > "$Work/counters" 2> /dev/null; then
-        printf '\nCounter arrays declared next to dialogsWithUnread in MessagesStorage: %s.\n' "$(command tr '\n' ' ' < "$Work/counters" | command sed 's/ $//')"
+        printf '\nCounter arrays declared next to dialogsWithUnread in MessagesStorage: %s.\n' "$(env tr '\n' ' ' < "$Work/counters" | env sed 's/ $//')"
     fi
 }
 
@@ -393,7 +396,7 @@ cmd_check() {
     [ -f "$Baseline" ] || die "docs/upstream-hooks.baseline is missing; run purple/upstream-hooks.sh baseline"
     : > "$Work/fails"
     current > "$Work/current"
-    command awk -v stats="$Work/stats" '
+    env awk -v stats="$Work/stats" '
         NR == FNR {
             if ($1 == "base") bb = $2
             else if ($1 == "file") { ba[$2] = $3; bd[$2] = $4 }
@@ -433,14 +436,14 @@ cmd_check() {
             if (low) print "note: " low " entries are now below docs/upstream-hooks.baseline; run purple/upstream-hooks.sh baseline to lower them"
         }
     ' "$Baseline" "$Work/current" > "$Work/ratchet"
-    command grep -v '^note: ' "$Work/ratchet" >> "$Work/fails" || true
+    env grep -v '^note: ' "$Work/ratchet" >> "$Work/fails" || true
     check_app_names
     check_privacy
     check_counters
-    command cat "$Work/fails"
-    command grep '^note: ' "$Work/ratchet" || true
-    if command grep -q '^FAIL ' "$Work/fails"; then
-        printf 'upstream-hooks check: %d problems in %s\n' "$(command grep -c '^FAIL ' "$Work/fails")" "$Label"
+    env cat "$Work/fails"
+    env grep '^note: ' "$Work/ratchet" || true
+    if env grep -q '^FAIL ' "$Work/fails"; then
+        printf 'upstream-hooks check: %d problems in %s\n' "$(env grep -c '^FAIL ' "$Work/fails")" "$Label"
         exit 1
     fi
     printf 'upstream-hooks check: OK for %s\n' "$Label"
@@ -452,9 +455,9 @@ cmd_baseline() {
     prepare
     current > "$Work/current"
     if [ -f "$Baseline" ]; then
-        command diff "$Baseline" "$Work/current" || true
+        env diff "$Baseline" "$Work/current" || true
     fi
-    command cp "$Work/current" "$Baseline"
+    env cp "$Work/current" "$Baseline"
     printf 'Wrote %s from %s.\n' "${Baseline#"$Root"/}" "$Label"
 }
 

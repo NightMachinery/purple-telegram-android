@@ -1,0 +1,53 @@
+// Init script for purple/run_host_suites.py; not applied by the build itself.
+// It records what the host suites need from the real AGP compile of the
+// library module, for the variant PURPLE_HOST_TASK names: the javac Gradle
+// chose, the class output, both class paths and every source with its hash.
+// It refuses a task graph that would build native code, assemble, minify,
+// sign or install anything, or touch an app module.
+import groovy.json.JsonOutput
+import java.security.MessageDigest
+
+def receipt = System.getenv('PURPLE_HOST_RECEIPT')
+def compileTask = System.getenv('PURPLE_HOST_TASK')
+if (!receipt || !compileTask || !(compileTask ==~ /:TMessagesProj:compile\w+JavaWithJavac/)) {
+    throw new GradleException('host-receipt.gradle needs PURPLE_HOST_RECEIPT=<file> and PURPLE_HOST_TASK=:TMessagesProj:compile<Variant>JavaWithJavac in the environment')
+}
+
+gradle.taskGraph.whenReady { graph ->
+    if (gradle.parent != null) {
+        // buildSrc and included builds compile the build logic itself.
+        return
+    }
+    def refused = graph.allTasks.collect { it.path }.findAll {
+        it =~ /(?i)externalNative|cmake|assemble|minify|sign|install/ || it.startsWith(':TMessagesProj_')
+    }
+    if (refused) {
+        throw new GradleException('host-receipt.gradle refuses these tasks: ' + refused)
+    }
+}
+
+gradle.taskGraph.afterTask { task, state ->
+    // A skipped or failed compile still gets a receipt that says so; the
+    // runner accepts only one that really ran javac in this build.
+    if (task.path != compileTask) {
+        return
+    }
+    def files = { collection -> collection.findAll { it.exists() }.collect { [path: it.absolutePath] } }
+    def sha256 = { file -> MessageDigest.getInstance('SHA-256').digest(file.bytes).encodeHex().toString() }
+    new File(receipt).text = JsonOutput.prettyPrint(JsonOutput.toJson([
+        task: task.path,
+        failure: state.failure?.toString(),
+        compiler: task.javaCompiler.get().executablePath.asFile.absolutePath,
+        sourceCompatibility: task.sourceCompatibility,
+        targetCompatibility: task.targetCompatibility,
+        destination: task.destinationDirectory.get().asFile.absolutePath,
+        sources: task.source.files.sort().collect { [path: it.absolutePath, sha256: sha256(it)] },
+        classpath: files(task.classpath.files),
+        bootstrapClasspath: files(task.options.bootstrapClasspath?.files ?: []),
+        executed: state.executed,
+        didWork: state.didWork,
+        skipped: state.skipped,
+        skipMessage: state.skipMessage,
+        upToDate: state.upToDate,
+    ])) + '\n'
+}
