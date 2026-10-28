@@ -28,6 +28,11 @@ public final class PurpleSyncInventory {
     final long[] editDates;
     final byte[][] bytes;
     private final long totalBytes;
+    private PurpleSyncChatMoveIO.RecordReceipt[] receipts;
+    private PurpleSyncScanner.Result scanReceipt;
+    long readSequence() { return scanReceipt==null?0:scanReceipt.readSequence; }
+    boolean ownedScan() { return scanReceipt!=null && scanReceipt.matches(origin,chat,ids); }
+    PurpleSyncChatMoveIO.RecordReceipt receipt(int i) { return receipts == null ? null : receipts[i]; }
 
     PurpleSyncInventory(long accountUserId, boolean scanComplete, int[] ids,
             int[] transport, long[] documentIds, long[] editDates,
@@ -108,6 +113,12 @@ public final class PurpleSyncInventory {
         private long[] editDates = new long[8];
         private byte[][] bytes = new byte[8][];
         private int count;
+        private final java.util.Map<Integer,PurpleSyncChatMoveIO.RecordReceipt> receipts = new java.util.HashMap<>();
+
+        Builder fetched(PurpleSyncReader.Row row) {
+            if (row.receipt != null) receipts.put(row.id, row.receipt);
+            return fetched(row.id,row.documentId,row.editDate,row.bytes);
+        }
 
         public Builder(long accountUserId) {
             this(accountUserId,PurpleSyncChatCore.Peer.self(),null);
@@ -133,13 +144,20 @@ public final class PurpleSyncInventory {
             return add(id, outcome, documentId, editDate, null);
         }
 
+        PurpleSyncInventory build(PurpleSyncScanner.Result scan) {
+            PurpleSyncInventory value=build(scan.complete);value.scanReceipt=scan;return value;
+        }
+
         public PurpleSyncInventory build(boolean scanComplete) {
-            return new PurpleSyncInventory(accountUserId,chat,origin,scanComplete,
+            PurpleSyncInventory value = new PurpleSyncInventory(accountUserId,chat,origin,scanComplete,
                     Arrays.copyOf(ids, count),
                     Arrays.copyOf(transport, count),
                     Arrays.copyOf(documentIds, count),
                     Arrays.copyOf(editDates, count),
                     Arrays.copyOf(bytes, count));
+            value.receipts = new PurpleSyncChatMoveIO.RecordReceipt[count];
+            for (int i=0;i<count;++i) value.receipts[i]=receipts.get(ids[i]);
+            return value;
         }
 
         private Builder add(int id, int outcome, long documentId,

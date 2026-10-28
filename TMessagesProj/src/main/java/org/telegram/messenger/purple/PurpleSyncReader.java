@@ -24,8 +24,14 @@ final class PurpleSyncReader {
         final long documentId;
         final long editDate;
         final byte[] bytes;
+        final PurpleSyncChatMoveIO.RecordReceipt receipt;
 
         Row(int id, int outcome, long documentId, long editDate, byte[] bytes) {
+            this(id, outcome, documentId, editDate, bytes, null);
+        }
+
+        Row(int id, int outcome, long documentId, long editDate, byte[] bytes, PurpleSyncChatMoveIO.RecordReceipt receipt) {
+            this.receipt = receipt;
             this.id = id;
             this.outcome = outcome;
             this.documentId = documentId;
@@ -138,10 +144,11 @@ final class PurpleSyncReader {
             return;
         }
         download = operation.client.download(message,
-                operation.guard(file -> onFile(message, file)));
+                operation.guard(file -> onFile(lookup, file)));
     }
 
-    private void onFile(PurpleSyncClient.Message message, File file) {
+    private void onFile(PurpleSyncClient.Lookup opening, File file) {
+        PurpleSyncClient.Message message = opening.message;
         download = null;
         final long documentId = message.documentId;
         final long editDate = message.editDate > 0 ? message.editDate : 0;
@@ -171,8 +178,11 @@ final class PurpleSyncReader {
             requesting=false;
             boolean unchanged=fresh!=null && fresh.status==PurpleSyncClient.LookupStatus.Found
                     && operation.client.contains(fresh.message) && PurpleSyncChatIO.same(message,fresh.message);
+            PurpleSyncChatMoveIO.RecordReceipt receipt = unchanged && opening.route != null
+                    ? PurpleSyncChatMoveIO.RecordReceipt.seal(opening, fresh, bytes) : null;
+            if (opening.route != null && receipt == null) unchanged = false;
             complete(new Row(message.id,unchanged?PurpleSyncInventory.FETCHED:PurpleSyncInventory.CHANGED,
-                    documentId,editDate,unchanged?bytes:null));
+                    documentId,editDate,unchanged?bytes:null,receipt));
         }));
     }
 

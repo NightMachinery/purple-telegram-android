@@ -11,16 +11,27 @@ import java.util.List;
 
 final class PurpleSyncScanner {
     static final int PAGE_SIZE = 100;
+    private static final java.util.concurrent.atomic.AtomicLong reads = new java.util.concurrent.atomic.AtomicLong();
+    static long readSequence() { return reads.get(); }
 
     static final class Result {
         final boolean complete;
         final int[] candidates;
         final long scanned;
+        final long readSequence;
 
-        Result(boolean complete, int[] candidates, long scanned) {
+        private final PurpleSyncChatOrigin origin;
+        private final PurpleSyncChatCore.Peer chat;
+        private final int[] sealedIds;
+        private Result(boolean complete, int[] candidates, long scanned, PurpleSyncChatOrigin origin, PurpleSyncChatCore.Peer chat,long readSequence) {
+            this.readSequence=readSequence;
+            this.origin=origin;this.chat=chat;sealedIds=candidates.clone();
             this.complete = complete;
             this.candidates = candidates;
             this.scanned = scanned;
+        }
+        boolean matches(PurpleSyncChatOrigin origin,PurpleSyncChatCore.Peer chat,int[] ids) {
+            return complete && this.origin!=null && this.origin.equals(origin) && this.chat.equals(chat) && Arrays.equals(sealedIds,ids);
         }
     }
 
@@ -31,6 +42,9 @@ final class PurpleSyncScanner {
     private final PurpleSyncClient.Operation operation;
     private final PurpleSyncTransport.Progress progress;
     private final Done done;
+    private final PurpleSyncChatOrigin origin;
+    private final PurpleSyncChatCore.Peer chat;
+    private final long readSequence=reads.incrementAndGet();
     private int offset;
     private long scanned;
     private int[] candidates = new int[16];
@@ -41,6 +55,7 @@ final class PurpleSyncScanner {
     PurpleSyncScanner(PurpleSyncClient.Operation operation,
             PurpleSyncTransport.Progress progress, Done done) {
         this.operation = operation;
+        origin=operation.client.origin();chat=operation.client.chat();
         this.progress = progress;
         this.done = done;
     }
@@ -67,7 +82,7 @@ final class PurpleSyncScanner {
 
     private void onHistory(PurpleSyncClient.History history) {
         requesting = false;
-        if (history.messages == null) {
+        if (!java.util.Objects.equals(origin,operation.client.origin()) || !chat.equals(operation.client.chat()) || history.messages == null) {
             operation.client.log("history page after " + offset
                     + " failed: " + history.error);
             finish(false);
@@ -125,6 +140,6 @@ final class PurpleSyncScanner {
     private void finish(boolean complete) {
         done.onScanned(new Result(complete,
                 complete ? Arrays.copyOf(candidates, candidateCount) : new int[0],
-                scanned));
+                scanned,origin,chat,readSequence));
     }
 }

@@ -15,7 +15,8 @@ final class PurpleSyncChatIOCases {
     static TLRPC.TL_message doc(Peer chat,int id,long size) {
         TLRPC.TL_message row=mark(chat,id,50);row.message=PurpleSyncPost.CAPTION;
         row.media=new TLRPC.TL_messageMediaDocument();row.media.document=new TLRPC.TL_document();
-        row.media.document.id=100+id;row.media.document.size=size;
+        row.flags|=1<<9;row.media.flags|=1;
+        row.media.document.id=100+id;row.media.document.size=size;row.media.document.file_reference=new byte[0];row.media.document.mime_type="application/json";
         TLRPC.TL_documentAttributeFilename name=new TLRPC.TL_documentAttributeFilename();name.file_name=PurpleSyncPost.RECORD_FILE_NAME;row.media.document.attributes.add(name);
         return row;
     }

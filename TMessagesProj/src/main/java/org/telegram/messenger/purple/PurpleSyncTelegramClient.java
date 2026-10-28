@@ -298,9 +298,7 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
                         if(operation[0].live())noteWriteFailure(error);
                         int resultId=error==null?PurpleSyncChatUpload.receipt(io,response,randomId,id)
                                 :id>0&&"MESSAGE_NOT_MODIFIED".equals(error.text)?id:0;
-                        if(error==null&&response instanceof TLRPC.Updates&&loginCurrent()){
-                            org.telegram.messenger.Utilities.stageQueue.postRunnable(()->{if(loginCurrent())org.telegram.messenger.MessagesController.getInstance(account).processUpdates((TLRPC.Updates)response,false);});
-                        }
+                        if(error==null)processUpdates(origin(),response);
                         reply.onReply(new PurpleSyncAutoUpload.Result(resultId,resultId>0?null:error!=null?error.text:"OutcomeUnknown",error!=null?error.code:0));
                     },ConnectionsManager.RequestFlagFailOnServerErrors);
                 };
@@ -311,6 +309,12 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
         operation[0] = new PurpleSyncAutoUpload(account, messageId, bytes, previous,
             () -> isActive() && guard.getAsBoolean(), port, reply);
         operation[0].start();return operation[0];
+    }
+    void processUpdates(PurpleSyncChatOrigin captured,TLObject response) {
+        if (captured==null || !captured.equals(origin()) || !(response instanceof TLRPC.Updates) || !loginCurrent()) return;
+        org.telegram.messenger.Utilities.stageQueue.postRunnable(()->{
+            if(loginCurrent())org.telegram.messenger.MessagesController.getInstance(account).processUpdates((TLRPC.Updates)response,false);
+        });
     }
     private void writeEffect(java.util.function.BooleanSupplier live,PurpleSyncTransport.PostAuthority authority,
             java.util.function.Function<Reply<PurpleSyncAutoUpload.Result>,Integer> wire,Reply<PurpleSyncAutoUpload.Result> done,

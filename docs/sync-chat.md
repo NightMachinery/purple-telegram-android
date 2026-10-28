@@ -195,3 +195,15 @@ The account-scoped move store now retains canonical journals, immutable state an
 base images, checked directory barriers and stable send identities. Carry artifacts
 fence ordinary recovery and writers across restart. This storage slice sends
 nothing and leaves outward move execution held. See [the storage contract](sync-chat-move.md).
+
+## Carry transport seam
+
+Typed sealed record receipts, worker-owned send reservations and opaque carry
+permits are available for the later move executor. They preserve ordinary
+publishing eligibility and the Self-only automatic guard. No carry callsite,
+Telegram dispatch or cleanup is activated. See [carry I/O and transport authority](sync-chat-move.md#typed-carry-io-and-transport-authority) for identities, unknown outcomes, D8 absence rules and qualification gaps.
+
+Carry reconciliation tickets include a nonrepeating store-shared slot generation.
+A delayed renewal must preserve the opening epoch and journal revision for both
+request effects and own uploads. The host suite pins uncertain-send ABA and
+late cross-revision/cross-epoch callbacks.

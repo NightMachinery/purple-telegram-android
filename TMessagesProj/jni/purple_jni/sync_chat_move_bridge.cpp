@@ -31,6 +31,7 @@ template <> const auto &Values<SyncCarryMode>() {
         EnumValue{SyncCarryMode::Switch, u"Switch"},
         EnumValue{SyncCarryMode::Follow, u"Follow"},
         EnumValue{SyncCarryMode::Fill, u"Fill"},
+        EnumValue{SyncCarryMode::RepairMark, u"RepairMark"},
     };
     return values;
 }
@@ -102,6 +103,8 @@ template <> const auto &Values<SyncCarryPendingStatus>() {
         EnumValue{SyncCarryPendingStatus::LocalCopyRequired, u"LocalCopyRequired"},
         EnumValue{SyncCarryPendingStatus::InvalidStage, u"InvalidStage"},
         EnumValue{SyncCarryPendingStatus::LibraryPending, u"LibraryPending"},
+        EnumValue{SyncCarryPendingStatus::ReconciliationRequired, u"ReconciliationRequired"},
+        EnumValue{SyncCarryPendingStatus::NotProtected, u"NotProtected"},
     };
     return values;
 }
@@ -124,6 +127,8 @@ template <> const auto &Values<SyncCarryPhase>() {
         EnumValue{SyncCarryPhase::Cleanup, u"Cleanup"},
         EnumValue{SyncCarryPhase::Done, u"Done"},
         EnumValue{SyncCarryPhase::Aborted, u"Aborted"},
+        EnumValue{SyncCarryPhase::CleanupSkipped, u"CleanupSkipped"},
+        EnumValue{SyncCarryPhase::InterruptedAbandoned, u"InterruptedAbandoned"},
     };
     return values;
 }
@@ -187,6 +192,8 @@ template <> const auto &Values<SyncCarryEventKind>() {
         EnumValue{SyncCarryEventKind::CacheCompleted, u"CacheCompleted"},
         EnumValue{SyncCarryEventKind::CleanupCompleted, u"CleanupCompleted"},
         EnumValue{SyncCarryEventKind::Cancel, u"Cancel"},
+        EnumValue{SyncCarryEventKind::SkipCleanup, u"SkipCleanup"},
+        EnumValue{SyncCarryEventKind::CleanupChatGone, u"CleanupChatGone"},
     };
     return values;
 }
@@ -556,6 +563,9 @@ SyncCarryJournalStart Start(const QJsonObject &o) {
     r.markRequestId = Text(o.value(u"markRequestId"_q));
     r.ownRequestId = Text(o.value(u"ownRequestId"_q));
     r.removeOldMarkAuthorized = Flag(o, u"removeOldMarkAuthorized"_q);
+    if (o.contains(u"loginAuthority"_q)) r.loginAuthority = Text(o.value(u"loginAuthority"_q));
+    if (o.contains(u"oldRead"_q)) r.oldRead = Enum<SyncChatDirectRead>(o.value(u"oldRead"_q));
+    if (o.contains(u"sourceAccess"_q)) r.sourceAccess = Enum<SyncCarrySourceAccess>(o.value(u"sourceAccess"_q));
     return r;
 }
 
@@ -606,6 +616,7 @@ QJsonObject JournalResult(const SyncCarryJournalResult &r) {
         result.insert(u"nextAction"_q, Name(NextSyncCarryJournalAction(parsed.journal)));
         result.insert(u"phase"_q, Name(parsed.journal.phase));
         result.insert(u"revision"_q, QString::number(parsed.journal.revision));
+        result.insert(u"expectedAction"_q, Name(parsed.journal.expectedAction));
     }
     return result;
 }
@@ -667,9 +678,14 @@ QJsonObject Evaluate(const QString &op, const QJsonObject &o) {
                 {u"source"_q, PeerText(e.source)}, {u"target"_q, PeerText(e.target)},
                 {u"revision"_q, QString::number(e.revision)}, {u"kind"_q, Name(e.kind)}, {u"outcome"_q, Name(e.outcome)}}}};
         }
-        if (op == u"advance"_q) return JournalResult(AdvanceSyncCarryJournal(j, Event(Object(o.value(u"event"_q)))));
+        if (op == u"advance"_q) return JournalResult(AdvanceSyncCarryJournal(j, Event(Object(o.value(u"event"_q))), o.value(u"currentLogin"_q).toString()));
         if (op == u"resume"_q) return JournalResult(ResumeSyncCarryJournal(j, State(o.value(u"state"_q)),
-            Flag(o, u"stateAbsentConfirmed"_q), Flag(o, u"stateDurableConfirmed"_q)));
+            Flag(o, u"stateAbsentConfirmed"_q), Flag(o, u"stateDurableConfirmed"_q), o.value(u"currentLogin"_q).toString()));
+        if (op == u"readers"_q) {
+            const auto verdict = CheckSyncCarryReaders(j, Eligibility(o.value(u"eligibility"_q)));
+            return {{u"status"_q, u"Valid"_q}, {u"verdict"_q, verdict == SyncCarryReaderVerdict::Hold
+                ? u"Hold"_q : verdict == SyncCarryReaderVerdict::WarnAndProceed ? u"WarnAndProceed"_q : u"Proceed"_q}};
+        }
         if (op == u"commands"_q) return {{u"status"_q, u"Valid"_q},
             {u"forwards"_q, References(SyncCarryJournalForwards(j))}, {u"postsOwn"_q, SyncCarryJournalPostsOwnRecord(j)}};
         if (op == u"checkDeletion"_q || op == u"checkOldMarkDeletion"_q) {

@@ -214,3 +214,133 @@ writes remain at `PurpleAccountSyncStore.initialize`, `stageConfig`,
 to those writes. No new main-thread sidecar read or durability barrier is allowed.
 
 This establishes host behavior, not phone lifecycle, power-loss or Telegram safety.
+
+## Typed carry I/O and transport authority
+
+A5c adds worker-owned `PurpleSyncChatMoveIO` and pure
+`PurpleSyncChatMoveRequests`. It supplies no executor, UI action, live request
+caller or cleanup activation. Ordinary publishing still requires its existing
+state, binding, consent and queue admission. Automatic sync stays Self-only.
+
+A typed reader seals each downloaded record against a second exact native
+messages response. The receipt owns serialized TL bytes and the exact record
+body, captured account/RAM login, typed chat, message id, positive server date,
+document id and edit date. Sealing checks C0 ownership, exact peer/id, document
+constructor, declared size, filename/caption and response flags/counts. Invalid,
+changed, inaccessible and incomplete evidence remains unknown. Newer-major
+records accepted by shared core retain their original bytes.
+
+Carry inventory conversion requires the actual scanner's complete receipt and
+one sealed record per candidate id. The scanner captures the route and a
+monotonic read sequence before reading its first page. A hand-built complete
+inventory cannot prove absence. Conversion delegates message construction and
+head selection to shared core, without reimplementing its version rules.
+
+Forward requests retain captured source and target InputPeers, set silent and
+drop_author, and keep media captions. Channel exact reads/deletes use their
+channel constructors; ordinary peers use ordinary constructors, including when
+the numeric ids coincide. Deletes contain one exact positive message id and
+never whole-history deletion. `cleanupEnabled()` stays false. A pure request
+builder confers no deletion authority.
+
+### Reservation and permits
+
+The reviewed core M2B5b gitlink is required for v2 delivery intents and the
+reader baseline fixed before the first outward write. Android keeps the full
+256-bit persistent login hash in its private envelope. Core v2's 32-hex login
+token is the first 128 bits of that hash; its current-login argument uses the
+same mapping. The RAM route UUID remains separate. No login value is logged.
+Existing v1 journals remain readable but cannot issue carry permits.
+
+Before an intent can issue effects, reserve every required forward random id,
+core own/mark random id mapping and own upload file id. The reservation is a
+single durable checked write. Canonical nonzero unsigned 64-bit decimal ids
+retain all bits, remain distinct and survive retries/restart. No permit is
+returned if the envelope cannot accommodate every future positive ack id.
+
+Only a durable core DeliveryPrepared or MarkPostPrepared permits admission.
+The private permit constructor seals operation, revision, O/N, payload hash,
+request/file ids, account/login, current store epoch and fresh typed peers.
+Fresh admission recomputes resolution and checks the expected winner/cache,
+readability, eligibility and readers. Protected O can provide a retained own
+version but cannot authorize forwarding. New known readers keep the accepted
+baseline and a sticky warning; unknown readers or lost rights hold.
+
+A carry permit can target N before ordinary settings state names N. Its frozen
+own body comes from the journal plan; ordinary callers cannot replace it.
+The upload port renews asynchronously through the worker before send and
+requires a strictly newer permit with the same opening epoch, journal revision
+and effect identity. Duplicate,
+opening or stale renewal callbacks cannot dispatch. The common request
+controller owns retry/flood scheduling. Combined waits use the latest active
+deadline and monotonic scheduling.
+
+Store transitions, failure or close replace a RAM epoch and revoke all old
+permits. Shared worker-owned slot ownership prevents two wrappers from issuing
+or reconciling one live effect. Closing an older wrapper releases only its
+exact tokens. GUI capability checks inspect RAM and sealed bytes only. File,
+JSON, hashing and store work stays on the worker; future callers must provide
+an observer-free, lock-free RAM current predicate and queue store closure onto that worker. Transport/upload helpers borrow permits; the worker owner retains them through outcome recording and closes the I/O adapter on every terminal or cancellation path.
+
+### Unknown outcomes and absence
+
+Acknowledgements are hints. Strict Updates receipts match request random id,
+positive server id, typed peer and C0 ownership. Short replies are accepted
+only on non-channel paths. Captured-account Updates processing remains valid
+after local cancellation; stale callbacks cannot confirm or dispatch new work.
+Exact metadata/bytes/metadata and a complete N inventory still establish the
+record evidence used by core.
+
+D8 absence rules:
+
+- Prepared, never-issued slots can receive their first permit after durable
+  intent and fresh admission.
+- Issued or unknown record slots, including after restart, hold until a new
+  complete scoped destination scan begun after a worker read ticket finishes.
+  An exact matching record hash verifies the slot. Complete absence permits
+  retry with the same persisted ids. Incomplete, older, wrong-scope, corrupt or
+  substituted evidence holds.
+- An active slot cannot be reconciled. Each durable transport write replaces
+  nonrepeating RAM slot-generation tokens shared by every wrapper on that store.
+  Tickets bind the token as well as the opening epoch and scanner sequence, so an
+  overlapping ticket cannot reuse absence across an unknown/prepared/unknown cycle.
+  Reconciliation consumes its ticket once.
+- A mark read requires the saved request-bound acknowledgement id, exact
+  canonical text, positive date, typed target, C0 ownership and no media.
+  Empty search, zero-row exact read, messageEmpty and unknown transport never
+  prove that an issued mark was unsent. Without matched-request evidence it
+  holds, including after restart.
+- Changed winner and login do not erase issued effects or retarget them.
+  Abandon/recovery decisions belong to shared core and the later executor.
+
+### Private transport extension
+
+The bounded carry envelope adds `transport`, version1, and
+`transport_sha256`. Absence of both means no reservation yet. The checksum
+covers domain `purple-sync-carry-transport-v1`, account, binding hash, full
+persistent login, operation, integer mode, O/N and the whole transport object.
+It detects corruption/substitution and is not a secret-key MAC. Unknown fields
+are preserved. Core journal/state hash meanings do not change.
+
+`entries` is keyed by SHA256(kind + ':' + source_id + ':' + record_hash).
+Each entry holds kind (forward/own/mark), hash, integer source_id, canonical
+random_id/file_id strings and state (prepared/issued/unknown/verified). Only
+forward has a positive source id; only own has a nonzero file id. Optional
+ack_id is a positive request-bound hint. Readers retain accepted members,
+count strings and warning, plus a sticky reader_warning. Malformed or newer
+extensions, duplicate ids, mismatched scope and overflow refuse without
+truncating the existing journal. The 4 MiB/1024-entry limits remain.
+
+### Host and native qualification
+
+The carry-I/O host driver loads actual AGP business classes and host JNI. It
+uses real generated TL byte encoding/decoding with controlled Android platform,
+file/download, request and timer ports. It exercises typed equal-number routes,
+C0/final metadata, durable identities, restart/uncertain reconciliation,
+reader/login fences, failure/capacity, cancellation, stale/duplicate callbacks
+and late Updates. No live request is dispatched.
+
+The full host suite and affected arm64 units qualify compilation and synthetic
+contracts. They do not establish Telegram forwarding behavior, Android UI or
+server acceptance, physical device durability, or production move execution.
+Those require later separately authorized qualification.

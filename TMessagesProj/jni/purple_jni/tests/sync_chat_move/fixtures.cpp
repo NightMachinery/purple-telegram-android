@@ -13,6 +13,7 @@ std::set<QByteArray> Seen;
 template <typename T> QString Name(T value);
 template <> QString Name(SyncCarryMode value) {
     switch (value) {
+    case SyncCarryMode::RepairMark: return u"RepairMark"_q;
     case SyncCarryMode::Switch: return u"Switch"_q;
     case SyncCarryMode::Follow: return u"Follow"_q;
     case SyncCarryMode::Fill: return u"Fill"_q;
@@ -73,6 +74,8 @@ template <> QString Name(SyncPlaylistCarryStatus value) {
 }
 template <> QString Name(SyncCarryPendingStatus value) {
     switch (value) {
+    case SyncCarryPendingStatus::NotProtected: return u"NotProtected"_q;
+    case SyncCarryPendingStatus::ReconciliationRequired: return u"ReconciliationRequired"_q;
     case SyncCarryPendingStatus::Invalid: return u"Invalid"_q;
     case SyncCarryPendingStatus::Ready: return u"Ready"_q;
     case SyncCarryPendingStatus::NoPending: return u"NoPending"_q;
@@ -86,6 +89,8 @@ template <> QString Name(SyncCarryPendingStatus value) {
 }
 template <> QString Name(SyncCarryPhase value) {
     switch (value) {
+    case SyncCarryPhase::InterruptedAbandoned: return u"InterruptedAbandoned"_q;
+    case SyncCarryPhase::CleanupSkipped: return u"CleanupSkipped"_q;
     case SyncCarryPhase::ResolvePending: return u"ResolvePending"_q;
     case SyncCarryPhase::WritePendingState: return u"WritePendingState"_q;
     case SyncCarryPhase::RetirePendingStage: return u"RetirePendingStage"_q;
@@ -145,6 +150,8 @@ template <> QString Name(SyncCarryMarkOutcome value) {
 }
 template <> QString Name(SyncCarryEventKind value) {
     switch (value) {
+    case SyncCarryEventKind::CleanupChatGone: return u"CleanupChatGone"_q;
+    case SyncCarryEventKind::SkipCleanup: return u"SkipCleanup"_q;
     case SyncCarryEventKind::PendingPrepared: return u"PendingPrepared"_q;
     case SyncCarryEventKind::StateObserved: return u"StateObserved"_q;
     case SyncCarryEventKind::StageRetired: return u"StageRetired"_q;
@@ -337,9 +344,9 @@ SyncCarryJournalEvent Reopen(SyncCarryJournalEvent event) {
     if (event.plan) event.plan = Reopen(*event.plan);
     return event;
 }
-SyncCarryJournalResult Advance(const SyncCarryJournal &j,const SyncCarryJournalEvent &e) {
-    const auto r = AdvanceSyncCarryJournal(j,e);
-    if(SerializeSyncCarryJournal(j)) { auto input = Journal(j); input.insert(u"event"_q,Event(e)); Emit(u"advance"_q,input,Result(AdvanceSyncCarryJournal(Reopen(j),Reopen(e)))); }
+SyncCarryJournalResult Advance(const SyncCarryJournal &j,const SyncCarryJournalEvent &e,const QString &login={}) {
+    const auto r = AdvanceSyncCarryJournal(j,e,login);
+    if(SerializeSyncCarryJournal(j)) { auto input = Journal(j); input.insert(u"event"_q,Event(e)); input.insert(u"currentLogin"_q,login); Emit(u"advance"_q,input,Result(AdvanceSyncCarryJournal(Reopen(j),Reopen(e),login))); }
     return r;
 }
 SyncCarryJournalResult Begin(const SyncCarryJournalStart &s) {
@@ -352,13 +359,14 @@ SyncCarryJournalResult Begin(const SyncCarryJournalStart &s) {
     input.insert(u"readerConsentAccepted"_q,s.readerConsentAccepted); input.insert(u"operationConfirmed"_q,s.operationConfirmed);
     input.insert(u"markText"_q,s.markText); input.insert(u"markRequestId"_q,s.markRequestId); input.insert(u"ownRequestId"_q,s.ownRequestId);
     input.insert(u"removeOldMarkAuthorized"_q,s.removeOldMarkAuthorized);
+    input.insert(u"loginAuthority"_q,s.loginAuthority); input.insert(u"oldRead"_q,Name(s.oldRead)); input.insert(u"sourceAccess"_q,Name(s.sourceAccess));
     auto reopened=s; reopened.state=Reopen(s.state);
     Emit(u"begin"_q,input,Result(BeginSyncCarryJournal(reopened))); return r;
 }
-SyncCarryJournalResult Resume(const SyncCarryJournal &j,const std::optional<SyncLocalState> &s,bool absent,bool durable=false) {
-    const auto r = ResumeSyncCarryJournal(j,s,absent,durable);
+SyncCarryJournalResult Resume(const SyncCarryJournal &j,const std::optional<SyncLocalState> &s,bool absent,bool durable=false,const QString &login={}) {
+    const auto r = ResumeSyncCarryJournal(j,s,absent,durable,login);
     if(SerializeSyncCarryJournal(j)) { auto input=Journal(j); input.insert(u"state"_q,State(s));
-        input.insert(u"stateAbsentConfirmed"_q,absent); input.insert(u"stateDurableConfirmed"_q,durable); Emit(u"resume"_q,input,Result(ResumeSyncCarryJournal(Reopen(j),Reopen(s),absent,durable))); }
+        input.insert(u"currentLogin"_q,login); input.insert(u"stateAbsentConfirmed"_q,absent); input.insert(u"stateDurableConfirmed"_q,durable); Emit(u"resume"_q,input,Result(ResumeSyncCarryJournal(Reopen(j),Reopen(s),absent,durable,login))); }
     return r;
 }
 SyncCarryJournalAction Next(const SyncCarryJournal &j) {

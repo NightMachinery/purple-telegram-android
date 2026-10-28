@@ -17,6 +17,7 @@ final class PurpleSyncCheck implements PurpleSyncTelegramTransport.Task,
     private PurpleSyncReader reader;
     private PurpleSyncInventory inventory;
     private boolean queuedAtStart;
+    private PurpleSyncScanner.Result scanReceipt;
 
     PurpleSyncCheck(PurpleSyncClient.Operation operation,
             PurpleSyncTransport.Progress progress,
@@ -83,6 +84,7 @@ final class PurpleSyncCheck implements PurpleSyncTelegramTransport.Task,
                     .build(false));
             return;
         }
+        scanReceipt=scan;
         reader = new PurpleSyncReader(operation, scan.candidates, progress,
                 this::onRead);
         reader.start();
@@ -94,12 +96,12 @@ final class PurpleSyncCheck implements PurpleSyncTelegramTransport.Task,
                 new PurpleSyncInventory.Builder(operation.client.userId(),operation.client.chat(),operation.client.origin());
         for (PurpleSyncReader.Row row : rows) {
             if (row.outcome == PurpleSyncInventory.FETCHED) {
-                builder.fetched(row.id, row.documentId, row.editDate, row.bytes);
+                builder.fetched(row);
             } else {
                 builder.failed(row.id, row.outcome, row.documentId, row.editDate);
             }
         }
-        askQueue(builder.build(true));
+        askQueue(builder.build(scanReceipt));
     }
 
     private void askQueue(PurpleSyncInventory result) {

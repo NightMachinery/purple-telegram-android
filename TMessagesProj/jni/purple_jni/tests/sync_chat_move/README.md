@@ -22,6 +22,5 @@ retained-base state admission, invalid base64/UTF-8 and oversize refusal. The
 business-class origin is checked against the real AGP output before replay.
 
 These are pure host tests. They do not perform file-store recovery, Telegram
-calls, device work or UI actions. Storage/executor contracts and native transport
-qualification belong to later slices. See docs/sync-chat-move.md for the wire
+calls, device work or UI actions. The core v2 login/intent/reader projections are included, while v1 replay remains unchanged. Storage and typed transport have separate registered suites; executor and native transport qualification belong to later slices. See docs/sync-chat-move.md for the wire
 contract and retention boundary.

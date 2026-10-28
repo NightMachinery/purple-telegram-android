@@ -27,6 +27,36 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
     private byte[] canonical;
     private long objectBytes;
     private int fault;
+    private volatile Object permitEpoch = new Object();
+    private final java.util.Map<String,Object> liveSlots = new java.util.HashMap<>();
+    private final java.util.Map<String,Object> slotGenerations = new java.util.HashMap<>();
+    Object slotGeneration(String key) { return slotGenerations.computeIfAbsent(key,ignored->new Object()); }
+    Object permitEpoch() { return permitEpoch; }
+    boolean permitCurrent(Object epoch) { return thread != null && epoch == permitEpoch; }
+    boolean claimSlot(String key,Object token) { if (liveSlots.containsKey(key)) return liveSlots.get(key) == token; liveSlots.put(key,token); return true; }
+    void releaseSlot(String key,Object token) { if (liveSlots.get(key) == token) liveSlots.remove(key); }
+    boolean slotLive(String key) { return liveSlots.containsKey(key); }
+    String loginAuthority() { return authority; }
+    String journalLoginAuthority() { return authority.substring(0,32); }
+    String accountKey() { return account; }
+    JSONObject transport() throws IOException {
+        unchanged();
+        try { return metadata == null || !metadata.has("transport") ? new JSONObject() : new JSONObject(metadata.getJSONObject("transport").toString()); }
+        catch (Exception e) { throw failure(e); }
+    }
+    void transport(JSONObject value,boolean checkOnly) throws IOException {
+        try {
+            unchanged(); if (canonical == null) throw new IOException("InvalidTransition");
+            JSONObject result = codec("wrap", json("wrapper",blob(journal.bytes),"journal",blob(canonical),
+                    "objects",objects,"send_identities",identities,"transport",value));
+            if (!checkOnly) {
+                journal = write(journalFile,journal,unblob(result,"bytes"),LIMIT); metadata=result;
+                Iterator<String> keys=value.getJSONObject("entries").keys();
+                while(keys.hasNext())slotGenerations.put(keys.next(),new Object());
+            }
+        } catch (Exception e) { close(); throw failure(e); }
+    }
+
 
     PurpleSyncChatMoveStore(PurpleSyncFileContext context, String device) throws Exception {
         this(context.files.syncDirectory, new PurpleAccountSyncStore(context), context.origin.slot,
@@ -79,7 +109,9 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
     }
     private void requireCurrent() throws IOException {
         PurpleAccountFileSnapshot.worker();
-        if (thread != Thread.currentThread() || !current.getAsBoolean()) throw new IOException("AccountUnbound");
+        Object openingEpoch=permitEpoch;
+        if (thread != Thread.currentThread() || !current.getAsBoolean() || thread != Thread.currentThread()
+                || openingEpoch!=permitEpoch) throw new IOException("AccountUnbound");
         if (production) {
             try { if (!authority.equals(PurpleSyncChatCache.authority(PurpleArchiveLogin.context(slot)))) throw new IOException("AccountUnbound"); }
             catch (Exception e) { throw new IOException("AccountUnbound", e); }
@@ -202,7 +234,7 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
     }
     private JSONObject scoped(byte[] value) throws Exception {
         JSONObject j = new JSONObject(new String(value, StandardCharsets.UTF_8));
-        return json("account", account, "source", j.getString("source"), "target", j.getString("target"), "journal", blob(value));
+        return json("account", account, "source", j.getString("source"), "target", j.getString("target"), "journal", blob(value), "currentLogin",journalLoginAuthority());
     }
     private PurpleSyncChatMoveCore.Result core(String op, JSONObject input) { return PurpleSyncChatMoveCore.request(op, bytes(input)); }
     private JSONObject event(String kind) throws Exception {
@@ -214,7 +246,7 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
         if (value.length == 0) return next;
         JSONObject wrapper = codec("wrap", json("wrapper", blob(journal.bytes), "journal", blob(value), "objects", objects, "send_identities", identities));
         byte[] encoded = unblob(wrapper, "bytes");
-        journal = write(journalFile, journal, encoded, LIMIT); metadata = wrapper; canonical = value;
+        journal = write(journalFile, journal, encoded, LIMIT); metadata = wrapper; canonical = value; permitEpoch = new Object(); liveSlots.clear();slotGenerations.clear();
         return next;
     }
     PurpleSyncChatMoveCore.Result begin(JSONObject input) throws IOException {
@@ -225,6 +257,7 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
             barrier(stateFile, state, LIMIT);
             input = new JSONObject(input.toString()); input.put("state", state.bytes == null ? JSONObject.NULL : blob(state.bytes));
             input.put("stateAbsentConfirmed", state.bytes == null);
+            if (production) input.put("loginAuthority",journalLoginAuthority());
             String[] pending = new File(root, "pending").list();
             input.put("otherStagesPresent", input.optBoolean("otherStagesPresent") || pending != null && pending.length != 0
                     && (state.bytes == null || PurpleAccountSyncCore.inspectState(state.bytes).pendingSeq == 0));
@@ -367,7 +400,7 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
     byte[] journalBytes() { return canonical == null ? null : canonical.clone(); }
     byte[] stateBytes() { return state == null || state.bytes == null ? null : state.bytes.clone(); }
     void fault(int point) { fault = point; }
-    @Override public void close() { owner.close(); thread = null; state = null; journal = null; canonical = null; metadata = null; objects = new JSONObject(); identities = new JSONObject(); objectBytes = 0; }
+    @Override public void close() { permitEpoch = new Object(); liveSlots.clear();slotGenerations.clear(); owner.close(); thread = null; state = null; journal = null; canonical = null; metadata = null; objects = new JSONObject(); identities = new JSONObject(); objectBytes = 0; }
     private static byte[] bytes(JSONObject input) { return input.toString().getBytes(StandardCharsets.UTF_8); }
     private static String blob(byte[] value) { return PurpleSyncRetainedBases.encode(value); }
     private static byte[] unblob(JSONObject value, String key) throws Exception { return PurpleSyncRetainedBases.decode(value.getString(key)); }

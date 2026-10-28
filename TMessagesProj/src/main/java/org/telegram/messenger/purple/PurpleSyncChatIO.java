@@ -83,7 +83,7 @@ final class PurpleSyncChatIO {
         if(message==null || message.id!=id || !matches(message)
                 || message.getClass()!=TLRPC.TL_message.class && message.getClass()!=TLRPC.TL_messageService.class)
             return PurpleSyncClient.Lookup.failed("WrongExactScope");
-        return PurpleSyncClient.Lookup.found(meta.apply(message));
+        return PurpleSyncClient.Lookup.found(meta.apply(message),this,PurpleSyncChatMoveRequests.snapshot(response));
     }
 
     static boolean ledgerMatches(Peer chat,byte[] state) {

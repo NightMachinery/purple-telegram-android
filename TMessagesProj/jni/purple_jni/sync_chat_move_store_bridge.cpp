@@ -73,7 +73,9 @@ QJsonObject Transport(const QByteArray &bytes) {
     return document.object();
 }
 QByteArray Canonical(const QJsonObject &object) {
-    const auto value = CanonicalizeSyncJson(QJsonDocument(object).toJson(QJsonDocument::Compact));
+    const auto bytes = QJsonDocument(object).toJson(QJsonDocument::Compact);
+    Need(bytes.size() <= 4194304, u"RetentionFull"_q);
+    const auto value = CanonicalizeSyncJson(bytes);
     Need(bool(value));
     return value.canonical;
 }
@@ -264,6 +266,60 @@ QJsonObject FileOperation(const QString &op, const QString &path, const QByteArr
     }
 }
 
+QString TransportHash(const QJsonObject &wrapper) {
+    const auto j = wrapper.value(u"journal"_q).toObject();
+    return SyncCarryRecordHash(Canonical(QJsonObject{
+        {u"domain"_q, u"purple-sync-carry-transport-v1"_q},
+        {u"operation"_q, wrapper.value(u"operation"_q)}, {u"mode"_q, j.value(u"mode"_q)},
+        {u"source"_q, j.value(u"source"_q)}, {u"target"_q, j.value(u"target"_q)},
+        {u"account"_q, wrapper.value(u"account"_q)}, {u"binding_sha256"_q, wrapper.value(u"binding_sha256"_q)},
+        {u"login_authority"_q, wrapper.value(u"login_authority"_q)}, {u"transport"_q, wrapper.value(u"transport"_q)}}));
+}
+void ValidateTransport(const QJsonObject &wrapper) {
+    const auto value = wrapper.value(u"transport"_q);
+    if (value.isUndefined()) { Need(!wrapper.contains(u"transport_sha256"_q)); return; }
+    Need(value.isObject() && wrapper.value(u"transport_sha256"_q) == TransportHash(wrapper));
+    const auto t = value.toObject();
+    Need(t.value(u"version"_q).isDouble() && t.value(u"version"_q).toDouble() == 1);
+    Need(t.value(u"entries"_q).isObject() && t.value(u"reader_warning"_q).isBool() && t.value(u"readers"_q).isObject());
+    const auto j = wrapper.value(u"journal"_q).toObject();
+    Need(j.value(u"version"_q).toInt() == 2 && j.value(u"login_authority"_q).toString() == wrapper.value(u"login_authority"_q).toString().left(32));
+    const auto readers = t.value(u"readers"_q).toObject();
+    Need(readers.value(u"members"_q).isArray() && readers.value(u"warning"_q).isBool());
+    auto members = std::set<QString>();
+    for (const auto &value : readers.value(u"members"_q).toArray()) {
+        Need(value.isString() && !value.toString().isEmpty() && members.insert(value.toString()).second);
+    }
+    for (const auto &name : {u"other_members"_q, u"other_admins"_q}) {
+        const auto value = readers.value(name); Need(value.isString());
+        if (!value.toString().isEmpty()) { auto ok = false; const auto n = value.toString().toULongLong(&ok); Need(ok && QString::number(n) == value.toString()); }
+    }
+    const auto entries = t.value(u"entries"_q).toObject(); Need(entries.size() <= 1024, u"RetentionFull"_q);
+    auto used = std::set<qulonglong>();
+    for (auto i = entries.begin(); i != entries.end(); ++i) {
+        Need(i.value().isObject()); const auto e = i.value().toObject();
+        const auto kind = e.value(u"kind"_q).toString(); const auto hash = e.value(u"hash"_q).toString();
+        const auto source = e.value(u"source_id"_q); const auto state = e.value(u"state"_q).toString();
+        Need((kind == u"forward"_q || kind == u"own"_q || kind == u"mark"_q) && IsSyncCarryHash(hash));
+        Need(source.isDouble() && source.toDouble() == source.toInt() && (kind == u"forward"_q ? source.toInt() > 0 : source.toInt() == 0));
+        Need(i.key() == SyncCarryRecordHash((kind + u':' + QString::number(source.toInt()) + u':' + hash).toUtf8()));
+        Need(state == u"prepared"_q || state == u"issued"_q || state == u"unknown"_q || state == u"verified"_q);
+        auto number = [&](const QString &name, bool nonzero) {
+            const auto v = e.value(name); Need(v.isString()); auto ok = false; const auto n = v.toString().toULongLong(&ok);
+            Need(ok && QString::number(n) == v.toString() && (!nonzero || n)); return n;
+        };
+        const auto random = number(u"random_id"_q, true);
+        Need(used.insert(random).second);
+        const auto own = j.value(u"own_request"_q).toString(), mark = j.value(u"mark_request"_q).toString();
+        const auto text = QString::number(random);
+        Need(kind == u"own"_q ? text == own : kind == u"mark"_q ? text == mark : text != own && text != mark);
+        const auto file = number(u"file_id"_q, kind == u"own"_q); Need(kind == u"own"_q || !file);
+        if (e.contains(u"ack_id"_q)) {
+            const auto ack = e.value(u"ack_id"_q); Need(ack.isDouble() && ack.toDouble() == ack.toInt() && ack.toInt() > 0);
+        }
+    }
+}
+
 QJsonObject StorageCodec(const QString &op, const QJsonObject &input) {
     if (op == u"canonical"_q) return {{u"status"_q, u"Ready"_q}, {u"bytes"_q, Blob(Canonical(Document(Unblob(input.value(u"bytes"_q)))) )}};
     const auto account = input.value(u"account"_q).toString();
@@ -296,6 +352,8 @@ QJsonObject StorageCodec(const QString &op, const QJsonObject &input) {
         Need(input.value(u"objects"_q).isObject());
         wrapper.insert(u"objects"_q, input.value(u"objects"_q));
         if (input.contains(u"send_identities"_q)) wrapper.insert(u"send_identities"_q, input.value(u"send_identities"_q));
+        if (input.contains(u"transport"_q)) wrapper.insert(u"transport"_q, input.value(u"transport"_q));
+        if (wrapper.contains(u"transport"_q)) wrapper.insert(u"transport_sha256"_q, TransportHash(wrapper));
     } else Need(op == u"inspect"_q);
     const auto version = wrapper.value(u"version"_q);
     Need(!(version.isDouble() && version.toDouble() > 1), u"NewerState"_q);
@@ -327,6 +385,7 @@ QJsonObject StorageCodec(const QString &op, const QJsonObject &input) {
             Need(ok && id && QString::number(id) == text && used.insert(id).second);
         }
     }
+    ValidateTransport(wrapper);
     const auto encoded = Canonical(wrapper);
     Need(encoded.size() <= 4194304, u"RetentionFull"_q);
     const auto &j = parsed.journal;
@@ -346,7 +405,7 @@ QJsonObject StorageCodec(const QString &op, const QJsonObject &input) {
     }
     auto result = QJsonObject{{u"status"_q, u"Ready"_q}, {u"bytes"_q, Blob(encoded)},
         {u"journal"_q, Blob(journal)}, {u"objects"_q, objects}, {u"send_identities"_q, ids.isUndefined() ? QJsonObject() : ids},
-        {u"requiredObjects"_q, required}, {u"stateHash"_q, j.stateHash}, {u"writeHash"_q, QString()}, {u"stageHash"_q, QString()}, {u"retireHash"_q, QString()}};
+        {u"transport"_q, wrapper.value(u"transport"_q).toObject()}, {u"requiredObjects"_q, required}, {u"stateHash"_q, j.stateHash}, {u"writeHash"_q, QString()}, {u"stageHash"_q, QString()}, {u"retireHash"_q, QString()}};
     const auto action = NextSyncCarryJournalAction(j);
     if (action == SyncCarryJournalAction::WritePendingState) result.insert(u"writeHash"_q, j.pendingStateHash);
     if (action == SyncCarryJournalAction::CommitState) result.insert(u"writeHash"_q, j.nextStateHash);

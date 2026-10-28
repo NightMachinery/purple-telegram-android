@@ -94,8 +94,15 @@ interface PurpleSyncClient {
         final LookupStatus status;
         final Message message;
         final String error;
+        final PurpleSyncChatIO route;
+        final byte[] response;
 
         private Lookup(LookupStatus status, Message message, String error) {
+            this(status, message, error, null, null);
+        }
+
+        private Lookup(LookupStatus status, Message message, String error, PurpleSyncChatIO route, byte[] response) {
+            this.route = route; this.response = response != null ? response.clone() : null;
             this.status = status;
             this.message = message;
             this.error = error;
@@ -106,6 +113,10 @@ interface PurpleSyncClient {
                 throw new IllegalArgumentException("found without a message");
             }
             return new Lookup(LookupStatus.Found, message, null);
+        }
+
+        static Lookup found(Message message, PurpleSyncChatIO route, byte[] response) {
+            return new Lookup(LookupStatus.Found, message, null, route, response);
         }
 
         static Lookup missing() {
