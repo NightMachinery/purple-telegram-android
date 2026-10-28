@@ -35,7 +35,7 @@ adapters = [path for path in (tests / "modern_sync").rglob("*.java") if "/messen
 adapters += list((tests / "list_capture/android").rglob("*.java"))
 business = ["PurpleAccountOwner", "PurpleAccountFiles", "PurpleAccountSettings", "PurpleWriter", "PurpleGlobalAccountChoice",
             "PurpleRoutedWriteModel", "PurpleListSource", "PurpleListMenu", "PurpleAccountRowWrite", "PurpleCore",
-            "PurpleDiagLog", "PurpleDiagLogStore", "PurpleWaitGate", "PurplePeekSnapshot"]
+            "PurpleDiagLog", "PurpleDiagLogStore", "PurpleWaitGate", "PurpleWaitPresence", "PurpleWaitLayout", "PurplePeekSnapshot"]
 main = args.output / "WaitGateHostMain.java"
 main.write_text('import java.io.File;public final class WaitGateHostMain{public static void main(String[] a)throws Exception{'
                 'org.telegram.messenger.purple.PurpleCore.ensureLoaded();File expected=new File(a[0]).getCanonicalFile();'
@@ -43,9 +43,10 @@ main.write_text('import java.io.File;public final class WaitGateHostMain{public 
                 'File origin=new File(Class.forName("org.telegram.messenger.purple."+n).getProtectionDomain().getCodeSource().getLocation().toURI()).getCanonicalFile();'
                 'if(!expected.equals(origin))throw new AssertionError("business class shadow: "+n);}'
                 'File root=new File(a[2]);if(!root.mkdir())throw new AssertionError("exclusive fixture");'
+                'if(a[1].equals("ready")){System.out.println("READY_WAIT_CHECKS="+org.telegram.messenger.purple.PurpleReadyWaitCases.run());return;}'
                 'if(a[1].equals("controller")){System.out.println("WAIT_GATE_CONTROLLER_CHECKS="+org.telegram.ui.PurpleWaitControllerCases.run(expected));return;}'
                 'System.out.println("WAIT_GATE_"+a[1].toUpperCase()+"_CHECKS="+org.telegram.messenger.purple.PurpleWaitCases.run(a[1],root));}}\n')
-sources = adapters + [tests / "list_capture/PurpleListCaptureCases.java", tests / "wait_gate/PurpleWaitCases.java", tests / "wait_gate/PurpleWaitControllerCases.java", main]
+sources = adapters + [tests / "list_capture/PurpleListCaptureCases.java", tests / "wait_gate/PurpleWaitCases.java", tests / "wait_gate/PurpleReadyWaitCases.java", tests / "wait_gate/PurpleWaitControllerCases.java", main]
 (args.output / "inputs.json").write_text(json.dumps([{"path": str(p), "sha256": hashlib.sha256(p.read_bytes()).hexdigest()}
                                                      for p in sources + [args.library, args.receipt]], indent=2) + "\n")
 
@@ -61,7 +62,7 @@ def run(name, command):
 
 
 run("javac", [compiler, "-source", "8", "-target", "8", "-proc:none", "-sourcepath", empty, "-cp", classpath, "-d", out] + sources)
-for scenario in ["machine", "account", "context", "held", "controller"]:
+for scenario in ["machine", "account", "context", "held", "controller", "ready"]:
     run(scenario, [java, "-Xcheck:jni", "-Xmx512m", "-Djava.library.path=" + str(args.library.parent),
                    "-Djava.io.tmpdir=" + str(fixtures), "-cp", str(out) + os.pathsep + classpath,
                    "WaitGateHostMain", classes, scenario, fixtures / scenario])

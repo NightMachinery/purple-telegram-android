@@ -1,6 +1,6 @@
 # Peek and app visibility
 
-Leaving the countdown's owning Activity, screen-off or either Telegram passcode screen cancels the start wait immediately and quietly. The wait is dismissed, its tick is removed and stale completion cannot start Peek. This always applies, independently of the active-Peek option and file-writer availability.
+App switching cancels a pending request. Screen-off and passcode lock preserve it under the [Ready presence rules](peek-ready.md), unless the independent active-Peek policy actually changes its captured state.
 
 “End Peek when Telegram loses focus” is device-local and off by default. Turning it on is instant. Turning it off uses the Work Mode wait and resolved start delay, including zero. The opening account lifetime, selection generation, local revision, delay/settings source and visible fragment are rechecked before writing. It needs no Own-file write authority in Follow or Stock. Cancellation preserves the option. The sole writer is inventoried by purple/check-wait-routes.py, with direct-write and moved-writer negative tests.
 
@@ -10,7 +10,7 @@ The grace uses elapsed realtime and the active Peek's identity. A replacement ge
 
 On restart with the option on, the first state resolution clears only Peek before publishing the gate. Presets and overrides remain. If saving fails, effective Peek stays off in memory and cleanup remains pending. Foreground retries and reports the failure once; disabling refuses until cleanup succeeds. The option and revision live only in purple_peek_local SharedPreferences, excluded from cloud backup and device transfer. They never enter settings/state TOML or sync/import/export.
 
-Host tests execute the actual AGP controller, foreground owner, local policy, ForegroundDetector and ScreenReceiver, with synthetic Android/UI, routing, IO, clock and preference ports plus real core JNI. They cover 1999/2000 ms boundaries, replacement Peek, late resume, countdown dismissal, stale completion, both passcode endpoints, local policy waits and failed writes. Source checks bind the passcode seams and backup exclusions. Real OS lifecycle delivery, multiwindow/PiP and visual/accessibility behavior require device qualification.
+Host tests execute the actual AGP controller, foreground owner, local policy, ForegroundDetector and ScreenReceiver, with synthetic Android/UI, routing, IO, clock and preference ports plus real core JNI. They cover 1999/2000 ms boundaries, replacement Peek, late resume, app-switch cancellation, lock-preserved waits, stale completion, both passcode endpoints, local policy waits and failed writes. Source checks bind the passcode seams and backup exclusions. Real OS lifecycle delivery, multiwindow/PiP and visual/accessibility behavior require device qualification.
 
 When automatic ending becomes due, the published gate immediately receives an immutable Peek-off copy of its existing resolution, before any settings routing, disk write or reload. The original preset and resolved policy remain. State cleanup is attempted independently of settings-source admission; failed cleanup retains an ending obligation, holds disabling, and retries on foreground/resume. A refused reload cannot preserve or restore revealing Peek.
 

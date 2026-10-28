@@ -9,7 +9,8 @@ a.output.mkdir();classes=a.output/'classes';classes.mkdir();empty=a.output/'empt
 classpath=os.pathsep.join([str(production),str(a.json)]+[x['path']for k in ['classpath','bootstrapClasspath']for x in d[k]])
 main=a.output/'PeekFocusMain.java';main.write_text('''import java.io.File;public final class PeekFocusMain {public static void main(String[] a)throws Exception {
  File expected=new File(a[0]).getCanonicalFile();
- for(String name:new String[]{"org.telegram.ui.PurplePeekControls","org.telegram.ui.PurplePeekControls$Pending",
+ for(String name:new String[]{"org.telegram.ui.PurplePeekControls","org.telegram.ui.PurplePeekControls$Pending","org.telegram.ui.PurpleWaitCover",
+ "org.telegram.messenger.purple.PurpleWaitGate","org.telegram.messenger.purple.PurpleWaitPresence",
  "org.telegram.messenger.purple.PurplePeekFocusModel","org.telegram.messenger.purple.PurplePeekForeground",
  "org.telegram.messenger.purple.PurplePeekLocalSettings","org.telegram.messenger.purple.PurplePeekStreak",
  "org.telegram.messenger.purple.PurplePeekStreakModel","org.telegram.messenger.purple.PurpleCore",
@@ -18,7 +19,7 @@ main=a.output/'PeekFocusMain.java';main.write_text('''import java.io.File;public
  File actual=new File(type.getProtectionDomain().getCodeSource().getLocation().toURI()).getCanonicalFile();
  if(!expected.equals(actual))throw new AssertionError("business class shadow: "+name);}
  org.telegram.ui.PeekFocusCases.main(new String[]{a[1]});}}\n''')
-sources=list((tests/'peek_focus/ports').rglob('*.java'))+[tests/'peek_focus/PeekFocusCases.java',tests/'peek_focus/PeekEscalationCases.java',tests/'peek_focus/PeekEscalationReviewCases.java',main]+list((tests/'peek_focus/reviewer').glob('*.java'))
+sources=list((tests/'peek_focus/ports').rglob('*.java'))+[tests/'peek_focus/PeekFocusCases.java',tests/'peek_focus/PeekReadyCases.java',tests/'peek_focus/PeekEscalationCases.java',tests/'peek_focus/PeekEscalationReviewCases.java',main]+list((tests/'peek_focus/reviewer').glob('*.java'))
 (a.output/'inputs.json').write_text(json.dumps([{'path':str(x),'sha256':hashlib.sha256(x.read_bytes()).hexdigest()}for x in sources+list((tests/'peek_focus/actual_gate').glob('*.java'))+[a.receipt,a.library]],indent=2)+'\n')
 def run(name,args):
  (a.output/(name+'.argv.json')).write_text(json.dumps(list(map(str,args)),indent=2)+'\n')
@@ -32,6 +33,8 @@ scenarios+=['cancel-'+s for s in ['pause','stop','destroy','screen','launch','ex
 scenarios+=['revoke-'+s for s in ['selection','logout','settings','revision','view','screen','launch','external']]
 scenarios+=['reload-failure-'+s for s in ['background','late','lock']]
 for scenario in scenarios:run(scenario,[compiler.with_name('java'),'-Xcheck:jni','-Xmx512m','-Djava.library.path='+str(a.library.parent),'-cp',str(classes)+os.pathsep+classpath,'PeekFocusMain',production,scenario])
+for scenario in ['queued-focus-late','queued-focus-first','focus-handoff-pause','focus-handoff-window','focus-handoff-timeout','return-departure','return-overdue','relock-no-resume','relock-resume-first','relock-locked-resume','return-duplicate-stop','late-show','late-show-expired','relock','button','cleanup','end','keys','abort','late-input','lock','screen','switch','late-lock','focus','quick-return','timeout','stale','editor']:
+ run('ready-'+scenario,[compiler.with_name('java'),'-Xcheck:jni','-Xmx512m','-Djava.library.path='+str(a.library.parent),'-cp',str(classes)+os.pathsep+classpath,'org.telegram.ui.PeekReadyCases',scenario])
 for scenario in ['model','controller','delay','exit','escalation','step','max_extra','reset_minutes']:
  run('escalation-'+scenario,[compiler.with_name('java'),'-Xcheck:jni','-Xmx512m','-Djava.library.path='+str(a.library.parent),'-cp',str(classes)+os.pathsep+classpath,'org.telegram.ui.PeekEscalationCases',scenario])
 for scenario in ['reboot','extension-failure','crash-before','crash-after','expired-no-op']:

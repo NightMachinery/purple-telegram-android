@@ -18,7 +18,7 @@ public class PersistenceProbe {
  static class App extends Application {final DurablePrefs durable=new DurablePrefs();@Override public SharedPreferences getSharedPreferences(String n,int m){return durable;}}
  static void set(Class<?> c,String n,Object value)throws Exception{Field f=c.getDeclaredField(n);f.setAccessible(true);f.set(null,value);}
  static BaseFragment setup()throws Exception {Method m=PeekFocusCases.class.getDeclaredMethod("setup",boolean.class,boolean.class,boolean.class);m.setAccessible(true);m.invoke(null,false,false,false);Field f=PeekFocusCases.class.getDeclaredField("fragment");f.setAccessible(true);return (BaseFragment)f.get(null);}
- static void complete()throws Exception {Field f=PurplePeekControls.class.getDeclaredField("pending");f.setAccessible(true);Object p=f.get(null);Method m=p.getClass().getDeclaredMethod("complete");m.setAccessible(true);m.invoke(p);}
+ static void complete()throws Exception {Field f=PurplePeekControls.class.getDeclaredField("pending");f.setAccessible(true);Object p=f.get(null);Field gateField=p.getClass().getDeclaredField("gate");gateField.setAccessible(true);SystemClock.now+=((PurpleWaitGate)gateField.get(p)).remaining(SystemClock.now);Method tick=p.getClass().getDeclaredMethod("tick");tick.setAccessible(true);tick.invoke(p);SystemClock.now+=500;Method m=p.getClass().getDeclaredMethod("complete");m.setAccessible(true);m.invoke(p);}
  public static void main(String[] args)throws Exception {
   BaseFragment f=setup();App app=new App();ApplicationLoader.applicationContext=app;set(PurplePeekLocalSettings.class,"current",null);set(PurplePeekStreak.class,"state",null);
   if(args[0].equals("failed-success")) {

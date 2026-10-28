@@ -186,6 +186,7 @@ public final class PurpleCore {
             byte[] settingsUtf8, String name, String title);
 
     private static native String setPeekStartDelayNative(byte[] settings, int seconds);
+    private static native String setPeekReadyTimeoutNative(byte[] settings, int seconds);
 
     private static native String setTableBoolNative(
             byte[] settingsUtf8, String table, String key, boolean value);
@@ -398,6 +399,7 @@ public final class PurpleCore {
          */
         public final int peekTap;
         public final int peekStartDelay;
+        public final int peekReadyTimeout;
         public final boolean peekExitHiddenChats;
 
         /**
@@ -459,7 +461,7 @@ public final class PurpleCore {
         public final int recentStyle;
 
         Clock(boolean peeking, long peekDeadline, boolean peekUntilStopped,
-                int peekTap, int peekStartDelay, boolean peekExitHiddenChats, List<Integer> peekDetents,
+                int peekTap, int peekStartDelay, int peekReadyTimeout, boolean peekExitHiddenChats, List<Integer> peekDetents,
                 boolean schedulePaused, long schedulePausedUntil,
                 boolean scheduleConfigured,
                 List<Override> overrides, long nextOverrideDeadline, int hideScope,
@@ -469,6 +471,7 @@ public final class PurpleCore {
             this.peekUntilStopped = peekUntilStopped;
             this.peekTap = peekTap;
             this.peekStartDelay = peekStartDelay;
+            this.peekReadyTimeout = peekReadyTimeout;
             this.peekExitHiddenChats = peekExitHiddenChats;
             this.peekDetents = peekDetents;
             this.schedulePaused = schedulePaused;
@@ -484,12 +487,12 @@ public final class PurpleCore {
 
         Clock withoutPeek() {
             return new Clock(false, 0, false, peekTap,
-                    peekStartDelay, peekExitHiddenChats, peekDetents, schedulePaused,
+                    peekStartDelay, peekReadyTimeout, peekExitHiddenChats, peekDetents, schedulePaused,
                     schedulePausedUntil, scheduleConfigured, overrides, nextOverrideDeadline,
                     hideScope, recentSeconds, recentScope, recentStyle);
         }
 
-        static final Clock NONE = new Clock(false, 0, false, 0, 10, true,
+        static final Clock NONE = new Clock(false, 0, false, 0, 10, 600, true,
                 Collections.<Integer>emptyList(), false, 0, false,
                 Collections.<Override>emptyList(), 0, SCOPE_UNCOUNTED,
                 0, RECENT_ALREADY_IN_VIEW, STYLE_NONE);
@@ -523,6 +526,7 @@ public final class PurpleCore {
                     object.optBoolean("peekUntilStopped", false),
                     object.optInt("peekTap", 0),
                     object.optInt("peekStartDelay", 10),
+                    object.optInt("peekReadyTimeout", 600),
                     object.optBoolean("peekExitHiddenChats", true),
                     Collections.unmodifiableList(detents),
                     object.optBoolean("schedulePaused", false),
@@ -1275,6 +1279,16 @@ public final class PurpleCore {
         ensureLoaded();
         try {
             return splice(setPeekStartDelayNative(settings, seconds));
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return new SpliceResult(null, false, "the core could not be reached");
+        }
+    }
+
+    public static SpliceResult setPeekReadyTimeout(byte[] settings, int seconds) {
+        ensureLoaded();
+        try {
+            return splice(setPeekReadyTimeoutNative(settings, seconds));
         } catch (UnsatisfiedLinkError | RuntimeException e) {
             FileLog.e(e);
             return new SpliceResult(null, false, "the core could not be reached");

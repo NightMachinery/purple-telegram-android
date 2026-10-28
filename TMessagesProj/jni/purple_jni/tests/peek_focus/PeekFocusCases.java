@@ -48,8 +48,18 @@ public final class PeekFocusCases {
     private static Object pending() throws Exception {
         Field f = PurplePeekControls.class.getDeclaredField("pending"); f.setAccessible(true); return f.get(null);
     }
-    private static void complete(Object operation) throws Exception {
+    static void complete(Object operation) throws Exception {
         Method m = operation.getClass().getDeclaredMethod("complete"); m.setAccessible(true); m.invoke(operation);
+    }
+    private static void screenOff() {
+        app.power.interactive = false;
+        activity.broadcast(new Intent(Intent.ACTION_SCREEN_OFF));
+        new ScreenReceiver().onReceive(app, new Intent(Intent.ACTION_SCREEN_OFF));
+    }
+    static void confirm(Object operation) throws Exception {
+        Method tick = operation.getClass().getDeclaredMethod("tick"); tick.setAccessible(true); tick.invoke(operation);
+        SystemClock.now += 500;
+        complete(operation);
     }
     private static void now(long time) { SystemClock.now = time; }
     private static void due(long time) { now(time); AndroidUtilities.due(); }
@@ -106,7 +116,7 @@ public final class PeekFocusCases {
         setup(false, true, false);
         check(!PurplePeekLocalSettings.snapshot().enabled && PurpleGate.peeking(), "missing option is OFF and restores existing Peek");
         app.stop(activity); due(10000); check(PurpleGate.peeking(), "optionOFF keeps an active Peek after10 s background");
-        new ScreenReceiver().onReceive(app, new Intent(Intent.ACTION_SCREEN_OFF));
+        screenOff();
         check(PurpleGate.peeking(), "optionOFF preserves active Peek across screen-off");
         SharedConfig.appLocked = true; PurpleGate.locked();
         check(PurpleGate.peeking(), "optionOFF preserves the legacy default app-lock policy");
@@ -114,7 +124,7 @@ public final class PeekFocusCases {
     }
     private static void lock(String kind) {
         setup(true, false, false); active();
-        if (kind.equals("screen")) new ScreenReceiver().onReceive(app, new Intent(Intent.ACTION_SCREEN_OFF));
+        if (kind.equals("screen")) screenOff();
         else { SharedConfig.appLocked = true; PurpleGate.locked(); }
         check(!PurpleGate.peeking(), "optionON ends Peek immediately on " + kind);
         check(Toast.shown == 0, "lock ending is quiet");
@@ -149,14 +159,14 @@ public final class PeekFocusCases {
         check(PurplePeekLocalSettings.snapshot().enabled && !PurplePeekControls.isPending(), "enabling is instant without file writer ownership");
         check(PurpleWriter.captures == 0, "local policy never captures a synced-file writer");
         disabling(); Object stale = pending(); int commits = app.prefs.commits, writes = PurpleState.writes;
-        app.pause(activity);
+        app.pause(activity); due(SystemClock.now + 300);
         check(!PurplePeekControls.isPending() && Dialog.dismissed == 1 && AndroidUtilities.delayed.isEmpty(), "pause dismisses the full-screen wait and removes ticks");
         now(3000); complete(stale);
         check(app.prefs.commits == commits && PurpleState.writes == writes, "cancelled completion cannot write");
         check(PurplePeekLocalSettings.snapshot().enabled && Toast.shown == 0, "abort preserves ON quietly");
         disabling(); long begin = SystemClock.now;
         due(begin + 1999); check(PurplePeekLocalSettings.snapshot().enabled, "disable remains ON at1999 ms");
-        due(begin + 2000); check(!PurplePeekLocalSettings.snapshot().enabled && !PurplePeekControls.isPending(), "disable commits exactly at the resolved delay");
+        due(begin + 2000); check(PurplePeekLocalSettings.snapshot().enabled && PurplePeekControls.isPending(), "countdown ends at Ready without applying"); confirm(pending()); check(!PurplePeekLocalSettings.snapshot().enabled && !PurplePeekControls.isPending(), "disable commits on fresh confirmation");
         check(PurpleWriter.captures == 0, "Follow/Stock-style held writer does not block device-local toggles");
         PurpleGate.settings = bytes("version=1\n[peek]\nstart_delay_seconds=0\n[presets.work]\n"); PurpleGate.reload("zero delay");
         PurplePeekControls.changeFocusPolicy(fragment, true); int shown = Dialog.shown;
@@ -174,9 +184,21 @@ public final class PeekFocusCases {
         if (cut.equals("pause")) app.pause(activity);
         else if (cut.equals("stop")) app.stop(activity);
         else if (cut.equals("destroy")) app.destroy(activity);
-        else if (cut.equals("screen")) new ScreenReceiver().onReceive(app, new Intent(Intent.ACTION_SCREEN_OFF));
+        else if (cut.equals("screen")) screenOff();
         else { SharedConfig.appLocked = true; PurpleGate.locked(); }
-        check(!PurplePeekControls.isPending() && Dialog.dismissed == 1 && AndroidUtilities.delayed.isEmpty(), cut + " immediately dismisses and unschedules");
+        boolean lock = cut.equals("screen") || cut.equals("launch") || cut.equals("external");
+        if (lock) {
+            due(10000); complete(stale);
+            check(PurplePeekControls.isPending() && PurpleGate.starts == 0, "lock keeps Ready without applying: " + cut);
+            app.power.interactive = true; SharedConfig.appLocked = false;
+            activity.broadcast(new Intent(Intent.ACTION_SCREEN_ON)); app.resume(activity);
+            check(PurplePeekControls.isPending() && PurpleGate.starts == 0, "unlock rearms the guard");
+            now(10500); complete(stale);
+            check(!PurplePeekControls.isPending() && PurpleGate.starts == 1 && activity.receivers.isEmpty(), "unlocked confirmation applies and releases receiver");
+            return;
+        }
+        if (!cut.equals("destroy")) due(300);
+        check(!PurplePeekControls.isPending() && Dialog.dismissed == 1 && AndroidUtilities.delayed.isEmpty(), cut + " dismisses and unschedules");
         now(10000); complete(stale);
         check(PurpleGate.starts == 0 && PurpleState.writes == writes && Toast.shown == 0, cut + " stays quiet and never writes after cancel");
     }
@@ -187,10 +209,14 @@ public final class PeekFocusCases {
         else if (cut.equals("settings")) PurpleGate.reload("delay source changed");
         else if (cut.equals("revision")) { PurplePeekLocalSettings.commitFocusPolicy(PurplePeekLocalSettings.snapshot(), false); commits = app.prefs.commits; }
         else if (cut.equals("view")) fragment.view.attached = false;
-        else if (cut.equals("screen")) new ScreenReceiver().onReceive(app, new Intent(Intent.ACTION_SCREEN_OFF));
+        else if (cut.equals("screen")) screenOff();
         else { SharedConfig.appLocked = true; PurpleGate.locked(); }
         now(3000); complete(stale);
-        check(!PurplePeekControls.isPending() && Dialog.dismissed == 1 && app.prefs.commits == commits, "local policy wait revoked by " + cut);
+        boolean lock = cut.equals("screen") || cut.equals("launch") || cut.equals("external");
+        if (lock) {
+            check(PurplePeekControls.isPending() && app.prefs.commits == commits, "lock preserves local wait: " + cut);
+            PurplePeekControls.cancel();
+        } else check(!PurplePeekControls.isPending() && Dialog.dismissed == 1 && app.prefs.commits == commits, "local policy wait revoked by " + cut);
         check(Toast.shown == 0, "revocation is quiet: " + cut);
     }
     private static void enableDuringWait() {
@@ -199,8 +225,8 @@ public final class PeekFocusCases {
         PurplePeekControls.changeFocusPolicy(fragment, true);
         check(!PurplePeekControls.isPending() && PurplePeekLocalSettings.snapshot().enabled && PurpleGate.starts == 0, "enabling cancels an old wait and applies in the same request");
     }
-    private static void failedPreference() {
-        setup(true, false, false); app.prefs.fail = true; disabling(); due(2000);
+    private static void failedPreference() throws Exception {
+        setup(true, false, false); app.prefs.fail = true; disabling(); due(2000); confirm(pending());
         check(PurplePeekLocalSettings.snapshot().enabled && !PurplePeekControls.isPending(), "failed disable preserves cached protection");
         check(Boolean.TRUE.equals(app.prefs.values.get("end_on_focus_loss")), "failed commit's in-memory preference mutation is rolled back");
         check(PurpleWriterUI.explanations == 1, "failed local write is reported without claiming success");
@@ -228,7 +254,7 @@ public final class PeekFocusCases {
         org.telegram.ui.ActionBar.ActionBarMenu menu = new org.telegram.ui.ActionBar.ActionBarMenu();
         PurplePeekControls.addEndButton(menu); check(menu.last.visibility == android.view.View.VISIBLE, "End Peek is available before a restart wait");
         PurplePeekControls.start(fragment, 60); check(menu.last.visibility == android.view.View.GONE, "pending wait temporarily hides End Peek");
-        app.pause(activity); check(menu.last.visibility == android.view.View.VISIBLE, "cancel immediately restores End Peek");
+        app.pause(activity); due(SystemClock.now + 300); check(menu.last.visibility == android.view.View.VISIBLE, "cancel immediately restores End Peek");
     }
     private static void refusedReload(String cut) {
         setup(true, false, false); active(); PurpleGate.rejectReload = true; PurpleState.fail = true;

@@ -41,17 +41,16 @@ public final class PurpleWaitCases {
                 check(gate.complete(end - 1, true, true, false, true) == PurpleWaitGate.Outcome.WAITING, "early completion cannot write");
             }
             check(gate.poll(end, true, true, false) == PurpleWaitGate.Outcome.READY, "expiry is ready");
-            check(gate.complete(end, true, true, false, true) == PurpleWaitGate.Outcome.READY, "valid completion consumes once");
-            check(gate.complete(end, true, true, false, true) == PurpleWaitGate.Outcome.FINISHED, "duplicate callback cannot apply twice");
+            check(gate.complete(end + (seconds > 0 ? 500 : 0), true, true, false, true) == PurpleWaitGate.Outcome.READY, "valid completion consumes once");
+            check(gate.complete(end + (seconds > 0 ? 500 : 0), true, true, false, true) == PurpleWaitGate.Outcome.FINISHED, "duplicate callback cannot apply twice");
             check(gate.abort() == PurpleWaitGate.Outcome.FINISHED, "dismissal after completion cannot change outcome");
         }
-        for (int cause = 0; cause < 5; ++cause) {
+        for (int cause = 0; cause < 3; ++cause) {
             PurpleWaitGate gate = new PurpleWaitGate(1000, 10);
-            PurpleWaitGate.Outcome outcome = cause == 0 ? gate.abort()
-                    : gate.poll(11000, cause != 1, cause != 2, cause == 3);
-            if (cause == 4) outcome = gate.complete(11000, true, true, false, false);
-            check(outcome == (cause == 4 ? PurpleWaitGate.Outcome.HELD : PurpleWaitGate.Outcome.ABORTED),
-                    "abort/back/close, context, background, lock or held write is terminal");
+            PurpleWaitGate.Outcome outcome = cause == 0 ? gate.abort() : gate.poll(11000, cause != 1, true, false);
+            if (cause == 2) outcome = gate.complete(11500, true, true, false, false);
+            check(outcome == (cause == 2 ? PurpleWaitGate.Outcome.HELD : PurpleWaitGate.Outcome.ABORTED),
+                    "abort, stale context or held confirmation is terminal");
             check(gate.complete(12000, true, true, false, true) == PurpleWaitGate.Outcome.FINISHED, "late callback after abort does nothing");
             check(Arrays.equals(active, Files.readAllBytes(state.toPath())), "abort preserves the active Peek byte for byte");
         }
@@ -85,7 +84,8 @@ public final class PurpleWaitCases {
             PurpleListCaptureCases.write(own, "version=2\n[last_seen]\nreasons_p=false\n");
             check(!opening.current(), "a changed account file invalidates the request");
         }
-        PurpleWaitGate.Outcome outcome = gate.complete(11000, opening.current(), true, false, true);
+        PurpleWaitGate.Outcome polled = gate.poll(11000, opening.current(), true, false);
+        PurpleWaitGate.Outcome outcome = changeContext ? polled : gate.complete(11500, opening.current(), true, false, true);
         if (changeContext) {
             check(outcome == PurpleWaitGate.Outcome.ABORTED, "context change aborts");
             check(Arrays.equals(local, Files.readAllBytes(new File(root, "local.toml").toPath())), "abort leaves local choice untouched");

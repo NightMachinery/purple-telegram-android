@@ -89,6 +89,7 @@ public class PurpleSettingsActivity extends UniversalFragment
     private static final int ROW_PEEK_DELAY = 21;
     private static final int ROW_PEEK_EXIT = 22;
     private static final int ROW_PEEK_FOCUS = 0x70750021;
+    private static final int ROW_PEEK_READY_TIMEOUT = 0x70750026;
 
     /**
      * Where the trade log's rows start numbering.
@@ -235,6 +236,8 @@ public class PurpleSettingsActivity extends UniversalFragment
                         : formatString(R.string.PurplePeekSeconds, state.clock.peekTap)));
         items.add(UItem.asButton(ROW_PEEK_DELAY, getString(R.string.PurplePeekStartDelay),
                 formatString(R.string.PurplePeekSeconds, state == null ? 10 : state.clock.peekStartDelay)));
+        items.add(UItem.asButton(ROW_PEEK_READY_TIMEOUT, getString(R.string.PurplePeekReadyTimeout),
+                formatString(R.string.PurplePeekSeconds, state == null ? 600 : state.clock.peekReadyTimeout)));
         UItem exitHidden = UItem.asCheck(ROW_PEEK_EXIT, getString(R.string.PurplePeekExitHiddenChats));
         exitHidden.checked = state == null || state.clock.peekExitHiddenChats;
         items.add(exitHidden);
@@ -472,7 +475,7 @@ public class PurpleSettingsActivity extends UniversalFragment
                 && item.id != ROW_IMPORT && item.id != ROW_CHECK && item.id != ROW_PATH && item.id != ROW_SYNC
                 && item.id != ROW_SCREEN_TIME && item.id != ROW_DEVICE && item.id != ROW_NOTIFICATIONS
                 && item.id != ROW_LAST_SEEN_SKIP_CONFIRMATION
-                && item.id != ROW_PEEK_DURATION && item.id != ROW_PEEK_DELAY && item.id != ROW_PEEK_EXIT
+                && item.id != ROW_PEEK_DURATION && item.id != ROW_PEEK_DELAY && item.id != ROW_PEEK_EXIT && item.id != ROW_PEEK_READY_TIMEOUT
                 && item.id != ROW_SCHEDULE && item.id != ROW_PREMIUM && item.id != ROW_SUGGESTIONS
                 && item.id != ROW_FOCUS && item.id != ROW_PEEK_FOCUS) {
             String held = PurpleWriter.ownerRefusal();
@@ -497,7 +500,10 @@ public class PurpleSettingsActivity extends UniversalFragment
             PurplePresetPicker.show(this);
             break;
         case ROW_PEEK_DELAY:
-            editPeekDelay();
+            editPeekScalar(false);
+            break;
+        case ROW_PEEK_READY_TIMEOUT:
+            editPeekScalar(true);
             break;
         case ROW_PEEK_EXIT:
             PurplePeekControls.changeExitHidden(this, !item.checked);
@@ -616,20 +622,20 @@ public class PurpleSettingsActivity extends UniversalFragment
      * An empty name writes an empty label rather than removing the line, which
      * the core and this screen both read as no name at all.
      */
-    private void editPeekDelay() {
+    private void editPeekScalar(boolean readyTimeout) {
         Activity activity = getParentActivity();
         if (activity == null) return;
-        PurpleWriter.Session writer = PurpleWriterUI.captureOrExplain(this, true, this::editPeekDelay);
+        PurpleWriter.Session writer = PurpleWriterUI.captureOrExplain(this, true, () -> editPeekScalar(readyTimeout));
         if (writer == null) return;
         PurpleGate.PeekSettings settings = PurpleGate.peekSettings();
         if (settings == null) {
             // The session read the files a moment ago, so this is a file
             // that changed or became unreadable since.
-            PurpleWriterUI.explain(this, "files_changed", this::editPeekDelay);
+            PurpleWriterUI.explain(this, "files_changed", () -> editPeekScalar(readyTimeout));
             return;
         }
         if (!PurpleGate.currentPeekEditSettings(settings) || !writer.current()) {
-            PurpleWriterUI.explain(this, "session_stale", this::editPeekDelay);
+            PurpleWriterUI.explain(this, "session_stale", () -> editPeekScalar(readyTimeout));
             return;
         }
         PurpleCore.Loaded state = settings.state;
@@ -639,19 +645,23 @@ public class PurpleSettingsActivity extends UniversalFragment
         field.setSingleLine(true);
         field.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
         field.setPadding(AndroidUtilities.dp(20), 0, AndroidUtilities.dp(20), 0);
-        field.setText(String.valueOf(state.clock.peekStartDelay));
+        field.setText(String.valueOf(readyTimeout ? state.clock.peekReadyTimeout : state.clock.peekStartDelay));
         field.selectAll();
         AlertDialog.Builder builder = new AlertDialog.Builder(activity);
-        builder.setTitle(getString(R.string.PurplePeekStartDelay));
-        builder.setMessage(getString(R.string.PurplePeekDelayInfo));
+        builder.setTitle(getString(readyTimeout ? R.string.PurplePeekReadyTimeout : R.string.PurplePeekStartDelay));
+        builder.setMessage(getString(readyTimeout ? R.string.PurplePeekReadyTimeoutInfo : R.string.PurplePeekDelayInfo));
         builder.setView(field);
         builder.setPositiveButton(getString(R.string.Save), (dialog, which) -> {
             String value = field.getText().toString().trim();
             try {
                 if (!value.matches("[0-9]+")) throw new NumberFormatException();
-                PurplePeekControls.changeDelay(this, Integer.parseInt(value), writer, settings);
+                int seconds = Integer.parseInt(value);
+                if (readyTimeout) {
+                    if (seconds < 10) throw new NumberFormatException();
+                    PurplePeekControls.changeReadyTimeout(this, seconds, writer, settings);
+                } else PurplePeekControls.changeDelay(this, seconds, writer, settings);
             } catch (NumberFormatException e) {
-                write(getString(R.string.PurplePeekInvalidDelay));
+                write(getString(readyTimeout ? R.string.PurplePeekInvalidReadyTimeout : R.string.PurplePeekInvalidDelay));
             }
         });
         builder.setNegativeButton(getString(R.string.Cancel), null);

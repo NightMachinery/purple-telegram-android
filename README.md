@@ -359,14 +359,16 @@ wins on either client. These choices apply across presets.
 
 The row, chips and dial all open the same full-screen countdown, with large
 remaining seconds and an **Abort Peek** button. Chats stay hidden until the
-countdown completes; the requested Peek duration starts then. Back, another
-start/toggle, leaving the app, changing account or preset, or locking the app
-cancels a pending start. Pending countdowns are never restored after restart.
+person confirms the Ready action; the requested Peek duration starts at that
+press. Back, Abort, another start/toggle, leaving the app, or changing the captured
+account or preset cancels a pending start. Screen-off and device/passcode lock
+preserve a current wait under the [Ready presence rules](docs/peek-ready.md).
+Pending requests are never restored after process restart.
 Choosing a new duration while Peek is active keeps that Peek running during
-the countdown and replaces it only after completion. **End Peek** appears beside the chat-list lock only while Peek is
+the countdown and replaces it only after confirmation. **End Peek** appears beside the chat-list lock only while Peek is
 active and no countdown is running; it ends Peek immediately.
 
-Changing the start delay itself waits for the longer of the old and new values.
+Increasing the start delay is instant; decreasing it waits with the current delay.
 Abort leaves the old value intact, and applying the setting does not start Peek.
 The shared exit switch is `[peek] exit_hidden_chats_p`. When Peek actually ends,
 its enabled default closes the open conversation only when the restored view
@@ -385,7 +387,10 @@ restrictive state, ending Peek, and no-ops are instant; other switches wait,
 including between two restrictive presets even when the new one is stricter.
 Incoming sync, manual settings transfers, and schedule/Focus automation are
 exempt. See [Work Mode waits](docs/work-mode-wait.md) for cancellation,
-account targeting, direct-writer checks and test coverage.
+account targeting, direct-writer checks and test coverage. Positive waits end at
+[Ready](docs/peek-ready.md), requiring a fresh action-button press. Screen-off
+and lock can preserve them; app switching cancels. The Peek ready timeout
+editor lowers immediately and waits before raising the shared timeout.
 
 Tapping the row starts a peek of `tap_mobile`, and **tapping it again ends it**,
 the way the desktop's checkbox does: a checkbox that will not uncheck is broken

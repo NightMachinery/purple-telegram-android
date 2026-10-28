@@ -33,7 +33,7 @@ probes = {
 probes["activation-bypass"] = 'package org.telegram.ui; final class Probe { void click() { org.telegram.messenger.purple.PurplePeekStreak.activatePeek(60,null,false); } }'
 for option in ["escalation", "step", "max_extra", "reset_minutes"]:
     probes["option-" + option] = 'package org.telegram.ui; final class Probe { void click(org.telegram.messenger.purple.PurplePeekLocalSettings.Snapshot s) { org.telegram.messenger.purple.PurplePeekLocalSettings.commitWaitPolicy(s,"' + option + '",0); } }'
-for writer in ["setPeekStartDelay", "setPeekExitHidden"]:
+for writer in ["setPeekStartDelay", "setPeekReadyTimeout", "setPeekExitHidden"]:
     probes[writer] = 'package org.telegram.ui; final class Probe { void click() { org.telegram.messenger.purple.PurpleWriter.' + writer + '(null,null,0); } }'
 for option in ["exit_hidden_chats_p", "tap_mobile", "auto_off", "hotkey_length", "end_on_app_lock_mobile_p"]:
     probes["table-" + option] = 'package org.telegram.ui; final class Probe { void click() { org.telegram.messenger.purple.PurpleWriter.setTableBool(null,"peek","' + option + '",false,""); } }'

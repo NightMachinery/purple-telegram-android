@@ -15,7 +15,7 @@ public final class PeekEscalationCases {
     private static Object pending() throws Exception { return field(PurplePeekControls.class,null,"pending"); }
     private static void complete() throws Exception {
         Object p=pending(); check(p!=null,"a gated operation exists");
-        Method m=p.getClass().getDeclaredMethod("complete");m.setAccessible(true);m.invoke(p);
+        Field gateField=p.getClass().getDeclaredField("gate");gateField.setAccessible(true);SystemClock.now+=((PurpleWaitGate)gateField.get(p)).remaining(SystemClock.now);Method tick=p.getClass().getDeclaredMethod("tick");tick.setAccessible(true);tick.invoke(p);SystemClock.now+=500;Method m=p.getClass().getDeclaredMethod("complete");m.setAccessible(true);m.invoke(p);
     }
     private static long left() throws Exception {
         Object p=pending(); return ((PurpleWaitGate)field(p.getClass(),p,"gate")).remaining(SystemClock.now);

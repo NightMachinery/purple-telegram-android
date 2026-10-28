@@ -298,6 +298,13 @@ public final class PurpleWriter {
         return apply(session, PurpleCore.setPeekStartDelay(session.bytes(), seconds), "peek start delay");
     }
 
+    public static String setPeekReadyTimeout(Session session, PurpleGate.PeekSettings settings, int seconds) {
+        if (session == null) return noSession();
+        if (!session.current() || !PurpleGate.currentPeekEditSettings(settings)
+                || !java.util.Arrays.equals(session.bytes(), settings.snapshot.bytes())) return "settings.toml changed";
+        return apply(session, PurpleCore.setPeekReadyTimeout(session.bytes(), seconds), "peek ready timeout");
+    }
+
     public static String setPeekExitHidden(Session session, PurpleGate.PeekSettings settings, boolean enabled) {
         if (session == null) return noSession();
         if (!session.current() || !PurpleGate.currentPeekEditSettings(settings)

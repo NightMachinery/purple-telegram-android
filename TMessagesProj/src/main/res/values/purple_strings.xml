@@ -935,4 +935,13 @@
     <string name="PurpleSyncChatSetupComplete">The sync chat is set up.</string>
     <string name="PurpleSyncChatFirstPostHeld">Setup does not send your settings. Open settings sync, check the sync chat and review the settings and readers before sending.</string>
     <string name="PurpleSyncChatReviewSettings">Review settings</string>
+    <string name="PurpleWaitReadyTitle">Ready</string>
+    <string name="PurpleWaitReadyHint">Tap the action to continue, or Abort to cancel.</string>
+    <string name="PurpleWaitStartAction">Start Peek</string>
+    <string name="PurpleWaitExtendAction">Extend Peek</string>
+    <string name="PurpleWaitApplyAction">Apply change</string>
+    <string name="PurpleWaitPresetAction">Switch to %1$s</string>
+    <string name="PurplePeekReadyTimeout">Ready timeout (seconds)</string>
+    <string name="PurplePeekReadyTimeoutInfo">How long the ready step remains available. At least 10 seconds. Lowering applies immediately; raising requires the wait and confirmation.</string>
+    <string name="PurplePeekInvalidReadyTimeout">Enter a whole number of seconds, at least 10.</string>
 </resources>

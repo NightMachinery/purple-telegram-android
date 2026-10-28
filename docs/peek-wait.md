@@ -33,9 +33,9 @@ streak changes invalidate a pending request. Aborting keeps the old option.
 
 The core `[peek]` fields are `hotkey`, `auto_off`, `tap`, `hotkey_length`,
 `tap_mobile`, `end_on_screen_lock_p`, `end_on_app_lock_p`,
-`end_on_app_lock_mobile_p`, `exit_hidden_chats_p`, and `start_delay_seconds`.
-Android exposes persistent in-app editors only for start delay and exit-hidden.
-Both enter `PurplePeekControls.request`; their writes occur only in pending
+`end_on_app_lock_mobile_p`, `exit_hidden_chats_p`, `start_delay_seconds`, and `ready_timeout_seconds`.
+Android exposes persistent in-app editors for start delay, ready timeout and exit-hidden.
+All enter `PurplePeekControls.request`; their writes occur only in pending
 completion through guarded PurpleWriter methods. The duration row opens the
 Peek start picker, it does not edit a stored duration. Starting and extending
 through it use the same escalated wait. There are no in-app writers for the
@@ -54,7 +54,7 @@ Android, clock, account and I/O ports. The pure clock cases test exact reset
 boundaries and reboot/backwards-clock behavior. The controller cases test
 success/abort/extension counting, Work Mode parity and option classification.
 The existing real-JNI visibility withdrawal, focus, wait and share regressions
-remain part of qualification. No upstream hook or native change is needed.
+remain part of qualification. The ready timeout is exposed by the existing native bridge; no upstream hook changes are needed.
 
 ## Crash and clock boundaries
 
@@ -73,3 +73,6 @@ positive wall-time age: advancing the wall clock and rebooting can shorten the
 reset interval. This is an accepted clock limit, not trusted-clock protection.
 
 After a reboot, an early End uses its observed end time, bounded above by the scheduled deadline. The reset begins at that end, including focus endings and abandoned reservations. Expiry while powered off keeps the scheduled end and its cross-boot wall age.
+
+Every positive effective delay ends at [Ready](peek-ready.md), requiring a fresh
+confirmation before the action applies or a successful activation is counted.

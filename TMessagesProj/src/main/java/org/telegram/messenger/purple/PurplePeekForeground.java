@@ -57,7 +57,7 @@ public final class PurplePeekForeground {
     }
 
     public static void visibility(boolean visible) {
-        PurplePeekControls.cancel();
+        PurplePeekControls.presenceChanged();
         boolean enabled = PurplePeekLocalSettings.snapshot().enabled;
         boolean due;
         synchronized (PurplePeekForeground.class) {
@@ -74,19 +74,23 @@ public final class PurplePeekForeground {
     }
 
     public static void screenOff() {
-        PurplePeekControls.cancel();
-        if (PurplePeekLocalSettings.snapshot().enabled) {
-            synchronized (PurplePeekForeground.class) { forceEnd = true; }
-            refresh();
-        }
+        PurplePeekControls.presenceChanged();
+        if (PurplePeekLocalSettings.snapshot().enabled) endForLock();
     }
 
     public static void appLocked() {
-        PurplePeekControls.cancel();
-        if (PurplePeekLocalSettings.snapshot().enabled) {
-            synchronized (PurplePeekForeground.class) { forceEnd = true; }
-            refresh();
-        } else PurpleGate.lockedLegacy();
+        PurplePeekControls.presenceChanged();
+        if (PurplePeekLocalSettings.snapshot().enabled) endForLock();
+        else PurpleGate.lockedLegacy();
+    }
+
+    private static void endForLock() {
+        boolean ending;
+        synchronized (PurplePeekForeground.class) {
+            ending = lastActive || cleanupPending;
+            if (ending) forceEnd = true;
+        }
+        if (ending) refresh();
     }
 
     public static void policyChanged() {

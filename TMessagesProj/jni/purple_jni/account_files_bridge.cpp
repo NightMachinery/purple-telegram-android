@@ -66,7 +66,8 @@ QString AccountEditorTemplate() {
             "# comes from the account that supplies app-wide settings on each device.\n"
             "# Work Mode, Local Premium and the other app-wide settings written here take\n"
             "# effect only on devices where this account supplies the app-wide settings.\n"
-            "# See config.md, \"Settings per account\".\nversion = 2\n"_q;
+            "# See config.md, \"Settings per account\".\nversion = 2\n\n"
+            "# [peek]\n# ready_timeout_seconds = 600\n"_q;
 }
 
 struct Layer {

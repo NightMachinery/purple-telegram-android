@@ -35,13 +35,13 @@ wrappers or reflection and is not proof that every possible bypass is absent.
 receivers. Selecting Normal while the saved preset is missing still writes
 Normal; a real-core test invokes the compiled Pending.noOp method.
 
-Back, Abort, closing the screen, backgrounding the owning activity, a screen
-lock or app lock, and changes to the captured settings or state cancel the
-operation without writing. A Peek already running is untouched by an aborted
-restart or extension. A completed restart replaces its deadline then; a
-completed extension adds to its current deadline with the existing hour cap.
-The existing capped/unlimited long-press behavior (end Peek with feedback) now
-happens after the wait. A pending countdown is never persisted.
+Positive countdowns end at [Ready](peek-ready.md), with a named confirmation
+button and Abort. They never apply automatically. Abort, closing the screen,
+app switching and changes to captured settings/state cancel without writing.
+Screen-off and device/passcode lock preserve an otherwise current request.
+A running Peek is untouched by an aborted restart or extension. Confirmation
+starts a restart's duration or extends its current deadline with the existing
+hour cap. Pending countdown and Ready state are never persisted.
 
 A Work Mode request stays bound to its opening account even if the selected
 account changes. Switching accounts alone does not retarget or cancel it.
@@ -64,17 +64,17 @@ carry no preset names, list names, account keys or settings text.
 
 Host tests run the AGP-compiled `PurpleWaitGate`, account identity capture and
 routed mode writer against the host JNI library. They cover the coarse rule,
-wait completion, exactly-once consumption, abort paths, an account switch,
-context changes and held writes. Device lifecycle delivery and visual layout
-are not exercised by host tests. No upstream hook changes are needed.
+Ready/confirmation, exactly-once consumption, abort paths, an account switch,
+context changes and held writes. Synthetic lifecycle and geometry cases are
+described in [Ready](peek-ready.md); real OS delivery and rendering need a phone. No upstream hook changes are needed.
 
-The device-local [Peek visibility option](peek-focus.md) uses the same request/countdown. Enabling is restrictive and immediate; disabling waits for the resolved delay. Its route captures local policy revision, selection generation and the delay source rather than a synced-file write session. Unlike legacy Work Mode source/preset requests, its fragment and selected-account guard remains strict. Screen-off and both passcode paths cancel pending waits directly and quietly. The route inventory includes the sole local preference writer and rejects direct or moved writes.
+The device-local [Peek visibility option](peek-focus.md) uses the same request/countdown. Enabling is restrictive and immediate; disabling waits for the resolved delay. Its route captures local policy revision, selection generation and the delay source rather than a synced-file write session. Unlike legacy Work Mode source/preset requests, its fragment and selected-account guard remains strict. Screen-off and both passcode paths preserve a current request under the [Ready presence rules](peek-ready.md). The route inventory includes the sole local preference writer and rejects direct or moved writes.
 
 Dedicated in-app Peek option editors use the same request. Tightening is instant:
-base delay up, exit-hidden on, focus-end on, escalation on, and step/cap/reset up.
+base delay up, ready timeout down, exit-hidden on, focus-end on, escalation on, and step/cap/reset up.
 Their reverses wait using the opening policy, never the proposed lower value.
 Pending operations also capture the local policy revision and streak generation.
 The route inventory rejects alternative local policy writers, direct in-app
-`[peek]` table writes, and moved delay/exit writers. Whole-file manual import,
+`[peek]` table writes, and moved delay/timeout/exit writers. Whole-file manual import,
 sync Apply, History Undo/Restore, external file edits and incoming sync remain
 exempt. This is an editor boundary, not a wrapper around every file replacement.

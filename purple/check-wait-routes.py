@@ -28,6 +28,9 @@ expected = {
     "setPeekStartDelay": {"org/telegram/ui/PurplePeekControls.java": 1,
         "org/telegram/messenger/purple/PurpleWriter.java": 2,
         "org/telegram/messenger/purple/PurpleCore.java": 1},
+    "setPeekReadyTimeout": {"org/telegram/ui/PurplePeekControls.java": 1,
+        "org/telegram/messenger/purple/PurpleWriter.java": 2,
+        "org/telegram/messenger/purple/PurpleCore.java": 1},
     "storeStreak": {"org/telegram/messenger/purple/PurplePeekLocalSettings.java": 1,
         "org/telegram/messenger/purple/PurplePeekStreak.java": 4},
     "activatePeek": {"org/telegram/messenger/purple/PurplePeekStreak.java": 1,
@@ -37,7 +40,7 @@ expected = {
     "apply": {"org/telegram/ui/PurplePeekControls.java": 1,
         "org/telegram/messenger/purple/PurpleGlobalAccountChoice.java": 2,
         "org/telegram/messenger/purple/PurpleAppWideRemoval.java": 2,
-        "org/telegram/messenger/purple/PurpleWriter.java": 15},
+        "org/telegram/messenger/purple/PurpleWriter.java": 16},
 }
 noncode = re.compile(r'""".*?"""|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|/\*.*?\*/|//[^\n]*', re.S)
 found = {name: {} for name in expected}
@@ -67,7 +70,7 @@ for path in files:
                 violations.append(relative + ": local Peek writer outside admitted policy/streak methods")
     if relative == "org/telegram/ui/PurplePeekControls.java":
         start, end = method_body(text, "complete")
-        for write in re.finditer(r"\b(?:commitFocusPolicy|commitWaitPolicy|setPeekStartDelay|setPeekExitHidden|activatePeek)\s*\(", text):
+        for write in re.finditer(r"\b(?:commitFocusPolicy|commitWaitPolicy|setPeekStartDelay|setPeekReadyTimeout|setPeekExitHidden|activatePeek)\s*\(", text):
             if not start <= write.start() < end:
                 violations.append(relative + ": local Peek write outside pending completion")
     if relative != "org/telegram/messenger/purple/PurpleWriter.java" and re.search(r'\bsetTable(?:Bool|String|Int)\s*\([^;]*?"peek"', raw, re.S):

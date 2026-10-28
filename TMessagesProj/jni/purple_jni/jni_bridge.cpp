@@ -1318,6 +1318,8 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 	// Zero is a real answer here: a tap that starts a peek with no clock.
 	json += QStringLiteral(",\"peekStartDelay\":");
 	json += QString::number(Purple::PeekStartDelaySeconds(gate.settings, gate.device));
+	json += u",\"peekReadyTimeout\":"_q;
+	json += QString::number(Purple::PeekReadyTimeoutSeconds(gate.settings));
 	json += QStringLiteral(",\"peekExitHiddenChats\":");
 	AppendJsonBool(json, Purple::PeekExitHiddenChats(gate.settings));
 	json += QStringLiteral(",\"peekTap\":");
@@ -2327,6 +2329,22 @@ Java_org_telegram_messenger_purple_PurpleCore_setPeekStartDelayNative(
 	return ToJava(env, SpliceJson(Purple::SetPeekStartDelay(
 		text,
 		QStringLiteral("settings.toml"),
+		int(seconds))));
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_setPeekReadyTimeoutNative(
+		JNIEnv *env,
+		jclass,
+		jbyteArray settingsUtf8,
+		jint seconds) {
+	auto text = QString();
+	if (!ReadUtf8(env, settingsUtf8, text)) {
+		return nullptr;
+	}
+	return ToJava(env, SpliceJson(Purple::SetPeekReadyTimeout(
+		text,
+		u"settings.toml"_q,
 		int(seconds))));
 }
 
