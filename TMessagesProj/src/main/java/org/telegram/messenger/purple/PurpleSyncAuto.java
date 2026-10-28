@@ -29,6 +29,15 @@ public final class PurpleSyncAuto {
         }
     };
     private static final PurpleSaveDebounces saves = new PurpleSaveDebounces(scheduler);
+    static void quiesceCarry(PurpleSyncChatOrigin origin,Runnable done) {
+        AndroidUtilities.runOnUIThread(()->{
+            Runtime runtime=accounts.get(origin.accountKey());
+            if(runtime!=null&&runtime.opening.slot==origin.slot){
+                runtime.cancelRetry();runtime.network.cancel();
+                runtime.queue(()->{runtime.engine.suspend();PurpleSyncAutoEdits.cleanup(origin.slot);done.run();});
+            } else {PurpleSyncAutoEdits.cleanup(origin.slot);done.run();}
+        });
+    }
     public static final class Status {
         public final boolean enabled;
         public final String text;

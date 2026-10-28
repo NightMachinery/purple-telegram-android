@@ -2,9 +2,9 @@
 
 `PurpleSyncChatMoveCore.request(operation, input)` is a pure adapter to the
 shared carry planner and journal. It does not read files, acquire account locks,
-post messages, delete messages or schedule callbacks. The later move executor
-must supply verified transport and durability receipts. Its production entry
-points remain held until those slices and the required qualification land.
+post messages, delete messages or schedule callbacks. The injected move executor
+supplies verified transport and durability receipts. No production move backend
+or user entry point is activated; those require later qualification.
 
 The request is a UTF-8 JSON object carried in a byte array. The native strict
 core JSON reader rejects duplicate keys, invalid UTF-8/Unicode, fractional and
@@ -104,9 +104,9 @@ require an exact version key and lineage. The pure bridge preserves the containe
 
 The Android base pins the shared core through its gitlink. No shared algorithms,
 new core lifecycle transitions or retention policy are copied into JNI. The
-approved pending/protected-source, reader-baseline, logout/abandonment, repair
-and cleanup changes remain requirements for their later executor/storage slices;
-this facade grants no fallback when the pinned core lacks a later contract.
+pending/protected-source, reader-baseline, interrupted abandonment, repair and
+cleanup contracts are consumed from the pinned core. JNI projects those APIs;
+it supplies no client fallback or replacement algorithm.
 
 The real JNI host driver is described in
 `TMessagesProj/jni/purple_jni/tests/sync_chat_move/README.md`. Host results do not
@@ -114,8 +114,8 @@ qualify Android directory durability, Telegram routes, shrinker behavior or UI.
 
 ## Durable operation storage
 
-Android has a storage adapter for a future move executor. It sends nothing and
-adds no move UI. Existing Follow/Fill and outward move execution remain held.
+Android has worker-owned storage and an injected Carry executor. They add no
+move UI or live backend. Existing user-facing Follow/Fill remain held.
 The adapter delegates journal parsing, transitions, prepared images and hashes
 to the shared core through the existing carry JNI surface.
 
@@ -123,8 +123,9 @@ to the shared core through the existing carry JNI surface.
 settings sync. Its carry-only opening path runs before ordinary recovery,
 changed-chat checks and stage cleanup. Any carry artifact, including a malformed,
 newer or foreign journal or an orphan object directory, blocks ordinary writers
-across close and restart. Relink, Start again and interrupted ordinary recovery
-also hold. A new login cannot resume an old login's operation. Account removal
+aacross close and restart until the terminal wrapper and every retained artifact
+validate. Relink, Start again and interrupted ordinary recovery stay conservative
+when carry artifacts remain. A new login cannot resume an old login's operation. Account removal
 continues to own removal of account-local files; this adapter deletes no journal.
 
 The account sync directory contains a bounded `carry.json` v1 envelope. It binds
@@ -217,9 +218,9 @@ This establishes host behavior, not phone lifecycle, power-loss or Telegram safe
 
 ## Typed carry I/O and transport authority
 
-A5c adds worker-owned `PurpleSyncChatMoveIO` and pure
-`PurpleSyncChatMoveRequests`. It supplies no executor, UI action, live request
-caller or cleanup activation. Ordinary publishing still requires its existing
+Worker-owned `PurpleSyncChatMoveIO` and pure `PurpleSyncChatMoveRequests`
+supply typed authority to the injected executor. No UI action, live request
+caller or cleanup activation is supplied. Ordinary publishing still requires its existing
 state, binding, consent and queue admission. Automatic sync stays Self-only.
 
 A typed reader seals each downloaded record against a second exact native
@@ -311,7 +312,7 @@ D8 absence rules:
   prove that an issued mark was unsent. Without matched-request evidence it
   holds, including after restart.
 - Changed winner and login do not erase issued effects or retarget them.
-  Abandon/recovery decisions belong to shared core and the later executor.
+  Abandon/recovery decisions belong to shared core and the worker executor.
 
 ### Private transport extension
 
@@ -344,3 +345,143 @@ The full host suite and affected arm64 units qualify compilation and synthetic
 contracts. They do not establish Telegram forwarding behavior, Android UI or
 server acceptance, physical device durability, or production move execution.
 Those require later separately authorized qualification.
+
+
+## One worker Carry executor
+
+`PurpleSyncChatMove` is package-private and created only through an injected
+`PurpleSyncChat.move(Port)` seam. The port supplies worker scheduling, current
+RAM login/foreground admission, fresh typed facts and controlled transports.
+There is no production implementation of that port, screen, Telegram dispatch
+or automatic activation. The service, manual runner and automatic engine expose
+quiescence hooks without starting a move themselves.
+
+Core `NextAction` is the only phase authority. Java retains a run, command ticket
+and exact active command for callback ownership. Commands freeze account, RAM
+origin, persistent login, operation, O/N and journal revision. Every reply checks
+that identity; synchronous status observers are followed by admission checks.
+Closing or losing foreground revokes permits immediately and queues resource
+release on the worker. A late callback cannot clear a later command or revive a
+closed owner. Failed cleanup still releases the exact account/file leases.
+
+Before Begin, the account Carry lease blocks ordinary acquisition. Registered
+publisher cancellation callbacks run outside the operations monitor. The service
+drains a captured queue, including throwing/reentrant observers; the manual
+runner and automatic engine suspend their own operation. Injected quiescence
+must finish their queued worker cleanup before the executor opens the account
+store. A still-owned publisher produces `PublishersNotQuiescent`. The account
+file lock is retained through the move. GUI-facing permit predicates are
+observer-free RAM checks; the store, JSON, hashing and barriers stay on the worker.
+
+The action order is:
+
+1. Open before ordinary stage cleanup, quiesce, and persist Begin plus exact
+   opening stage/base objects. A resumed journal reopens and barriers durable
+   objects, then obtains fresh complete resolution before progressing.
+2. ResolvePending reads O. Readable exact landed bytes finish the pending state;
+   an unlanded readable record uses its frozen O upload permit and stable ids,
+   then rereads. Protected O never receives a send. Imported uncertainty and any
+   saved issued intent establish a durable Issued floor, so later NotIssued
+   cannot replace the required complete scoped read. Definite ChatGone uses the
+   core loss transition while retaining exact local bytes.
+3. WritePendingState and RetirePendingStage persist the prepared image, barrier
+   it, retire only exact old bytes and acknowledge through core. ResolveAgain
+   and Plan use fresh sealed inventories and the exact retained own base.
+4. StageOwn persists the immutable own record and reserved state. Delivery
+   reservations precede DeliveryPrepared. Prepared slots issue once; uncertain
+   slots require a new complete scan after their read ticket. Core missing-record
+   Retry is persisted before another delivery intent. One slot dispatch per run
+   prevents an automatic retry loop; explicit Retry can begin another run.
+5. VerifyDestination prepares the exact N state and any deferred target stage
+   through PrepareSyncCarryJournalCommit. Unknown or missing evidence cannot
+   commit. A restart before DeliveryPrepared first reads N; it cannot send until
+   core returns through Deliver and a durable intent.
+6. Switch and RepairMark persist MarkPostPrepared before dispatch and require
+   saved request-bound ack plus exact canonical owned mark readback. Follow and
+   Fill read their frozen existing target mark by exact typed id/date, supported
+   text, C0 ownership and no media; they never invent an own-request ack or post
+   another mark. A changed resolver winner admits only frozen reconciliation if
+   it is this operation's saved own ack or existing/verified target mark. New
+   effect admission still checks the opening resolution.
+7. PrepareCache writes a private incomplete cache. CommitState writes the exact
+   retained image and pins its exact base for ordinary recovery. RetireOwnStage
+   retires only exact obsolete bytes and installs/barriers the already-reserved
+   deferred N stage. CompleteCache unions disclosures and preserves the accepted
+   reader baseline and sticky warnings before ordinary admission.
+8. Cleanup completes empty authorized work, or passes definite scoped R3
+   ChatGone to core. Unknown, MarkGone, protection, contradictory scope and any
+   remaining deletion policy hold. Explicit SkipCleanup is core-authorized;
+   arbitrary record, mark and whole-chat deletion remain disabled.
+
+Every nonempty core canonical reply is persisted before its status is used,
+including holds and retries. An empty reply holds without progression. Resuming
+missing, malformed, foreign-login or newer evidence does not fabricate state.
+RepairMark preserves the exact ledger/binding. No-state Fill preserves state
+absence; unreadable Fill source holds.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Quiesce
+    Quiesce --> Open: publishers drained
+    Open --> Fresh: Begin or durable Resume
+    Fresh --> CoreAction: current frozen scope
+    CoreAction --> IO: core requests read or effect
+    IO --> Persist: scoped receipt and native barriers
+    Persist --> Fresh: nonempty canonical
+    CoreAction --> Terminal: core has no remaining action
+    Fresh --> Held: uncertainty or revoked admission
+    IO --> Held: unknown or durability failure
+    Held --> Open: explicit same-login Retry or Resume
+    Open --> Abandoned: explicit new-login Discard
+    Abandoned --> Terminal: retained effects and stage preserved
+    Terminal --> Ordinary: validate all retained artifacts
+```
+
+### Interrupted Discard and terminal evidence
+
+A new login cannot Resume. Its explicit Discard validates under the retained
+wrapper authority and calls AbandonInterruptedOperation with the current login.
+It sends nothing and retains every reservation, ack and unresolved effect. Before
+N state commit it preserves actual O state and stage. After commit it materializes
+and barriers exact already-reserved target pending bytes before terminal
+abandonment, whether the obsolete carry stage is still present or was already
+retired. It cannot leave an ordinary pending sequence without its exact file.
+
+Terminal carry.json remains durable. Ordinary worker opening validates its
+codec, account/binding and terminal status; every carry-object name/hash and all
+history wrappers are checked, including unreferenced objects. Objects are bounded
+to 1,024/64 MiB, histories to 256/64 MiB, with existing per-image caps. A later
+Begin first archives the complete terminal wrapper under its hash and barriers
+it. Unknown paths, corrupt history, overflow or a failed barrier hold admission.
+A terminal wrapper from an earlier login is an integrity record, so a new
+operation can archive it without resuming its effects. No-state Fill retains
+its empty binding scope after later ordinary state initialization. No
+history/object garbage collection is added. Static relink/reset paths retain
+their conservative carry-artifact guard.
+
+### Playlist hook and evidence limits
+
+Absent playlists permit NotInUse. State/library pending facts and observed O/N
+playlist records force a hold before settings delivery. Raw Verified JSON is not
+a playlist proof. The typed PlaylistReceipt hook has no issuer in this slice;
+there is no Android playlist carry producer, so required playlists remain held.
+A future issuer must supply genuinely verified scope/plan/destination evidence,
+which is rechecked through core. No receipt is synthesized, and no playlist
+merge, forwarding, pruning or fake complete inventory is implemented.
+
+The registered `sync-chat-move-executor` host suite uses actual AGP business
+classes, fresh host JNI, real private files and narrow synthetic Android/cloud
+ports. It covers each action/reopen boundary, exact write/rename/barrier faults,
+effect-before-ack, protected pending and own-base recovery, failed N/mark reads,
+cache/state gaps, deferred Discard, late callbacks, throwing cancellation,
+quiescence lock order, ordinary terminal admission and shared uploader claims.
+The service fixture separately exercises its queued quiescence callback. The
+canonical in-tree runner requires completion records and floors for these tests.
+Affected arm64 compilation is separate from Android filesystem, phone lifecycle,
+UI and Telegram-server qualification; none of those native behaviors is claimed.
+
+### O-pending read chronology
+
+A Pending command opens a read ticket after store reopen and after the current scanner sequence. Its sealed, complete O inventory must come from a scan started after that ticket, scoped to the exact account/source and pending bytes. A retained older scan cannot prove an issued pending record absent. The ticket belongs to the store epoch and shared pending-slot generation, and consuming it invalidates sibling tickets. Issuance, renewal and outcome consumption invalidate the shared generation too. A private absence proof admits one pending attempt; a found-record proof feeds one core transition. Renewals retain the same active request and upload claim.
+
+Affirmative Issued observations are persisted before checking inventory or chronology, so invalid evidence cannot erase the conservative floor. A stale scan leaves ResolvePending, its exact stage and the floor intact. A new post-outcome O scan can reconcile the existing record without a duplicate send or deferred record. Definite scoped ChatGone retains its separate R3 path; it is never inferred from an empty inventory.

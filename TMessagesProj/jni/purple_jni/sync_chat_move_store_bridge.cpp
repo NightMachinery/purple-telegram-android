@@ -405,7 +405,7 @@ QJsonObject StorageCodec(const QString &op, const QJsonObject &input) {
     }
     auto result = QJsonObject{{u"status"_q, u"Ready"_q}, {u"bytes"_q, Blob(encoded)},
         {u"journal"_q, Blob(journal)}, {u"objects"_q, objects}, {u"send_identities"_q, ids.isUndefined() ? QJsonObject() : ids},
-        {u"transport"_q, wrapper.value(u"transport"_q).toObject()}, {u"requiredObjects"_q, required}, {u"stateHash"_q, j.stateHash}, {u"writeHash"_q, QString()}, {u"stageHash"_q, QString()}, {u"retireHash"_q, QString()}};
+        {u"holdsWrites"_q, SyncCarryJournalHoldsWrites(j)}, {u"transport"_q, wrapper.value(u"transport"_q).toObject()}, {u"requiredObjects"_q, required}, {u"stateHash"_q, j.stateHash}, {u"writeHash"_q, QString()}, {u"stageHash"_q, QString()}, {u"retireHash"_q, QString()}};
     const auto action = NextSyncCarryJournalAction(j);
     if (action == SyncCarryJournalAction::WritePendingState) result.insert(u"writeHash"_q, j.pendingStateHash);
     if (action == SyncCarryJournalAction::CommitState) result.insert(u"writeHash"_q, j.nextStateHash);

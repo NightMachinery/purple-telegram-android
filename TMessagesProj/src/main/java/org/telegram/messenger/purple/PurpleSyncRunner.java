@@ -666,7 +666,7 @@ public final class PurpleSyncRunner {
         Object owner=new Object(),previousOwner=operationOwner;
         PurpleSyncOperations.Capability previous=operationCapability;
         long run=generation;
-        PurpleSyncOperations.Capability capability=PurpleSyncOperations.acquire(operationKey(),owner,()->!closed&&session.available());
+        PurpleSyncOperations.Capability capability=PurpleSyncOperations.acquire(operationKey(),owner,()->!closed&&session.available(),()->ui.post(this::suspend));
         if(capability==null)return false;
         boolean installed=false;
         try {

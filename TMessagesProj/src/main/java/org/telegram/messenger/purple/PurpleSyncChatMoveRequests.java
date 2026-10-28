@@ -61,7 +61,7 @@ final class PurpleSyncChatMoveRequests {
         if (permit == null || !permit.current()) return null;
         if (permit.kind.equals("forward")) return forward(permit.source,permit.sourcePeer(),permit.target,permit.targetPeer(),permit.sourceId,permit.randomId);
         if (permit.kind.equals("mark")) return mark(permit.target,permit.targetPeer(),permit.markText(),permit.randomId);
-        if (!permit.kind.equals("own") || file == null || file.id != permit.fileId) return null;
+        if ((!permit.kind.equals("own")&&!permit.kind.equals("pending")) || file == null || file.id != permit.fileId) return null;
         return PurpleSyncChatUpload.request(permit.target,permit.targetPeer(),0,file,permit.randomId);
     }
     private PurpleSyncChatMoveRequests() { }

@@ -141,6 +141,16 @@ public final class PurpleSyncChat {
             closed=true;if(reader!=null){reader.cancel();reader=null;}holder.service.cancelBorrowed(owner);
         }
     }
+    static PurpleSyncChatMove move(PurpleSyncChatMove.Port injected) {
+        return injected==null?null:new PurpleSyncChatMove(injected);
+    }
+    static void quiesceCarry(PurpleSyncChatOrigin origin,Runnable done) {
+        AndroidUtilities.runOnUIThread(()->{
+            Holder holder=accounts.get(origin.slot);
+            if(holder!=null&&holder.env.origin.equals(origin))holder.service.quiesceCarry();
+            PurpleSyncAuto.quiesceCarry(origin,done);
+        });
+    }
     static void underLock(PurpleSyncFileContext context,Object owner,String key,boolean beforePost,BooleanSupplier current,Consumer<Status> done) {
         underLock(context,owner,key,beforePost,current,current,done);
     }

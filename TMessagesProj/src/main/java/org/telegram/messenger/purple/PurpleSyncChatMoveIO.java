@@ -109,24 +109,26 @@ final class PurpleSyncChatMoveIO implements AutoCloseable {
         final int sourceId;
         private final PurpleSyncChatMoveIO owner;
         private final Object epoch;
-        private final AtomicBoolean live;
+        private final AtomicBoolean live,uploadClaim;
         private final TLRPC.InputPeer from,to;
         private final byte[] body;
         private final String text;
         private final PurpleSyncChatFacts.MappedPeer targetFacts;
-        private Permit(PurpleSyncChatMoveIO owner,Fresh fresh,JSONObject journal,JSONObject slot,String key,long renewal,byte[] body,AtomicBoolean live) throws Exception {
-            this.owner=owner;origin=fresh.origin;source=Peer.parse(journal.getString("source"),origin.userId);target=Peer.parse(journal.getString("target"),origin.userId);
+        private Permit(PurpleSyncChatMoveIO owner,Fresh fresh,JSONObject journal,JSONObject slot,String key,long renewal,byte[] body,AtomicBoolean live,AtomicBoolean uploadClaim) throws Exception {
+            this.owner=owner;origin=fresh.origin;source=Peer.parse(journal.getString("source"),origin.userId);target=Peer.parse(slot.getString("kind").equals("pending")?journal.getString("source"):journal.getString("target"),origin.userId);
             operation=journal.getString("operation");revision=journal.getLong("revision");this.key=key;kind=slot.getString("kind");hash=slot.getString("hash");
             randomId=unsigned(slot.getString("random_id"));fileId=Long.parseUnsignedLong(slot.getString("file_id"));sourceId=slot.getInt("source_id");this.renewal=renewal;
-            from=PurpleSyncChatMoveRequests.peer(fresh.sourcePeer);to=PurpleSyncChatMoveRequests.peer(fresh.targetPeer);
-            epoch=owner.store.permitEpoch();this.live=live;this.body=body.clone();text=journal.getString("mark_text");
-            targetFacts=new PurpleSyncChatFacts.MappedPeer(origin,target,fresh.target.peer.kind,fresh.target.peer.creator,fresh.target.peer.soleAdmin,null,null);
+            from=PurpleSyncChatMoveRequests.peer(fresh.sourcePeer);to=PurpleSyncChatMoveRequests.peer(kind.equals("pending")?fresh.sourcePeer:fresh.targetPeer);
+            epoch=owner.store.permitEpoch();this.live=live;this.uploadClaim=uploadClaim;this.body=body.clone();text=journal.getString("mark_text");
+            PurpleSyncChatClient.Info targetInfo=kind.equals("pending")?fresh.source:fresh.target;
+            targetFacts=new PurpleSyncChatFacts.MappedPeer(origin,target,targetInfo.peer.kind,targetInfo.peer.creator,targetInfo.peer.soleAdmin,null,null);
         }
         boolean current() {
             if(!live.get() || owner.closed || !owner.store.permitCurrent(epoch))return false;
             boolean allowed=owner.current.getAsBoolean();
             return allowed&&live.get()&&!owner.closed&&owner.store.permitCurrent(epoch);
         }
+        boolean claimUpload() { return (kind.equals("own")||kind.equals("pending"))&&current()&&uploadClaim.compareAndSet(false,true)&&current(); }
         byte[] payload() { return body.clone(); }
         String markText() { return text; }
         TLRPC.InputPeer sourcePeer() { return PurpleSyncChatMoveRequests.peer(from); }
@@ -227,7 +229,9 @@ final class PurpleSyncChatMoveIO implements AutoCloseable {
     private JSONObject scope(JSONObject j) throws Exception {
         return json("account",origin.accountKey(),"source",j.getString("source"),"target",j.getString("target"),"journal",blob(store.journalBytes()));
     }
-    private void fresh(JSONObject j,Fresh fresh) throws Exception {
+    private void fresh(JSONObject j,Fresh fresh) throws Exception { fresh(j,fresh,false); }
+    void reconciliationFresh(Fresh fresh) throws IOException {try{fresh(journal(),fresh,true);}catch(Exception e){throw failure(e);}}
+    private void fresh(JSONObject j,Fresh fresh,boolean reconcile) throws Exception {
         require(fresh!=null && origin.equals(fresh.origin) && store.loginAuthority().equals(fresh.loginAuthority)
                 && fresh.fullResolution && fresh.oldRead!=null && fresh.oldRead!=DirectRead.Unknown && fresh.oldRead!=DirectRead.Migrated
                 && fresh.source!=null && fresh.target!=null && origin.equals(fresh.source.origin) && origin.equals(fresh.target.origin)
@@ -236,8 +240,18 @@ final class PurpleSyncChatMoveIO implements AutoCloseable {
                 && PurpleSyncChatRequests.matches(fresh.target.chat,fresh.targetPeer)
                 && fresh.resolution!=null && fresh.resolution.selfUserId==origin.userId,"FreshScopeMismatch");
         Resolution r=PurpleSyncChatCore.resolve(fresh.resolution);
-        require(r.action.name().equals(core("parse",scope(j)).fields.getString("expectedAction")) && r.action!=Action.Invalid && r.action!=Action.NewerMark && r.action!=Action.VerifyMark && r.action!=Action.ReadWinnerInventory
-                && cacheEquals(j.optJSONObject("expected_winner"),r.winner) && cacheEquals(j.optJSONObject("old_mark"),r.cache),"ResolutionChanged");
+        boolean opening=r.action.name().equals(core("parse",scope(j)).fields.getString("expectedAction"))
+                && r.action!=Action.Invalid && r.action!=Action.NewerMark && r.action!=Action.VerifyMark && r.action!=Action.ReadWinnerInventory
+                && cacheEquals(j.optJSONObject("expected_winner"),r.winner) && cacheEquals(j.optJSONObject("old_mark"),r.cache);
+        boolean ownWinner=false;
+        if(reconcile && r.winner!=null && r.winner.chat.token().equals(j.getString("target"))) {
+            JSONObject mark=j.optJSONObject("target_mark");
+            if(mark!=null&&(j.optBoolean("mark_verified")||j.getInt("mode")==1||j.getInt("mode")==2)&&cacheEquals(mark,r.winner))ownWinner=true;
+            JSONObject entries=store.transport().optJSONObject("entries");
+            if(entries!=null){Iterator<String> it=entries.keys();while(it.hasNext()){JSONObject slot=entries.getJSONObject(it.next());
+                if(slot.getString("kind").equals("mark")&&slot.optInt("ack_id")==r.winner.markId&&j.optBoolean("mark_attempted"))ownWinner=true;}}
+        }
+        require(opening||reconcile&&ownWinner,"ResolutionChanged");
         JSONObject input=scope(j);input.put("eligibility",PurpleSyncChatCore.eligibilityJson(fresh.target.eligibility()));
         require(!"Hold".equals(core("readers",input).fields.getString("verdict")),"ReadersUnknown");
     }
@@ -287,7 +301,7 @@ final class PurpleSyncChatMoveIO implements AutoCloseable {
     }
     Permit renew(Permit previous,Fresh fresh,RecordReceipt source) throws IOException {
         require(previous!=null&&previous.owner==this&&previous.current(),"StalePermit");
-        return authorize(previous.kind,previous.sourceId,previous.hash,fresh,source,previous);
+        return previous.kind.equals("pending")?pendingPermit(fresh,previous,null):authorize(previous.kind,previous.sourceId,previous.hash,fresh,source,previous);
     }
     private Permit authorize(String kind,int sourceId,String hash,Fresh fresh,RecordReceipt source,Permit previous) throws IOException {
         try {
@@ -308,7 +322,7 @@ final class PurpleSyncChatMoveIO implements AutoCloseable {
             readerWarning(t,fresh.target);capacity(t);
             require(store.claimSlot(key,ownerToken),"SlotBusy");
             slot.put("state","issued");store.transport(t,false);check();
-            AtomicBoolean live=new AtomicBoolean(true);Permit permit=new Permit(this,fresh,j,slot,key,previous==null?1:previous.renewal+1,body,live);
+            AtomicBoolean live=new AtomicBoolean(true);Permit permit=new Permit(this,fresh,j,slot,key,previous==null?1:previous.renewal+1,body,live,previous==null?new AtomicBoolean():previous.uploadClaim);
             if(previous!=null)previous.live.set(false);permits.put(key,permit);return permit;
         } catch(Exception error) { close();throw failure(error); }
     }
@@ -353,7 +367,7 @@ final class PurpleSyncChatMoveIO implements AutoCloseable {
     }
     ReadTicket beginReconcile(String key,Fresh fresh) throws IOException {
         try {
-            JSONObject j=journal();fresh(j,fresh);require(!store.slotLive(key),"SlotBusy");
+            JSONObject j=journal();fresh(j,fresh,true);require(!store.slotLive(key),"SlotBusy");
             JSONObject slot=store.transport().getJSONObject("entries").getJSONObject(key);
             require(!slot.getString("kind").equals("mark"),"MarkNeedsExactRead");
             String state=slot.getString("state");require(state.equals("issued")||state.equals("unknown"),"ReconciliationRequired");
@@ -364,7 +378,7 @@ final class PurpleSyncChatMoveIO implements AutoCloseable {
         check();require(ticket!=null&&ticket.owner==this&&!ticket.consumed&&store.permitCurrent(ticket.epoch)&&ticket.generation==store.slotGeneration(ticket.key),"StaleRead");
         require(destination!=null&&destination.readSequence()>ticket.after,"StaleRead");
         try {
-            JSONObject j=journal();fresh(j,fresh);Peer target=Peer.parse(j.getString("target"),origin.userId);JSONObject verified=inventory(destination,origin,target);
+            JSONObject j=journal();fresh(j,fresh,true);Peer target=Peer.parse(j.getString("target"),origin.userId);JSONObject verified=inventory(destination,origin,target);
             require(!store.slotLive(ticket.key),"SlotBusy");JSONObject t=store.transport(),slot=t.getJSONObject("entries").getJSONObject(ticket.key);
             require(slot.getString("state").equals(ticket.state)&&ticket.generation==store.slotGeneration(ticket.key),"StaleRead");boolean found=false;
             JSONArray messages=verified.getJSONArray("messages");for(int i=0;i<messages.length();++i)if(hash(PurpleSyncRetainedBases.decode(messages.getJSONObject(i).getString("bytes"))).equals(slot.getString("hash")))found=true;
@@ -382,6 +396,82 @@ final class PurpleSyncChatMoveIO implements AutoCloseable {
                     && m.message.equals(j.getString("mark_text")),"UnknownMark");
             return json("outcome","Valid","account",origin.accountKey(),"chat",route.chat.token(),"id",Integer.toString(id),"date",Integer.toString(m.date),"text",m.message,"hasMedia",false,"ownership","Own");
         } catch(Exception error) { throw failure(error); }
+    }
+    JSONObject existingMarkReadback(PurpleSyncChatIO route,TLObject response) throws IOException {
+        try {
+            JSONObject j=journal();require(j.getInt("mode")==1||j.getInt("mode")==2,"MarkNeedsMatchedRequest");
+            JSONObject expected=j.getJSONObject("target_mark");int id=expected.getInt("id");
+            require(route!=null&&origin.equals(route.origin)&&route.chat.token().equals(j.getString("target")),"MarkNeedsExactRead");
+            TLRPC.messages_Messages page=response instanceof TLRPC.messages_Messages?(TLRPC.messages_Messages)response:null;
+            require(page!=null&&page.messages.size()==1,"UnknownMark");TLRPC.Message message=page.messages.get(0);
+            require(route.lookup(response,null,id,ignored->new PurpleSyncClient.Message(id,true,false,false,"",null,route.chat,0,0,0,null)).status==PurpleSyncClient.LookupStatus.Found
+                    &&message.getClass()==TLRPC.TL_message.class&&message.date==expected.getLong("date")&&message.media==null&&route.ownership(message)==Ownership.Own
+                    &&PurpleSyncChatCore.parseMark(message.message,false,route.ownership(message)).status==MarkStatus.Supported,"UnknownMark");
+            return json("outcome","Valid","account",origin.accountKey(),"chat",route.chat.token(),"id",Integer.toString(id),"date",Integer.toString(message.date),"text",message.message,"hasMedia",false,"ownership","Own");
+        }catch(Exception e){throw failure(e);}
+    }
+    static final class PendingProof {
+        private final PurpleSyncChatMoveIO owner;
+        private final Object epoch,generation;
+        private final String key,hash;
+        private final JSONObject inventory;
+        private final boolean absent;
+        private boolean used;
+        private PendingProof(PurpleSyncChatMoveIO owner,String key,String hash,JSONObject inventory,boolean absent) {
+            this.owner=owner;this.key=key;this.hash=hash;this.inventory=inventory;this.absent=absent;
+            epoch=owner.store.permitEpoch();generation=owner.store.invalidateSlot(key);
+        }
+    }
+    ReadTicket beginPendingRead(Fresh fresh) throws IOException {
+        try {
+            JSONObject j=journal();fresh(j,fresh,true);
+            require(core("next",scope(j)).fields.getString("nextAction").equals("ResolvePending"),"PendingHeld");
+            byte[] body=store.pendingBytes();require(body.length!=0,"PendingMismatch");String key="pending:"+hash(body);
+            require(!store.slotLive(key),"SlotBusy");return new ReadTicket(this,key,"pending");
+        }catch(Exception e){throw failure(e);}
+    }
+    PendingProof consumePendingRead(ReadTicket ticket,PurpleSyncInventory source,Fresh fresh) throws IOException {
+        try {
+            JSONObject j=journal();fresh(j,fresh,true);Peer chat=Peer.parse(j.getString("source"),origin.userId);
+            JSONObject verified=inventory(source,origin,chat);
+            require(ticket!=null&&ticket.owner==this&&ticket.state.equals("pending")&&!ticket.consumed&&store.permitCurrent(ticket.epoch)
+                    &&ticket.generation==store.slotGeneration(ticket.key)&&source.readSequence()>ticket.after,"StaleRead");
+            byte[] body=store.pendingBytes();String hash=hash(body),key="pending:"+hash;
+            require(body.length!=0&&ticket.key.equals(key)&&core("next",scope(j)).fields.getString("nextAction").equals("ResolvePending"),"PendingMismatch");
+            require(!store.slotLive(key),"SlotBusy");boolean absent=true;JSONArray messages=verified.getJSONArray("messages");
+            for(int i=0;i<messages.length();++i)if(hash(PurpleSyncRetainedBases.decode(messages.getJSONObject(i).getString("bytes"))).equals(hash))absent=false;
+            ticket.consumed=true;return new PendingProof(this,key,hash,verified,absent);
+        }catch(Exception e){throw failure(e);}
+    }
+    JSONObject pendingInventory(PendingProof proof) throws IOException {
+        check();require(proof!=null&&proof.owner==this&&!proof.used&&store.permitCurrent(proof.epoch)
+                &&proof.generation==store.slotGeneration(proof.key),"StaleRead");
+        proof.used=true;store.invalidateSlot(proof.key);
+        try{return new JSONObject(proof.inventory.toString());}catch(Exception e){throw failure(e);}
+    }
+    Permit pendingPermit(Fresh fresh,Permit previous,PendingProof proof) throws IOException {
+        try {
+            JSONObject j=journal();fresh(j,fresh);
+            require(core("next",scope(j)).fields.getString("nextAction").equals("ResolvePending") && fresh.source.readable()
+                    && fresh.source.eligibility().allowed() && PurpleSyncChatRequests.matches(fresh.source.chat,fresh.sourcePeer),"PendingHeld");
+            byte[] body=store.pendingBytes();require(body.length!=0,"PendingMismatch");String hash=hash(body),key="pending:"+hash;
+            require(previous==null?!permits.containsKey(key):permits.get(key)==previous&&previous.current(),"SlotBusy");
+            if(previous==null){
+                require(proof!=null&&proof.owner==this&&!proof.used&&proof.absent&&proof.key.equals(key)&&proof.hash.equals(hash)
+                        &&store.permitCurrent(proof.epoch)&&proof.generation==store.slotGeneration(key),"StaleRead");
+                proof.used=true;
+            }
+            store.invalidateSlot(key);store.pendingIntent(body,"Issued");
+            long random=store.sendIdentity("pending-random:"+hash,new SecureRandom()),file=store.sendIdentity("pending-file:"+hash,new SecureRandom());
+            JSONObject slot=json("kind","pending","hash",hash,"random_id",Long.toUnsignedString(random),"file_id",Long.toUnsignedString(file),"source_id",0);
+            require(store.claimSlot(key,ownerToken),"SlotBusy");
+            Permit permit=new Permit(this,fresh,j,slot,key,previous==null?1:previous.renewal+1,body,new AtomicBoolean(true),previous==null?new AtomicBoolean():previous.uploadClaim);
+            if(previous!=null)previous.live.set(false);permits.put(key,permit);return permit;
+        }catch(Exception e){close();throw failure(e);}
+    }
+    void pendingReceipt(Permit permit) throws IOException {
+        check();require(permit!=null&&permit.owner==this&&permit.kind.equals("pending")&&permits.get(permit.key)==permit&&permit.current(),"StalePermit");
+        permit.live.set(false);permits.remove(permit.key);store.invalidateSlot(permit.key);store.releaseSlot(permit.key,ownerToken);
     }
     @Override public void close() {
         closed=true;for(Permit permit:permits.values()){permit.live.set(false);store.releaseSlot(permit.key,ownerToken);}permits.clear();

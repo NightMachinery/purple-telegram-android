@@ -170,7 +170,8 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
     private byte[] state;
     private Status status = Status.Disabled;
     private boolean opened;
-    private boolean carryOnly;
+    private boolean carryOnly, terminalCarry;
+    private boolean carryBlocks(){return PurpleSyncChatMoveStore.artifacts(root)&&!terminalCarry;}
     private boolean production;
     private PurpleAccountFiles.Identity origin;
     private PurpleSyncFileContext context;
@@ -265,7 +266,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
                 return fail(Status.LockBusy);
             }
             if (carryOnly) return result(Status.Ready);
-            if (PurpleSyncChatMoveStore.artifacts(root)) return fail(Status.CarryPending);
+            if (PurpleSyncChatMoveStore.artifacts(root)) {terminalCarry=PurpleSyncChatMoveStore.completed(root,production&&origin!=null?origin.key:null);if(!terminalCarry)return fail(Status.CarryPending);}
             if (!PurpleSyncRetainedFiles.valid(root)) return fail(Status.InvalidRetention);
             if (!prepareDirectory(pending)) {
                 return fail(Status.IoError);
@@ -286,7 +287,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
             if (!recover(stageFile) || !recoverAuto(new File(root,"auto.json"),PurpleAccountFiles.capture(account)!=null?PurpleAccountFiles.capture(account).key:"")) {
                 return fail(Status.IoError);
             }
-            if (!knownFiles(root, "lock", "state.json", "pending", "auto.json", "sync-chat-setup.json", "sync-chat-setup-create.json", "sync-chat-setup-mark.json", "retained-bases")
+            if (!knownFiles(root, "lock", "state.json", "pending", "auto.json", "sync-chat-setup.json", "sync-chat-setup-create.json", "sync-chat-setup-mark.json", "retained-bases", "carry.json", "carry-cache.json", "carry-objects", "carry-history")
                     || !knownFiles(pending, "config.json")) {
                 return fail(Status.AmbiguousFiles);
             }
@@ -347,7 +348,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
     }
 
     public synchronized Result initialize(byte[] boundState) {
-        if (carryOnly || PurpleSyncChatMoveStore.artifacts(root)) return result(Status.CarryPending);
+        if (carryOnly || carryBlocks()) return result(Status.CarryPending);
         if (!routeCurrent()) return fail(Status.AccountUnbound);
         if (status != Status.Uninitialized || stateFile.exists()
                 || stageFile.exists() || boundState == null
@@ -732,7 +733,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
         state = null;
         status = Status.Disabled;
         opened = false;
-        carryOnly = false;
+        carryOnly = false;terminalCarry=false;
     }
 
     private static PurpleAccountFiles requireFiles(PurpleSyncFileContext context) {
@@ -741,7 +742,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
     }
 
     private boolean bound() {
-        return !carryOnly && !PurpleSyncChatMoveStore.artifacts(root) && state != null && bindingMatches(state);
+        return !carryOnly && !carryBlocks() && state != null && bindingMatches(state);
     }
 
     private java.util.function.BooleanSupplier admission=()->true;
@@ -818,7 +819,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
 
     private void dropUnreservedStage() {
         try {
-            if (!carryOnly && !PurpleSyncChatMoveStore.artifacts(root) && Arrays.equals(read(stateFile, STATE_LIMIT), state)) {
+            if (!carryOnly && !carryBlocks() && Arrays.equals(read(stateFile, STATE_LIMIT), state)) {
                 stageFile.delete();
             }
         } catch (IOException | SecurityException ignored) {
@@ -909,10 +910,10 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
         FileOutputStream stream = null;
         boolean committed = false;
         try {
-            if(carryOnly || PurpleSyncChatMoveStore.artifacts(root) || !admission.getAsBoolean())throw new IOException("Sync operation retired");
+            if(carryOnly || carryBlocks() || !admission.getAsBoolean())throw new IOException("Sync operation retired");
             stream = atomic.startWrite();
             stream.write(bytes);
-            if(carryOnly || PurpleSyncChatMoveStore.artifacts(root) || !admission.getAsBoolean())throw new IOException("Sync operation retired");
+            if(carryOnly || carryBlocks() || !admission.getAsBoolean())throw new IOException("Sync operation retired");
             atomic.finishWrite(stream);
             committed = true;
             if (!Arrays.equals(bytes, read(file, bytes.length))) {

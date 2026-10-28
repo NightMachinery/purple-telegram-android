@@ -126,5 +126,19 @@ final class PurpleSyncChatServiceCases {
         env=new Env();env.file.seed(cache(SELF,7,50));env.authority=PurpleSyncChatCache.authority("22222222222222222222222222222222");service=new PurpleSyncChatService(env);service.close(true);check(env.file.removes==0&&env.file.bytes!=null,"old authority logout cannot delete newer login cache");
         env=new Env();env.file.seed(cache(SELF,7,50));service=new PurpleSyncChatService(env);service.close(true);check(env.file.removes==1&&env.file.bytes==null,"matching authority logout removes own cache");
     }
-    static void run(File root)throws Exception{cacheCases(root);serviceCases();}
+    static void carryQuiescence(){
+        Env env=new Env();env.heldWorker=true;PurpleSyncChatService service=new PurpleSyncChatService(env);List<PurpleSyncChatDiscovery.Status> active=new ArrayList<>(),queued=new ArrayList<>();
+        service.ensureResolved(true,"config",null,active::add);service.ensureResolved(true,"library",null,queued::add);
+        PurpleSyncOperations.CarryLease lease=PurpleSyncOperations.carry(env.key,new Object());check(lease!=null,"carry reserves account before discovery cancellation");lease.quiesce();
+        check(lease.quiescent()&&!PurpleSyncOperations.busy(env.key),"service releases discovery capability before carry Begin");
+        check(active.size()==1&&queued.size()==1&&queued.get(0).reason.equals("CarryPending"),"active and queued requests receive held outcome");
+        while(!env.tasks.isEmpty())env.tasks.removeFirst().run();check(env.clients==0&&env.file.writes==0,"late pre-quiescence worker cannot create client or cache");
+        lease.close();service.close(false);
+        Env reentrant=new Env();reentrant.heldWorker=true;PurpleSyncChatService next=new PurpleSyncChatService(reentrant);int[] delivered={0};
+        next.ensureResolved(true,"config",null,ignored->{++delivered[0];next.ensureResolved(true,"config",null,value->{});});
+        next.ensureResolved(true,"library",null,ignored->{throw new IllegalStateException("queued observer");});
+        PurpleSyncOperations.CarryLease held=PurpleSyncOperations.carry(reentrant.key,new Object());held.quiesce();
+        check(delivered[0]==1&&held.quiescent(),"quiescence drains captured queue despite reentry and throwing observer");held.close();next.close(false);
+    }
+    static void run(File root)throws Exception{cacheCases(root);serviceCases();carryQuiescence();}
 }

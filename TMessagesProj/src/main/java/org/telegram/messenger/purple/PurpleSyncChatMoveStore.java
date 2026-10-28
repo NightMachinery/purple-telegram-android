@@ -20,17 +20,21 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
     private final byte[] binding;
     private final int slot;
     private final BooleanSupplier current;
-    private boolean production;
+    private boolean production, interrupted, newEnvelope;
+    private String envelopeAuthority;
     private Thread thread;
     private PurpleAccountFileSnapshot.Durable state, journal;
     private JSONObject metadata, objects = new JSONObject(), identities = new JSONObject();
     private byte[] canonical;
     private long objectBytes;
     private int fault;
+    private File faultFile;
+    private int faultFor(File path){return faultFile==null||faultFile.equals(path)?fault:0;}
     private volatile Object permitEpoch = new Object();
     private final java.util.Map<String,Object> liveSlots = new java.util.HashMap<>();
     private final java.util.Map<String,Object> slotGenerations = new java.util.HashMap<>();
     Object slotGeneration(String key) { return slotGenerations.computeIfAbsent(key,ignored->new Object()); }
+    Object invalidateSlot(String key) {Object generation=new Object();slotGenerations.put(key,generation);return generation;}
     Object permitEpoch() { return permitEpoch; }
     boolean permitCurrent(Object epoch) { return thread != null && epoch == permitEpoch; }
     boolean claimSlot(String key,Object token) { if (liveSlots.containsKey(key)) return liveSlots.get(key) == token; liveSlots.put(key,token); return true; }
@@ -39,6 +43,7 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
     String loginAuthority() { return authority; }
     String journalLoginAuthority() { return authority.substring(0,32); }
     String accountKey() { return account; }
+    boolean terminal() { return metadata!=null&&!metadata.optBoolean("holdsWrites",true); }
     JSONObject transport() throws IOException {
         unchanged();
         try { return metadata == null || !metadata.has("transport") ? new JSONObject() : new JSONObject(metadata.getJSONObject("transport").toString()); }
@@ -70,9 +75,72 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
             String binding, String authority, String device, File cacheFile, BooleanSupplier current) {
         this.root = root; this.owner = owner; this.slot = slot; this.account = account;
         this.binding = binding == null ? new byte[0] : binding.getBytes(StandardCharsets.UTF_8);
-        this.authority = authority; this.device = device; this.cacheFile = cacheFile; this.current = current;
+        this.authority = authority; envelopeAuthority=authority; this.device = device; this.cacheFile = cacheFile; this.current = current;
         stateFile = new File(root, "state.json"); journalFile = new File(root, "carry.json");
         stageFile = new File(root, "pending/config.json");
+    }
+    private static JSONObject inspectRetained(byte[] wrapper,String account,byte[] binding)throws Exception {
+        JSONObject raw=new JSONObject(new String(wrapper,StandardCharsets.UTF_8));
+        JSONObject retained=raw.getJSONObject("journal");
+        if(raw.optString("binding_sha256").equals(hash(new byte[0]))&&retained.getInt("mode")==2&&retained.getString("state_hash").isEmpty())binding=new byte[0];
+        JSONObject request=json("account",account,"authority",raw.getString("login_authority"),"binding",blob(binding),"wrapper",blob(wrapper));
+        JSONObject result=new JSONObject(new String(codecNative("inspect",bytes(request)),StandardCharsets.UTF_8));
+        if(!result.optString("status").equals("Ready"))throw new IOException(result.optString("status","InvalidState"));
+        return result;
+    }
+    private static JSONObject allObjects(File root)throws Exception {
+        File directory=new File(root,"carry-objects");JSONObject found=new JSONObject();
+        if(PurpleAccountFileSnapshot.directory(directory)==0)return found;
+        String identity=PurpleAccountFileSnapshot.durableDirectoryIdentity(directory);String[] names=directory.list();
+        if(identity.equals("missing")||names==null||names.length>1024)throw new IOException("InvalidRetention");
+        long total=0;
+        for(String name:names) {
+            if(!name.matches("(state|record|text)-[0-9a-f]{64}\\.json"))throw new IOException("AmbiguousFiles");
+            String kind=name.substring(0,name.indexOf('-')),hash=name.substring(name.indexOf('-')+1,name.length()-5);
+            int limit=kind.equals("state")?LIMIT:262144;File path=new File(directory,name);
+            PurpleAccountFileSnapshot.Durable object=PurpleAccountFileSnapshot.durable("read",path,null,null,limit,0);
+            if(object.bytes==null||!hash.equals(hash(object.bytes))||found.has(hash))throw new IOException("InvalidState");
+            total+=object.bytes.length;if(total>67108864)throw new IOException("RetentionFull");
+            found.put(hash,kind);PurpleAccountFileSnapshot.durable("barrier",path,object,null,limit,0);
+        }
+        if(!identity.equals(PurpleAccountFileSnapshot.durableDirectoryIdentity(directory)))throw new IOException("Changed");
+        return found;
+    }
+    private static void references(JSONObject wrapper,JSONObject found)throws Exception {
+        JSONObject needed=wrapper.getJSONObject("objects");Iterator<String> keys=needed.keys();
+        while(keys.hasNext()){String hash=keys.next();if(!needed.getString(hash).equals(found.optString(hash)))throw new IOException("InvalidState");}
+    }
+    private static long histories(File root,String account,byte[] binding,JSONObject found)throws Exception {
+        File directory=new File(root,"carry-history");if(PurpleAccountFileSnapshot.directory(directory)==0)return 0;
+        String identity=PurpleAccountFileSnapshot.durableDirectoryIdentity(directory);String[] names=directory.list();
+        if(identity.equals("missing")||names==null||names.length>256)throw new IOException("InvalidRetention");long total=0;
+        for(String name:names) {
+            if(!name.matches("[0-9a-f]{64}\\.json"))throw new IOException("AmbiguousFiles");File path=new File(directory,name);
+            PurpleAccountFileSnapshot.Durable file=PurpleAccountFileSnapshot.durable("read",path,null,null,LIMIT,0);
+            if(file.bytes==null||!name.equals(hash(file.bytes)+".json"))throw new IOException("InvalidRetention");
+            total+=file.bytes.length;if(total>67108864)throw new IOException("RetentionFull");
+            JSONObject inspected=inspectRetained(file.bytes,account,binding);
+            if(inspected.optBoolean("holdsWrites",true))throw new IOException("InvalidRetention");references(inspected,found);
+            PurpleAccountFileSnapshot.durable("barrier",path,file,null,LIMIT,0);
+        }
+        if(!identity.equals(PurpleAccountFileSnapshot.durableDirectoryIdentity(directory)))throw new IOException("Changed");return total;
+    }
+    static boolean completed(File root,String expectedAccount) {
+        try {
+            PurpleAccountFileSnapshot.worker();PurpleCore.ensureLoaded();File path=new File(root,"carry.json");
+            PurpleAccountFileSnapshot.Durable file=PurpleAccountFileSnapshot.durable("read",path,null,null,LIMIT,0);
+            if(file.bytes==null)return false;
+            JSONObject raw=new JSONObject(new String(file.bytes,StandardCharsets.UTF_8));String account=raw.getString("account");
+            if(expectedAccount!=null&&!expectedAccount.equals(account))return false;
+            byte[] state=PurpleAccountFileSnapshot.durable("read",new File(root,"state.json"),null,null,LIMIT,0).bytes;
+            byte[] binding=(state==null?"":new JSONObject(new String(state,StandardCharsets.UTF_8)).getString("binding_token")).getBytes(StandardCharsets.UTF_8);
+            JSONObject inspected=inspectRetained(file.bytes,account,binding);
+            if(inspected.optBoolean("holdsWrites",true))return false;
+            JSONObject found=allObjects(root);references(inspected,found);histories(root,account,binding,found);
+            File cache=new File(root,"carry-cache.json");PurpleAccountFileSnapshot.Durable saved=PurpleAccountFileSnapshot.durable("read",cache,null,null,65536,0);
+            if(saved.bytes!=null){JSONObject value=new JSONObject(new String(saved.bytes,StandardCharsets.UTF_8));if(value.getInt("version")!=1||!account.equals(value.getString("account")))return false;PurpleAccountFileSnapshot.durable("barrier",cache,saved,null,65536,0);}
+            PurpleAccountFileSnapshot.durable("barrier",path,file,null,LIMIT,0);return true;
+        }catch(Exception|LinkageError e){return false;}
     }
     static boolean artifacts(File root) {
         if (PurpleAccountFileSnapshot.directory(root) == 0) return false;
@@ -81,6 +149,7 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
         for (String name : names) if (name.startsWith("carry") || name.startsWith(".carry-")) return true;
         return false;
     }
+    void openInterrupted() throws IOException { interrupted=true;open(); }
     void open() throws IOException {
         PurpleAccountFileSnapshot.worker();
         if (thread != null) throw new IOException("InvalidTransition");
@@ -100,7 +169,10 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
                 requireCurrent();
                 return;
             }
-            metadata = codec("inspect", json("wrapper", blob(journal.bytes)));
+            JSONObject raw=new JSONObject(new String(journal.bytes,StandardCharsets.UTF_8));envelopeAuthority=raw.getString("login_authority");
+            if(!envelopeAuthority.matches("[0-9a-f]{64}")||interrupted&&envelopeAuthority.equals(authority))throw new IOException("InvalidTransition");
+            metadata=inspectRetained(journal.bytes,account,binding);
+            if(!interrupted&&!envelopeAuthority.equals(authority)&&metadata.optBoolean("holdsWrites",true))throw new IOException("AccountUnbound");
             canonical = unblob(metadata, "journal"); objects = metadata.getJSONObject("objects"); identities = metadata.getJSONObject("send_identities");
             validateObjects();
             barrier(journalFile, journal, LIMIT);
@@ -132,7 +204,7 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
                         || PurpleAccountFileSnapshot.durableDirectoryIdentity(path).equals("missing")) throw new IOException("AmbiguousFiles");
                 String[] pending = path.list(); if (pending == null) throw new IOException("AmbiguousFiles");
                 for (String item : pending) { if (!item.equals("config.json")) throw new IOException("AmbiguousFiles"); read(new File(path, item), 262144); }
-            } else if (name.equals("carry-objects") || name.equals("retained-bases")) {
+            } else if (name.equals("carry-objects") || name.equals("retained-bases") || name.equals("carry-history")) {
                 if (PurpleAccountFileSnapshot.directory(path) != 1 || !path.getCanonicalFile().equals(path.getAbsoluteFile())
                         || PurpleAccountFileSnapshot.durableDirectoryIdentity(path).equals("missing")) throw new IOException("AmbiguousFiles");
             } else if (name.equals("lock")) {
@@ -146,17 +218,17 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
         return PurpleAccountFileSnapshot.durable("read", path, null, null, limit, 0);
     }
     private PurpleAccountFileSnapshot.Durable barrier(File path, PurpleAccountFileSnapshot.Durable value, int limit) throws IOException {
-        return PurpleAccountFileSnapshot.durable("barrier", path, value, null, limit, fault);
+        return PurpleAccountFileSnapshot.durable("barrier", path, value, null, limit, faultFor(path));
     }
     private PurpleAccountFileSnapshot.Durable write(File path, PurpleAccountFileSnapshot.Durable expected, byte[] bytes, int limit) throws IOException {
         requireCurrent();
-        PurpleAccountFileSnapshot.Durable written = PurpleAccountFileSnapshot.durable("write", path, expected, bytes, limit, fault);
+        PurpleAccountFileSnapshot.Durable written = PurpleAccountFileSnapshot.durable("write", path, expected, bytes, limit, faultFor(path));
         requireCurrent();
         return written;
     }
     private JSONObject codec(String operation, JSONObject input) throws IOException {
         try {
-            input.put("account", account).put("binding", blob(binding)).put("authority", authority);
+            input.put("account", account).put("binding", blob(binding)).put("authority", envelopeAuthority);
             PurpleCore.ensureLoaded();
             byte[] response = codecNative(operation, bytes(input));
             if (response == null) throw new IOException("InvalidState");
@@ -166,26 +238,10 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
         } catch (Exception e) { throw failure(e); }
     }
     private void validateObjects() throws Exception {
-        File directory = new File(root, "carry-objects");
-        String[] names = directory.list();
-        if (names == null) { if (objects.length() != 0 || PurpleAccountFileSnapshot.directory(directory) != 0) throw new IOException("InvalidState"); return; }
-        String identity = PurpleAccountFileSnapshot.durableDirectoryIdentity(directory);
-        if (identity.equals("missing")) throw new IOException("Changed");
-        if (names.length > 1024) throw new IOException("RetentionFull");
-        JSONObject found = new JSONObject(); objectBytes = 0;
-        for (String name : names) {
-            if (!name.matches("(state|record|text)-[0-9a-f]{64}\\.json")) throw new IOException("AmbiguousFiles");
-            String kind = name.substring(0, name.indexOf('-')), hash = name.substring(name.indexOf('-') + 1, name.length() - 5);
-            byte[] value = read(new File(directory, name), kind.equals("state") ? LIMIT : 262144).bytes;
-            if (value == null || !hash.equals(hash(value)) || found.has(hash)) throw new IOException("InvalidState");
-            found.put(hash, kind); objectBytes += value.length;
-            if (objectBytes > 67108864) throw new IOException("RetentionFull");
-            barrier(new File(directory, name), read(new File(directory, name), kind.equals("state") ? LIMIT : 262144), kind.equals("state") ? LIMIT : 262144);
-        }
-        Iterator<String> keys = objects.keys();
-        while (keys.hasNext()) { String hash = keys.next(); if (!objects.getString(hash).equals(found.optString(hash))) throw new IOException("InvalidState"); }
-        if (!identity.equals(PurpleAccountFileSnapshot.durableDirectoryIdentity(directory))) throw new IOException("Changed");
-        objects = found;
+        JSONObject found=allObjects(root);references(metadata,found);histories(root,account,binding,found);
+        objectBytes=0;Iterator<String> keys=found.keys();
+        while(keys.hasNext()){String hash=keys.next(),kind=found.getString(hash);objectBytes+=read(new File(root,"carry-objects/"+kind+"-"+hash+".json"),kind.equals("state")?LIMIT:262144).bytes.length;}
+        objects=found;
     }
     private String storeObject(String kind, byte[] bytes) throws Exception {
         unchanged();
@@ -218,7 +274,7 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
             unchanged(); codec("state", json("bytes", blob(image)));
             PurpleSyncRetainedBases.Result base = PurpleSyncRetainedBases.request("find", image, null, PurpleSyncRetainedFiles.combine(candidates, baseCandidates()));
             if (!base.ready()) throw new IOException(base.status);
-            if (base.record.length != 0) storeObject("record", base.record);
+            if (base.record.length != 0) {storeObject("record", base.record);PurpleSyncRetainedFiles.pin(root,base.record);}
             return storeObject("state", image);
         } catch (Exception e) { close(); throw failure(e); }
     }
@@ -244,16 +300,28 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
     private PurpleSyncChatMoveCore.Result persist(PurpleSyncChatMoveCore.Result next) throws Exception {
         unchanged(); byte[] value = unblob(next.fields, "canonical");
         if (value.length == 0) return next;
-        JSONObject wrapper = codec("wrap", json("wrapper", blob(journal.bytes), "journal", blob(value), "objects", objects, "send_identities", identities));
+        JSONObject wrapper = codec("wrap", json("wrapper", blob(newEnvelope?null:journal.bytes), "journal", blob(value), "objects", objects, "send_identities", identities));
         byte[] encoded = unblob(wrapper, "bytes");
-        journal = write(journalFile, journal, encoded, LIMIT); metadata = wrapper; canonical = value; permitEpoch = new Object(); liveSlots.clear();slotGenerations.clear();
+        journal = write(journalFile, journal, encoded, LIMIT); metadata = wrapper; canonical = value; newEnvelope=false;permitEpoch = new Object(); liveSlots.clear();slotGenerations.clear();
         return next;
     }
     PurpleSyncChatMoveCore.Result begin(JSONObject input) throws IOException {
         try {
-            unchanged(); if (canonical != null || journal.bytes != null) throw new IOException("InvalidTransition");
+            unchanged();
+            if(canonical!=null) {
+                if(metadata.optBoolean("holdsWrites",true))throw new IOException("InvalidTransition");
+                File directory=new File(root,"carry-history");PurpleAccountFileSnapshot.durableDirectory(directory);
+                String[] retained=directory.list();if(retained==null||retained.length>=256||histories(root,account,binding,objects)+journal.bytes.length>67108864)throw new IOException("RetentionFull");
+                File archive=new File(directory,hash(journal.bytes)+".json");PurpleAccountFileSnapshot.Durable old=read(archive,LIMIT);
+                if(old.bytes==null)write(archive,old,journal.bytes,LIMIT);else if(!Arrays.equals(old.bytes,journal.bytes))throw new IOException("Changed");else barrier(archive,old,LIMIT);
+                canonical=null;identities=new JSONObject();newEnvelope=true;
+                envelopeAuthority=authority;
+            } else if(journal.bytes!=null)throw new IOException("InvalidTransition");
+            if(interrupted)throw new IOException("AccountUnbound");
             if (!account.equals(input.getString("account")) || !Arrays.equals(binding, unblob(input, "preferenceToken"))) throw new IOException("AccountUnbound");
             if (state.bytes != null) prepareState(state.bytes);
+            byte[] openingStage=pendingBytes();
+            if(openingStage.length!=0)storeObject("record",openingStage);
             barrier(stateFile, state, LIMIT);
             input = new JSONObject(input.toString()); input.put("state", state.bytes == null ? JSONObject.NULL : blob(state.bytes));
             input.put("stateAbsentConfirmed", state.bytes == null);
@@ -269,7 +337,7 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
     }
     PurpleSyncChatMoveCore.Result advance(JSONObject input) throws IOException {
         try {
-            unchanged(); if (canonical == null) throw new IOException("InvalidTransition");
+            unchanged(); if (canonical == null || interrupted) throw new IOException("InvalidTransition");
             JSONObject e = new JSONObject(input.toString()); String kind = e.getString("kind");
             if (Arrays.asList("StateObserved", "OwnStagePersisted", "StageRetired").contains(kind)) throw new IOException("InvalidTransition");
             e.put("objectsDurable", false).put("state", state.bytes == null ? JSONObject.NULL : blob(state.bytes)).put("stateAbsentConfirmed", state.bytes == null);
@@ -289,7 +357,8 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
                     if (!Arrays.equals(record, read(stageFile, 262144).bytes)) throw new IOException("PendingMismatch");
                     JSONObject request = new JSONObject(e.toString()); request.put("account", account);
                     PurpleSyncChatMoveCore.Result prepared;
-                    if (e.has("pendingReadback")) { request.put("readback", e.getJSONObject("pendingReadback")); prepared = core("finishPending", request); }
+                    if ("Protected".equals(e.optString("pendingAccess"))) prepared=core("protectedPending",request);
+                    else if (e.has("pendingReadback")) { request.put("readback", e.getJSONObject("pendingReadback")); prepared = core("finishPending", request); }
                     else prepared = core("abandonPending", request);
                     if (!"Ready".equals(prepared.status)) throw new IOException("InvalidTransition");
                     storeObject("record", record);
@@ -297,20 +366,24 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
                     e.put("preparedImageHash", prepareState(unblob(prepared.fields, "state"))).put("objectsDurable", true);
                 } else if (kind.equals("DestinationRead")) {
                     JSONObject j = new JSONObject(new String(canonical, StandardCharsets.UTF_8));
-                    JSONObject request = scoped(canonical); request.remove("journal");
-                    request.put("plan", blob(bytes(j.getJSONObject("plan")))).put("state", state.bytes == null ? JSONObject.NULL : blob(state.bytes));
+                    JSONObject request = scoped(canonical);
+                    request.put("state", state.bytes == null ? JSONObject.NULL : blob(state.bytes));
                     request.put("destination", e.getJSONObject("destination")); if (e.has("playlist")) request.put("playlist", e.getJSONObject("playlist"));
-                    PurpleSyncChatMoveCore.Result prepared = core("prepareCommit", request);
+                    PurpleSyncChatMoveCore.Result prepared = core("prepareJournalCommit", request);
                     if ("Ready".equals(prepared.status)) {
                         byte[] image = unblob(prepared.fields, "canonical");
                         ArrayList<byte[]> records = new ArrayList<>();
                         org.json.JSONArray messages = e.getJSONObject("destination").getJSONArray("messages");
                         for (int i = 0; i < messages.length(); ++i) records.add(unblob(messages.getJSONObject(i), "bytes"));
                         if (image.length != 0) prepareState(image, records.toArray(new byte[0][]));
-                        e.put("preparedImageHash", prepared.fields.getString("stateHash")).put("objectsDurable", true);
+                        byte[] target=unblob(prepared.fields,"targetPendingRecord");
+                        if(target.length!=0)storeObject("record",target);
+                        e.put("targetPendingRecord",blob(target)).put("preparedImageHash", prepared.fields.getString("stateHash")).put("objectsDurable", true);
                     }
                 } else if (kind.equals("CachePrepared") || kind.equals("CacheCompleted")) {
-                    witnessCache(e.getJSONObject("cache"), kind.equals("CacheCompleted")); e.put("objectsDurable", true);
+                    witnessCache(e.getJSONObject("cache"), kind.equals("CacheCompleted"));
+                    if(kind.equals("CacheCompleted")){byte[] target=targetPending();if(target.length!=0){installTargetPending();e.put("stagedRecord",blob(target)).put("targetPendingStageDurable",true);}}
+                    e.put("objectsDurable", true);
                 }
             }
             return apply(e);
@@ -318,7 +391,7 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
     }
     PurpleSyncChatMoveCore.Result resume() throws IOException {
         try {
-            unchanged(); barrier(stateFile, state, LIMIT);
+            unchanged(); if(interrupted)throw new IOException("AccountUnbound");barrier(stateFile, state, LIMIT);
             JSONObject input = scoped(canonical); input.put("state", state.bytes == null ? JSONObject.NULL : blob(state.bytes));
             input.put("stateAbsentConfirmed", state.bytes == null).put("stateDurableConfirmed", true);
             return persist(core("resume", input));
@@ -344,18 +417,80 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
             return apply(e);
         } catch (Exception e) { close(); throw failure(e); }
     }
+    private byte[] targetPending() throws Exception {
+        JSONObject j=new JSONObject(new String(canonical,StandardCharsets.UTF_8));
+        return j.optString("target_pending_record").getBytes(StandardCharsets.UTF_8);
+    }
+    private void installTargetPending() throws Exception {
+        byte[] target=targetPending();if(target.length==0)return;
+        JSONObject j=new JSONObject(new String(canonical,StandardCharsets.UTF_8));
+        if(!j.getBoolean("state_committed") && !hash(state.bytes).equals(j.optString("next_state_hash")))throw new IOException("InvalidTransition");
+        if(!hash(state.bytes).equals(j.getString("next_state_hash")) || !objects.has(hash(target))
+                || !Arrays.equals(target,object("record",hash(target))))throw new IOException("PendingMismatch");
+        PurpleAccountFileSnapshot.durableDirectory(stageFile.getParentFile());
+        PurpleAccountFileSnapshot.Durable old=read(stageFile,262144);
+        if(old.bytes!=null&&!Arrays.equals(old.bytes,target)) {
+            String obsolete=j.has("plan")?hash(j.getJSONObject("plan").optString("own_record").getBytes(StandardCharsets.UTF_8)):"";
+            if(!hash(old.bytes).equals(obsolete))throw new IOException("PendingMismatch");
+            PurpleAccountFileSnapshot.durable("remove",stageFile,old,null,262144,faultFor(stageFile));old=read(stageFile,262144);
+        }
+        if(old.bytes==null)write(stageFile,old,target,262144);else barrier(stageFile,old,262144);
+    }
     PurpleSyncChatMoveCore.Result retireStage() throws IOException {
         try {
-            unchanged(); String hash = metadata.getString("retireHash"); if (hash.isEmpty()) throw new IOException("InvalidTransition");
+            unchanged(); if(interrupted)throw new IOException("AccountUnbound");
+            String hash = metadata.getString("retireHash"); if (hash.isEmpty()) throw new IOException("InvalidTransition");
             barrier(stateFile, state, LIMIT); if (state.bytes != null) prepareState(state.bytes);
-            PurpleAccountFileSnapshot.Durable staged = read(stageFile, 262144);
-            if (staged.bytes != null && !hash.equals(hash(staged.bytes))) throw new IOException("PendingMismatch");
-            if (staged.bytes == null) barrier(stageFile, staged, 262144);
-            else PurpleAccountFileSnapshot.durable("remove", stageFile, staged, null, 262144, fault);
-            String[] pending = stageFile.getParentFile().list(); if (pending == null || pending.length != 0) throw new IOException("OrphanStage");
-            JSONObject e = event("StageRetired"); e.put("outcome", "Success").put("retiredStageHash", hash).put("noPendingFiles", true);
+            byte[] target=targetPending();PurpleAccountFileSnapshot.Durable staged = read(stageFile, 262144);
+            if(staged.bytes!=null&&!Arrays.equals(staged.bytes,target)) {
+                if(!hash.equals(hash(staged.bytes)))throw new IOException("PendingMismatch");
+                PurpleAccountFileSnapshot.durable("remove",stageFile,staged,null,262144,faultFor(stageFile));
+            } else barrier(stageFile,staged,262144);
+            if(target.length!=0)installTargetPending();
+            String[] pending=stageFile.getParentFile().list();
+            if(pending==null || pending.length!=(target.length==0?0:1))throw new IOException("OrphanStage");
+            JSONObject e = event("StageRetired"); e.put("outcome", "Success").put("retiredStageHash", hash).put("noPendingFiles",target.length==0)
+                    .put("state",state.bytes==null?JSONObject.NULL:blob(state.bytes)).put("stateAbsentConfirmed",state.bytes==null)
+                    .put("stagedRecord",blob(target)).put("targetPendingStageDurable",target.length!=0).put("objectsDurable",true);
             return apply(e);
         } catch (Exception e) { close(); throw failure(e); }
+    }
+    byte[] pendingBytes() throws IOException {try{unchanged();if(PurpleAccountFileSnapshot.directory(stageFile.getParentFile())==0)return new byte[0];byte[] value=read(stageFile,262144).bytes;return value==null?new byte[0]:value.clone();}catch(Exception e){throw failure(e);}}
+    String pendingIntent(byte[] record,String observed) throws IOException {
+        try {
+            unchanged();String key="pending-issued:"+hash(record);
+            if(identities.has(key))return "Issued";
+            if(!"NotIssued".equals(observed))sendIdentity(key,new SecureRandom());
+            return identities.has(key)?"Issued":"NotIssued";
+        }catch(Exception e){throw failure(e);}
+    }
+    PurpleSyncChatMoveCore.Result discardInterrupted(boolean confirmed) throws IOException {
+        try {
+            unchanged();if(!interrupted||!confirmed)throw new IOException("InvalidTransition");
+            barrier(stateFile,state,LIMIT);JSONObject j=new JSONObject(new String(canonical,StandardCharsets.UTF_8));
+            if(state.bytes!=null&&hash(state.bytes).equals(j.optString("next_state_hash")))installTargetPending();
+            JSONObject request=scoped(canonical);request.put("explicitlyConfirmed",true).put("state",state.bytes==null?JSONObject.NULL:blob(state.bytes))
+                    .put("stateAbsentConfirmed",state.bytes==null).put("stagedRecord",blob(pendingBytes())).put("objectsDurable",true);
+            return persist(core("abandonInterrupted",request));
+        }catch(Exception e){close();throw failure(e);}
+    }
+    void writeCache(PurpleSyncChatOrigin origin,PurpleSyncChatClient.Info accepted,boolean complete) throws IOException {
+        try {
+            unchanged();JSONObject j=new JSONObject(new String(canonical,StandardCharsets.UTF_8)),mark=j.getJSONObject("target_mark");
+            File path=complete?cacheFile:new File(root,"carry-cache.json");
+            PurpleAccountFileSnapshot.Durable old=read(path,65536),admitted=read(cacheFile,65536);
+            PurpleSyncChatCache.Loaded previous=PurpleSyncChatCache.load(new PurpleSyncChatCache.IO(){
+                public byte[] read(){return admitted.bytes;}public boolean write(byte[] a,byte[] b){return false;}public boolean remove(byte[] a){return false;}
+            },origin,authority);
+            if(!previous.ok)throw new IOException("InvalidState");
+            PurpleSyncChatCache.ReadersSnapshot readers=PurpleSyncChatCache.ReadersSnapshot.from(accepted);
+            java.util.Set<String> warned=new java.util.HashSet<>();boolean warning=transport().optBoolean("reader_warning");
+            if(previous.data!=null){warned.addAll(previous.data.warned);warning|=previous.data.newReaders;if(previous.data.location.chat.token().equals(mark.getString("chat"))&&previous.data.readers!=null)readers=previous.data.readers;}
+            warned.add("config");
+            PurpleSyncChatCache.Data data=new PurpleSyncChatCache.Data(new PurpleSyncChatCore.Cache(PurpleSyncChatCore.Peer.parse(mark.getString("chat"),origin.userId),mark.getInt("id"),mark.getLong("date")),
+                    accepted.title,readers,warned,complete?new JSONObject():json("operation",j.getString("operation")),warning);
+            write(path,old,PurpleSyncChatCache.encode(origin,authority,data),65536);
+        }catch(Exception e){close();throw failure(e);}
     }
     long sendIdentity(String request, SecureRandom random) throws IOException {
         try {
@@ -399,7 +534,8 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
     }
     byte[] journalBytes() { return canonical == null ? null : canonical.clone(); }
     byte[] stateBytes() { return state == null || state.bytes == null ? null : state.bytes.clone(); }
-    void fault(int point) { fault = point; }
+    void fault(int point) { fault = point;faultFile=null; }
+    void fault(int point,File path){fault=point;faultFile=path;}
     @Override public void close() { permitEpoch = new Object(); liveSlots.clear();slotGenerations.clear(); owner.close(); thread = null; state = null; journal = null; canonical = null; metadata = null; objects = new JSONObject(); identities = new JSONObject(); objectBytes = 0; }
     private static byte[] bytes(JSONObject input) { return input.toString().getBytes(StandardCharsets.UTF_8); }
     private static String blob(byte[] value) { return PurpleSyncRetainedBases.encode(value); }

@@ -47,6 +47,15 @@ template <> const auto &Values<SyncCarrySourceAccess>() {
     return values;
 }
 
+template <> const auto &Values<SyncCarrySendIntent>() {
+    static const auto values = std::array{
+        EnumValue{SyncCarrySendIntent::Unknown, u"Unknown"},
+        EnumValue{SyncCarrySendIntent::NotIssued, u"NotIssued"},
+        EnumValue{SyncCarrySendIntent::Issued, u"Issued"},
+    };
+    return values;
+}
+
 template <> const auto &Values<SyncCarryFamily>() {
     static const auto values = std::array{
         EnumValue{SyncCarryFamily::Settings, u"Settings"},
@@ -597,6 +606,14 @@ SyncCarryJournalEvent Event(const QJsonObject &o) {
         Require(o.value(u"deleted"_q).isArray());
         for (const auto &ref : o.value(u"deleted"_q).toArray()) r.deleted.push_back(Reference(ref));
     }
+    if (o.contains(u"pendingAccess"_q)) r.pendingAccess = Enum<SyncCarrySourceAccess>(o.value(u"pendingAccess"_q));
+    if (o.contains(u"pendingSendIntent"_q)) r.pendingSendIntent = Enum<SyncCarrySendIntent>(o.value(u"pendingSendIntent"_q));
+    if (o.contains(u"pendingInventory"_q)) r.pendingInventory = Inventory(o.value(u"pendingInventory"_q));
+    if (o.contains(u"targetPendingRecord"_q)) r.targetPendingRecord = Bytes(o.value(u"targetPendingRecord"_q));
+    r.targetPendingStageDurable = Flag(o, u"targetPendingStageDurable"_q);
+    r.skipCleanupConfirmed = Flag(o, u"skipCleanupConfirmed"_q);
+    if (o.contains(u"neverLandedRequestId"_q)) r.neverLandedRequestId = Text(o.value(u"neverLandedRequestId"_q));
+    r.neverLandedConfirmed = Flag(o, u"neverLandedConfirmed"_q);
     r.noRequestInFlight = Flag(o, u"noRequestInFlight"_q);
     r.noPendingFiles = Flag(o, u"noPendingFiles"_q);
     return r;
@@ -648,6 +665,19 @@ QJsonObject Evaluate(const QString &op, const QJsonObject &o) {
         return {{u"status"_q, Name(r.status)}, {u"records"_q, records}, {u"heads"_q, heads},
             {u"hashes"_q, hashes}, {u"playlists"_q, r.playlists}, {u"stamp"_q, r.stamp}};
     }
+    if (op == u"ownVersion"_q) {
+        const auto parsed = ParseSyncEnvelope(Bytes(o.value(u"record"_q)));
+        const auto payload = InspectConfigPayload(parsed);
+        Require(parsed.header.has_value() && payload.status == ConfigPayloadStatus::Valid);
+        auto parents = QJsonArray(), lineage = QJsonArray();
+        for (const auto &value : payload.version.parents) parents.append(value);
+        for (const auto &value : payload.version.lineage) lineage.append(value);
+        return {{u"status"_q, u"Ready"_q}, {u"ownVersion"_q, QJsonObject{
+            {u"text"_q, Blob(payload.text)}, {u"key"_q, payload.version.key},
+            {u"parents"_q, parents}, {u"lineage"_q, lineage},
+            {u"platform"_q, parsed.header->writerPlatform}, {u"app"_q, parsed.header->writerApp},
+            {u"at"_q, QString::number(parsed.header->at)}}}};
+    }
     if (op == u"plan"_q) {
         const auto r = PlanCarry(Input(o));
         auto result = QJsonObject{{u"status"_q, Name(r.status)}};
@@ -656,12 +686,16 @@ QJsonObject Evaluate(const QString &op, const QJsonObject &o) {
         return result;
     }
     if (op == u"begin"_q) return JournalResult(BeginSyncCarryJournal(Start(o)));
-    if (op == u"finishPending"_q || op == u"abandonPending"_q) {
+    if (op == u"finishPending"_q || op == u"abandonPending"_q || op == u"protectedPending"_q) {
         const auto state = State(o.value(u"state"_q));
         Require(state.has_value());
         const auto account = Account(o.value(u"account"_q));
         if (op == u"finishPending"_q) return Pending(FinishPendingStageForCarry(account, *state,
             Bytes(o.value(u"stagedRecord"_q)), Message(o.value(u"readback"_q))));
+        if (op == u"protectedPending"_q) return Pending(ReconcileProtectedStageForCarry(account, *state,
+            Peer(o.value(u"source"_q), account), Enum<SyncCarrySourceAccess>(o.value(u"pendingAccess"_q)),
+            Enum<SyncCarrySendIntent>(o.value(u"pendingSendIntent"_q)), Bytes(o.value(u"stagedRecord"_q)),
+            Bytes(o.value(u"retainedLocalText"_q)), Inventory(o.value(u"pendingInventory"_q))));
         return Pending(AbandonStageForLostChat(account, *state, Peer(o.value(u"source"_q), account),
             Enum<SyncChatDirectRead>(o.value(u"oldRead"_q)), Bytes(o.value(u"stagedRecord"_q)), Bytes(o.value(u"retainedLocalText"_q))));
     }
@@ -671,6 +705,15 @@ QJsonObject Evaluate(const QString &op, const QJsonObject &o) {
         const auto &j = parsed.journal;
         Scope(o, j.account, j.source, j.target);
         if (op == u"parse"_q || op == u"serialize"_q || op == u"next"_q) return JournalResult(SerializeSyncCarryJournal(j));
+        if (op == u"abandonInterrupted"_q) return JournalResult(AbandonInterruptedOperation(j, j.account,
+            Text(o.value(u"currentLogin"_q)), Flag(o, u"explicitlyConfirmed"_q), State(o.value(u"state"_q)),
+            Flag(o, u"stateAbsentConfirmed"_q), Bytes(o.value(u"stagedRecord"_q)), Flag(o, u"objectsDurable"_q)));
+        if (op == u"prepareJournalCommit"_q) {
+            const auto prepared = PrepareSyncCarryJournalCommit(j, State(o.value(u"state"_q)),
+                Inventory(o.value(u"destination"_q)), Playlist(o.value(u"playlist"_q)));
+            return {{u"status"_q, Name(prepared.commit.status)}, {u"canonical"_q, Blob(prepared.commit.canonical)},
+                {u"stateHash"_q, prepared.commit.stateHash}, {u"targetPendingRecord"_q, Blob(prepared.targetPendingRecord)}};
+        }
         if (op == u"event"_q) {
             const auto e = SyncCarryEvent(j, Enum<SyncCarryEventKind>(o.value(u"kind"_q)));
             return {{u"status"_q, u"Valid"_q}, {u"event"_q, QJsonObject{

@@ -199,7 +199,7 @@ nothing and leaves outward move execution held. See [the storage contract](sync-
 ## Carry transport seam
 
 Typed sealed record receipts, worker-owned send reservations and opaque carry
-permits are available for the later move executor. They preserve ordinary
+permits are consumed by the injected worker move executor. They preserve ordinary
 publishing eligibility and the Self-only automatic guard. No carry callsite,
 Telegram dispatch or cleanup is activated. See [carry I/O and transport authority](sync-chat-move.md#typed-carry-io-and-transport-authority) for identities, unknown outcomes, D8 absence rules and qualification gaps.
 
@@ -207,3 +207,18 @@ Carry reconciliation tickets include a nonrepeating store-shared slot generation
 A delayed renewal must preserve the opening epoch and journal revision for both
 request effects and own uploads. The host suite pins uncertain-send ABA and
 late cross-revision/cross-epoch callbacks.
+
+
+## Carry executor and recovery
+
+The package-private worker executor drives shared-core NextAction through injected
+ports. It quiesces account publishers, persists each canonical transition, and
+reopens exact images before resume. The ordinary store admits a completed move
+only after validating the retained terminal wrapper, immutable objects and history.
+New-login Discard preserves state/effects and repairs an already-committed deferred
+pending file before abandonment. Same-chat RepairMark and no-state Fill retain
+their core special cases. Required playlists hold before dispatch because no
+playlist proof producer is supplied. There is no move screen or live backend.
+See [action order and recovery](sync-chat-move.md#one-worker-carry-executor).
+
+Carry's O-pending reconciliation requires a complete owned scan started after its live read ticket. Retained pre-send or pre-open scans cannot clear the pending stage. See [O-pending chronology](sync-chat-move.md#o-pending-read-chronology).

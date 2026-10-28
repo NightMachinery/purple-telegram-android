@@ -950,6 +950,35 @@
         "carry-io:CARRY_IO_CHECKS": 563,
         "sync-chat-move-io:CARRY_IO_CHECKS": 563
       }
+    },
+    {
+      "name": "sync-chat-move-executor",
+      "driver": "TMessagesProj/jni/purple_jni/tests/run_sync_chat_move_executor.py",
+      "args": [
+        "--receipt",
+        "{receipt}",
+        "--json",
+        "{json}",
+        "--library",
+        "{library}",
+        "--output",
+        "{output}",
+        "--modern",
+        "{out:modern-sync}",
+        "--carry",
+        "{out:sync-chat-move}",
+        "--store",
+        "{out:sync-chat-move-store}",
+        "--io",
+        "{out:sync-chat-move-io}"
+      ],
+      "coverage": "Actual AGP core NextAction executor, worker-owned real files, controlled effects, restart and lifecycle fences.",
+      "expects": {
+        "carry-executor:CARRY_EXECUTOR_CHECKS": 4400,
+        "sync-chat-move-executor:CARRY_EXECUTOR_CHECKS": 4400,
+        "carry-executor:PENDING_CHRONOLOGY_CHECKS": 28,
+        "sync-chat-move-executor:PENDING_CHRONOLOGY_CHECKS": 28
+      }
     }
   ]
 }

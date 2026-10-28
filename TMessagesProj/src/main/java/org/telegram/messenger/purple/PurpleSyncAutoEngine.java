@@ -280,7 +280,7 @@ final class PurpleSyncAutoEngine {
         }
         if (!owned) {
             String openingSession=session;PurpleSyncOperations.Capability previous=acquisition;
-            PurpleSyncOperations.Capability token=PurpleSyncOperations.acquire(operationKey(),this,this::current);
+            PurpleSyncOperations.Capability token=PurpleSyncOperations.acquire(operationKey(),this,this::current,()->port.queue(this::suspend));
             boolean installed=false;
             try {
             if(closed||owned||!openingSession.equals(session)||acquisition!=previous||!current())return;

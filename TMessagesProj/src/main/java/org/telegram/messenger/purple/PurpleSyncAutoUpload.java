@@ -52,7 +52,7 @@ final class PurpleSyncAutoUpload {
     }
     PurpleSyncAutoUpload(PurpleSyncChatMoveIO.Permit permit,BooleanSupplier current,Port port,PurpleSyncClient.Reply<Result> reply) {
         this(permit.origin.slot,0,permit.payload(),null,current,port,reply);
-        if (!permit.kind.equals("own") || origin==null || !origin.key.equals(permit.origin.accountKey())) throw new IllegalArgumentException("OwnPermitRequired");
+        if ((!permit.kind.equals("own")&&!permit.kind.equals("pending")) || !permit.claimUpload() || origin==null || !origin.key.equals(permit.origin.accountKey())) throw new IllegalArgumentException("OwnPermitRequired");
         carry=permit;
     }
     boolean live() {

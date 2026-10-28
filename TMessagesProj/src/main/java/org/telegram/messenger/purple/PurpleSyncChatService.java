@@ -106,6 +106,12 @@ final class PurpleSyncChatService {
         return new PurpleSyncChatScreen.Frame(env.origin(),new PurpleSyncChat.Status(status),binding,opening,
                 model!=null?model.readInfo():null,model!=null?model.refused():Collections.emptyList());
     }
+    void quiesceCarry() {
+        ArrayDeque<Request> pending=new ArrayDeque<>(waiting);waiting.clear();long run=generation;
+        try{if(active!=null)abandon(run);}finally{
+            for(Request request:pending)try{request.done.accept(unavailable("CarryPending"));}catch(RuntimeException ignored){}
+        }
+    }
     void startSession() {
         if(started||closed)return;
         started=true;ensureResolved(false,"config",null,ignored->{});
@@ -131,7 +137,7 @@ final class PurpleSyncChatService {
         if(next.borrowed!=null&&!borrowedCurrent(next.borrowed)){waiting.removeFirst().done.accept(unavailable("OperationChanged"));kick();return;}
 
         long opening=generation;
-        PurpleSyncOperations.Capability token=next.borrowed==null?PurpleSyncOperations.acquire(env.operationKey(),this,env::current):null;
+        PurpleSyncOperations.Capability token=next.borrowed==null?PurpleSyncOperations.acquire(env.operationKey(),this,env::current,()->env.ui(this::quiesceCarry)):null;
         boolean installed=false,restart=false;
         try {
             if(closed||cleaning||active!=null||generation!=opening||waiting.peekFirst()!=next||!env.current()){restart=true;return;}
