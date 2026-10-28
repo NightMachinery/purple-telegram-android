@@ -98,3 +98,5 @@ core bridge and History suites. Fixtures stay outside the repository.
 Real AGP JavaCompile and affected host/arm64 JNI compilation are separate gates.
 These checks do not qualify Android UI, the actual Os implementation, devices,
 emulators, an APK or shrinker behavior. No upstream hook changes are needed.
+
+The binding-only host driver also uses the real core setup-token planner. Pass its offline org.json jar with `--json` and the host JNI library with `--library`. Only unrelated account-file and typed-ledger edges are fail-closed test fakes. Missing JNI refuses initialization; it is never substituted by a Java token algorithm. Identity or login-lifetime changes and preference CAS conflicts remain zero-write refusals. Error labels differ by the capture phase: an unusable opening identity is AccountUnavailable on read, while an invalidated persistence capture is AccountChanged.

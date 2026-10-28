@@ -7,6 +7,7 @@ import java.util.HexFormat;
 import java.util.Map;
 
 public final class PurpleAccountBindingTest {
+    private static int checks;
     private static final String TOKEN_A = "00112233445566778899aabbccddeeff";
     private static final String TOKEN_B = "ffeeddccbbaa99887766554433221100";
 
@@ -16,7 +17,10 @@ public final class PurpleAccountBindingTest {
         boolean commitSucceeds = true;
         boolean changeOnRead;
         boolean changeOnCommit;
-        long userId = 100;
+        long userId = 100, lifetime = 1;
+        int environment;
+        @Override public String identity(int account) { return environment + "-" + userId; }
+        @Override public long lifetime(int account) { return lifetime; }
         int commits;
         final Map<String, String> values = new HashMap<>();
 
@@ -82,6 +86,9 @@ public final class PurpleAccountBindingTest {
         testCheckPreservesMissingAndMalformedTokens();
         testInitializeRetryReusesPersistedToken();
         testInitializeRejectsMalformedExistingToken();
+        testPreparedIdentityAndPreferenceFences();
+        testNativeUnavailableIsNotSuccess();
+        System.out.println("ACCOUNT_BINDING_CHECKS=" + checks);
         System.out.println("PurpleAccountBinding host test passed");
     }
 
@@ -93,7 +100,8 @@ public final class PurpleAccountBindingTest {
         final Access nonpositive = new Access();
         nonpositive.userId = 0;
         expectError(PurpleAccountBinding.persist(0, 0, TOKEN_A, nonpositive),
-                "InvalidBindingToken");
+                "AccountChanged");
+        expect(nonpositive.commits == 0);
     }
 
     private static void testInvalidAccountIndexes() {
@@ -137,7 +145,8 @@ public final class PurpleAccountBindingTest {
         final Access access = new Access();
         access.values.put("purple_sync_binding_100", TOKEN_A);
         access.changeOnRead = true;
-        expectError(PurpleAccountBinding.read(0, access), "AccountChanged");
+        expectError(PurpleAccountBinding.read(0, access), "AccountUnavailable");
+        expect(access.commits == 0);
     }
 
     private static void testIdentityChangeAroundWrite() {
@@ -200,6 +209,34 @@ public final class PurpleAccountBindingTest {
         expect(access.commits == 0);
     }
 
+    private static void testPreparedIdentityAndPreferenceFences() {
+        for (String change : new String[]{"environment", "lifetime", "user", "token"}) {
+            final Access access = new Access();
+            final PurpleAccountBinding.Initialization prepared = PurpleAccountBinding.prepareInitialization(0, access, new RandomBytes((byte) 0x33));
+            expect(prepared.isValid());
+            if (change.equals("environment")) access.environment = 1;
+            if (change.equals("lifetime")) ++access.lifetime;
+            if (change.equals("user")) ++access.userId;
+            if (change.equals("token")) access.values.put("purple_sync_binding_100", TOKEN_B);
+            expectError(PurpleAccountBinding.persist(0, prepared, HexFormat.of().formatHex(prepared.entropy)), "AccountChanged");
+            expect(access.commits == 0);
+        }
+        final Access access = new Access();
+        final PurpleAccountBinding.Initialization prepared = PurpleAccountBinding.prepareInitialization(0, access, new RandomBytes((byte) 0x33));
+        expectValid(PurpleAccountBinding.persist(0, prepared, HexFormat.of().formatHex(prepared.entropy)));
+    }
+
+    private static void testNativeUnavailableIsNotSuccess() {
+        final String library = System.getProperty("purple.test.library");
+        System.clearProperty("purple.test.library");
+        try {
+            final Access access = new Access();
+            final PurpleAccountBinding.Initialization prepared = PurpleAccountBinding.prepareInitialization(0, access, new RandomBytes((byte) 0x33));
+            expect(!prepared.isValid());
+            expect(access.commits == 0);
+        } finally { System.setProperty("purple.test.library", library); }
+    }
+
     private static void expectValid(PurpleAccountBinding.Binding binding) {
         expect(binding.isValid());
     }
@@ -211,6 +248,7 @@ public final class PurpleAccountBindingTest {
     }
 
     private static void expect(boolean condition) {
+        ++checks;
         if (!condition) {
             throw new AssertionError();
         }
