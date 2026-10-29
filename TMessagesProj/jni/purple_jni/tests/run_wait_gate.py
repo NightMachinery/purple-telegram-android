@@ -56,7 +56,7 @@ def run(name, command):
     with (args.output / (name + ".log")).open("w") as log:
         result = subprocess.run(list(map(str, command)), stdout=log, stderr=subprocess.STDOUT)
     print(name, result.returncode, flush=True)
-    print((args.output / (name + ".log")).read_text()[-4000:], flush=True)
+    print((args.output / (name + ".log")).read_text(), flush=True)
     if result.returncode:
         raise SystemExit(result.returncode)
 
