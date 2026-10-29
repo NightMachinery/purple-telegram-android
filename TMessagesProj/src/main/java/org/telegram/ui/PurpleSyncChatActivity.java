@@ -21,7 +21,7 @@ import java.util.ArrayList;
 import java.util.Locale;
 
 public final class PurpleSyncChatActivity extends UniversalFragment {
-    private static final int REFRESH=0x70750110, SELF=REFRESH+1, EXISTING=REFRESH+2, CREATE=REFRESH+3, CONSENT=REFRESH+4, RESUME=REFRESH+5, CANCEL_SETUP=REFRESH+6, REVIEW_SETTINGS=REFRESH+7, CHANGE=REFRESH+8, FOLLOW_FILL=REFRESH+9, LOCAL_RESUME=REFRESH+10;
+    private static final int REFRESH=0x70750110, SELF=REFRESH+1, EXISTING=REFRESH+2, CREATE=REFRESH+3, CONSENT=REFRESH+4, RESUME=REFRESH+5, CANCEL_SETUP=REFRESH+6, REVIEW_SETTINGS=REFRESH+7, CHANGE=REFRESH+8, FOLLOW_FILL=REFRESH+9, LOCAL_RESUME=REFRESH+10, REMOVE_MARK=0x70750200;
     private PurpleSyncChatScreen.Control control;
     private PurpleSyncChatScreen.Frame frame;
     private PurpleSyncChatCore.Peer pending;
@@ -32,6 +32,7 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
     private boolean limitShown;
     private Runnable rpcWatch;
     private boolean changePicker;
+    private org.telegram.messenger.purple.PurpleSyncChatMarkActions markAction;
 
     public PurpleSyncChatActivity(int account) { setCurrentAccount(account); }
     @Override public boolean onFragmentCreate() {
@@ -74,10 +75,10 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
     }
     private void cancelSetup(){if(setup!=null)setup.close();setup=null;setupState=null;limitShown=false;if(visible)openSetup();update();}
     @Override public void onPause() {
-        visible=false;if(setup!=null){setup.close();setup=null;}setupState=null;if(rpcWatch!=null){rpcWatch.run();rpcWatch=null;}if(control!=null){control.close();control=null;}super.onPause();
+        visible=false;if(markAction!=null){markAction.close();markAction=null;}if(setup!=null){setup.close();setup=null;}setupState=null;if(rpcWatch!=null){rpcWatch.run();rpcWatch=null;}if(control!=null){control.close();control=null;}super.onPause();
     }
     @Override public void onFragmentDestroy() {
-        visible=false;if(setup!=null){setup.close();setup=null;}setupState=null;if(rpcWatch!=null){rpcWatch.run();rpcWatch=null;}if(control!=null){control.close();control=null;}super.onFragmentDestroy();
+        visible=false;if(markAction!=null){markAction.close();markAction=null;}if(setup!=null){setup.close();setup=null;}setupState=null;if(rpcWatch!=null){rpcWatch.run();rpcWatch=null;}if(control!=null){control.close();control=null;}super.onFragmentDestroy();
     }
     private void update() { if(visible&&listView!=null)listView.adapter.update(true); }
     private void reload() {
@@ -114,6 +115,13 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
                 items.add(UItem.asShadow(text("NewReaders",frame.current!=null?title(frame.current):text("UnknownChat"),members,baseline)
                         +"\n"+text(frame.current!=null&&frame.current.hiddenPrehistory?"NewReadersFuture":"NewReadersEarlier")+"\n"+text("ReaderBlindSpot")));
             }
+            if(org.telegram.messenger.purple.PurpleSyncChatMarkActions.ACTIVATED&&!frame.staleMarks.isEmpty()){
+                items.add(UItem.asHeader(text("StaleMarks")));
+                for(int i=0;i<frame.staleMarks.size();++i){
+                    org.telegram.messenger.purple.PurpleSyncChatMarkActions.Row row=frame.staleMarks.get(i);
+                    items.add(UItem.asButton(REMOVE_MARK+i,text("RemoveMarkRow",row.location.chat.kind==PurpleSyncChatCore.PeerKind.Self?text("Saved"):row.title,Integer.toString(row.location.markId))));
+                }
+            }
             if(frame.canFollowFill())items.add(UItem.asButton(FOLLOW_FILL,text(frame.status.resolution.action==PurpleSyncChatCore.Action.Follow?"Follow":"Fill")));
             if(frame.locallyPaused())items.add(UItem.asButton(LOCAL_RESUME,text("LocalResume")));
             if(frame.status.reason.equals("ReaderConsent")&&frame.current!=null&&frame.current.allowed)
@@ -141,6 +149,7 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
     }
     @Override protected void onClick(UItem item,View view,int position,float x,float y) {
         if(!visible||control==null||!control.current())return;
+        if(org.telegram.messenger.purple.PurpleSyncChatMarkActions.ACTIVATED&&frame!=null&&item.id>=REMOVE_MARK&&item.id<REMOVE_MARK+frame.staleMarks.size()){removeMark(frame.staleMarks.get(item.id-REMOVE_MARK));return;}
         if(item.id==REVIEW_SETTINGS&&setupState!=null&&setupState.phase.equals("Complete")){presentFragment(new PurpleSyncActivity(currentAccount));return;}
         if(item.id==FOLLOW_FILL&&frame!=null&&frame.canFollowFill()){followFill();return;}
         if(item.id==LOCAL_RESUME&&frame!=null&&frame.locallyPaused()){control.pauseHere(false,saved->{if(visible){if(!saved)message(text("Changed"));reload();}});return;}
@@ -193,6 +202,21 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
             }));
             dialog.setNegativeButton(LocaleController.getString(org.telegram.messenger.R.string.Cancel),null);showDialog(dialog.create());
         });
+    }
+    private void removeMark(org.telegram.messenger.purple.PurpleSyncChatMarkActions.Row row){
+        PurpleSyncChatScreen.Control opening=control;
+        if(!org.telegram.messenger.purple.PurpleSyncChatMarkActions.ACTIVATED||!visible||opening==null||!opening.current()||getParentActivity()==null)return;
+        String chat=row.location.chat.kind==PurpleSyncChatCore.PeerKind.Self?text("Saved"):row.title;
+        AlertDialog.Builder dialog=new AlertDialog.Builder(getParentActivity());dialog.setTitle(text("RemoveMark"));
+        dialog.setMessage(text("RemoveMarkAbout",chat,Integer.toString(row.location.markId)));
+        dialog.setPositiveButton(text("RemoveMark"),(ignored,which)->{
+            if(!org.telegram.messenger.purple.PurpleSyncChatMarkActions.ACTIVATED||!visible||control!=opening||!opening.current())return;
+            if(markAction!=null)markAction.close();
+            markAction=PurpleSyncChat.removeMark(currentAccount,row,()->visible&&control==opening&&opening.current(),state->{
+                if(visible&&control==opening&&opening.current()){message(text(state.absent?"RemoveMarkComplete":"RemoveMarkHeld"));if(state.absent)reload();}
+            });
+        });
+        dialog.setNegativeButton(LocaleController.getString(org.telegram.messenger.R.string.Cancel),null);showDialog(dialog.create());
     }
     private void followFill(){
         PurpleSyncChatScreen.Control opening=control;if(opening==null||!visible)return;

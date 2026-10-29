@@ -162,6 +162,80 @@ public final class PurpleSyncChat {
             closed=true;if(reader!=null){reader.cancel();reader=null;}holder.service.cancelBorrowed(owner);
         }
     }
+    public static PurpleSyncChatMarkActions removeMark(int slot,PurpleSyncChatMarkActions.Row row,BooleanSupplier foreground,Consumer<PurpleSyncChatMarkActions.State> changed){
+        Holder holder=accounts.get(slot);
+        boolean current=holder!=null&&foreground.getAsBoolean()&&holder.env.context.current();
+        if(!PurpleSyncChatMarkActions.ACTIVATED){
+            changed.accept(PurpleSyncChatMarkActions.production(row,holder==null?null:holder.env.origin,holder==null?null:holder.env.authority,current));return null;
+        }
+        if(!current)return null;
+        PurpleSyncChatMarkActions action=new PurpleSyncChatMarkActions(new MarkPort(holder,foreground),changed);action.remove(row);return action;
+    }
+    private static final class MarkPort implements PurpleSyncChatMarkActions.Port {
+        final Holder holder;
+        final ScreenPort screen;
+        PurpleSyncChatTelegram client,admissionReader;
+        long admissionEpoch;
+        MarkPort(Holder holder,BooleanSupplier foreground){this.holder=holder;screen=new ScreenPort(holder,foreground);}
+        public PurpleSyncChatOrigin origin(){return screen.origin();}
+        public String authority(){return screen.authority();}
+        public boolean current(){return screen.current();}
+        public boolean begin(Object owner){return screen.begin(owner);}
+        public boolean owned(Object owner){return screen.owner==owner&&screen.acquisition!=null&&screen.acquisition.current();}
+        public void end(Object owner){screen.end(owner);}
+        public void resolve(Object owner,Consumer<PurpleSyncChatScreen.Frame> done){screen.resolve(owner,done);}
+        public void referenced(PurpleSyncChatMarkActions.Row row,Consumer<Boolean> done){
+            holder.env.worker(()->{
+                boolean blocked=!current()||PurpleSyncChatMoveStore.markReferenced(holder.env.context.files.syncDirectory,holder.env.context.origin.key,row);
+                holder.env.ui(()->{if(current())done.accept(blocked);});
+            });
+        }
+        PurpleSyncChatTelegram client(){
+            if(client==null){
+                Object owner=screen.owner;PurpleSyncOperations.Capability token=screen.acquisition;
+                client=new PurpleSyncChatTelegram(origin(),PurpleSyncChatTelegram.platform(origin(),()->valid(owner,token)));
+            }
+            return client;
+        }
+        public void exact(PurpleSyncChatMarkActions.Row row,Consumer<PurpleSyncChatClient.Exact> done){client().exact(row.location,done);}
+        public void delete(PurpleSyncChatMarkActions.Row row,Consumer<org.telegram.tgnet.TLObject> done){client().removeMark(row.location,(request,grant)->admit(row,request,grant),done);}
+        boolean valid(Object owner,PurpleSyncOperations.Capability token){
+            return owner!=null&&token!=null&&token==screen.acquisition&&owner==screen.owner&&token.current()&&current();
+        }
+        <T> Consumer<T> admitted(long epoch,Object owner,PurpleSyncOperations.Capability token,Consumer<Boolean> grant,Consumer<T> next){
+            return value->{
+                if(epoch!=admissionEpoch||!valid(owner,token)){grant.accept(false);return;}
+                try{next.accept(value);}catch(RuntimeException|LinkageError error){grant.accept(false);}
+            };
+        }
+        void admit(PurpleSyncChatMarkActions.Row row,org.telegram.tgnet.TLObject request,Consumer<Boolean> grant){
+            long epoch=++admissionEpoch;Object owner=screen.owner;PurpleSyncOperations.Capability token=screen.acquisition;
+            try{
+                if(!valid(owner,token)||!PurpleSyncChatMarkActions.requestMatches(row,request)){grant.accept(false);return;}
+                if(admissionReader!=null){admissionReader.cancel();admissionReader=null;}
+                holder.service.cancelBorrowed(owner);
+                screen.resolve(owner,admitted(epoch,owner,token,grant,frame->{
+                    if(frame==null||!frame.status.complete||frame.status.postingHeld){grant.accept(false);return;}
+                    referenced(row,admitted(epoch,owner,token,grant,blocked->{
+                        if(!Boolean.FALSE.equals(blocked)){grant.accept(false);return;}
+                        PurpleSyncChatTelegram reader=new PurpleSyncChatTelegram(origin(),PurpleSyncChatTelegram.platform(origin(),()->epoch==admissionEpoch&&valid(owner,token)));
+                        admissionReader=reader;
+                        reader.exact(row.location,admitted(epoch,owner,token,grant,exact->{
+                            grant.accept(PurpleSyncChatMarkActions.requestMatches(row,request)&&PurpleSyncChatMarkActions.authorized(row,frame,exact)&&valid(owner,token));
+                        }));
+                    }));
+                }));
+            }catch(RuntimeException|LinkageError error){grant.accept(false);}
+        }
+        public void apply(PurpleSyncChatMarkActions.Row row,org.telegram.tgnet.TLObject updates){
+            org.telegram.messenger.PurpleSyncChatMarkUpdates.apply(origin().slot,row.location.chat,updates,holder.env::current);
+        }
+        public void cancel(Object owner){
+            ++admissionEpoch;
+            try{if(client!=null){client.cancel();client=null;}}
+            finally{try{if(admissionReader!=null){admissionReader.cancel();admissionReader=null;}}finally{holder.service.cancelBorrowed(owner);}}
+        }
+    }
     public static void change(int slot,PurpleSyncChatScreen.ChangeSelection selection,BooleanSupplier foreground,Consumer<PurpleSyncChatChange.State> changed) {
         Holder holder=accounts.get(slot);
         PurpleSyncChatChange.State result=holder==null?new PurpleSyncChatChange.State("Held","OpeningChanged",false)

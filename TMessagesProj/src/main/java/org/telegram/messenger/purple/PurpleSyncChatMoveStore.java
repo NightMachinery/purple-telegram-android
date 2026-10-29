@@ -144,6 +144,38 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
             PurpleAccountFileSnapshot.durable("barrier",path,file,null,LIMIT,0);return true;
         }catch(Exception|LinkageError e){return false;}
     }
+    static boolean markReferenced(File root,String account,PurpleSyncChatMarkActions.Row row){
+        try{
+            PurpleAccountFileSnapshot.worker();
+            if(row==null||!account.equals(row.origin.accountKey()))return true;
+            if(!artifacts(root))return false;
+            if(!completed(root,account))return true;
+            byte[] state=PurpleAccountFileSnapshot.durable("read",new File(root,"state.json"),null,null,LIMIT,0).bytes;
+            byte[] binding=(state==null?"":new JSONObject(new String(state,StandardCharsets.UTF_8)).getString("binding_token")).getBytes(StandardCharsets.UTF_8);
+            ArrayList<File> journals=new ArrayList<>();journals.add(new File(root,"carry.json"));
+            File history=new File(root,"carry-history");
+            if(PurpleAccountFileSnapshot.directory(history)!=0){
+                String[] names=history.list();if(names==null||names.length>256)return true;
+                for(String name:names){if(!name.matches("[0-9a-f]{64}\\.json"))return true;journals.add(new File(history,name));}
+            }
+            for(File path:journals){
+                PurpleAccountFileSnapshot.Durable file=PurpleAccountFileSnapshot.durable("read",path,null,null,LIMIT,0);
+                if(file.bytes==null)return true;
+                JSONObject inspected=inspectRetained(file.bytes,account,binding);
+                if(inspected.optBoolean("holdsWrites",true))return true;
+                if(inspected.optBoolean("unresolvedMarkReferences",true)){
+                    JSONObject journal=new JSONObject(new String(unblob(inspected,"journal"),StandardCharsets.UTF_8));
+                    for(String name:new String[]{"expected_winner","old_mark","target_mark"}){
+                        JSONObject mark=journal.optJSONObject(name);
+                        if(mark!=null&&row.location.chat.token().equals(mark.optString("chat"))&&Integer.toString(row.location.markId).equals(mark.optString("id")))return true;
+                    }
+                    if(journal.optBoolean("mark_attempted")&&row.location.chat.token().equals(journal.optString("target"))&&row.text.equals(journal.optString("mark_text")))return true;
+                }
+                PurpleAccountFileSnapshot.durable("barrier",path,file,null,LIMIT,0);
+            }
+            return false;
+        }catch(Exception|LinkageError error){return true;}
+    }
     static boolean artifacts(File root) {
         if (PurpleAccountFileSnapshot.directory(root) == 0) return false;
         String[] names = root.list();

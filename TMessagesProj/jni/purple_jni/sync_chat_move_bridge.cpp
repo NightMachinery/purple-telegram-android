@@ -685,6 +685,16 @@ QJsonObject Evaluate(const QString &op, const QJsonObject &o) {
         if (r.reservedState) result.insert(u"state"_q, Image(*r.reservedState));
         return result;
     }
+    if (op == u"checkStaleMarkRemoval"_q) {
+        const auto account = Account(o.value(u"account"_q));
+        auto resolution = Resolution(o.value(u"resolution"_q), account);
+        const auto raw = Object(o.value(u"resolution"_q));
+        Require(raw.value(u"postingHeld"_q).isBool() && o.value(u"complete"_q).isBool());
+        resolution.postingHeld = Flag(raw, u"postingHeld"_q);
+        const auto allowed = CheckStaleMarkRemoval(account, Cache(o.value(u"stale"_q), account),
+            Mark(o.value(u"mark"_q)), resolution, Flag(o, u"complete"_q));
+        return {{u"status"_q, u"Valid"_q}, {u"allowed"_q, allowed}};
+    }
     if (op == u"begin"_q) return JournalResult(BeginSyncCarryJournal(Start(o)));
     if (op == u"finishPending"_q || op == u"abandonPending"_q || op == u"protectedPending"_q) {
         const auto state = State(o.value(u"state"_q));

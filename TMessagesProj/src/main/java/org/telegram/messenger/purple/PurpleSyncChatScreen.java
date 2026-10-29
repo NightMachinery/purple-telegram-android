@@ -60,11 +60,17 @@ public final class PurpleSyncChatScreen {
         public final PurpleSyncChat.Status status;
         public final Candidate current;
         public final List<Refused> refused;
+        public final List<PurpleSyncChatMarkActions.Row> staleMarks;
         public final boolean canSetup, bound, newReaders;
         public final Long originalOtherMembers;
         Frame(PurpleSyncChatOrigin origin, PurpleSyncChat.Status status, PurpleSyncChatService.Binding binding,
                 PurpleSyncChatCache.Loaded opening, PurpleSyncChatClient.Info info, List<Refused> refused) {
+            this(origin,status,binding,opening,info,refused,Collections.emptyList());
+        }
+        Frame(PurpleSyncChatOrigin origin,PurpleSyncChat.Status status,PurpleSyncChatService.Binding binding,
+                PurpleSyncChatCache.Loaded opening,PurpleSyncChatClient.Info info,List<Refused> refused,List<PurpleSyncChatMarkActions.Row> staleMarks){
             this.origin=origin;this.status=status;this.binding=binding;this.opening=opening;
+            this.staleMarks=Collections.unmodifiableList(new ArrayList<>(staleMarks));
             bound=binding==null||!binding.ok||binding.bound;
             canSetup=!bound&&status.complete&&status.phase==PurpleSyncChat.Phase.Unset&&opening!=null&&opening.ok&&opening.data==null;
             current=info!=null?new Candidate(origin,info.chat,info):null;

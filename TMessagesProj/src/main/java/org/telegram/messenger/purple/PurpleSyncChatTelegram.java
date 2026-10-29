@@ -20,6 +20,7 @@ import static org.telegram.messenger.purple.PurpleSyncChatCore.*;
 
 final class PurpleSyncChatTelegram implements PurpleSyncChatClient {
     interface Reply { void accept(TLObject object, TLRPC.TL_error error); }
+    interface Admission { void check(TLObject request,Consumer<Boolean> done); }
     interface Platform {
         boolean current();
         void dispatch(Runnable task);
@@ -46,7 +47,8 @@ final class PurpleSyncChatTelegram implements PurpleSyncChatClient {
     @Override public List<Peer> fallback() { return current() ? platform.fallback() : Collections.emptyList(); }
 
     @Override public void transientWait(Consumer<PurpleRpcRetry.Transient> observer){waiting=observer!=null?observer:ignored->{};}
-    private void request(TLObject request,Reply done){
+    private void request(TLObject request,Reply done){request(request,null,done);}
+    private void request(TLObject request,Admission admission,Reply done){
         if(!current()||request==null){if(current())done.accept(null,null);return;}
         PurpleRpcRequest[] call=new PurpleRpcRequest[1];
         PurpleRpcRequest.Port port=new PurpleRpcRequest.Port(){
@@ -55,6 +57,7 @@ final class PurpleSyncChatTelegram implements PurpleSyncChatClient {
             public void dispatch(Runnable task){platform.dispatch(task);}
             public void delay(Runnable task,long millis){platform.delay(task,millis);}
             public void cancelDelay(Runnable task){platform.cancelDelay(task);}
+            public void admit(TLObject value,Consumer<Boolean> grant){if(admission==null)grant.accept(true);else admission.check(value,grant);}
             public int send(TLObject value,PurpleRpcRequest.Reply reply){return platform.send(value,reply::accept);}
             public void cancel(int token){platform.cancel(token);}
             public void waiting(PurpleRpcRetry.Transient value){platform.waiting(call[0],value);if(current())waiting.accept(value);}
@@ -156,6 +159,13 @@ final class PurpleSyncChatTelegram implements PurpleSyncChatClient {
         });
     }
 
+    void removeMark(Cache location,Admission admission,Consumer<TLObject> done){
+        if(admission==null){done.accept(null);return;}
+        request(PurpleSyncChatMoveRequests.delete(location.chat,platform.input(location.chat),location.markId),admission,(response,error)->{
+            if(current())done.accept(error==null&&(response instanceof TLRPC.Updates||response instanceof TLRPC.TL_messages_affectedMessages)?response:null);
+        });
+    }
+
     void readBack(Cache mark,Consumer<PurpleSyncChatSetup.ReadBack> done) {
         request(PurpleSyncChatRequests.exact(mark.chat,mark.markId,platform.input(mark.chat)),(response,error)->{
             if(error==null)acceptPeers(response);
@@ -178,7 +188,7 @@ final class PurpleSyncChatTelegram implements PurpleSyncChatClient {
         if (message == null || message.id != location.markId) return new Exact(DirectRead.Unknown,null,info);
         if (message.getClass() == TLRPC.TL_messageEmpty.class) {
             boolean peerPresent=(message.flags&1)!=0;
-            return new Exact(peerPresent&&!location.chat.equals(PurpleSyncChatFacts.token(message.peer_id,origin.userId))?DirectRead.Unknown:DirectRead.MarkGone,null,info);
+            return new Exact(peerPresent&&!location.chat.equals(PurpleSyncChatFacts.token(message.peer_id,origin.userId))?DirectRead.Unknown:DirectRead.MarkGone,null,info,location);
         }
         if (message.getClass() != TLRPC.TL_message.class || !location.chat.equals(PurpleSyncChatFacts.token(message.peer_id,origin.userId))) return new Exact(DirectRead.Unknown,null,info);
         Ownership own = ownership(PurpleSyncChatFacts.message(origin,info.peer,message),Options.restricted());

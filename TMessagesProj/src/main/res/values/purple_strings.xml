@@ -962,4 +962,10 @@
     <string name="PurpleSyncChatFollowComplete">Sync records verified and this account’s sync chat updated.</string>
     <string name="PurpleSyncChatLibraryCloud">Playlists are kept in %1$s, a Telegram cloud chat. They are not end-to-end encrypted, and every signed-in session of this account can read them.</string>
     <string name="PurpleSyncChatLibraryReaders">This includes this account’s playlist names and tracks.</string>
+    <string name="PurpleSyncChatStaleMarks">Older Purple marks</string>
+    <string name="PurpleSyncChatRemoveMark">Remove mark</string>
+    <string name="PurpleSyncChatRemoveMarkRow">Remove mark %2$s in %1$s</string>
+    <string name="PurpleSyncChatRemoveMarkAbout">Remove only Purple mark %2$s in %1$s? The current winner and the selected message will be checked again. This does not remove records or the chat.</string>
+    <string name="PurpleSyncChatRemoveMarkComplete">The selected mark is absent.</string>
+    <string name="PurpleSyncChatRemoveMarkHeld">Mark removal is not available yet. No other messages or chats will be removed.</string>
 </resources>

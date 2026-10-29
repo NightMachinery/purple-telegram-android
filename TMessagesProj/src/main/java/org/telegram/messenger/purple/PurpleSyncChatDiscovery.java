@@ -110,6 +110,16 @@ final class PurpleSyncChatDiscovery {
         }
         return result;
     }
+    List<PurpleSyncChatMarkActions.Row> staleMarks(String authority){
+        if(!status.complete||directOnly||status.resolution.winner==null)return Collections.emptyList();
+        List<PurpleSyncChatMarkActions.Row> rows=new ArrayList<>();Set<String> seen=new HashSet<>();
+        for(TLRPC.Message message:hits){
+            Peer peer=PurpleSyncChatFacts.token(message.peer_id,origin.userId);
+            PurpleSyncChatMarkActions.Row row=PurpleSyncChatMarkActions.Row.capture(origin,authority,message,facts.get(peer));
+            if(row!=null&&outranks(status.resolution.winner,row.location)&&seen.add(key(row.location)))rows.add(row);
+        }
+        return rows;
+    }
     ResolveInput input() { return input; }
     private void begin(long now, boolean retry) {
         ++run; hits.clear(); facts.clear(); verified.clear(); gone.clear(); inventories.clear();

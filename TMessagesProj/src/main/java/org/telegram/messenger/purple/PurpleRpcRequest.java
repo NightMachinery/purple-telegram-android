@@ -15,6 +15,7 @@ public final class PurpleRpcRequest {
         void dispatch(Runnable task);
         void delay(Runnable task,long millis);
         void cancelDelay(Runnable task);
+        default void admit(TLObject request,Consumer<Boolean> done){done.accept(true);}
         int send(TLObject request,Reply done);
         void cancel(int token);
         default void waiting(PurpleRpcRetry.Transient value){}
@@ -89,6 +90,22 @@ public final class PurpleRpcRequest {
             cancelTimeout();failed(-504,"REQUEST_TIMEOUT",true);
         };
         port.delay(timeout,Math.max(0,budget.deadline()-port.now()));
+        boolean[] admitted={false};
+        try{
+            port.admit(request,allowed->port.dispatch(()->{
+                if(finished||generation!=run||admitted[0])return;
+                admitted[0]=true;
+                if(!port.current()){finish(null,null,false);stream.drive();return;}
+                if(!Boolean.TRUE.equals(allowed)){
+                    TLRPC.TL_error error=new TLRPC.TL_error();error.code=-506;error.text="ADMISSION_CHANGED";
+                    finish(null,error,true);stream.drive();return;
+                }
+                if(port.now()>=budget.deadline()){cancelTimeout();failed(-504,"REQUEST_TIMEOUT",true);return;}
+                send(run);
+            }));
+        }catch(RuntimeException error){if(!admitted[0]){cancelTimeout();failed(-1,"TRANSPORT_UNAVAILABLE",false);}}
+    }
+    private void send(long run){
         try{
             int sent=port.send(request,(response,error)->port.dispatch(()->{
                 if(finished||generation!=run)return;

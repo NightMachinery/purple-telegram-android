@@ -1041,6 +1041,41 @@
         "consent:MOVE_CONSENT_REVIEW_CHECKS": 35,
         "sync-chat-move-consent:MOVE_CONSENT_REVIEW_CHECKS": 35
       }
+    },
+    {
+      "name": "sync-chat-marks",
+      "driver": "TMessagesProj/jni/purple_jni/tests/run_sync_chat_marks.py",
+      "args": [
+        "--receipt",
+        "{receipt}",
+        "--json",
+        "{json}",
+        "--library",
+        "{library}",
+        "--output",
+        "{output}",
+        "--modern",
+        "{out:modern-sync}",
+        "--discovery",
+        "{out:sync-chat-discovery}",
+        "--carry",
+        "{out:sync-chat-move}",
+        "--store",
+        "{out:sync-chat-move-store}",
+        "--io",
+        "{out:sync-chat-move-io}",
+        "--executor",
+        "{out:sync-chat-move-executor}",
+        "--consent",
+        "{out:sync-chat-move-consent}"
+      ],
+      "coverage": "Standalone shared-core stale-mark authority, exact immutable identity, account serialization, scoped absence and lifecycle fences. Production constant OFF.",
+      "expects": {
+        "marks:STALE_MARK_CHECKS": 375,
+        "sync-chat-marks:STALE_MARK_CHECKS": 375,
+        "marks:MARK_ACTIVATION_REVIEW_CHECKS": 20,
+        "sync-chat-marks:MARK_ACTIVATION_REVIEW_CHECKS": 20
+      }
     }
   ]
 }

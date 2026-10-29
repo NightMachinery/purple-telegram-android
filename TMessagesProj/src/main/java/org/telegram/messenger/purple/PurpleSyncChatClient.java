@@ -32,7 +32,9 @@ interface PurpleSyncChatClient {
         final DirectRead state;
         final TLRPC.Message message;
         final Info info;
-        Exact(DirectRead state, TLRPC.Message message, Info info) { this.state = state; this.message = message; this.info = info; }
+        final Cache absentLocation;
+        Exact(DirectRead state, TLRPC.Message message, Info info) { this(state,message,info,null); }
+        Exact(DirectRead state,TLRPC.Message message,Info info,Cache absentLocation){this.state=state;this.message=message;this.info=info;this.absentLocation=absentLocation;}
     }
     PurpleSyncChatOrigin origin();
     boolean current();
