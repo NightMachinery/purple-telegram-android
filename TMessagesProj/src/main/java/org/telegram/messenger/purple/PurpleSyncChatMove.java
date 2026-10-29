@@ -139,7 +139,7 @@ final class PurpleSyncChatMove implements AutoCloseable {
     private Committed committed()throws Exception {
         if(store==null||store.journalBytes()==null)return null;JSONObject j=journal();
         if(!j.optBoolean("destination_verified")||!j.optBoolean("mark_verified")||!j.optBoolean("state_committed")||!j.optBoolean("cache_completed")
-                ||store.stateBytes()==null||!PurpleSyncRetainedFiles.hash(store.stateBytes()).equals(j.optString("next_state_hash")))return null;
+                ||!(store.stateBytes()==null?j.getInt("mode")==2&&j.optString("next_state_hash").isEmpty():PurpleSyncRetainedFiles.hash(store.stateBytes()).equals(j.optString("next_state_hash"))))return null;
         JSONObject mark=j.getJSONObject("target_mark");
         return new Committed(origin,authority,j.getString("operation"),new Cache(Peer.parse(mark.getString("chat"),origin.userId),mark.getInt("id"),mark.getLong("date")));
     }
@@ -153,10 +153,13 @@ final class PurpleSyncChatMove implements AutoCloseable {
             if(captured!=run||store!=null)return;
             if(!lease.quiescent()){hold("PublishersNotQuiescent");return;}
             store=port.open(this::live,foreign);require();
+            if(!origin.accountKey().equals(store.accountKey())||!authority.equals(store.loginAuthority()))throw new IOException("AccountUnbound");
+            if(!foreign)store.checkNotPaused(origin);
             if(opening!=null&&opening.has("openingStateStamp")){
                 String actual=store.stateBytes()==null?"missing":PurpleSyncRetainedFiles.hash(store.stateBytes());
                 if(!actual.equals(opening.getString("openingStateStamp")))throw new IOException("OpeningChanged");
             }
+            if(opening!=null&&opening.optBoolean("openingCacheAbsent")&&store.openingCacheBytes()!=null)throw new IOException("OpeningChanged");
             if(opening!=null&&opening.has("openingCacheBytes")&&!java.util.Arrays.equals(store.openingCacheBytes(),PurpleSyncRetainedBases.decode(opening.getString("openingCacheBytes"))))throw new IOException("OpeningChanged");
             if(foreign){if(discardConfirmed)transition(store.discardInterrupted(true));return;}
             if(resume||store.journalBytes()!=null&&!store.terminal()){
@@ -164,7 +167,9 @@ final class PurpleSyncChatMove implements AutoCloseable {
                 if(store.terminal()){finish();return;}
                 transitionOnly(store.resume());
                 if(accepted==null){hold("TargetFactsRequired");return;}
-                io=new PurpleSyncChatMoveIO(store,origin,this::live);request("Fresh",null,0,null);
+                io=new PurpleSyncChatMoveIO(store,origin,this::live);
+                if(store.transport().optJSONObject("readers")==null||!store.transport().getJSONObject("readers").has("snapshot")){hold("ReadersBaselineMissing");return;}
+                request("Fresh",null,0,null);
             } else request("Fresh",null,0,null);
         })));
     }
@@ -196,10 +201,12 @@ final class PurpleSyncChatMove implements AutoCloseable {
         case "Fresh":
             fresh=reply.fresh;checkFresh();
             if(store.journalBytes()==null||store.terminal()&&opening!=null){
+                if(accepted==null||!new PurpleSyncChatScreen.Candidate(origin,fresh.target.chat,accepted).same(new PurpleSyncChatScreen.Candidate(origin,fresh.target.chat,fresh.target)))throw new IOException("ReaderConsentChanged");
                 JSONObject begin=copy(opening);begin.put("loginAuthority",authority.substring(0,32)).put("resolution",resolution(fresh.resolution))
-                        .put("eligibility",eligibilityJson(fresh.target.eligibility())).put("oldRead",fresh.oldRead.name()).put("sourceAccess",reply.sourceAccess);
+                        .put("eligibility",eligibilityJson(accepted.eligibility())).put("oldRead",fresh.oldRead.name()).put("sourceAccess",reply.sourceAccess);
                 transitionOnly(store.begin(begin));byte[] pending=store.pendingBytes();if(pending.length!=0)store.pendingIntent(pending,"Unknown");
                 io=new PurpleSyncChatMoveIO(store,origin,this::live);
+                io.acceptReaders(fresh,accepted,begin.optString("consentStream","config"));
             }else io.reconciliationFresh(fresh);
             drive();break;
         case "Source":
@@ -265,7 +272,7 @@ final class PurpleSyncChatMove implements AutoCloseable {
     private void deliverOrRead()throws Exception {
         if(journal().getJSONObject("plan").optBoolean("playlist_required")){hold("PlaylistRequired");return;}
         if(!journal().optBoolean("delivery_attempted")){request("Destination",null,0,null);return;}
-        if(store.transport().length()==0)io.reserve(fresh,accepted,entropy);
+        if(store.transport().getJSONObject("entries").length()==0)io.reserve(fresh,accepted,entropy);
         JSONObject entries=store.transport().getJSONObject("entries");JSONArray missing=journal().getJSONArray("missing");
         for(String key:sortedKeys(entries)){
             JSONObject slot=entries.getJSONObject(key);String kind=slot.getString("kind");if(kind.equals("mark")||!contains(missing,slot.getString("hash")))continue;
@@ -282,7 +289,7 @@ final class PurpleSyncChatMove implements AutoCloseable {
     private void deliverMark()throws Exception {
         JSONObject j=journal();
         if(j.getInt("mode")==1||j.getInt("mode")==2){request("Mark",null,j.getJSONObject("target_mark").getInt("id"),null);return;}
-        if(store.transport().length()==0)io.reserve(fresh,accepted,entropy);
+        if(store.transport().getJSONObject("entries").length()==0)io.reserve(fresh,accepted,entropy);
         JSONObject slot=store.transport().getJSONObject("entries").optJSONObject(markKey());
         if(slot==null){hold("MarkReadbackRequired");return;}
         if(slot.getString("state").equals("prepared")){request("Effect",io.authorize("mark",0,slot.getString("hash"),fresh,null),0,null);return;}
@@ -345,7 +352,7 @@ final class PurpleSyncChatMove implements AutoCloseable {
         if(!result.status.equals("Valid")&&!(result.status.equals("Retry")&&next().equals("Deliver")&&retryReady()))throw new IOException(result.status);
     }
     private boolean retryReady()throws Exception {
-        JSONObject entries=store.transport().optJSONObject("entries");if(entries==null)return true;
+        JSONObject entries=store.transport().optJSONObject("entries");if(entries==null||entries.length()==0)return true;
         JSONArray missing=journal().getJSONArray("missing");for(String key:sortedKeys(entries)){JSONObject slot=entries.getJSONObject(key);if(slot.getString("state").equals("prepared")&&contains(missing,slot.getString("hash")))return true;}return false;
     }
     private void transition(PurpleSyncChatMoveCore.Result result)throws Exception {transitionOnly(result);if(store.terminal())finish();else request("Fresh",null,0,null);}

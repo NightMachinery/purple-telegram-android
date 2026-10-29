@@ -21,7 +21,7 @@ import java.util.ArrayList;
 import java.util.Locale;
 
 public final class PurpleSyncChatActivity extends UniversalFragment {
-    private static final int REFRESH=0x70750110, SELF=REFRESH+1, EXISTING=REFRESH+2, CREATE=REFRESH+3, CONSENT=REFRESH+4, RESUME=REFRESH+5, CANCEL_SETUP=REFRESH+6, REVIEW_SETTINGS=REFRESH+7, CHANGE=REFRESH+8;
+    private static final int REFRESH=0x70750110, SELF=REFRESH+1, EXISTING=REFRESH+2, CREATE=REFRESH+3, CONSENT=REFRESH+4, RESUME=REFRESH+5, CANCEL_SETUP=REFRESH+6, REVIEW_SETTINGS=REFRESH+7, CHANGE=REFRESH+8, FOLLOW_FILL=REFRESH+9, LOCAL_RESUME=REFRESH+10;
     private PurpleSyncChatScreen.Control control;
     private PurpleSyncChatScreen.Frame frame;
     private PurpleSyncChatCore.Peer pending;
@@ -114,6 +114,8 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
                 items.add(UItem.asShadow(text("NewReaders",frame.current!=null?title(frame.current):text("UnknownChat"),members,baseline)
                         +"\n"+text(frame.current!=null&&frame.current.hiddenPrehistory?"NewReadersFuture":"NewReadersEarlier")+"\n"+text("ReaderBlindSpot")));
             }
+            if(frame.canFollowFill())items.add(UItem.asButton(FOLLOW_FILL,text(frame.status.resolution.action==PurpleSyncChatCore.Action.Follow?"Follow":"Fill")));
+            if(frame.locallyPaused())items.add(UItem.asButton(LOCAL_RESUME,text("LocalResume")));
             if(frame.status.reason.equals("ReaderConsent")&&frame.current!=null&&frame.current.allowed)
                 items.add(UItem.asButton(CONSENT,text("ReviewReaders")));
             if(frame.canSetup&&(setupState==null||!setupState.busy&&!setupState.resumable)) {
@@ -140,6 +142,8 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
     @Override protected void onClick(UItem item,View view,int position,float x,float y) {
         if(!visible||control==null||!control.current())return;
         if(item.id==REVIEW_SETTINGS&&setupState!=null&&setupState.phase.equals("Complete")){presentFragment(new PurpleSyncActivity(currentAccount));return;}
+        if(item.id==FOLLOW_FILL&&frame!=null&&frame.canFollowFill()){followFill();return;}
+        if(item.id==LOCAL_RESUME&&frame!=null&&frame.locallyPaused()){control.pauseHere(false,saved->{if(visible){if(!saved)message(text("Changed"));reload();}});return;}
         if(item.id==CHANGE&&frame!=null&&frame.canChange()){changeChoices();return;}
         if(item.id==CANCEL_SETUP){cancelSetup();return;}
         if(item.id==RESUME&&setup!=null){limitShown=false;setup.resume();return;}
@@ -188,6 +192,28 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
                 else {message(text(selected==null?"Changed":"ConsentSaved"));reload();}
             }));
             dialog.setNegativeButton(LocaleController.getString(org.telegram.messenger.R.string.Cancel),null);showDialog(dialog.create());
+        });
+    }
+    private void followFill(){
+        PurpleSyncChatScreen.Control opening=control;if(opening==null||!visible)return;
+        opening.offerFollowFill("config",offer->{
+            if(!visible||control!=opening||!opening.current()||getParentActivity()==null)return;
+            if(offer==null){message(text("Changed"));reload();return;}
+            Runnable accept=()->opening.acceptFollowFill(offer,true,selection->{
+                if(!visible||control!=opening||!opening.current())return;
+                if(selection==null){message(text("Changed"));reload();return;}
+                PurpleSyncChat.followFill(currentAccount,selection,()->visible&&identity!=null&&identity.current(),state->{
+                    if(visible&&control==opening&&opening.current())message(text(state.committed?"FollowComplete":"FollowHeld"));
+                });
+            });
+            if(!offer.requiresReaders){accept.run();return;}
+            AlertDialog.Builder dialog=new AlertDialog.Builder(getParentActivity());dialog.setTitle(text(offer.action==PurpleSyncChatCore.Action.Follow?"Follow":"Fill"));
+            dialog.setMessage(org.telegram.messenger.purple.PurpleSyncChatMoveConsent.disclosure(offer,PurpleSyncChatActivity::text));
+            dialog.setPositiveButton(text(offer.action==PurpleSyncChatCore.Action.Follow?"Follow":"Fill"),(ignored,which)->accept.run());
+            dialog.setNegativeButton(text("PauseHere"),(ignored,which)->{
+                if(visible&&control==opening&&opening.current())opening.pauseHere(true,saved->{if(visible&&control==opening){if(!saved)message(text("Changed"));reload();}});
+            });
+            dialog.setNeutralButton(LocaleController.getString(org.telegram.messenger.R.string.Cancel),null);showDialog(dialog.create());
         });
     }
     private void changeChoices() {
@@ -239,6 +265,7 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
     }
     private static String refusal(PurpleSyncChatCore.Refusal value) { return text("Refusal"+value.name()); }
     private static String reason(String value) {
+        if(value.equals("LocalPause"))return text("LocalPaused");
         if(value.equals("SetupPostingHeld"))return text("FirstPostHeld");
         if(value.equals("ReaderConsent"))return text("ConsentNeeded");
         if(value.equals("UnknownReaders"))return text("ReadersUnknown");

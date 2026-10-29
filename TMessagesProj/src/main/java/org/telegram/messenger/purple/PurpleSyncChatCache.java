@@ -100,10 +100,11 @@ final class PurpleSyncChatCache {
         }
     }
     static final class Loaded {
-        final boolean ok;
+        final boolean ok,paused;
         final byte[] bytes;
         final Data data;
-        Loaded(boolean ok, byte[] bytes, Data data) { this.ok = ok; this.bytes = bytes; this.data = data; }
+        Loaded(boolean ok, byte[] bytes, Data data) { this(ok,bytes,data,false); }
+        Loaded(boolean ok,byte[] bytes,Data data,boolean paused) { this.ok=ok;this.bytes=bytes;this.data=data;this.paused=paused; }
     }
     static Loaded load(IO io, PurpleSyncChatOrigin origin, String authority) {
         byte[] bytes = null;
@@ -112,7 +113,13 @@ final class PurpleSyncChatCache {
             if (bytes.length > 65536) return new Loaded(false,bytes,null);
             JSONObject value = new JSONObject(StandardCharsets.UTF_8.newDecoder().onMalformedInput(java.nio.charset.CodingErrorAction.REPORT).decode(java.nio.ByteBuffer.wrap(bytes)).toString());
             if (!(value.get("version") instanceof Integer || value.get("version") instanceof Long) || ((Number)value.get("version")).longValue() != 1 || !origin.accountKey().equals(value.getString("account")) ) return new Loaded(false,bytes,null);
-            if (!authority.equals(value.getString("authority"))) return new Loaded(true,bytes,null);
+            boolean paused=value.has("paused")&&bool(value,"paused");
+            boolean admitted=authority.equals(value.getString("authority"));
+            if(value.has("pauseOnly")) {
+                if(!bool(value,"pauseOnly")||!paused||value.has("chat"))return new Loaded(false,bytes,null);
+                return new Loaded(true,bytes,null,true);
+            }
+            if(!admitted)return new Loaded(true,bytes,null,paused);
             Peer chat = Peer.parse(value.getString("chat"),origin.userId); if (chat == null || !chat.token().equals(value.getString("chat"))) return new Loaded(false,bytes,null);
             Object rawId = value.get("markId"); if (!(rawId instanceof Integer || rawId instanceof Long)) return new Loaded(false,bytes,null);
             long id = ((Number)rawId).longValue(), date = decimal(value,"markDate");
@@ -122,11 +129,11 @@ final class PurpleSyncChatCache {
             if (array.length() > 2) return new Loaded(false,bytes,null);
             for (int i=0;i<array.length();++i) { String stream = array.getString(i); if (!stream.equals("config") && !stream.equals("library") || !warned.add(stream)) return new Loaded(false,bytes,null); }
             ReadersSnapshot readers = value.has("readers") ? ReadersSnapshot.parse(value.getJSONObject("readers")) : null;
-            return new Loaded(true,bytes,new Data(new Cache(chat,(int)id,date),title,readers,warned,value.getJSONObject("journal"),bool(value,"newReaders")));
+            return new Loaded(true,bytes,new Data(new Cache(chat,(int)id,date),title,readers,warned,value.getJSONObject("journal"),bool(value,"newReaders")),paused);
         } catch (Exception error) { return new Loaded(false,bytes,null); }
     }
     static boolean save(IO io, Loaded opening, PurpleSyncChatOrigin origin, String authority, Data data, BooleanSupplier current) {
-        if (opening == null || !opening.ok || data == null || !current.getAsBoolean()) return false;
+        if (opening == null || !opening.ok || opening.paused || data == null || !current.getAsBoolean()) return false;
         try {
             byte[] encoded=encode(origin,authority,data);
             return encoded.length <= 65536 && current.getAsBoolean() && (java.util.Arrays.equals(opening.bytes,encoded) ? java.util.Arrays.equals(opening.bytes,io.read()) : io.write(opening.bytes,encoded)) && current.getAsBoolean();
@@ -139,6 +146,28 @@ final class PurpleSyncChatCache {
         if (data.readers != null) put(value,"readers",data.readers.json());
         byte[] encoded = value.toString().getBytes(StandardCharsets.UTF_8);
         return encoded;
+    }
+    static boolean pause(IO io,Loaded opening,PurpleSyncChatOrigin origin,String authority,boolean paused,BooleanSupplier current) {
+        try {
+            PurpleAccountFileSnapshot.worker();
+            if(opening==null||!opening.ok||!current.getAsBoolean()||opening.data!=null&&opening.data.pendingMove()||!java.util.Arrays.equals(opening.bytes,io.read()))return false;
+            if(!paused&&opening.data==null)return current.getAsBoolean()&&(opening.bytes==null||io.remove(opening.bytes));
+            JSONObject value=opening.data!=null?new JSONObject(new String(opening.bytes,StandardCharsets.UTF_8)):json("version",1,"account",origin.accountKey(),"authority",authority,"pauseOnly",true);
+            if(paused)value.put("paused",true);else value.remove("paused");
+            byte[] bytes=value.toString().getBytes(StandardCharsets.UTF_8);
+            return bytes.length<=65536&&current.getAsBoolean()&&io.write(opening.bytes,bytes)&&current.getAsBoolean();
+        }catch(Exception|LinkageError e){return false;}
+    }
+    static void forgetLogin(IO io,PurpleSyncChatOrigin origin,String authority) {
+        try {
+            PurpleAccountFileSnapshot.worker();
+            Loaded loaded=load(io,origin,authority);
+            if(!loaded.ok||loaded.data==null||loaded.bytes==null)return;
+            if(loaded.paused){
+                byte[] negative=json("version",1,"account",origin.accountKey(),"authority",authority,"pauseOnly",true,"paused",true).toString().getBytes(StandardCharsets.UTF_8);
+                io.write(loaded.bytes,negative);
+            }else io.remove(loaded.bytes);
+        }catch(Exception|LinkageError error){}
     }
     static IO file(File path) {
         return new IO() {

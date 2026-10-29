@@ -79,6 +79,15 @@ public final class PurpleSyncChatScreen {
                     &&status.resolution.cache!=null&&opening.data.location.equals(status.resolution.cache)
                     &&binding.bound&&binding.chat!=null&&binding.chat.equals(status.resolution.cache.chat)&&!binding.stateStamp.isEmpty();
         }
+        public boolean locallyPaused(){return opening!=null&&opening.ok&&opening.paused;}
+        public boolean canFollowFill(){
+            if(binding==null||!binding.ok||binding.stateStamp.isEmpty()||!status.complete||opening==null||!opening.ok||opening.paused||opening.data!=null&&opening.data.pendingMove())return false;
+            Resolution resolution=status.resolution;
+            if(resolution.winner==null)return false;
+            if(resolution.action==Action.Fill)return !binding.bound&&binding.stateStamp.equals("missing")&&resolution.cache==null&&resolution.source!=null&&opening.data==null;
+            return resolution.action==Action.Follow&&binding.bound&&binding.chat!=null&&resolution.cache!=null&&binding.chat.equals(resolution.cache.chat)
+                    &&(opening.data==null||opening.data.location.equals(resolution.cache));
+        }
         boolean canConsent(Peer chat) {
             return status.complete&&status.resolution.action==Action.Use&&opening!=null&&opening.ok&&opening.data!=null
                     &&!opening.data.pendingMove()&&opening.data.location.chat.equals(chat)&&status.resolution.readChat.equals(chat);
@@ -155,6 +164,8 @@ public final class PurpleSyncChatScreen {
         boolean begin(Object owner);
         void end(Object owner);
         void resolve(Object owner, Consumer<Frame> done);
+        default void resolve(Object owner,String stream,Consumer<Frame> done){resolve(owner,done);}
+        default void pause(Frame frame,boolean paused,Consumer<Boolean> done){done.accept(false);}
         void inspect(Peer chat, Consumer<PurpleSyncChatClient.Info> done);
         void remember(Frame frame, Candidate candidate, Consumer<Boolean> done);
         void cancel(Object owner);
@@ -242,6 +253,42 @@ public final class PurpleSyncChatScreen {
                     boolean accepted=shown.candidate.same(fresh);end(run);
                     if(current())done.accept(accepted?new ChangeSelection(shown,cleanup):null);
                 });
+            });}catch(RuntimeException|LinkageError e){end(run);}
+        }
+        public void offerFollowFill(String stream,Consumer<PurpleSyncChatMoveConsent.Offer> done){
+            if(!stream.equals("config")&&!stream.equals("library"))return;
+            long run=begin();if(run==0)return;
+            try{port.resolve(this,stream,value->{
+                if(!live(run)){end(run);return;}frame=value;
+                if(value==null||!port.origin().equals(value.origin)||!value.canFollowFill()||!port.authority().matches("[0-9a-f]{64}")){end(run);if(current())done.accept(null);return;}
+                Peer target=value.status.resolution.winner.chat;
+                port.inspect(target,info->{
+                    if(!live(run)){end(run);return;}
+                    Candidate candidate=new Candidate(port.origin(),target,info);
+                    PurpleSyncChatMoveConsent.Offer offer=candidate.allowed?new PurpleSyncChatMoveConsent.Offer(port.origin(),port.authority(),this,value,stream,candidate):null;
+                    end(run);if(current())done.accept(offer);
+                });
+            });}catch(RuntimeException|LinkageError e){end(run);}
+        }
+        public void acceptFollowFill(PurpleSyncChatMoveConsent.Offer offer,boolean readersAccepted,Consumer<PurpleSyncChatMoveConsent.Selection> done){
+            if(offer==null||offer.owner!=this||!offer.current(port.origin(),port.authority())||offer.requiresReaders&&!readersAccepted)return;
+            long run=begin();if(run==0)return;
+            try{port.resolve(this,offer.stream,value->{
+                if(!live(run)){end(run);return;}frame=value;
+                if(!offer.matches(value)){end(run);if(current())done.accept(null);return;}
+                port.inspect(offer.target,info->{
+                    if(!live(run)){end(run);return;}
+                    boolean same=offer.candidate.same(new Candidate(port.origin(),offer.target,info));end(run);
+                    if(current())done.accept(same?PurpleSyncChatMoveConsent.Selection.accepted(offer):null);
+                });
+            });}catch(RuntimeException|LinkageError e){end(run);}
+        }
+        public void pauseHere(boolean paused,Consumer<Boolean> done){
+            long run=begin();if(run==0)return;
+            try{port.resolve(this,value->{
+                if(!live(run)){end(run);return;}frame=value;
+                if(value==null||!port.origin().equals(value.origin)||!paused&&!value.locallyPaused()||paused&&!value.canFollowFill()){end(run);if(current())done.accept(false);return;}
+                port.pause(value,paused,saved->{if(!live(run)){end(run);return;}end(run);if(current())done.accept(saved);});
             });}catch(RuntimeException|LinkageError e){end(run);}
         }
         @Override public void close() {

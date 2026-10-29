@@ -479,19 +479,30 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
             return persist(core("abandonInterrupted",request));
         }catch(Exception e){close();throw failure(e);}
     }
+    void checkNotPaused(PurpleSyncChatOrigin origin)throws IOException {
+        unchanged();if(origin==null||!account.equals(origin.accountKey()))throw new IOException("AccountUnbound");
+        PurpleSyncChatCache.Loaded loaded=PurpleSyncChatCache.load(PurpleSyncChatCache.file(cacheFile),origin,authority);
+        if(!loaded.ok)throw new IOException("CacheUnavailable");
+        if(loaded.paused)throw new IOException("LocalPause");
+    }
     void writeCache(PurpleSyncChatOrigin origin,PurpleSyncChatClient.Info accepted,boolean complete) throws IOException {
         try {
-            unchanged();JSONObject j=new JSONObject(new String(canonical,StandardCharsets.UTF_8)),mark=j.getJSONObject("target_mark");
+            unchanged();if(origin==null||!account.equals(origin.accountKey()))throw new IOException("AccountUnbound");
+            JSONObject j=new JSONObject(new String(canonical,StandardCharsets.UTF_8)),mark=j.getJSONObject("target_mark");
             File path=complete?cacheFile:new File(root,"carry-cache.json");
             PurpleAccountFileSnapshot.Durable old=read(path,65536),admitted=read(cacheFile,65536);
             PurpleSyncChatCache.Loaded previous=PurpleSyncChatCache.load(new PurpleSyncChatCache.IO(){
                 public byte[] read(){return admitted.bytes;}public boolean write(byte[] a,byte[] b){return false;}public boolean remove(byte[] a){return false;}
             },origin,authority);
             if(!previous.ok)throw new IOException("InvalidState");
-            PurpleSyncChatCache.ReadersSnapshot readers=PurpleSyncChatCache.ReadersSnapshot.from(accepted);
+            if(previous.paused)throw new IOException("LocalPause");
+            JSONObject transport=transport(),baseline=transport.optJSONObject("readers");
+            if(baseline==null||!baseline.has("snapshot")||!baseline.optBoolean("settings_disclosed"))throw new IOException("ReadersBaselineMissing");
+            PurpleSyncChatCache.ReadersSnapshot readers=PurpleSyncChatCache.ReadersSnapshot.parse(baseline.getJSONObject("snapshot"));
+            if(readers==null)throw new IOException("ReadersUnknown");
             java.util.Set<String> warned=new java.util.HashSet<>();boolean warning=transport().optBoolean("reader_warning");
-            if(previous.data!=null){warned.addAll(previous.data.warned);warning|=previous.data.newReaders;if(previous.data.location.chat.token().equals(mark.getString("chat"))&&previous.data.readers!=null)readers=previous.data.readers;}
-            warned.add("config");
+            if(previous.data!=null&&previous.data.location.chat.token().equals(mark.getString("chat"))){warned.addAll(previous.data.warned);warning|=previous.data.newReaders;}
+            warned.add("config");warned.add(baseline.getString("stream"));
             PurpleSyncChatCache.Data data=new PurpleSyncChatCache.Data(new PurpleSyncChatCore.Cache(PurpleSyncChatCore.Peer.parse(mark.getString("chat"),origin.userId),mark.getInt("id"),mark.getLong("date")),
                     accepted.title,readers,warned,complete?new JSONObject():json("operation",j.getString("operation")),warning);
             write(path,old,PurpleSyncChatCache.encode(origin,authority,data),65536);

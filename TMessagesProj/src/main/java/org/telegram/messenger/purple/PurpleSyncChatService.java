@@ -165,6 +165,7 @@ final class PurpleSyncChatService {
                 PurpleSyncChatCache.Loaded previous=opening;Binding previousBinding=this.binding;
                 opening=loaded;this.binding=binding;
                 if(!loaded.ok){finish(unavailable("CacheUnavailable"),run);return;}
+                if(loaded.paused){receipt=null;lastResolved=0;finish(unavailable("LocalPause"),run);return;}
                 if(binding==null||!binding.ok){finish(unavailable("BindingUnavailable"),run);return;}
                 if(!active.beforePost&&!active.force&&lastResolved>0&&env.now()-lastResolved>=0&&env.now()-lastResolved<15*60*1000L
                     &&lastStream.equals(active.stream)&&status.complete&&status.phase==PurpleSyncChatDiscovery.Phase.Use
@@ -248,6 +249,8 @@ final class PurpleSyncChatService {
         if(token!=null)token.revoke();
         owned=false;active=null;cleaning=true;boolean cleaned=false;
         try {
+            if(next.resolution.action==Action.Follow||next.resolution.action==Action.Fill)
+                next=new PurpleSyncChatDiscovery.Status(PurpleSyncChatDiscovery.Phase.Paused,next.resolution,next.resolution.action==Action.Follow?"FollowRequired":"FillRequired",next.complete,true,next.retryAt,next.newReaders);
             if(env.setupPostingHeld()&&next.phase==PurpleSyncChatDiscovery.Phase.Use
                     &&(finished.borrowed==null||!finished.borrowed.setupReleased.getAsBoolean()))
                 next=new PurpleSyncChatDiscovery.Status(next.phase,next.resolution,"SetupPostingHeld",next.complete,true,next.retryAt,next.newReaders);
@@ -357,7 +360,7 @@ final class PurpleSyncChatService {
         if(!pendingLogout||logoutDrained)return;
         pendingLogout=false;logoutDrained=true;
         try {
-            env.worker(()->{PurpleSyncChatCache.Loaded loaded=PurpleSyncChatCache.load(env.cache(),env.origin(),env.authority());if(loaded.ok&&loaded.data!=null&&loaded.bytes!=null)env.cache().remove(loaded.bytes);});
+            env.worker(()->PurpleSyncChatCache.forgetLogin(env.cache(),env.origin(),env.authority()));
         } catch(RuntimeException|LinkageError error) {
             pendingLogout=true;logoutDrained=false;throw error;
         }

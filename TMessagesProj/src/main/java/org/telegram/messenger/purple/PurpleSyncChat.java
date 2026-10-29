@@ -115,6 +115,24 @@ public final class PurpleSyncChat {
             PurpleSyncChatService.Borrowed borrowed=new PurpleSyncChatService.Borrowed(holder.env.operationKey(),owner,this::current);
             holder.service.ensureResolved(true,"config",borrowed,ignored->{if(current())done.accept(holder.service.screen());});
         }
+        public void resolve(Object owner,String stream,Consumer<PurpleSyncChatScreen.Frame> done){
+            PurpleSyncChatService.Borrowed borrowed=new PurpleSyncChatService.Borrowed(holder.env.operationKey(),owner,this::current);
+            holder.service.ensureResolved(true,stream,borrowed,ignored->{if(current())done.accept(holder.service.screen());});
+        }
+        public void pause(PurpleSyncChatScreen.Frame frame,boolean paused,Consumer<Boolean> done){
+            Object captured=owner;
+            holder.env.worker(()->{
+                boolean saved=false;
+                try {
+                if(current()&&captured!=null&&captured==owner&&PurpleSyncOperations.owned(holder.env.operationKey(),captured)){
+                    PurpleSyncChatService.Binding binding=holder.env.binding();
+                    if(binding.same(frame.binding)&&binding.stateStamp.equals(frame.binding.stateStamp))
+                        saved=PurpleSyncChatCache.pause(holder.env.cache,frame.opening,origin(),holder.env.authority,paused,()->current()&&captured==owner&&PurpleSyncOperations.owned(holder.env.operationKey(),captured));
+                }
+                }catch(RuntimeException|LinkageError error){saved=false;}
+                boolean result=saved;holder.env.ui(()->{if(current()&&captured==owner)done.accept(result);});
+            });
+        }
         public void inspect(Peer chat,Consumer<PurpleSyncChatClient.Info> done) {
             if(reader!=null)reader.cancel();
             PurpleSyncChatClient captured=holder.env.client();reader=captured;
@@ -150,6 +168,13 @@ public final class PurpleSyncChat {
                 :PurpleSyncChatChange.production(selection,holder.env.origin,holder.env.authority,()->foreground.getAsBoolean()&&holder.env.context.current());
         if(!PurpleSyncChatChange.ACTIVATED){changed.accept(result);return;}
         changed.accept(new PurpleSyncChatChange.State("Held","TransportNotQualified",false));
+    }
+    public static void followFill(int slot,PurpleSyncChatMoveConsent.Selection selection,BooleanSupplier foreground,Consumer<PurpleSyncChatMoveConsent.State> changed){
+        Holder holder=accounts.get(slot);
+        PurpleSyncChatMoveConsent.State result=holder==null?new PurpleSyncChatMoveConsent.State("Held","OpeningChanged",false)
+                :PurpleSyncChatMoveConsent.production(selection,holder.env.origin,holder.env.authority,()->foreground.getAsBoolean()&&holder.env.context.current());
+        if(!PurpleSyncChatMoveConsent.ACTIVATED){changed.accept(result);return;}
+        changed.accept(new PurpleSyncChatMoveConsent.State("Held","TransportNotQualified",false));
     }
     static PurpleSyncChatMove move(PurpleSyncChatMove.Port injected) {
         return injected==null?null:new PurpleSyncChatMove(injected);
@@ -224,7 +249,7 @@ public final class PurpleSyncChat {
             setupPostingHeld=PurpleSyncChatSetupFlow.postingHeld(new File(context.files.syncDirectory,"sync-chat-setup.json"));
             if(!current())return new PurpleSyncChatService.Binding(false,false,Peer.self());
             File file=new File(context.files.syncDirectory,"state.json");PurpleAccountFileSnapshot state=PurpleAccountFileSnapshot.read(file);
-            if(state.status==PurpleAccountFileSnapshot.Status.Missing)return new PurpleSyncChatService.Binding(true,false,Peer.self());
+            if(state.status==PurpleAccountFileSnapshot.Status.Missing)return new PurpleSyncChatService.Binding(true,false,Peer.self(),"","missing");
             if(state.status!=PurpleAccountFileSnapshot.Status.Present)return new PurpleSyncChatService.Binding(false,false,Peer.self());
             PurpleAccountSyncCore.Result inspected=PurpleAccountSyncCore.inspectState(state.bytes);
             PurpleAccountSyncCore.Result binding=PurpleAccountSyncCore.checkAccountBinding(origin.slot,state.bytes);

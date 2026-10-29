@@ -310,10 +310,13 @@ public final class PurpleSyncChatMoveExecutorCases {
         }
     }
     static void mergeCache()throws Exception {
-        Frame f=new Frame(false);PurpleSyncChatCache.Data original=new PurpleSyncChatCache.Data(new Cache(O,1,1001),"retained",PurpleSyncChatCache.ReadersSnapshot.from(info(O,0,false)),Collections.singleton("library"),new JSONObject(),true);
-        PurpleModernSyncCases.write(f.files.cache,PurpleSyncChatCache.encode(ORIGIN,AUTH,original));f.start();must(f.done(),"cache merge prerequisite");
-        byte[] saved=Files.readAllBytes(f.files.cache.toPath());PurpleSyncChatCache.Loaded loaded=PurpleSyncChatCache.load(new PurpleSyncChatCache.IO(){public byte[] read(){return saved;}public boolean write(byte[] a,byte[] b){return false;}public boolean remove(byte[] a){return false;}},ORIGIN,AUTH);
-        must(loaded.ok&&loaded.data.warned.containsAll(Arrays.asList("library","config"))&&loaded.data.newReaders,"complete cache unions disclosures and preserves sticky warning");f.close();
+        for(boolean sameChat:new boolean[]{false,true}){
+            Frame f=new Frame(false);Peer previousChat=sameChat?f.target:O;
+            PurpleSyncChatCache.Data original=new PurpleSyncChatCache.Data(new Cache(previousChat,sameChat?90:1,sameChat?2000:1001),"retained",PurpleSyncChatCache.ReadersSnapshot.from(info(previousChat,0,false)),Collections.singleton("library"),new JSONObject(),true);
+            PurpleModernSyncCases.write(f.files.cache,PurpleSyncChatCache.encode(ORIGIN,AUTH,original));f.start();must(f.done(),"cache merge prerequisite");
+            byte[] saved=Files.readAllBytes(f.files.cache.toPath());PurpleSyncChatCache.Loaded loaded=PurpleSyncChatCache.load(new PurpleSyncChatCache.IO(){public byte[] read(){return saved;}public boolean write(byte[] a,byte[] b){return false;}public boolean remove(byte[] a){return false;}},ORIGIN,AUTH);
+            must(loaded.ok&&loaded.data.warned.contains("config")&&loaded.data.warned.contains("library")==sameChat&&loaded.data.newReaders==sameChat,"cache unions disclosures and sticky warnings only for the same chat");f.close();
+        }
     }
     static void uncertaintyControls()throws Exception {
         Frame mark=new Frame(false);mark.dropKind="mark";mark.start();must(mark.ownWinner&&mark.deferred!=null,"mark effect happened without retained ack");mark.close();

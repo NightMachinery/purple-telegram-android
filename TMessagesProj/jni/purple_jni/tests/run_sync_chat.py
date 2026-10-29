@@ -33,6 +33,7 @@ if args.suite == 'discovery':
     sources += [production / 'org/telegram/ui' / (name + '.java') for name in ['PurpleDialogsHooks','PurpleSyncActivity','PurpleSyncChatActivity','PurpleSyncChatSetupUI','PurpleSyncReviewDialog']]
     sources += list((tests / 'modern_sync/android/system').glob('*.java'))
     sources += [tests / 'modern_sync/android/util/Base64.java', tests / 'sync_chat_move_io/ports/org/telegram/messenger/FileLoader.java', tests / 'sync_chat_move_io/ports/android/text/TextUtils.java']
+    sources += [tests / 'modern_sync/android/os/Looper.java']
     sources += [p for p in (tests / 'sync_chat').glob('*.java') if not p.name.endswith('IntegrationCases.java')] + list((tests / 'sync_chat/ports').rglob('*.java'))
 if args.suite == 'integration':
     if args.overlay is None or not args.overlay.is_dir():

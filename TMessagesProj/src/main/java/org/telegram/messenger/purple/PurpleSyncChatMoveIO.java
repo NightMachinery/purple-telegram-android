@@ -230,8 +230,9 @@ final class PurpleSyncChatMoveIO implements AutoCloseable {
         return json("account",origin.accountKey(),"source",j.getString("source"),"target",j.getString("target"),"journal",blob(store.journalBytes()));
     }
     private void fresh(JSONObject j,Fresh fresh) throws Exception { fresh(j,fresh,false); }
-    void reconciliationFresh(Fresh fresh) throws IOException {try{fresh(journal(),fresh,true);}catch(Exception e){throw failure(e);}}
+    void reconciliationFresh(Fresh fresh) throws IOException {try{JSONObject readers=store.transport().optJSONObject("readers");require(readers!=null&&readers.has("snapshot")&&readers.optBoolean("settings_disclosed"),"ReadersBaselineMissing");fresh(journal(),fresh,true);}catch(Exception e){throw failure(e);}}
     private void fresh(JSONObject j,Fresh fresh,boolean reconcile) throws Exception {
+        store.checkNotPaused(origin);
         require(fresh!=null && origin.equals(fresh.origin) && store.loginAuthority().equals(fresh.loginAuthority)
                 && fresh.fullResolution && fresh.oldRead!=null && fresh.oldRead!=DirectRead.Unknown && fresh.oldRead!=DirectRead.Migrated
                 && fresh.source!=null && fresh.target!=null && origin.equals(fresh.source.origin) && origin.equals(fresh.target.origin)
@@ -253,24 +254,43 @@ final class PurpleSyncChatMoveIO implements AutoCloseable {
         }
         require(opening||reconcile&&ownWinner,"ResolutionChanged");
         JSONObject input=scope(j);input.put("eligibility",PurpleSyncChatCore.eligibilityJson(fresh.target.eligibility()));
-        require(!"Hold".equals(core("readers",input).fields.getString("verdict")),"ReadersUnknown");
+        String verdict=core("readers",input).fields.getString("verdict");
+        require(!"Hold".equals(verdict)&&fresh.target.readersKnown,"ReadersUnknown");
+        JSONObject transport=store.transport();
+        if(transport.length()!=0){
+            JSONObject baseline=transport.getJSONObject("readers");
+            require(baseline.has("snapshot")&&baseline.has("stream"),"ReadersBaselineMissing");
+            PurpleSyncChatCache.ReadersSnapshot original=PurpleSyncChatCache.ReadersSnapshot.parse(baseline.getJSONObject("snapshot"));
+            PurpleSyncChatCache.ReadersSnapshot actual=PurpleSyncChatCache.ReadersSnapshot.from(fresh.target);
+            require(actual!=null&&original.kind==actual.kind&&!(original.memberHashes!=null&&actual.memberHashes==null),"ReadersUnknown");
+            require(!(original.creator&&!actual.creator)&&!(original.admin&&!actual.admin),"ReaderRightsChanged");
+            boolean added="WarnAndProceed".equals(verdict)||original.newReaders(actual);
+            if(!j.optBoolean("delivery_attempted")&&!j.optBoolean("mark_attempted"))require(!added,"ReaderConsentChanged");
+            else if(added&&!transport.optBoolean("reader_warning")){transport.put("reader_warning",true);store.transport(transport,false);}
+        }
+    }
+    void acceptReaders(Fresh fresh,PurpleSyncChatClient.Info accepted,String stream)throws IOException {
+        try {
+            JSONObject j=journal();fresh(j,fresh);require(stream.equals("config")||stream.equals("library"),"InvalidStream");
+            if(store.transport().length()!=0)return;
+            require(accepted!=null && origin.equals(accepted.origin) && fresh.target.chat.equals(accepted.chat)
+                    && accepted.peer!=null && accepted.peer.kind==fresh.target.peer.kind && accepted.eligibility().allowed()
+                    && PurpleSyncChatCore.eligibilityJson(accepted.eligibility()).toString().equals(PurpleSyncChatCore.eligibilityJson(fresh.target.eligibility()).toString())
+                    && accepted.readersKnown && fresh.target.readersKnown && java.util.Objects.equals(accepted.members,fresh.target.members),"ReaderConsentChanged");
+            JSONObject input=scope(j);input.put("eligibility",PurpleSyncChatCore.eligibilityJson(fresh.target.eligibility()));
+            require("Proceed".equals(core("readers",input).fields.getString("verdict")),"ReaderConsentChanged");
+            JSONArray members=new JSONArray();if(accepted.members!=null)for(Long id:new java.util.TreeSet<>(accepted.members))members.put(Long.toString(id));
+            JSONObject t=json("version",1,"entries",new JSONObject(),"readers",json("members",members,
+                    "other_members",accepted.eligibility().readers.otherMembers==null?"":accepted.eligibility().readers.otherMembers.toString(),
+                    "other_admins",accepted.eligibility().readers.otherAdmins==null?"":accepted.eligibility().readers.otherAdmins.toString(),
+                    "warning",accepted.eligibility().readers.warningRequired,"snapshot",PurpleSyncChatCache.ReadersSnapshot.from(accepted).json(),"stream",stream,"settings_disclosed",true),"reader_warning",false);
+            capacity(t);store.transport(t,false);
+        }catch(Exception e){close();throw failure(e);}
     }
     void reserve(Fresh fresh,PurpleSyncChatClient.Info accepted,SecureRandom entropy) throws IOException {
         try {
             JSONObject j=journal();fresh(j,fresh);JSONObject t=store.transport();
-            if(t.length()==0) {
-                require(accepted!=null && origin.equals(accepted.origin) && fresh.target.chat.equals(accepted.chat)
-                        && accepted.peer!=null && accepted.peer.kind==fresh.target.peer.kind && accepted.eligibility().allowed()
-                        && PurpleSyncChatCore.eligibilityJson(accepted.eligibility()).toString().equals(PurpleSyncChatCore.eligibilityJson(fresh.target.eligibility()).toString())
-                        && accepted.readersKnown && fresh.target.readersKnown && java.util.Objects.equals(accepted.members,fresh.target.members),"ReaderConsentChanged");
-                JSONObject input=scope(j);input.put("eligibility",PurpleSyncChatCore.eligibilityJson(fresh.target.eligibility()));
-                require("Proceed".equals(core("readers",input).fields.getString("verdict")),"ReaderConsentChanged");
-                JSONArray members=new JSONArray();if(accepted.members!=null)for(Long id:new java.util.TreeSet<>(accepted.members))members.put(Long.toString(id));
-                t=json("version",1,"entries",new JSONObject(),"readers",json("members",members,
-                        "other_members",accepted.eligibility().readers.otherMembers==null?"":accepted.eligibility().readers.otherMembers.toString(),
-                        "other_admins",accepted.eligibility().readers.otherAdmins==null?"":accepted.eligibility().readers.otherAdmins.toString(),
-                        "warning",accepted.eligibility().readers.warningRequired),"reader_warning",false);
-            }
+            if(t.length()==0) {acceptReaders(fresh,accepted,"config");t=store.transport();}
             JSONObject entries=t.getJSONObject("entries");JSONObject plan=j.optJSONObject("plan");
             if(plan!=null) {
                 JSONArray forwards=plan.getJSONArray("forwards");
@@ -294,7 +314,7 @@ final class PurpleSyncChatMoveIO implements AutoCloseable {
     private void capacity(JSONObject transport) throws Exception {
         JSONObject maximum=new JSONObject(transport.toString()),entries=maximum.getJSONObject("entries");Iterator<String> keys=entries.keys();
         while(keys.hasNext()) {JSONObject value=entries.getJSONObject(keys.next());value.put("ack_id",Integer.MAX_VALUE).put("state","verified");}
-        maximum.put("reader_warning",false);store.transport(maximum,true);
+        store.transport(maximum,true);
     }
     Permit authorize(String kind,int sourceId,String hash,Fresh fresh,RecordReceipt source) throws IOException {
         return authorize(kind,sourceId,hash,fresh,source,null);
@@ -308,6 +328,7 @@ final class PurpleSyncChatMoveIO implements AutoCloseable {
             JSONObject j=journal();fresh(j,fresh);JSONObject t=store.transport(),entries=t.getJSONObject("entries");String key=key(kind,sourceId,hash);
             require(entries.has(key),"IdentityNotReserved");JSONObject slot=entries.getJSONObject(key);
             require(required(j).equals(keys(entries)),"IncompleteReservation");
+            require(t.getJSONObject("readers").optBoolean("settings_disclosed"),"SettingsConsentRequired");
             require(kind.equals("mark")?j.getBoolean("mark_attempted")&&!j.getBoolean("mark_verified")&&core("next",scope(j)).fields.getString("nextAction").equals("ReadMark")
                     :j.getBoolean("delivery_attempted")&&core("next",scope(j)).fields.getString("nextAction").equals("VerifyDestination"),"IntentNotDurable");
             require(previous!=null?permits.get(key)==previous:slot.getString("state").equals("prepared"),"ReconciliationRequired");
@@ -341,7 +362,7 @@ final class PurpleSyncChatMoveIO implements AutoCloseable {
     private void readerWarning(JSONObject t,PurpleSyncChatClient.Info fresh) throws Exception {
         require(fresh.readersKnown,"ReadersUnknown");JSONObject baseline=t.getJSONObject("readers");JSONArray original=baseline.getJSONArray("members");
         Set<Long> old=new HashSet<>();for(int i=0;i<original.length();++i)old.add(Long.parseLong(original.getString(i)));
-        if(fresh.members!=null&&!old.containsAll(fresh.members))t.put("reader_warning",true);
+        if(baseline.getJSONObject("snapshot").has("memberHashes")&&fresh.members!=null&&!old.containsAll(fresh.members))t.put("reader_warning",true);
         JSONObject input=scope(journal());input.put("eligibility",PurpleSyncChatCore.eligibilityJson(fresh.eligibility()));
         if("WarnAndProceed".equals(core("readers",input).fields.getString("verdict")))t.put("reader_warning",true);
     }

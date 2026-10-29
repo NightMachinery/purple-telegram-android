@@ -294,6 +294,11 @@ void ValidateTransport(const QJsonObject &wrapper) {
         const auto value = readers.value(name); Need(value.isString());
         if (!value.toString().isEmpty()) { auto ok = false; const auto n = value.toString().toULongLong(&ok); Need(ok && QString::number(n) == value.toString()); }
     }
+    if (readers.contains(u"snapshot"_q) || readers.contains(u"stream"_q)) {
+        const auto stream = readers.value(u"stream"_q).toString();
+        Need(readers.value(u"snapshot"_q).isObject() && readers.value(u"settings_disclosed"_q).isBool()
+            && readers.value(u"settings_disclosed"_q).toBool() && (stream == u"config"_q || stream == u"library"_q));
+    }
     const auto entries = t.value(u"entries"_q).toObject(); Need(entries.size() <= 1024, u"RetentionFull"_q);
     auto used = std::set<qulonglong>();
     for (auto i = entries.begin(); i != entries.end(); ++i) {
@@ -357,7 +362,13 @@ QJsonObject StorageCodec(const QString &op, const QJsonObject &input) {
             Need(consent.isBool() && (!wrapper.contains(u"cleanup_settings"_q) || wrapper.value(u"cleanup_settings"_q) == consent));
             wrapper.insert(u"cleanup_settings"_q, consent);
         }
-        if (input.contains(u"transport"_q)) wrapper.insert(u"transport"_q, input.value(u"transport"_q));
+        if (input.contains(u"transport"_q)) {
+            const auto before = wrapper.value(u"transport"_q).toObject();
+            const auto next = input.value(u"transport"_q).toObject();
+            Need(before.isEmpty() || (before.value(u"readers"_q) == next.value(u"readers"_q)
+                && (!before.value(u"reader_warning"_q).toBool() || next.value(u"reader_warning"_q).toBool())));
+            wrapper.insert(u"transport"_q, input.value(u"transport"_q));
+        }
         if (wrapper.contains(u"transport"_q)) wrapper.insert(u"transport_sha256"_q, TransportHash(wrapper));
     } else Need(op == u"inspect"_q);
     const auto version = wrapper.value(u"version"_q);

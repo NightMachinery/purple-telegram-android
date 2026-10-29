@@ -951,4 +951,15 @@
     <string name="PurpleSyncChatChangeOlder">Older Purple builds read settings from Saved Messages. Deleting them makes those devices pause or offer to start over.</string>
     <string name="PurpleSyncChatChangeHeld">Changing the sync chat is waiting for qualification. Nothing has moved.</string>
     <string name="PurpleSyncChatChangeComplete">The sync chat has changed.</string>
+    <string name="PurpleSyncChatFollow">Follow sync here</string>
+    <string name="PurpleSyncChatFill">Fill sync chat</string>
+    <string name="PurpleSyncChatFollowAbout">Another of your devices moved sync to %1$s. Purple carries this account’s current records there before reading from it.</string>
+    <string name="PurpleSyncChatFillAbout">%1$s has no sync records yet. Purple copies this account’s records from the older source before reading from it. Your first post can be read by the people there.</string>
+    <string name="PurpleSyncChatPauseHere">Pause sync here</string>
+    <string name="PurpleSyncChatLocalResume">Resume sync on this device</string>
+    <string name="PurpleSyncChatLocalPaused">All streams of this account are paused on this device.</string>
+    <string name="PurpleSyncChatFollowHeld">Follow and Fill are waiting for transport qualification. Nothing was sent or moved.</string>
+    <string name="PurpleSyncChatFollowComplete">Sync records verified and this account’s sync chat updated.</string>
+    <string name="PurpleSyncChatLibraryCloud">Playlists are kept in %1$s, a Telegram cloud chat. They are not end-to-end encrypted, and every signed-in session of this account can read them.</string>
+    <string name="PurpleSyncChatLibraryReaders">This includes this account’s playlist names and tracks.</string>
 </resources>
