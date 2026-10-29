@@ -12,6 +12,7 @@
 #include <limits>
 #include <stdexcept>
 #include <set>
+#include <algorithm>
 
 namespace {
 using namespace Purple;
@@ -325,6 +326,50 @@ void ValidateTransport(const QJsonObject &wrapper) {
     }
 }
 
+QString CleanupHash(const QJsonObject &wrapper) {
+    const auto j = wrapper.value(u"journal"_q).toObject();
+    return SyncCarryRecordHash(Canonical(QJsonObject{
+        {u"domain"_q, u"purple-sync-cleanup-v1"_q}, {u"operation"_q, wrapper.value(u"operation"_q)},
+        {u"account"_q, wrapper.value(u"account"_q)}, {u"binding_sha256"_q, wrapper.value(u"binding_sha256"_q)},
+        {u"login_authority"_q, wrapper.value(u"login_authority"_q)}, {u"source"_q, j.value(u"source"_q)},
+        {u"target"_q, j.value(u"target"_q)}, {u"cleanup"_q, wrapper.value(u"cleanup"_q)}}));
+}
+void ValidateCleanup(const QJsonObject &wrapper, const SyncCarryJournal &journal) {
+    const auto value = wrapper.value(u"cleanup"_q);
+    if (value.isUndefined()) { Need(!wrapper.contains(u"cleanup_sha256"_q)); return; }
+    Need(value.isObject() && wrapper.value(u"cleanup_sha256"_q) == CleanupHash(wrapper));
+    const auto c = value.toObject();
+    Need(c.value(u"version"_q).isDouble() && c.value(u"version"_q).toDouble() == 1
+        && c.value(u"entries"_q).isObject() && journal.plan && journal.stateCommitted && journal.cacheCompleted);
+    const auto entries = c.value(u"entries"_q).toObject();
+    Need(entries.size() <= 1024, u"RetentionFull"_q);
+    auto seen = std::set<int>();
+    for (auto i = entries.begin(); i != entries.end(); ++i) {
+        Need(i.value().isObject()); const auto e = i.value().toObject();
+        const auto kind = e.value(u"kind"_q).toString(), hash = e.value(u"hash"_q).toString();
+        const auto id = e.value(u"id"_q), date = e.value(u"date"_q);
+        Need(id.isDouble() && id.toDouble() == id.toInt() && id.toInt() > 0 && seen.insert(id.toInt()).second);
+        Need(date.isString()); auto ok = false; const auto at = date.toString().toLongLong(&ok);
+        Need(ok && at > 0 && QString::number(at) == date.toString());
+        Need(IsSyncCarryHash(hash) && i.key() == SyncCarryRecordHash((kind + u':' + QString::number(id.toInt()) + u':' + hash).toUtf8()));
+        const auto state = e.value(u"state"_q).toString();
+        Need(state == u"issued"_q || state == u"absent"_q);
+        if (kind == u"record"_q) {
+            Need(journal.plan->cleanupAuthorized && journal.plan->cleanup != SyncCarryCleanup::None);
+            const auto &candidates = journal.plan->cleanupCandidates;
+            Need(std::any_of(candidates.begin(), candidates.end(), [&](const auto &v) {
+                return v.reference.messageId == id.toInt() && v.reference.recordHash == hash && v.date == at;
+            }));
+        } else {
+            Need(kind == u"mark"_q && journal.removeOldMarkAuthorized && journal.mode == SyncCarryMode::Switch
+                && journal.oldMark && journal.oldMark->markId == id.toInt() && journal.oldMark->markDate == at);
+        }
+        const auto body = Unblob(e.value(u"body"_q));
+        Need(body.size() <= 262144 && e.value(u"bodyHash"_q) == SyncCarryRecordHash(body)
+            && (body.isEmpty() ? state == u"absent"_q : kind == u"mark"_q || SyncCarryRecordHash(body) == hash));
+    }
+}
+
 QJsonObject StorageCodec(const QString &op, const QJsonObject &input) {
     if (op == u"canonical"_q) return {{u"status"_q, u"Ready"_q}, {u"bytes"_q, Blob(Canonical(Document(Unblob(input.value(u"bytes"_q)))) )}};
     const auto account = input.value(u"account"_q).toString();
@@ -361,6 +406,11 @@ QJsonObject StorageCodec(const QString &op, const QJsonObject &input) {
             const auto consent = input.value(u"cleanup_settings"_q);
             Need(consent.isBool() && (!wrapper.contains(u"cleanup_settings"_q) || wrapper.value(u"cleanup_settings"_q) == consent));
             wrapper.insert(u"cleanup_settings"_q, consent);
+        }
+        if (input.contains(u"cleanup"_q)) {
+            Need(input.value(u"cleanup"_q).isObject());
+            wrapper.insert(u"cleanup"_q, input.value(u"cleanup"_q));
+            wrapper.insert(u"cleanup_sha256"_q, CleanupHash(wrapper));
         }
         if (input.contains(u"transport"_q)) {
             const auto before = wrapper.value(u"transport"_q).toObject();
@@ -403,6 +453,7 @@ QJsonObject StorageCodec(const QString &op, const QJsonObject &input) {
         }
     }
     ValidateTransport(wrapper);
+    ValidateCleanup(wrapper, parsed.journal);
     const auto encoded = Canonical(wrapper);
     Need(encoded.size() <= 4194304, u"RetentionFull"_q);
     const auto &j = parsed.journal;
@@ -422,6 +473,7 @@ QJsonObject StorageCodec(const QString &op, const QJsonObject &input) {
     }
     auto result = QJsonObject{{u"status"_q, u"Ready"_q}, {u"bytes"_q, Blob(encoded)},
         {u"journal"_q, Blob(journal)}, {u"objects"_q, objects}, {u"send_identities"_q, ids.isUndefined() ? QJsonObject() : ids},
+        {u"cleanup"_q, wrapper.value(u"cleanup"_q).isObject() ? wrapper.value(u"cleanup"_q) : QJsonValue(QJsonObject{{u"version"_q, 1}, {u"entries"_q, QJsonObject()}})},
         {u"cleanupSettings"_q, wrapper.value(u"cleanup_settings"_q).toBool()}, {u"holdsWrites"_q, SyncCarryJournalHoldsWrites(j)},
         {u"unresolvedMarkReferences"_q, SyncCarryJournalHoldsWrites(j) || j.phase == SyncCarryPhase::CleanupSkipped || j.phase == SyncCarryPhase::InterruptedAbandoned}, {u"transport"_q, wrapper.value(u"transport"_q).toObject()}, {u"requiredObjects"_q, required}, {u"stateHash"_q, j.stateHash}, {u"writeHash"_q, QString()}, {u"stageHash"_q, QString()}, {u"retireHash"_q, QString()}};
     const auto action = NextSyncCarryJournalAction(j);

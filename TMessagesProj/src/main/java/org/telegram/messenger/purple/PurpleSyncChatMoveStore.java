@@ -32,7 +32,8 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
     private int faultFor(File path){return faultFile==null||faultFile.equals(path)?fault:0;}
     private volatile Object permitEpoch = new Object();
     private final java.util.Map<String,Object> liveSlots = new java.util.HashMap<>();
-    private final java.util.Map<String,Object> slotGenerations = new java.util.HashMap<>();
+    private final java.util.Map<String,Object> slotGenerations = new java.util.concurrent.ConcurrentHashMap<>();
+    boolean slotCurrent(String key,Object generation){return slotGenerations.get(key)==generation;}
     Object slotGeneration(String key) { return slotGenerations.computeIfAbsent(key,ignored->new Object()); }
     Object invalidateSlot(String key) {Object generation=new Object();slotGenerations.put(key,generation);return generation;}
     Object permitEpoch() { return permitEpoch; }
@@ -45,6 +46,32 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
     private boolean newCleanupSettings;
     boolean cleanupSettings() throws IOException {unchanged();return metadata!=null&&metadata.optBoolean("cleanupSettings");}
     String accountKey() { return account; }
+    JSONObject cleanup() throws IOException {
+        unchanged();
+        try {return metadata.has("cleanup")?new JSONObject(metadata.getJSONObject("cleanup").toString()):json("version",1,"entries",new JSONObject());}
+        catch(Exception e){throw failure(e);}
+    }
+    void cleanup(JSONObject value) throws IOException {
+        try {
+            unchanged();if(interrupted||canonical==null)throw new IOException("InvalidTransition");
+            JSONObject result=codec("wrap",json("wrapper",blob(journal.bytes),"journal",blob(canonical),"objects",objects,
+                    "send_identities",identities,"cleanup",value));
+            journal=write(journalFile,journal,unblob(result,"bytes"),LIMIT);metadata=result;
+        }catch(Exception e){close();throw failure(e);}
+    }
+    void witnessCleanup(PurpleSyncChatOrigin origin) throws IOException {
+        try {
+            unchanged();if(interrupted||!account.equals(origin.accountKey()))throw new IOException("AccountUnbound");
+            JSONObject j=new JSONObject(new String(canonical,StandardCharsets.UTF_8));
+            if(!"Cleanup".equals(core("next",scoped(canonical)).fields.optString("nextAction"))||!j.getBoolean("state_committed")||!j.getBoolean("cache_completed"))throw new IOException("CleanupNotCommitted");
+            if(!hash(state.bytes==null?new byte[0]:state.bytes).equals(j.optString("next_state_hash"))
+                    &&!(state.bytes==null&&j.getInt("mode")==2&&j.optString("next_state_hash").isEmpty()))throw new IOException("StateChanged");
+            barrier(stateFile,state,LIMIT);checkNotPaused(origin);
+            JSONObject mark=j.getJSONObject("target_mark");
+            witnessCache(json("account",account,"operation",j.getString("operation"),"mark",json("chat",mark.getString("chat"),
+                    "id",Integer.toString(mark.getInt("id")),"date",Long.toString(mark.getLong("date"))),"complete",true),true);
+        }catch(Exception e){throw failure(e);}
+    }
     boolean terminal() { return metadata!=null&&!metadata.optBoolean("holdsWrites",true); }
     JSONObject transport() throws IOException {
         unchanged();

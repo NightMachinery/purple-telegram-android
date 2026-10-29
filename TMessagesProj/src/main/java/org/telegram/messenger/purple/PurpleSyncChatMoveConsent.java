@@ -45,7 +45,9 @@ public final class PurpleSyncChatMoveConsent implements AutoCloseable {
     public static final class State {
         public final String phase,reason;
         public final boolean committed;
-        State(String phase,String reason,boolean committed){this.phase=phase;this.reason=reason;this.committed=committed;}
+        public final PurpleSyncChatMoveCleanup.Progress cleanup;
+        State(String phase,String reason,boolean committed){this(phase,reason,committed,null);}
+        State(String phase,String reason,boolean committed,PurpleSyncChatMoveCleanup.Progress cleanup){this.phase=phase;this.reason=reason;this.committed=committed;this.cleanup=cleanup;}
     }
     public static String disclosure(Offer offer,PurpleSyncChatScreen.Text text){
         String title=offer.target.kind==PeerKind.Self?text.get("Saved"):offer.title;
@@ -130,7 +132,7 @@ public final class PurpleSyncChatMoveConsent implements AutoCloseable {
                     });
                 }
                 public void cancel(PurpleSyncChatMove.Command command){delegate.cancel(command);}
-                public void status(PurpleSyncChatMove.Status status){publish(new State(status.terminal?"Complete":"Carrying",status.reason,status.committed!=null));}
+                public void status(PurpleSyncChatMove.Status status){publish(new State(status.terminal?"Complete":"Carrying",status.reason,status.committed!=null,status.cleanup));}
             });
             if(live())move.start(begin,info);
         })));

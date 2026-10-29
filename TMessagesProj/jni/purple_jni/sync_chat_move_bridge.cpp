@@ -429,12 +429,12 @@ SyncChatEligibilityResult Eligibility(const QJsonValue &value) {
     return r;
 }
 
-SyncCarryReference Reference(const QJsonValue &value) {
+SyncCarryReference Reference(const QJsonValue &value, bool absentMark = false) {
     const auto o = Object(value);
     const auto account = Account(o.value(u"account"_q));
     const auto hash = Text(o.value(u"hash"_q));
     const auto id = Id(o.value(u"id"_q));
-    Require(id > 0 && IsSyncCarryHash(hash));
+    Require(id > 0 && (IsSyncCarryHash(hash) || (absentMark && hash.isEmpty())));
     return {account, Peer(o.value(u"chat"_q), account), id, hash};
 }
 
@@ -604,7 +604,7 @@ SyncCarryJournalEvent Event(const QJsonObject &o) {
     if (o.contains(u"retiredStageHash"_q)) r.retiredStageHash = Text(o.value(u"retiredStageHash"_q));
     if (o.contains(u"deleted"_q)) {
         Require(o.value(u"deleted"_q).isArray());
-        for (const auto &ref : o.value(u"deleted"_q).toArray()) r.deleted.push_back(Reference(ref));
+        for (const auto &ref : o.value(u"deleted"_q).toArray()) r.deleted.push_back(Reference(ref, r.kind == SyncCarryEventKind::SkipCleanup));
     }
     if (o.contains(u"pendingAccess"_q)) r.pendingAccess = Enum<SyncCarrySourceAccess>(o.value(u"pendingAccess"_q));
     if (o.contains(u"pendingSendIntent"_q)) r.pendingSendIntent = Enum<SyncCarrySendIntent>(o.value(u"pendingSendIntent"_q));

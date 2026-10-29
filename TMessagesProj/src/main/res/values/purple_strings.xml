@@ -968,4 +968,12 @@
     <string name="PurpleSyncChatRemoveMarkAbout">Remove only Purple mark %2$s in %1$s? The current winner and the selected message will be checked again. This does not remove records or the chat.</string>
     <string name="PurpleSyncChatRemoveMarkComplete">The selected mark is absent.</string>
     <string name="PurpleSyncChatRemoveMarkHeld">Mark removal is not available yet. No other messages or chats will be removed.</string>
+    <string name="PurpleSyncChatChangeOldMark">Also remove the old Purple mark in %1$s</string>
+    <string name="PurpleSyncChatCleanupPending">Moved; cleanup pending. Sync writes stay paused until cleanup finishes or you explicitly skip it.</string>
+    <string name="PurpleSyncChatCleanupRetry">Retry cleanup</string>
+    <string name="PurpleSyncChatCleanupSkip">Skip cleanup</string>
+    <string name="PurpleSyncChatCleanupSkipAbout">Leave the remaining old messages in Telegram and continue syncing in the new chat? This does not report cleanup as complete.</string>
+    <string name="PurpleSyncChatCleanupSkipped">Moved; remaining cleanup was skipped.</string>
+    <string name="PurpleSyncChatFollowLateCleanup">Outside Saved Messages, Purple may remove only this install’s own late settings posts after verifying their copies in the new chat.</string>
+    <string name="PurpleSyncChatInstallMoved">A settings post created here, rather than carried from the old chat, shows that this install has used the new sync chat.</string>
 </resources>

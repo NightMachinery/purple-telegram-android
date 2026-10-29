@@ -19,6 +19,9 @@ import static org.telegram.messenger.purple.PurpleSyncChatCore.*;
 
 final class PurpleSyncChatMoveIO implements AutoCloseable {
     static final class RecordReceipt {
+        private static final java.util.concurrent.atomic.AtomicLong observations=new java.util.concurrent.atomic.AtomicLong();
+        static long observation(){return observations.get();}
+        final long observation;
         final PurpleSyncChatOrigin origin;
         final Peer chat;
         final int id, date;
@@ -26,6 +29,7 @@ final class PurpleSyncChatMoveIO implements AutoCloseable {
         final String hash, family;
         private final byte[] response, body;
         private RecordReceipt(PurpleSyncChatIO route,TLRPC.Message message,byte[] response,byte[] body,String family) {
+            observation=observations.incrementAndGet();
             origin=route.origin;chat=route.chat;id=message.id;date=message.date;
             documentId=message.media.document.id;editDate=message.edit_date;this.family=family;
             this.response=response.clone();this.body=body.clone();hash=hash(body);

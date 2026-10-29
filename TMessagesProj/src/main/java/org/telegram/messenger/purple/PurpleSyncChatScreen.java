@@ -121,7 +121,7 @@ public final class PurpleSyncChatScreen {
         final Action action;
         final String sourceReaders,stateStamp,bindingIdentity;
         public final Peer source,target;
-        public final boolean createChannel,cleanupAvailable,cleanupDefault;
+        public final boolean createChannel,cleanupAvailable,cleanupDefault,oldMarkAvailable;
         public final String sourceTitle,targetTitle;
         private ChangeOffer(PurpleSyncChatOrigin origin,String authority,Frame frame,Candidate target,Control owner) {
             this.owner=owner;
@@ -134,6 +134,7 @@ public final class PurpleSyncChatScreen {
             sourceTitle=frame.current==null?"":frame.current.title;targetTitle=target==null?"":target.title;
             cleanupAvailable=frame.current!=null&&source.equals(frame.current.chat)&&frame.current.allowed;
             cleanupDefault=cleanupAvailable&&source.kind!=PeerKind.Self;
+            oldMarkAvailable=cleanupAvailable&&location.markId>0;
         }
         private static String sourceReaders(Frame frame){return frame.current==null?"":frame.current.chat.token()+":"+frame.current.readers;}
         boolean matches(Frame frame) {
@@ -152,7 +153,8 @@ public final class PurpleSyncChatScreen {
     public static final class ChangeSelection {
         final ChangeOffer offer;
         public final boolean cleanupSettings;
-        private ChangeSelection(ChangeOffer offer,boolean cleanup){this.offer=offer;cleanupSettings=cleanup;}
+        public final boolean removeOldMark;
+        private ChangeSelection(ChangeOffer offer,boolean cleanup,boolean removeOldMark){this.offer=offer;cleanupSettings=cleanup;this.removeOldMark=removeOldMark;}
         boolean current(PurpleSyncChatOrigin origin,String authority){return offer.owner.current()&&offer.origin.equals(origin)&&offer.authority.equals(authority);}
     }
     public static String changeDisclosure(ChangeOffer offer,Text text) {
@@ -247,17 +249,21 @@ public final class PurpleSyncChatScreen {
             });}catch(RuntimeException|LinkageError e){end(run);}
         }
         public void acceptChange(ChangeOffer shown,boolean cloud,boolean readers,boolean cleanup,Consumer<ChangeSelection> done) {
+            acceptChange(shown,cloud,readers,cleanup,false,done);
+        }
+        public void acceptChange(ChangeOffer shown,boolean cloud,boolean readers,boolean cleanup,boolean removeOldMark,Consumer<ChangeSelection> done) {
             if(shown==null||shown.owner!=this||!shown.origin.equals(port.origin())||!shown.authority.equals(port.authority())||!cloud
-                    ||shown.candidate!=null&&shown.candidate.eligibility.readers.warningRequired&&!readers||cleanup&&!shown.cleanupAvailable)return;
+                    ||shown.candidate!=null&&shown.candidate.eligibility.readers.warningRequired&&!readers||cleanup&&!shown.cleanupAvailable
+                    ||removeOldMark&&(!shown.cleanupAvailable||shown.location.markId<=0))return;
             long run=begin();if(run==0)return;
             try {port.resolve(this,value->{
                 if(!live(run)){end(run);return;}frame=value;
                 if(!shown.matches(value)){end(run);if(current())done.accept(null);return;}
-                if(shown.createChannel){end(run);if(current())done.accept(new ChangeSelection(shown,cleanup));return;}
+                if(shown.createChannel){end(run);if(current())done.accept(new ChangeSelection(shown,cleanup,removeOldMark));return;}
                 port.inspect(shown.target,info->{
                     if(!live(run)){end(run);return;}Candidate fresh=new Candidate(port.origin(),shown.target,info);
                     boolean accepted=shown.candidate.same(fresh);end(run);
-                    if(current())done.accept(accepted?new ChangeSelection(shown,cleanup):null);
+                    if(current())done.accept(accepted?new ChangeSelection(shown,cleanup,removeOldMark):null);
                 });
             });}catch(RuntimeException|LinkageError e){end(run);}
         }

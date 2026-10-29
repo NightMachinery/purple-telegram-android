@@ -1986,3 +1986,5 @@ Older supported Purple marks appear separately on the Sync chat screen. **Remove
 mark** targets one captured message and requires a fresh complete winner and exact
 ownership readback. Removal remains off pending qualification. It grants no record
 or chat cleanup. See [stale-mark authority](docs/sync-chat-marks.md).
+
+Exact old-settings cleanup remains qualification-held. Its separate choices, partial outcomes and host checks are described in [the cleanup guide](docs/sync-chat-cleanup.md).

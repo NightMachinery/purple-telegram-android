@@ -10,7 +10,9 @@ public final class PurpleSyncChatChange implements AutoCloseable {
     public static final class State {
         public final String phase,reason;
         public final boolean committed;
-        State(String phase,String reason,boolean committed){this.phase=phase;this.reason=reason;this.committed=committed;}
+        public final PurpleSyncChatMoveCleanup.Progress cleanup;
+        State(String phase,String reason,boolean committed){this(phase,reason,committed,null);}
+        State(String phase,String reason,boolean committed,PurpleSyncChatMoveCleanup.Progress cleanup){this.phase=phase;this.reason=reason;this.committed=committed;this.cleanup=cleanup;}
     }
     interface Port {
         PurpleSyncChatOrigin origin();
@@ -36,12 +38,14 @@ public final class PurpleSyncChatChange implements AutoCloseable {
     private enum Decoration { NotStarted, Waiting, Held, Complete }
     private Decoration decoration=Decoration.NotStarted;
     private int decorationStep;
+    private String decorationPhase="Carrying",decorationReason="";
     private long ticket;
     private Peer target;
     private String operation;
     private PurpleSyncChatSetup provision;
     private PurpleSyncChatMove move;
     private PurpleSyncChatMove.Committed commit;
+    private PurpleSyncChatMoveCleanup.Progress cleanupProgress;
     PurpleSyncChatChange(Port injected,PurpleSyncChatScreen.ChangeSelection selection){
         port=injected;this.selection=selection;origin=injected.origin();authority=injected.authority();target=selection.offer.target;
     }
@@ -54,7 +58,7 @@ public final class PurpleSyncChatChange implements AutoCloseable {
     private void guard(Work task){try{PurpleAccountFileSnapshot.worker();if(live())task.run();}catch(Exception|LinkageError e){hold("ChangeUnavailable");}}
     private boolean publish(String phase,String reason,boolean committed){
         if(!live())return false;
-        try{port.status(new State(phase,reason,committed));}catch(RuntimeException|LinkageError e){close();return false;}
+        try{port.status(new State(phase,reason,committed,cleanupProgress));}catch(RuntimeException|LinkageError e){close();return false;}
         return live();
     }
     private void hold(String reason){publish("Held",reason,commit!=null);}
@@ -91,7 +95,7 @@ public final class PurpleSyncChatChange implements AutoCloseable {
             JSONObject begin=port.begin(selection,info);if(!live()||begin==null){hold("OpeningChanged");return;}
             operation=operation==null?java.util.UUID.randomUUID().toString().replace("-",""):operation;
             begin.put("operation",operation).put("account",origin.accountKey()).put("source",selection.offer.source.token()).put("target",target.token())
-                    .put("openingCacheBytes",PurpleSyncRetainedBases.encode(selection.offer.cacheBytes)).put("openingStateStamp",selection.offer.stateStamp).put("mode","Switch").put("readerConsentAccepted",true).put("operationConfirmed",true).put("cleanupSettings",selection.cleanupSettings);
+                    .put("openingCacheBytes",PurpleSyncRetainedBases.encode(selection.offer.cacheBytes)).put("openingStateStamp",selection.offer.stateStamp).put("mode","Switch").put("readerConsentAccepted",true).put("operationConfirmed",true).put("cleanupSettings",selection.cleanupSettings).put("removeOldMarkAuthorized",selection.removeOldMark);
             if(!publish("Carrying","",false))return;
             PurpleSyncChatMove.Port delegate=port.carry();if(!live()||delegate==null){hold("CarryUnavailable");return;}
             move=new PurpleSyncChatMove(new PurpleSyncChatMove.Port(){
@@ -124,6 +128,7 @@ public final class PurpleSyncChatChange implements AutoCloseable {
     }
     private void changed(PurpleSyncChatMove.Status status){
         if(!live())return;
+        cleanupProgress=status.cleanup;
         PurpleSyncChatMove.Committed proof=status.committed;
         if(proof!=null&&origin.equals(proof.origin)&&authority.equals(proof.authority)&&operation.equals(proof.operation)&&target.equals(proof.mark.chat))commit=proof;
         if(created&&commit!=null){
@@ -131,6 +136,9 @@ public final class PurpleSyncChatChange implements AutoCloseable {
                 decoration=Decoration.Waiting;
                 if(publish("Carrying",status.reason,true))port.worker(()->guard(this::decorate));
             }
+            if(decoration==Decoration.Complete)publish(status.terminal?"Complete":"Carrying",status.reason,true);
+            else if(decoration==Decoration.Held)publish("Held",decorationReason,true);
+            else if(decoration==Decoration.Waiting)publish(decorationPhase,"",true);
             return;
         }
         publish(status.terminal?"Complete":"Carrying",status.reason,commit!=null);
@@ -138,7 +146,7 @@ public final class PurpleSyncChatChange implements AutoCloseable {
     private void decorate(){
         if(!live()||commit==null||!created||decoration!=Decoration.Waiting)return;
         if(decorationStep==3){decoration=Decoration.Complete;publish("Complete","",true);return;}
-        String effect=new String[]{"Pin","Mute","Archive"}[decorationStep];
+        String effect=new String[]{"Pin","Mute","Archive"}[decorationStep];decorationPhase=effect;
         if(!publish(effect,"",true))return;long run=++ticket;
         try{
             port.decorate(effect,commit,ok->port.worker(()->guard(()->{
@@ -149,7 +157,7 @@ public final class PurpleSyncChatChange implements AutoCloseable {
         }catch(RuntimeException|LinkageError e){if(run==ticket&&decoration==Decoration.Waiting)decorationFailed(effect);}
     }
     private void decorationFailed(String effect){
-        ++ticket;decoration=Decoration.Held;hold(effect+"Unknown");
+        ++ticket;decoration=Decoration.Held;decorationReason=effect+"Unknown";hold(decorationReason);
     }
     void retryDecorations(){
         port.worker(()->guard(()->{

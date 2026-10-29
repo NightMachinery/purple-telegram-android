@@ -38,8 +38,9 @@ final class PurpleSyncChatMove implements AutoCloseable {
         final String action,reason;
         final boolean terminal;
         final Committed committed;
-        Status(String action,String reason,boolean terminal){this(action,reason,terminal,null);}
-        private Status(String action,String reason,boolean terminal,Committed committed){this.action=action;this.reason=reason;this.terminal=terminal;this.committed=committed;}
+        final PurpleSyncChatMoveCleanup.Progress cleanup;
+        Status(String action,String reason,boolean terminal){this(action,reason,terminal,null,null);}
+        private Status(String action,String reason,boolean terminal,Committed committed,PurpleSyncChatMoveCleanup.Progress cleanup){this.action=action;this.reason=reason;this.terminal=terminal;this.committed=committed;this.cleanup=cleanup;}
     }
     static final class Command {
         final String action,operation,account,source,target;
@@ -47,12 +48,17 @@ final class PurpleSyncChatMove implements AutoCloseable {
         final PurpleSyncChatOrigin origin;
         final String authority;
         final PurpleSyncChatMoveIO.Permit permit;
+        final PurpleSyncChatMoveCleanup.Item cleanupItem;
+        final PurpleSyncChatMoveCleanup.Permit cleanupPermit;
+        final PurpleSyncChatMoveCleanup.Read cleanupRead;
         private PurpleSyncChatMoveIO.Permit currentPermit;
         final int messageId;
         private final byte[] journal;
         private final PurpleSyncChatMoveIO.ReadTicket read,pendingRead;
         private Command(PurpleSyncChatMove owner,String action,PurpleSyncChatMoveIO.Permit permit,int id,PurpleSyncChatMoveIO.ReadTicket read)throws Exception {
             this.action=action;this.permit=permit;currentPermit=permit;messageId=id;this.read=read;
+            cleanupItem=owner.cleanupItem;cleanupPermit=owner.cleanupPermit;
+            cleanupRead=action.equals("CleanupRead")?owner.cleanup.read(cleanupItem):null;
             pendingRead=action.equals("Pending")?owner.io.beginPendingRead(owner.fresh):null;
             origin=owner.origin;authority=owner.authority;account=origin.accountKey();run=owner.run;ticket=++owner.tickets;
             journal=owner.store==null?null:owner.store.journalBytes();JSONObject j=journal==null?owner.opening:parse(journal);
@@ -83,14 +89,19 @@ final class PurpleSyncChatMove implements AutoCloseable {
     private PurpleSyncOperations.CarryLease lease;
     private PurpleSyncChatMoveStore store;
     private PurpleSyncChatMoveIO io;
+    private PurpleSyncChatMoveCleanup cleanup;
+    private PurpleSyncChatMoveCleanup.Item cleanupItem;
+    private PurpleSyncChatMoveCleanup.Permit cleanupPermit;
     private JSONObject opening;
     private PurpleSyncChatClient.Info accepted;
     private PurpleSyncChatMoveIO.Fresh fresh;
     private List<PurpleSyncChatMoveIO.RecordReceipt> sourceRecords=new ArrayList<>();
     private final java.util.Set<String> dispatched=new java.util.HashSet<>();
     private JSONObject destination,playlist;
+    private String knownAction="Open";
+    private Committed knownCommitted;
     private volatile boolean closed;
-    private boolean started,interrupted,discardConfirmed;
+    private boolean started,interrupted,discardConfirmed,skipConfirmed,uncopiedDestination;
     private Thread worker;
     private volatile long run,tickets;
     private volatile Command active;
@@ -123,25 +134,37 @@ final class PurpleSyncChatMove implements AutoCloseable {
         try{require();work.run();}catch(Exception|LinkageError e){hold(e.getMessage()==null?"CarryUnavailable":e.getMessage());}
     }
     private void hold(String reason){
-        if(closed)return;String action=actionQuiet();Command old=active;active=null;++run;++tickets;
+        if(closed)return;String action=actionQuiet();Committed proof=null;try{proof=committed();}catch(Exception ignored){}Command old=active;active=null;++run;++tickets;
         try{if(old!=null)port.cancel(old);}finally{
-            try{if(io!=null)io.close();}finally{try{if(store!=null)store.close();}finally{
+            try{if(cleanup!=null)cleanup.close();if(io!=null)io.close();}finally{try{if(store!=null)store.close();}finally{
+                cleanup=null;cleanupItem=null;cleanupPermit=null;
                 io=null;store=null;PurpleSyncOperations.CarryLease held=lease;lease=null;if(held!=null)held.close();
             }}
         }
-        try{port.status(new Status(action,reason,false));}finally{if(!live())close();}
+        try{port.status(new Status(action,reason,false,proof,progress(action,false)));}finally{if(!live())close();}
     }
-    private String actionQuiet(){try{return store==null||store.journalBytes()==null?"Open":next();}catch(Exception e){return "Open";}}
+    private String actionQuiet(){
+        try{if(store!=null&&store.journalBytes()!=null)knownAction=next();}catch(Exception ignored){}
+        return knownAction;
+    }
     private boolean publish(String reason,boolean terminal)throws Exception {
-        require();long before=run;port.status(new Status(store==null||store.journalBytes()==null?"Open":next(),reason,terminal,committed()));
+        require();long before=run;String action=actionQuiet();port.status(new Status(action,reason,terminal,committed(),progress(action,terminal)));
         if(before!=run||!live())return false;require();return true;
     }
+    private PurpleSyncChatMoveCleanup.Progress progress(String action,boolean terminal){
+        boolean skipped=false;try{skipped=store!=null&&journal().getInt("phase")==16;}catch(Exception ignored){}
+        return new PurpleSyncChatMoveCleanup.Progress(this,run,!terminal&&action.equals("Cleanup"),skipped,active==null,uncopiedDestination);
+    }
+    void cleanupAction(long openingRun,boolean skip){
+        port.worker(()->guard(()->{if(openingRun!=run||active!=null)return;if(skip)skipCleanup(true);else retry();}));
+    }
     private Committed committed()throws Exception {
-        if(store==null||store.journalBytes()==null)return null;JSONObject j=journal();
+        if(store==null||store.journalBytes()==null)return knownCommitted;JSONObject j=journal();
         if(!j.optBoolean("destination_verified")||!j.optBoolean("mark_verified")||!j.optBoolean("state_committed")||!j.optBoolean("cache_completed")
                 ||!(store.stateBytes()==null?j.getInt("mode")==2&&j.optString("next_state_hash").isEmpty():PurpleSyncRetainedFiles.hash(store.stateBytes()).equals(j.optString("next_state_hash"))))return null;
         JSONObject mark=j.getJSONObject("target_mark");
-        return new Committed(origin,authority,j.getString("operation"),new Cache(Peer.parse(mark.getString("chat"),origin.userId),mark.getInt("id"),mark.getLong("date")));
+        knownCommitted=new Committed(origin,authority,j.getString("operation"),new Cache(Peer.parse(mark.getString("chat"),origin.userId),mark.getInt("id"),mark.getLong("date")));
+        return knownCommitted;
     }
     private void open(boolean resume,boolean foreign)throws Exception {
         require();if(lease!=null)return;
@@ -155,17 +178,22 @@ final class PurpleSyncChatMove implements AutoCloseable {
             store=port.open(this::live,foreign);require();
             if(!origin.accountKey().equals(store.accountKey())||!authority.equals(store.loginAuthority()))throw new IOException("AccountUnbound");
             if(!foreign)store.checkNotPaused(origin);
-            if(opening!=null&&opening.has("openingStateStamp")){
-                String actual=store.stateBytes()==null?"missing":PurpleSyncRetainedFiles.hash(store.stateBytes());
-                if(!actual.equals(opening.getString("openingStateStamp")))throw new IOException("OpeningChanged");
+            boolean continuing=resume||store.journalBytes()!=null&&!store.terminal();
+            if(!continuing){
+                if(opening!=null&&opening.has("openingStateStamp")){
+                    String actual=store.stateBytes()==null?"missing":PurpleSyncRetainedFiles.hash(store.stateBytes());
+                    if(!actual.equals(opening.getString("openingStateStamp")))throw new IOException("OpeningChanged");
+                }
+                if(opening!=null&&opening.optBoolean("openingCacheAbsent")&&store.openingCacheBytes()!=null)throw new IOException("OpeningChanged");
+                if(opening!=null&&opening.has("openingCacheBytes")&&!java.util.Arrays.equals(store.openingCacheBytes(),PurpleSyncRetainedBases.decode(opening.getString("openingCacheBytes"))))throw new IOException("OpeningChanged");
             }
-            if(opening!=null&&opening.optBoolean("openingCacheAbsent")&&store.openingCacheBytes()!=null)throw new IOException("OpeningChanged");
-            if(opening!=null&&opening.has("openingCacheBytes")&&!java.util.Arrays.equals(store.openingCacheBytes(),PurpleSyncRetainedBases.decode(opening.getString("openingCacheBytes"))))throw new IOException("OpeningChanged");
             if(foreign){if(discardConfirmed)transition(store.discardInterrupted(true));return;}
-            if(resume||store.journalBytes()!=null&&!store.terminal()){
+            if(continuing){
                 if(store.journalBytes()==null){hold("MissingJournal");return;}
                 if(store.terminal()){finish();return;}
                 transitionOnly(store.resume());
+                if(next().equals("Cleanup"))store.witnessCleanup(origin);
+                if(skipConfirmed){skipConfirmed=false;transition(event("SkipCleanup",json("skipCleanupConfirmed",true,"noRequestInFlight",true,"deleted",PurpleSyncChatMoveCleanup.persistedDeleted(store))));return;}
                 if(accepted==null){hold("TargetFactsRequired");return;}
                 io=new PurpleSyncChatMoveIO(store,origin,this::live);
                 if(store.transport().optJSONObject("readers")==null||!store.transport().getJSONObject("readers").has("snapshot")){hold("ReadersBaselineMissing");return;}
@@ -186,6 +214,22 @@ final class PurpleSyncChatMove implements AutoCloseable {
             if(!matches(command)||!command.action.equals("Effect"))return;
             require();PurpleSyncChatMoveIO.Permit next=io.renew(command.currentPermit,facts,source);
             if(!matches(command)||!live())return;command.currentPermit=next;done.accept(next);
+        }));
+    }
+    void beginCleanupRead(Command command,Consumer<PurpleSyncChatMoveCleanup.Read> done){
+        port.worker(()->guard(()->{
+            if(!matches(command)||!command.action.equals("CleanupDelete"))return;
+            done.accept(cleanup.read(command.cleanupItem));
+        }));
+    }
+    void renewCleanup(Command command,PurpleSyncChatMoveCleanup.Read read,Reply reply,Consumer<PurpleSyncChatMoveCleanup.Permit> done){
+        port.worker(()->guard(()->{
+            if(!matches(command)||!command.action.equals("CleanupDelete"))return;
+            checkReplyFresh(reply);JSONObject dest=PurpleSyncChatMoveIO.inventory(reply.destination,origin,target()),proof=playlist(reply,dest);
+            PurpleSyncChatMoveIO.RecordReceipt record=null;
+            for(PurpleSyncChatMoveIO.RecordReceipt candidate:reply.sourceRecords)if(candidate.id==command.cleanupItem.id)record=candidate;
+            PurpleSyncChatMoveCleanup.Permit next=cleanup.inspect(read,fresh,reply.destination,proof,reply.markRoute,reply.response,record);
+            if(matches(command)&&live())done.accept(next);
         }));
     }
     private boolean matches(Command command){
@@ -230,12 +274,24 @@ final class PurpleSyncChatMove implements AutoCloseable {
                 transition(event("CleanupChatGone",json("noRequestInFlight",true,"mark",json("outcome","ChatGone","account",origin.accountKey(),"chat",source().token(),"id","0","date","0","text","","hasMedia",false,"ownership","Unknown"))));
             } else {
                 destination=PurpleSyncChatMoveIO.inventory(reply.destination,origin,target());playlist=playlist(reply,destination);
-                JSONObject candidates=scope();candidates.remove("journal");candidates.put("plan",blob(bytes(journal().getJSONObject("plan")))).put("destination",destination).put("playlist",playlist);
-                PurpleSyncChatMoveCore.Result result=core("cleanupCandidates",candidates);
-                if(!"Ready".equals(result.status)||result.fields.getJSONArray("references").length()!=0||journal().optBoolean("remove_old_mark_authorized")){hold("CleanupPolicyNotEnabled");return;}
-                transition(event("CleanupCompleted",json("destination",destination,"playlist",playlist,"deleted",new JSONArray())));
+                if(cleanup==null)cleanup=new PurpleSyncChatMoveCleanup(store,origin,this::live);
+                cleanup.prepare(fresh,reply.destination,playlist);uncopiedDestination=PurpleSyncChatMoveCleanup.uncopied(journal().getJSONObject("plan"),destination);cleanupItem=cleanup.next();
+                if(cleanupItem!=null){publish("MovedCleanupPending",false);request("CleanupRead",null,cleanupItem.id,null);return;}
+                JSONObject payload=json("destination",destination,"playlist",playlist,"deleted",cleanup.deleted());
+                JSONObject absent=cleanup.oldMarkAbsent();if(absent!=null)payload.put("mark",absent);
+                transition(event("CleanupCompleted",payload));
             }
             break;
+        case "CleanupRead":
+            checkReplyFresh(reply);destination=PurpleSyncChatMoveIO.inventory(reply.destination,origin,target());playlist=playlist(reply,destination);
+            PurpleSyncChatMoveIO.RecordReceipt exact=null;
+            for(PurpleSyncChatMoveIO.RecordReceipt record:reply.sourceRecords)if(record.id==command.cleanupItem.id)exact=record;
+            cleanupPermit=cleanup.inspect(command.cleanupRead,fresh,reply.destination,playlist,reply.markRoute,reply.response,exact);
+            if(cleanupPermit==null){request("Cleanup",null,0,null);return;}
+            if(!dispatched.add("cleanup:"+command.cleanupItem.key)){hold("CleanupStillPresent");return;}
+            request("CleanupDelete",null,command.cleanupItem.id,null);break;
+        case "CleanupDelete":
+            cleanupPermit=null;request("Cleanup",null,0,null);break;
         default:throw new IOException("InvalidTransition");
         }
     }
@@ -318,7 +374,8 @@ final class PurpleSyncChatMove implements AutoCloseable {
         input.put("mode",new String[]{"Switch","Follow","Fill","RepairMark"}[j.getInt("mode")]).put("access",reply.sourceAccess)
                 .put("state",store.stateBytes()==null?JSONObject.NULL:blob(store.stateBytes())).put("preferenceToken",openingToken())
                 .put("otherStagesPresent",false).put("eligibility",eligibilityJson(fresh.target.eligibility())).put("readerConsentAccepted",true)
-                .put("oldInventory",old).put("newInventory",dest).put("cleanup",store.cleanupSettings()?"AllSettings":"None").put("cleanupAuthorized",store.cleanupSettings())
+                .put("oldInventory",old).put("newInventory",dest).put("cleanup",j.getInt("mode")==1&&!source().equals(Peer.self())?"OwnLatePosts":store.cleanupSettings()?"AllSettings":"None")
+                .put("cleanupAuthorized",j.getInt("mode")==1&&!source().equals(Peer.self())||store.cleanupSettings())
                 .put("playlistsInUse",playlistUse(reply,old,dest));
         if(j.optJSONObject("target_mark")!=null)input.put("winner",cache(j.getJSONObject("target_mark")));
         if(store.stateBytes()!=null){byte[] own=store.ownBase();if(own.length!=0)input.put("ownVersion",core("ownVersion",json("record",blob(own))).fields.getJSONObject("ownVersion"));}
@@ -357,11 +414,16 @@ final class PurpleSyncChatMove implements AutoCloseable {
     }
     private void transition(PurpleSyncChatMoveCore.Result result)throws Exception {transitionOnly(result);if(store.terminal())finish();else request("Fresh",null,0,null);}
     private void finish()throws Exception {if(!store.terminal())throw new IOException("CarryHeld");try{publish("Done",true);}finally{close();}}
-    void skipCleanup(boolean confirmed){port.worker(()->guard(()->{if(!confirmed||active!=null||store==null)return;transition(event("SkipCleanup",json("skipCleanupConfirmed",true,"noRequestInFlight",true)));}));}
+    void skipCleanup(boolean confirmed){port.worker(()->guard(()->{
+        if(!confirmed||active!=null)return;
+        if(store==null){skipConfirmed=true;open(true,false);return;}
+        JSONObject payload=json("skipCleanupConfirmed",true,"noRequestInFlight",true,"deleted",PurpleSyncChatMoveCleanup.persistedDeleted(store));
+        transition(event("SkipCleanup",payload));
+    }));}
     @Override public void close(){
         if(closed)return;closed=true;++run;++tickets;Command old=active;active=null;
         port.worker(()->{
-            try{if(old!=null)port.cancel(old);}finally{try{if(io!=null)io.close();}finally{try{if(store!=null)store.close();}finally{PurpleSyncOperations.CarryLease held=lease;lease=null;if(held!=null)held.close();}}}
+            try{if(old!=null)port.cancel(old);}finally{try{if(cleanup!=null)cleanup.close();if(io!=null)io.close();}finally{try{if(store!=null)store.close();}finally{PurpleSyncOperations.CarryLease held=lease;lease=null;if(held!=null)held.close();}}}
         });
     }
     private String next()throws Exception{return core("next",scope()).fields.getString("nextAction");}

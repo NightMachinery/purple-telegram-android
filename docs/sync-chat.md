@@ -243,3 +243,7 @@ The injected Follow/Fill controller drives the existing Carry executor, without 
 
 Explicit stale-mark rows and their qualification boundary are described in
 [Older Purple marks](sync-chat-marks.md).
+
+## Explicit old-settings cleanup
+
+The injected Carry executor supports exact frozen-record cleanup after durable N commit, with independent old-mark authorization and explicit Retry/Skip progress. Production remains OFF. See [old settings cleanup](sync-chat-cleanup.md) for scope, conservative absence and the install-moved note.

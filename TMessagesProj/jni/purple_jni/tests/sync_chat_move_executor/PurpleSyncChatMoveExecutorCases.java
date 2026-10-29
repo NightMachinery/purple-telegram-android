@@ -112,6 +112,7 @@ public final class PurpleSyncChatMoveExecutorCases {
                 case "Pending":r.source=access.equals("ChatGone")||omitPendingInventory?null:inventory(true);r.sendIntent="NotIssued";break;
                 case "Destination":r.destination=inventory(false);break;
                 case "Cleanup":r.destination=inventory(false);break;
+                case "CleanupRead":r.destination=inventory(false);r.markRoute=route(O);r.response=page(O);break;
                 case "Mark":
                     TLRPC.Message mark=newRecords.stream().filter(m->m.id==command.messageId).findFirst().orElse(null);
                     r.markRoute=route(target);r.response=page(target,badMark?new TLRPC.Message[0]:mark==null?new TLRPC.Message[0]:new TLRPC.Message[]{mark});break;
