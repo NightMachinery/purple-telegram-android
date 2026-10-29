@@ -1111,6 +1111,39 @@
         "cleanup:CLEANUP_RESUME_CHECKS": 60,
         "sync-chat-move-cleanup:CLEANUP_RESUME_CHECKS": 60
       }
+    },
+    {
+      "name": "sync-chat-move-recovery",
+      "driver": "TMessagesProj/jni/purple_jni/tests/run_sync_chat_move_recovery.py",
+      "args": [
+        "--receipt",
+        "{receipt}",
+        "--json",
+        "{json}",
+        "--library",
+        "{library}",
+        "--output",
+        "{output}",
+        "--modern",
+        "{out:modern-sync}",
+        "--carry",
+        "{out:sync-chat-move}",
+        "--store",
+        "{out:sync-chat-move-store}",
+        "--io",
+        "{out:sync-chat-move-io}",
+        "--executor",
+        "{out:sync-chat-move-executor}",
+        "--change",
+        "{out:sync-chat-change}",
+        "--discovery",
+        "{out:sync-chat-discovery}"
+      ],
+      "coverage": "Lost recovery through Create/Choose and core RepairMark; actual service R3 projection, exact retained base, pending stage, readers, login/winner/lifetime, retry and OFF controls. Production OFF.",
+      "expects": {
+        "recovery:MOVE_RECOVERY_CHECKS": 54,
+        "sync-chat-move-recovery:MOVE_RECOVERY_CHECKS": 54
+      }
     }
   ]
 }

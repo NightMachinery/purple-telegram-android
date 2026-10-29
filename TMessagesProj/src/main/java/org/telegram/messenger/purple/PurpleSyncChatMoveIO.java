@@ -257,6 +257,7 @@ final class PurpleSyncChatMoveIO implements AutoCloseable {
                 if(slot.getString("kind").equals("mark")&&slot.optInt("ack_id")==r.winner.markId&&j.optBoolean("mark_attempted"))ownWinner=true;}}
         }
         require(opening||reconcile&&ownWinner,"ResolutionChanged");
+        require(j.getInt("mode")!=3||fresh.source.readable()&&(fresh.oldRead==DirectRead.MarkGone||reconcile&&ownWinner),"MarkNotProvenGone");
         JSONObject input=scope(j);input.put("eligibility",PurpleSyncChatCore.eligibilityJson(fresh.target.eligibility()));
         String verdict=core("readers",input).fields.getString("verdict");
         require(!"Hold".equals(verdict)&&fresh.target.readersKnown,"ReadersUnknown");
@@ -269,11 +270,12 @@ final class PurpleSyncChatMoveIO implements AutoCloseable {
             require(actual!=null&&original.kind==actual.kind&&!(original.memberHashes!=null&&actual.memberHashes==null),"ReadersUnknown");
             require(!(original.creator&&!actual.creator)&&!(original.admin&&!actual.admin),"ReaderRightsChanged");
             boolean added="WarnAndProceed".equals(verdict)||original.newReaders(actual);
-            if(!j.optBoolean("delivery_attempted")&&!j.optBoolean("mark_attempted"))require(!added,"ReaderConsentChanged");
+            if(j.getInt("mode")!=3&&!j.optBoolean("delivery_attempted")&&!j.optBoolean("mark_attempted"))require(!added,"ReaderConsentChanged");
             else if(added&&!transport.optBoolean("reader_warning")){transport.put("reader_warning",true);store.transport(transport,false);}
         }
     }
-    void acceptReaders(Fresh fresh,PurpleSyncChatClient.Info accepted,String stream)throws IOException {
+    void acceptReaders(Fresh fresh,PurpleSyncChatClient.Info accepted,String stream)throws IOException {acceptReaders(fresh,accepted,stream,null);}
+    void acceptReaders(Fresh fresh,PurpleSyncChatClient.Info accepted,String stream,JSONObject repairBaseline)throws IOException {
         try {
             JSONObject j=journal();fresh(j,fresh);require(stream.equals("config")||stream.equals("library"),"InvalidStream");
             if(store.transport().length()!=0)return;
@@ -283,12 +285,15 @@ final class PurpleSyncChatMoveIO implements AutoCloseable {
                     && accepted.readersKnown && fresh.target.readersKnown && java.util.Objects.equals(accepted.members,fresh.target.members),"ReaderConsentChanged");
             JSONObject input=scope(j);input.put("eligibility",PurpleSyncChatCore.eligibilityJson(fresh.target.eligibility()));
             require("Proceed".equals(core("readers",input).fields.getString("verdict")),"ReaderConsentChanged");
+            PurpleSyncChatCache.ReadersSnapshot baseline=repairBaseline==null?PurpleSyncChatCache.ReadersSnapshot.from(accepted):PurpleSyncChatCache.ReadersSnapshot.parse(repairBaseline);
+            require(repairBaseline==null||j.getInt("mode")==3,"InvalidTransition");
             JSONArray members=new JSONArray();if(accepted.members!=null)for(Long id:new java.util.TreeSet<>(accepted.members))members.put(Long.toString(id));
             JSONObject t=json("version",1,"entries",new JSONObject(),"readers",json("members",members,
                     "other_members",accepted.eligibility().readers.otherMembers==null?"":accepted.eligibility().readers.otherMembers.toString(),
                     "other_admins",accepted.eligibility().readers.otherAdmins==null?"":accepted.eligibility().readers.otherAdmins.toString(),
-                    "warning",accepted.eligibility().readers.warningRequired,"snapshot",PurpleSyncChatCache.ReadersSnapshot.from(accepted).json(),"stream",stream,"settings_disclosed",true),"reader_warning",false);
+                    "warning",accepted.eligibility().readers.warningRequired,"snapshot",baseline.json(),"stream",stream,"settings_disclosed",true),"reader_warning",false);
             capacity(t);store.transport(t,false);
+            if(repairBaseline!=null)fresh(j,fresh,true);
         }catch(Exception e){close();throw failure(e);}
     }
     void reserve(Fresh fresh,PurpleSyncChatClient.Info accepted,SecureRandom entropy) throws IOException {

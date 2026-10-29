@@ -250,6 +250,11 @@ public final class PurpleSyncChat {
         if(!PurpleSyncChatMoveConsent.ACTIVATED){changed.accept(result);return;}
         changed.accept(new PurpleSyncChatMoveConsent.State("Held","TransportNotQualified",false));
     }
+    public static void recover(int slot,PurpleSyncChatScreen.Frame opening,PurpleSyncChatMoveRecovery.ActionChoice choice,
+            PurpleSyncChatScreen.ChangeSelection selection,BooleanSupplier foreground,Consumer<PurpleSyncChatChange.State> changed){
+        if(!PurpleSyncChatMoveRecovery.ACTIVATED){changed.accept(PurpleSyncChatMoveRecovery.production());return;}
+        changed.accept(new PurpleSyncChatChange.State("Held","TransportNotQualified",false));
+    }
     static PurpleSyncChatMove move(PurpleSyncChatMove.Port injected) {
         return injected==null?null:new PurpleSyncChatMove(injected);
     }

@@ -976,4 +976,19 @@
     <string name="PurpleSyncChatCleanupSkipped">Moved; remaining cleanup was skipped.</string>
     <string name="PurpleSyncChatFollowLateCleanup">Outside Saved Messages, Purple may remove only this install’s own late settings posts after verifying their copies in the new chat.</string>
     <string name="PurpleSyncChatInstallMoved">A settings post created here, rather than carried from the old chat, shows that this install has used the new sync chat.</string>
+    <string name="PurpleSyncChatRecoveryCreate">Create a new sync chat</string>
+    <string name="PurpleSyncChatRecoveryChoose">Choose another sync chat</string>
+    <string name="PurpleSyncChatRecoveryMark">Mark this chat again</string>
+    <string name="PurpleSyncChatRecoveryAbout">Recovery keeps this install’s saved version. If its exact local version is missing, the move waits. Unsynced edits are not substituted for the saved version.</string>
+    <string name="PurpleSyncChatRecoveryMarkAbout">Restore the Purple mark in this chat. This keeps the settings binding and version history. New known readers receive the existing warning; unavailable readers or lost rights pause recovery.</string>
+    <string name="PurpleSyncChatRecoveryHeld">Recovery is held. Your saved settings are retained.</string>
+    <string name="PurpleSyncChatRecoveryQualificationHeld">Sync-chat recovery is not available yet. Your saved settings are retained.</string>
+    <string name="PurpleSyncChatRecoveryMissingBase">This install’s exact saved version is missing. Recovery is paused; unsynced edits will not replace it.</string>
+    <string name="PurpleSyncChatRecoveryMarkUnproven">The old mark has not been confirmed missing. Check this chat again before restoring its mark.</string>
+    <string name="PurpleSyncChatRecoveryUnreadable">This chat cannot be read. Choose another sync chat to recover the versions still available.</string>
+    <string name="PurpleSyncChatRecoveryRights">This chat’s permissions changed. Review its access before restoring the mark.</string>
+    <string name="PurpleSyncChatRecoverySearching">Purple is still checking for the sync chat. Retry after the connection returns.</string>
+    <string name="PurpleSyncChatRecoveryPending">A settings send is still pending. Resolve it before restoring this chat’s mark.</string>
+    <string name="PurpleSyncChatRecoveryNewReaders">New readers can see this sync chat. Recovery continues with the existing reader warning.</string>
+    <string name="PurpleSyncChatRecoveryComplete">The sync-chat recovery is complete.</string>
 </resources>

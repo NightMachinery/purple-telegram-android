@@ -31,6 +31,7 @@ public final class PurpleSyncChatChange implements AutoCloseable {
     }
     private final Port port;
     private final PurpleSyncChatScreen.ChangeSelection selection;
+    private final BooleanSupplier parentCurrent;
     private final PurpleSyncChatOrigin origin;
     private final String authority;
     private volatile boolean closed;
@@ -46,10 +47,11 @@ public final class PurpleSyncChatChange implements AutoCloseable {
     private PurpleSyncChatMove move;
     private PurpleSyncChatMove.Committed commit;
     private PurpleSyncChatMoveCleanup.Progress cleanupProgress;
-    PurpleSyncChatChange(Port injected,PurpleSyncChatScreen.ChangeSelection selection){
-        port=injected;this.selection=selection;origin=injected.origin();authority=injected.authority();target=selection.offer.target;
+    PurpleSyncChatChange(Port injected,PurpleSyncChatScreen.ChangeSelection selection){this(injected,selection,()->true);}
+    PurpleSyncChatChange(Port injected,PurpleSyncChatScreen.ChangeSelection selection,BooleanSupplier parentCurrent){
+        this.parentCurrent=parentCurrent;port=injected;this.selection=selection;origin=injected.origin();authority=injected.authority();target=selection.offer.target;
     }
-    private boolean live(){return !closed&&port.current()&&port.foreground()&&selection.current(origin,authority)&&origin.equals(port.origin())&&authority.equals(port.authority());}
+    private boolean live(){return !closed&&parentCurrent.getAsBoolean()&&port.current()&&port.foreground()&&selection.current(origin,authority)&&origin.equals(port.origin())&&authority.equals(port.authority());}
     static State production(PurpleSyncChatScreen.ChangeSelection selection,PurpleSyncChatOrigin origin,String authority,BooleanSupplier current){
         return new State("Held",selection!=null&&selection.current(origin,authority)&&current.getAsBoolean()?"QualificationHeld":"OpeningChanged",false);
     }
@@ -82,7 +84,7 @@ public final class PurpleSyncChatChange implements AutoCloseable {
                 created=true;target=journal.chat;operation=journal.operation.replace("-","");
                 port.worker(()->guard(()->fresh(false)));
             }else if(phase==PurpleSyncChatSetup.Phase.Held||phase==PurpleSyncChatSetup.Phase.Limit)hold(provision.reason());
-        });
+        },this::live);
         if(live())provision.start();
     }
     private void inspect(){

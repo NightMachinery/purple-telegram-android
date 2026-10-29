@@ -1988,3 +1988,5 @@ ownership readback. Removal remains off pending qualification. It grants no reco
 or chat cleanup. See [stale-mark authority](docs/sync-chat-marks.md).
 
 Exact old-settings cleanup remains qualification-held. Its separate choices, partial outcomes and host checks are described in [the cleanup guide](docs/sync-chat-cleanup.md).
+
+Lost recovery and same-chat mark repair are qualified through injected host ports, with production OFF. See [Lost recovery](docs/sync-chat-recovery.md).

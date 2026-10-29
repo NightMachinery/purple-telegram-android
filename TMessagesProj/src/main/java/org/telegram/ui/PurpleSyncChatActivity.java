@@ -21,7 +21,7 @@ import java.util.ArrayList;
 import java.util.Locale;
 
 public final class PurpleSyncChatActivity extends UniversalFragment {
-    private static final int REFRESH=0x70750110, SELF=REFRESH+1, EXISTING=REFRESH+2, CREATE=REFRESH+3, CONSENT=REFRESH+4, RESUME=REFRESH+5, CANCEL_SETUP=REFRESH+6, REVIEW_SETTINGS=REFRESH+7, CHANGE=REFRESH+8, FOLLOW_FILL=REFRESH+9, LOCAL_RESUME=REFRESH+10, CLEANUP_RETRY=REFRESH+11, CLEANUP_SKIP=REFRESH+12, REMOVE_MARK=0x70750200;
+    private static final int REFRESH=0x70750110, SELF=REFRESH+1, EXISTING=REFRESH+2, CREATE=REFRESH+3, CONSENT=REFRESH+4, RESUME=REFRESH+5, CANCEL_SETUP=REFRESH+6, REVIEW_SETTINGS=REFRESH+7, CHANGE=REFRESH+8, FOLLOW_FILL=REFRESH+9, LOCAL_RESUME=REFRESH+10, CLEANUP_RETRY=REFRESH+11, CLEANUP_SKIP=REFRESH+12, RECOVERY_CREATE=REFRESH+13, RECOVERY_CHOOSE=REFRESH+14, RECOVERY_MARK=REFRESH+15, REMOVE_MARK=0x70750200;
     private PurpleSyncChatScreen.Control control;
     private PurpleSyncChatScreen.Frame frame;
     private PurpleSyncChatCore.Peer pending;
@@ -131,6 +131,14 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
                 items.add(UItem.asButton(CREATE,text("Create")));
                 items.add(UItem.asButton(SELF,text("Saved")));
                 items.add(UItem.asButton(EXISTING,text("Choose")));
+            } else if(org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.recovery(frame)){
+                for(org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.ActionChoice choice:org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.actions(frame)){
+                    int id=choice==org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.ActionChoice.Create?RECOVERY_CREATE:choice==org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.ActionChoice.Choose?RECOVERY_CHOOSE:RECOVERY_MARK;
+                    items.add(UItem.asButton(id,text(choice==org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.ActionChoice.Create?"RecoveryCreate":choice==org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.ActionChoice.Choose?"RecoveryChoose":"RecoveryMark")));
+                }
+                items.add(UItem.asShadow(text("RecoveryAbout")));
+                String held=org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.ACTIVATED?org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.repairHeld(frame):"QualificationHeld";
+                if(!held.isEmpty())items.add(UItem.asShadow(recoveryReason(held)));
             } else if(frame.canChange())items.add(UItem.asButton(CHANGE,text("Change")));
             else if(frame.bound)items.add(UItem.asShadow(text("Bound")));
         }
@@ -170,7 +178,16 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
         if(item.id==REVIEW_SETTINGS&&setupState!=null&&setupState.phase.equals("Complete")){presentFragment(new PurpleSyncActivity(currentAccount));return;}
         if(item.id==FOLLOW_FILL&&frame!=null&&frame.canFollowFill()){followFill();return;}
         if(item.id==LOCAL_RESUME&&frame!=null&&frame.locallyPaused()){control.pauseHere(false,saved->{if(visible){if(!saved)message(text("Changed"));reload();}});return;}
-        if(item.id==CHANGE&&frame!=null&&frame.canChange()){changeChoices();return;}
+        if(item.id>=RECOVERY_CREATE&&item.id<=RECOVERY_MARK){
+            if(!org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.ACTIVATED)return;
+            if(item.id==RECOVERY_MARK){repairMark();return;}
+            if(item.id==RECOVERY_CREATE){inspectChange(null,true);return;}
+            changePicker=true;choose();return;
+        }
+        if(item.id==CHANGE&&frame!=null&&frame.canChange()){
+            if(org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.recovery(frame)&&!org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.ACTIVATED)return;
+            changeChoices();return;
+        }
         if(item.id==CANCEL_SETUP){cancelSetup();return;}
         if(item.id==RESUME&&setup!=null){limitShown=false;setup.resume();return;}
         if(item.id==REFRESH)reload();
@@ -258,6 +275,7 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
         });
     }
     private void changeChoices() {
+        if(org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.recovery(frame)&&!org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.ACTIVATED)return;
         PurpleSyncChatScreen.Control opening=control;
         AlertDialog.Builder dialog=new AlertDialog.Builder(getParentActivity());dialog.setTitle(text("Change"));
         dialog.setItems(new CharSequence[]{text("Create"),text("Saved"),text("Choose")},(ignored,which)->{
@@ -267,7 +285,37 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
         });
         dialog.setNegativeButton(LocaleController.getString(org.telegram.messenger.R.string.Cancel),null);showDialog(dialog.create());
     }
+    private void repairMark(){
+        if(!org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.ACTIVATED||!visible||frame==null||!org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.repairHeld(frame).isEmpty())return;
+        PurpleSyncChatScreen.Frame shown=frame;
+        new AlertDialog.Builder(getParentActivity()).setTitle(text("RecoveryMark")).setMessage(text("RecoveryMarkAbout"))
+                .setPositiveButton(text("RecoveryMark"),(dialog,which)->{
+                    if(!org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.ACTIVATED||!visible||frame!=shown||control==null||!control.current())return;
+                    PurpleSyncChat.recover(currentAccount,shown,org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.ActionChoice.RepairMark,null,()->visible,this::recoveryStatus);
+                }).setNegativeButton(LocaleController.getString(org.telegram.messenger.R.string.Cancel),null).show();
+    }
+    private void recoveryStatus(org.telegram.messenger.purple.PurpleSyncChatChange.State state){
+        if(!visible)return;cleanupProgress=state.cleanup;update();
+        if(state.phase.equals("Warning"))message(text("RecoveryNewReaders"));
+        else if(state.phase.equals("Held"))message(recoveryReason(state.reason));
+        else if(state.phase.equals("Complete")&&(state.cleanup==null||!state.cleanup.pending))message(text("RecoveryComplete"));
+    }
+    private static String recoveryReason(String value){
+        if(value.equals("QualificationHeld")||value.equals("TransportNotQualified"))return text("RecoveryQualificationHeld");
+        if(value.equals("MissingLocalVersion"))return text("RecoveryMissingBase");
+        if(value.equals("MarkNotProvenGone"))return text("RecoveryMarkUnproven");
+        if(value.equals("ChatGone")||value.equals("ChatUnreadable"))return text("RecoveryUnreadable");
+        if(value.equals("ReadersUnknown"))return text("ReadersUnknown");
+        if(value.equals("ReaderRightsChanged"))return text("RecoveryRights");
+        if(value.equals("ReaderConsent"))return text("ConsentNeeded");
+        if(value.equals("Searching"))return text("RecoverySearching");
+        if(value.equals("PendingStage"))return text("RecoveryPending");
+        if(value.equals("OpeningChanged")||value.equals("AccountUnbound"))return text("Changed");
+        return text("RecoveryHeld");
+    }
     private void inspectChange(PurpleSyncChatCore.Peer target,boolean create) {
+        PurpleSyncChatScreen.Frame recoveryFrame=org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.recovery(frame)?frame:null;
+        if(recoveryFrame!=null&&!org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.ACTIVATED)return;
         PurpleSyncChatScreen.Control opening=control;if(opening==null||!visible)return;
         opening.offerChange(target,create,offer->{
             if(!visible||control!=opening||getParentActivity()==null)return;
@@ -287,6 +335,10 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
             dialog.setPositiveButton(text("ChangeMove"),(ignored,which)->opening.acceptChange(offer,true,true,cleanup.isChecked(),oldMark.isChecked(),selection->{
                 if(!visible||control!=opening||!opening.current())return;
                 if(selection==null){message(text("Changed"));reload();return;}
+                if(recoveryFrame!=null){
+                    if(!org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.ACTIVATED)return;
+                    PurpleSyncChat.recover(currentAccount,recoveryFrame,create?org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.ActionChoice.Create:org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.ActionChoice.Choose,selection,()->visible,this::recoveryStatus);return;
+                }
                 PurpleSyncChat.change(currentAccount,selection,()->visible&&identity!=null&&identity.current(),state->{
                     if(visible&&control==opening&&opening.current()){cleanupProgress=state.cleanup;update();if(state.cleanup==null||!state.cleanup.pending)message(text(state.committed?"ChangeComplete":"ChangeHeld"));}
                 });

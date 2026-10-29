@@ -62,6 +62,7 @@ public final class PurpleSyncChatScreen {
         public final List<Refused> refused;
         public final List<PurpleSyncChatMarkActions.Row> staleMarks;
         public final boolean canSetup, bound, newReaders;
+        public final DirectRead oldRead;
         public final Long originalOtherMembers;
         Frame(PurpleSyncChatOrigin origin, PurpleSyncChat.Status status, PurpleSyncChatService.Binding binding,
                 PurpleSyncChatCache.Loaded opening, PurpleSyncChatClient.Info info, List<Refused> refused) {
@@ -69,6 +70,11 @@ public final class PurpleSyncChatScreen {
         }
         Frame(PurpleSyncChatOrigin origin,PurpleSyncChat.Status status,PurpleSyncChatService.Binding binding,
                 PurpleSyncChatCache.Loaded opening,PurpleSyncChatClient.Info info,List<Refused> refused,List<PurpleSyncChatMarkActions.Row> staleMarks){
+            this(origin,status,binding,opening,info,refused,staleMarks,DirectRead.Unknown);
+        }
+        Frame(PurpleSyncChatOrigin origin,PurpleSyncChat.Status status,PurpleSyncChatService.Binding binding,
+                PurpleSyncChatCache.Loaded opening,PurpleSyncChatClient.Info info,List<Refused> refused,List<PurpleSyncChatMarkActions.Row> staleMarks,DirectRead oldRead){
+            this.oldRead=oldRead;
             this.origin=origin;this.status=status;this.binding=binding;this.opening=opening;
             this.staleMarks=Collections.unmodifiableList(new ArrayList<>(staleMarks));
             bound=binding==null||!binding.ok||binding.bound;

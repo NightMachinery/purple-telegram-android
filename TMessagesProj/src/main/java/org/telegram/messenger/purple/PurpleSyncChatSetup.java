@@ -155,6 +155,7 @@ final class PurpleSyncChatSetup implements AutoCloseable {
         }
     }
 
+    private java.util.function.BooleanSupplier parentCurrent=()->true;
     private final Env env;
     private final PurpleSyncChatScreen.ChangeSelection change;
     private final PurpleSyncChatOrigin origin;
@@ -175,9 +176,10 @@ final class PurpleSyncChatSetup implements AutoCloseable {
     PurpleSyncChatSetup(Env env,PurpleSyncChatScreen.Selection selection,Consumer<Phase> observer) {
         this.env=env;this.origin=env.origin();this.authority=authority(env.authority());this.selection=selection;this.observer=observer;change=null;
     }
-    static PurpleSyncChatSetup provision(Env env,PurpleSyncChatScreen.ChangeSelection change,Consumer<Phase> observer) {
+    static PurpleSyncChatSetup provision(Env env,PurpleSyncChatScreen.ChangeSelection change,Consumer<Phase> observer) {return provision(env,change,observer,()->true);}
+    static PurpleSyncChatSetup provision(Env env,PurpleSyncChatScreen.ChangeSelection change,Consumer<Phase> observer,java.util.function.BooleanSupplier parentCurrent) {
         if(change==null||!change.offer.createChannel)throw new IllegalArgumentException("ProvisionConsentRequired");
-        return new PurpleSyncChatSetup(env,change,observer,true);
+        PurpleSyncChatSetup result=new PurpleSyncChatSetup(env,change,observer,true);result.parentCurrent=parentCurrent;return result;
     }
     private PurpleSyncChatSetup(Env env,PurpleSyncChatScreen.ChangeSelection change,Consumer<Phase> observer,boolean provision) {
         this.env=env;origin=env.origin();authority=authority(env.authority());this.change=change;this.observer=observer;
@@ -188,7 +190,7 @@ final class PurpleSyncChatSetup implements AutoCloseable {
     Journal journal() { return journal; }
     String reason() { return reason; }
     boolean newReaders() { return journal!=null&&journal.newReaders; }
-    boolean live() { return !closed&&busy&&origin.equals(env.origin())&&env.current()&&env.foreground()&&env.owned(this); }
+    boolean live() { return !closed&&busy&&parentCurrent.getAsBoolean()&&origin.equals(env.origin())&&env.current()&&env.foreground()&&env.owned(this); }
     private boolean writable() {
         if(!live())return false;
         PurpleSyncChatService.Binding binding=env.binding();
@@ -201,7 +203,7 @@ final class PurpleSyncChatSetup implements AutoCloseable {
         finish(Phase.Held,"NotForegroundOrBindingChanged");return false;
     }
     void start() {
-        if(closed||busy||!env.current()||!env.foreground()||!origin.equals(env.origin())||!env.acquire(this))return;
+        if(closed||busy||!parentCurrent.getAsBoolean()||!env.current()||!env.foreground()||!origin.equals(env.origin())||!env.acquire(this))return;
         busy=true;warningCommitted=false;++run;
         try {
             if(!live()){finish(Phase.Held,"AccountUnavailable");return;}

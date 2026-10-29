@@ -102,6 +102,11 @@ final class PurpleSyncChatDiscovery {
     PurpleSyncChatCache.Data cache() { return cache; }
     boolean directOnly() { return directOnly; }
     PurpleSyncChatClient.Info readInfo() { return facts.get(status.resolution.readChat); }
+    PurpleSyncChatClient.Info screenInfo(){
+        if((status.resolution.action==Action.Searching||status.resolution.action==Action.Lost)&&status.resolution.cache!=null)
+            return facts.get(status.resolution.cache.chat);
+        return readInfo();
+    }
     List<PurpleSyncChatScreen.Refused> refused() {
         List<PurpleSyncChatScreen.Refused> result=new ArrayList<>();Set<Peer> seen=new HashSet<>();
         for(Mark mark:input.marks)if(!mark.eligibility.allowed()&&seen.add(mark.location.chat)) {

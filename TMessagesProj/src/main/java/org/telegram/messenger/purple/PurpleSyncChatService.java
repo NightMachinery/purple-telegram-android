@@ -105,7 +105,7 @@ final class PurpleSyncChatService {
     PurpleSyncChatDiscovery.Status status() { return status; }
     PurpleSyncChatScreen.Frame screen() {
         return new PurpleSyncChatScreen.Frame(env.origin(),new PurpleSyncChat.Status(status),binding,opening,
-                model!=null?model.readInfo():null,model!=null?model.refused():Collections.emptyList(),model!=null?model.staleMarks(env.authority()):Collections.emptyList());
+                model!=null?model.screenInfo():null,model!=null?model.refused():Collections.emptyList(),model!=null?model.staleMarks(env.authority()):Collections.emptyList(),model!=null&&status.complete?model.input().cacheRead:DirectRead.Unknown);
     }
     void quiesceCarry() {
         ArrayDeque<Request> pending=new ArrayDeque<>(waiting);waiting.clear();long run=generation;

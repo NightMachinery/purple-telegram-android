@@ -382,7 +382,10 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
             } else if(journal.bytes!=null)throw new IOException("InvalidTransition");
             if(interrupted)throw new IOException("AccountUnbound");
             if (!account.equals(input.getString("account")) || !Arrays.equals(binding, unblob(input, "preferenceToken"))) throw new IOException("AccountUnbound");
-            if (state.bytes != null) prepareState(state.bytes);
+            if (state.bytes != null) {
+                if(input.optString("mode").equals("RepairMark")){if(PurpleAccountSyncCore.inspectState(state.bytes).pendingSeq!=0)throw new IOException("PendingStage");codec("state",json("bytes",blob(state.bytes)));storeObject("state",state.bytes);}
+                else prepareState(state.bytes);
+            }
             byte[] openingStage=pendingBytes();
             if(openingStage.length!=0)storeObject("record",openingStage);
             barrier(stateFile, state, LIMIT);
@@ -474,7 +477,11 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
                 if (opening.bytes == null) write(stageFile, opening, record, 262144); else barrier(stageFile, opening, 262144);
             }
             if (hash.isEmpty()) { if (state.bytes != null) throw new IOException("Changed"); barrier(stateFile, state, LIMIT); }
-            else { byte[] image = object("state", hash); prepareState(image); state = write(stateFile, state, image, LIMIT); }
+            else {
+                byte[] image=object("state",hash);JSONObject j=new JSONObject(new String(canonical,StandardCharsets.UTF_8));
+                if(j.getInt("mode")==3){if(!Arrays.equals(image,state.bytes))throw new IOException("StateChanged");barrier(stateFile,state,LIMIT);}
+                else {prepareState(image);state=write(stateFile,state,image,LIMIT);}
+            }
             JSONObject e = event(action.equals("StageOwn") ? "OwnStagePersisted" : "StateObserved");
             e.put("outcome", "Success").put("objectsDurable", true).put("state", state.bytes == null ? JSONObject.NULL : blob(state.bytes)).put("stateAbsentConfirmed", state.bytes == null);
             if (action.equals("StageOwn")) e.put("stagedRecord", blob(read(stageFile, 262144).bytes));

@@ -250,7 +250,7 @@ final class PurpleSyncChatMove implements AutoCloseable {
                         .put("eligibility",eligibilityJson(accepted.eligibility())).put("oldRead",fresh.oldRead.name()).put("sourceAccess",reply.sourceAccess);
                 transitionOnly(store.begin(begin));byte[] pending=store.pendingBytes();if(pending.length!=0)store.pendingIntent(pending,"Unknown");
                 io=new PurpleSyncChatMoveIO(store,origin,this::live);
-                io.acceptReaders(fresh,accepted,begin.optString("consentStream","config"));
+                io.acceptReaders(fresh,accepted,begin.optString("consentStream","config"),begin.getString("mode").equals("RepairMark")?begin.optJSONObject("repairReaders"):null);
             }else io.reconciliationFresh(fresh);
             drive();break;
         case "Source":
