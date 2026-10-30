@@ -386,7 +386,9 @@ The action order is:
    core loss transition while retaining exact local bytes.
 3. WritePendingState and RetirePendingStage persist the prepared image, barrier
    it, retire only exact old bytes and acknowledge through core. ResolveAgain
-   and Plan use fresh sealed inventories and the exact retained own base.
+   and Plan use fresh sealed inventories and the exact retained own base. Plan
+   accepts a ChatGone source only when the scoped direct read is also ChatGone;
+   a lone ChatGone label holds as UnknownSource before any effect.
 4. StageOwn persists the immutable own record and reserved state. Delivery
    reservations precede DeliveryPrepared. Prepared slots issue once; uncertain
    slots require a new complete scan after their read ticket. Core missing-record

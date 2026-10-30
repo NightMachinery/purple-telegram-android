@@ -34,21 +34,44 @@ creating another copy. State ledgers are checked against the bound chat's
 actual bytes and this install's writer identity. Unrelated and legacy messages
 remain in O.
 
+Every scenario ends with a conservation check. The cloud remembers the chat
+where each settings record's bytes were first published. Each such record must
+still be in that chat or be present, byte for byte, in the install's final
+bound chat (the winner chat for the race). A completed crash window must also
+have deleted old settings, so the check covers real cleanup rather than an
+untouched O.
+
 ## Priority 2
 
 Seeded scheduling interleaves three executor queues. Duplicate callbacks are
 sent both immediately and later in shuffled order, including callbacks from a
-closed executor after its replacement has reopened the files. Simultaneous
-switches stop all installs at mark intent and then at readback, so the shared
-same-second winner exists before any commit. Losing operations retain their
-frozen source/target and attempted mark, never commit and never delete O.
+closed executor after its replacement has reopened the files. Every operation
+gets its own mark and own-record request ids, so racing installs never share a
+wire request.
+
+Simultaneous switches stop all installs at mark intent and then at readback, so
+the shared winner exists before any commit. Two installs race into one chat at
+the same second and the third into the other chat. The seed picks the pair's
+chat (N1 for even seeds, N2 for odd) and the odd install out. The pair's chat
+always wins, either by chat order at the same second or because the odd
+install's mark is one second earlier. So every seed has a loser whose mark lost
+inside the winning chat, and the default seeds change the winning chat. Losing
+operations retain their frozen source/target and attempted mark, never commit
+and never delete O. A finished operation must hold the winner's exact mark.
 
 The chain uses one install moving O to N1, another initially bound to N1 moving
-N1 to N2, and an offline third install following from O after publishing a late
-own record. Follow deletes only its verified eligible late O record. It keeps
-another install's O record. Unknown/protected evidence and an uncorroborated
-ChatGone label must not become affirmative ChatGone; the positive control
-supplies scoped definite evidence.
+N1 to N2, and an offline third install on O with a queued local edit. Its Follow
+releases the edit into O after both marks: a late own post whose bytes exist in
+no chat yet. Follow must carry those bytes into N2 and only then delete the O
+copy. It keeps another install's O record. A control hides the carried record
+from N2's readback: Follow holds before commit and the late O post survives.
+
+ChatGone needs two agreeing signals: the port's source access label and the
+scoped direct read. At Plan, a ChatGone label with a valid direct read holds
+before any effect; with both signals the move completes from the own record
+alone and deletes nothing from O. At Cleanup, Unknown/protected evidence and an
+uncorroborated ChatGone label must not become affirmative ChatGone; the positive
+control supplies scoped definite evidence.
 
 ## Existing coverage and priority 3
 
@@ -73,9 +96,10 @@ or Telegram observations:
   or physical power-loss durability.
 - N8 Follow/Fill: existing executor modes and consent cases; the new chain
   exercises Follow. Native foreground, reader and Pause behavior remains open.
-- N9 offline late post: the new three-install chain, with exact own late cleanup.
-- N10 protected/gone O: existing pending/protected cases and the new affirmative
-  ChatGone control. No live chat is protected or deleted by this suite.
+- N9 offline late post: the new three-install chain, carrying a late edit's new
+  bytes before exact own late cleanup, plus its lagging-readback hold.
+- N10 protected/gone O: existing pending/protected cases and the new Plan and
+  Cleanup ChatGone controls. No live chat is protected or deleted by this suite.
 - N11 cleanup/stale: existing cleanup/stale-mark cases and the new sentinel and
   durable cleanup restart checks. No whole-chat or whole-channel deletion.
 - N12 convergence: the new simultaneous-switch and chained-move schedules.

@@ -370,6 +370,7 @@ final class PurpleSyncChatMove implements AutoCloseable {
     private void preparePlan(Reply reply)throws Exception {
         checkReplyFresh(reply);
         if(!next().equals("Plan")){drive();return;}
+        if(reply.sourceAccess.equals("ChatGone")&&fresh.oldRead!=DirectRead.ChatGone){hold("UnknownSource");return;}
         JSONObject old=reply.sourceAccess.equals("ChatGone")?json("account",origin.accountKey(),"chat",source().token(),"complete",false,"messages",new JSONArray()):PurpleSyncChatMoveIO.inventory(reply.source,origin,source()),dest=PurpleSyncChatMoveIO.inventory(reply.destination,origin,target());
         JSONObject input=scope();input.remove("journal");JSONObject j=journal();
         input.put("mode",new String[]{"Switch","Follow","Fill","RepairMark"}[j.getInt("mode")]).put("access",reply.sourceAccess)
