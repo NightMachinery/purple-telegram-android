@@ -46,6 +46,7 @@ public final class PurpleSyncChatMoveRecovery implements AutoCloseable {
     }
     static PurpleSyncChatChange.State production(){return new PurpleSyncChatChange.State("Held","QualificationHeld",false);}
     private final Port port;
+    private boolean cleanupEnabled=true;
     private final PurpleSyncChatScreen.Frame opening;
     private final PurpleSyncChatScreen.ChangeSelection selection;
     private final ActionChoice choice;
@@ -59,6 +60,7 @@ public final class PurpleSyncChatMoveRecovery implements AutoCloseable {
     PurpleSyncChatMoveRecovery(Port port,PurpleSyncChatScreen.Frame opening,ActionChoice choice,PurpleSyncChatScreen.ChangeSelection selection){
         this.port=port;this.opening=opening;this.choice=choice;this.selection=selection;origin=port.origin();authority=port.authority();
     }
+    void cleanupEnabled(boolean enabled){cleanupEnabled=enabled;}
     private boolean live(){return !closed&&port.current()&&port.foreground()&&origin.equals(port.origin())&&authority.equals(port.authority());}
     private interface Work{void run()throws Exception;}
     private void guard(Work work){try{PurpleAccountFileSnapshot.worker();if(live())work.run();else close();}catch(Exception|LinkageError e){busy=false;hold(e.getMessage()==null?"RecoveryUnavailable":e.getMessage());}}
@@ -74,7 +76,7 @@ public final class PurpleSyncChatMoveRecovery implements AutoCloseable {
                 &&opening.oldRead==frame.oldRead;
     }
     void start(){if(started||closed)return;started=true;port.worker(()->guard(this::fresh));}
-    void retry(){port.worker(()->guard(()->{if(!busy&&change==null&&move==null)fresh();}));}
+    void retry(){port.worker(()->guard(()->{if(change!=null)change.retry();else if(move!=null)move.retry();else if(!busy)fresh();}));}
     private void fresh(){
         if(busy||change!=null||move!=null)return;
         if(!authority.matches("[0-9a-f]{64}")){hold("AccountUnbound");return;}
@@ -87,7 +89,7 @@ public final class PurpleSyncChatMoveRecovery implements AutoCloseable {
             if(choice!=ActionChoice.RepairMark){
                 if(selection==null||!selection.current(origin,authority)||!selection.offer.matches(frame)
                         ||selection.offer.createChannel!=(choice==ActionChoice.Create)){hold("OpeningChanged");return;}
-                change=new PurpleSyncChatChange(port,selection,this::live);change.start();return;
+                change=new PurpleSyncChatChange(port,selection,this::live);change.cleanupEnabled(cleanupEnabled);change.start();return;
             }
             reasonRepair(frame);
         })));
@@ -129,11 +131,11 @@ public final class PurpleSyncChatMoveRecovery implements AutoCloseable {
                 }
                 public void cancel(PurpleSyncChatMove.Command c){delegate.cancel(c);}
                 public void status(PurpleSyncChatMove.Status s){statusRecovery(s);}
-            });
+            },cleanupEnabled);
             move.start(begin,info);
         })));
     }
-    private void statusRecovery(PurpleSyncChatMove.Status s){status(new PurpleSyncChatChange.State(s.terminal?"Complete":"Carrying",s.reason,s.committed!=null,s.cleanup));}
+    private void statusRecovery(PurpleSyncChatMove.Status s){status(new PurpleSyncChatChange.State(s.terminal?"Complete":PurpleSyncChatChange.held(s)?"Held":"Carrying",s.reason,s.committed!=null,s.cleanup));}
     @Override public void close(){
         if(closed)return;closed=true;++ticket;
         try{if(change!=null)change.close();}finally{try{if(move!=null)move.close();}finally{if(change==null)port.worker(port::cancel);}}

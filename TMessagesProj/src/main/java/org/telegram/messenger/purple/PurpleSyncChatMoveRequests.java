@@ -56,7 +56,7 @@ final class PurpleSyncChatMoveRequests {
         TLRPC.TL_messages_deleteMessages request = new TLRPC.TL_messages_deleteMessages();
         request.id.add(id); request.revoke = true; return request;
     }
-    static boolean cleanupEnabled() { return false; }
+    static boolean cleanupEnabled() { return PurpleSyncChatMoveCleanup.ACTIVATED; }
     static TLObject effect(PurpleSyncChatMoveIO.Permit permit,TLRPC.TL_inputFile file) {
         if (permit == null || !permit.current()) return null;
         if (permit.kind.equals("forward")) return forward(permit.source,permit.sourcePeer(),permit.target,permit.targetPeer(),permit.sourceId,permit.randomId);

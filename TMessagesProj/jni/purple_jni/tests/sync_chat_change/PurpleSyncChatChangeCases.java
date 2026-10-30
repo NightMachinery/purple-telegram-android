@@ -44,7 +44,7 @@ public final class PurpleSyncChatChangeCases {
                 new PurpleSyncChatService.Binding(true,true,source,"binding",hash(state)),new PurpleSyncChatCache.Loaded(true,PurpleSyncChatCache.encode(ORIGIN,AUTH,data),data),old,Collections.emptyList());
     }
     static PurpleSyncChatScreen.ChangeSelection selection(Screen p,boolean create,boolean cleanup){
-        PurpleSyncChatScreen.Control c=new PurpleSyncChatScreen.Control(p);PurpleSyncChatScreen.ChangeOffer[] offer={null};
+        PurpleSyncChatScreen.Control c=new PurpleSyncChatScreen.Control(p,true);PurpleSyncChatScreen.ChangeOffer[] offer={null};
         c.offerChange(create?null:p.target.chat,create,x->offer[0]=x);must(offer[0]!=null,"offer admitted");
         PurpleSyncChatScreen.ChangeSelection[] accepted={null};c.acceptChange(offer[0],true,true,cleanup,x->accepted[0]=x);
         must(accepted[0]!=null,"selection freshly accepted");return accepted[0];
@@ -126,7 +126,7 @@ public final class PurpleSyncChatChangeCases {
     }
     static void ui()throws Exception{
         for(String change:new String[]{"none","state","cache","winner","readers","rights","origin","login","foreground","cloud","consent","cancel"}){
-            Flow f=new Flow();Screen p=f.screen;PurpleSyncChatScreen.Control c=new PurpleSyncChatScreen.Control(p);PurpleSyncChatScreen.ChangeOffer[] offer={null};
+            Flow f=new Flow();Screen p=f.screen;PurpleSyncChatScreen.Control c=new PurpleSyncChatScreen.Control(p,true);PurpleSyncChatScreen.ChangeOffer[] offer={null};
             android.os.Looper.mainThread=Thread.currentThread();
             c.offerChange(p.target.chat,false,x->offer[0]=x);must(offer[0]!=null&&offer[0].cleanupDefault,"eligible non-Self cleanup checked");
             if(change.equals("state"))p.frame=new PurpleSyncChatScreen.Frame(ORIGIN,p.frame.status,new PurpleSyncChatService.Binding(true,true,O,"binding","changed"),p.frame.opening,p.frame.current.info,p.frame.refused);
@@ -142,7 +142,7 @@ public final class PurpleSyncChatChangeCases {
             must(accepted[0]==(change.equals("none")||change.equals("consent")?1:0),"capture/fresh acceptance "+change);
             must(p.remembered==0&&!p.held,"Change writes no ordinary consent "+change);c.close();android.os.Looper.mainThread=null;f.close();
         }
-        Flow f=new Flow();f.screen.frame=screen(f.carry,Peer.self());PurpleSyncChatScreen.Control c=new PurpleSyncChatScreen.Control(f.screen);PurpleSyncChatScreen.ChangeOffer[] offer={null};
+        Flow f=new Flow();f.screen.frame=screen(f.carry,Peer.self());PurpleSyncChatScreen.Control c=new PurpleSyncChatScreen.Control(f.screen,true);PurpleSyncChatScreen.ChangeOffer[] offer={null};
         c.offerChange(f.screen.target.chat,false,x->offer[0]=x);must(offer[0]!=null&&!offer[0].cleanupDefault&&offer[0].cleanupAvailable,"Saved Messages cleanup unticked");
         Map<String,String> strings=new HashMap<>();org.w3c.dom.NodeList nodes=javax.xml.parsers.DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(new File(System.getProperty("purple.test.strings"))).getElementsByTagName("string");
         for(int i=0;i<nodes.getLength();++i){org.w3c.dom.Element e=(org.w3c.dom.Element)nodes.item(i);strings.put(e.getAttribute("name"),e.getTextContent());}
@@ -222,7 +222,7 @@ public final class PurpleSyncChatChangeCases {
     }
     static void eligibility()throws Exception{
         for(boolean denied:new boolean[]{false,true}){
-            Flow f=new Flow();f.screen.target=info(f.carry.target,1,denied);PurpleSyncChatScreen.Control c=new PurpleSyncChatScreen.Control(f.screen);
+            Flow f=new Flow();f.screen.target=info(f.carry.target,1,denied);PurpleSyncChatScreen.Control c=new PurpleSyncChatScreen.Control(f.screen,true);
             PurpleSyncChatScreen.ChangeOffer[] offer={null};c.offerChange(f.screen.target.chat,false,x->offer[0]=x);
             must((offer[0]!=null)==!denied,"same candidate eligibility gates Change offer "+denied);
             if(!denied){
@@ -234,7 +234,7 @@ public final class PurpleSyncChatChangeCases {
         }
         Flow f=new Flow();PurpleSyncChatScreen.Frame old=f.screen.frame;
         f.screen.frame=new PurpleSyncChatScreen.Frame(ORIGIN,old.status,old.binding,old.opening,info(O,0,true),old.refused);
-        PurpleSyncChatScreen.Control c=new PurpleSyncChatScreen.Control(f.screen);PurpleSyncChatScreen.ChangeOffer[] offer={null};
+        PurpleSyncChatScreen.Control c=new PurpleSyncChatScreen.Control(f.screen,true);PurpleSyncChatScreen.ChangeOffer[] offer={null};
         c.offerChange(f.carry.target,false,x->offer[0]=x);must(offer[0]!=null&&!offer[0].cleanupAvailable&&!offer[0].cleanupDefault,"ineligible old chat cleanup unavailable and unticked");
         int[] accepted={0};c.acceptChange(offer[0],true,true,true,x->{if(x!=null)++accepted[0];});must(accepted[0]==0,"unavailable cleanup cannot be authorized");
         c.acceptChange(offer[0],true,true,false,x->{if(x!=null)++accepted[0];});must(accepted[0]==1,"ineligible source can Change without cleanup");

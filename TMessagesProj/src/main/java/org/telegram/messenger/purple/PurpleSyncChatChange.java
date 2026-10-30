@@ -11,8 +11,8 @@ public final class PurpleSyncChatChange implements AutoCloseable {
         public final String phase,reason;
         public final boolean committed;
         public final PurpleSyncChatMoveCleanup.Progress cleanup;
-        State(String phase,String reason,boolean committed){this(phase,reason,committed,null);}
-        State(String phase,String reason,boolean committed,PurpleSyncChatMoveCleanup.Progress cleanup){this.phase=phase;this.reason=reason;this.committed=committed;this.cleanup=cleanup;}
+        public State(String phase,String reason,boolean committed){this(phase,reason,committed,null);}
+        public State(String phase,String reason,boolean committed,PurpleSyncChatMoveCleanup.Progress cleanup){this.phase=phase;this.reason=reason;this.committed=committed;this.cleanup=cleanup;}
     }
     interface Port {
         PurpleSyncChatOrigin origin();
@@ -30,6 +30,7 @@ public final class PurpleSyncChatChange implements AutoCloseable {
         void status(State state);
     }
     private final Port port;
+    private boolean cleanupEnabled=true;
     private final PurpleSyncChatScreen.ChangeSelection selection;
     private final BooleanSupplier parentCurrent;
     private final PurpleSyncChatOrigin origin;
@@ -51,6 +52,8 @@ public final class PurpleSyncChatChange implements AutoCloseable {
     PurpleSyncChatChange(Port injected,PurpleSyncChatScreen.ChangeSelection selection,BooleanSupplier parentCurrent){
         this.parentCurrent=parentCurrent;port=injected;this.selection=selection;origin=injected.origin();authority=injected.authority();target=selection.offer.target;
     }
+    void cleanupEnabled(boolean enabled){cleanupEnabled=enabled;}
+    void retry(){port.worker(()->guard(()->{if(decoration==Decoration.Held)retryDecorations();else if(move!=null)move.retry();else if(provision!=null)provision.tryAgain();else fresh(selection.offer.createChannel);}));}
     private boolean live(){return !closed&&parentCurrent.getAsBoolean()&&port.current()&&port.foreground()&&selection.current(origin,authority)&&origin.equals(port.origin())&&authority.equals(port.authority());}
     static State production(PurpleSyncChatScreen.ChangeSelection selection,PurpleSyncChatOrigin origin,String authority,BooleanSupplier current){
         return new State("Held",selection!=null&&selection.current(origin,authority)&&current.getAsBoolean()?"QualificationHeld":"OpeningChanged",false);
@@ -124,7 +127,7 @@ public final class PurpleSyncChatChange implements AutoCloseable {
                 }
                 public void cancel(PurpleSyncChatMove.Command command){delegate.cancel(command);}
                 public void status(PurpleSyncChatMove.Status status){changed(status);}
-            });
+            },cleanupEnabled);
             if(live())move.start(begin,info);
         })));
     }
@@ -143,8 +146,9 @@ public final class PurpleSyncChatChange implements AutoCloseable {
             else if(decoration==Decoration.Waiting)publish(decorationPhase,"",true);
             return;
         }
-        publish(status.terminal?"Complete":"Carrying",status.reason,commit!=null);
+        publish(status.terminal?"Complete":held(status)?"Held":"Carrying",status.reason,commit!=null);
     }
+    static boolean held(PurpleSyncChatMove.Status state){return !state.terminal&&state.cleanup!=null&&state.cleanup.canAct&&!state.reason.isEmpty()&&!state.reason.equals("Running")&&!state.reason.equals("MovedCleanupPending");}
     private void decorate(){
         if(!live()||commit==null||!created||decoration!=Decoration.Waiting)return;
         if(decorationStep==3){decoration=Decoration.Complete;publish("Complete","",true);return;}

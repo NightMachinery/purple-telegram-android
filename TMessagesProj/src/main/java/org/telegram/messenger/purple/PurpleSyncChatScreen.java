@@ -138,7 +138,7 @@ public final class PurpleSyncChatScreen {
             stateStamp=frame.binding.stateStamp;bindingIdentity=frame.binding.identity;
             sourceReaders=sourceReaders(frame);
             sourceTitle=frame.current==null?"":frame.current.title;targetTitle=target==null?"":target.title;
-            cleanupAvailable=frame.current!=null&&source.equals(frame.current.chat)&&frame.current.allowed;
+            cleanupAvailable=owner.cleanupEnabled&&frame.current!=null&&source.equals(frame.current.chat)&&frame.current.allowed;
             cleanupDefault=cleanupAvailable&&source.kind!=PeerKind.Self;
             oldMarkAvailable=cleanupAvailable&&location.markId>0;
         }
@@ -190,7 +190,9 @@ public final class PurpleSyncChatScreen {
         private long ticket;
         private boolean closed, busy;
         private Frame frame;
-        Control(Port port) { this.port=port; }
+        private final boolean cleanupEnabled;
+        Control(Port port) { this(port,PurpleSyncChatMoveCleanup.ACTIVATED); }
+        Control(Port port,boolean cleanupEnabled) { this.port=port;this.cleanupEnabled=cleanupEnabled; }
         public boolean current() { return !closed&&port.current(); }
         public Frame frame() { return frame; }
         private long begin() {

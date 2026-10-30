@@ -36,9 +36,12 @@ final class PurpleSyncChatSetupEnvironment implements PurpleSyncChatSetup.Env {
         void cancel(){cancelled=true;AndroidUtilities.runOnUIThread(()->{if(nativeToken>0)ConnectionsManager.getInstance(origin().slot).cancelRequest(nativeToken,true);});}
     }
     PurpleSyncChatSetupEnvironment(PurpleSyncChat.Holder holder,BooleanSupplier foreground,BooleanSupplier admitted) {
+        this(holder,foreground,admitted,false);
+    }
+    PurpleSyncChatSetupEnvironment(PurpleSyncChat.Holder holder,BooleanSupplier foreground,BooleanSupplier admitted,boolean provision) {
         this.holder=holder;this.foreground=foreground;this.admitted=admitted;
-        journalPath=new File(holder.env.context.files.syncDirectory,"sync-chat-setup.json");
-        journal=PurpleSyncChatSetup.file(journalPath);
+        journalPath=new File(holder.env.context.files.syncDirectory,provision?"sync-chat-move-create.json":"sync-chat-setup.json");
+        journal=provision?moveProvisionJournal(PurpleSyncChatSetup.provisionFile(journalPath),origin(),authority(),holder.env.context.files.syncDirectory):PurpleSyncChatSetup.file(journalPath);
         receipts=new PurpleSyncChatSetupReceipts(origin(),PurpleSyncChatSetup.authority(authority()),PurpleSyncChatSetupReceipts.file(holder.env.context.files.syncDirectory));
         transport=new PurpleSyncChatSetupTransport(new PurpleSyncChatSetupTransport.Port(){
             public boolean current(PurpleSyncChatSetup.Command command){return setup!=null&&setup.commandCurrent(command)&&PurpleSyncChatSetupEnvironment.this.current();}
@@ -56,6 +59,29 @@ final class PurpleSyncChatSetupEnvironment implements PurpleSyncChatSetup.Env {
             }
         });
     }
+    static PurpleSyncChatSetup.JournalIO moveProvisionJournal(PurpleSyncChatSetup.JournalIO disk,PurpleSyncChatOrigin origin,String authority,File root){
+        return new PurpleSyncChatSetup.JournalIO(){
+            private byte[] retired;
+            public byte[] read()throws Exception {
+                byte[] raw=disk.read();retired=null;
+                if(raw==null)return null;
+                PurpleSyncChatSetup.Journal old=PurpleSyncChatSetup.Journal.parse(raw,origin,PurpleSyncChatSetup.authority(authority));
+                if(old.step!=PurpleSyncChatSetup.Step.Provisioned)return raw;
+                File carryPath=new File(root,"carry.json");
+                PurpleAccountFileSnapshot before=PurpleAccountFileSnapshot.read(carryPath,4194304);
+                if(before.status!=PurpleAccountFileSnapshot.Status.Present)return raw;
+                org.json.JSONObject wrapper=new org.json.JSONObject(new String(before.bytes,java.nio.charset.StandardCharsets.UTF_8));
+                if(!old.operation.replace("-","").equals(wrapper.getJSONObject("journal").getString("operation"))
+                        ||!PurpleSyncChatMoveStore.completed(root,origin.accountKey())||!before.matches(carryPath))return raw;
+                retired=raw;return null;
+            }
+            public boolean save(byte[] expected,byte[] next,BooleanSupplier current){
+                byte[] actual=expected==null?retired:expected;
+                boolean saved=disk.save(actual,next,current);if(saved)retired=null;return saved;
+            }
+        };
+    }
+    public void controller(PurpleSyncChatSetup value){setup=value;}
     public PurpleSyncChatOrigin origin(){return holder.env.origin;}
     public String authority(){return holder.env.authority;}
     public boolean current(){return admitted.getAsBoolean()&&holder.env.context.current();}

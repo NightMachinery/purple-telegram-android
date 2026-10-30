@@ -93,6 +93,7 @@ final class PurpleSyncChatSetup implements AutoCloseable {
         void mute(Peer chat,Consumer<Reply<Boolean>> done);
         void archive(Peer chat,Consumer<Reply<Boolean>> done);
         void cancel();
+        default void controller(PurpleSyncChatSetup setup){}
     }
     static final class Journal {
         Step step=Step.Ready;
@@ -174,7 +175,7 @@ final class PurpleSyncChatSetup implements AutoCloseable {
     private Command issued;
 
     PurpleSyncChatSetup(Env env,PurpleSyncChatScreen.Selection selection,Consumer<Phase> observer) {
-        this.env=env;this.origin=env.origin();this.authority=authority(env.authority());this.selection=selection;this.observer=observer;change=null;
+        this.env=env;this.origin=env.origin();this.authority=authority(env.authority());this.selection=selection;this.observer=observer;change=null;env.controller(this);
     }
     static PurpleSyncChatSetup provision(Env env,PurpleSyncChatScreen.ChangeSelection change,Consumer<Phase> observer) {return provision(env,change,observer,()->true);}
     static PurpleSyncChatSetup provision(Env env,PurpleSyncChatScreen.ChangeSelection change,Consumer<Phase> observer,java.util.function.BooleanSupplier parentCurrent) {
@@ -182,7 +183,7 @@ final class PurpleSyncChatSetup implements AutoCloseable {
         PurpleSyncChatSetup result=new PurpleSyncChatSetup(env,change,observer,true);result.parentCurrent=parentCurrent;return result;
     }
     private PurpleSyncChatSetup(Env env,PurpleSyncChatScreen.ChangeSelection change,Consumer<Phase> observer,boolean provision) {
-        this.env=env;origin=env.origin();authority=authority(env.authority());this.change=change;this.observer=observer;
+        this.env=env;origin=env.origin();authority=authority(env.authority());this.change=change;this.observer=observer;env.controller(this);
     }
     Phase phase() { return phase; }
     boolean busy() { return busy; }

@@ -77,6 +77,7 @@ public final class PurpleSyncChatMoveConsent implements AutoCloseable {
         void status(State state);
     }
     private final Port port;
+    private boolean cleanupEnabled=true;
     private final Selection selection;
     private final PurpleSyncChatOrigin origin;
     private final String authority;
@@ -85,6 +86,8 @@ public final class PurpleSyncChatMoveConsent implements AutoCloseable {
     private long ticket;
     private PurpleSyncChatMove move;
     PurpleSyncChatMoveConsent(Port port,Selection selection){this.port=port;this.selection=selection;origin=port.origin();authority=port.authority();}
+    void cleanupEnabled(boolean enabled){cleanupEnabled=enabled;}
+    void retry(){port.worker(()->guard(()->{if(move!=null)move.retry();else{started=false;start();}}));}
     private boolean live(){return !closed&&port.current()&&port.foreground()&&origin.equals(port.origin())&&authority.equals(port.authority())&&selection.current(origin,authority);}
     private interface Work{void run()throws Exception;}
     private void guard(Work work){try{PurpleAccountFileSnapshot.worker();if(live())work.run();}catch(Exception|LinkageError e){hold("FollowUnavailable");}}
@@ -132,8 +135,8 @@ public final class PurpleSyncChatMoveConsent implements AutoCloseable {
                     });
                 }
                 public void cancel(PurpleSyncChatMove.Command command){delegate.cancel(command);}
-                public void status(PurpleSyncChatMove.Status status){publish(new State(status.terminal?"Complete":"Carrying",status.reason,status.committed!=null,status.cleanup));}
-            });
+                public void status(PurpleSyncChatMove.Status status){publish(new State(status.terminal?"Complete":PurpleSyncChatChange.held(status)?"Held":"Carrying",status.reason,status.committed!=null,status.cleanup));}
+            },cleanupEnabled);
             if(live())move.start(begin,info);
         })));
     }

@@ -169,7 +169,7 @@ public final class PurpleSyncChatMoveCleanupCases {
     }
     static void uiAndDurability()throws Exception {
         PurpleSyncChatChangeCases.Flow f=new PurpleSyncChatChangeCases.Flow();f.screen.frame=PurpleSyncChatChangeCases.screen(f.carry,Peer.self());
-        PurpleSyncChatScreen.Control control=new PurpleSyncChatScreen.Control(f.screen);PurpleSyncChatScreen.ChangeOffer[] offer={null};
+        PurpleSyncChatScreen.Control control=new PurpleSyncChatScreen.Control(f.screen,true);PurpleSyncChatScreen.ChangeOffer[] offer={null};
         control.offerChange(f.screen.target.chat,false,x->offer[0]=x);must(offer[0]!=null&&!offer[0].cleanupDefault&&offer[0].cleanupAvailable,"Self cleanup is available but unchecked");
         String disclosure=PurpleSyncChatScreen.changeDisclosure(offer[0],(key,args)->key);
         must(disclosure.contains("ChangeOlder"),"Self always discloses older-device consequence");

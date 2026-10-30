@@ -115,8 +115,10 @@ qualify Android directory durability, Telegram routes, shrinker behavior or UI.
 
 ## Durable operation storage
 
-Android has worker-owned storage and an injected Carry executor. The production Change entry is qualification-held. They add no
-live move transport or live backend. Existing user-facing Follow/Fill remain held.
+Android has worker-owned storage and a Carry executor. The production facade now
+constructs Change, Follow/Fill and Lost recovery controllers behind their separate
+OFF switches. Their ports use the production carry dispatcher and request plumbing.
+The switches still require native qualification before activation.
 The adapter delegates journal parsing, transitions, prepared images and hashes
 to the shared core through the existing carry JNI surface.
 
@@ -616,3 +618,61 @@ The registered sync-chat-move-consent host suite uses actual AGP business classe
 A local Pause survives logout and a new login of the same account as a pause-only negative choice. Old location, reader consent and move authority remain invalidated; only explicit foreground Resume clears Pause. Original unavailable member rosters stay count-only for addition detection even when identities become available later. Departures alone do not warn, count increases still warn, and a same-count replacement remains a documented blind spot when the original roster was unavailable.
 
 Seeded three-install crash/race schedules and the D1 N6-N13 host/native boundary are documented in [the race harness](sync-chat-move-races.md).
+
+
+## Held-OFF production wiring
+
+`PurpleSyncChatFlows` owns one foreground operation per account holder. The screen
+keeps a closeable handle and a disposable progress subscription, displays controller progress, and offers Retry for a held
+operation. Leaving the screen closes its foreground operation; logout retires the
+holder and its ports. Late replies cannot act after that owner closes. Closing an older screen or
+subscription cannot cancel a replacement flow or clear a newer observer.
+
+`PurpleSyncChatFlowPort` connects fresh resolution and peer inspection, durable
+move provisioning, the existing carry dispatcher, and post-commit Pin, Mute and
+Archive. Provisioning uses `sync-chat-move-create.json` with the existing
+`MoveProvision` journal purpose. It never uses the first-setup journal. Decoration
+rechecks the exact owned mark before every request attempt. Preference writes run
+on the sync worker and native updates return to Telegram's account queues.
+
+When any move feature is enabled, `PurpleSyncChatStartup` checks existing carry
+artifacts on the sync worker before starting ordinary discovery. A validated
+unfinished journal whose feature is enabled gets fresh target facts and resumes the same executor. It
+creates no new operation. Missing, foreign, paused or invalid evidence is reported
+once and keeps ordinary writes fenced; Retry rechecks that evidence without
+creating a chat. Cleanup alone can resume a journal already at the existing core
+Cleanup action; Recovery also covers the Switch journals its Create/Choose
+controllers produce. The screen can attach to startup progress without owning its
+persisted consent. Account retirement closes the startup move and transport.
+
+Cleanup has an independent production gate. With cleanup OFF, the Change offer
+neither selects nor accepts settings or old-mark deletion. The production executor
+also stops before Cleanup dispatch, including Follow's implicit late-post cleanup
+and restart of an older journal. A committed move then exposes Retry and explicit
+Skip. Skip records the existing core transition; it sends no delete request.
+
+The `sync-chat-wire` host suite drives the same factory/owner seam used by the
+facade with all three controllers ON, a fake carry dispatcher, and real journals.
+It retains OFF regressions for all five switches and checks startup ordering and
+cancellation. It makes no device, GUI or Telegram-server qualification claim.
+
+### Renewal through the owning engine
+
+Change, Follow/Fill, recovery and startup resume all use `PurpleSyncChatMove`.
+Their Port wrappers pass each `Command` unchanged. `PurpleSyncChatCarry` obtains
+effect renewal from `command.owner().renew`; forward renewal also re-reads its
+source record. Own uploads use the same renewal via `renewCarry`. Cleanup uses
+that owner’s `beginCleanupRead` and `renewCleanup`, with fresh evidence before
+any delete. None of these paths installs a renewal callback that always refuses.
+
+The wire host cases include the real dispatcher below accepted Follow/Fill and
+recovery controllers. They hold the first Telegram write, observe the real Move
+renewal, and then release only the injected network response. Controls revoke
+admission inside the first renewal and require zero sends and no commitment.
+Ordinary forward/own sends and cleanup get the same owner checks. The test helper
+uses the carry suite’s Net with a persisted cache and never answers a Command
+directly. These cases require fresh host qualification before activation.
+
+Held text describes an unconfirmed or paused operation. It does not establish
+another winner or claim that no earlier request was sent. An unreadable journal
+is preserved for inspection and explicit retry, without a claim about its history.

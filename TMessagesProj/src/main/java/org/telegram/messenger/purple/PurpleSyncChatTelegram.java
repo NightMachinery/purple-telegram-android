@@ -166,6 +166,13 @@ final class PurpleSyncChatTelegram implements PurpleSyncChatClient {
         });
     }
 
+    void decorate(String effect,Cache mark,Admission admission,Reply done){
+        TLRPC.InputPeer input=platform.input(mark.chat);
+        TLObject value=effect.equals("Pin")?PurpleSyncChatSetupRequests.pin(mark,input)
+                :effect.equals("Mute")?PurpleSyncChatSetupRequests.mute(mark.chat,input)
+                :effect.equals("Archive")?PurpleSyncChatSetupRequests.archive(mark.chat,input):null;
+        request(value,admission,done);
+    }
     void readBack(Cache mark,Consumer<PurpleSyncChatSetup.ReadBack> done) {
         request(PurpleSyncChatRequests.exact(mark.chat,mark.markId,platform.input(mark.chat)),(response,error)->{
             if(error==null)acceptPeers(response);

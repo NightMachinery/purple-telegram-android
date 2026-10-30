@@ -21,7 +21,7 @@ import java.util.ArrayList;
 import java.util.Locale;
 
 public final class PurpleSyncChatActivity extends UniversalFragment {
-    private static final int REFRESH=0x70750110, SELF=REFRESH+1, EXISTING=REFRESH+2, CREATE=REFRESH+3, CONSENT=REFRESH+4, RESUME=REFRESH+5, CANCEL_SETUP=REFRESH+6, REVIEW_SETTINGS=REFRESH+7, CHANGE=REFRESH+8, FOLLOW_FILL=REFRESH+9, LOCAL_RESUME=REFRESH+10, CLEANUP_RETRY=REFRESH+11, CLEANUP_SKIP=REFRESH+12, RECOVERY_CREATE=REFRESH+13, RECOVERY_CHOOSE=REFRESH+14, RECOVERY_MARK=REFRESH+15, REMOVE_MARK=0x70750200;
+    private static final int REFRESH=0x70750110, SELF=REFRESH+1, EXISTING=REFRESH+2, CREATE=REFRESH+3, CONSENT=REFRESH+4, RESUME=REFRESH+5, CANCEL_SETUP=REFRESH+6, REVIEW_SETTINGS=REFRESH+7, CHANGE=REFRESH+8, FOLLOW_FILL=REFRESH+9, LOCAL_RESUME=REFRESH+10, CLEANUP_RETRY=REFRESH+11, CLEANUP_SKIP=REFRESH+12, RECOVERY_CREATE=REFRESH+13, RECOVERY_CHOOSE=REFRESH+14, RECOVERY_MARK=REFRESH+15, MOVE_RETRY=REFRESH+16, REMOVE_MARK=0x70750200;
     private PurpleSyncChatScreen.Control control;
     private PurpleSyncChatScreen.Frame frame;
     private PurpleSyncChatCore.Peer pending;
@@ -32,6 +32,9 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
     private boolean limitShown;
     private Runnable rpcWatch;
     private org.telegram.messenger.purple.PurpleSyncChatMoveCleanup.Progress cleanupProgress;
+    private org.telegram.messenger.purple.PurpleSyncChatFlows.Handle moveFlow;
+    private Runnable moveWatch;
+    private org.telegram.messenger.purple.PurpleSyncChatChange.State moveState;
     private boolean changePicker;
     private org.telegram.messenger.purple.PurpleSyncChatMarkActions markAction;
 
@@ -55,6 +58,8 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
         rpcWatch=org.telegram.messenger.purple.PurpleRpcRequests.observe(currentAccount,this::update);
         if(identity==null||!identity.current()){finishFragment();return;}
         if(control==null||!control.current())control=PurpleSyncChat.screen(currentAccount,()->visible&&identity!=null&&identity.current());
+        if(moveWatch!=null)moveWatch.run();
+        moveWatch=PurpleSyncChat.observeMove(currentAccount,()->visible&&identity!=null&&identity.current(),state->{moveState=state;cleanupProgress=state.cleanup;update();if(state.phase.equals("Complete"))reload();});
         openSetup();reload();
     }
     private void openSetup() {
@@ -76,10 +81,10 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
     }
     private void cancelSetup(){if(setup!=null)setup.close();setup=null;setupState=null;limitShown=false;if(visible)openSetup();update();}
     @Override public void onPause() {
-        visible=false;cleanupProgress=null;if(markAction!=null){markAction.close();markAction=null;}if(setup!=null){setup.close();setup=null;}setupState=null;if(rpcWatch!=null){rpcWatch.run();rpcWatch=null;}if(control!=null){control.close();control=null;}super.onPause();
+        visible=false;if(moveFlow!=null)moveFlow.close();moveFlow=null;if(moveWatch!=null){moveWatch.run();moveWatch=null;}moveState=null;cleanupProgress=null;if(markAction!=null){markAction.close();markAction=null;}if(setup!=null){setup.close();setup=null;}setupState=null;if(rpcWatch!=null){rpcWatch.run();rpcWatch=null;}if(control!=null){control.close();control=null;}super.onPause();
     }
     @Override public void onFragmentDestroy() {
-        visible=false;cleanupProgress=null;if(markAction!=null){markAction.close();markAction=null;}if(setup!=null){setup.close();setup=null;}setupState=null;if(rpcWatch!=null){rpcWatch.run();rpcWatch=null;}if(control!=null){control.close();control=null;}super.onFragmentDestroy();
+        visible=false;if(moveFlow!=null)moveFlow.close();moveFlow=null;if(moveWatch!=null){moveWatch.run();moveWatch=null;}moveState=null;cleanupProgress=null;if(markAction!=null){markAction.close();markAction=null;}if(setup!=null){setup.close();setup=null;}setupState=null;if(rpcWatch!=null){rpcWatch.run();rpcWatch=null;}if(control!=null){control.close();control=null;}super.onFragmentDestroy();
     }
     private void update() { if(visible&&listView!=null)listView.adapter.update(true); }
     private void reload() {
@@ -153,6 +158,10 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
                 items.add(UItem.asButton(REVIEW_SETTINGS,text("ReviewSettings")));
             }
         }
+        if(moveState!=null){
+            items.add(UItem.asShadow(text(moveState.phase.equals("Complete")?"ChangeComplete":moveState.phase.equals("Held")?"MoveHeld":"MoveWorking")));
+            if(moveState.phase.equals("Held"))items.add(UItem.asButton(MOVE_RETRY,LocaleController.getString(org.telegram.messenger.R.string.PurpleWriteActionRetry)));
+        }
         if(cleanupProgress!=null){
             if(cleanupProgress.pending)items.add(UItem.asShadow(text("CleanupPending")));
             if(cleanupProgress.skipped)items.add(UItem.asShadow(text("CleanupSkipped")));
@@ -168,6 +177,7 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
     @Override protected void onClick(UItem item,View view,int position,float x,float y) {
         if(!visible||control==null||!control.current())return;
         if(org.telegram.messenger.purple.PurpleSyncChatMarkActions.ACTIVATED&&frame!=null&&item.id>=REMOVE_MARK&&item.id<REMOVE_MARK+frame.staleMarks.size()){removeMark(frame.staleMarks.get(item.id-REMOVE_MARK));return;}
+        if(item.id==MOVE_RETRY){if(moveFlow!=null)moveFlow.retry();else PurpleSyncChat.retryMove(currentAccount);return;}
         if(item.id==CLEANUP_RETRY&&cleanupProgress!=null){cleanupProgress.retry();return;}
         if(item.id==CLEANUP_SKIP&&cleanupProgress!=null){
             org.telegram.messenger.purple.PurpleSyncChatMoveCleanup.Progress shown=cleanupProgress;
@@ -260,8 +270,8 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
             Runnable accept=()->opening.acceptFollowFill(offer,true,selection->{
                 if(!visible||control!=opening||!opening.current())return;
                 if(selection==null){message(text("Changed"));reload();return;}
-                PurpleSyncChat.followFill(currentAccount,selection,()->visible&&identity!=null&&identity.current(),state->{
-                    if(visible&&control==opening&&opening.current()){cleanupProgress=state.cleanup;update();if(state.cleanup==null||!state.cleanup.pending)message(text(state.committed?"FollowComplete":"FollowHeld"));}
+                moveFlow=PurpleSyncChat.followFill(currentAccount,selection,()->visible&&identity!=null&&identity.current(),state->{
+                    if(visible&&control==opening&&opening.current()){moveState=new org.telegram.messenger.purple.PurpleSyncChatChange.State(state.phase,state.reason,state.committed,state.cleanup);cleanupProgress=state.cleanup;update();if(state.phase.equals("Complete"))reload();}
                 });
             });
             if(!offer.requiresReaders){accept.run();return;}
@@ -291,11 +301,11 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
         new AlertDialog.Builder(getParentActivity()).setTitle(text("RecoveryMark")).setMessage(text("RecoveryMarkAbout"))
                 .setPositiveButton(text("RecoveryMark"),(dialog,which)->{
                     if(!org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.ACTIVATED||!visible||frame!=shown||control==null||!control.current())return;
-                    PurpleSyncChat.recover(currentAccount,shown,org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.ActionChoice.RepairMark,null,()->visible,this::recoveryStatus);
+                    moveFlow=PurpleSyncChat.recover(currentAccount,shown,org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.ActionChoice.RepairMark,null,()->visible,this::recoveryStatus);
                 }).setNegativeButton(LocaleController.getString(org.telegram.messenger.R.string.Cancel),null).show();
     }
     private void recoveryStatus(org.telegram.messenger.purple.PurpleSyncChatChange.State state){
-        if(!visible)return;cleanupProgress=state.cleanup;update();
+        if(!visible)return;moveState=state;cleanupProgress=state.cleanup;update();
         if(state.phase.equals("Warning"))message(text("RecoveryNewReaders"));
         else if(state.phase.equals("Held"))message(recoveryReason(state.reason));
         else if(state.phase.equals("Complete")&&(state.cleanup==null||!state.cleanup.pending))message(text("RecoveryComplete"));
@@ -337,10 +347,10 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
                 if(selection==null){message(text("Changed"));reload();return;}
                 if(recoveryFrame!=null){
                     if(!org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.ACTIVATED)return;
-                    PurpleSyncChat.recover(currentAccount,recoveryFrame,create?org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.ActionChoice.Create:org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.ActionChoice.Choose,selection,()->visible,this::recoveryStatus);return;
+                    moveFlow=PurpleSyncChat.recover(currentAccount,recoveryFrame,create?org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.ActionChoice.Create:org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.ActionChoice.Choose,selection,()->visible,this::recoveryStatus);return;
                 }
-                PurpleSyncChat.change(currentAccount,selection,()->visible&&identity!=null&&identity.current(),state->{
-                    if(visible&&control==opening&&opening.current()){cleanupProgress=state.cleanup;update();if(state.cleanup==null||!state.cleanup.pending)message(text(state.committed?"ChangeComplete":"ChangeHeld"));}
+                moveFlow=PurpleSyncChat.change(currentAccount,selection,()->visible&&identity!=null&&identity.current(),state->{
+                    if(visible&&control==opening&&opening.current()){moveState=state;cleanupProgress=state.cleanup;update();if(state.phase.equals("Complete"))reload();}
                 });
             }));
             dialog.setNegativeButton(LocaleController.getString(org.telegram.messenger.R.string.Cancel),null);showDialog(dialog.create());

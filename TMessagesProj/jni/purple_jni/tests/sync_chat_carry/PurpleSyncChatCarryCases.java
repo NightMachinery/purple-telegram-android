@@ -26,7 +26,7 @@ public final class PurpleSyncChatCarryCases {
     static TLRPC.TL_error error(String text){TLRPC.TL_error e=new TLRPC.TL_error();e.code=text.startsWith("FLOOD_WAIT_")?420:400;e.text=text;return e;}
 
     /** One fake account for a Frame: discovery, scans, exact reads and writes all answer from the Frame's records. */
-    static final class Net implements PurpleSyncChatCarry.Env {
+    static class Net implements PurpleSyncChatCarry.Env {
         final Frame f;
         final TLRPC.TL_message oldMark=mark(O,1,1001);
         boolean live=true,oldMarkPresent=true,holdWrites,failTargetInfo,failScans,failExact,holdReads,partialExact,failDownloads,failAfterPeers;

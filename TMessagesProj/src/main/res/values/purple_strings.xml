@@ -906,7 +906,7 @@
     <string name="PurpleSyncChatConsentNeeded">Review who can read the settings before posting.</string>
     <string name="PurpleSyncChatReadersUnknown">The current readers could not be established. Posting is held.</string>
     <string name="PurpleSyncChatNewerMark">A newer Purple chose a sync chat. Update Purple.</string>
-    <string name="PurpleSyncChatMoveHeld">A move or carry needs review. This batch keeps the existing chat.</string>
+    <string name="PurpleSyncChatMoveHeld">The move is paused. Retry to check the existing operation.</string>
     <string name="PurpleSyncChatRetry">The chat could not be verified. Refresh to try again.</string>
     <string name="PurpleSyncChatRefusalNone">The current reader facts could not be verified.</string>
     <string name="PurpleSyncChatRefusalUnknownKind">The current rights or chat facts are unknown.</string>
@@ -949,7 +949,7 @@
     <string name="PurpleSyncChatChangeAbout">Move sync to %1$s? Purple copies the current sync messages there, verifies them, then marks it as the sync chat. Your other devices follow the next time they open Purple.</string>
     <string name="PurpleSyncChatChangeCleanup">Also delete settings messages in %1$s</string>
     <string name="PurpleSyncChatChangeOlder">Older Purple builds read settings from Saved Messages. Deleting them makes those devices pause or offer to start over.</string>
-    <string name="PurpleSyncChatChangeHeld">Changing the sync chat is waiting for qualification. Nothing has moved.</string>
+    <string name="PurpleSyncChatChangeHeld">Changing the sync chat is not available yet.</string>
     <string name="PurpleSyncChatChangeComplete">The sync chat has changed.</string>
     <string name="PurpleSyncChatFollow">Follow sync here</string>
     <string name="PurpleSyncChatFill">Fill sync chat</string>
@@ -958,7 +958,7 @@
     <string name="PurpleSyncChatPauseHere">Pause sync here</string>
     <string name="PurpleSyncChatLocalResume">Resume sync on this device</string>
     <string name="PurpleSyncChatLocalPaused">All streams of this account are paused on this device.</string>
-    <string name="PurpleSyncChatFollowHeld">Follow and Fill are waiting for transport qualification. Nothing was sent or moved.</string>
+    <string name="PurpleSyncChatFollowHeld">Follow and Fill are not available yet.</string>
     <string name="PurpleSyncChatFollowComplete">Sync records verified and this account’s sync chat updated.</string>
     <string name="PurpleSyncChatLibraryCloud">Playlists are kept in %1$s, a Telegram cloud chat. They are not end-to-end encrypted, and every signed-in session of this account can read them.</string>
     <string name="PurpleSyncChatLibraryReaders">This includes this account’s playlist names and tracks.</string>
@@ -981,14 +981,15 @@
     <string name="PurpleSyncChatRecoveryMark">Mark this chat again</string>
     <string name="PurpleSyncChatRecoveryAbout">Recovery keeps this install’s saved version. If its exact local version is missing, the move waits. Unsynced edits are not substituted for the saved version.</string>
     <string name="PurpleSyncChatRecoveryMarkAbout">Restore the Purple mark in this chat. This keeps the settings binding and version history. New known readers receive the existing warning; unavailable readers or lost rights pause recovery.</string>
-    <string name="PurpleSyncChatRecoveryHeld">Recovery is held. Your saved settings are retained.</string>
-    <string name="PurpleSyncChatRecoveryQualificationHeld">Sync-chat recovery is not available yet. Your saved settings are retained.</string>
+    <string name="PurpleSyncChatRecoveryHeld">Recovery is paused. Retry to check the existing operation.</string>
+    <string name="PurpleSyncChatRecoveryQualificationHeld">Sync-chat recovery is not available yet.</string>
     <string name="PurpleSyncChatRecoveryMissingBase">This install’s exact saved version is missing. Recovery is paused; unsynced edits will not replace it.</string>
     <string name="PurpleSyncChatRecoveryMarkUnproven">The old mark has not been confirmed missing. Check this chat again before restoring its mark.</string>
-    <string name="PurpleSyncChatRecoveryUnreadable">This chat cannot be read. Choose another sync chat to recover the versions still available.</string>
+    <string name="PurpleSyncChatRecoveryUnreadable">This chat could not be read. Check again or choose another sync chat for recovery.</string>
     <string name="PurpleSyncChatRecoveryRights">This chat’s permissions changed. Review its access before restoring the mark.</string>
-    <string name="PurpleSyncChatRecoverySearching">Purple is still checking for the sync chat. Retry after the connection returns.</string>
+    <string name="PurpleSyncChatRecoverySearching">Purple is still checking for the sync chat. Check again later.</string>
     <string name="PurpleSyncChatRecoveryPending">A settings send is still pending. Resolve it before restoring this chat’s mark.</string>
     <string name="PurpleSyncChatRecoveryNewReaders">New readers can see this sync chat. Recovery continues with the existing reader warning.</string>
     <string name="PurpleSyncChatRecoveryComplete">The sync-chat recovery is complete.</string>
+    <string name="PurpleSyncChatMoveWorking">Moving the sync chat. Settings sync will resume when this finishes.</string>
 </resources>

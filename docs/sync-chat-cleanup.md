@@ -5,7 +5,7 @@ production move, Follow and cleanup constants remain OFF; the controller is
 qualified only with injected host ports. No Telegram request is made by this
 slice's qualification.
 
-The Switch confirmation can authorize settings cleanup and old-mark removal
+With the cleanup switch ON, the Switch confirmation can authorize settings cleanup and old-mark removal
 independently. Eligible non-Saved sources offer settings cleanup checked; Saved
 Messages stays unchecked and discloses that older Purple devices may pause or
 offer to start over after their settings messages are deleted. Old-mark removal

@@ -85,6 +85,7 @@ final class PurpleSyncChatMove implements AutoCloseable {
         private PlaylistReceipt(JSONObject proof)throws Exception {this.proof=copy(proof);}
     }
     private final Port port;
+    private final boolean cleanupEnabled;
     private final PurpleSyncChatOrigin origin;
     private final String authority;
     private final Object owner=new Object();
@@ -108,7 +109,8 @@ final class PurpleSyncChatMove implements AutoCloseable {
     private Thread worker;
     private volatile long run,tickets;
     private volatile Command active;
-    PurpleSyncChatMove(Port port){this.port=port;origin=port.origin();authority=port.authority();}
+    PurpleSyncChatMove(Port port){this(port,true);}
+    PurpleSyncChatMove(Port port,boolean cleanupEnabled){this.port=port;this.cleanupEnabled=cleanupEnabled;origin=port.origin();authority=port.authority();}
     void start(JSONObject begin,PurpleSyncChatClient.Info accepted){
         if(started||closed)return;started=true;
         try{opening=copy(begin);this.accepted=accepted;}catch(Exception e){close();return;}
@@ -326,7 +328,7 @@ final class PurpleSyncChatMove implements AutoCloseable {
             boolean complete=next().equals("CompleteCache");store.writeCache(origin,accepted,complete);
             JSONObject mark=journal().getJSONObject("target_mark");
             transition(event(complete?"CacheCompleted":"CachePrepared",json("cache",json("account",origin.accountKey(),"operation",journal().getString("operation"),"mark",json("chat",mark.getString("chat"),"id",Integer.toString(mark.getInt("id")),"date",Long.toString(mark.getLong("date"))),"complete",complete))));break;
-        case "Cleanup":request("Cleanup",null,0,null);break;
+        case "Cleanup":if(cleanupEnabled)request("Cleanup",null,0,null);else hold("CleanupDisabled");break;
         default:throw new IOException("InvalidTransition");
         }
     }

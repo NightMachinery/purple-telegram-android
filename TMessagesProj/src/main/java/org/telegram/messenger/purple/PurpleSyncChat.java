@@ -32,7 +32,10 @@ public final class PurpleSyncChat {
     static final class Holder {
         final Platform env;
         final PurpleSyncChatService service;
-        Holder(Platform env) { this.env=env;service=new PurpleSyncChatService(env); }
+        final PurpleSyncChatFlows flows=new PurpleSyncChatFlows();
+        final PurpleSyncChatStartup startup;
+        Holder(Platform env) { this.env=env;service=new PurpleSyncChatService(env);startup=new PurpleSyncChatStartup(this); }
+        void close(boolean logout){try{startup.close();}finally{try{flows.close();}finally{service.close(logout);}}}
     }
     private static final java.util.concurrent.ConcurrentHashMap<Integer,Holder> accounts=new java.util.concurrent.ConcurrentHashMap<>();
     private static DispatchQueue queue;
@@ -41,7 +44,7 @@ public final class PurpleSyncChat {
         if(slot<0||slot>=UserConfig.MAX_ACCOUNT_COUNT)return null;
         Holder holder=accounts.get(slot);
         if(holder!=null&&!holder.env.current()){
-            accounts.remove(slot,holder);holder.service.close(!holder.env.identityCurrent());holder=accounts.get(slot);
+            accounts.remove(slot,holder);holder.close(!holder.env.identityCurrent());holder=accounts.get(slot);
         }
         if(holder==null){
             try{Platform env=new Platform(slot);if(!env.current())return null;holder=new Holder(env);accounts.put(slot,holder);}
@@ -49,7 +52,7 @@ public final class PurpleSyncChat {
         }
         return holder;
     }
-    public static void startSession(int slot) { AndroidUtilities.runOnUIThread(()->{Holder holder=account(slot);if(holder!=null)holder.service.startSession();}); }
+    public static void startSession(int slot) { AndroidUtilities.runOnUIThread(()->{Holder holder=account(slot);if(holder!=null)holder.startup.start();}); }
     public static void ensureResolved(int slot,boolean force,Consumer<Status> done) {
         AndroidUtilities.runOnUIThread(()->{Holder holder=account(slot);if(holder==null){done.accept(unavailable());return;}holder.service.ensureResolved(force,"config",null,status->done.accept(new Status(status)));});
     }
@@ -236,25 +239,38 @@ public final class PurpleSyncChat {
             finally{try{if(admissionReader!=null){admissionReader.cancel();admissionReader=null;}}finally{holder.service.cancelBorrowed(owner);}}
         }
     }
-    public static void change(int slot,PurpleSyncChatScreen.ChangeSelection selection,BooleanSupplier foreground,Consumer<PurpleSyncChatChange.State> changed) {
+    public static PurpleSyncChatFlows.Handle change(int slot,PurpleSyncChatScreen.ChangeSelection selection,BooleanSupplier foreground,Consumer<PurpleSyncChatChange.State> changed) {
+        if(!PurpleSyncChatChange.ACTIVATED){changed.accept(new PurpleSyncChatChange.State("Held","QualificationHeld",false));return null;}
         Holder holder=accounts.get(slot);
-        PurpleSyncChatChange.State result=holder==null?new PurpleSyncChatChange.State("Held","OpeningChanged",false)
-                :PurpleSyncChatChange.production(selection,holder.env.origin,holder.env.authority,()->foreground.getAsBoolean()&&holder.env.context.current());
-        if(!PurpleSyncChatChange.ACTIVATED){changed.accept(result);return;}
-        changed.accept(new PurpleSyncChatChange.State("Held","TransportNotQualified",false));
+        if(holder==null||selection==null){changed.accept(new PurpleSyncChatChange.State("Held","OpeningChanged",false));return null;}
+        return holder.flows.change(PurpleSyncChatChange.ACTIVATED,PurpleSyncChatMoveCleanup.ACTIVATED,
+                factory(holder,foreground),selection,changed);
     }
-    public static void followFill(int slot,PurpleSyncChatMoveConsent.Selection selection,BooleanSupplier foreground,Consumer<PurpleSyncChatMoveConsent.State> changed){
+    public static PurpleSyncChatFlows.Handle followFill(int slot,PurpleSyncChatMoveConsent.Selection selection,BooleanSupplier foreground,Consumer<PurpleSyncChatMoveConsent.State> changed){
+        if(!PurpleSyncChatMoveConsent.ACTIVATED){changed.accept(new PurpleSyncChatMoveConsent.State("Held","QualificationHeld",false));return null;}
         Holder holder=accounts.get(slot);
-        PurpleSyncChatMoveConsent.State result=holder==null?new PurpleSyncChatMoveConsent.State("Held","OpeningChanged",false)
-                :PurpleSyncChatMoveConsent.production(selection,holder.env.origin,holder.env.authority,()->foreground.getAsBoolean()&&holder.env.context.current());
-        if(!PurpleSyncChatMoveConsent.ACTIVATED){changed.accept(result);return;}
-        changed.accept(new PurpleSyncChatMoveConsent.State("Held","TransportNotQualified",false));
+        if(holder==null||selection==null){changed.accept(new PurpleSyncChatMoveConsent.State("Held","OpeningChanged",false));return null;}
+        return holder.flows.consent(PurpleSyncChatMoveConsent.ACTIVATED,PurpleSyncChatMoveCleanup.ACTIVATED,
+                factory(holder,foreground),selection,changed);
     }
-    public static void recover(int slot,PurpleSyncChatScreen.Frame opening,PurpleSyncChatMoveRecovery.ActionChoice choice,
+    public static PurpleSyncChatFlows.Handle recover(int slot,PurpleSyncChatScreen.Frame opening,PurpleSyncChatMoveRecovery.ActionChoice choice,
             PurpleSyncChatScreen.ChangeSelection selection,BooleanSupplier foreground,Consumer<PurpleSyncChatChange.State> changed){
-        if(!PurpleSyncChatMoveRecovery.ACTIVATED){changed.accept(PurpleSyncChatMoveRecovery.production());return;}
-        changed.accept(new PurpleSyncChatChange.State("Held","TransportNotQualified",false));
+        if(!PurpleSyncChatMoveRecovery.ACTIVATED){changed.accept(PurpleSyncChatMoveRecovery.production());return null;}
+        Holder holder=accounts.get(slot);
+        if(holder==null){changed.accept(new PurpleSyncChatChange.State("Held","OpeningChanged",false));return null;}
+        return holder.flows.recover(PurpleSyncChatMoveRecovery.ACTIVATED,PurpleSyncChatMoveCleanup.ACTIVATED,
+                factory(holder,foreground),opening,choice,selection,changed);
     }
+    private static PurpleSyncChatFlows.Factory factory(Holder holder,BooleanSupplier foreground){
+        return new PurpleSyncChatFlows.Factory(){
+            public PurpleSyncChatMoveRecovery.Port change(Consumer<PurpleSyncChatChange.State> changed){return new PurpleSyncChatFlowPort(holder,foreground,changed,null);}
+            public PurpleSyncChatMoveConsent.Port consent(Consumer<PurpleSyncChatMoveConsent.State> changed){return new PurpleSyncChatFlowPort(holder,foreground,null,changed);}
+        };
+    }
+    public static Runnable observeMove(int slot,BooleanSupplier foreground,Consumer<PurpleSyncChatChange.State> changed){
+        Holder holder=account(slot);return holder!=null?holder.startup.observe(foreground,changed):()->{};
+    }
+    public static void retryMove(int slot){Holder holder=accounts.get(slot);if(holder!=null)holder.startup.retry();}
     static PurpleSyncChatMove move(PurpleSyncChatMove.Port injected) {
         return injected==null?null:new PurpleSyncChatMove(injected);
     }
@@ -284,7 +300,7 @@ public final class PurpleSyncChat {
     public static void identityChanged(int slot) {
         PurpleRpcRequests.identityChanged(slot);
         Holder retired=accounts.get(slot);
-        AndroidUtilities.runOnUIThread(()->{if(retired!=null){accounts.remove(slot,retired);retired.service.close(true);}});
+        AndroidUtilities.runOnUIThread(()->{if(retired!=null){accounts.remove(slot,retired);retired.close(true);}});
     }
     private static Status unavailable(){return new Status(new PurpleSyncChatDiscovery.Status(PurpleSyncChatDiscovery.Phase.Paused,resolve(new ResolveInput(1)),"AccountUnavailable",false,true,0));}
 
