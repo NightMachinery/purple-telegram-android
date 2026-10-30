@@ -3,8 +3,9 @@
 `PurpleSyncChatMoveCore.request(operation, input)` is a pure adapter to the
 shared carry planner and journal. It does not read files, acquire account locks,
 post messages, delete messages or schedule callbacks. The injected move executor
-supplies verified transport and durability receipts. No production move backend
-or user entry point is activated; those require later qualification.
+supplies verified transport and durability receipts. The production carry
+dispatcher exists but nothing constructs it, and no user entry point is
+activated; those require later qualification.
 
 The request is a UTF-8 JSON object carried in a byte array. The native strict
 core JSON reader rejects duplicate keys, invalid UTF-8/Unicode, fractional and
@@ -352,8 +353,9 @@ Those require later separately authorized qualification.
 `PurpleSyncChatMove` is package-private and created only through an injected
 `PurpleSyncChat.move(Port)` seam. The port supplies worker scheduling, current
 RAM login/foreground admission, fresh typed facts and controlled transports.
-There is no production implementation of that port, screen, Telegram dispatch
-or automatic activation. The service, manual runner and automatic engine expose
+`PurpleSyncChatCarry` is the production implementation of that port (see
+"Production carry dispatcher" below). No screen or automatic activation
+constructs it in this slice. The service, manual runner and automatic engine expose
 quiescence hooks without starting a move themselves.
 
 Core `NextAction` is the only phase authority. Java retains a run, command ticket
@@ -488,6 +490,65 @@ A Pending command opens a read ticket after store reopen and after the current s
 
 Affirmative Issued observations are persisted before checking inventory or chronology, so invalid evidence cannot erase the conservative floor. A stale scan leaves ResolvePending, its exact stage and the floor intact. A new post-outcome O scan can reconcile the existing record without a duplicate send or deferred record. Definite scoped ChatGone retains its separate R3 path; it is never inferred from an empty inventory.
 
+### Production carry dispatcher
+
+`PurpleSyncChatCarry.production(holder, current, foreground, status)` returns the
+production `PurpleSyncChatMove.Port` for one move. It is held OFF: nothing in this
+slice constructs it. Its network side sits behind a package `Env` seam, so host
+tests inject every Telegram reply. Every reply and status runs on the
+`purpleSyncChat` worker. A reply arrives at most once, never after `cancel` or
+`close()`. A null reply means Unknown, and the controller holds with
+`OutcomeUnknown`. A non-null reply carries only verified fields, so the
+controller's own checks hold with their typed reason.
+
+Each command gets fresh facts first: one read-only `PurpleSyncChatDiscovery` pass,
+then full info and input peers for both chats. A *read-only pass* uses its own
+reader and scans. It takes no service queue or capability, never writes the
+sync-chat cache, and is not paused by a pending move journal. An incomplete pass
+replies null. Without a cache (Fill), `oldRead` comes from the source's fresh
+info: Valid when readable, ChatGone on CHANNEL_PRIVATE, otherwise Unknown.
+What each command adds:
+
+- Fresh: nothing more.
+- Source: complete inventory scans of both chats (no source scan when it is
+  gone), and every source record receipt.
+- Pending: a source scan. `sendIntent` stays Unknown, which the store records as
+  Issued.
+- Destination and Cleanup: a target scan. Cleanup skips it for a definite
+  ChatGone.
+- Mark: an exact read of the posted mark id.
+- CleanupRead: a target scan, plus the exact item. A record uses its scanned
+  receipt; a mark, or a record no longer scanned, uses an exact read.
+- Effect, forward or mark: `PurpleSyncChatMoveIO.Effect`. Each renewal repeats
+  the fresh facts, re-scans the forwarded source record, and renews through the
+  controller.
+- Effect, own or pending: `PurpleSyncAutoUpload` uploads the sealed bytes once.
+  `renewCarry` is the full renewal and `sendCarry` sends once. A flood retry only
+  rechecks that the permit is current, because a second authorization would
+  retire the upload's permit.
+- CleanupDelete: `PurpleSyncChatMoveCleanup.Effect`. Its renewal opens a cleanup
+  read through the controller, repeats the CleanupRead evidence and re-inspects.
+
+An Effect replies only after a write response arrives. On an error the response
+is null, so the slot becomes unknown and the next destination read reconciles it.
+CleanupDelete replies only on success. `verifiedPlaylist` is never set (no
+issuer) and `libraryPending` is false. Production requests go through
+`ConnectionsManager` on the UI thread with `RequestFlagFailOnServerErrors`.
+Responses are copied by bytes, and write failures and waits are reported to the
+shared `sync-write` gate. Updates from each write go to the app's
+`PurpleSyncChatMarkUpdates.apply`.
+
+`freshFrame(stream, done)` runs the same read-only pass and builds the
+`PurpleSyncChatScreen.Frame` the way `PurpleSyncChatService.screen()` does, with
+the opening cache exactly as read. Controllers use it to resolve again while the
+carry lease is held.
+
+The `sync-chat-carry` host suite drives this dispatcher as the Port of a real
+move controller. It covers complete forward and own moves, readable and
+protected pending, record and old-mark cleanup deletes, flood retry, Unknown
+reads, refused writes, and close/cancel fences. The production `Env` is covered
+by the AGP compile only.
+
 ## Provision-only Change boundary
 
 The injected Change controller revalidates captured source state/cache/winner and target/readers before it starts Carry. Carry opens under its account lease, checks exact state and cache bytes, and obtains fresh resolution before Begin. The foreground screen owner, origin/login and each async callback identity stay live through actual admission. Required playlists and old-message deletion policy retain their existing conservative holds.
@@ -498,7 +559,7 @@ Create uses the existing setup engine in a separate `MoveProvision` purpose, bou
 
 Provisioned proves a target, not a committed move. This mode cannot post a mark, commit ordinary cache, or pin/mute/archive. Reopening Provisioned revalidates rights/readers and inventory without entering ordinary setup's post-mark consent/cache path. Cancellation keeps the child journal and never deletes an orphan channel. The injected controller passes the proven channel into the existing Carry executor.
 
-Only a private committed receipt from actual destination verification, mark readback, committed exact state and completed cache permits decoration. Only a newly created channel gets silent pin, mute and archive, in that order. Existing chats and Saved Messages never get these effects. A provisioning receipt, phase name or observer callback cannot forge that authority. Production supplies no transport adapter while activation is false.
+Only a private committed receipt from actual destination verification, mark readback, committed exact state and completed cache permits decoration. Only a newly created channel gets silent pin, mute and archive, in that order. Existing chats and Saved Messages never get these effects. A provisioning receipt, phase name or observer callback cannot forge that authority. The production transport adapter, `PurpleSyncChatCarry`, is not constructed while activation is false.
 
 Host suite `sync-chat-change` uses actual AGP business classes and controlled ports with real child/Carry files. It pins eligibility and reader consent, state/cache/winner changes, foreground revocation, defaults/disclosure, purpose separation, ambiguous creation restart, duplicate callbacks, orphan retention and committed-only decoration. It runs alongside the unchanged Pending chronology regressions. Device lifecycle, Telegram behavior and physical power-loss durability remain unqualified.
 

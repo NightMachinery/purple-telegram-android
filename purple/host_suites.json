@@ -981,6 +981,35 @@
       }
     },
     {
+      "name": "sync-chat-carry",
+      "driver": "TMessagesProj/jni/purple_jni/tests/run_sync_chat_carry.py",
+      "args": [
+        "--receipt",
+        "{receipt}",
+        "--json",
+        "{json}",
+        "--library",
+        "{library}",
+        "--output",
+        "{output}",
+        "--modern",
+        "{out:modern-sync}",
+        "--carry",
+        "{out:sync-chat-move}",
+        "--store",
+        "{out:sync-chat-move-store}",
+        "--io",
+        "{out:sync-chat-move-io}",
+        "--executor",
+        "{out:sync-chat-move-executor}"
+      ],
+      "coverage": "Production carry dispatcher under a real move controller: discovery, scans, exact reads, forwards, own uploads, marks, cleanup deletes, flood retry, Unknown replies and close/cancel fences, with injected Telegram replies.",
+      "expects": {
+        "carry-dispatch:CARRY_DISPATCH_CHECKS": 5600,
+        "sync-chat-carry:CARRY_DISPATCH_CHECKS": 5600
+      }
+    },
+    {
       "name": "sync-chat-change",
       "driver": "TMessagesProj/jni/purple_jni/tests/run_sync_chat_change.py",
       "args": [

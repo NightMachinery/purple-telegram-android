@@ -55,8 +55,9 @@ final class PurpleSyncChatMove implements AutoCloseable {
         final int messageId;
         private final byte[] journal;
         private final PurpleSyncChatMoveIO.ReadTicket read,pendingRead;
+        private final PurpleSyncChatMove owner;
         private Command(PurpleSyncChatMove owner,String action,PurpleSyncChatMoveIO.Permit permit,int id,PurpleSyncChatMoveIO.ReadTicket read)throws Exception {
-            this.action=action;this.permit=permit;currentPermit=permit;messageId=id;this.read=read;
+            this.owner=owner;this.action=action;this.permit=permit;currentPermit=permit;messageId=id;this.read=read;
             cleanupItem=owner.cleanupItem;cleanupPermit=owner.cleanupPermit;
             cleanupRead=action.equals("CleanupRead")?owner.cleanup.read(cleanupItem):null;
             pendingRead=action.equals("Pending")?owner.io.beginPendingRead(owner.fresh):null;
@@ -65,6 +66,8 @@ final class PurpleSyncChatMove implements AutoCloseable {
             operation=j.getString("operation");source=j.getString("source");target=j.getString("target");revision=j.optLong("revision",0);
         }
         byte[] journal(){return journal==null?null:journal.clone();}
+        /** The move that issued this command; the carry dispatcher renews permits and cleanup reads through it. */
+        PurpleSyncChatMove owner(){return owner;}
     }
     static final class Reply {
         PurpleSyncChatMoveIO.Fresh fresh;
