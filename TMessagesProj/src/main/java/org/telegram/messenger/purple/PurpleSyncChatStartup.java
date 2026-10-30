@@ -97,6 +97,7 @@ final class PurpleSyncChatStartup implements AutoCloseable {
             }catch(Exception|LinkageError error){if(live(run)){publish(new PurpleSyncChatChange.State("Held",error.getMessage()==null?"ResumeUnavailable":error.getMessage(),false));}}
         });
     }
+    boolean retryAvailable(){PurpleSyncChatFlows.Handle active=move;return !closed&&active!=null&&active.current();}
     void retry(){port.worker(()->{if(closed||!port.enabled())return;++generation;try{if(move!=null)move.close();}finally{move=null;port.cancel();attempt();}});}
     Runnable observe(BooleanSupplier foreground,Consumer<PurpleSyncChatChange.State> observer){Object key=new Object();watch=key;this.foreground=foreground;this.observer=observer;if(state!=null)publish(state);start();return ()->{if(watch==key)detach();};}
     private void publish(PurpleSyncChatChange.State value){

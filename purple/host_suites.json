@@ -1262,7 +1262,9 @@
         "wire:SYNC_CHAT_WIRE_CHECKS": 50,
         "sync-chat-wire:SYNC_CHAT_WIRE_CHECKS": 50,
         "wire:WIRE_RENEWAL_CHECKS": 40,
-        "sync-chat-wire:WIRE_RENEWAL_CHECKS": 40
+        "sync-chat-wire:WIRE_RENEWAL_CHECKS": 40,
+        "wire:WIRE_VIEW_CHECKS": 85,
+        "sync-chat-wire:WIRE_VIEW_CHECKS": 85
       }
     }
   ]

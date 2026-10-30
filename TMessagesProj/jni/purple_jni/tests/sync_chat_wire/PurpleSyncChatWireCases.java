@@ -246,6 +246,6 @@ public final class PurpleSyncChatWireCases {
         for(JSONObject row:rows)if(row.getString("op").equals("begin")&&row.getJSONObject("expected").getString("status").equals("Valid")){beginning=row.getJSONObject("input");break;}
         base=unblob(rows.get(0).getJSONObject("input").getString("stagedRecord"));PurpleSyncChatMoveStoreCases.initial=unblob(beginning.getString("state"));PurpleSyncChatMoveStoreCases.baseRecord=base;
         PurpleModernSyncCases.directory(new File(args[1]));root=new PurpleModernSyncCases.Frame(new File(args[1]),"wire",true).root;
-        gates();change();consent();recovery();cancellation();startup();productionBoundaries();ownerThreads();startupSubscriptions();independentResume();followCleanupOff();closeFailureAndStaleHandle();decorationRetry();PurpleSyncChatWireRenewalCases.run();System.out.println("SYNC_CHAT_WIRE_CHECKS="+checks);
+        PurpleSyncChatMoveViewCases.run();gates();change();consent();recovery();cancellation();startup();productionBoundaries();ownerThreads();startupSubscriptions();independentResume();followCleanupOff();closeFailureAndStaleHandle();decorationRetry();PurpleSyncChatWireRenewalCases.run();System.out.println("SYNC_CHAT_WIRE_CHECKS="+checks);
     }
 }

@@ -14,6 +14,13 @@ public final class PurpleSyncChatFlows implements AutoCloseable {
         private final PurpleSyncChatFlows owner;
         private volatile boolean closed;
         Handle(AutoCloseable flow,Runnable retry,Object context,PurpleSyncChatFlows owner){this.flow=flow;this.retry=retry;this.context=context;this.owner=owner;}
+        public boolean current(){
+            synchronized(owner){if(closed||owner.closed||owner.active!=this)return false;}
+            boolean live=context instanceof PurpleSyncChatMove.Port?((PurpleSyncChatMove.Port)context).current()
+                    :context instanceof PurpleSyncChatChange.Port?((PurpleSyncChatChange.Port)context).current()
+                    :context instanceof PurpleSyncChatMoveConsent.Port&&((PurpleSyncChatMoveConsent.Port)context).current();
+            synchronized(owner){return live&&!closed&&!owner.closed&&owner.active==this;}
+        }
         public void retry(){if(!closed)retry.run();}
         @Override public void close(){synchronized(this){if(closed)return;closed=true;}try{flow.close();}catch(Exception|LinkageError ignored){}finally{owner.release(this);}}
     }

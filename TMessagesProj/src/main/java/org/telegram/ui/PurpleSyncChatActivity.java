@@ -11,6 +11,7 @@ import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.purple.PurpleSyncChat;
 import org.telegram.messenger.purple.PurpleSyncChatCore;
 import org.telegram.messenger.purple.PurpleSyncChatScreen;
+import org.telegram.messenger.purple.PurpleSyncChatMoveView;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.Components.UItem;
@@ -34,6 +35,7 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
     private org.telegram.messenger.purple.PurpleSyncChatMoveCleanup.Progress cleanupProgress;
     private org.telegram.messenger.purple.PurpleSyncChatFlows.Handle moveFlow;
     private Runnable moveWatch;
+    private PurpleSyncChatMoveView.Feature moveFeature=PurpleSyncChatMoveView.Feature.Startup;
     private org.telegram.messenger.purple.PurpleSyncChatChange.State moveState;
     private boolean changePicker;
     private org.telegram.messenger.purple.PurpleSyncChatMarkActions markAction;
@@ -59,7 +61,7 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
         if(identity==null||!identity.current()){finishFragment();return;}
         if(control==null||!control.current())control=PurpleSyncChat.screen(currentAccount,()->visible&&identity!=null&&identity.current());
         if(moveWatch!=null)moveWatch.run();
-        moveWatch=PurpleSyncChat.observeMove(currentAccount,()->visible&&identity!=null&&identity.current(),state->{moveState=state;cleanupProgress=state.cleanup;update();if(state.phase.equals("Complete"))reload();});
+        moveWatch=PurpleSyncChat.observeMove(currentAccount,()->visible&&identity!=null&&identity.current(),state->{if(moveFlow!=null&&moveFlow.current())return;recordMoveState(PurpleSyncChatMoveView.Feature.Startup,state);if(state.phase.equals("Complete"))reload();});
         openSetup();reload();
     }
     private void openSetup() {
@@ -128,7 +130,10 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
                     items.add(UItem.asButton(REMOVE_MARK+i,text("RemoveMarkRow",row.location.chat.kind==PurpleSyncChatCore.PeerKind.Self?text("Saved"):row.title,Integer.toString(row.location.markId))));
                 }
             }
-            if(frame.canFollowFill())items.add(UItem.asButton(FOLLOW_FILL,text(frame.status.resolution.action==PurpleSyncChatCore.Action.Follow?"Follow":"Fill")));
+            if(frame.canFollowFill()){
+                if(PurpleSyncChatMoveView.enabled(PurpleSyncChatMoveView.Feature.FollowFill))items.add(UItem.asButton(FOLLOW_FILL,text(frame.status.resolution.action==PurpleSyncChatCore.Action.Follow?"Follow":"Fill")));
+                else items.add(UItem.asShadow(text("FollowHeld")));
+            }
             if(frame.locallyPaused())items.add(UItem.asButton(LOCAL_RESUME,text("LocalResume")));
             if(frame.status.reason.equals("ReaderConsent")&&frame.current!=null&&frame.current.allowed)
                 items.add(UItem.asButton(CONSENT,text("ReviewReaders")));
@@ -144,7 +149,10 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
                 items.add(UItem.asShadow(text("RecoveryAbout")));
                 String held=org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.ACTIVATED?org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.repairHeld(frame):"QualificationHeld";
                 if(!held.isEmpty())items.add(UItem.asShadow(recoveryReason(held)));
-            } else if(frame.canChange())items.add(UItem.asButton(CHANGE,text("Change")));
+            } else if(frame.canChange()){
+                if(PurpleSyncChatMoveView.enabled(PurpleSyncChatMoveView.Feature.Change))items.add(UItem.asButton(CHANGE,text("Change")));
+                else items.add(UItem.asShadow(text("ChangeHeld")));
+            }
             else if(frame.bound)items.add(UItem.asShadow(text("Bound")));
         }
         if(setupState!=null){
@@ -160,7 +168,7 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
         }
         if(moveState!=null){
             items.add(UItem.asShadow(text(moveState.phase.equals("Complete")?"ChangeComplete":moveState.phase.equals("Held")?"MoveHeld":"MoveWorking")));
-            if(moveState.phase.equals("Held"))items.add(UItem.asButton(MOVE_RETRY,LocaleController.getString(org.telegram.messenger.R.string.PurpleWriteActionRetry)));
+            if(PurpleSyncChatMoveView.retry(moveFeature,moveState,moveLive()))items.add(UItem.asButton(MOVE_RETRY,LocaleController.getString(org.telegram.messenger.R.string.PurpleWriteActionRetry)));
         }
         if(cleanupProgress!=null){
             if(cleanupProgress.pending)items.add(UItem.asShadow(text("CleanupPending")));
@@ -177,7 +185,7 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
     @Override protected void onClick(UItem item,View view,int position,float x,float y) {
         if(!visible||control==null||!control.current())return;
         if(org.telegram.messenger.purple.PurpleSyncChatMarkActions.ACTIVATED&&frame!=null&&item.id>=REMOVE_MARK&&item.id<REMOVE_MARK+frame.staleMarks.size()){removeMark(frame.staleMarks.get(item.id-REMOVE_MARK));return;}
-        if(item.id==MOVE_RETRY){if(moveFlow!=null)moveFlow.retry();else PurpleSyncChat.retryMove(currentAccount);return;}
+        if(item.id==MOVE_RETRY){if(!PurpleSyncChatMoveView.retry(moveFeature,moveState,moveLive()))return;if(moveFlow!=null)moveFlow.retry();else PurpleSyncChat.retryMove(currentAccount);return;}
         if(item.id==CLEANUP_RETRY&&cleanupProgress!=null){cleanupProgress.retry();return;}
         if(item.id==CLEANUP_SKIP&&cleanupProgress!=null){
             org.telegram.messenger.purple.PurpleSyncChatMoveCleanup.Progress shown=cleanupProgress;
@@ -186,7 +194,7 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
                     .setNegativeButton(LocaleController.getString(org.telegram.messenger.R.string.Cancel),null).show();return;
         }
         if(item.id==REVIEW_SETTINGS&&setupState!=null&&setupState.phase.equals("Complete")){presentFragment(new PurpleSyncActivity(currentAccount));return;}
-        if(item.id==FOLLOW_FILL&&frame!=null&&frame.canFollowFill()){followFill();return;}
+        if(item.id==FOLLOW_FILL&&PurpleSyncChatMoveView.enabled(PurpleSyncChatMoveView.Feature.FollowFill)&&frame!=null&&frame.canFollowFill()){followFill();return;}
         if(item.id==LOCAL_RESUME&&frame!=null&&frame.locallyPaused()){control.pauseHere(false,saved->{if(visible){if(!saved)message(text("Changed"));reload();}});return;}
         if(item.id>=RECOVERY_CREATE&&item.id<=RECOVERY_MARK){
             if(!org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.ACTIVATED)return;
@@ -196,7 +204,7 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
         }
         if(item.id==CHANGE&&frame!=null&&frame.canChange()){
             if(org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.recovery(frame)&&!org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.ACTIVATED)return;
-            changeChoices();return;
+            if(!PurpleSyncChatMoveView.enabled(PurpleSyncChatMoveView.Feature.Change))return;changeChoices();return;
         }
         if(item.id==CANCEL_SETUP){cancelSetup();return;}
         if(item.id==RESUME&&setup!=null){limitShown=false;setup.resume();return;}
@@ -263,6 +271,7 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
         dialog.setNegativeButton(LocaleController.getString(org.telegram.messenger.R.string.Cancel),null);showDialog(dialog.create());
     }
     private void followFill(){
+        if(!PurpleSyncChatMoveView.enabled(PurpleSyncChatMoveView.Feature.FollowFill))return;
         PurpleSyncChatScreen.Control opening=control;if(opening==null||!visible)return;
         opening.offerFollowFill("config",offer->{
             if(!visible||control!=opening||!opening.current()||getParentActivity()==null)return;
@@ -271,7 +280,7 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
                 if(!visible||control!=opening||!opening.current())return;
                 if(selection==null){message(text("Changed"));reload();return;}
                 moveFlow=PurpleSyncChat.followFill(currentAccount,selection,()->visible&&identity!=null&&identity.current(),state->{
-                    if(visible&&control==opening&&opening.current()){moveState=new org.telegram.messenger.purple.PurpleSyncChatChange.State(state.phase,state.reason,state.committed,state.cleanup);cleanupProgress=state.cleanup;update();if(state.phase.equals("Complete"))reload();}
+                    if(visible&&control==opening&&opening.current()){recordMoveState(PurpleSyncChatMoveView.Feature.FollowFill,new org.telegram.messenger.purple.PurpleSyncChatChange.State(state.phase,state.reason,state.committed,state.cleanup));if(state.phase.equals("Complete"))reload();}
                 });
             });
             if(!offer.requiresReaders){accept.run();return;}
@@ -285,6 +294,7 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
         });
     }
     private void changeChoices() {
+        if(!PurpleSyncChatMoveView.enabled(PurpleSyncChatMoveView.Feature.Change))return;
         if(org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.recovery(frame)&&!org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.ACTIVATED)return;
         PurpleSyncChatScreen.Control opening=control;
         AlertDialog.Builder dialog=new AlertDialog.Builder(getParentActivity());dialog.setTitle(text("Change"));
@@ -305,7 +315,7 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
                 }).setNegativeButton(LocaleController.getString(org.telegram.messenger.R.string.Cancel),null).show();
     }
     private void recoveryStatus(org.telegram.messenger.purple.PurpleSyncChatChange.State state){
-        if(!visible)return;moveState=state;cleanupProgress=state.cleanup;update();
+        if(!visible||!recordMoveState(PurpleSyncChatMoveView.Feature.Recovery,state))return;
         if(state.phase.equals("Warning"))message(text("RecoveryNewReaders"));
         else if(state.phase.equals("Held"))message(recoveryReason(state.reason));
         else if(state.phase.equals("Complete")&&(state.cleanup==null||!state.cleanup.pending))message(text("RecoveryComplete"));
@@ -325,7 +335,7 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
     }
     private void inspectChange(PurpleSyncChatCore.Peer target,boolean create) {
         PurpleSyncChatScreen.Frame recoveryFrame=org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.recovery(frame)?frame:null;
-        if(recoveryFrame!=null&&!org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.ACTIVATED)return;
+        if(recoveryFrame!=null?!PurpleSyncChatMoveView.enabled(PurpleSyncChatMoveView.Feature.Recovery):!PurpleSyncChatMoveView.enabled(PurpleSyncChatMoveView.Feature.Change))return;
         PurpleSyncChatScreen.Control opening=control;if(opening==null||!visible)return;
         opening.offerChange(target,create,offer->{
             if(!visible||control!=opening||getParentActivity()==null)return;
@@ -350,11 +360,20 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
                     moveFlow=PurpleSyncChat.recover(currentAccount,recoveryFrame,create?org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.ActionChoice.Create:org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.ActionChoice.Choose,selection,()->visible,this::recoveryStatus);return;
                 }
                 moveFlow=PurpleSyncChat.change(currentAccount,selection,()->visible&&identity!=null&&identity.current(),state->{
-                    if(visible&&control==opening&&opening.current()){moveState=state;cleanupProgress=state.cleanup;update();if(state.phase.equals("Complete"))reload();}
+                    if(visible&&control==opening&&opening.current()){recordMoveState(PurpleSyncChatMoveView.Feature.Change,state);if(state.phase.equals("Complete"))reload();}
                 });
             }));
             dialog.setNegativeButton(LocaleController.getString(org.telegram.messenger.R.string.Cancel),null);showDialog(dialog.create());
         });
+    }
+    private boolean moveLive(){
+        return moveFlow!=null?moveFlow.current():moveFeature==PurpleSyncChatMoveView.Feature.Startup&&PurpleSyncChat.moveRetryAvailable(currentAccount);
+    }
+    private boolean recordMoveState(PurpleSyncChatMoveView.Feature feature,org.telegram.messenger.purple.PurpleSyncChatChange.State state){
+        if(!visible)return false;
+        moveFeature=feature;moveState=PurpleSyncChatMoveView.progress(state);cleanupProgress=moveState!=null?moveState.cleanup:null;update();
+        if(moveState==null){message(text(feature==PurpleSyncChatMoveView.Feature.FollowFill?"FollowHeld":feature==PurpleSyncChatMoveView.Feature.Recovery?"RecoveryQualificationHeld":"ChangeHeld"));return false;}
+        return true;
     }
     private void confirmCreate() {
         PurpleSyncChatScreen.Control opening=control;

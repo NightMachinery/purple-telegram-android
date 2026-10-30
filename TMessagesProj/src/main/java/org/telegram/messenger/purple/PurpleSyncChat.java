@@ -270,6 +270,7 @@ public final class PurpleSyncChat {
     public static Runnable observeMove(int slot,BooleanSupplier foreground,Consumer<PurpleSyncChatChange.State> changed){
         Holder holder=account(slot);return holder!=null?holder.startup.observe(foreground,changed):()->{};
     }
+    public static boolean moveRetryAvailable(int slot){Holder holder=accounts.get(slot);return holder!=null&&holder.startup.retryAvailable();}
     public static void retryMove(int slot){Holder holder=accounts.get(slot);if(holder!=null)holder.startup.retry();}
     static PurpleSyncChatMove move(PurpleSyncChatMove.Port injected) {
         return injected==null?null:new PurpleSyncChatMove(injected);

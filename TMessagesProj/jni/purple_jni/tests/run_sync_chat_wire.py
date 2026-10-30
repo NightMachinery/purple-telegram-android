@@ -26,9 +26,18 @@ classpath = os.pathsep.join([str(args.dispatcher / 'classes'), str(args.consent 
 main = args.output / 'SyncChatWireHostMain.java'
 main.write_text('import java.io.File; public final class SyncChatWireHostMain { public static void main(String[] a) throws Exception {'
     'org.telegram.messenger.purple.PurpleCore.ensureLoaded();'
-    'for(String n:new String[]{"PurpleSyncChatCarry","PurpleSyncChatMoveCleanup","PurpleSyncChatPostEffect","PurpleSyncChatFlows","PurpleSyncChatFlowPort","PurpleSyncChatStartup","PurpleSyncChatMoveRecovery","PurpleSyncChatSetup","PurpleSyncChatDiscovery","PurpleSyncChatChange","PurpleSyncChatMoveConsent","PurpleSyncChatScreen","PurpleSyncChatMove","PurpleSyncChat","PurpleSyncChatMoveRequests","PurpleSyncAutoEngine","PurpleSyncOperations","PurpleSyncChatService","PurpleSyncRunner","PurpleSyncAuto","PurpleAccountSyncStore","PurpleSyncChatMoveIO","PurpleSyncChatMoveStore","PurpleSyncChatMoveCore","PurpleSyncAutoUpload"})'
+    'for(String n:new String[]{"PurpleSyncChatMoveView","PurpleSyncChatCarry","PurpleSyncChatMoveCleanup","PurpleSyncChatPostEffect","PurpleSyncChatFlows","PurpleSyncChatFlowPort","PurpleSyncChatStartup","PurpleSyncChatMoveRecovery","PurpleSyncChatSetup","PurpleSyncChatDiscovery","PurpleSyncChatChange","PurpleSyncChatMoveConsent","PurpleSyncChatScreen","PurpleSyncChatMove","PurpleSyncChat","PurpleSyncChatMoveRequests","PurpleSyncAutoEngine","PurpleSyncOperations","PurpleSyncChatService","PurpleSyncRunner","PurpleSyncAuto","PurpleAccountSyncStore","PurpleSyncChatMoveIO","PurpleSyncChatMoveStore","PurpleSyncChatMoveCore","PurpleSyncAutoUpload"})'
     'if(!new File(Class.forName("org.telegram.messenger.purple."+n).getProtectionDomain().getCodeSource().getLocation().toURI()).getCanonicalFile().equals(new File(a[0]).getCanonicalFile()))throw new AssertionError("business shadow "+n);'
     'org.telegram.messenger.purple.PurpleSyncChatWireCases.main(new String[]{a[1],a[2]});}}\n')
+ui=tests.parents[2]/'src/main/java/org/telegram/ui/PurpleSyncChatActivity.java'
+view_source=ui.read_text()
+for required in ['if(PurpleSyncChatMoveView.retry(moveFeature,moveState,moveLive()))items.add(UItem.asButton(MOVE_RETRY',
+                 'if(!PurpleSyncChatMoveView.retry(moveFeature,moveState,moveLive()))return;',
+                 'if(PurpleSyncChatMoveView.enabled(PurpleSyncChatMoveView.Feature.Change))items.add(UItem.asButton(CHANGE',
+                 'if(PurpleSyncChatMoveView.enabled(PurpleSyncChatMoveView.Feature.FollowFill))items.add(UItem.asButton(FOLLOW_FILL',
+                 'moveState=PurpleSyncChatMoveView.progress(state)']:
+    assert required in view_source,required
+(args.output/'ui-source.json').write_text(json.dumps({'path':str(ui),'sha256':hashlib.sha256(ui.read_bytes()).hexdigest()},indent=2)+'\n')
 sources = sorted((tests / 'sync_chat_wire').glob('*.java')) + [main]
 def run(name, argv):
     (args.output / (name + '.argv.json')).write_text(json.dumps(list(map(str, argv)), indent=2) + '\n')
@@ -42,5 +51,5 @@ run('javac', [compiler, '-source', '8', '-target', '8', '-proc:none', '-sourcepa
 run('wire', [compiler.with_name('java'), '--add-opens=java.base/sun.nio.fs=ALL-UNNAMED', '-Xcheck:jni', '-Xmx768m', '-XX:ActiveProcessorCount=2',
     '-Dpurple.test.strings=' + str(tests.parents[2] / 'src/main/res/values/purple_strings.xml'), '-Djava.library.path=' + str(args.library.parent), '-cp', str(out) + os.pathsep + classpath,
     'SyncChatWireHostMain', production, args.carry / 'fixtures.jsonl', args.output / 'fixtures'])
-inputs = sources + [args.receipt, args.library, args.carry / 'fixtures.jsonl', tests.parents[2] / 'src/main/res/values/purple_strings.xml']
+inputs = sources + [ui, args.receipt, args.library, args.carry / 'fixtures.jsonl', tests.parents[2] / 'src/main/res/values/purple_strings.xml']
 (args.output / 'inputs.json').write_text(json.dumps([{'path': str(f), 'sha256': hashlib.sha256(f.read_bytes()).hexdigest()} for f in inputs], indent=2) + '\n')

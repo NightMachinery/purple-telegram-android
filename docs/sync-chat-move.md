@@ -676,3 +676,7 @@ directly. These cases require fresh host qualification before activation.
 Held text describes an unconfirmed or paused operation. It does not establish
 another winner or claim that no earlier request was sent. An unreadable journal
 is preserved for inspection and explicit retry, without a claim about its history.
+
+### Switch-safe move progress
+
+An unavailable feature shows its message without adding move progress or Retry. Change and Follow/Fill entry rows are absent while their switches are off. Retry requires the corresponding feature switch and the account owner's current operation; closing or replacing that operation removes its Retry action. Startup Retry is offered only after the startup owner has a current resumed move. Other unavailable startup evidence remains held for inspection.
