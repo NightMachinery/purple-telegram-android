@@ -1980,7 +1980,7 @@ Legacy confirmed-stage startup pins the exact base before cleanup. See
 [carry storage](docs/sync-chat-move.md).
 
 Carry transport host checks also cover overlapping reconciliation and delayed
-request/upload renewal across execution revisions. See [the carry I/O contract](docs/sync-chat-move.md).
+request/upload renewal across execution revisions. See [the carry I/O contract](docs/sync-chat-move.md). Seeded three-install crash and race cases, including durable restarts, are described in [the host harness](docs/sync-chat-move-races.md).
 
 Older supported Purple marks appear separately on the Sync chat screen. **Remove
 mark** targets one captured message and requires a fresh complete winner and exact
