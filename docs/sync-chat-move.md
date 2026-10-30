@@ -546,8 +546,10 @@ carry lease is held.
 The `sync-chat-carry` host suite drives this dispatcher as the Port of a real
 move controller. It covers complete forward and own moves, readable and
 protected pending, record and old-mark cleanup deletes, flood retry, Unknown
-reads, refused writes, and close/cancel fences. The production `Env` is covered
-by the AGP compile only.
+reads, refused writes, and close/cancel fences. It also pins that a live own mark
+which a fresh resolution shows lost to another winner, in the same chat or
+another, holds with ResolutionChanged: no commit and no old-chat deletion. The
+production `Env` is covered by the AGP compile only.
 
 ## Provision-only Change boundary
 

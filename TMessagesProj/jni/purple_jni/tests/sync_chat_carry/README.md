@@ -23,6 +23,11 @@ Coverage, by case:
   during a write cancels it and suppresses its reply.
 - `floodRetry`: after FLOOD_WAIT a forward renews through the controller and
   resends once; an own record resends once with the same upload.
+- `losingOwnMark` (decision D-M2B5-13): after this move posts its own mark 90, a
+  newer rival mark in the same chat or another chat, visible at the uninterrupted
+  ReadMark or right after the mark write, holds the move with ResolutionChanged.
+  Nothing commits and nothing in the old chat is deleted; an older rival is the
+  control that completes.
 - `lifecycle` and `frames`: Port identity, open refusal, idempotent close,
   `cancel(command)`, and the read-only `freshFrame` (pending journal included,
   null on loss or unknown stream, nothing after close).

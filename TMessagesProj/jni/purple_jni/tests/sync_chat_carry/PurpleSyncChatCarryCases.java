@@ -43,10 +43,13 @@ public final class PurpleSyncChatCarryCases {
         final List<TLObject> applied=new ArrayList<>();
         final List<TLRPC.TL_error> failures=new ArrayList<>();
         final Map<Integer,Peer> deleted=new HashMap<>();
+        TLRPC.TL_message rival;
+        boolean rivalAtRead;
+        final List<TLRPC.Message> extra=new ArrayList<>();
         int token,readerCancels,scans,infos;
         long clock=1000;
         Net(Frame f){this.f=f;cache=new PurpleSyncChatCache.Data(new Cache(O,1,1001),"original",PurpleSyncChatCache.ReadersSnapshot.from(info(O,0,false)),Collections.singleton("config"),new JSONObject(),false);}
-        List<TLRPC.Message> all(){List<TLRPC.Message> out=new ArrayList<>(f.oldRecords);out.addAll(f.newRecords);if(oldMarkPresent)out.add(oldMark);return out;}
+        List<TLRPC.Message> all(){List<TLRPC.Message> out=new ArrayList<>(f.oldRecords);out.addAll(f.newRecords);out.addAll(extra);if(oldMarkPresent)out.add(oldMark);return out;}
         List<TLRPC.Message> marks(){List<TLRPC.Message> out=new ArrayList<>();for(TLRPC.Message m:all())if(isMark(m))out.add(m);out.sort((a,b)->Integer.compare(b.date,a.date));return out;}
         PurpleSyncChatClient.Info infoOf(Peer p){
             if(p.equals(f.target)){if(failTargetInfo)return null;return f.targetInfo!=null?f.targetInfo:info(p,0,false);}
@@ -80,7 +83,7 @@ public final class PurpleSyncChatCarryCases {
             ++scans;
             try{
                 List<TLRPC.Message> settings=new ArrayList<>();Map<Integer,byte[]> bodies=new HashMap<>(f.oldBodies);bodies.putAll(f.newBodies);
-                for(TLRPC.Message m:chat.chat.equals(O)?f.oldRecords:f.newRecords)if(m.media!=null)settings.add(m);
+                for(TLRPC.Message m:chat.chat.equals(O)?f.oldRecords:chat.chat.equals(f.target)?f.newRecords:Collections.<TLRPC.Message>emptyList())if(m.media!=null)settings.add(m);
                 CloudClient cloud=new CloudClient(chat.chat,failScans?Collections.emptyList():settings,bodies);clouds.add(cloud);
                 PurpleSyncChatIO route=cloud.route;
                 PurpleSyncClient client=new PurpleSyncChatRecordClient(cloud,m->route.ownership((TLRPC.Message)m.remote));
@@ -118,7 +121,7 @@ public final class PurpleSyncChatCarryCases {
                 return ack(chat(r.to_peer),r.random_id.get(0),m);
             }
             if(request instanceof TLRPC.TL_messages_sendMessage){
-                TLRPC.TL_messages_sendMessage r=(TLRPC.TL_messages_sendMessage)request;TLRPC.TL_message m=mark(chat(r.peer),f.markId,2000);f.newRecords.add(m);f.ownWinner=true;++f.effects;
+                TLRPC.TL_messages_sendMessage r=(TLRPC.TL_messages_sendMessage)request;TLRPC.TL_message m=mark(chat(r.peer),f.markId,2000);f.newRecords.add(m);f.ownWinner=true;++f.effects;if(rival!=null&&!rivalAtRead)extra.add(rival);
                 return ack(chat(r.peer),r.random_id,m);
             }
             if(request instanceof TLRPC.TL_messages_sendMedia){
@@ -222,7 +225,7 @@ public final class PurpleSyncChatCarryCases {
                 public PurpleSyncChatOrigin origin(){return carry.origin();}public String authority(){return carry.authority();}public String operationKey(){return carry.operationKey();}
                 public boolean current(){return carry.current();}public boolean foreground(){return carry.foreground();}public void worker(Runnable t){carry.worker(t);}public void quiesce(Runnable d){carry.quiesce(d);}
                 public PurpleSyncChatMoveStore open(BooleanSupplier c,boolean i)throws Exception{f.opened=carry.open(c,i);return f.opened;}
-                public void dispatch(PurpleSyncChatMove.Command c,Consumer<PurpleSyncChatMove.Reply> d){commands.add(c);carry.dispatch(c,d);}
+                public void dispatch(PurpleSyncChatMove.Command c,Consumer<PurpleSyncChatMove.Reply> d){commands.add(c);if(net.rival!=null&&net.rivalAtRead&&c.action.equals("Mark")&&!net.extra.contains(net.rival))net.extra.add(net.rival);carry.dispatch(c,d);}
                 public void cancel(PurpleSyncChatMove.Command c){carry.cancel(c);}public void status(PurpleSyncChatMove.Status s){carry.status(s);}
             };
         }
@@ -328,12 +331,27 @@ public final class PurpleSyncChatCarryCases {
         net.holdReads=true;out.clear();carry.freshFrame("config",out::add);net.drain();carry.close();for(Runnable t:net.heldReads)t.run();net.drain();
         must(out.isEmpty()&&net.readerCancels>0,"close cancels a pass and suppresses its answer");
     }
+    /** D-M2B5-13: a live own mark that a fresh resolution shows lost to another winner never commits or deletes in the old chat. */
+    static void losingOwnMark()throws Exception {
+        for(String place:new String[]{"same-chat","other-chat","older-control"})for(boolean atRead:new boolean[]{true,false}){
+            Frame f=new Frame(false);f.removeOld=true;Run r=new Run(f);r.cleanupSettings=true;String name=place+(atRead?" at ReadMark":" after the mark write");
+            Peer at=place.equals("other-chat")?Peer.of(PeerKind.Channel,999):f.target;
+            r.net.rival=mark(at,91,place.equals("older-control")?1500:2500);r.net.rivalAtRead=atRead;r.start();
+            must(r.net.count(TLRPC.TL_messages_sendMessage.class)==1&&f.newRecords.stream().anyMatch(m->m.id==f.markId&&isMark(m)),"own mark 90 posted "+name);
+            if(atRead)must(r.issued("Mark")&&(place.equals("older-control")||r.commands.get(r.commands.size()-1).action.equals("Mark")),"uninterrupted ReadMark is the deciding read "+name);
+            if(place.equals("older-control")){must(f.done(),"an older rival leaves the own mark the winner "+name+" "+f.reason());r.close();continue;}
+            must(!f.done()&&f.reason().equals("ResolutionChanged"),"fresh rival winner holds the move "+name+" "+f.reason()+" "+r.trace());
+            must(!f.diskJournal().optBoolean("state_committed")&&!f.diskJournal().optBoolean("cache_completed"),"no commitment "+name);
+            must(r.net.count(TLRPC.TL_messages_deleteMessages.class)==0&&f.oldRecords.stream().anyMatch(m->m.id==2)&&r.net.oldMarkPresent,"no old-chat deletion "+name);
+            r.close();
+        }
+    }
     public static void main(String[] args)throws Exception {
         rows=new ArrayList<>();for(String line:Files.readAllLines(new File(args[0]).toPath()))rows.add(new JSONObject(line));for(JSONObject row:rows)if(row.getString("op").equals("begin")&&row.getJSONObject("expected").getString("status").equals("Valid")){beginning=row.getJSONObject("input");break;}
         base=unblob(rows.get(0).getJSONObject("input").getString("stagedRecord"));PurpleSyncChatMoveStoreCases.initial=unblob(beginning.getString("state"));PurpleSyncChatMoveStoreCases.baseRecord=base;
         File parent=new File(args[1]);PurpleModernSyncCases.directory(parent);PurpleSyncChatMoveExecutorCases.parent=parent;PurpleModernSyncCases.Frame setup=new PurpleModernSyncCases.Frame(parent,"routing",true);root=setup.root;
         org.telegram.messenger.UserConfig.getInstance(0).user=777;
-        lifecycle();frames();happy();pending();cleanup();unknownReplies();partialWrites();floodRetry();
+        lifecycle();frames();happy();pending();cleanup();unknownReplies();partialWrites();floodRetry();losingOwnMark();
         System.out.println("CARRY_DISPATCH_CHECKS="+checks);
     }
 }
