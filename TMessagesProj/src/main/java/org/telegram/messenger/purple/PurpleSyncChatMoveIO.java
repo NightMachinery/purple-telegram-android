@@ -427,6 +427,15 @@ final class PurpleSyncChatMoveIO implements AutoCloseable {
             return json("outcome","Valid","account",origin.accountKey(),"chat",route.chat.token(),"id",Integer.toString(id),"date",Integer.toString(m.date),"text",m.message,"hasMedia",false,"ownership","Own");
         } catch(Exception error) { throw failure(error); }
     }
+    /** D-M2B5-13: MarkRead needs a settled fresh resolution whose winner is exactly the read-back mark (chat, id and date); the opening resolution cannot stand in. */
+    void markWinner(Fresh fresh,JSONObject mark) throws IOException {
+        try {
+            Resolution r=PurpleSyncChatCore.resolve(fresh.resolution);
+            require(r.winner!=null&&r.action!=Action.Invalid&&r.action!=Action.NewerMark&&r.action!=Action.VerifyMark&&r.action!=Action.ReadWinnerInventory
+                    &&r.winner.chat.token().equals(mark.getString("chat"))&&r.winner.markId==Integer.parseInt(mark.getString("id"))
+                    &&r.winner.markDate==Long.parseLong(mark.getString("date")),"ResolutionChanged");
+        }catch(Exception e){throw failure(e);}
+    }
     JSONObject existingMarkReadback(PurpleSyncChatIO route,TLObject response) throws IOException {
         try {
             JSONObject j=journal();require(j.getInt("mode")==1||j.getInt("mode")==2,"MarkNeedsMatchedRequest");

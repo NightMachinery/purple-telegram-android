@@ -406,7 +406,11 @@ The action order is:
    text, C0 ownership and no media; they never invent an own-request ack or post
    another mark. A changed resolver winner admits only frozen reconciliation if
    it is this operation's saved own ack or existing/verified target mark. New
-   effect admission still checks the opening resolution.
+   effect admission still checks the opening resolution. MarkRead needs more: a
+   settled fresh resolution whose winner is exactly the read-back mark (chat, id
+   and date). The opening resolution cannot stand in, so a fresh search that still
+   names O's winner, or a winner at another date, holds with ResolutionChanged
+   before any commit or old-chat cleanup.
 7. PrepareCache writes a private incomplete cache. CommitState writes the exact
    retained image and pins its exact base for ordinary recovery. RetireOwnStage
    retires only exact obsolete bytes and installs/barriers the already-reserved
@@ -548,7 +552,9 @@ move controller. It covers complete forward and own moves, readable and
 protected pending, record and old-mark cleanup deletes, flood retry, Unknown
 reads, refused writes, and close/cancel fences. It also pins that a live own mark
 which a fresh resolution shows lost to another winner, in the same chat or
-another, holds with ResolutionChanged: no commit and no old-chat deletion. The
+another, holds with ResolutionChanged: no commit and no old-chat deletion. So does
+a fresh resolution that still names the opening winner, or whose winner date
+differs from the exact mark read. The
 production `Env` is covered by the AGP compile only.
 
 ## Provision-only Change boundary

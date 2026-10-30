@@ -271,6 +271,7 @@ final class PurpleSyncChatMove implements AutoCloseable {
         case "Mark":
             checkReplyFresh(reply);JSONObject mark=journal().getInt("mode")==1||journal().getInt("mode")==2
                     ?io.existingMarkReadback(reply.markRoute,reply.response):io.markReadback(markKey(),reply.markRoute,reply.response);
+            io.markWinner(fresh,mark);
             transition(event("MarkRead",json("mark",mark)));break;
         case "Cleanup":
             checkReplyFresh(reply);

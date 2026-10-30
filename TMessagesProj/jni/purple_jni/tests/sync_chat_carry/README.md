@@ -28,6 +28,11 @@ Coverage, by case:
   ReadMark or right after the mark write, holds the move with ResolutionChanged.
   Nothing commits and nothing in the old chat is deleted; an older rival is the
   control that completes.
+- `unprovenOwnMark` (decision D-M2B5-13): at the uninterrupted ReadMark, a fresh
+  search that still names the opening winner, or an exact read of the own mark at
+  another date than the winner's, holds with ResolutionChanged. Nothing commits and
+  nothing in the old chat is deleted; a retry completes once the own mark is the
+  proven winner.
 - `lifecycle` and `frames`: Port identity, open refusal, idempotent close,
   `cancel(command)`, and the read-only `freshFrame` (pending journal included,
   null on loss or unknown stream, nothing after close).
