@@ -33,6 +33,14 @@ Coverage, by case:
   another date than the winner's, holds with ResolutionChanged. Nothing commits and
   nothing in the old chat is deleted; a retry completes once the own mark is the
   proven winner.
+- `fences`: close or cancel called from inside a run's own release suppresses
+  its reply, and close inside a pass's release suppresses its frame; nothing is
+  handed over after either returns. Close and cancel called inside a reply,
+  status or frame callback on the delivering thread return promptly (checked
+  with a timeout) and nothing is delivered after them.
+- `failedReads`: a failed scan in Source, Destination or CleanupRead, or a failed
+  exact read in Mark, replies null; the move holds OutcomeUnknown and deletes
+  nothing in the old chat. An absent own mark stays a messageEmpty response.
 - `lifecycle` and `frames`: Port identity, open refusal, idempotent close,
   `cancel(command)`, and the read-only `freshFrame` (pending journal included,
   null on loss or unknown stream, nothing after close).

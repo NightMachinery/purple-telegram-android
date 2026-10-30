@@ -44,8 +44,13 @@ public final class PurpleSyncChatCarryCases {
         final List<TLRPC.TL_error> failures=new ArrayList<>();
         final Map<Integer,Peer> deleted=new HashMap<>();
         TLRPC.TL_message rival;
-        boolean rivalAtRead,hideOwn,wrongMarkDate;
-        Runnable onMark;
+        boolean rivalAtRead,hideOwn,wrongMarkDate,ownMarkGone;
+        Runnable onMark,onRelease;
+        Consumer<PurpleSyncChatMove.Command> onDispatch;
+        /** Runs onRelease once when called from inside a carry Run's release, to place close or cancel exactly there. */
+        void releasing(){
+            if(onRelease!=null&&Arrays.stream(Thread.currentThread().getStackTrace()).anyMatch(x->x.getClassName().endsWith("PurpleSyncChatCarry$Run")&&x.getMethodName().equals("release"))){Runnable hook=onRelease;onRelease=null;hook.run();}
+        }
         final List<TLRPC.Message> extra=new ArrayList<>();
         int token,readerCancels,scans,infos;
         long clock=1000;
@@ -104,7 +109,7 @@ public final class PurpleSyncChatCarryCases {
         public int upload(long file,byte[] bytes,Consumer<PurpleSyncAutoUpload.Result> done){
             int id=++token;uploads.put(file,bytes.clone());f.tasks.addLast(()->{if(!cancelled.contains(id))done.accept(new PurpleSyncAutoUpload.Result(1,null));});return id;
         }
-        public void cancel(int value){cancelled.add(value);held.remove(value);}
+        public void cancel(int value){cancelled.add(value);held.remove(value);releasing();}
         public void apply(Peer chat,TLObject response){applied.add(response);}
         public long now(){return clock;}
         public long wall(){return 1700000000000L+clock;}
@@ -151,7 +156,7 @@ public final class PurpleSyncChatCarryCases {
             Reads(BooleanSupplier current){this.current=current;}
             public PurpleSyncChatOrigin origin(){return ORIGIN;}
             public boolean current(){return live&&current.getAsBoolean();}
-            public void dispatch(Runnable task){f.tasks.addLast(task);}
+            public void dispatch(Runnable task){releasing();f.tasks.addLast(task);}
             void answer(Runnable task){if(holdReads)heldReads.add(task);else f.tasks.addLast(task);}
             public void search(PurpleSyncChatRequests.Search kind,PurpleSyncChatRequests.Cursor cursor,Peer target,Consumer<PurpleSyncChatRequests.Page> done){
                 List<TLRPC.Message> hits=new ArrayList<>();
@@ -182,6 +187,7 @@ public final class PurpleSyncChatCarryCases {
                     int wanted=request instanceof TLRPC.TL_messages_getMessages?((TLRPC.TL_messages_getMessages)request).id.get(0):((TLRPC.TL_channels_getMessages)request).id.get(0);
                     if(failExact){f.tasks.addLast(()->{if(!cancelled.contains(id))done.accept(null,error("TIMEOUT"));});return id;}
                     TLRPC.Message hit=null;for(TLRPC.Message m:all())if(m.id==wanted)hit=m;
+                    if(ownMarkGone&&wanted==f.markId)hit=null;
                     TLRPC.TL_messages_messages page=new TLRPC.TL_messages_messages();
                     if(hit!=null){if(wrongMarkDate&&wanted==f.markId)hit=mark(f.target,wanted,hit.date+1);page.messages.add(hit);}else{TLRPC.TL_messageEmpty empty=new TLRPC.TL_messageEmpty();empty.id=wanted;Peer gone=deleted.get(wanted);if(gone!=null){empty.flags=1;empty.peer_id=peer(gone);}page.messages.add(empty);}
                     f.tasks.addLast(()->{if(!cancelled.contains(id))done.accept(page,null);});return id;
@@ -215,18 +221,29 @@ public final class PurpleSyncChatCarryCases {
         final Net net;
         final PurpleSyncChatCarry carry;
         final List<PurpleSyncChatMove.Command> commands=new ArrayList<>();
+        final List<String> answeredActions=new ArrayList<>();
+        final List<PurpleSyncChatMove.Reply> answers=new ArrayList<>();
+        boolean fenced,delivering;
+        int late;
+        PurpleSyncChatMove.Command cancelled;
+        BiConsumer<PurpleSyncChatMove.Command,PurpleSyncChatMove.Reply> inDone;
+        Consumer<PurpleSyncChatMove.Status> inStatus;
         Run(Frame f)throws Exception {this(f,null);}
         Run(Frame f,Net shared)throws Exception {
             this.f=f;net=shared!=null?shared:new Net(f);
             PurpleSyncRetainedFiles.pin(f.files.root,base);
-            carry=new PurpleSyncChatCarry(net,()->f.live,()->f.foreground,f::status);
+            carry=new PurpleSyncChatCarry(net,()->f.live,()->f.foreground,s->{f.status(s);if(inStatus!=null)inStatus.accept(s);});
         }
         PurpleSyncChatMove.Port port(){
             return new PurpleSyncChatMove.Port(){
                 public PurpleSyncChatOrigin origin(){return carry.origin();}public String authority(){return carry.authority();}public String operationKey(){return carry.operationKey();}
                 public boolean current(){return carry.current();}public boolean foreground(){return carry.foreground();}public void worker(Runnable t){carry.worker(t);}public void quiesce(Runnable d){carry.quiesce(d);}
                 public PurpleSyncChatMoveStore open(BooleanSupplier c,boolean i)throws Exception{f.opened=carry.open(c,i);return f.opened;}
-                public void dispatch(PurpleSyncChatMove.Command c,Consumer<PurpleSyncChatMove.Reply> d){commands.add(c);if(c.action.equals("Mark")&&net.onMark!=null){Runnable h=net.onMark;net.onMark=null;h.run();}if(net.rival!=null&&net.rivalAtRead&&c.action.equals("Mark")&&!net.extra.contains(net.rival))net.extra.add(net.rival);carry.dispatch(c,d);}
+                public void dispatch(PurpleSyncChatMove.Command c,Consumer<PurpleSyncChatMove.Reply> d){commands.add(c);if(net.onDispatch!=null)net.onDispatch.accept(c);if(c.action.equals("Mark")&&net.onMark!=null){Runnable h=net.onMark;net.onMark=null;h.run();}if(net.rival!=null&&net.rivalAtRead&&c.action.equals("Mark")&&!net.extra.contains(net.rival))net.extra.add(net.rival);
+                    carry.dispatch(c,reply->{
+                        if(fenced&&(cancelled==null||cancelled==c))++late;answeredActions.add(c.action);answers.add(reply);
+                        delivering=true;try{if(inDone!=null)inDone.accept(c,reply);d.accept(reply);}finally{delivering=false;}
+                    });}
                 public void cancel(PurpleSyncChatMove.Command c){carry.cancel(c);}public void status(PurpleSyncChatMove.Status s){carry.status(s);}
             };
         }
@@ -235,6 +252,8 @@ public final class PurpleSyncChatCarryCases {
         Run resume()throws Exception {f.move=new PurpleSyncChatMove(port());f.move.resume(info(f.target,0,false));net.drain();return this;}
         String trace(){StringBuilder b=new StringBuilder();for(PurpleSyncChatMove.Command c:commands)b.append(c.action).append(c.permit!=null?":"+c.permit.kind:"").append(' ');b.append('|');for(TLObject t:net.requests)b.append(t.getClass().getSimpleName()).append(' ');b.append('|');for(PurpleSyncChatMove.Status s:f.statuses)b.append(s.action).append('/').append(s.reason).append(' ');return b.toString();}
         boolean issued(String action){return commands.stream().anyMatch(c->c.action.equals(action));}
+        boolean answered(String action){return answeredActions.contains(action);}
+        PurpleSyncChatMove.Reply answer(String action){for(int i=answeredActions.size()-1;i>=0;--i)if(answeredActions.get(i).equals(action))return answers.get(i);return null;}
         void close(){carry.close();if(f.move!=null)f.move.close();net.drain();}
     }
 
@@ -276,7 +295,7 @@ public final class PurpleSyncChatCarryCases {
         Run lost=new Run(new Frame(false));lost.net.failScans=true;lost.start();
         must(!lost.f.done()&&lost.net.count(TLRPC.TL_messages_forwardMessages.class)==0,"incomplete inventory never writes "+lost.f.reason());lost.close();
         Run exact=new Run(new Frame(false));exact.net.failExact=true;exact.start();
-        must(!exact.f.done()&&exact.net.count(TLRPC.TL_messages_sendMessage.class)==1,"failed mark read-back holds after the one mark write "+exact.f.reason());exact.close();
+        must(!exact.f.done()&&exact.f.reason().equals("OutcomeUnknown")&&exact.net.count(TLRPC.TL_messages_sendMessage.class)==1,"failed mark read-back holds Unknown after the one mark write "+exact.f.reason());exact.close();
     }
     static void partialWrites()throws Exception {
         Run refused=new Run(new Frame(false));refused.net.writeError="CHAT_WRITE_FORBIDDEN";refused.net.writeErrorKind="forward";refused.start();
@@ -360,12 +379,67 @@ public final class PurpleSyncChatCarryCases {
             must(f.done(),"a retry completes once the own mark is the proven winner "+scenario+" "+f.reason());r.close();
         }
     }
+    /** One lifecycle: close or cancel from inside a run's own release suppresses its hand-over, so nothing is delivered after either returns. */
+    static void fences()throws Exception {
+        for(String how:new String[]{"close","cancel"}){
+            Frame f=new Frame(false);Run r=new Run(f);
+            r.net.onDispatch=c->{if(c.action.equals("Effect")&&r.net.onRelease==null&&!r.fenced)r.net.onRelease=()->{if(how.equals("close"))r.carry.close();else r.carry.cancel(c);r.fenced=true;};};r.start();
+            must(r.fenced&&r.late==0,"no reply after "+how+" returns from a release hook "+r.late+" "+r.trace());
+            must(!f.done(),"the fenced move does not advance "+how+" "+f.reason());r.close();
+        }
+        Frame f=new Frame(false);Net net=new Net(f);PurpleSyncChatCarry carry=new PurpleSyncChatCarry(net,()->true,()->true,null);
+        List<PurpleSyncChatScreen.Frame> out=new ArrayList<>();boolean[] fenced={false};
+        net.onRelease=()->{carry.close();fenced[0]=true;};carry.freshFrame("config",out::add);net.drain();
+        must(fenced[0]&&out.isEmpty(),"no frame after close returns from a pass's release hook");
+        // A5M closes from its controllers' cancel(), inside a done or status callback on the worker. A done callback runs inside the
+        // hand-over, so the wait must be reentrant there; the controller posts its own work, so status follows the hand-over.
+        for(String place:new String[]{"done","status"})for(String how:new String[]{"close","cancel"}){
+            String name=how+" inside "+place;boolean[] inside={false},returned={false};Run[] run={null};Throwable[] failure={null};
+            Thread t=new Thread(()->{try{
+                Run r=new Run(new Frame(false));run[0]=r;
+                Runnable hook=()->{
+                    if(inside[0]||(place.equals("done")?!r.delivering:r.answers.isEmpty()))return;inside[0]=true;
+                    if(how.equals("close"))r.carry.close();else{r.cancelled=r.commands.get(r.commands.size()-1);r.carry.cancel(r.cancelled);}
+                    r.fenced=true;returned[0]=true;
+                };
+                if(place.equals("done"))r.inDone=(c,reply)->{if(c.action.equals("Source"))hook.run();};else r.inStatus=s->hook.run();
+                r.start();
+            }catch(Throwable e){failure[0]=e;}});
+            t.setDaemon(true);t.start();t.join(20000);
+            must(!t.isAlive(),"close and cancel inside a delivery return promptly "+name);
+            if(failure[0]!=null)throw new AssertionError(name,failure[0]);
+            Run r=run[0];
+            must(inside[0]&&returned[0]&&r.late==0,"nothing is delivered after "+name+" returns "+r.late+" "+r.trace());
+            if(how.equals("cancel")&&place.equals("done"))must(r.f.done(),"cancelling the command being delivered leaves the carry working "+r.f.reason());
+            r.close();
+        }
+        Frame g=new Frame(false);Net gnet=new Net(g);PurpleSyncChatCarry passCarry=new PurpleSyncChatCarry(gnet,()->true,()->true,null);
+        List<PurpleSyncChatScreen.Frame> frames=new ArrayList<>();boolean[] frameReturned={false};
+        Thread t=new Thread(()->{passCarry.freshFrame("config",frame->{frames.add(frame);passCarry.close();frameReturned[0]=true;});gnet.drain();passCarry.freshFrame("config",frames::add);gnet.drain();});
+        t.setDaemon(true);t.start();t.join(20000);
+        must(!t.isAlive()&&frameReturned[0]&&frames.size()==1,"close inside a frame callback returns promptly and nothing follows");
+    }
+    /** A failed or partial read delivers the null Unknown reply; an affirmative exact absence stays a real response. */
+    static void failedReads()throws Exception {
+        for(String action:new String[]{"Source","Destination","Mark","CleanupRead"}){
+            Frame f=new Frame(false);f.removeOld=true;Run r=new Run(f);r.cleanupSettings=true;
+            r.net.onDispatch=c->{if(c.action.equals(action)){r.net.onDispatch=null;if(action.equals("Mark"))r.net.failExact=true;else r.net.failScans=true;}};r.start();
+            must(r.answered(action)&&r.answer(action)==null,"a failed read in "+action+" replies null "+r.trace());
+            must(!f.done()&&f.reason().equals("OutcomeUnknown"),"a null read reply holds Unknown "+action+" "+f.reason());
+            must(r.net.count(TLRPC.TL_messages_deleteMessages.class)==0&&f.oldRecords.stream().anyMatch(m->m.id==2),"no old-chat deletion after a failed read "+action);r.close();
+        }
+        Frame f=new Frame(false);Run r=new Run(f);
+        r.net.onDispatch=c->{if(c.action.equals("Mark")){r.net.onDispatch=null;r.net.hideOwn=true;r.net.ownMarkGone=true;r.net.deleted.put(f.markId,f.target);}};r.start();
+        PurpleSyncChatMove.Reply absent=r.answer("Mark");
+        must(absent!=null&&absent.response instanceof TLRPC.messages_Messages&&((TLRPC.messages_Messages)absent.response).messages.get(0) instanceof TLRPC.TL_messageEmpty,"an absent own mark is a response, not the null reply");
+        must(!f.done()&&!f.reason().equals("OutcomeUnknown")&&!f.diskJournal().optBoolean("state_committed"),"an absent own mark holds without commitment "+f.reason());r.close();
+    }
     public static void main(String[] args)throws Exception {
         rows=new ArrayList<>();for(String line:Files.readAllLines(new File(args[0]).toPath()))rows.add(new JSONObject(line));for(JSONObject row:rows)if(row.getString("op").equals("begin")&&row.getJSONObject("expected").getString("status").equals("Valid")){beginning=row.getJSONObject("input");break;}
         base=unblob(rows.get(0).getJSONObject("input").getString("stagedRecord"));PurpleSyncChatMoveStoreCases.initial=unblob(beginning.getString("state"));PurpleSyncChatMoveStoreCases.baseRecord=base;
         File parent=new File(args[1]);PurpleModernSyncCases.directory(parent);PurpleSyncChatMoveExecutorCases.parent=parent;PurpleModernSyncCases.Frame setup=new PurpleModernSyncCases.Frame(parent,"routing",true);root=setup.root;
         org.telegram.messenger.UserConfig.getInstance(0).user=777;
-        lifecycle();frames();happy();pending();cleanup();unknownReplies();partialWrites();floodRetry();losingOwnMark();unprovenOwnMark();
+        lifecycle();frames();happy();pending();cleanup();unknownReplies();partialWrites();floodRetry();losingOwnMark();unprovenOwnMark();fences();failedReads();
         System.out.println("CARRY_DISPATCH_CHECKS="+checks);
     }
 }

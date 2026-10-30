@@ -500,16 +500,25 @@ Affirmative Issued observations are persisted before checking inventory or chron
 production `PurpleSyncChatMove.Port` for one move. It is held OFF: nothing in this
 slice constructs it. Its network side sits behind a package `Env` seam, so host
 tests inject every Telegram reply. Every reply and status runs on the
-`purpleSyncChat` worker. A reply arrives at most once, never after `cancel` or
-`close()`. A null reply means Unknown, and the controller holds with
+`purpleSyncChat` worker. A reply arrives at most once, and none starts after
+`cancel` or `close()` returns. Delivery and retirement share one delivery
+monitor: a run must still be registered both before and after its own release,
+so a close or cancel at any point, even from a release hook, suppresses its
+reply or frame. `close()` and `cancel` pass through that monitor before they
+return, so either can wait for one reply already being handed over on another
+thread. The monitor is reentrant: close or cancel called from inside a reply,
+frame or status callback on the delivering worker returns at once. A null
+reply means Unknown, and the controller holds with
 `OutcomeUnknown`. A non-null reply carries only verified fields, so the
 controller's own checks hold with their typed reason.
 
 Each command gets fresh facts first: one read-only `PurpleSyncChatDiscovery` pass,
 then full info and input peers for both chats. A *read-only pass* uses its own
 reader and scans. It takes no service queue or capability, never writes the
-sync-chat cache, and is not paused by a pending move journal. An incomplete pass
-replies null. Without a cache (Fill), `oldRead` comes from the source's fresh
+sync-chat cache, and is not paused by a pending move journal. An incomplete pass,
+a failed or partial scan and a failed exact read all reply null. An exact read
+that finds the message affirmatively absent (a messageEmpty) is a response, not
+a failure. Without a cache (Fill), `oldRead` comes from the source's fresh
 info: Valid when readable, ChatGone on CHANNEL_PRIVATE, otherwise Unknown.
 What each command adds:
 
@@ -532,6 +541,7 @@ What each command adds:
   retire the upload's permit.
 - CleanupDelete: `PurpleSyncChatMoveCleanup.Effect`. Its renewal opens a cleanup
   read through the controller, repeats the CleanupRead evidence and re-inspects.
+  A failed read during that renewal refuses admission, so no delete is sent.
 
 An Effect replies only after a write response arrives. On an error the response
 is null, so the slot becomes unknown and the next destination read reconciles it.

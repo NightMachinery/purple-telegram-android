@@ -61,6 +61,8 @@ final class PurpleSyncChatCarry implements PurpleSyncChatMove.Port, AutoCloseabl
     private final PurpleSyncChatOrigin origin;
     private final String authority;
     private final Object lock=new Object();
+    /** Serializes delivery with retirement: a reply or frame is handed over only while this is held, and close and cancel pass through it before returning. */
+    private final Object delivery=new Object();
     private final Map<PurpleSyncChatMove.Command,Run> runs=new IdentityHashMap<>();
     private final List<Run> passes=new ArrayList<>();
     private volatile boolean closed;
@@ -92,7 +94,7 @@ final class PurpleSyncChatCarry implements PurpleSyncChatMove.Port, AutoCloseabl
         synchronized(lock){if(closed||runs.containsKey(command))return;runs.put(command,run);}
         run.post(()->execute(run,reply->finish(run,reply,done)));
     }
-    public void cancel(PurpleSyncChatMove.Command command){Run run;synchronized(lock){run=runs.remove(command);}if(run!=null)run.release();}
+    public void cancel(PurpleSyncChatMove.Command command){Run run;synchronized(lock){run=runs.remove(command);}if(run!=null)run.release();settle();}
     /** Read-only fresh resolution for controllers; safe while the carry lease is held. Never writes the sync-chat cache. */
     void freshFrame(String stream,Consumer<PurpleSyncChatScreen.Frame> done){
         if(done==null)return;
@@ -101,9 +103,10 @@ final class PurpleSyncChatCarry implements PurpleSyncChatMove.Port, AutoCloseabl
         run.post(()->discover(run,stream,pass->endPass(run,pass==null?null:pass.frame(),done)));
     }
     @Override public void close(){
-        List<Run> all;
-        synchronized(lock){if(closed)return;closed=true;all=new ArrayList<>(runs.values());all.addAll(passes);runs.clear();passes.clear();}
+        List<Run> all=new ArrayList<>();
+        synchronized(lock){if(!closed){closed=true;all.addAll(runs.values());all.addAll(passes);runs.clear();passes.clear();}}
         for(Run run:all)run.release();
+        settle();
     }
 
     private boolean live(){return !closed&&current.getAsBoolean()&&env.current();}
@@ -131,17 +134,27 @@ final class PurpleSyncChatCarry implements PurpleSyncChatMove.Port, AutoCloseabl
         }
     }
     private static void quiet(Runnable value){try{value.run();}catch(RuntimeException|LinkageError ignored){}}
+    /** Waits out a hand-over in progress. Hand-overs check registration under the same monitor, so none starts after this returns. */
+    private void settle(){synchronized(delivery){}}
+    /**
+     * One lifecycle for delivery and retirement: under the delivery monitor a run must still be registered both before and after its own
+     * release, so close or cancel at any point, a release hook included, suppresses it, and a hand-over already started ends first.
+     */
     private void finish(Run run,PurpleSyncChatMove.Reply reply,Consumer<PurpleSyncChatMove.Reply> done){
-        boolean deliver;
-        synchronized(lock){if(runs.get(run.command)!=run)return;runs.remove(run.command);deliver=!closed;}
-        deliver&=!run.released;run.release();
-        if(deliver)done.accept(reply);
+        synchronized(delivery){
+            synchronized(lock){if(closed||runs.get(run.command)!=run)return;}
+            run.release();
+            synchronized(lock){if(closed||runs.get(run.command)!=run)return;runs.remove(run.command);}
+            done.accept(reply);
+        }
     }
     private void endPass(Run run,PurpleSyncChatScreen.Frame frame,Consumer<PurpleSyncChatScreen.Frame> done){
-        boolean deliver;
-        synchronized(lock){if(!passes.remove(run))return;deliver=!closed;}
-        deliver&=!run.released;run.release();
-        if(deliver)done.accept(frame);
+        synchronized(delivery){
+            synchronized(lock){if(closed||!passes.contains(run))return;}
+            run.release();
+            synchronized(lock){if(closed||!passes.remove(run))return;}
+            done.accept(frame);
+        }
     }
 
     private void execute(Run run,Consumer<PurpleSyncChatMove.Reply> done)throws Exception {
@@ -150,42 +163,45 @@ final class PurpleSyncChatCarry implements PurpleSyncChatMove.Port, AutoCloseabl
         case "Fresh":fresh(run,facts->done.accept(facts==null?null:reply(facts)));break;
         case "Source":fresh(run,facts->{
             if(facts==null){done.accept(null);return;}
-            PurpleSyncChatMove.Reply reply=reply(facts);
-            scan(run,reply.sourceAccess.equals("ChatGone")?null:facts.fresh.source,old->scan(run,facts.fresh.target,destination->{
-                reply.source=old;reply.destination=destination;receipts(old,reply.sourceRecords);done.accept(reply);
-            }));
+            PurpleSyncChatMove.Reply reply=reply(facts);boolean gone=reply.sourceAccess.equals("ChatGone");
+            scan(run,gone?null:facts.fresh.source,old->{
+                if(old==null&&!gone){done.accept(null);return;}
+                scan(run,facts.fresh.target,known(done,destination->{reply.source=old;reply.destination=destination;receipts(old,reply.sourceRecords);done.accept(reply);}));
+            });
         });break;
         case "Pending":fresh(run,facts->{
             if(facts==null){done.accept(null);return;}
-            PurpleSyncChatMove.Reply reply=reply(facts);reply.sendIntent="Unknown";
-            scan(run,reply.sourceAccess.equals("ChatGone")?null:facts.fresh.source,old->{reply.source=old;done.accept(reply);});
+            PurpleSyncChatMove.Reply reply=reply(facts);reply.sendIntent="Unknown";boolean gone=reply.sourceAccess.equals("ChatGone");
+            scan(run,gone?null:facts.fresh.source,old->{if(old==null&&!gone){done.accept(null);return;}reply.source=old;done.accept(reply);});
         });break;
         case "Destination":fresh(run,facts->{
             if(facts==null){done.accept(null);return;}
             PurpleSyncChatMove.Reply reply=reply(facts);
-            scan(run,facts.fresh.target,destination->{reply.destination=destination;done.accept(reply);});
+            scan(run,facts.fresh.target,known(done,destination->{reply.destination=destination;done.accept(reply);}));
         });break;
         case "Cleanup":fresh(run,facts->{
             if(facts==null){done.accept(null);return;}
             PurpleSyncChatMove.Reply reply=reply(facts);
             if(reply.sourceAccess.equals("ChatGone")&&facts.fresh.oldRead==DirectRead.ChatGone){done.accept(reply);return;}
-            scan(run,facts.fresh.target,destination->{reply.destination=destination;done.accept(reply);});
+            scan(run,facts.fresh.target,known(done,destination->{reply.destination=destination;done.accept(reply);}));
         });break;
         case "Mark":fresh(run,facts->{
             if(facts==null){done.accept(null);return;}
             PurpleSyncChatMove.Reply reply=reply(facts);reply.markRoute=route(facts.fresh.target);
-            exact(run,facts.fresh.target.chat,command.messageId,read->{reply.response=read!=null&&read.error==null?read.response:null;done.accept(reply);});
+            exact(run,facts.fresh.target.chat,command.messageId,known(done,response->{reply.response=response;done.accept(reply);}));
         });break;
         case "CleanupRead":fresh(run,facts->{
             if(facts==null){done.accept(null);return;}
             PurpleSyncChatMove.Reply reply=reply(facts);
-            scan(run,facts.fresh.target,destination->{reply.destination=destination;cleanupRead(run,facts,reply,command.cleanupItem,()->done.accept(reply));});
+            scan(run,facts.fresh.target,known(done,destination->{reply.destination=destination;cleanupRead(run,facts,reply,command.cleanupItem,done);}));
         });break;
         case "Effect":effect(run,done);break;
         case "CleanupDelete":cleanupDelete(run,done);break;
         default:done.accept(null);
         }
     }
+    /** Continues only with a value: a failed or partial read (null) delivers the null Unknown reply instead. */
+    private static <T> Consumer<T> known(Consumer<PurpleSyncChatMove.Reply> done,Consumer<T> next){return value->{if(value==null)done.accept(null);else next.accept(value);};}
     private static PurpleSyncChatMove.Reply reply(Facts facts){
         PurpleSyncChatMove.Reply reply=new PurpleSyncChatMove.Reply();reply.fresh=facts.fresh;reply.sourceAccess=facts.access;reply.libraryPending=false;return reply;
     }
@@ -298,23 +314,24 @@ final class PurpleSyncChatCarry implements PurpleSyncChatMove.Port, AutoCloseabl
         transport.check(null,result->run.post(()->done.accept(result!=null&&result.status==PurpleSyncTransport.CheckStatus.Finished&&result.inventory!=null
                 &&result.inventory.scanComplete&&result.inventory.sameOrigin(client)&&info.chat.equals(result.inventory.chat)?result.inventory:null)));
     }
-    private void exact(Run run,Peer chat,int id,Consumer<PurpleSyncChatSetup.ReadBack> done){
+    /** The exact read's response, or null when the read failed. An affirmative absence is a response (messageEmpty), never null. */
+    private void exact(Run run,Peer chat,int id,Consumer<TLObject> done){
         if(chat==null||id<=0){done.accept(null);return;}
         PurpleSyncChatTelegram reader=new PurpleSyncChatTelegram(origin,env.platform(run::live));run.own(()->reader.dispatch(reader::cancel));
-        reader.dispatch(()->reader.readBack(new Cache(chat,id,0),value->run.post(()->done.accept(value))));
+        reader.dispatch(()->reader.readBack(new Cache(chat,id,0),value->run.post(()->done.accept(value!=null&&value.error==null?value.response:null))));
     }
-    /** Exact evidence for one cleanup item: the scanned record receipt and its own response, or an exact read. */
-    private void cleanupRead(Run run,Facts facts,PurpleSyncChatMove.Reply reply,PurpleSyncChatMoveCleanup.Item item,Runnable done){
+    /** Exact evidence for one cleanup item: the scanned record receipt and its own response, or an exact read. A failed read replies null. */
+    private void cleanupRead(Run run,Facts facts,PurpleSyncChatMove.Reply reply,PurpleSyncChatMoveCleanup.Item item,Consumer<PurpleSyncChatMove.Reply> done){
         PurpleSyncChatClient.Info chat=item!=null&&item.chat.equals(facts.fresh.source.chat)?facts.fresh.source:null;
         reply.markRoute=route(chat);
-        if(reply.markRoute==null){done.run();return;}
+        if(reply.markRoute==null){done.accept(null);return;}
         Consumer<PurpleSyncInventory> after=old->{
             receipts(old,reply.sourceRecords);PurpleSyncChatMoveIO.RecordReceipt found=null;
             for(PurpleSyncChatMoveIO.RecordReceipt receipt:reply.sourceRecords)if(receipt.id==item.id)found=receipt;
-            if(found!=null){reply.response=PurpleSyncChatMoveRequests.messages(found.response());done.run();return;}
-            exact(run,item.chat,item.id,read->{reply.response=read!=null&&read.error==null?read.response:null;done.run();});
+            if(found!=null){reply.response=PurpleSyncChatMoveRequests.messages(found.response());done.accept(reply);return;}
+            exact(run,item.chat,item.id,known(done,response->{reply.response=response;done.accept(reply);}));
         };
-        if(item.kind.equals("record"))scan(run,chat,after);else after.accept(null);
+        if(item.kind.equals("record"))scan(run,chat,known(done,after));else after.accept(null);
     }
 
     /** Fresh facts, then the executor's own renewal; a forward also needs a freshly sealed receipt of its source record. */
@@ -437,8 +454,9 @@ final class PurpleSyncChatCarry implements PurpleSyncChatMove.Port, AutoCloseabl
                     if(facts==null){next.accept(null);return;}
                     PurpleSyncChatMove.Reply reply=reply(facts);
                     scan(run,facts.fresh.target,destination->{
+                        if(destination==null){next.accept(null);return;}
                         reply.destination=destination;
-                        cleanupRead(run,facts,reply,command.cleanupItem,()->command.owner().renewCleanup(command,read,reply,next));
+                        cleanupRead(run,facts,reply,command.cleanupItem,evidence->{if(evidence==null)next.accept(null);else command.owner().renewCleanup(command,read,evidence,next);});
                     });
                 })));
             }
