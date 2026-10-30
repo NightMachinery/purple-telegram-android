@@ -29,7 +29,7 @@ public final class PurpleSyncChatCarryCases {
     static final class Net implements PurpleSyncChatCarry.Env {
         final Frame f;
         final TLRPC.TL_message oldMark=mark(O,1,1001);
-        boolean live=true,oldMarkPresent=true,holdWrites,failTargetInfo,failScans,failExact,holdReads;
+        boolean live=true,oldMarkPresent=true,holdWrites,failTargetInfo,failScans,failExact,holdReads,partialExact,failDownloads,failAfterPeers;
         String writeError,writeErrorKind="";
         PurpleSyncChatCache.Data cache;
         PurpleSyncChatService.Binding binding=new PurpleSyncChatService.Binding(true,true,O);
@@ -93,7 +93,7 @@ public final class PurpleSyncChatCarryCases {
                 CloudClient cloud=new CloudClient(chat.chat,failScans?Collections.emptyList():settings,bodies);clouds.add(cloud);
                 PurpleSyncChatIO route=cloud.route;
                 PurpleSyncClient client=new PurpleSyncChatRecordClient(cloud,m->route.ownership((TLRPC.Message)m.remote));
-                return failScans?new Broken(client):client;
+                return failScans?new Broken(client):failDownloads?new Partial(client):client;
             }catch(Exception e){throw new RuntimeException(e);}
         }
         public int send(TLObject request,PurpleSyncChatTelegram.Reply done){
@@ -188,7 +188,7 @@ public final class PurpleSyncChatCarryCases {
                     if(failExact){f.tasks.addLast(()->{if(!cancelled.contains(id))done.accept(null,error("TIMEOUT"));});return id;}
                     TLRPC.Message hit=null;for(TLRPC.Message m:all())if(m.id==wanted)hit=m;
                     if(ownMarkGone&&wanted==f.markId)hit=null;
-                    TLRPC.TL_messages_messages page=new TLRPC.TL_messages_messages();
+                    TLRPC.TL_messages_messages page=new TLRPC.TL_messages_messages();if(partialExact&&wanted==f.markId)page.inexact=true;
                     if(hit!=null){if(wrongMarkDate&&wanted==f.markId)hit=mark(f.target,wanted,hit.date+1);page.messages.add(hit);}else{TLRPC.TL_messageEmpty empty=new TLRPC.TL_messageEmpty();empty.id=wanted;Peer gone=deleted.get(wanted);if(gone!=null){empty.flags=1;empty.peer_id=peer(gone);}page.messages.add(empty);}
                     f.tasks.addLast(()->{if(!cancelled.contains(id))done.accept(page,null);});return id;
                 }
@@ -197,7 +197,7 @@ public final class PurpleSyncChatCarryCases {
             public void cancel(int value){cancelled.add(value);}
             public void delay(Runnable task,long millis){timers.add(task);}
             public void cancelDelay(Runnable task){timers.remove(task);}
-            public TLRPC.InputPeer input(Peer peer){return PurpleSyncChatMoveIOCases.input(peer);}
+            public TLRPC.InputPeer input(Peer peer){if(failAfterPeers)failDownloads=true;return PurpleSyncChatMoveIOCases.input(peer);}
             public void peers(List<TLRPC.User> users,List<TLRPC.Chat> chats){}
             public List<Peer> fallback(){return Collections.emptyList();}
         }
@@ -210,6 +210,19 @@ public final class PurpleSyncChatCarryCases {
         public void runOnMain(Runnable r){inner.runOnMain(r);}public void runOnWorker(Runnable r){inner.runOnWorker(r);}public void log(String s){}
         public int requestHistory(int offset,int limit,Reply<History> done){done.onReply(null);return 1;}
         public int requestMessage(int id,Reply<Lookup> done){done.onReply(Lookup.failed("Unknown"));return 2;}
+        public void cancelRequest(int id){}public Object download(Message m,Reply<File> done){done.onReply(null);return null;}
+        public void cancelDownload(Object token){}public void localCopies(Reply<List<LocalCopy>> done){inner.localCopies(done);}
+        public File filesDirectory(){return inner.filesDirectory();}public File cacheDirectory(){return inner.cacheDirectory();}public long nowMillis(){return 1;}
+        public void send(File f,String c,String m,Receipt r){throw new AssertionError("no live send");}
+    }
+    /** A scan client whose history reads succeed but whose record downloads fail, so rows stay unfetched in a complete history. */
+    static final class Partial implements PurpleSyncClient {
+        final PurpleSyncClient inner;
+        Partial(PurpleSyncClient inner){this.inner=inner;}
+        public long userId(){return inner.userId();}public Peer chat(){return inner.chat();}public PurpleSyncChatOrigin origin(){return inner.origin();}public boolean isActive(){return inner.isActive();}
+        public void runOnMain(Runnable r){inner.runOnMain(r);}public void runOnWorker(Runnable r){inner.runOnWorker(r);}public void log(String s){}
+        public int requestHistory(int offset,int limit,Reply<History> done){return inner.requestHistory(offset,limit,done);}
+        public int requestMessage(int id,Reply<Lookup> done){return inner.requestMessage(id,done);}
         public void cancelRequest(int id){}public Object download(Message m,Reply<File> done){done.onReply(null);return null;}
         public void cancelDownload(Object token){}public void localCopies(Reply<List<LocalCopy>> done){inner.localCopies(done);}
         public File filesDirectory(){return inner.filesDirectory();}public File cacheDirectory(){return inner.cacheDirectory();}public long nowMillis(){return 1;}
@@ -434,12 +447,27 @@ public final class PurpleSyncChatCarryCases {
         must(absent!=null&&absent.response instanceof TLRPC.messages_Messages&&((TLRPC.messages_Messages)absent.response).messages.get(0) instanceof TLRPC.TL_messageEmpty,"an absent own mark is a response, not the null reply");
         must(!f.done()&&!f.reason().equals("OutcomeUnknown")&&!f.diskJournal().optBoolean("state_committed"),"an absent own mark holds without commitment "+f.reason());r.close();
     }
+    /** Partial non-null reads are Unknown too: an inexact or unscoped exact page, and a complete history whose candidate rows failed to download. */
+    static void partialReads()throws Exception {
+        for(String scenario:new String[]{"inexact Mark","unscoped Mark","partial Source scan"}){
+            String action=scenario.endsWith("scan")?"Source":"Mark";
+            Frame f=new Frame(false);f.removeOld=true;Run r=new Run(f);r.cleanupSettings=true;
+            r.net.onDispatch=c->{
+                if(!c.action.equals(action))return;r.net.onDispatch=null;
+                if(scenario.startsWith("inexact"))r.net.partialExact=true;else if(scenario.startsWith("unscoped")){r.net.hideOwn=true;r.net.ownMarkGone=true;}else r.net.failAfterPeers=true;
+            };r.start();
+            must(r.answered(action)&&r.answer(action)==null,"a partial read replies null "+scenario+" "+r.trace());
+            must(!f.done()&&f.reason().equals("OutcomeUnknown")&&!f.diskJournal().optBoolean("state_committed"),"a partial read holds Unknown without commitment "+scenario+" "+f.reason());
+            must(r.net.count(TLRPC.TL_messages_deleteMessages.class)==0&&f.oldRecords.stream().anyMatch(m->m.id==2)
+                    &&(!action.equals("Source")||r.net.count(TLRPC.TL_messages_forwardMessages.class)==0),"no write after a partial read "+scenario);r.close();
+        }
+    }
     public static void main(String[] args)throws Exception {
         rows=new ArrayList<>();for(String line:Files.readAllLines(new File(args[0]).toPath()))rows.add(new JSONObject(line));for(JSONObject row:rows)if(row.getString("op").equals("begin")&&row.getJSONObject("expected").getString("status").equals("Valid")){beginning=row.getJSONObject("input");break;}
         base=unblob(rows.get(0).getJSONObject("input").getString("stagedRecord"));PurpleSyncChatMoveStoreCases.initial=unblob(beginning.getString("state"));PurpleSyncChatMoveStoreCases.baseRecord=base;
         File parent=new File(args[1]);PurpleModernSyncCases.directory(parent);PurpleSyncChatMoveExecutorCases.parent=parent;PurpleModernSyncCases.Frame setup=new PurpleModernSyncCases.Frame(parent,"routing",true);root=setup.root;
         org.telegram.messenger.UserConfig.getInstance(0).user=777;
-        lifecycle();frames();happy();pending();cleanup();unknownReplies();partialWrites();floodRetry();losingOwnMark();unprovenOwnMark();fences();failedReads();
+        lifecycle();frames();happy();pending();cleanup();unknownReplies();partialWrites();floodRetry();losingOwnMark();unprovenOwnMark();fences();failedReads();partialReads();
         System.out.println("CARRY_DISPATCH_CHECKS="+checks);
     }
 }

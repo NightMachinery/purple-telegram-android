@@ -188,7 +188,7 @@ final class PurpleSyncChatCarry implements PurpleSyncChatMove.Port, AutoCloseabl
         case "Mark":fresh(run,facts->{
             if(facts==null){done.accept(null);return;}
             PurpleSyncChatMove.Reply reply=reply(facts);reply.markRoute=route(facts.fresh.target);
-            exact(run,facts.fresh.target.chat,command.messageId,known(done,response->{reply.response=response;done.accept(reply);}));
+            exact(run,reply.markRoute,command.messageId,known(done,response->{reply.response=response;done.accept(reply);}));
         });break;
         case "CleanupRead":fresh(run,facts->{
             if(facts==null){done.accept(null);return;}
@@ -298,7 +298,7 @@ final class PurpleSyncChatCarry implements PurpleSyncChatMove.Port, AutoCloseabl
             case PeerInfo:reads.dispatch(()->reads.info(command.chat,info->{reply.success=info!=null;reply.info=info;next.accept(reply);}));break;
             case ExactMark:reads.dispatch(()->reads.exact(command.mark,exact->{reply.success=exact!=null;reply.exact=exact;next.accept(reply);}));break;
             case SettingsHint:reads.dispatch(()->reads.hint(hint->{reply.success=hint!=null;reply.hint=hint!=null?hint:SettingsHint.Unknown;next.accept(reply);}));break;
-            case Inventory:info(run,reads,command.chat,info->scan(run,info,inventory->{
+            case Inventory:info(run,reads,command.chat,info->completeScan(run,info,inventory->{
                 RecordPresence presence=inventory==null?RecordPresence.Unknown:PurpleSyncChat.recordPresence(inventory,origin.userId,command.chat);
                 reply.success=presence!=RecordPresence.Unknown;reply.records=presence;next.accept(reply);
             }));break;
@@ -306,19 +306,37 @@ final class PurpleSyncChatCarry implements PurpleSyncChatMove.Port, AutoCloseabl
         }
     }
 
-    /** A complete owned inventory of one chat, or null; null info (an unreadable or gone chat) skips the scan. */
+    /** A command's scan: complete and sealed, every row fetched with its receipt. A partial inventory is a failed read (null). */
     private void scan(Run run,PurpleSyncChatClient.Info info,Consumer<PurpleSyncInventory> done){
+        completeScan(run,info,inventory->done.accept(inventory!=null&&sealed(inventory)?inventory:null));
+    }
+    private static boolean sealed(PurpleSyncInventory inventory){
+        if(!inventory.ownedScan())return false;
+        for(int i=0;i<inventory.count();++i)if(inventory.transport[i]!=PurpleSyncInventory.FETCHED||inventory.receipt(i)==null)return false;
+        return true;
+    }
+    /** A complete owned history of one chat, or null; null info (an unreadable or gone chat) skips the scan. Discovery's presence step uses it as is. */
+    private void completeScan(Run run,PurpleSyncChatClient.Info info,Consumer<PurpleSyncInventory> done){
         if(info==null||!info.readable()||!origin.equals(info.origin)){done.accept(null);return;}
         PurpleSyncClient client=env.scanner(info,run::live);
         PurpleSyncTelegramTransport transport=new PurpleSyncTelegramTransport(client);run.own(transport::cancel);
         transport.check(null,result->run.post(()->done.accept(result!=null&&result.status==PurpleSyncTransport.CheckStatus.Finished&&result.inventory!=null
                 &&result.inventory.scanComplete&&result.inventory.sameOrigin(client)&&info.chat.equals(result.inventory.chat)?result.inventory:null)));
     }
-    /** The exact read's response, or null when the read failed. An affirmative absence is a response (messageEmpty), never null. */
-    private void exact(Run run,Peer chat,int id,Consumer<TLObject> done){
-        if(chat==null||id<=0){done.accept(null);return;}
+    /**
+     * The exact read's response when the route's scoped exact-page validation finds the message or its scoped absence (messageEmpty),
+     * otherwise null: a failed, inexact, partial or unscoped read is Unknown.
+     */
+    private void exact(Run run,PurpleSyncChatIO route,int id,Consumer<TLObject> done){
+        if(route==null||id<=0){done.accept(null);return;}
         PurpleSyncChatTelegram reader=new PurpleSyncChatTelegram(origin,env.platform(run::live));run.own(()->reader.dispatch(reader::cancel));
-        reader.dispatch(()->reader.readBack(new Cache(chat,id,0),value->run.post(()->done.accept(value!=null&&value.error==null?value.response:null))));
+        reader.dispatch(()->reader.readBack(new Cache(route.chat,id,0),value->run.post(()->done.accept(value!=null&&exactKnown(route,value.response,value.error,id)?value.response:null))));
+    }
+    private static boolean exactKnown(PurpleSyncChatIO route,TLObject response,TLRPC.TL_error error,int id){
+        try{
+            PurpleSyncClient.LookupStatus status=route.lookup(response,error,id,m->new PurpleSyncClient.Message(m.id,true,false,false,"",null,route.chat,0,0,0,null)).status;
+            return status==PurpleSyncClient.LookupStatus.Found||status==PurpleSyncClient.LookupStatus.Missing;
+        }catch(RuntimeException ignored){return false;}
     }
     /** Exact evidence for one cleanup item: the scanned record receipt and its own response, or an exact read. A failed read replies null. */
     private void cleanupRead(Run run,Facts facts,PurpleSyncChatMove.Reply reply,PurpleSyncChatMoveCleanup.Item item,Consumer<PurpleSyncChatMove.Reply> done){
@@ -329,7 +347,7 @@ final class PurpleSyncChatCarry implements PurpleSyncChatMove.Port, AutoCloseabl
             receipts(old,reply.sourceRecords);PurpleSyncChatMoveIO.RecordReceipt found=null;
             for(PurpleSyncChatMoveIO.RecordReceipt receipt:reply.sourceRecords)if(receipt.id==item.id)found=receipt;
             if(found!=null){reply.response=PurpleSyncChatMoveRequests.messages(found.response());done.accept(reply);return;}
-            exact(run,item.chat,item.id,known(done,response->{reply.response=response;done.accept(reply);}));
+            exact(run,reply.markRoute,item.id,known(done,response->{reply.response=response;done.accept(reply);}));
         };
         if(item.kind.equals("record"))scan(run,chat,known(done,after));else after.accept(null);
     }

@@ -41,6 +41,10 @@ Coverage, by case:
 - `failedReads`: a failed scan in Source, Destination or CleanupRead, or a failed
   exact read in Mark, replies null; the move holds OutcomeUnknown and deletes
   nothing in the old chat. An absent own mark stays a messageEmpty response.
+- `partialReads`: partial reads that still return data are Unknown too. An
+  inexact or unscoped exact page at Mark, and a Source scan whose history is
+  complete but whose candidate downloads failed, reply null; the move holds
+  OutcomeUnknown without commitment, deletion or forward.
 - `lifecycle` and `frames`: Port identity, open refusal, idempotent close,
   `cancel(command)`, and the read-only `freshFrame` (pending journal included,
   null on loss or unknown stream, nothing after close).

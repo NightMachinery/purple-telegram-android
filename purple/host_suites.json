@@ -1005,8 +1005,8 @@
       ],
       "coverage": "Production carry dispatcher under a real move controller: discovery, scans, exact reads, forwards, own uploads, marks, cleanup deletes, flood retry, Unknown replies and close/cancel fences, with injected Telegram replies.",
       "expects": {
-        "carry-dispatch:CARRY_DISPATCH_CHECKS": 13800,
-        "sync-chat-carry:CARRY_DISPATCH_CHECKS": 13800
+        "carry-dispatch:CARRY_DISPATCH_CHECKS": 14500,
+        "sync-chat-carry:CARRY_DISPATCH_CHECKS": 14500
       }
     },
     {

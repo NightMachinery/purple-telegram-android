@@ -515,10 +515,13 @@ controller's own checks hold with their typed reason.
 Each command gets fresh facts first: one read-only `PurpleSyncChatDiscovery` pass,
 then full info and input peers for both chats. A *read-only pass* uses its own
 reader and scans. It takes no service queue or capability, never writes the
-sync-chat cache, and is not paused by a pending move journal. An incomplete pass,
-a failed or partial scan and a failed exact read all reply null. An exact read
-that finds the message affirmatively absent (a messageEmpty) is a response, not
-a failure. Without a cache (Fill), `oldRead` comes from the source's fresh
+sync-chat cache, and is not paused by a pending move journal. An incomplete pass
+replies null, and so does any failed or partial command read. A command scan
+counts only when it is complete and sealed, every row fetched with its receipt;
+the discovery pass's own presence step keeps the plain complete-history rule. An
+exact read counts only when the route's scoped exact-page check finds the message
+or its scoped absence (a messageEmpty carrying its chat). An inexact, partial or
+unscoped page replies null; a scoped absence is a response, not a failure. Without a cache (Fill), `oldRead` comes from the source's fresh
 info: Valid when readable, ChatGone on CHANNEL_PRIVATE, otherwise Unknown.
 What each command adds:
 
