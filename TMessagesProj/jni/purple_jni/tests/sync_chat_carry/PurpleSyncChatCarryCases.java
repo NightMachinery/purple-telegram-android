@@ -462,12 +462,91 @@ public final class PurpleSyncChatCarryCases {
                     &&(!action.equals("Source")||r.net.count(TLRPC.TL_messages_forwardMessages.class)==0),"no write after a partial read "+scenario);r.close();
         }
     }
+    /** Production's env view, read at every dispatch: the binding from state.json, as Holder.env.binding derives it (with the fixture's binding token in place of the app preference), and the admitted cache from its file. */
+    static void diskEnv(Run r,Consumer<PurpleSyncChatMove.Command> also){
+        r.net.onDispatch=c->{
+            try{r.net.binding=diskBinding(r.f);r.net.cache=diskCache(r.f);}catch(Exception e){throw new RuntimeException(e);}
+            if(also!=null)also.accept(c);
+        };
+    }
+    static PurpleSyncChatService.Binding diskBinding(Frame f)throws Exception {
+        File file=new File(f.files.root,"state.json");
+        if(!file.exists())return new PurpleSyncChatService.Binding(true,false,Peer.self(),"","missing");
+        byte[] bytes=Files.readAllBytes(file.toPath());JSONObject value=new JSONObject(new String(bytes,java.nio.charset.StandardCharsets.UTF_8));
+        Peer chat=Peer.parse(value.optString("chat","self"),777);
+        String identity=value.getString("install")+":"+value.getString("space")+":"+value.optString("binding_token","")+":"+value.optInt("version");
+        return new PurpleSyncChatService.Binding(chat!=null,"Bound".equals(PurpleAccountSyncCore.checkAccountBinding(bytes,f.files.binding).verdict),chat!=null?chat:Peer.self(),identity,PurpleSyncRetainedFiles.hash(bytes));
+    }
+    static PurpleSyncChatCache.Data diskCache(Frame f){
+        PurpleSyncChatCache.Loaded loaded=PurpleSyncChatCache.load(new PurpleSyncChatCache.IO(){
+            public byte[] read()throws Exception{return f.files.cache.exists()?Files.readAllBytes(f.files.cache.toPath()):null;}
+            public boolean write(byte[] a,byte[] b){return false;}public boolean remove(byte[] a){return false;}
+        },ORIGIN,f.authority);
+        must(loaded.ok&&!loaded.paused,"the admitted cache loads from disk");return loaded.data;
+    }
+    static JSONObject journal(PurpleSyncChatMove.Command c)throws Exception{byte[] j=c.journal();return j==null?null:new JSONObject(new String(j,java.nio.charset.StandardCharsets.UTF_8));}
+    static boolean inWindow(PurpleSyncChatMove.Command c)throws Exception{JSONObject j=journal(c);return j!=null&&j.optBoolean("state_committed")&&!j.optBoolean("cache_completed");}
+    /** A Run whose env reads state.json and the admitted cache from disk, starting from an admitted cache at O (none for Fill; for RepairMark its mark is gone). */
+    static Run diskRun(String mode,Consumer<PurpleSyncChatMove.Command> also)throws Exception {
+        Frame f=new Frame(false,false,mode);Run r=new Run(f);r.net.oldMarkPresent=!mode.equals("RepairMark");
+        if(!mode.equals("Fill"))PurpleModernSyncCases.write(f.files.cache,PurpleSyncChatCache.encode(ORIGIN,f.authority,r.net.cache));
+        r.net.binding=diskBinding(f);r.net.cache=diskCache(f);diskEnv(r,also);return r;
+    }
+    /**
+     * The window between CommitState and CompleteCache, with the env read from disk. A cross-chat move's Fresh there sees state.json
+     * already bound to the target while the admitted cache still names the source; Follow and an ordinary move must still get the
+     * real resolution, complete the cache and reach Done. Fill (no state, no cache) and a same-chat RepairMark never see that
+     * mismatch. A move stopped in the window resumes to Done. A mismatch the command's journal does not own (a freshFrame, a foreign
+     * state stamp, a third chat) still pauses.
+     */
+    static void committedWindow()throws Exception {
+        for(String mode:new String[]{"Switch","Follow","Fill","RepairMark"}){
+            List<PurpleSyncChatMove.Command> window=new ArrayList<>();List<PurpleSyncChatService.Binding> bound=new ArrayList<>();List<PurpleSyncChatCache.Data> cached=new ArrayList<>();
+            List<String> frames=new ArrayList<>();Run[] run=new Run[1];
+            run[0]=diskRun(mode,c->{
+                try{if(!c.action.equals("Fresh")||!inWindow(c))return;}catch(Exception e){throw new RuntimeException(e);}
+                window.add(c);bound.add(run[0].net.binding);cached.add(run[0].net.cache);
+                if(window.size()==1)run[0].carry.freshFrame("config",frame->frames.add(frame==null?"null":frame.status.reason));
+            });
+            Run r=run[0];Frame f=r.f;List<PurpleSyncChatMove.Reply> replies=new ArrayList<>();r.inDone=(c,reply)->{if(window.contains(c))replies.add(reply);};
+            r.start();
+            must(f.done(),"the move reaches Done through the committed window "+mode+" "+f.reason()+" "+r.trace());
+            must(!window.isEmpty()&&replies.size()==window.size()&&replies.stream().allMatch(x->x!=null&&x.fresh!=null&&x.fresh.fullResolution),"Fresh in the window returns the real resolution "+mode+" "+window.size()+"/"+replies.size());
+            for(PurpleSyncChatMove.Reply x:replies){Resolution res=resolve(x.fresh.resolution);must(res.winner!=null&&res.winner.chat.equals(f.target),"the window resolution names the own target mark "+mode);}
+            if(mode.equals("Switch")||mode.equals("Follow")){
+                must(bound.stream().allMatch(b->b.bound&&b.chat.equals(f.target))&&cached.stream().allMatch(d->d!=null&&d.location.chat.equals(O))&&!f.target.equals(O),"the case sat in the cross-chat window "+mode+" "+bound.stream().map(b->b.bound+":"+b.chat.token()+":"+b.stateStamp.length()).collect(java.util.stream.Collectors.toList())+" "+cached.stream().map(d->d==null?"none":d.location.chat.token()).collect(java.util.stream.Collectors.toList())+" target "+f.target.token());
+                must(frames.equals(Collections.singletonList("BoundChatMismatch")),"a freshFrame in the same window owns no journal and still pauses "+mode+" "+frames);
+            }else if(mode.equals("Fill"))must(bound.stream().allMatch(b->!b.bound)&&cached.stream().allMatch(d->d==null),"Fill has no state binding and no cache in the window");
+            else must(f.target.equals(O)&&bound.stream().allMatch(b->b.bound&&b.chat.equals(O))&&cached.stream().allMatch(d->d!=null&&d.location.chat.equals(O)),"same-chat RepairMark has no mismatch in the window");
+            JSONObject j=f.diskJournal();must(j.getBoolean("state_committed")&&j.getBoolean("cache_completed"),"CompleteCache ran "+mode);
+            must(diskCache(f).location.chat.equals(f.target)&&diskBinding(f).chat.equals(mode.equals("Fill")?Peer.self():f.target),"state and admitted cache agree on the target after Done "+mode);r.close();
+        }
+        Run[] run=new Run[1];
+        run[0]=diskRun("Follow",c->{try{if(c.action.equals("Fresh")&&inWindow(c)){PurpleSyncChatService.Binding b=run[0].net.binding;run[0].net.binding=new PurpleSyncChatService.Binding(true,true,b.chat,b.identity,"foreign"+b.stateStamp);}}catch(Exception e){throw new RuntimeException(e);}});
+        Run foreign=run[0];foreign.start();
+        must(!foreign.f.done()&&foreign.f.reason().equals("OutcomeUnknown")&&foreign.f.diskJournal().getBoolean("state_committed")&&!foreign.f.diskJournal().getBoolean("cache_completed"),
+                "a target binding whose state is not the journal's next state still pauses and holds Unknown "+foreign.f.reason());
+        must(diskCache(foreign.f).location.chat.equals(O),"the cache stays at the source while held");foreign.close();
+        Run[] stopped=new Run[1];
+        stopped[0]=diskRun("Switch",c->{try{if(c.action.equals("Fresh")&&inWindow(c))stopped[0].f.live=false;}catch(Exception e){throw new RuntimeException(e);}});
+        stopped[0].start();Frame cut=stopped[0].f;
+        must(!cut.done()&&cut.diskJournal().getBoolean("state_committed")&&!cut.diskJournal().getBoolean("cache_completed"),"a move stopped in the window keeps state committed and the cache pending "+cut.reason());stopped[0].close();
+        Frame again=new Frame(cut);Run restart=new Run(again);restart.net.binding=diskBinding(again);restart.net.cache=diskCache(again);diskEnv(restart,null);restart.resume();
+        must(again.done()&&again.diskJournal().getBoolean("cache_completed")&&diskCache(again).location.chat.equals(again.target),"resume inside the window completes the cache and reaches Done "+again.reason()+" "+restart.trace());restart.close();
+        Peer third=Peer.of(PeerKind.Channel,4242);
+        Run stranger=new Run(new Frame(false));stranger.net.binding=new PurpleSyncChatService.Binding(true,true,third,"stranger","stranger");stranger.start();
+        must(!stranger.f.done()&&!(new File(stranger.f.files.root,"carry.json").exists()&&stranger.f.diskJournal().optBoolean("state_committed"))&&stranger.net.count(TLRPC.TL_messages_sendMessage.class)==0&&stranger.net.count(TLRPC.TL_messages_forwardMessages.class)==0,
+                "a state bound to a third chat holds before any write "+stranger.f.reason());stranger.close();
+        Run idle=new Run(new Frame(false));idle.net.binding=new PurpleSyncChatService.Binding(true,true,idle.f.target,"idle","idle");List<String> reasons=new ArrayList<>();
+        idle.carry.freshFrame("config",frame->reasons.add(frame==null?"null":frame.status.reason));idle.net.drain();
+        must(reasons.equals(Collections.singletonList("BoundChatMismatch")),"a freshFrame with state bound away from the cache pauses "+reasons);idle.close();
+    }
     public static void main(String[] args)throws Exception {
         rows=new ArrayList<>();for(String line:Files.readAllLines(new File(args[0]).toPath()))rows.add(new JSONObject(line));for(JSONObject row:rows)if(row.getString("op").equals("begin")&&row.getJSONObject("expected").getString("status").equals("Valid")){beginning=row.getJSONObject("input");break;}
         base=unblob(rows.get(0).getJSONObject("input").getString("stagedRecord"));PurpleSyncChatMoveStoreCases.initial=unblob(beginning.getString("state"));PurpleSyncChatMoveStoreCases.baseRecord=base;
         File parent=new File(args[1]);PurpleModernSyncCases.directory(parent);PurpleSyncChatMoveExecutorCases.parent=parent;PurpleModernSyncCases.Frame setup=new PurpleModernSyncCases.Frame(parent,"routing",true);root=setup.root;
         org.telegram.messenger.UserConfig.getInstance(0).user=777;
-        lifecycle();frames();happy();pending();cleanup();unknownReplies();partialWrites();floodRetry();losingOwnMark();unprovenOwnMark();fences();failedReads();partialReads();
+        lifecycle();frames();happy();pending();cleanup();unknownReplies();partialWrites();floodRetry();losingOwnMark();unprovenOwnMark();fences();failedReads();partialReads();committedWindow();
         System.out.println("CARRY_DISPATCH_CHECKS="+checks);
     }
 }

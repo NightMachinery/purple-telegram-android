@@ -1,6 +1,7 @@
 package org.telegram.messenger.purple;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
@@ -274,15 +275,35 @@ final class PurpleSyncChatCarry implements PurpleSyncChatMove.Port, AutoCloseabl
         PurpleSyncChatCache.Loaded opening=env.cache();PurpleSyncChatService.Binding binding=env.binding();
         if(opening==null||!opening.ok||opening.paused||binding==null||!binding.ok){done.accept(null);return;}
         PurpleSyncChatCache.Data data=opening.data;
+        Peer settings=committedWindow(run.command,data,binding)?data.location.chat:binding.chat;
         PurpleSyncChatCache.Data input=data!=null&&data.pendingMove()?new PurpleSyncChatCache.Data(data.location,data.title,data.readers,data.warned,new JSONObject(),data.newReaders):data;
         PurpleSyncChatClient reads=env.reads(run::live);run.own(()->reads.dispatch(reads::cancel));
         reads.dispatch(()->{
             List<Peer> fallback=run.live()?reads.fallback():Collections.emptyList();
             run.post(()->{
-                Pass pass=new Pass(opening,binding,reads,new PurpleSyncChatDiscovery(origin,input,binding.bound,binding.chat,fallback,stream));
+                Pass pass=new Pass(opening,binding,reads,new PurpleSyncChatDiscovery(origin,input,binding.bound,settings,fallback,stream));
                 pass.model.start(env.now());pump(run,pass,0,done);
             });
         });
+    }
+    /**
+     * The command's own cross-chat move between CommitState and CompleteCache: state.json already holds the committed state,
+     * bound to the target, while the admitted cache still names the source. Discovery then reads from the source as it did
+     * before the commit. With a cache present the resolver ignores the settings chat, so only Discovery's BoundChatMismatch
+     * guard sees the difference. The proof is exact: the command's journal has state_committed and not cache_completed, the
+     * bound state's hash is the journal's next_state_hash, the binding names the target and the cache names the source. Any
+     * other mismatch, and every freshFrame, still pauses as BoundChatMismatch.
+     */
+    private boolean committedWindow(PurpleSyncChatMove.Command command,PurpleSyncChatCache.Data cache,PurpleSyncChatService.Binding binding){
+        byte[] journal=command==null?null:command.journal();
+        if(journal==null||cache==null||!binding.bound||binding.stateStamp.isEmpty())return false;
+        try{
+            JSONObject j=new JSONObject(new String(journal,StandardCharsets.UTF_8));
+            Peer source=Peer.parse(j.getString("source"),origin.userId),target=Peer.parse(j.getString("target"),origin.userId);
+            return source!=null&&target!=null&&!source.equals(target)&&j.getString("source").equals(command.source)&&j.getString("target").equals(command.target)
+                    &&j.optBoolean("state_committed")&&!j.optBoolean("cache_completed")&&binding.stateStamp.equals(j.optString("next_state_hash"))
+                    &&target.equals(binding.chat)&&source.equals(cache.location.chat);
+        }catch(Exception error){return false;}
     }
     private void pump(Run run,Pass pass,int steps,Consumer<Pass> done){
         PurpleSyncChatDiscovery.Command command=pass.model.command();

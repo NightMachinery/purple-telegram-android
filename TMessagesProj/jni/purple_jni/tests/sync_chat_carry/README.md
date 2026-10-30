@@ -45,6 +45,15 @@ Coverage, by case:
   inexact or unscoped exact page at Mark, and a Source scan whose history is
   complete but whose candidate downloads failed, reply null; the move holds
   OutcomeUnknown without commitment, deletion or forward.
+- `committedWindow`: the env reads state.json and the admitted cache from disk,
+  as production does. An ordinary move and Follow pass the window between
+  CommitState and CompleteCache, where state is bound to the target while the
+  cache still names the source: Fresh returns the real resolution, CompleteCache
+  runs and the move reaches Done. Fill and same-chat RepairMark pass the same
+  window without a mismatch. A mismatch no journal owns still pauses as
+  BoundChatMismatch: a freshFrame (in the window or idle), a target binding
+  whose state hash is not the journal's next state, and a state bound to a
+  third chat.
 - `lifecycle` and `frames`: Port identity, open refusal, idempotent close,
   `cancel(command)`, and the read-only `freshFrame` (pending journal included,
   null on loss or unknown stream, nothing after close).

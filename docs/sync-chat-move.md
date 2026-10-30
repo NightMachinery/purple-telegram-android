@@ -523,6 +523,21 @@ exact read counts only when the route's scoped exact-page check finds the messag
 or its scoped absence (a messageEmpty carrying its chat). An inexact, partial or
 unscoped page replies null; a scoped absence is a response, not a failure. Without a cache (Fill), `oldRead` comes from the source's fresh
 info: Valid when readable, ChatGone on CHANNEL_PRIVATE, otherwise Unknown.
+
+The pass runs against the settings binding from state.json and the admitted
+cache. Between CommitState and CompleteCache of a cross-chat move (an ordinary
+move or Follow), state.json already holds the committed state, bound to the
+target, while the admitted cache still names the source. Discovery would pause
+that as `BoundChatMismatch`, so every Fresh would reply null and CompleteCache
+would never run. For a command whose own journal is in that window, the pass
+therefore takes the source as the settings chat, as it did before the commit.
+The proof is exact: the command's journal has `state_committed` and not
+`cache_completed`, the bound state's hash is the journal's `next_state_hash`,
+the binding names the journal's target, the cache names its source, and the
+two differ. With a cache present the resolver ignores the settings chat, so
+only that guard sees the difference. Any other mismatch still pauses, and so
+does every `freshFrame`, which owns no journal. Fill (no state, no cache) and a
+same-chat RepairMark never reach the mismatch.
 What each command adds:
 
 - Fresh: nothing more.
@@ -567,7 +582,9 @@ reads, refused writes, and close/cancel fences. It also pins that a live own mar
 which a fresh resolution shows lost to another winner, in the same chat or
 another, holds with ResolutionChanged: no commit and no old-chat deletion. So does
 a fresh resolution that still names the opening winner, or whose winner date
-differs from the exact mark read. The
+differs from the exact mark read. With the env read from disk, it pins the
+CommitState-to-CompleteCache window above for ordinary, Follow, Fill and
+RepairMark moves. The
 production `Env` is covered by the AGP compile only.
 
 ## Provision-only Change boundary
