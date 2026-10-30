@@ -1003,10 +1003,12 @@
         "--executor",
         "{out:sync-chat-move-executor}"
       ],
-      "coverage": "Captured Change consent, qualification-held production entry, durable provision-only creation and verified Carry commit before new-channel decoration.",
+      "coverage": "Captured Change consent, qualification-held production entry, durable provision-only creation and verified Carry commit before new-channel decoration. Consecutive screen Changes on one durable install after ordinary reopen, with exact old-wrapper retention and new request scope.",
       "expects": {
         "change:SYNC_CHAT_CHANGE_CHECKS": 1000,
-        "sync-chat-change:SYNC_CHAT_CHANGE_CHECKS": 1000
+        "sync-chat-change:SYNC_CHAT_CHANGE_CHECKS": 1000,
+        "change:SYNC_CHAT_CONSECUTIVE_CHANGE_CHECKS": 50,
+        "sync-chat-change:SYNC_CHAT_CONSECUTIVE_CHANGE_CHECKS": 50
       }
     },
     {

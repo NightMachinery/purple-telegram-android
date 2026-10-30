@@ -15,6 +15,14 @@ receipt = json.loads(args.receipt.read_text())
 compiler = Path(receipt['compiler'])
 production = Path(receipt['destination'])
 assert receipt['task'] in [':TMessagesProj:compileDebugJavaWithJavac', ':TMessagesProj:compileStandaloneJavaWithJavac']
+cohort = []
+for source in receipt['sources']:
+    marker = '/TMessagesProj/src/main/java/org/telegram/messenger/purple/'
+    if marker in source['path']:
+        local = tests.parents[3] / ('TMessagesProj/src/main/java/org/telegram/messenger/purple/' + source['path'].split(marker, 1)[1])
+        assert local.is_file() and hashlib.sha256(local.read_bytes()).hexdigest() == source['sha256'], 'AGP source mismatch: ' + str(local)
+        cohort.append(source)
+assert cohort, 'no production source cohort'
 assert args.library.is_file() and (args.modern / 'classes').is_dir() and (args.carry / 'fixtures.jsonl').is_file()
 args.output.mkdir(parents=True, exist_ok=False)
 out = args.output / 'classes'
@@ -29,7 +37,7 @@ main.write_text('import java.io.File; public final class SyncChatChangeHostMain 
     'for(String n:new String[]{"PurpleSyncChatChange","PurpleSyncChatScreen","PurpleSyncChatSetup","PurpleSyncChatMove","PurpleSyncChat","PurpleSyncChatMoveRequests","PurpleSyncAutoEngine","PurpleSyncOperations","PurpleSyncChatService","PurpleSyncRunner","PurpleSyncAuto","PurpleAccountSyncStore","PurpleSyncChatMoveIO","PurpleSyncChatMoveStore","PurpleSyncChatMoveCore","PurpleSyncAutoUpload"})'
     'if(!new File(Class.forName("org.telegram.messenger.purple."+n).getProtectionDomain().getCodeSource().getLocation().toURI()).getCanonicalFile().equals(new File(a[0]).getCanonicalFile()))throw new AssertionError("business shadow "+n);'
     'org.telegram.messenger.purple.PurpleSyncChatChangeCases.main(new String[]{a[1],a[2]});}}\n')
-sources = [tests / 'sync_chat_change/PurpleSyncChatChangeCases.java', main]
+sources = sorted((tests / 'sync_chat_change').glob('*.java')) + [tests / 'sync_chat_move_races/PurpleSyncChatMoveRaceCases.java', main]
 def run(name, argv):
     (args.output / (name + '.argv.json')).write_text(json.dumps(list(map(str, argv)), indent=2) + '\n')
     with (args.output / (name + '.log')).open('w') as log:

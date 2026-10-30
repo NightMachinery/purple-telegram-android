@@ -281,6 +281,6 @@ public final class PurpleSyncChatChangeCases {
         for(JSONObject row:rows)if(row.getString("op").equals("begin")&&row.getJSONObject("expected").getString("status").equals("Valid")){beginning=row.getJSONObject("input");break;}
         base=unblob(rows.get(0).getJSONObject("input").getString("stagedRecord"));PurpleSyncChatMoveStoreCases.initial=unblob(beginning.getString("state"));PurpleSyncChatMoveStoreCases.baseRecord=base;
         PurpleModernSyncCases.directory(new File(args[1]));PurpleModernSyncCases.Frame bootstrap=new PurpleModernSyncCases.Frame(new File(args[1]),"change",true);root=bootstrap.root;
-        ui();eligibility();provisioning();flows();races();decorationFailures();System.out.println("SYNC_CHAT_CHANGE_CHECKS="+checks);
+        ui();eligibility();provisioning();flows();races();decorationFailures();PurpleSyncChatConsecutiveChangeCases.run();System.out.println("SYNC_CHAT_CHANGE_CHECKS="+checks);
     }
 }

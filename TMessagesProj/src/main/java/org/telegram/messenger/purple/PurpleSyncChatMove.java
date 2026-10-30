@@ -61,7 +61,7 @@ final class PurpleSyncChatMove implements AutoCloseable {
             cleanupRead=action.equals("CleanupRead")?owner.cleanup.read(cleanupItem):null;
             pendingRead=action.equals("Pending")?owner.io.beginPendingRead(owner.fresh):null;
             origin=owner.origin;authority=owner.authority;account=origin.accountKey();run=owner.run;ticket=++owner.tickets;
-            journal=owner.store==null?null:owner.store.journalBytes();JSONObject j=journal==null?owner.opening:parse(journal);
+            journal=owner.activeJournal();JSONObject j=journal==null?owner.opening:parse(journal);
             operation=j.getString("operation");source=j.getString("source");target=j.getString("target");revision=j.optLong("revision",0);
         }
         byte[] journal(){return journal==null?null:journal.clone();}
@@ -101,7 +101,7 @@ final class PurpleSyncChatMove implements AutoCloseable {
     private String knownAction="Open";
     private Committed knownCommitted;
     private volatile boolean closed;
-    private boolean started,interrupted,discardConfirmed,skipConfirmed,uncopiedDestination;
+    private boolean started,interrupted,discardConfirmed,skipConfirmed,uncopiedDestination,beginning;
     private Thread worker;
     private volatile long run,tickets;
     private volatile Command active;
@@ -144,7 +144,7 @@ final class PurpleSyncChatMove implements AutoCloseable {
         try{port.status(new Status(action,reason,false,proof,progress(action,false)));}finally{if(!live())close();}
     }
     private String actionQuiet(){
-        try{if(store!=null&&store.journalBytes()!=null)knownAction=next();}catch(Exception ignored){}
+        try{if(activeJournal()!=null)knownAction=next();}catch(Exception ignored){}
         return knownAction;
     }
     private boolean publish(String reason,boolean terminal)throws Exception {
@@ -159,7 +159,7 @@ final class PurpleSyncChatMove implements AutoCloseable {
         port.worker(()->guard(()->{if(openingRun!=run||active!=null)return;if(skip)skipCleanup(true);else retry();}));
     }
     private Committed committed()throws Exception {
-        if(store==null||store.journalBytes()==null)return knownCommitted;JSONObject j=journal();
+        if(activeJournal()==null)return knownCommitted;JSONObject j=journal();
         if(!j.optBoolean("destination_verified")||!j.optBoolean("mark_verified")||!j.optBoolean("state_committed")||!j.optBoolean("cache_completed")
                 ||!(store.stateBytes()==null?j.getInt("mode")==2&&j.optString("next_state_hash").isEmpty():PurpleSyncRetainedFiles.hash(store.stateBytes()).equals(j.optString("next_state_hash"))))return null;
         JSONObject mark=j.getJSONObject("target_mark");
@@ -179,6 +179,7 @@ final class PurpleSyncChatMove implements AutoCloseable {
             if(!origin.accountKey().equals(store.accountKey())||!authority.equals(store.loginAuthority()))throw new IOException("AccountUnbound");
             if(!foreign)store.checkNotPaused(origin);
             boolean continuing=resume||store.journalBytes()!=null&&!store.terminal();
+            beginning=!continuing;
             if(!continuing){
                 if(opening!=null&&opening.has("openingStateStamp")){
                     String actual=store.stateBytes()==null?"missing":PurpleSyncRetainedFiles.hash(store.stateBytes());
@@ -238,17 +239,17 @@ final class PurpleSyncChatMove implements AutoCloseable {
     private void complete(Command command,Reply reply)throws Exception {
         if(!matches(command))return;require();active=null;
         if(reply==null)throw new IOException("OutcomeUnknown");
-        if(store.journalBytes()!=null) {
+        if(activeJournal()!=null) {
             JSONObject j=journal();if(!command.operation.equals(j.getString("operation"))||command.revision!=j.getLong("revision"))return;
         }
         switch(command.action){
         case "Fresh":
             fresh=reply.fresh;checkFresh();
-            if(store.journalBytes()==null||store.terminal()&&opening!=null){
+            if(beginning){
                 if(accepted==null||!new PurpleSyncChatScreen.Candidate(origin,fresh.target.chat,accepted).same(new PurpleSyncChatScreen.Candidate(origin,fresh.target.chat,fresh.target)))throw new IOException("ReaderConsentChanged");
                 JSONObject begin=copy(opening);begin.put("loginAuthority",authority.substring(0,32)).put("resolution",resolution(fresh.resolution))
                         .put("eligibility",eligibilityJson(accepted.eligibility())).put("oldRead",fresh.oldRead.name()).put("sourceAccess",reply.sourceAccess);
-                transitionOnly(store.begin(begin));byte[] pending=store.pendingBytes();if(pending.length!=0)store.pendingIntent(pending,"Unknown");
+                transitionOnly(store.begin(begin));beginning=false;byte[] pending=store.pendingBytes();if(pending.length!=0)store.pendingIntent(pending,"Unknown");
                 io=new PurpleSyncChatMoveIO(store,origin,this::live);
                 io.acceptReaders(fresh,accepted,begin.optString("consentStream","config"),begin.getString("mode").equals("RepairMark")?begin.optJSONObject("repairReaders"):null);
             }else io.reconciliationFresh(fresh);
@@ -298,8 +299,8 @@ final class PurpleSyncChatMove implements AutoCloseable {
     private void checkFresh()throws Exception {
         require();if(fresh==null||!origin.equals(fresh.origin)||!authority.equals(fresh.loginAuthority)||!fresh.fullResolution||fresh.resolution==null
                 ||fresh.source==null||fresh.target==null||!origin.equals(fresh.source.origin)||!origin.equals(fresh.target.origin)
-                ||!fresh.source.chat.token().equals(store.journalBytes()==null?opening.getString("source"):journal().getString("source"))
-                ||!fresh.target.chat.token().equals(store.journalBytes()==null?opening.getString("target"):journal().getString("target")))throw new IOException("FreshScopeMismatch");
+                ||!fresh.source.chat.token().equals(beginning?opening.getString("source"):journal().getString("source"))
+                ||!fresh.target.chat.token().equals(beginning?opening.getString("target"):journal().getString("target")))throw new IOException("FreshScopeMismatch");
     }
     private void checkReplyFresh(Reply reply)throws Exception {fresh=reply.fresh;checkFresh();io.reconciliationFresh(fresh);}
     private void drive()throws Exception {
@@ -427,6 +428,7 @@ final class PurpleSyncChatMove implements AutoCloseable {
         });
     }
     private String next()throws Exception{return core("next",scope()).fields.getString("nextAction");}
+    private byte[] activeJournal(){return store==null||beginning?null:store.journalBytes();}
     private JSONObject journal()throws Exception{return parse(store.journalBytes());}
     private JSONObject scope()throws Exception {JSONObject j=journal();return json("account",origin.accountKey(),"source",j.getString("source"),"target",j.getString("target"),"journal",blob(store.journalBytes()));}
     private Peer source()throws Exception{return Peer.parse(journal().getString("source"),origin.userId);}
