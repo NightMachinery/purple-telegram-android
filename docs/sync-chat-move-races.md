@@ -73,6 +73,12 @@ alone and deletes nothing from O. At Cleanup, Unknown/protected evidence and an
 uncorroborated ChatGone label must not become affirmative ChatGone; the positive
 control supplies scoped definite evidence.
 
+Protected at Plan needs no second signal. With a direct read that agrees, and with
+one that contradicts the label (O actually forwardable), the move carries only
+this install's own record and leaves O untouched, while the Readable control
+forwards and cleans O. A wrong Protected label therefore loses, duplicates,
+misdirects and deletes nothing; the other installs' records stay in O.
+
 ## Existing coverage and priority 3
 
 The existing [executor fixture](../TMessagesProj/jni/purple_jni/tests/sync_chat_move_executor/README.md)
@@ -98,8 +104,8 @@ or Telegram observations:
   exercises Follow. Native foreground, reader and Pause behavior remains open.
 - N9 offline late post: the new three-install chain, carrying a late edit's new
   bytes before exact own late cleanup, plus its lagging-readback hold.
-- N10 protected/gone O: existing pending/protected cases and the new Plan and
-  Cleanup ChatGone controls. No live chat is protected or deleted by this suite.
+- N10 protected/gone O: existing pending/protected cases, the Plan Protected
+  controls, and the new Plan and Cleanup ChatGone controls. No live chat is protected or deleted by this suite.
 - N11 cleanup/stale: existing cleanup/stale-mark cases and the new sentinel and
   durable cleanup restart checks. No whole-chat or whole-channel deletion.
 - N12 convergence: the new simultaneous-switch and chained-move schedules.

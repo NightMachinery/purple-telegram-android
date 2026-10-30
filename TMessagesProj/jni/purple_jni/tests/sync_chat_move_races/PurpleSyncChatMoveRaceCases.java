@@ -22,7 +22,7 @@ public final class PurpleSyncChatMoveRaceCases {
         final Map<String,Integer> ids=new TreeMap<>();
         final Map<String,Integer> requests=new HashMap<>();
         final List<String> effects=new ArrayList<>(),attempts=new ArrayList<>();
-        final Set<String> gone=new HashSet<>();
+        final Set<String> gone=new HashSet<>(),forwardable=new HashSet<>();
         final Map<String,String> published=new LinkedHashMap<>();
         final Map<String,Set<String>> hidden=new HashMap<>();
         int markDate=2000,recordDate=1500,deletedSettings;
@@ -125,7 +125,7 @@ public final class PurpleSyncChatMoveRaceCases {
         }
         PurpleSyncChatMove.Reply reply()throws Exception {
             PurpleSyncChatMove.Reply r=new PurpleSyncChatMove.Reply();r.sourceAccess=access;
-            PurpleSyncChatClient.Info sourceInfo=info(source,0,access.equals("Protected"));
+            PurpleSyncChatClient.Info sourceInfo=info(source,0,access.equals("Protected")&&!cloud.forwardable.contains(source.token()));
             if((access.equals("Unknown")||access.equals("ChatGone"))&&!cloud.gone.contains(source.token()))sourceInfo=new PurpleSyncChatClient.Info(ORIGIN,source,null,PurpleSyncChatClient.Error.Unknown,"synthetic unreadable",Collections.emptySet(),false);
             r.fresh=new PurpleSyncChatMoveIO.Fresh(ORIGIN,AUTH,sourceInfo,input(source),info(target,0,false),input(target),cloud.resolution(source),true,cloud.gone.contains(source.token())?DirectRead.ChatGone:DirectRead.Valid);
             return r;
@@ -301,6 +301,25 @@ public final class PurpleSyncChatMoveRaceCases {
             must(cloud.effects.size()==effects,"ChatGone does not synthesize delete requests");cloud.conserved(N1);affirmative.close();pump(affirmative);++races;
         }
     }
+    /**
+     * Protected at Plan, against a Readable control: a label the direct read agrees with, and one it contradicts (O actually
+     * forwardable). Both Protected cases carry only this install's own record and leave O untouched, so a wrong label loses,
+     * duplicates, misdirects and deletes nothing; the other installs' records stay in O.
+     */
+    static void planProtected()throws Exception {
+        for(String label:new String[]{"Readable","Protected","contradicted"}){
+            context="plan-protected-"+label;Cloud cloud=new Cloud();Install first=cohort(cloud)[0];
+            first.access=label.equals("Readable")?"Readable":"Protected";if(label.equals("contradicted"))cloud.forwardable.add(O.token());first.start();pump(first);
+            must(first.done(),"Plan with "+label+" completes "+first.reason());ledger(first);
+            long forwards=cloud.effects.stream().filter(s->s.startsWith("forward:")).count(),deletes=cloud.effects.stream().filter(s->s.startsWith("delete:")).count();
+            if(label.equals("Readable"))must(forwards>0&&deletes>0&&cloud.deletedSettings>0,"the Readable control forwards and cleans O "+cloud.effects);
+            else{
+                must(forwards==0&&deletes==0&&cloud.deletedSettings==0&&cloud.bodies(O).size()==3,"a Protected plan forwards nothing and keeps every O record "+label+" "+cloud.effects);
+                must(cloud.effects.stream().filter(s->s.startsWith("own:")).count()==1&&cloud.bodies(N1).size()==1,"only this install's own record reaches N1, once "+label+" "+cloud.bodies(N1).keySet());
+            }
+            cloud.conserved(first.bound());first.close();pump(first);++races;
+        }
+    }
     public static void main(String[] args)throws Exception {
         seed=Long.parseLong(args[2]);random=new Random(seed);System.out.println("CARRY_RACE_SEED="+seed);
         rows=new ArrayList<>();for(String line:Files.readAllLines(new File(args[0]).toPath()))rows.add(new JSONObject(line));
@@ -310,7 +329,7 @@ public final class PurpleSyncChatMoveRaceCases {
         File parent=new File(args[1]);PurpleModernSyncCases.directory(parent);root=new PurpleModernSyncCases.Frame(parent,"routing",true).root;
         must(!PurpleSyncChatChange.ACTIVATED&&!PurpleSyncChatMoveCleanup.ACTIVATED,"production remains OFF");
         if(args.length<4||args[3].equals("matrix")||args[3].equals("all"))crashMatrix();
-        if(args.length<4||args[3].equals("races")||args[3].equals("all")){simultaneous();chain();laggingFollow();planGone();goneControls();}
+        if(args.length<4||args[3].equals("races")||args[3].equals("all")){simultaneous();chain();laggingFollow();planGone();goneControls();planProtected();}
         System.out.println("CARRY_RACE_WINDOWS="+windows);System.out.println("CARRY_RACE_SCENARIOS="+races);System.out.println("CARRY_RACE_SAME_CHAT_LOSERS="+sameChatLosers);
         System.out.println("CARRY_RACE_CONSERVATION="+conservation);System.out.println("CARRY_RACE_CHECKS="+checks);
     }
