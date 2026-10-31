@@ -10,6 +10,8 @@ namespace Probe {
 using namespace Purple;
 QFile Output;
 std::set<QByteArray> Seen;
+// Set for the FinishThenFollow groups, which run last: other suites index the earlier rows by position.
+bool Appending = false;
 template <typename T> QString Name(T value);
 template <> QString Name(SyncCarryMode value) {
     switch (value) {
@@ -27,6 +29,14 @@ template <> QString Name(SyncCarrySourceAccess value) {
     case SyncCarrySourceAccess::Protected: return u"Protected"_q;
     case SyncCarrySourceAccess::Unreadable: return u"Unreadable"_q;
     case SyncCarrySourceAccess::ChatGone: return u"ChatGone"_q;
+    }
+    std::abort();
+}
+template <> QString Name(SyncCarrySendIntent value) {
+    switch (value) {
+    case SyncCarrySendIntent::Unknown: return u"Unknown"_q;
+    case SyncCarrySendIntent::NotIssued: return u"NotIssued"_q;
+    case SyncCarrySendIntent::Issued: return u"Issued"_q;
     }
     std::abort();
 }
@@ -90,6 +100,7 @@ template <> QString Name(SyncCarryPendingStatus value) {
 template <> QString Name(SyncCarryPhase value) {
     switch (value) {
     case SyncCarryPhase::InterruptedAbandoned: return u"InterruptedAbandoned"_q;
+    case SyncCarryPhase::FinishedForFollow: return u"FinishedForFollow"_q;
     case SyncCarryPhase::CleanupSkipped: return u"CleanupSkipped"_q;
     case SyncCarryPhase::ResolvePending: return u"ResolvePending"_q;
     case SyncCarryPhase::WritePendingState: return u"WritePendingState"_q;
@@ -107,6 +118,28 @@ template <> QString Name(SyncCarryPhase value) {
     case SyncCarryPhase::Cleanup: return u"Cleanup"_q;
     case SyncCarryPhase::Done: return u"Done"_q;
     case SyncCarryPhase::Aborted: return u"Aborted"_q;
+    }
+    std::abort();
+}
+template <> QString Name(SyncCarryFinishRefusal value) {
+    switch (value) {
+    case SyncCarryFinishRefusal::None: return u"None"_q;
+    case SyncCarryFinishRefusal::Scope: return u"Scope"_q;
+    case SyncCarryFinishRefusal::Version: return u"Version"_q;
+    case SyncCarryFinishRefusal::Mode: return u"Mode"_q;
+    case SyncCarryFinishRefusal::Phase: return u"Phase"_q;
+    case SyncCarryFinishRefusal::Outcome: return u"Outcome"_q;
+    case SyncCarryFinishRefusal::RequestInFlight: return u"RequestInFlight"_q;
+    case SyncCarryFinishRefusal::IncompleteResolution: return u"IncompleteResolution"_q;
+    case SyncCarryFinishRefusal::Action: return u"Action"_q;
+    case SyncCarryFinishRefusal::ResolutionScope: return u"ResolutionScope"_q;
+    case SyncCarryFinishRefusal::InvalidWinner: return u"InvalidWinner"_q;
+    case SyncCarryFinishRefusal::WinnerInTarget: return u"WinnerInTarget"_q;
+    case SyncCarryFinishRefusal::MarkMismatch: return u"MarkMismatch"_q;
+    case SyncCarryFinishRefusal::AbsentUnproven: return u"AbsentUnproven"_q;
+    case SyncCarryFinishRefusal::TargetGone: return u"TargetGone"_q;
+    case SyncCarryFinishRefusal::WinnerNotNewer: return u"WinnerNotNewer"_q;
+    case SyncCarryFinishRefusal::Serialization: return u"Serialization"_q;
     }
     std::abort();
 }
@@ -151,6 +184,7 @@ template <> QString Name(SyncCarryMarkOutcome value) {
 template <> QString Name(SyncCarryEventKind value) {
     switch (value) {
     case SyncCarryEventKind::CleanupChatGone: return u"CleanupChatGone"_q;
+    case SyncCarryEventKind::FinishThenFollow: return u"FinishThenFollow"_q;
     case SyncCarryEventKind::SkipCleanup: return u"SkipCleanup"_q;
     case SyncCarryEventKind::PendingPrepared: return u"PendingPrepared"_q;
     case SyncCarryEventKind::StateObserved: return u"StateObserved"_q;
@@ -318,6 +352,16 @@ QJsonObject Event(const SyncCarryJournalEvent &e) {
     o.insert(u"retiredStageHash"_q,e.retiredStageHash);
     auto refs = QJsonArray(); for(const auto &r:e.deleted) refs.append(Reference(r));
     o.insert(u"deleted"_q,refs); o.insert(u"noRequestInFlight"_q,e.noRequestInFlight); o.insert(u"noPendingFiles"_q,e.noPendingFiles);
+    // Only when set, so the rows recorded before the FinishThenFollow groups keep their bytes and positions.
+    if(e.fullResolutionComplete) o.insert(u"fullResolutionComplete"_q,true);
+    if(e.neverLandedConfirmed) o.insert(u"neverLandedConfirmed"_q,true);
+    if(!e.neverLandedRequestId.isEmpty()) o.insert(u"neverLandedRequestId"_q,e.neverLandedRequestId);
+    if(e.pendingAccess != SyncCarrySourceAccess::Unknown) o.insert(u"pendingAccess"_q,Name(e.pendingAccess));
+    if(e.pendingSendIntent != SyncCarrySendIntent::Unknown) o.insert(u"pendingSendIntent"_q,Name(e.pendingSendIntent));
+    if(AccountKeyText(e.pendingInventory.account.environment,e.pendingInventory.account.userId)) o.insert(u"pendingInventory"_q,Inventory(e.pendingInventory));
+    if(!e.targetPendingRecord.isEmpty()) o.insert(u"targetPendingRecord"_q,Blob(e.targetPendingRecord));
+    if(e.targetPendingStageDurable) o.insert(u"targetPendingStageDurable"_q,true);
+    if(e.skipCleanupConfirmed) o.insert(u"skipCleanupConfirmed"_q,true);
     return o;
 }
 void Emit(const QString &op,const QJsonObject &input,const QJsonObject &expected) {
@@ -367,6 +411,22 @@ SyncCarryJournalResult Resume(const SyncCarryJournal &j,const std::optional<Sync
     const auto r = ResumeSyncCarryJournal(j,s,absent,durable,login);
     if(SerializeSyncCarryJournal(j)) { auto input=Journal(j); input.insert(u"state"_q,State(s));
         input.insert(u"currentLogin"_q,login); input.insert(u"stateAbsentConfirmed"_q,absent); input.insert(u"stateDurableConfirmed"_q,durable); Emit(u"resume"_q,input,Result(ResumeSyncCarryJournal(Reopen(j),Reopen(s),absent,durable,login))); }
+    return r;
+}
+// The wire refuses negative ids and dates while parsing (status Invalid), before the core can name a refusal.
+bool Wired(const std::optional<SyncChatCache> &c) { return !c || (c->markId >= 0 && c->markDate >= 0); }
+SyncCarryFinishRefusal CheckFinish(const SyncCarryJournal &j,const SyncCarryJournalEvent &e,const QString &login={}) {
+    const auto r = CheckSyncCarryFinishThenFollow(j,e,login);
+    const auto wired = Wired(e.resolution.cache) && Wired(e.resolution.winner) && e.mark.messageId >= 0 && e.mark.date >= 0;
+    if(wired && SerializeSyncCarryJournal(j)) { auto input = Journal(j); input.insert(u"event"_q,Event(e)); input.insert(u"currentLogin"_q,login);
+        Emit(u"checkFinishThenFollow"_q,input,{{u"status"_q,u"Valid"_q},{u"refusal"_q,Name(CheckSyncCarryFinishThenFollow(Reopen(j),Reopen(e),login))}}); }
+    return r;
+}
+std::optional<SyncChatCache> CacheMark(const SyncCarryJournal &j) {
+    const auto r = SyncCarryJournalCacheMark(j);
+    if(Appending && SerializeSyncCarryJournal(j)) { const auto wire = SyncCarryJournalCacheMark(Reopen(j));
+        auto expected = wire ? Cache(*wire) : QJsonObject(); expected.insert(u"status"_q,wire ? u"Valid"_q : u"Invalid"_q);
+        Emit(u"cacheMark"_q,Journal(j),expected); }
     return r;
 }
 SyncCarryJournalAction Next(const SyncCarryJournal &j) {
@@ -468,9 +528,13 @@ SyncCarryPendingResult Abandon(const AccountKey &a,const SyncLocalState &s,const
 #define CheckSyncCarryOldMarkDeletion Probe::OldMarkDeletion
 #define FinishPendingStageForCarry Probe::Finish
 #define AbandonStageForLostChat Probe::Abandon
+#define CheckSyncCarryFinishThenFollow Probe::CheckFinish
+#define SyncCarryJournalCacheMark Probe::CacheMark
 #define main CoreCarryMain
 #include "tests/test_sync_chat_carry.cpp"
 #undef main
+#undef CheckSyncCarryFinishThenFollow
+#undef SyncCarryJournalCacheMark
 #undef FinishPendingStageForCarry
 #undef AbandonStageForLostChat
 #undef PlanCarry
@@ -500,6 +564,15 @@ int main(int argc,char **argv) {
     FollowAndProtectedSources();
     FillContracts();
     PlaylistHookAndReadback();
+    // D-M2B5-13 FinishThenFollow: phase 18, the new event and its fields, typed refusals and the zero cache receipt (not the seeded fleet).
+    Probe::Appending = true;
+    FinishThenFollowDelta();
+    FinishThenFollowUnmarked();
+    FinishThenFollowTie();
+    FinishThenFollowScope();
+    FinishThenFollowCrashes();
+    FinishThenFollowProtected();
+    FinishThenFollowRepair();
     std::printf("%d checks, %d failures\n", Checks, Failures);
     const auto result=Failures ? 1 : 0;
     Probe::Output.close();

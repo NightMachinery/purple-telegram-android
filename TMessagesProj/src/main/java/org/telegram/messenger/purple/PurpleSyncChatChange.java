@@ -127,6 +127,7 @@ public final class PurpleSyncChatChange implements AutoCloseable {
                 }
                 public void cancel(PurpleSyncChatMove.Command command){delegate.cancel(command);}
                 public void status(PurpleSyncChatMove.Status status){changed(status);}
+                public long wall(){return delegate.wall();}
             },cleanupEnabled);
             if(live())move.start(begin,info);
         })));

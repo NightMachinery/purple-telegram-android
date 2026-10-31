@@ -83,8 +83,9 @@ public final class PurpleSyncChatMoveRaceCases {
         PurpleSyncChatMoveStore opened;
         String phase="",window="",lastAction="",access="Readable",barrier="";
         Runnable parked;
-        boolean crashed,duplicates,durablePending,cleanupEnabled=true;
+        boolean crashed,duplicates,durablePending,cleanupEnabled=true,unmarkedCache;
         int deletes,markDate;
+        long clock=1_000_000_000L;
         final byte[] queued;
         Install(Cloud cloud,int identity,Peer source,Peer target,String mode)throws Exception {this(cloud,identity,source,target,mode,false);}
         Install(Cloud cloud,int identity,Peer source,Peer target,String mode,boolean edited)throws Exception {
@@ -103,12 +104,13 @@ public final class PurpleSyncChatMoveRaceCases {
             if(cloud.find(source,2+identity)==null)cloud.add(source,2+identity,1001,own);
         }
         Install(Install previous){this(previous,previous.source,previous.target,previous.mode);}
-        Install(Install previous,Peer source,Peer target,String mode){cloud=previous.cloud;files=previous.files;this.source=source;this.target=target;own=previous.own;queued=previous.queued;this.mode=mode;duplicates=previous.duplicates;access=previous.access;cleanupEnabled=previous.cleanupEnabled;markDate=previous.markDate;}
+        Install(Install previous,Peer source,Peer target,String mode){cloud=previous.cloud;files=previous.files;this.source=source;this.target=target;own=previous.own;queued=previous.queued;this.mode=mode;duplicates=previous.duplicates;access=previous.access;cleanupEnabled=previous.cleanupEnabled;markDate=previous.markDate;clock=previous.clock;}
         public PurpleSyncChatOrigin origin(){return ORIGIN;}
         public String authority(){return AUTH;}
         public String operationKey(){return "race:"+files.root.getName();}
         public boolean current(){return true;}
         public boolean foreground(){return true;}
+        public long wall(){return clock;}
         public void worker(Runnable task){tasks.addLast(task);}
         public void quiesce(Runnable task){tasks.addLast(task);}
         public PurpleSyncChatMoveStore open(BooleanSupplier current,boolean interrupted)throws Exception {
@@ -127,7 +129,9 @@ public final class PurpleSyncChatMoveRaceCases {
             PurpleSyncChatMove.Reply r=new PurpleSyncChatMove.Reply();r.sourceAccess=access;
             PurpleSyncChatClient.Info sourceInfo=info(source,0,access.equals("Protected")&&!cloud.forwardable.contains(source.token()));
             if((access.equals("Unknown")||access.equals("ChatGone"))&&!cloud.gone.contains(source.token()))sourceInfo=new PurpleSyncChatClient.Info(ORIGIN,source,null,PurpleSyncChatClient.Error.Unknown,"synthetic unreadable",Collections.emptySet(),false);
-            r.fresh=new PurpleSyncChatMoveIO.Fresh(ORIGIN,AUTH,sourceInfo,input(source),info(target,0,false),input(target),cloud.resolution(source),true,cloud.gone.contains(source.token())?DirectRead.ChatGone:DirectRead.Valid);
+            // After FinishedForFollow the binding is the frozen N, unmarked {N, 0, 0}: discovery reports MarkGone without a request.
+            ResolveInput resolution=cloud.resolution(source);if(unmarkedCache){resolution.cache=new Cache(source,0,0);resolution.cacheRead=DirectRead.MarkGone;}
+            r.fresh=new PurpleSyncChatMoveIO.Fresh(ORIGIN,AUTH,sourceInfo,input(source),info(target,0,false),input(target),resolution,true,unmarkedCache?DirectRead.MarkGone:cloud.gone.contains(source.token())?DirectRead.ChatGone:DirectRead.Valid);
             return r;
         }
         String label(PurpleSyncChatMove.Command c){
@@ -214,20 +218,45 @@ public final class PurpleSyncChatMoveRaceCases {
             JSONObject oldEntries=json(disk).getJSONObject("transport").getJSONObject("entries"),newEntries=json(Files.readAllBytes(new File(first.files.root,"carry.json").toPath())).getJSONObject("transport").getJSONObject("entries");
             for(String key:oldEntries.keySet())for(String field:new String[]{"random_id","file_id","hash","source_id"})must(oldEntries.getJSONObject(key).get(field).equals(newEntries.getJSONObject(key).get(field)),"restart preserves reserved request and record identities");
             must(disk.length>0&&reopened.opened!=null,"restart opens actual journal from disk");
-            if(phase.equals("PostMark")&&!window.equals("durable")){
-                must(!reopened.done()&&(reopened.reason().equals("MarkNeedsMatchedRequest")||reopened.reason().equals("ResolutionChanged")),"unacknowledged mark holds rather than blind resend "+reopened.reason());
-                must(cloud.bodies(O).size()==3,"uncertain mark preserves all O records");
-            }else must(reopened.done(),"durable reopen completes "+reopened.reason());
+            Install last=reopened;boolean followed=phase.equals("PostMark")&&window.equals("before");
+            if(followed){
+                // Never sent: the mark is nowhere, so the check stays uncertain (case d) until the fourth complete check.
+                Install finished=cadence(reopened);
+                must(finished.journal().getInt("phase")==18&&finished.journal().optJSONObject("attempted_mark")==null&&finished.journal().getJSONObject("superseded_by").getString("chat").equals(O.token()),"unmarked FinishThenFollow names the O mark");
+                must(cloud.bodies(O).size()==3&&cloud.effects.stream().noneMatch(s->s.startsWith("delete:")),"FinishThenFollow deletes nothing");
+                cloud.conserved(finished.bound());ledger(finished);
+                last=follow(finished,O);
+            }else must(reopened.done()&&reopened.reason().equals("Done"),"durable reopen completes "+reopened.reason());
             must(new HashSet<>(cloud.attempts).size()==cloud.attempts.size(),"no blind wire resend hidden by server request deduplication");
             long marks=cloud.effects.stream().filter(s->s.startsWith("mark:")).count();must(marks==(phase.equals("PostMark")&&window.equals("before")?0:1),"no blind mark resend after restart");
             for(Map<Integer,byte[]> bodies:cloud.bodies.values()){
                 Set<String> hashes=new HashSet<>();for(byte[] body:bodies.values())must(hashes.add(hash(body)),"no blind duplicate record send");
             }
             must(cloud.find(O,10)!=null&&cloud.find(O,11)!=null,"unrelated and legacy O messages survive every restart");
-            if(reopened.done())must(cloud.deletedSettings>0,"completed cleanup deleted old settings, so conservation is exercised");
-            cloud.conserved(reopened.bound());ledger(reopened);reopened.close();pump(reopened);++windows;
+            if(followed)must(cloud.bodies(O).size()==3&&cloud.effects.stream().noneMatch(s->s.startsWith("delete:"+O.token())),"Follow back to O deletes nothing in O");
+            else must(cloud.deletedSettings>0,"completed cleanup deleted old settings, so conservation is exercised");
+            cloud.conserved(last.bound());ledger(last);last.close();pump(last);++windows;
         }
     }
+    /** Case (d) of D-M2B5-13 across restarts: checks after 30, 120 and 600 s on the install clock, then an unmarked FinishThenFollow. */
+    static Install cadence(Install i)throws Exception {
+        for(long wait:new long[]{30_000,120_000,600_000}){
+            PurpleSyncChatMove.Status s=i.statuses.get(i.statuses.size()-1);
+            must(!i.done()&&s.reason.equals("MarkRecoveryWaiting")&&s.recheckAt==i.clock+wait,"uncertain mark waits "+wait/1000+" s, not "+s.reason);
+            i.close();pump(i);Install next=new Install(i);next.clock=s.recheckAt;next.resume();pump(next);i=next;
+        }
+        must(i.done()&&i.reason().equals("FinishedForFollow"),"the fourth uncertain check finishes for follow "+i.reason());
+        return i;
+    }
+    /** After FinishedForFollow, ordinary resolution from the unmarked frozen N offers Follow to the winner chat. */
+    static Install follow(Install moved,Peer winner)throws Exception {
+        moved.close();pump(moved);int effects=cloud(moved).effects.size();
+        Install f=new Install(moved,moved.target,winner,"Follow");f.unmarkedCache=true;f.start();pump(f);
+        must(f.done()&&f.reason().equals("Done"),"Follow from the frozen N to the winner completes "+f.reason());
+        must(cloud(moved).effects.subList(effects,cloud(moved).effects.size()).stream().noneMatch(s->s.startsWith("mark:")),"Follow posts no mark");
+        return f;
+    }
+    static Cloud cloud(Install i){return i.cloud;}
     static void simultaneous()throws Exception {
         // Two installs race into one chat at the same second, the third into the other chat. The seed picks
         // the pair's chat and the odd install out; the pair's chat always wins (by chat order at the same
@@ -242,12 +271,23 @@ public final class PurpleSyncChatMoveRaceCases {
         Install[] reopened=new Install[group.length];for(int k=0;k<group.length;++k){group[k].close();reopened[k]=new Install(group[k]);reopened[k].resume();}pump(reopened);
         Resolution resolution=resolve(cloud.resolution(O));must(resolution.winner!=null&&resolution.winner.chat.equals(pair),"shared full resolution selects the pair's chat");
         System.out.println("CARRY_RACE_WINNER="+resolution.winner.chat.token()+":"+resolution.winner.markId+" single="+single);
-        int finished=0,losers=0;
+        int finished=0,losers=0,followers=0;
         for(int k=0;k<reopened.length;++k){Install i=reopened[k];stale(group[k]);JSONObject j=i.journal();
             if(i.target.equals(resolution.winner.chat)&&i.markAck()!=resolution.winner.markId)++losers;
-            if(i.done()){++finished;must(i.target.equals(resolution.winner.chat)&&j.getJSONObject("target_mark").getInt("id")==resolution.winner.markId,"losing mark never reports Done");ledger(i);}else{must(!j.getBoolean("state_committed"),"losing install cannot commit");must(i.deletes==0,"losing mark cannot erase O");must(j.getString("source").equals(O.token())&&j.getString("target").equals(i.target.token())&&j.getBoolean("mark_attempted"),"loser retains frozen outward intent");}i.close();}pump(reopened);
+            must(i.done(),"every racing install finishes "+i.reason());
+            if(i.target.equals(resolution.winner.chat)){++finished;must(i.reason().equals("Done")&&j.getJSONObject("target_mark").getInt("id")==resolution.winner.markId,"a same-chat install finishes with the winning mark, never its losing one");ledger(i);}
+            else{
+                must(i.reason().equals("FinishedForFollow")&&j.getInt("phase")==18&&j.getJSONObject("attempted_mark").getInt("id")==i.markAck()&&i.deletes==0,"the odd install out finishes for follow with its own mark and erases nothing");
+                must(j.getJSONObject("superseded_by").getInt("id")==resolution.winner.markId,"it names the winner");cloud.conserved(i.bound());ledger(i);
+                long marks=cloud.effects.stream().filter(s->s.startsWith("mark:")).count();
+                Install f=follow(i,resolution.winner.chat);must(cloud.effects.stream().filter(s->s.startsWith("mark:")).count()==marks,"Follow posts no new mark");
+                must(f.bound().equals(resolution.winner.chat),"the follower converges on the winner");ledger(f);f.close();pump(f);++followers;
+            }
+            i.close();}pump(reopened);
         must(losers==1,"one install's mark loses inside the winning chat");sameChatLosers+=losers;
-        must(finished>0,"at least one racing install completes");cloud.conserved(resolution.winner.chat);++races;
+        must(finished==2&&followers==1,"the pair completes and the odd install out follows");
+        must(new HashSet<>(cloud.attempts).size()==cloud.attempts.size(),"no resend across FinishThenFollow and Follow");
+        cloud.conserved(resolution.winner.chat);++races;
     }
     // O to N1 by one install, N1 to N2 by another, while a third install sits offline on O with a queued
     // edit. Its Follow releases the edit into O after both marks (a late own post with new bytes), so it

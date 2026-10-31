@@ -12,6 +12,7 @@ import static org.telegram.messenger.purple.PurpleSyncChatMoveIOCases.*;
 public final class PurpleSyncChatMoveExecutorCases {
     static int checks,sequence;
     static File parent;
+    static final Peer X=Peer.of(PeerKind.Chat,30);
     static void must(boolean value,String reason){++checks;if(!value)throw new AssertionError(reason);}
     static final class CloudClient implements PurpleSyncClient {
         final PurpleSyncChatIO route;final List<TLRPC.Message> records;final Map<Integer,byte[]> bodies;
@@ -43,9 +44,14 @@ public final class PurpleSyncChatMoveExecutorCases {
         PurpleSyncChatMoveStore opened;
         String authority=AUTH,access="Readable",stop="",stopCore="",dropKind="",faultAction="";
         boolean libraryPending,fakePlaylist,removeOld,duplicate,omitBase;
+        /** No mark left anywhere: O's mark reads gone and discovery finds none, so the resolver has no winner. */
+        boolean vanished;
         String playlistStatus="Verified";
         DirectRead oldReadOverride;
-        boolean foreground=true,live=true,ownWinner,dropEffect,stopAfterMark,badMark,badDestination,closeObserver,throwCancel,omitPendingInventory;
+        boolean foreground=true,live=true,ownWinner,dropEffect,stopAfterMark,badMark,badDestination,closeObserver,throwCancel,omitPendingInventory,lostMark;
+        Cache rival;
+        String stopKind="";
+        long clock=1_000_000_000L;
         int effects,markId=90,reads,quiesces,cancels;
         int fault;
         Consumer<PurpleSyncChatMove.Reply> deferred;
@@ -62,11 +68,13 @@ public final class PurpleSyncChatMoveExecutorCases {
             oldRecords.add(doc(O,2,1001,base));oldBodies.put(2,base);
             if(mode.equals("Follow")||mode.equals("Fill")){TLRPC.TL_message mark=doc(target,markId,2000,base);mark.media=null;mark.flags&=~(1<<9);mark.message=PurpleSyncChatSetupRequests.MARK;newRecords.add(mark);}
         }
-        Frame(Frame original){mode=original.mode;files=original.files;target=original.target;access=original.access;oldRecords.addAll(original.oldRecords);newRecords.addAll(original.newRecords);oldBodies.putAll(original.oldBodies);newBodies.putAll(original.newBodies);ownWinner=original.ownWinner;}
+        Frame(Frame original){mode=original.mode;files=original.files;target=original.target;access=original.access;oldRecords.addAll(original.oldRecords);newRecords.addAll(original.newRecords);oldBodies.putAll(original.oldBodies);newBodies.putAll(original.newBodies);ownWinner=original.ownWinner;rival=original.rival;clock=original.clock;vanished=original.vanished;}
+        /** Another install of this account marked chat p (id, date); a mark in N is also readable there. */
+        void marked(Peer p,int id,int date){rival=new Cache(p,id,date);if(p.equals(target)){TLRPC.TL_message m=doc(target,id,date,base);m.media=null;m.flags&=~(1<<9);m.message=PurpleSyncChatSetupRequests.MARK;newRecords.add(m);}}
         JSONObject begin()throws Exception{return copy(beginning).put("operation",String.format(Locale.ROOT,"%032x",sequence)).put("target",target.token()).put("mode",mode).put("removeOldMarkAuthorized",removeOld).put("preferenceToken",blob(files.binding.getBytes(java.nio.charset.StandardCharsets.UTF_8))).put("markText",PurpleSyncChatSetupRequests.MARK).put("loginAuthority",authority.substring(0,32));}
         public PurpleSyncChatOrigin origin(){return ORIGIN;}public String authority(){return authority;}
         public String operationKey(){return "executor:"+files.root.getName();}
-        public boolean current(){return live;}public boolean foreground(){return foreground;}
+        public boolean current(){return live;}public boolean foreground(){return foreground;}public long wall(){return clock;}
         public void worker(Runnable task){tasks.addLast(task);}
         public void quiesce(Runnable done){++quiesces;tasks.addLast(done);}
         public PurpleSyncChatMoveStore open(BooleanSupplier current,boolean interrupted)throws Exception {
@@ -91,7 +99,9 @@ public final class PurpleSyncChatMoveExecutorCases {
                 if(mode.equals("Fill")){r.cache=null;r.settingsBound=false;}
             }
             if(mode.equals("RepairMark")&&!ownWinner){r.cacheRead=DirectRead.MarkGone;r.marks=Collections.emptyList();}
-            return new PurpleSyncChatMoveIO.Fresh(ORIGIN,authority,source,input(O),dest,input(target),r,true,oldReadOverride!=null?oldReadOverride:mode.equals("RepairMark")&&!ownWinner?DirectRead.MarkGone:access.equals("ChatGone")?DirectRead.ChatGone:DirectRead.Valid);
+            if(vanished){r.cacheRead=DirectRead.MarkGone;r.marks=Collections.emptyList();}
+            if(rival!=null){List<Mark> all=new ArrayList<>(r.marks);all.add(new Mark(rival,MarkStatus.Supported,(rival.chat.equals(target)?dest:info(rival.chat,0,false)).eligibility(),RecordPresence.Present,true,true));r.marks=all;}
+            return new PurpleSyncChatMoveIO.Fresh(ORIGIN,authority,source,input(O),dest,input(target),r,true,oldReadOverride!=null?oldReadOverride:vanished||mode.equals("RepairMark")&&!ownWinner?DirectRead.MarkGone:access.equals("ChatGone")?DirectRead.ChatGone:DirectRead.Valid);
         }
         PurpleSyncInventory inventory(boolean source)throws Exception {
             ++reads;List<TLRPC.Message> records=source?oldRecords:newRecords;Map<Integer,byte[]> bodies=source?oldBodies:newBodies;
@@ -104,7 +114,7 @@ public final class PurpleSyncChatMoveExecutorCases {
         public void dispatch(PurpleSyncChatMove.Command command,Consumer<PurpleSyncChatMove.Reply> done){
             try {
                 commands.add(command);
-                if(command.action.equals(stop)||stopAfterMark&&ownWinner&&command.action.equals("Fresh")){deferred=done;deferredCommand=command;return;}
+                if(command.action.equals(stop)||stopAfterMark&&ownWinner&&command.action.equals("Fresh")||command.permit!=null&&command.permit.kind.equals(stopKind)){deferred=done;deferredCommand=command;return;}
                 PurpleSyncChatMove.Reply r=reply();
                 switch(command.action){
                 case "Fresh":break;
@@ -119,7 +129,7 @@ public final class PurpleSyncChatMoveExecutorCases {
                 case "Effect":
                     PurpleSyncChatMoveIO.Permit permit=command.permit;must(permit.current(),"effect has current sealed admission");++effects;
                     if(permit.kind.equals("mark")){
-                        TLRPC.TL_message posted=doc(target,markId,2000,base);posted.media=null;posted.flags&=~(1<<9);posted.message=PurpleSyncChatSetupRequests.MARK;newRecords.add(posted);ownWinner=true;
+                        TLRPC.TL_message posted=doc(target,markId,2000,base);posted.media=null;posted.flags&=~(1<<9);posted.message=PurpleSyncChatSetupRequests.MARK;if(!lostMark){newRecords.add(posted);ownWinner=true;}
                     }else{
                         boolean pending=permit.kind.equals("pending");int id=pending?22:55;
                         TLRPC.TL_message record=doc(pending?O:target,id,1500,permit.payload());(pending?oldRecords:newRecords).add(record);(pending?oldBodies:newBodies).put(id,permit.payload());
@@ -139,6 +149,11 @@ public final class PurpleSyncChatMoveExecutorCases {
         boolean done(){return statuses.stream().anyMatch(s->s.terminal);}
         String reason(){return statuses.isEmpty()?"none":statuses.get(statuses.size()-1).reason;}
         JSONObject diskJournal()throws Exception{return json(Files.readAllBytes(new File(files.root,"carry.json").toPath())).getJSONObject("journal");}
+        JSONObject diskTransport()throws Exception{return json(Files.readAllBytes(new File(files.root,"carry.json").toPath())).getJSONObject("transport");}
+        String markSlot()throws Exception{JSONObject e=diskTransport().getJSONObject("entries");for(String k:e.keySet())if(e.getJSONObject(k).getString("kind").equals("mark"))return e.getJSONObject(k).getString("state");return "";}
+        PurpleSyncChatMove.Status last(){return statuses.get(statuses.size()-1);}
+        long markEffects(){return commands.stream().filter(c->c.permit!=null&&c.permit.kind.equals("mark")).count();}
+        boolean cleanupTouched(){return commands.stream().anyMatch(c->c.action.equals("Cleanup")||c.action.equals("CleanupRead"));}
     }
     static void modes()throws Exception {
         for(String mode:new String[]{"Follow","Fill","RepairMark"}){
@@ -321,10 +336,86 @@ public final class PurpleSyncChatMoveExecutorCases {
     }
     static void uncertaintyControls()throws Exception {
         Frame mark=new Frame(false);mark.dropKind="mark";mark.start();must(mark.ownWinner&&mark.deferred!=null,"mark effect happened without retained ack");mark.close();
-        Frame restart=new Frame(mark);restart.resume();must(!restart.done()&&restart.effects==0&&restart.diskJournal().getBoolean("mark_attempted"),"lost mark acknowledgement holds frozen intent without blind repost");restart.close();
+        Frame restart=new Frame(mark);restart.resume();
+        must(restart.done()&&restart.reason().equals("Done")&&restart.effects==0&&restart.diskJournal().getBoolean("mark_verified"),"(b) lost mark acknowledgement: the exact read of the winner in N finishes without a repost "+restart.reason());restart.close();
         Frame pending=new Frame(false,true);pending.dropKind="pending";pending.start();must(pending.effects==1,"pending O effect before ack");pending.close();
         Frame protectedRestart=new Frame(pending);protectedRestart.access="Protected";protectedRestart.resume();must(protectedRestart.done()&&!protectedRestart.commands.stream().anyMatch(c->c.permit!=null&&c.permit.kind.equals("pending")),"issued pending found under protection is reconciled without another O send");protectedRestart.close();
         Frame missing=new Frame(true);missing.omitBase=true;missing.start();must(!missing.done()&&missing.effects==0&&missing.reason().equals("MissingLocalVersion"),"missing exact own base never fabricates a version "+missing.reason());missing.close();
+    }
+    /** D-M2B5-13: the automatic exit from a held mark attempt, cases (a) to (d), through the real executor, store and core. */
+    static void finishThenFollow()throws Exception {
+        Cache elsewhere=new Cache(X,7,3000);
+        // (a) The mark intent is durable but the mark was never handed to the network (slot prepared). That is the state a crash
+        // leaves between MarkPostPrepared and the mark authorization; reserve() already wrote the slot, so it is rebuilt here
+        // from a run stopped before the mark send, with the slot written back to prepared through the store.
+        for(boolean changed:new boolean[]{false,true}){
+            Frame f=new Frame(false);f.removeOld=changed;f.stopKind="mark";f.start();
+            must(f.deferredCommand!=null&&f.effects==1&&f.diskJournal().getBoolean("mark_attempted"),"(a) prerequisite: durable mark intent, mark not sent "+f.reason());f.close();
+            try(PurpleSyncChatMoveStore s=f.open(()->true,false)){JSONObject t=s.transport(),e=t.getJSONObject("entries");for(String k:e.keySet())if(e.getJSONObject(k).getString("kind").equals("mark"))e.getJSONObject(k).put("state","prepared");s.transport(t,false);}
+            must(f.markSlot().equals("prepared"),"(a) prerequisite: prepared mark slot");
+            Frame next=new Frame(f);if(changed)next.marked(X,7,3000);next.resume();JSONObject j=next.diskJournal();
+            if(!changed){must(next.done()&&next.reason().equals("Done")&&next.markEffects()==1&&j.getBoolean("mark_verified"),"(a) unchanged winner sends the prepared mark once "+next.reason());next.close();continue;}
+            must(next.done()&&next.reason().equals("FinishedForFollow")&&j.getInt("phase")==18,"(a) a changed winner finishes for follow without a mark "+next.reason());
+            must(next.markEffects()==0&&next.effects==0&&!next.cleanupTouched()&&j.optJSONObject("attempted_mark")==null,"(a) no mark, no send, no cleanup read or O deletion, no attempted mark");
+            must(j.getBoolean("state_committed")&&j.getBoolean("cache_completed")&&!j.getBoolean("mark_verified"),"(a) N state committed without a verified mark");
+            must(next.last().terminal&&next.last().committed==null&&elsewhere.equals(next.last().supersededBy),"(a) terminal status is not a committed move and names W");
+            must(PurpleSyncChatMoveStore.completed(next.files.root,"0-777"),"(a) FinishedForFollow admits ordinary startup, which follows W");next.close();
+        }
+        // (b) Another install's mark in N outranks ours: the exact read of that mark finishes the move with it.
+        Frame sibling=new Frame(false);sibling.stopAfterMark=true;sibling.start();must(sibling.ownWinner&&sibling.deferred!=null,"(b) prerequisite: our mark acknowledged");sibling.close();
+        Frame b=new Frame(sibling);b.marked(b.target,95,2500);b.resume();JSONObject bj=b.diskJournal();
+        must(b.done()&&b.reason().equals("Done")&&b.effects==0&&bj.getJSONObject("target_mark").getInt("id")==95&&bj.getJSONObject("target_mark").getLong("date")==2500,"(b) another install's newer mark in N completes the move "+b.reason());
+        must(b.commands.stream().anyMatch(c->c.action.equals("Mark")&&c.messageId==95),"(b) the Mark command reads the id the executor names");b.close();
+        // (c) Our acknowledged mark M is read back Valid, and W elsewhere outranks it.
+        Frame acked=new Frame(false);acked.removeOld=true;acked.stopAfterMark=true;acked.start();must(acked.ownWinner&&acked.deferred!=null,"(c) prerequisite: our mark acknowledged");acked.close();
+        Frame c=new Frame(acked);c.marked(X,7,3000);c.resume();JSONObject cj=c.diskJournal();
+        must(c.done()&&c.reason().equals("FinishedForFollow")&&cj.getInt("phase")==18,"(c) acked mark outranked elsewhere finishes for follow "+c.reason());
+        must(cj.getJSONObject("attempted_mark").getInt("id")==c.markId&&cj.getJSONObject("attempted_mark").getLong("date")==2000&&cj.getJSONObject("superseded_by").getString("chat").equals(X.token()),"(c) records our attempted mark and W");
+        must(c.effects==0&&!c.cleanupTouched()&&c.commands.stream().anyMatch(m->m.action.equals("Mark")&&m.messageId==c.markId),"(c) reads our own mark exactly; no resend, no cleanup read or O deletion");
+        must(cj.getBoolean("state_committed")&&c.last().committed==null&&elsewhere.equals(c.last().supersededBy),"(c) N state committed, terminal names W");c.close();
+        // (c) control: M reads back Valid but is missing from the resolution, and W elsewhere does not outrank it: hold, decide nothing.
+        Frame newer=new Frame(false);newer.stopAfterMark=true;newer.start();must(newer.deferred!=null,"(c) control prerequisite");newer.close();
+        Frame older=new Frame(newer);older.ownWinner=false;older.marked(X,7,1500);older.resume();
+        must(!older.done()&&older.reason().equals("ResolutionChanged")&&older.effects==0&&!older.diskJournal().getBoolean("state_committed"),"(c) a W that does not outrank M decides nothing "+older.reason());older.close();
+        // (d) Mark sent, acknowledgement lost, mark not visible anywhere: 30, 120 and 600 s checks, then an unmarked finish.
+        Frame lost=new Frame(false);lost.removeOld=true;lost.lostMark=true;lost.dropKind="mark";lost.start();must(lost.deferred!=null&&lost.effects==2&&!lost.ownWinner,"(d) prerequisite: mark sent, no ack, not landed");lost.close();
+        Frame d=new Frame(lost);d.resume();long first=d.clock;
+        must(!d.done()&&d.reason().equals("MarkRecoveryWaiting")&&d.markEffects()==0&&d.last().recheckAt==first+30_000&&d.diskTransport().getJSONObject("mark_recovery").getInt("checks")==1,"(d) first uncertain check waits 30 s "+d.reason());d.close();
+        long[] at={first+10_000,first+30_000,first+60_000,first+150_000,first+150_000,first+750_000};
+        int[] counts={1,2,2,3,3,-1};long[] due={first+30_000,first+150_000,first+150_000,first+750_000,first+750_000,0};
+        for(int k=0;k<at.length;++k){
+            Frame again=new Frame(d);again.clock=at[k];boolean failed=k==4;if(failed)again.oldReadOverride=DirectRead.Unknown;again.resume();
+            if(counts[k]<0){d=again;break;}
+            must(!again.done()&&again.effects==0&&again.diskTransport().getJSONObject("mark_recovery").getInt("checks")==counts[k]&&again.diskTransport().getJSONObject("mark_recovery").getString("next_at").equals(Long.toString(due[k])),
+                "(d) cadence survives restart: no reset, no skip, early and failed checks not counted, step "+k+" "+again.reason());
+            must(failed?!again.reason().equals("MarkRecoveryWaiting"):again.reason().equals("MarkRecoveryWaiting")&&again.last().recheckAt==due[k],"(d) waiting status carries the due time, step "+k+" "+again.reason());
+            again.close();d=again;
+        }
+        JSONObject dj=d.diskJournal();
+        must(d.done()&&d.reason().equals("FinishedForFollow")&&dj.getInt("phase")==18&&dj.optJSONObject("attempted_mark")==null,"(d) the fourth complete uncertain check finishes without a mark "+d.reason());
+        must(dj.getJSONObject("superseded_by").getString("chat").equals(O.token())&&d.effects==0&&!d.cleanupTouched(),"(d) W is the old mark in O; no mark, no resend, no O deletion");
+        PurpleSyncChatCache.Loaded cache=loadCache(d);must(cache.ok&&cache.data.location.equals(new Cache(d.target,0,0)),"(d) the cache names frozen N unmarked {N, 0, 0}");d.close();
+        // Rollback guard: a due time further ahead than the longest delay (the clock moved back) counts as due.
+        Frame unsent=new Frame(false);unsent.lostMark=true;unsent.dropKind="mark";unsent.start();unsent.close();
+        Frame once=new Frame(unsent);once.resume();must(once.diskTransport().getJSONObject("mark_recovery").getInt("checks")==1,"(d) rollback prerequisite "+once.reason());once.close();
+        Frame skew=new Frame(once);skew.clock=once.clock-3_600_000;skew.resume();
+        must(skew.diskTransport().getJSONObject("mark_recovery").getInt("checks")==2&&skew.reason().equals("MarkRecoveryWaiting"),"(d) a clock moved back cannot stall the cadence "+skew.reason());skew.close();
+        // (d) with no winner left anywhere (Searching or Lost): FinishThenFollow names none, so superseded_by is null. Its
+        // reconciliations between CommitState and CompleteCache still pass the committed window, whose frozen target_mark
+        // pin holds ordinary journals only.
+        Frame gone=new Frame(false);gone.removeOld=true;gone.lostMark=true;gone.dropKind="mark";gone.start();gone.close();
+        Frame g=new Frame(gone);g.vanished=true;g.resume();long g0=g.clock;
+        must(!g.done()&&g.reason().equals("MarkRecoveryWaiting"),"(d) no winner: the first check waits "+g.reason());g.close();
+        for(long step:new long[]{30_000,150_000,750_000}){Frame next=new Frame(g);next.clock=g0+step;next.resume();next.close();g=next;}
+        JSONObject gj=g.diskJournal();
+        must(g.done()&&g.reason().equals("FinishedForFollow")&&gj.getInt("phase")==18&&gj.has("superseded_by")&&gj.isNull("superseded_by")&&g.last().supersededBy==null,
+            "(d) no winner: the move finishes for follow naming none, through the committed window "+g.reason());
+        must(gj.getBoolean("state_committed")&&gj.getBoolean("cache_completed")&&g.effects==0&&!g.cleanupTouched()&&loadCache(g).data.location.equals(new Cache(g.target,0,0)),
+            "(d) no winner: state and cache in N unmarked; nothing sent or deleted");g.close();
+    }
+    static PurpleSyncChatCache.Loaded loadCache(Frame f)throws Exception {
+        byte[] saved=Files.readAllBytes(f.files.cache.toPath());
+        return PurpleSyncChatCache.load(new PurpleSyncChatCache.IO(){public byte[] read(){return saved;}public boolean write(byte[] a,byte[] b){return false;}public boolean remove(byte[] a){return false;}},ORIGIN,AUTH);
     }
     static void ownClaim()throws Exception {
         org.telegram.messenger.UserConfig.getInstance(0).user=777;
@@ -358,7 +449,7 @@ public final class PurpleSyncChatMoveExecutorCases {
         rows=new ArrayList<>();for(String line:Files.readAllLines(new File(args[0]).toPath()))rows.add(new JSONObject(line));for(JSONObject row:rows)if(row.getString("op").equals("begin")&&row.getJSONObject("expected").getString("status").equals("Valid")){beginning=row.getJSONObject("input");break;}
         base=unblob(rows.get(0).getJSONObject("input").getString("stagedRecord"));PurpleSyncChatMoveStoreCases.initial=unblob(beginning.getString("state"));PurpleSyncChatMoveStoreCases.baseRecord=base;
         parent=new File(args[1]);PurpleModernSyncCases.directory(parent);PurpleModernSyncCases.Frame setup=new PurpleModernSyncCases.Frame(parent,"routing",true);root=setup.root;
-        PurpleSyncChatPendingChronologyCases.run();pendingProofs();happy();modes();playlistHolds();observerAndForeground();effectCrash();ownMarkWinnerRestart();failedReads();quiescence();pendingCases();precommitDiscard();deferredDiscardCases();cleanupGone();cleanupControls();lifecycleCallbacks();lockOrder();actionRestarts();durabilityRestarts();pendingRestarts();mergeCache();uncertaintyControls();ownClaim();terminalAdmission();
+        PurpleSyncChatPendingChronologyCases.run();pendingProofs();happy();modes();playlistHolds();observerAndForeground();effectCrash();ownMarkWinnerRestart();failedReads();quiescence();pendingCases();precommitDiscard();deferredDiscardCases();cleanupGone();cleanupControls();lifecycleCallbacks();lockOrder();actionRestarts();durabilityRestarts();pendingRestarts();mergeCache();uncertaintyControls();finishThenFollow();ownClaim();terminalAdmission();
         System.out.println("CARRY_EXECUTOR_CHECKS="+(checks+PurpleSyncChatMoveIOCases.checks));
     }
 }

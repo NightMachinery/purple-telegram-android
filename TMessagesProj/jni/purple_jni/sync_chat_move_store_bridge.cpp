@@ -300,6 +300,14 @@ void ValidateTransport(const QJsonObject &wrapper) {
         Need(readers.value(u"snapshot"_q).isObject() && readers.value(u"settings_disclosed"_q).isBool()
             && readers.value(u"settings_disclosed"_q).toBool() && (stream == u"config"_q || stream == u"library"_q));
     }
+    if (t.contains(u"mark_recovery"_q)) {
+        // D-M2B5-13 (d) cadence: completed uncertain checks (1 to 3) and the wall-clock time the next one is due.
+        Need(t.value(u"mark_recovery"_q).isObject() && j.value(u"mark_attempted"_q).toBool());
+        const auto r = t.value(u"mark_recovery"_q).toObject(); const auto checks = r.value(u"checks"_q);
+        Need(r.size() == 2 && checks.isDouble() && checks.toDouble() == checks.toInt() && checks.toInt() >= 1 && checks.toInt() <= 3);
+        auto ok = false; const auto at = r.value(u"next_at"_q).toString().toULongLong(&ok);
+        Need(r.value(u"next_at"_q).isString() && ok && QString::number(at) == r.value(u"next_at"_q).toString());
+    }
     const auto entries = t.value(u"entries"_q).toObject(); Need(entries.size() <= 1024, u"RetentionFull"_q);
     auto used = std::set<qulonglong>();
     for (auto i = entries.begin(); i != entries.end(); ++i) {

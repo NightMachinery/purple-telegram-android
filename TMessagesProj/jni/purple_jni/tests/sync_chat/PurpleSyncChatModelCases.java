@@ -92,5 +92,15 @@ final class PurpleSyncChatModelCases {
         PurpleSyncChatFacts.MappedPeer increasedFacts=PurpleSyncChatFacts.peer(ORIGIN,increased);world.peers.put(CHANNEL,new PurpleSyncChatClient.Info(ORIGIN,CHANNEL,increasedFacts,PurpleSyncChatClient.Error.None,"",new HashSet<>(Arrays.asList(11L,22L)),true));
         model=model(cache(CHANNEL,7,50));model.startBeforePost(1000);world.drain(model,1000);check(!model.status().postingHeld&&model.status().newReaders&&model.cache().newReaders,"new reader warning keeps previously accepted posting per C6");
         model=model(null);model.start(1000);first=model.command();model.cancel();check(!model.complete(new PurpleSyncChatDiscovery.Reply(first),1000),"cancel fences all late completions");
+        // D-M2B5-13: FinishThenFollow leaves an unmarked cache {N, 0, 0}. For a group or channel it reads MarkGone through PeerInfo, never an exact read of id 0.
+        world=new World();world.add(mark(SELF,7,50));world.records.put(SELF,RecordPresence.Present);model=model(cache(CHANNEL,0,0));model.start(1000);world.drain(model,1000);
+        check(model.status().resolution.action==Action.Follow&&new Cache(SELF,7,50).equals(model.status().resolution.winner)&&world.commands.stream().noneMatch(c->c.step==PurpleSyncChatDiscovery.Step.ExactMark&&c.mark!=null&&c.mark.markId==0),"unmarked group or channel cache reads MarkGone and follows the winner");
+        // A seeded chat's own history is searched after Saved Messages, so its mark is found when account-wide search misses it.
+        TLRPC.TL_message seeded=mark(CHANNEL,8,60);
+        for(boolean seed:new boolean[]{false,true}){
+            world=new World();world.add(mark(SELF,7,50));world.dialogs.put(CHANNEL,new ArrayList<>(Collections.singletonList(seeded)));world.exact.put(CHANNEL.token()+"/8",seeded);world.records.put(CHANNEL,RecordPresence.Present);
+            model=new PurpleSyncChatDiscovery(ORIGIN,original,false,SELF,Collections.emptyList(),"config",seed?Collections.singletonList(CHANNEL):Collections.emptyList());model.start(1000);world.drain(model,1000);
+            check(world.searches(PurpleSyncChatRequests.Search.Dialog)==(seed?1:0)&&new Cache(CHANNEL,8,60).equals(model.status().resolution.winner)==seed,"seeded chat history decides whether its unindexed mark is seen "+seed);
+        }
     }
 }

@@ -27,6 +27,8 @@ final class PurpleSyncChatMove implements AutoCloseable {
         void dispatch(Command command,Consumer<Reply> done);
         void cancel(Command command);
         void status(Status status);
+        /** Wall-clock milliseconds for the persisted mark recovery cadence (D-M2B5-13); tests supply a fake clock. */
+        default long wall(){return System.currentTimeMillis();}
     }
     static final class Committed {
         final PurpleSyncChatOrigin origin;
@@ -39,8 +41,14 @@ final class PurpleSyncChatMove implements AutoCloseable {
         final boolean terminal;
         final Committed committed;
         final PurpleSyncChatMoveCleanup.Progress cleanup;
-        Status(String action,String reason,boolean terminal){this(action,reason,terminal,null,null);}
-        private Status(String action,String reason,boolean terminal,Committed committed,PurpleSyncChatMoveCleanup.Progress cleanup){this.action=action;this.reason=reason;this.terminal=terminal;this.committed=committed;this.cleanup=cleanup;}
+        /** MarkRecoveryWaiting: the wall-clock time the next mark recovery check is due; 0 otherwise. */
+        final long recheckAt;
+        /** FinishedForFollow: the winner sync follows next, or null when the resolution named none. */
+        final Cache supersededBy;
+        Status(String action,String reason,boolean terminal){this(action,reason,terminal,null,null,0,null);}
+        private Status(String action,String reason,boolean terminal,Committed committed,PurpleSyncChatMoveCleanup.Progress cleanup,long recheckAt,Cache supersededBy){
+            this.action=action;this.reason=reason;this.terminal=terminal;this.committed=committed;this.cleanup=cleanup;this.recheckAt=recheckAt;this.supersededBy=supersededBy;
+        }
     }
     static final class Command {
         final String action,operation,account,source,target;
@@ -53,6 +61,8 @@ final class PurpleSyncChatMove implements AutoCloseable {
         final PurpleSyncChatMoveCleanup.Read cleanupRead;
         private PurpleSyncChatMoveIO.Permit currentPermit;
         final int messageId;
+        /** Fresh reads also search N's own history: a mark of ours may have left, and search can lag behind it (D-M2B5-13). */
+        final boolean seedTarget;
         private final byte[] journal;
         private final PurpleSyncChatMoveIO.ReadTicket read,pendingRead;
         private final PurpleSyncChatMove owner;
@@ -64,6 +74,7 @@ final class PurpleSyncChatMove implements AutoCloseable {
             origin=owner.origin;authority=owner.authority;account=origin.accountKey();run=owner.run;ticket=++owner.tickets;
             journal=owner.activeJournal();JSONObject j=journal==null?owner.opening:parse(journal);
             operation=j.getString("operation");source=j.getString("source");target=j.getString("target");revision=j.optLong("revision",0);
+            seedTarget=journal!=null&&j.optBoolean("mark_attempted")&&(j.getInt("mode")==0||j.getInt("mode")==3);
         }
         byte[] journal(){return journal==null?null:journal.clone();}
         /** The move that issued this command; the carry dispatcher renews permits and cleanup reads through it. */
@@ -84,6 +95,10 @@ final class PurpleSyncChatMove implements AutoCloseable {
         private final JSONObject proof;
         private PlaylistReceipt(JSONObject proof)throws Exception {this.proof=copy(proof);}
     }
+    /** Phase 18, the terminal of a FinishThenFollow journal: moved into N for the record, not moved as the sync chat. */
+    static final int FINISHED_FOR_FOLLOW=18;
+    /** D-M2B5-13 (d): the delays between uncertain mark checks, the resolver's Searching cadence. */
+    static final long[] RECHECK_MILLIS={30_000,120_000,600_000};
     private final Port port;
     private final boolean cleanupEnabled;
     private final PurpleSyncChatOrigin origin;
@@ -107,6 +122,7 @@ final class PurpleSyncChatMove implements AutoCloseable {
     private volatile boolean closed;
     private boolean started,interrupted,discardConfirmed,skipConfirmed,uncopiedDestination,beginning;
     private Thread worker;
+    private long recheckAt;
     private volatile long run,tickets;
     private volatile Command active;
     PurpleSyncChatMove(Port port){this(port,true);}
@@ -146,14 +162,16 @@ final class PurpleSyncChatMove implements AutoCloseable {
                 io=null;store=null;PurpleSyncOperations.CarryLease held=lease;lease=null;if(held!=null)held.close();
             }}
         }
-        try{port.status(new Status(action,reason,false,proof,progress(action,false)));}finally{if(!live())close();}
+        long due=reason.equals("MarkRecoveryWaiting")?recheckAt:0;
+        try{port.status(new Status(action,reason,false,proof,progress(action,false),due,null));}finally{if(!live())close();}
     }
     private String actionQuiet(){
         try{if(activeJournal()!=null)knownAction=next();}catch(Exception ignored){}
         return knownAction;
     }
-    private boolean publish(String reason,boolean terminal)throws Exception {
-        require();long before=run;String action=actionQuiet();port.status(new Status(action,reason,terminal,committed(),progress(action,terminal)));
+    private boolean publish(String reason,boolean terminal)throws Exception {return publish(reason,terminal,null);}
+    private boolean publish(String reason,boolean terminal,Cache supersededBy)throws Exception {
+        require();long before=run;String action=actionQuiet();port.status(new Status(action,reason,terminal,committed(),progress(action,terminal),0,supersededBy));
         if(before!=run||!live())return false;require();return true;
     }
     private PurpleSyncChatMoveCleanup.Progress progress(String action,boolean terminal){
@@ -165,6 +183,7 @@ final class PurpleSyncChatMove implements AutoCloseable {
     }
     private Committed committed()throws Exception {
         if(activeJournal()==null)return knownCommitted;JSONObject j=journal();
+        if(j.getInt("phase")==FINISHED_FOR_FOLLOW)return null;
         if(!j.optBoolean("destination_verified")||!j.optBoolean("mark_verified")||!j.optBoolean("state_committed")||!j.optBoolean("cache_completed")
                 ||!(store.stateBytes()==null?j.getInt("mode")==2&&j.optString("next_state_hash").isEmpty():PurpleSyncRetainedFiles.hash(store.stateBytes()).equals(j.optString("next_state_hash"))))return null;
         JSONObject mark=j.getJSONObject("target_mark");
@@ -271,10 +290,11 @@ final class PurpleSyncChatMove implements AutoCloseable {
             playlist=playlist(reply,destination);
             transition(event("DestinationRead",json("destination",destination,"playlist",playlist)));break;
         case "Mark":
-            checkReplyFresh(reply);JSONObject mark=journal().getInt("mode")==1||journal().getInt("mode")==2
-                    ?io.existingMarkReadback(reply.markRoute,reply.response):io.markReadback(markKey(),reply.markRoute,reply.response);
-            io.markWinner(fresh,mark);
-            transition(event("MarkRead",json("mark",mark)));break;
+            checkReplyFresh(reply);
+            if(journal().getInt("mode")==1||journal().getInt("mode")==2){
+                JSONObject mark=io.existingMarkReadback(reply.markRoute,reply.response);io.markWinner(fresh,mark);transition(event("MarkRead",json("mark",mark)));
+            }else markRead(command.messageId,io.namedMarkReadback(command.messageId,reply.markRoute,reply.response));
+            break;
         case "Cleanup":
             checkReplyFresh(reply);
             if(reply.sourceAccess.equals("ChatGone")&&fresh.oldRead==DirectRead.ChatGone) {
@@ -326,7 +346,7 @@ final class PurpleSyncChatMove implements AutoCloseable {
         case "ReadMark":deliverMark();break;
         case "PrepareCache":case "CompleteCache":
             boolean complete=next().equals("CompleteCache");store.writeCache(origin,accepted,complete);
-            JSONObject mark=journal().getJSONObject("target_mark");
+            JSONObject mark=store.cacheMark();
             transition(event(complete?"CacheCompleted":"CachePrepared",json("cache",json("account",origin.accountKey(),"operation",journal().getString("operation"),"mark",json("chat",mark.getString("chat"),"id",Integer.toString(mark.getInt("id")),"date",Long.toString(mark.getLong("date"))),"complete",complete))));break;
         case "Cleanup":if(cleanupEnabled)request("Cleanup",null,0,null);else hold("CleanupDisabled");break;
         default:throw new IOException("InvalidTransition");
@@ -349,15 +369,75 @@ final class PurpleSyncChatMove implements AutoCloseable {
         }
         request("Destination",null,0,null);
     }
+    /**
+     * The Mark step of a Switch or RepairMark, classified per D-M2B5-13 (first match wins). MarkRead still commits only a mark the fresh
+     * resolution names exactly; the cases below are the automatic exit from that hold, never a way around it. See docs/sync-chat-move.md,
+     * "Finishing a held mark attempt".
+     */
     private void deliverMark()throws Exception {
         JSONObject j=journal();
         if(j.getInt("mode")==1||j.getInt("mode")==2){request("Mark",null,j.getJSONObject("target_mark").getInt("id"),null);return;}
         if(store.transport().getJSONObject("entries").length()==0)io.reserve(fresh,accepted,entropy);
         JSONObject slot=store.transport().getJSONObject("entries").optJSONObject(markKey());
         if(slot==null){hold("MarkReadbackRequired");return;}
-        if(slot.getString("state").equals("prepared")){request("Effect",io.authorize("mark",0,slot.getString("hash"),fresh,null),0,null);return;}
-        if(!slot.has("ack_id")){hold("MarkNeedsMatchedRequest");return;}
-        request("Mark",null,slot.getInt("ack_id"),null);
+        Resolution r=resolve(fresh.resolution);
+        // (b) N is the winner: our mark landed and won, or another install of this account marked N. Read that mark exactly.
+        if(r.winner!=null&&r.winner.chat.equals(target())){request("Mark",null,r.winner.markId,null);return;}
+        boolean prepared=slot.getString("state").equals("prepared");
+        // (a) Never handed to the network: send it once under the opening winner; under any other winner nothing of ours can land.
+        if(prepared&&io.openingWinner(fresh)){request("Effect",io.authorize("mark",0,slot.getString("hash"),fresh,null),0,null);return;}
+        if(prepared){finishThenFollow(null);return;}
+        // (c) or (d), decided by the exact read of our own mark when we know its id.
+        Cache own=ownMark(j);
+        if(own!=null){request("Mark",null,own.markId,null);return;}
+        uncertain(null);
+    }
+    private void markRead(int id,JSONObject mark)throws Exception {
+        JSONObject j=journal();Resolution r=resolve(fresh.resolution);Peer n=target();
+        Cache read=mark==null?null:new Cache(n,id,Long.parseLong(mark.getString("date")));
+        if(read!=null&&read.equals(r.winner)){io.markWinner(fresh,mark);transition(event("MarkRead",json("mark",mark,"noRequestInFlight",true)));return;}
+        Cache own=ownMark(j);
+        if(r.winner!=null&&r.winner.chat.equals(n)||own==null||own.markId!=id){hold(read==null?"UnknownMark":"ResolutionChanged");return;}
+        if(read!=null&&own.markDate!=0&&own.markDate!=read.markDate){hold("UnknownMark");return;}
+        if(read!=null&&r.winner!=null){
+            if(settled(r)&&outranks(r.winner,read)){finishThenFollow(mark);return;}
+            hold("ResolutionChanged");return;
+        }
+        uncertain(mark);
+    }
+    /** Our posted mark as far as it is known: the saved acknowledgement, else the attempt a FinishThenFollow recorded (with its date). */
+    private Cache ownMark(JSONObject j)throws Exception {
+        JSONObject slot=store.transport().getJSONObject("entries").optJSONObject(markKey());
+        if(slot!=null&&slot.has("ack_id"))return new Cache(target(),slot.getInt("ack_id"),0);
+        JSONObject seen=j.optJSONObject("attempted_mark");
+        return seen==null?null:new Cache(target(),seen.getInt("id"),seen.getLong("date"));
+    }
+    private static boolean settled(Resolution r){return r.action==Action.Use||r.action==Action.Follow||r.action==Action.Searching||r.action==Action.Lost;}
+    /**
+     * (d) Still uncertain: check again after 30, 120 and 600 seconds, persisted in the transport sidecar so a restart neither resets nor skips the
+     * count. An early check (a retry before the due time) decides nothing. The fourth complete uncertain check finishes without a mark.
+     */
+    private void uncertain(JSONObject mark)throws Exception {
+        Resolution r=resolve(fresh.resolution);
+        if(!settled(r)||r.winner!=null&&r.winner.chat.equals(target())){hold("ResolutionChanged");return;}
+        JSONObject t=store.transport(),record=t.optJSONObject("mark_recovery");long now=port.wall();
+        int checks=record==null?0:record.getInt("checks");long due=record==null?0:Long.parseLong(record.getString("next_at"));
+        // A due time further ahead than the longest delay means the clock moved back; the check counts then.
+        if(checks>0&&now<due&&due-now<=RECHECK_MILLIS[RECHECK_MILLIS.length-1]){recheckAt=due;hold("MarkRecoveryWaiting");return;}
+        if(checks>=RECHECK_MILLIS.length){finishThenFollow(mark);return;}
+        recheckAt=now+RECHECK_MILLIS[checks];
+        t.put("mark_recovery",json("checks",checks+1,"next_at",Long.toString(recheckAt)));store.transport(t,false);
+        hold("MarkRecoveryWaiting");
+    }
+    /** Finishes the move into the frozen N without cleanup so sync can follow the current winner; posts and deletes nothing (D-M2B5-13). */
+    private void finishThenFollow(JSONObject mark)throws Exception {
+        Resolution r=resolve(fresh.resolution);
+        if(!settled(r)||r.winner!=null&&r.winner.chat.equals(target())){hold("ResolutionChanged");return;}
+        JSONObject payload=json("resolution",resolution(fresh.resolution),"fullResolutionComplete",fresh.fullResolution,"noRequestInFlight",true,
+                "mark",mark!=null?mark:json("outcome","Unknown","account",origin.accountKey(),"chat",journal().getString("target"),"id","0","date","0","text","","hasMedia",false,"ownership","Unknown"));
+        JSONObject e=eventJson("FinishThenFollow",payload);String refusal=store.finishRefusal(e);
+        if(!refusal.equals("None")){hold("FinishThenFollow"+refusal);return;}
+        transition(store.advance(e));
     }
     private void pending(Command command,Reply reply)throws Exception {
         checkReplyFresh(reply);byte[] record=store.pendingBytes();if(record.length==0)throw new IOException("PendingMismatch");
@@ -408,9 +488,10 @@ final class PurpleSyncChatMove implements AutoCloseable {
         return proof;
     }
     private String openingToken()throws Exception{return store.stateBytes()==null?blob(new byte[0]):blob(parse(store.stateBytes()).getString("binding_token").getBytes(StandardCharsets.UTF_8));}
-    private PurpleSyncChatMoveCore.Result event(String kind,JSONObject payload)throws Exception {
+    private PurpleSyncChatMoveCore.Result event(String kind,JSONObject payload)throws Exception {return store.advance(eventJson(kind,payload));}
+    private JSONObject eventJson(String kind,JSONObject payload)throws Exception {
         JSONObject request=scope();request.put("kind",kind);JSONObject e=core("event",request).fields.getJSONObject("event");
-        for(Iterator<String> keys=payload.keys();keys.hasNext();){String key=keys.next();e.put(key,payload.get(key));}e.put("outcome","Success");return store.advance(e);
+        for(Iterator<String> keys=payload.keys();keys.hasNext();){String key=keys.next();e.put(key,payload.get(key));}e.put("outcome","Success");return e;
     }
     private void transitionOnly(PurpleSyncChatMoveCore.Result result)throws Exception {
         require();if(!result.fields.has("canonical")||PurpleSyncRetainedBases.decode(result.fields.getString("canonical")).length==0)throw new IOException(result.status);
@@ -421,7 +502,14 @@ final class PurpleSyncChatMove implements AutoCloseable {
         JSONArray missing=journal().getJSONArray("missing");for(String key:sortedKeys(entries)){JSONObject slot=entries.getJSONObject(key);if(slot.getString("state").equals("prepared")&&contains(missing,slot.getString("hash")))return true;}return false;
     }
     private void transition(PurpleSyncChatMoveCore.Result result)throws Exception {transitionOnly(result);if(store.terminal())finish();else request("Fresh",null,0,null);}
-    private void finish()throws Exception {if(!store.terminal())throw new IOException("CarryHeld");try{publish("Done",true);}finally{close();}}
+    private void finish()throws Exception {
+        if(!store.terminal())throw new IOException("CarryHeld");
+        try{
+            JSONObject j=journal();
+            if(j.getInt("phase")!=FINISHED_FOR_FOLLOW)publish("Done",true);
+            else{JSONObject w=j.optJSONObject("superseded_by");publish("FinishedForFollow",true,w==null?null:new Cache(Peer.parse(w.getString("chat"),origin.userId),w.getInt("id"),w.getLong("date")));}
+        }finally{close();}
+    }
     void skipCleanup(boolean confirmed){port.worker(()->guard(()->{
         if(!confirmed||active!=null)return;
         if(store==null){skipConfirmed=true;open(true,false);return;}

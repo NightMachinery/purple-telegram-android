@@ -58,7 +58,7 @@ final class PurpleSyncChatDiscovery {
     private final ResolveInput input;
     private final PurpleSyncChatCache.Data original;
     private final String stream;
-    private final List<Peer> dialogs;
+    private final List<Peer> dialogs, seeds;
     private final List<TLRPC.Message> hits = new ArrayList<>();
     private final Map<Peer,PurpleSyncChatClient.Info> facts = new HashMap<>();
     private final Set<String> verified = new HashSet<>(), gone = new HashSet<>();
@@ -68,16 +68,22 @@ final class PurpleSyncChatDiscovery {
     private Command command;
     private Status status;
     private List<Peer> peers = Collections.emptyList();
-    private int peerIndex, dialogIndex, retries;
+    private int peerIndex, dialogIndex, seedIndex, retries;
     private long run, ticket;
-    private boolean complete, uncertain, globalCapped, fallbackUsed, cacheRead, cancelled, fallbackTruncated, directOnly, hintInventory;
+    private boolean complete, uncertain, globalCapped, fallbackUsed, cacheRead, cancelled, fallbackTruncated, directOnly, hintInventory, seeding;
 
     PurpleSyncChatDiscovery(PurpleSyncChatOrigin origin, PurpleSyncChatCache.Data cache, boolean bound, Peer boundChat, List<Peer> dialogs, String stream) {
+        this(origin,cache,bound,boundChat,dialogs,stream,Collections.emptyList());
+    }
+    /** {@code seeds}: chats whose own history is always searched after the global and Saved Messages searches, so their newest marks never depend on search indexing. */
+    PurpleSyncChatDiscovery(PurpleSyncChatOrigin origin, PurpleSyncChatCache.Data cache, boolean bound, Peer boundChat, List<Peer> dialogs, String stream, List<Peer> seeds) {
         this.origin = origin; this.original = cache; this.cache = cache; this.stream = stream;
         input = new ResolveInput(origin.userId); input.cache = cache != null ? cache.location : null; input.settingsBound = bound; input.settingsChat = boundChat;
         List<Peer> unique = new ArrayList<>(); Set<Peer> seen = new HashSet<>();
         if (dialogs != null) for (Peer peer : dialogs) if (peer != null && (peer.kind == PeerKind.Chat || peer.kind == PeerKind.Channel) && seen.add(peer)) unique.add(peer);
         fallbackTruncated = unique.size() > 50; this.dialogs = new ArrayList<>(unique.subList(0,Math.min(50,unique.size())));
+        List<Peer> seeded = new ArrayList<>(); if (seeds != null) for (Peer peer : seeds) if (peer != null && (peer.kind == PeerKind.Chat || peer.kind == PeerKind.Channel) && !seeded.contains(peer)) seeded.add(peer);
+        this.seeds = seeded;
         status = new Status(Phase.Paused,safeResolution(),"NotStarted",false,true,0);
         command = new Command(origin,0,0,Step.Idle,null,null,null,null);
     }
@@ -128,7 +134,7 @@ final class PurpleSyncChatDiscovery {
     ResolveInput input() { return input; }
     private void begin(long now, boolean retry) {
         ++run; hits.clear(); facts.clear(); verified.clear(); gone.clear(); inventories.clear();
-        complete = true; uncertain = false; directOnly = hintInventory = false; globalCapped = false; fallbackUsed = false; cacheRead = false; dialogIndex = peerIndex = 0;
+        complete = true; uncertain = false; directOnly = hintInventory = false; globalCapped = false; fallbackUsed = false; cacheRead = false; seeding = false; dialogIndex = peerIndex = seedIndex = 0;
         input.marks = Collections.emptyList(); input.cacheRead = DirectRead.Unknown; input.settingsHint = SettingsHint.NotRun;
         input.cachedEligibility = unknownEligibility(); input.searchRetriesCompleted = retries;
         if (!retry) retries = input.searchRetriesCompleted = 0;
@@ -146,7 +152,9 @@ final class PurpleSyncChatDiscovery {
                     if (reply.success && valid(reply.info,command.chat)) facts.put(command.chat,reply.info);
                     else { facts.remove(command.chat); uncertain = true; }
                     if (effective() != null && effective().markId == 0 && command.chat.equals(effective().chat)) {
-                        cacheRead = true; input.cacheRead = reply.success && valid(reply.info,command.chat) && reply.info.readable() ? DirectRead.Valid : DirectRead.Unknown;
+                        // An unmarked cache of a chat other than Saved Messages has no mark to read: it reads as MarkGone (D-M2B5-13).
+                        boolean unmarked = original != null && command.chat.kind != PeerKind.Self;
+                        cacheRead = true; input.cacheRead = reply.success && valid(reply.info,command.chat) && reply.info.readable() ? unmarked ? DirectRead.MarkGone : DirectRead.Valid : DirectRead.Unknown;
                     }
                     peerNext(now); break;
                 case ExactMark: exact(reply,now); break;
@@ -188,10 +196,15 @@ final class PurpleSyncChatDiscovery {
         } else if (kind == PurpleSyncChatRequests.Search.Broadcasts) {
             fallbackNext(now);
         } else if (kind == PurpleSyncChatRequests.Search.Dialog) {
-            fallbackNext(now);
+            if (seeding) seedNext(now); else fallbackNext(now);
         } else {
-            searchDone(now);
+            seedNext(now);
         }
+    }
+    private void seedNext(long now) {
+        seeding = seedIndex < seeds.size();
+        if (seeding) { search(PurpleSyncChatRequests.Search.Dialog,seeds.get(seedIndex++)); return; }
+        searchDone(now);
     }
     private void fallbackNext(long now) {
         if (dialogIndex < dialogs.size()) { search(PurpleSyncChatRequests.Search.Dialog,dialogs.get(dialogIndex++)); return; }

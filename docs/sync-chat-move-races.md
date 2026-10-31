@@ -26,10 +26,14 @@ rename-before-directory-barrier fault point. Cleanup's durable window requires
 an actual persisted `absent` deletion receipt. The port intercepts the real
 executor command; it does not substitute a core event for the operation.
 
-A mark authorization is already durable before dispatch. Losing its callback
-therefore holds without a blind resend, even if the synthetic cloud never
-received the mark. An unacknowledged visible mark also holds with its frozen
-intent. Successfully acknowledged delivery reads N after reopening rather than
+A mark authorization is already durable before dispatch, so a lost callback
+never causes a blind resend. When the mark landed (PostMark after the effect),
+the fresh resolution names it in N and the exact read finishes the move with
+exactly one mark. When it never left (PostMark before dispatch), the mark stays
+uncertain: the install checks again after 30, 120 and 600 seconds on its own
+clock, each check after a restart, and the fourth check finishes for follow
+without a mark. The install then follows O with an ordinary Follow from the
+unmarked N. Neither step posts a mark or deletes anything in O. Successfully acknowledged delivery reads N after reopening rather than
 creating another copy. State ledgers are checked against the bound chat's
 actual bytes and this install's writer identity. Unrelated and legacy messages
 remain in O.
@@ -39,7 +43,8 @@ where each settings record's bytes were first published. Each such record must
 still be in that chat or be present, byte for byte, in the install's final
 bound chat (the winner chat for the race). A completed crash window must also
 have deleted old settings, so the check covers real cleanup rather than an
-untouched O.
+untouched O. The finish-then-follow window is the exception: it must delete
+nothing in O.
 
 ## Priority 2
 
@@ -55,9 +60,12 @@ the same second and the third into the other chat. The seed picks the pair's
 chat (N1 for even seeds, N2 for odd) and the odd install out. The pair's chat
 always wins, either by chat order at the same second or because the odd
 install's mark is one second earlier. So every seed has a loser whose mark lost
-inside the winning chat, and the default seeds change the winning chat. Losing
-operations retain their frozen source/target and attempted mark, never commit
-and never delete O. A finished operation must hold the winner's exact mark.
+inside the winning chat, and the default seeds change the winning chat. The
+same-chat loser finishes with the winner's exact mark, never its own. The odd
+install out reads its own mark Valid, sees the winner outrank it, and finishes
+for follow with its attempted mark recorded and nothing deleted. It then follows
+the winner chat without a new mark. No request is resent, and conservation
+holds over every record.
 
 The chain uses one install moving O to N1, another initially bound to N1 moving
 N1 to N2, and an offline third install on O with a queued local edit. Its Follow

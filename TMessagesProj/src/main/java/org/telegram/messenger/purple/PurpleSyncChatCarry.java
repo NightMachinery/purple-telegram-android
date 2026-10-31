@@ -101,7 +101,7 @@ final class PurpleSyncChatCarry implements PurpleSyncChatMove.Port, AutoCloseabl
         if(done==null)return;
         Run run=new Run(null);run.failure=()->endPass(run,null,done);
         synchronized(lock){if(closed)return;passes.add(run);}
-        run.post(()->discover(run,stream,pass->endPass(run,pass==null?null:pass.frame(),done)));
+        run.post(()->discover(run,stream,null,pass->endPass(run,pass==null?null:pass.frame(),done)));
     }
     @Override public void close(){
         List<Run> all=new ArrayList<>();
@@ -224,7 +224,7 @@ final class PurpleSyncChatCarry implements PurpleSyncChatMove.Port, AutoCloseabl
         PurpleSyncChatMove.Command command=run.command;
         Peer source=Peer.parse(command.source,origin.userId),target=Peer.parse(command.target,origin.userId);
         if(source==null||target==null){done.accept(null);return;}
-        discover(run,"config",pass->{
+        discover(run,"config",command.seedTarget?target:null,pass->{
             PurpleSyncChatDiscovery.Status resolved=pass==null?null:pass.model.status();
             if(resolved==null||!resolved.complete){done.accept(null);return;}
             ResolveInput input=pass.model.input();boolean full=!pass.model.directOnly();
@@ -270,7 +270,8 @@ final class PurpleSyncChatCarry implements PurpleSyncChatMove.Port, AutoCloseabl
                     model.staleMarks(authority),value.complete?model.input().cacheRead:DirectRead.Unknown);
         }
     }
-    private void discover(Run run,String stream,Consumer<Pass> done){
+    /** {@code seed}: a chat whose own history this pass also searches, the frozen N while a mark of ours may have left (D-M2B5-13). */
+    private void discover(Run run,String stream,Peer seed,Consumer<Pass> done){
         if(!"config".equals(stream)&&!"library".equals(stream)){done.accept(null);return;}
         PurpleSyncChatCache.Loaded opening=env.cache();PurpleSyncChatService.Binding binding=env.binding();
         if(opening==null||!opening.ok||opening.paused||binding==null||!binding.ok){done.accept(null);return;}
@@ -281,7 +282,8 @@ final class PurpleSyncChatCarry implements PurpleSyncChatMove.Port, AutoCloseabl
         reads.dispatch(()->{
             List<Peer> fallback=run.live()?reads.fallback():Collections.emptyList();
             run.post(()->{
-                Pass pass=new Pass(opening,binding,reads,new PurpleSyncChatDiscovery(origin,input,binding.bound,settings,fallback,stream));
+                Pass pass=new Pass(opening,binding,reads,new PurpleSyncChatDiscovery(origin,input,binding.bound,settings,fallback,stream,
+                        seed==null?Collections.emptyList():Collections.singletonList(seed)));
                 pass.model.start(env.now());pump(run,pass,0,done);
             });
         });

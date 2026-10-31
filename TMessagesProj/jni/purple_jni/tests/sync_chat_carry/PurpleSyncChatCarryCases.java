@@ -44,7 +44,8 @@ public final class PurpleSyncChatCarryCases {
         final List<TLRPC.TL_error> failures=new ArrayList<>();
         final Map<Integer,Peer> deleted=new HashMap<>();
         TLRPC.TL_message rival;
-        boolean rivalAtRead,hideOwn,wrongMarkDate,ownMarkGone;
+        boolean rivalAtRead,hideOwn,wrongMarkDate,ownMarkGone,searchMissesTarget;
+        final List<String> searches=new ArrayList<>();
         Runnable onMark,onRelease;
         Consumer<PurpleSyncChatMove.Command> onDispatch;
         /** Runs onRelease once when called from inside a carry Run's release, to place close or cancel exactly there. */
@@ -159,8 +160,9 @@ public final class PurpleSyncChatCarryCases {
             public void dispatch(Runnable task){releasing();f.tasks.addLast(task);}
             void answer(Runnable task){if(holdReads)heldReads.add(task);else f.tasks.addLast(task);}
             public void search(PurpleSyncChatRequests.Search kind,PurpleSyncChatRequests.Cursor cursor,Peer target,Consumer<PurpleSyncChatRequests.Page> done){
-                List<TLRPC.Message> hits=new ArrayList<>();
+                List<TLRPC.Message> hits=new ArrayList<>();searches.add(kind+":"+(target==null?"":target.token()));
                 for(TLRPC.Message m:marks()){Peer at=PurpleSyncChatFacts.token(m.peer_id,777);
+                    if(searchMissesTarget&&at.equals(f.target)&&!(kind==PurpleSyncChatRequests.Search.Dialog&&at.equals(target)))continue;
                     if(kind==PurpleSyncChatRequests.Search.Global||kind==PurpleSyncChatRequests.Search.Self&&at.kind==PeerKind.Self
                             ||kind==PurpleSyncChatRequests.Search.Broadcasts&&at.kind==PeerKind.Channel||kind==PurpleSyncChatRequests.Search.Dialog&&at.equals(target))hits.add(m);}
                 TLRPC.TL_messages_messages page=new TLRPC.TL_messages_messages();page.messages.addAll(cursor.id==0?hits:Collections.emptyList());
@@ -364,20 +366,44 @@ public final class PurpleSyncChatCarryCases {
         net.holdReads=true;out.clear();carry.freshFrame("config",out::add);net.drain();carry.close();for(Runnable t:net.heldReads)t.run();net.drain();
         must(out.isEmpty()&&net.readerCancels>0,"close cancels a pass and suppresses its answer");
     }
-    /** D-M2B5-13: a live own mark that a fresh resolution shows lost to another winner never commits or deletes in the old chat. */
+    /**
+     * D-M2B5-13: a live own mark that a fresh resolution shows lost to another winner never commits as the winner. The classification is
+     * the exit: W in N is read exactly and finishes the move with W (case b); our Valid mark outranked by W elsewhere finishes for follow
+     * (case c) without any old-chat deletion.
+     */
     static void losingOwnMark()throws Exception {
         for(String place:new String[]{"same-chat","other-chat","older-control"})for(boolean atRead:new boolean[]{true,false}){
             Frame f=new Frame(false);f.removeOld=true;Run r=new Run(f);r.cleanupSettings=true;String name=place+(atRead?" at ReadMark":" after the mark write");
             Peer at=place.equals("other-chat")?Peer.of(PeerKind.Channel,999):f.target;
             r.net.rival=mark(at,91,place.equals("older-control")?1500:2500);r.net.rivalAtRead=atRead;r.start();
             must(r.net.count(TLRPC.TL_messages_sendMessage.class)==1&&f.newRecords.stream().anyMatch(m->m.id==f.markId&&isMark(m)),"own mark 90 posted "+name);
-            if(atRead)must(r.issued("Mark")&&(place.equals("older-control")||r.commands.get(r.commands.size()-1).action.equals("Mark")),"uninterrupted ReadMark is the deciding read "+name);
+            must(r.issued("Mark"),"the mark step reads exactly "+name);
             if(place.equals("older-control")){must(f.done(),"an older rival leaves the own mark the winner "+name+" "+f.reason());r.close();continue;}
-            must(!f.done()&&f.reason().equals("ResolutionChanged"),"fresh rival winner holds the move "+name+" "+f.reason()+" "+r.trace());
-            must(!f.diskJournal().optBoolean("state_committed")&&!f.diskJournal().optBoolean("cache_completed"),"no commitment "+name);
+            if(place.equals("same-chat")){
+                if(atRead){
+                    // W appeared during the read of our own mark: that read cannot commit under W, and nothing is decided yet.
+                    must(!f.done()&&f.reason().equals("ResolutionChanged")&&!f.diskJournal().optBoolean("state_committed"),"our own mark read under W in N holds "+name+" "+f.reason()+" "+r.trace());
+                    must(r.net.count(TLRPC.TL_messages_deleteMessages.class)==0&&r.net.oldMarkPresent,"no old-chat deletion while held "+name);
+                    f.move.retry();r.net.drain();
+                }
+                JSONObject j=f.diskJournal();
+                must(f.done()&&f.reason().equals("Done")&&j.getJSONObject("target_mark").getInt("id")==91&&j.getJSONObject("target_mark").getLong("date")==2500,"(b) the move finishes with the other install's mark in N "+name+" "+f.reason()+" "+r.trace());
+                must(r.commands.stream().anyMatch(c->c.action.equals("Mark")&&c.messageId==91)&&r.net.count(TLRPC.TL_messages_sendMessage.class)==1,"(b) the Mark command reads W's id; no resend "+name);
+                r.close();continue;
+            }
+            JSONObject j=f.diskJournal();
+            must(f.done()&&f.reason().equals("FinishedForFollow")&&j.getInt("phase")==18&&j.getBoolean("state_committed")&&j.getBoolean("cache_completed"),"(c) our outranked Valid mark finishes for follow "+name+" "+f.reason()+" "+r.trace());
+            must(j.getJSONObject("attempted_mark").getInt("id")==f.markId&&j.getJSONObject("superseded_by").getInt("id")==91,"(c) records M and W "+name);
             must(r.net.count(TLRPC.TL_messages_deleteMessages.class)==0&&f.oldRecords.stream().anyMatch(m->m.id==2)&&r.net.oldMarkPresent,"no old-chat deletion "+name);
+            must(r.net.count(TLRPC.TL_messages_sendMessage.class)==1,"no resend "+name);
             r.close();
         }
+    }
+    /** D-M2B5-13 case (b) needs N's mark in the resolution: the Fresh read of a held Switch seeds a Dialog search of the frozen N. */
+    static void seededTarget()throws Exception {
+        Frame f=new Frame(false);f.removeOld=true;Run r=new Run(f);r.cleanupSettings=true;r.net.searchMissesTarget=true;r.start();
+        must(f.done()&&f.reason().equals("Done")&&f.diskJournal().getJSONObject("target_mark").getInt("id")==f.markId,"a landed mark missing from account-wide search is found by the N-seeded read "+f.reason()+" "+r.trace());
+        must(r.net.searches.contains("Dialog:"+f.target.token())&&r.net.count(TLRPC.TL_messages_sendMessage.class)==1,"the seed searched N exactly; one mark");r.close();
     }
     /** D-M2B5-13: MarkRead needs a fresh winner equal to the read-back mark's chat, id and date; the opening winner cannot stand in. */
     static void unprovenOwnMark()throws Exception {
@@ -574,7 +600,7 @@ public final class PurpleSyncChatCarryCases {
         base=unblob(rows.get(0).getJSONObject("input").getString("stagedRecord"));PurpleSyncChatMoveStoreCases.initial=unblob(beginning.getString("state"));PurpleSyncChatMoveStoreCases.baseRecord=base;
         File parent=new File(args[1]);PurpleModernSyncCases.directory(parent);PurpleSyncChatMoveExecutorCases.parent=parent;PurpleModernSyncCases.Frame setup=new PurpleModernSyncCases.Frame(parent,"routing",true);root=setup.root;
         org.telegram.messenger.UserConfig.getInstance(0).user=777;
-        lifecycle();frames();happy();pending();cleanup();unknownReplies();partialWrites();floodRetry();losingOwnMark();unprovenOwnMark();fences();failedReads();partialReads();committedWindow();windowWinner();
+        lifecycle();frames();happy();pending();cleanup();unknownReplies();partialWrites();floodRetry();losingOwnMark();seededTarget();unprovenOwnMark();fences();failedReads();partialReads();committedWindow();windowWinner();
         System.out.println("CARRY_DISPATCH_CHECKS="+checks);
     }
 }

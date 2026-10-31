@@ -78,7 +78,7 @@
         "run:CACHE_SERVICE_CHECKS": 1081,
         "run:MANUAL_ACTIVATION_CHECKS": 44,
         "run:MANUAL_POST_EFFECT_CHECKS": 47,
-        "run:MODEL_CHECKS": 993,
+        "run:MODEL_CHECKS": 1135,
         "run:Q2A_REVIEW_REGRESSION_CHECKS": 360,
         "run:REQUEST_CLIENT_CHECKS": 648,
         "run:RPC_RETRY_CHECKS": 308,
@@ -87,13 +87,13 @@
         "run:SYNC_CHAT_CHECKS": 119,
         "run:SYNC_CHAT_SCREEN_CHECKS": 153,
         "run:SYNC_CHAT_SETUP_CHECKS": 3835,
-        "run:SYNC_CHAT_TOTAL_CHECKS": 11350,
+        "run:SYNC_CHAT_TOTAL_CHECKS": 12648,
         "run:TYPED_IO_CHECKS": 310,
         "run:TYPED_UPLOAD_WIRE_CHECKS": 237,
         "sync-chat-discovery:CACHE_SERVICE_CHECKS": 1081,
         "sync-chat-discovery:MANUAL_ACTIVATION_CHECKS": 44,
         "sync-chat-discovery:MANUAL_POST_EFFECT_CHECKS": 47,
-        "sync-chat-discovery:MODEL_CHECKS": 993,
+        "sync-chat-discovery:MODEL_CHECKS": 1135,
         "sync-chat-discovery:Q2A_REVIEW_REGRESSION_CHECKS": 360,
         "sync-chat-discovery:REQUEST_CLIENT_CHECKS": 648,
         "sync-chat-discovery:RPC_RETRY_CHECKS": 308,
@@ -102,7 +102,7 @@
         "sync-chat-discovery:SYNC_CHAT_CHECKS": 119,
         "sync-chat-discovery:SYNC_CHAT_SCREEN_CHECKS": 153,
         "sync-chat-discovery:SYNC_CHAT_SETUP_CHECKS": 3835,
-        "sync-chat-discovery:SYNC_CHAT_TOTAL_CHECKS": 11350,
+        "sync-chat-discovery:SYNC_CHAT_TOTAL_CHECKS": 12648,
         "sync-chat-discovery:TYPED_IO_CHECKS": 310,
         "sync-chat-discovery:TYPED_UPLOAD_WIRE_CHECKS": 237
       }
@@ -175,12 +175,12 @@
         "{output}"
       ],
       "expects": {
-        "core:checks": 6399,
-        "jni:SYNC_CHAT_MOVE_ACTIONS": 14,
-        "jni:SYNC_CHAT_MOVE_CHECKS": 1935,
-        "sync-chat-move:SYNC_CHAT_MOVE_ACTIONS": 14,
-        "sync-chat-move:SYNC_CHAT_MOVE_CHECKS": 1935,
-        "sync-chat-move:checks": 6399
+        "core:checks": 9305,
+        "jni:SYNC_CHAT_MOVE_ACTIONS": 16,
+        "jni:SYNC_CHAT_MOVE_CHECKS": 3121,
+        "sync-chat-move:SYNC_CHAT_MOVE_ACTIONS": 16,
+        "sync-chat-move:SYNC_CHAT_MOVE_CHECKS": 3121,
+        "sync-chat-move:checks": 9305
       }
     },
     {
@@ -947,8 +947,8 @@
       ],
       "coverage": "Actual AGP typed carry receipts, generated TL bytes, worker-owned private stores, durable transport identities and controlled upload/retry callbacks.",
       "expects": {
-        "carry-io:CARRY_IO_CHECKS": 563,
-        "sync-chat-move-io:CARRY_IO_CHECKS": 563
+        "carry-io:CARRY_IO_CHECKS": 779,
+        "sync-chat-move-io:CARRY_IO_CHECKS": 779
       }
     },
     {
@@ -974,8 +974,8 @@
       ],
       "coverage": "Actual AGP core NextAction executor, worker-owned real files, controlled effects, restart and lifecycle fences.",
       "expects": {
-        "carry-executor:CARRY_EXECUTOR_CHECKS": 4400,
-        "sync-chat-move-executor:CARRY_EXECUTOR_CHECKS": 4400,
+        "carry-executor:CARRY_EXECUTOR_CHECKS": 5594,
+        "sync-chat-move-executor:CARRY_EXECUTOR_CHECKS": 5594,
         "carry-executor:PENDING_CHRONOLOGY_CHECKS": 28,
         "sync-chat-move-executor:PENDING_CHRONOLOGY_CHECKS": 28
       }
@@ -1005,8 +1005,8 @@
       ],
       "coverage": "Production carry dispatcher under a real move controller: discovery, scans, exact reads, forwards, own uploads, marks, cleanup deletes, flood retry, Unknown replies and close/cancel fences, with injected Telegram replies.",
       "expects": {
-        "carry-dispatch:CARRY_DISPATCH_CHECKS": 20000,
-        "sync-chat-carry:CARRY_DISPATCH_CHECKS": 20000
+        "carry-dispatch:CARRY_DISPATCH_CHECKS": 24254,
+        "sync-chat-carry:CARRY_DISPATCH_CHECKS": 24254
       }
     },
     {
@@ -1204,23 +1204,23 @@
         "race-271828:CARRY_RACE_WINDOWS": 18,
         "race-271828:CARRY_RACE_SCENARIOS": 11,
         "race-271828:CARRY_RACE_SAME_CHAT_LOSERS": 1,
-        "race-271828:CARRY_RACE_CONSERVATION": 26,
-        "race-271828:CARRY_RACE_CHECKS": 2200,
+        "race-271828:CARRY_RACE_CONSERVATION": 31,
+        "race-271828:CARRY_RACE_CHECKS": 2829,
         "race-314159:CARRY_RACE_WINDOWS": 18,
         "race-314159:CARRY_RACE_SCENARIOS": 11,
         "race-314159:CARRY_RACE_SAME_CHAT_LOSERS": 1,
-        "race-314159:CARRY_RACE_CONSERVATION": 26,
-        "race-314159:CARRY_RACE_CHECKS": 2200,
+        "race-314159:CARRY_RACE_CONSERVATION": 31,
+        "race-314159:CARRY_RACE_CHECKS": 2829,
         "race-424242:CARRY_RACE_WINDOWS": 18,
         "race-424242:CARRY_RACE_SCENARIOS": 11,
         "race-424242:CARRY_RACE_SAME_CHAT_LOSERS": 1,
-        "race-424242:CARRY_RACE_CONSERVATION": 26,
-        "race-424242:CARRY_RACE_CHECKS": 2200,
+        "race-424242:CARRY_RACE_CONSERVATION": 31,
+        "race-424242:CARRY_RACE_CHECKS": 2820,
         "sync-chat-move-races:CARRY_RACE_WINDOWS": 18,
         "sync-chat-move-races:CARRY_RACE_SCENARIOS": 11,
         "sync-chat-move-races:CARRY_RACE_SAME_CHAT_LOSERS": 1,
-        "sync-chat-move-races:CARRY_RACE_CONSERVATION": 26,
-        "sync-chat-move-races:CARRY_RACE_CHECKS": 2200,
+        "sync-chat-move-races:CARRY_RACE_CONSERVATION": 31,
+        "sync-chat-move-races:CARRY_RACE_CHECKS": 2820,
         "sync-chat-move-races:CARRY_RACE_DRIVER_SEEDS": 3
       }
     },

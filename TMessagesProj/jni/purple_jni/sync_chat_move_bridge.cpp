@@ -138,6 +138,7 @@ template <> const auto &Values<SyncCarryPhase>() {
         EnumValue{SyncCarryPhase::Aborted, u"Aborted"},
         EnumValue{SyncCarryPhase::CleanupSkipped, u"CleanupSkipped"},
         EnumValue{SyncCarryPhase::InterruptedAbandoned, u"InterruptedAbandoned"},
+        EnumValue{SyncCarryPhase::FinishedForFollow, u"FinishedForFollow"},
     };
     return values;
 }
@@ -203,6 +204,7 @@ template <> const auto &Values<SyncCarryEventKind>() {
         EnumValue{SyncCarryEventKind::Cancel, u"Cancel"},
         EnumValue{SyncCarryEventKind::SkipCleanup, u"SkipCleanup"},
         EnumValue{SyncCarryEventKind::CleanupChatGone, u"CleanupChatGone"},
+        EnumValue{SyncCarryEventKind::FinishThenFollow, u"FinishThenFollow"},
     };
     return values;
 }
@@ -216,6 +218,29 @@ template <> const auto &Values<SyncCarryJournalStatus>() {
         EnumValue{SyncCarryJournalStatus::Retry, u"Retry"},
         EnumValue{SyncCarryJournalStatus::NeedsReview, u"NeedsReview"},
         EnumValue{SyncCarryJournalStatus::Superseded, u"Superseded"},
+    };
+    return values;
+}
+
+template <> const auto &Values<SyncCarryFinishRefusal>() {
+    static const auto values = std::array{
+        EnumValue{SyncCarryFinishRefusal::None, u"None"},
+        EnumValue{SyncCarryFinishRefusal::Scope, u"Scope"},
+        EnumValue{SyncCarryFinishRefusal::Version, u"Version"},
+        EnumValue{SyncCarryFinishRefusal::Mode, u"Mode"},
+        EnumValue{SyncCarryFinishRefusal::Phase, u"Phase"},
+        EnumValue{SyncCarryFinishRefusal::Outcome, u"Outcome"},
+        EnumValue{SyncCarryFinishRefusal::RequestInFlight, u"RequestInFlight"},
+        EnumValue{SyncCarryFinishRefusal::IncompleteResolution, u"IncompleteResolution"},
+        EnumValue{SyncCarryFinishRefusal::Action, u"Action"},
+        EnumValue{SyncCarryFinishRefusal::ResolutionScope, u"ResolutionScope"},
+        EnumValue{SyncCarryFinishRefusal::InvalidWinner, u"InvalidWinner"},
+        EnumValue{SyncCarryFinishRefusal::WinnerInTarget, u"WinnerInTarget"},
+        EnumValue{SyncCarryFinishRefusal::MarkMismatch, u"MarkMismatch"},
+        EnumValue{SyncCarryFinishRefusal::AbsentUnproven, u"AbsentUnproven"},
+        EnumValue{SyncCarryFinishRefusal::TargetGone, u"TargetGone"},
+        EnumValue{SyncCarryFinishRefusal::WinnerNotNewer, u"WinnerNotNewer"},
+        EnumValue{SyncCarryFinishRefusal::Serialization, u"Serialization"},
     };
     return values;
 }
@@ -616,6 +641,7 @@ SyncCarryJournalEvent Event(const QJsonObject &o) {
     r.neverLandedConfirmed = Flag(o, u"neverLandedConfirmed"_q);
     r.noRequestInFlight = Flag(o, u"noRequestInFlight"_q);
     r.noPendingFiles = Flag(o, u"noPendingFiles"_q);
+    r.fullResolutionComplete = Flag(o, u"fullResolutionComplete"_q);
     return r;
 }
 
@@ -732,6 +758,14 @@ QJsonObject Evaluate(const QString &op, const QJsonObject &o) {
                 {u"revision"_q, QString::number(e.revision)}, {u"kind"_q, Name(e.kind)}, {u"outcome"_q, Name(e.outcome)}}}};
         }
         if (op == u"advance"_q) return JournalResult(AdvanceSyncCarryJournal(j, Event(Object(o.value(u"event"_q))), o.value(u"currentLogin"_q).toString()));
+        if (op == u"checkFinishThenFollow"_q) return {{u"status"_q, u"Valid"_q}, {u"refusal"_q,
+            Name(CheckSyncCarryFinishThenFollow(j, Event(Object(o.value(u"event"_q))), o.value(u"currentLogin"_q).toString()))}};
+        if (op == u"cacheMark"_q) {
+            const auto mark = SyncCarryJournalCacheMark(j);
+            if (!mark) return {{u"status"_q, u"Invalid"_q}};
+            return {{u"status"_q, u"Valid"_q}, {u"chat"_q, PeerText(mark->chat)},
+                {u"id"_q, QString::number(mark->markId)}, {u"date"_q, QString::number(mark->markDate)}};
+        }
         if (op == u"resume"_q) return JournalResult(ResumeSyncCarryJournal(j, State(o.value(u"state"_q)),
             Flag(o, u"stateAbsentConfirmed"_q), Flag(o, u"stateDurableConfirmed"_q), o.value(u"currentLogin"_q).toString()));
         if (op == u"readers"_q) {

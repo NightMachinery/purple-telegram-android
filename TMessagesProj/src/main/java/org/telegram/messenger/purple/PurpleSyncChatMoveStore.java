@@ -554,7 +554,7 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
     void writeCache(PurpleSyncChatOrigin origin,PurpleSyncChatClient.Info accepted,boolean complete) throws IOException {
         try {
             unchanged();if(origin==null||!account.equals(origin.accountKey()))throw new IOException("AccountUnbound");
-            JSONObject j=new JSONObject(new String(canonical,StandardCharsets.UTF_8)),mark=j.getJSONObject("target_mark");
+            JSONObject j=new JSONObject(new String(canonical,StandardCharsets.UTF_8)),mark=cacheMark();
             File path=complete?cacheFile:new File(root,"carry-cache.json");
             PurpleAccountFileSnapshot.Durable old=read(path,65536),admitted=read(cacheFile,65536);
             PurpleSyncChatCache.Loaded previous=PurpleSyncChatCache.load(new PurpleSyncChatCache.IO(){
@@ -574,6 +574,26 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
             write(path,old,PurpleSyncChatCache.encode(origin,authority,data),65536);
         }catch(Exception e){close();throw failure(e);}
     }
+    /** The mark both cache receipts carry: target_mark, or the unmarked {N, 0, 0} of a FinishThenFollow journal (core SyncCarryJournalCacheMark). */
+    JSONObject cacheMark() throws IOException {
+        try {
+            unchanged(); if (canonical == null) throw new IOException("InvalidTransition");
+            PurpleSyncChatMoveCore.Result result = core("cacheMark", scoped(canonical));
+            if (!"Valid".equals(result.status)) throw new IOException("InvalidTransition");
+            JSONObject mark = result.fields;
+            return json("chat", mark.getString("chat"), "id", Integer.parseInt(mark.getString("id")), "date", Long.parseLong(mark.getString("date")));
+        } catch (Exception e) { throw failure(e); }
+    }
+    /** D-M2B5-13 addendum (3): the typed reason the core would refuse this FinishThenFollow event with, "None" when it accepts. */
+    String finishRefusal(JSONObject event) throws IOException {
+        try {
+            unchanged(); if (canonical == null || interrupted) throw new IOException("InvalidTransition");
+            JSONObject input = scoped(canonical); input.put("event", event);
+            PurpleSyncChatMoveCore.Result result = core("checkFinishThenFollow", input);
+            if (!"Valid".equals(result.status)) throw new IOException("InvalidTransition");
+            return result.fields.getString("refusal");
+        } catch (Exception e) { throw failure(e); }
+    }
     long sendIdentity(String request, SecureRandom random) throws IOException {
         try {
             unchanged(); if (canonical == null || request == null || request.isEmpty() || request.length() > 256) throw new IOException("InvalidTransition");
@@ -591,7 +611,7 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
     }
     private void witnessCache(JSONObject receipt, boolean complete) throws Exception {
         JSONObject j = new JSONObject(new String(canonical, StandardCharsets.UTF_8));
-        JSONObject mark = j.getJSONObject("target_mark"), supplied = receipt.getJSONObject("mark");
+        JSONObject mark = cacheMark(), supplied = receipt.getJSONObject("mark");
         if (!account.equals(receipt.getString("account")) || !j.getString("operation").equals(receipt.getString("operation"))
                 || !mark.getString("chat").equals(supplied.getString("chat")) || mark.getInt("id") != Integer.parseInt(supplied.getString("id"))
                 || mark.getLong("date") != Long.parseLong(supplied.getString("date")) || receipt.getBoolean("complete") != complete) throw new IOException("InvalidTransition");

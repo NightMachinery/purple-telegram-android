@@ -245,9 +245,7 @@ final class PurpleSyncChatMoveIO implements AutoCloseable {
                 && PurpleSyncChatRequests.matches(fresh.target.chat,fresh.targetPeer)
                 && fresh.resolution!=null && fresh.resolution.selfUserId==origin.userId,"FreshScopeMismatch");
         Resolution r=PurpleSyncChatCore.resolve(fresh.resolution);
-        boolean opening=r.action.name().equals(core("parse",scope(j)).fields.getString("expectedAction"))
-                && r.action!=Action.Invalid && r.action!=Action.NewerMark && r.action!=Action.VerifyMark && r.action!=Action.ReadWinnerInventory
-                && cacheEquals(j.optJSONObject("expected_winner"),r.winner) && cacheEquals(j.optJSONObject("old_mark"),r.cache);
+        boolean opening=opening(j,r);
         boolean ownWinner=false;
         if(reconcile && r.winner!=null && r.winner.chat.token().equals(j.getString("target"))) {
             JSONObject mark=j.optJSONObject("target_mark");
@@ -259,11 +257,20 @@ final class PurpleSyncChatMoveIO implements AutoCloseable {
         // After CommitState and before CompleteCache the frozen target_mark is the only acceptable winner: a settled
         // resolution naming exactly its chat, id and date. The opening resolution and an acknowledged mark id cannot
         // stand in for it there, so a changed, missing or excluded own mark holds before the cache is completed.
-        boolean window=j.optBoolean("state_committed")&&!j.optBoolean("cache_completed");
+        // A FinishThenFollow journal (core writes superseded_by, null without a winner, only for one) passes the window
+        // on the recovery rule instead: its target_mark is our losing mark M (or none), never the winner. Its
+        // CompleteCache records where the finished carry went, N with M when M is known and N unmarked otherwise; that
+        // receipt does not certify M as the winner, makes no Committed receipt and authorizes no cleanup. A separate
+        // Follow resolves the winner afresh (D-M2B5-13).
+        boolean finishing=j.has("superseded_by");
+        boolean window=j.optBoolean("state_committed")&&!j.optBoolean("cache_completed")&&!finishing;
         boolean frozen=r.winner!=null&&r.action!=Action.Invalid&&r.action!=Action.NewerMark&&r.action!=Action.VerifyMark&&r.action!=Action.ReadWinnerInventory
                 &&cacheEquals(j.optJSONObject("target_mark"),r.winner);
-        require(window?frozen:opening||reconcile&&ownWinner,"ResolutionChanged");
-        require(j.getInt("mode")!=3||fresh.source.readable()&&(fresh.oldRead==DirectRead.MarkGone||reconcile&&ownWinner),"MarkNotProvenGone");
+        // D-M2B5-13 recovery: once a mark may have left, reads (never effects) accept a changed winner, so the executor can classify it.
+        // Before FinishThenFollow it ends at CommitState, so it never reaches the window above.
+        boolean recovery=reconcile&&(finishing||(j.getInt("mode")==0||j.getInt("mode")==3)&&j.optBoolean("mark_attempted")&&!j.optBoolean("mark_verified")&&!j.optBoolean("state_committed"));
+        require(window?frozen:opening||reconcile&&ownWinner||recovery,"ResolutionChanged");
+        require(j.getInt("mode")!=3||fresh.source.readable()&&(fresh.oldRead==DirectRead.MarkGone||reconcile&&ownWinner||recovery),"MarkNotProvenGone");
         JSONObject input=scope(j);input.put("eligibility",PurpleSyncChatCore.eligibilityJson(fresh.target.eligibility()));
         String verdict=core("readers",input).fields.getString("verdict");
         require(!"Hold".equals(verdict)&&fresh.target.readersKnown,"ReadersUnknown");
@@ -280,6 +287,13 @@ final class PurpleSyncChatMoveIO implements AutoCloseable {
             else if(added&&!transport.optBoolean("reader_warning")){transport.put("reader_warning",true);store.transport(transport,false);}
         }
     }
+    private boolean opening(JSONObject j,Resolution r) throws Exception {
+        return r.action.name().equals(core("parse",scope(j)).fields.getString("expectedAction"))
+                && r.action!=Action.Invalid && r.action!=Action.NewerMark && r.action!=Action.VerifyMark && r.action!=Action.ReadWinnerInventory
+                && cacheEquals(j.optJSONObject("expected_winner"),r.winner) && cacheEquals(j.optJSONObject("old_mark"),r.cache);
+    }
+    /** Whether a fresh resolution still names the journal's opening winner, the only one an effect may be issued under. */
+    boolean openingWinner(Fresh fresh) throws IOException {try{return opening(journal(),PurpleSyncChatCore.resolve(fresh.resolution));}catch(Exception e){throw failure(e);}}
     void acceptReaders(Fresh fresh,PurpleSyncChatClient.Info accepted,String stream)throws IOException {acceptReaders(fresh,accepted,stream,null);}
     void acceptReaders(Fresh fresh,PurpleSyncChatClient.Info accepted,String stream,JSONObject repairBaseline)throws IOException {
         try {
@@ -425,13 +439,24 @@ final class PurpleSyncChatMoveIO implements AutoCloseable {
         try {
             JSONObject j=journal();JSONObject slot=store.transport().getJSONObject("entries").getJSONObject(key);
             require(slot.getString("kind").equals("mark")&&slot.has("ack_id")&&origin.equals(route.origin)&&route.chat.token().equals(j.getString("target")),"MarkNeedsExactRead");
-            TLRPC.messages_Messages page=response instanceof TLRPC.messages_Messages?(TLRPC.messages_Messages)response:null;
-            int id=slot.getInt("ack_id");require(page!=null&&page.messages.size()==1,"UnknownMark");TLRPC.Message m=page.messages.get(0);
-            require(route.lookup(response,null,id,ignored->new PurpleSyncClient.Message(id,true,false,false,"",null,route.chat,0,0,0,null)).status==PurpleSyncClient.LookupStatus.Found
-                    && m.getClass()==TLRPC.TL_message.class&&m.date>0&&route.ownership(m)==Ownership.Own&&m.media==null
-                    && m.message.equals(j.getString("mark_text")),"UnknownMark");
-            return json("outcome","Valid","account",origin.accountKey(),"chat",route.chat.token(),"id",Integer.toString(id),"date",Integer.toString(m.date),"text",m.message,"hasMedia",false,"ownership","Own");
+            JSONObject mark=exactMark(j,route,slot.getInt("ack_id"),response);require(mark!=null,"UnknownMark");return mark;
         } catch(Exception error) { throw failure(error); }
+    }
+    /** D-M2B5-13: the exact read of a mark id the executor names in N (the fresh winner, or our own mark); null unless it shows exactly that own mark. */
+    JSONObject namedMarkReadback(int id,PurpleSyncChatIO route,TLObject response) throws IOException {
+        try {
+            JSONObject j=journal();
+            require(id>0&&route!=null&&origin.equals(route.origin)&&route.chat.token().equals(j.getString("target")),"MarkNeedsExactRead");
+            return exactMark(j,route,id,response);
+        } catch(Exception error) { throw failure(error); }
+    }
+    private JSONObject exactMark(JSONObject j,PurpleSyncChatIO route,int id,TLObject response) throws Exception {
+        TLRPC.messages_Messages page=response instanceof TLRPC.messages_Messages?(TLRPC.messages_Messages)response:null;
+        if(page==null||page.messages.size()!=1)return null;TLRPC.Message m=page.messages.get(0);
+        if(route.lookup(response,null,id,ignored->new PurpleSyncClient.Message(id,true,false,false,"",null,route.chat,0,0,0,null)).status!=PurpleSyncClient.LookupStatus.Found
+                || m.getClass()!=TLRPC.TL_message.class||m.date<=0||route.ownership(m)!=Ownership.Own||m.media!=null
+                || !m.message.equals(j.getString("mark_text")))return null;
+        return json("outcome","Valid","account",origin.accountKey(),"chat",route.chat.token(),"id",Integer.toString(id),"date",Integer.toString(m.date),"text",m.message,"hasMedia",false,"ownership","Own");
     }
     /** D-M2B5-13: MarkRead needs a settled fresh resolution whose winner is exactly the read-back mark (chat, id and date); the opening resolution cannot stand in. */
     void markWinner(Fresh fresh,JSONObject mark) throws IOException {

@@ -411,12 +411,14 @@ The action order is:
    effect admission still checks the opening resolution. MarkRead needs more: a
    settled fresh resolution whose winner is exactly the read-back mark (chat, id
    and date). The opening resolution cannot stand in, so a fresh search that still
-   names O's winner, or a winner at another date, holds with ResolutionChanged
-   before any commit or old-chat cleanup. The same pin applies after CommitState
-   until CompleteCache: every reconciliation there needs a settled winner equal to
-   the journal's frozen `target_mark` (chat, id and date), and neither the opening
-   resolution nor a saved ack id can stand in. An own mark that disappears, is left
-   out of discovery or changes its date then holds before the cache is completed.
+   names O's winner, or a winner at another date, cannot commit MarkRead. "Finishing
+   a held mark attempt" below is the automatic exit from that hold. The same pin
+   applies after CommitState until CompleteCache: every reconciliation there needs
+   a settled winner equal to the journal's frozen `target_mark` (chat, id and
+   date), and neither the opening resolution nor a saved ack id can stand in. An
+   own mark that disappears, is left out of discovery or changes its date then
+   holds before the cache is completed. A FinishThenFollow journal is the one
+   exception; that section says why.
 7. PrepareCache writes a private incomplete cache. CommitState writes the exact
    retained image and pins its exact base for ordinary recovery. RetireOwnStage
    retires only exact obsolete bytes and installs/barriers the already-reserved
@@ -450,6 +452,94 @@ stateDiagram-v2
     Abandoned --> Terminal: retained effects and stage preserved
     Terminal --> Ordinary: validate all retained artifacts
 ```
+
+### Finishing a held mark attempt
+
+A Switch or RepairMark whose mark may have left the device used to hold at the
+Mark step until someone decided. D-M2B5-13 adds the automatic exit. The MarkRead
+rule above is unchanged: an ordinary MarkRead commits only when a fresh
+resolution names exactly the read-back mark. The classification below decides
+what happens when that rule cannot be met. It never relaxes the rule.
+
+Terms used here:
+
+- *N* is the frozen target of the move.
+- *W* is the winner of a fresh, complete resolution.
+- *M* is our own mark, known from its saved acknowledgement or from the
+  `attempted_mark` an earlier FinishThenFollow recorded.
+- A *recovery read* is a Fresh, Destination or Mark read taken after a mark
+  attempt and before MarkRead or state commit. `PurpleSyncChatMoveIO` accepts a
+  changed winner for recovery reads only. Effect, Pending and Source
+  authorization still need the opening winner, so nothing new is sent under W.
+
+At the Mark step the executor classifies; the first match wins.
+
+1. (b) W is in N. The Mark command reads W's id exactly, through
+   `namedMarkReadback`. A Valid read equal to W commits MarkRead with W, whether W
+   is our mark or another install's.
+2. (a) The mark slot is still `prepared`, so the mark was never handed to the
+   network. Under the opening winner it is sent once. Under any other winner
+   nothing of ours can land, and the move runs FinishThenFollow without a mark.
+3. (c) M is known. The Mark command reads M exactly. When M reads Valid and W,
+   outside N, outranks it, the move runs FinishThenFollow with M. When W does not
+   outrank M, the move holds with ResolutionChanged.
+4. (d) Otherwise the outcome is uncertain, and the executor checks again.
+
+Case (d) checks again after 30, 120 and 600 seconds, the resolver's Searching
+delays. The count and the next due time live in the transport sidecar as
+`mark_recovery: {checks, next_at}`, with `next_at` in wall-clock milliseconds as
+a decimal string. A restart neither resets nor skips the cadence. A check before
+its due time decides nothing and does not count, so Retry runs a check without
+skipping one. A due time more than 600 seconds ahead means the clock moved back,
+and that check counts. A failed check (a failed read, an unsettled resolution)
+holds with its own reason and does not count either. While waiting, the move
+holds with `MarkRecoveryWaiting`, and `Status.recheckAt` carries the due time.
+The fourth complete uncertain check runs FinishThenFollow without a mark.
+
+FinishThenFollow builds its event from the fresh resolution, with
+`fullResolutionComplete` and `noRequestInFlight`, and with M's Valid readback or
+an Unknown readback of id 0. The executor first asks core
+`checkFinishThenFollow`. A refusal holds as `FinishThenFollow` plus the refusal
+name, for example `FinishThenFollowWinnerNotNewer`, so the reason stays visible.
+On acceptance core runs PrepareCache, CommitState, RetireOwnStage and
+CompleteCache into phase 18, FinishedForFollow. Both cache receipts carry core's
+`cacheMark`: the target mark when one is known (M, after a FinishThenFollow with
+M), otherwise `{N, 0, 0}`. No cleanup runs, nothing is posted or deleted, and the
+carried records stay in N.
+
+The reconciliation Fresh between CommitState and CompleteCache passes on the
+recovery rule, not on the frozen `target_mark` pin of step 6. After
+FinishThenFollow `target_mark` is M, the mark that lost (or none), so the pin
+could never pass and the journal would hold forever. Nor does the window need
+it: CompleteCache records where the finished carry went, N with M when M is
+known and N unmarked otherwise. That receipt does not certify M as the winner,
+makes no Committed move receipt and authorizes no cleanup; the separate Follow
+resolves its winner afresh. The journal is
+recognized by `superseded_by`, which core writes for FinishThenFollow journals
+only (null when no winner was named). Every other journal keeps the pin: before
+FinishThenFollow the recovery rule ends at CommitState, so it never reaches the
+window.
+
+FinishedForFollow is terminal but is not a completed move: `committed()` is
+null, and `finish()` publishes reason `FinishedForFollow` with
+`Status.supersededBy` set to W. Ordinary admission accepts the terminal journal.
+The next ordinary resolution starts from N's cache, as for any binding. A known
+M is read exactly, like any marked cache; an unmarked group or channel cache
+reads as MarkGone without an exact read (Saved Messages keeps its implicit
+binding). The resolver then picks the current winner: Follow to W while W
+outranks M, or Searching and then Lost when an unmarked N has no winner.
+FinishedForFollow is not an
+unresolved mark reference, so our losing mark stays removable on request as a
+stale mark.
+
+Case (b) needs N's mark in the resolution, and search indexing can lag. While a
+Switch or RepairMark has a mark attempt, each command sets `seedTarget`. The
+dispatcher's read-only pass then searches N's own history after the account-wide
+and Saved Messages searches.
+
+The A5M-wire slice adds what calls this: Resume at startup for a held journal, a
+foreground timer that resumes at `recheckAt`, and ordinary discovery after the
+terminal.
 
 ### Interrupted Discard and terminal evidence
 
@@ -519,7 +609,8 @@ reply means Unknown, and the controller holds with
 controller's own checks hold with their typed reason.
 
 Each command gets fresh facts first: one read-only `PurpleSyncChatDiscovery` pass,
-then full info and input peers for both chats. A *read-only pass* uses its own
+then full info and input peers for both chats. A command with `seedTarget`
+seeds that pass with N, so N's own history is searched too. A *read-only pass* uses its own
 reader and scans. It takes no service queue or capability, never writes the
 sync-chat cache, and is not paused by a pending move journal. An incomplete pass
 replies null, and so does any failed or partial command read. A command scan
@@ -555,7 +646,8 @@ What each command adds:
   Issued.
 - Destination and Cleanup: a target scan. Cleanup skips it for a definite
   ChatGone.
-- Mark: an exact read of the posted mark id.
+- Mark: an exact read of the mark id the controller names (W in N, or our own
+  mark).
 - CleanupRead: a target scan, plus the exact item. A record uses its scanned
   receipt; a mark, or a record no longer scanned, uses an exact read.
 - Effect, forward or mark: `PurpleSyncChatMoveIO.Effect`. Each renewal repeats
@@ -586,15 +678,18 @@ carry lease is held.
 The `sync-chat-carry` host suite drives this dispatcher as the Port of a real
 move controller. It covers complete forward and own moves, readable and
 protected pending, record and old-mark cleanup deletes, flood retry, Unknown
-reads, refused writes, and close/cancel fences. It also pins that a live own mark
-which a fresh resolution shows lost to another winner, in the same chat or
-another, holds with ResolutionChanged: no commit and no old-chat deletion. So does
-a fresh resolution that still names the opening winner, or whose winner date
-differs from the exact mark read. With the env read from disk, it pins the
-CommitState-to-CompleteCache window above for ordinary, Follow, Fill and
-RepairMark moves, and that a window winner other than the frozen target mark
-holds before CompleteCache. The
-production `Env` is covered by the AGP compile only.
+reads, refused writes, and close/cancel fences. It also pins the mark
+classification on live own marks. A rival in N finishes the move with the
+rival's mark (case b); when that rival appears during the read of our own mark,
+the move first holds with ResolutionChanged. An own Valid mark that a rival
+elsewhere outranks finishes for follow (case c), with no old-chat deletion. A
+fresh resolution that still names the opening winner, or whose winner date
+differs from the exact mark read, holds with ResolutionChanged. A mark missing
+from account-wide search is found through the N seed. With the env read from
+disk, it pins the CommitState-to-CompleteCache window above for ordinary,
+Follow, Fill and RepairMark moves, and that a window winner other than the
+frozen target mark holds before CompleteCache. The production `Env` is covered
+by the AGP compile only.
 
 ## Provision-only Change boundary
 

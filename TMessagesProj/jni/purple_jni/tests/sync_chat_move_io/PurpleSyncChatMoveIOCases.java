@@ -189,6 +189,27 @@ public final class PurpleSyncChatMoveIOCases {
             refuses("RetentionFull",()->near.authorize("forward"));check(near.store.journalBytes()==null,"capacity failure revokes store before any permit");check(Arrays.equals(before,Files.readAllBytes(new File(near.files.root,"carry.json").toPath())),"near-limit unknown extension and exact journal retained");
         }
     }
+    /** D-M2B5-13 recovery reads: after a mark attempt a changed winner is accepted for reads only; effects still need the opening winner. */
+    static void recoveryCases()throws Exception {
+        try(Harness h=new Harness(false)) {
+            h.reserve();h.intent();ReadClient read=new ReadClient(h.target,base,Collections.singletonList(doc(h.target,55,1500,base)));
+            h.step("DestinationRead",obj("destination",PurpleSyncChatMoveIO.inventory(read.inventory(),ORIGIN,h.target)));
+            Peer x=Peer.of(PeerKind.Chat,30);PurpleSyncChatMoveIO.Fresh changed=h.fresh();List<Mark> marks=new ArrayList<>(changed.resolution.marks);
+            marks.add(new Mark(new Cache(x,7,3000),MarkStatus.Supported,info(x,0,false).eligibility(),RecordPresence.Present,true,true));changed.resolution.marks=marks;
+            refuses("ResolutionChanged",()->h.io.reconciliationFresh(changed));
+            check(h.io.openingWinner(h.fresh())&&!h.io.openingWinner(changed),"the opening winner is the Begin resolution's");
+            h.step("MarkPostPrepared",new JSONObject());h.io.reconciliationFresh(changed);check(h.store.journalBytes()!=null,"after a mark attempt a changed winner is accepted for reads");
+            TLRPC.TL_message own=doc(h.target,70,2000,base);own.message=PurpleSyncChatSetupRequests.MARK;own.media=null;own.flags&=~(1<<9);
+            check(h.io.namedMarkReadback(70,route(h.target),page(h.target,own)).getString("date").equals("2000"),"exact read of a named mark id in N");
+            check(h.io.namedMarkReadback(70,route(h.target),page(h.target))==null,"an absent named mark reads as nothing, never as proof");
+            own.message="other";check(h.io.namedMarkReadback(70,route(h.target),page(h.target,own))==null,"other text is not our mark");own.message=PurpleSyncChatSetupRequests.MARK;
+            refuses("MarkNeedsExactRead",()->h.io.namedMarkReadback(0,route(h.target),page(h.target,own)));
+            refuses("MarkNeedsExactRead",()->h.io.namedMarkReadback(70,route(O),page(O,own)));
+            JSONObject s=h.slot("mark");PurpleSyncChatMoveIO.Permit permit=h.authorize("mark");check(permit.current(),"the opening winner still authorizes the frozen mark");
+            refuses("ResolutionChanged",()->h.io.authorize("mark",s.getInt("source_id"),s.getString("hash"),changed,null));
+            check(!permit.current(),"a refused effect under a changed winner closes the wrapper and its permits");
+        }
+    }
     static final class WritePort implements PurpleSyncChatMoveIO.WritePort {
         long now=1000;int sends,updates,cancels;PurpleRpcRetry.Transient cooldown;
         final List<PurpleSyncChatMoveIO.Permit> previous=new ArrayList<>(),issued=new ArrayList<>();final List<Consumer<PurpleSyncChatMoveIO.Permit>> renew=new ArrayList<>();final List<Consumer<PurpleSyncChatMoveIO.WriteResponse>> replies=new ArrayList<>();
@@ -271,6 +292,6 @@ public final class PurpleSyncChatMoveIOCases {
         base=unblob(rows.get(0).getJSONObject("input").getString("stagedRecord"));PurpleSyncChatMoveStoreCases.initial=unblob(beginning.getString("state"));PurpleSyncChatMoveStoreCases.baseRecord=base;
         File parent=new File(args[1]);PurpleModernSyncCases.directory(parent);PurpleModernSyncCases.Frame frame=new PurpleModernSyncCases.Frame(parent,"routing",true);root=frame.root;
         if(args.length>2){if(args[2].equals("aba"))overlappingReconciliationCase(false);else renewalRevisionCase(args[2].equals("upload"),args[2].equals("epoch"));System.out.println("CARRY_IO_CHECKS="+checks);return;}
-        fixRoundOneCases();wireCases();readCases();identityCases();receiptHints();scopeCases();restartAndMarkCases();effectCases();uploadCases();System.out.println("CARRY_IO_CHECKS="+checks);
+        fixRoundOneCases();wireCases();readCases();identityCases();receiptHints();scopeCases();restartAndMarkCases();recoveryCases();effectCases();uploadCases();System.out.println("CARRY_IO_CHECKS="+checks);
     }
 }
