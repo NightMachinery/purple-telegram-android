@@ -54,6 +54,10 @@ Coverage, by case:
   BoundChatMismatch: a freshFrame (in the window or idle), a target binding
   whose state hash is not the journal's next state, and a state bound to a
   third chat.
+- `windowWinner`: one change on the first Fresh in that window (the own mark left
+  out of discovery, removed, or with another date, or a newer rival mark in the
+  target). Switch and Follow both hold ResolutionChanged before CompleteCache,
+  keep the admitted cache at the source, send no second mark and delete nothing.
 - `lifecycle` and `frames`: Port identity, open refusal, idempotent close,
   `cancel(command)`, and the read-only `freshFrame` (pending journal included,
   null on loss or unknown stream, nothing after close).

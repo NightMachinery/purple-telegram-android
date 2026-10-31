@@ -412,7 +412,11 @@ The action order is:
    settled fresh resolution whose winner is exactly the read-back mark (chat, id
    and date). The opening resolution cannot stand in, so a fresh search that still
    names O's winner, or a winner at another date, holds with ResolutionChanged
-   before any commit or old-chat cleanup.
+   before any commit or old-chat cleanup. The same pin applies after CommitState
+   until CompleteCache: every reconciliation there needs a settled winner equal to
+   the journal's frozen `target_mark` (chat, id and date), and neither the opening
+   resolution nor a saved ack id can stand in. An own mark that disappears, is left
+   out of discovery or changes its date then holds before the cache is completed.
 7. PrepareCache writes a private incomplete cache. CommitState writes the exact
    retained image and pins its exact base for ordinary recovery. RetireOwnStage
    retires only exact obsolete bytes and installs/barriers the already-reserved
@@ -539,7 +543,9 @@ the binding names the journal's target, the cache names its source, and the
 two differ. With a cache present the resolver ignores the settings chat, so
 only that guard sees the difference. Any other mismatch still pauses, and so
 does every `freshFrame`, which owns no journal. Fill (no state, no cache) and a
-same-chat RepairMark never reach the mismatch.
+same-chat RepairMark never reach the mismatch. What the pass may conclude is
+pinned too: the controller accepts it only when its winner is exactly the frozen
+target mark (step 6 above), so CompleteCache never runs on another winner.
 What each command adds:
 
 - Fresh: nothing more.
@@ -586,7 +592,8 @@ another, holds with ResolutionChanged: no commit and no old-chat deletion. So do
 a fresh resolution that still names the opening winner, or whose winner date
 differs from the exact mark read. With the env read from disk, it pins the
 CommitState-to-CompleteCache window above for ordinary, Follow, Fill and
-RepairMark moves. The
+RepairMark moves, and that a window winner other than the frozen target mark
+holds before CompleteCache. The
 production `Env` is covered by the AGP compile only.
 
 ## Provision-only Change boundary

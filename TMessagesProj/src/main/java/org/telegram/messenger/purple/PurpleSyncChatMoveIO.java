@@ -256,7 +256,13 @@ final class PurpleSyncChatMoveIO implements AutoCloseable {
             if(entries!=null){Iterator<String> it=entries.keys();while(it.hasNext()){JSONObject slot=entries.getJSONObject(it.next());
                 if(slot.getString("kind").equals("mark")&&slot.optInt("ack_id")==r.winner.markId&&j.optBoolean("mark_attempted"))ownWinner=true;}}
         }
-        require(opening||reconcile&&ownWinner,"ResolutionChanged");
+        // After CommitState and before CompleteCache the frozen target_mark is the only acceptable winner: a settled
+        // resolution naming exactly its chat, id and date. The opening resolution and an acknowledged mark id cannot
+        // stand in for it there, so a changed, missing or excluded own mark holds before the cache is completed.
+        boolean window=j.optBoolean("state_committed")&&!j.optBoolean("cache_completed");
+        boolean frozen=r.winner!=null&&r.action!=Action.Invalid&&r.action!=Action.NewerMark&&r.action!=Action.VerifyMark&&r.action!=Action.ReadWinnerInventory
+                &&cacheEquals(j.optJSONObject("target_mark"),r.winner);
+        require(window?frozen:opening||reconcile&&ownWinner,"ResolutionChanged");
         require(j.getInt("mode")!=3||fresh.source.readable()&&(fresh.oldRead==DirectRead.MarkGone||reconcile&&ownWinner),"MarkNotProvenGone");
         JSONObject input=scope(j);input.put("eligibility",PurpleSyncChatCore.eligibilityJson(fresh.target.eligibility()));
         String verdict=core("readers",input).fields.getString("verdict");

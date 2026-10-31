@@ -541,12 +541,40 @@ public final class PurpleSyncChatCarryCases {
         idle.carry.freshFrame("config",frame->reasons.add(frame==null?"null":frame.status.reason));idle.net.drain();
         must(reasons.equals(Collections.singletonList("BoundChatMismatch")),"a freshFrame with state bound away from the cache pauses "+reasons);idle.close();
     }
+    /**
+     * The window's winner is pinned to the journal's frozen target_mark. One change on the first committed, not completed
+     * Fresh: the own mark left out of discovery, the own mark removed, its date changed, or a newer rival in the target.
+     * Switch and Follow both hold ResolutionChanged before CompleteCache, keep the admitted cache at the source, send no
+     * second mark and delete nothing.
+     */
+    static void windowWinner()throws Exception {
+        for(String mode:new String[]{"Switch","Follow"})for(String change:new String[]{"excluded","removed","date","rival"}){
+            Run[] run=new Run[1];boolean[] changed={false};
+            run[0]=diskRun(mode,c->{
+                try{if(changed[0]||!c.action.equals("Fresh")||!inWindow(c))return;}catch(Exception e){throw new RuntimeException(e);}
+                changed[0]=true;Frame f=run[0].f;
+                if(change.equals("excluded"))run[0].net.hideOwn=true;
+                else if(change.equals("removed"))f.newRecords.removeIf(m->isMark(m)&&m.id==f.markId);
+                else if(change.equals("date")){for(TLRPC.Message m:f.newRecords)if(isMark(m)&&m.id==f.markId)m.date++;}
+                else run[0].net.extra.add(mark(f.target,91,2500));
+            });
+            Run r=run[0];Frame f=r.f;if(mode.equals("Switch")){f.removeOld=true;r.cleanupSettings=true;}
+            r.start();JSONObject j=f.diskJournal();
+            must(changed[0],"the change landed in the committed window "+mode+" "+change);
+            must(!f.done()&&f.reason().equals("ResolutionChanged")&&j.getBoolean("state_committed")&&!j.getBoolean("cache_completed"),
+                    "a window winner other than the frozen target mark holds before CompleteCache "+mode+" "+change+" "+f.reason()+" "+r.trace());
+            Cache admitted=diskCache(f).location;
+            must(admitted.chat.equals(O)&&admitted.markId==1&&admitted.markDate==1001,"the admitted cache still names the source mark "+mode+" "+change);
+            must(r.net.count(TLRPC.TL_messages_sendMessage.class)==(mode.equals("Switch")?1:0)&&r.net.deleted.isEmpty()&&f.oldRecords.stream().anyMatch(m->m.id==2),
+                    "no second mark and no deletion "+mode+" "+change);r.close();
+        }
+    }
     public static void main(String[] args)throws Exception {
         rows=new ArrayList<>();for(String line:Files.readAllLines(new File(args[0]).toPath()))rows.add(new JSONObject(line));for(JSONObject row:rows)if(row.getString("op").equals("begin")&&row.getJSONObject("expected").getString("status").equals("Valid")){beginning=row.getJSONObject("input");break;}
         base=unblob(rows.get(0).getJSONObject("input").getString("stagedRecord"));PurpleSyncChatMoveStoreCases.initial=unblob(beginning.getString("state"));PurpleSyncChatMoveStoreCases.baseRecord=base;
         File parent=new File(args[1]);PurpleModernSyncCases.directory(parent);PurpleSyncChatMoveExecutorCases.parent=parent;PurpleModernSyncCases.Frame setup=new PurpleModernSyncCases.Frame(parent,"routing",true);root=setup.root;
         org.telegram.messenger.UserConfig.getInstance(0).user=777;
-        lifecycle();frames();happy();pending();cleanup();unknownReplies();partialWrites();floodRetry();losingOwnMark();unprovenOwnMark();fences();failedReads();partialReads();committedWindow();
+        lifecycle();frames();happy();pending();cleanup();unknownReplies();partialWrites();floodRetry();losingOwnMark();unprovenOwnMark();fences();failedReads();partialReads();committedWindow();windowWinner();
         System.out.println("CARRY_DISPATCH_CHECKS="+checks);
     }
 }
