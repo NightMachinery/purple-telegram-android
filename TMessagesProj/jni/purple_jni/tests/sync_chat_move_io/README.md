@@ -19,3 +19,9 @@ attempt, both within one wrapper and across wrappers sharing a store. Delayed
 request and own-upload renewal callbacks reject a legitimate successor from a
 different journal revision or opening epoch; same-revision epoch replacement is
 a separate control. Existing same-epoch renewal remains the success control.
+
+The snapshot regression uses the upstream message serializer with Android test
+mode disabled. It covers empty and nonempty local attachment paths, Self and
+shared chats, following container vectors, real receipt sealing and reader
+completion, and refusal of unknown constructors, truncation, trailing bytes and
+legacy broken snapshots. `SNAPSHOT_CODEC_CHECKS` is required by the suite registry.

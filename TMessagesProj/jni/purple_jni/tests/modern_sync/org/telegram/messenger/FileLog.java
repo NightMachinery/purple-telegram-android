@@ -11,6 +11,10 @@ public final class FileLog {
         ++errors;
     }
 
+    public static void e(Throwable error,boolean report) {
+        ++errors;
+    }
+
     public static void d(String message) {
     }
 }

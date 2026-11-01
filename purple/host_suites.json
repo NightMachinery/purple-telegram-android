@@ -945,10 +945,12 @@
         "--store",
         "{out:sync-chat-move-store}"
       ],
-      "coverage": "Actual AGP typed carry receipts, generated TL bytes, worker-owned private stores, durable transport identities and controlled upload/retry callbacks.",
+      "coverage": "Actual AGP typed carry receipts, generated TL bytes, worker-owned private stores, durable transport identities and controlled upload/retry callbacks. Production-mode upstream message serialization normalizes local attachment tails into strict wire snapshots; exact receipts, the real reader, following vectors, corruption controls and old snapshot refusal.",
       "expects": {
         "carry-io:CARRY_IO_CHECKS": 779,
-        "sync-chat-move-io:CARRY_IO_CHECKS": 779
+        "sync-chat-move-io:CARRY_IO_CHECKS": 779,
+        "carry-io:SNAPSHOT_CODEC_CHECKS": 196,
+        "sync-chat-move-io:SNAPSHOT_CODEC_CHECKS": 196
       }
     },
     {

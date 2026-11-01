@@ -821,3 +821,17 @@ separate Follow.
 ### Switch-safe move progress
 
 An unavailable feature shows its message without adding move progress or Retry. Change and Follow/Fill entry rows are absent while their switches are off. Retry requires the corresponding feature switch and the account owner's current operation; closing or replacing that operation removes its Retry action. Startup Retry is offered only after the startup owner has a current resumed move. Other unavailable startup evidence remains held for inspection.
+
+### Exact-read snapshots in Android
+
+Record receipts retain a wire-only snapshot of the exact Telegram response. The
+upstream Android message serializer also writes a local attachment-path tail;
+Purple validates and removes that tail from each message before storing the
+snapshot. A bounded wire reader rejects truncated primitives and invalid TL
+lengths or padding. All ownership, message, document and body checks still apply. Older snapshots containing the local tail remain unreadable
+and fail closed, so the reader must obtain a fresh exact response. This changes
+neither the sync envelope nor the record uploaded by another client.
+
+The IO host suite runs the real upstream serializer with production test mode
+disabled, including following topics, chats and users vectors, exact receipt
+sealing, the record reader and corrupt snapshot controls.

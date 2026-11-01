@@ -287,11 +287,78 @@ public final class PurpleSyncChatMoveIOCases {
         overlappingReconciliationCase(false);overlappingReconciliationCase(true);
         for(boolean upload:new boolean[]{false,true})for(boolean epochOnly:new boolean[]{false,true})renewalRevisionCase(upload,epochOnly);
     }
+    static int snapshotChecks;
+    static void snapshotCheck(boolean value,String why){++snapshotChecks;if(!value)throw new AssertionError(why);}
+    static byte[] upstream(TLObject object){SerializedData data=new SerializedData();try{object.serializeToStream(data);return data.toByteArray();}finally{data.cleanup();}}
+    static void snapshotCodec()throws Exception {
+        boolean previous=org.telegram.messenger.ApplicationLoader.androidTestEnvironment;
+        try {
+            org.telegram.messenger.ApplicationLoader.androidTestEnvironment=false;
+            snapshotCheck(!org.telegram.messenger.ApplicationLoader.isAndroidTestEnvironment(),"real upstream serializer runs in production mode");
+            for(Peer chat:new Peer[]{Peer.self(),O,Peer.of(PeerKind.Channel,20)})for(String path:new String[]{"","synthetic/cache/record"}){
+                TLRPC.TL_message message=doc(chat,12,1100,base);message.attachPath=path;
+                TLRPC.messages_Messages response=page(chat,message);
+                TLRPC.TL_forumTopicDeleted topic=new TLRPC.TL_forumTopicDeleted();topic.id=7;response.topics.add(topic);
+                TLRPC.TL_chatEmpty group=new TLRPC.TL_chatEmpty();group.id=13;response.chats.add(group);
+                TLRPC.TL_userEmpty user=new TLRPC.TL_userEmpty();user.id=777;response.users.add(user);
+                byte[] rawMessage=upstream(message);SerializedData scan=new SerializedData(rawMessage);
+                try {
+                    TLRPC.Message decoded=TLRPC.Message.TLdeserialize(scan,scan.readInt32(true),true);
+                    snapshotCheck(decoded!=null&&scan.remaining()>0,"upstream production message has the local tail");
+                    if(path.isEmpty())snapshotCheck(scan.readInt32(true)==0x2001,"blank local path is precisely the native failing word");
+                    else snapshotCheck(path.equals(scan.readString(true)),"nonempty local path is serialized too");
+                    snapshotCheck(scan.remaining()==0,"local path is the only message tail");
+                } finally {scan.cleanup();}
+                byte[] stored=PurpleSyncChatMoveRequests.snapshot(response);
+                TLRPC.messages_Messages decoded=PurpleSyncChatMoveRequests.messages(stored);
+                snapshotCheck(decoded!=null,"production document snapshot round-trips before the topics vector");
+                snapshotCheck(decoded.messages.size()==1&&decoded.messages.get(0).id==message.id&&decoded.messages.get(0).date==message.date,"exact message identity survives");
+                snapshotCheck(decoded.messages.get(0).media.document.id==message.media.document.id&&decoded.messages.get(0).media.document.size==base.length,"document identity and size survive");
+                snapshotCheck(decoded.topics.size()==1&&decoded.topics.get(0).id==topic.id&&decoded.chats.size()==1&&decoded.users.size()==1,"all following container vectors survive");
+                snapshotCheck(response.messages.get(0)==message&&Objects.equals(message.attachPath,path),"normalization never replaces or edits caller attachment metadata");
+                org.telegram.messenger.ApplicationLoader.androidTestEnvironment=true;
+                snapshotCheck(Arrays.equals(stored,PurpleSyncChatMoveRequests.snapshot(response)),"wire snapshot is identical in production and host modes");
+                org.telegram.messenger.ApplicationLoader.androidTestEnvironment=false;
+                snapshotCheck(PurpleSyncChatMoveRequests.messages(upstream(response))==null,"previous broken production snapshots fail closed for reread");
+                PurpleSyncChatIO route=route(chat);
+                snapshotCheck(receipt(route,message,message,base)!=null,"real production-mode receipt seals");
+                TLRPC.TL_message changed=doc(chat,12,1101,base);
+                snapshotCheck(receipt(route,message,changed,base)==null,"receipt still rejects changed exact metadata");
+                snapshotCheck(receipt(route,message,message,Arrays.copyOf(base,base.length-1))==null,"receipt still rejects a mismatched body");
+                byte[] unknown=stored.clone();Arrays.fill(unknown,0,4,(byte)0);snapshotCheck(PurpleSyncChatMoveRequests.messages(unknown)==null,"unknown container magic refused");
+                unknown=stored.clone();int vector=chat.kind==PeerKind.Channel?16:4;Arrays.fill(unknown,vector,vector+4,(byte)0);snapshotCheck(PurpleSyncChatMoveRequests.messages(unknown)==null,"unknown message vector magic refused");
+                unknown=stored.clone();Arrays.fill(unknown,vector+8,vector+12,(byte)0);snapshotCheck(PurpleSyncChatMoveRequests.messages(unknown)==null,"unknown message constructor refused");
+                for(int cut:new int[]{0,1,3,4,7,8,9,stored.length/2,stored.length-4,stored.length-3,stored.length-2,stored.length-1})
+                    snapshotCheck(PurpleSyncChatMoveRequests.messages(Arrays.copyOf(stored,cut))==null,"truncated snapshot refused "+cut);
+                for(int extra:new int[]{1,4})snapshotCheck(PurpleSyncChatMoveRequests.messages(Arrays.copyOf(stored,stored.length+extra))==null,"trailing snapshot bytes refused");
+                ReadClient reader=new ReadClient(chat,base,Collections.singletonList(message));PurpleSyncInventory inventory=reader.inventory();
+                snapshotCheck(inventory.scanComplete&&inventory.ownedScan()&&inventory.count()==1&&inventory.transport(0)==PurpleSyncInventory.FETCHED&&inventory.receipt(0)!=null,"real reader returns a sealed fetched record in production mode");
+            }
+            TLRPC.messages_Messages mixed=new TLRPC.TL_messages_messages();
+            mixed.messages.add(doc(Peer.self(),12,1100,base));mixed.messages.add(doc(Peer.self(),13,1101,base));
+            snapshotCheck(PurpleSyncChatMoveRequests.messages(PurpleSyncChatMoveRequests.snapshot(mixed)).messages.size()==2,"each message tail is removed before the next element");
+            TLRPC.TL_messageService service=new TLRPC.TL_messageService();service.id=14;service.date=1100;service.out=true;service.peer_id=peer(Peer.self());service.action=new TLRPC.TL_messageActionEmpty();
+            TLRPC.TL_messageEmpty empty=new TLRPC.TL_messageEmpty();empty.id=15;empty.flags=1;empty.peer_id=peer(Peer.self());
+            for(TLRPC.Message message:new TLRPC.Message[]{service,empty}){
+                TLRPC.messages_Messages decoded=PurpleSyncChatMoveRequests.messages(PurpleSyncChatMoveRequests.snapshot(page(Peer.self(),message)));
+                snapshotCheck(decoded!=null,"service and empty message snapshots remain supported");
+                snapshotCheck(decoded.messages.get(0).getClass()==message.getClass()&&decoded.messages.get(0).id==message.id,"service and empty identities preserved");
+            }
+            TLRPC.TL_messages_messagesSlice slice=new TLRPC.TL_messages_messagesSlice();slice.count=8;slice.flags=1|4;slice.next_rate=3;slice.offset_id_offset=2;slice.messages.add(doc(Peer.self(),12,1100,base));
+            TLRPC.messages_Messages sliced=PurpleSyncChatMoveRequests.messages(PurpleSyncChatMoveRequests.snapshot(slice));
+            snapshotCheck(sliced!=null&&sliced.getClass()==slice.getClass(),"current slice constructor preserved");
+            snapshotCheck(sliced.count==8&&sliced.next_rate==3&&sliced.offset_id_offset==2,"slice optional header fields preserved");
+            snapshotCheck(PurpleSyncChatMoveRequests.messages(new byte[4194305])==null,"oversized snapshot refused");
+            snapshotCheck(PurpleSyncChatMoveRequests.snapshot(null)==null,"missing response remains Unknown");
+        } finally {org.telegram.messenger.ApplicationLoader.androidTestEnvironment=previous;}
+        System.out.println("SNAPSHOT_CODEC_CHECKS="+snapshotChecks);
+    }
     public static void main(String[] args)throws Exception{
         rows=new ArrayList<>();for(String line:Files.readAllLines(new File(args[0]).toPath()))rows.add(new JSONObject(line));for(JSONObject r:rows)if(r.getString("op").equals("begin")&&r.getJSONObject("expected").getString("status").equals("Valid")){beginning=r.getJSONObject("input");break;}
         base=unblob(rows.get(0).getJSONObject("input").getString("stagedRecord"));PurpleSyncChatMoveStoreCases.initial=unblob(beginning.getString("state"));PurpleSyncChatMoveStoreCases.baseRecord=base;
         File parent=new File(args[1]);PurpleModernSyncCases.directory(parent);PurpleModernSyncCases.Frame frame=new PurpleModernSyncCases.Frame(parent,"routing",true);root=frame.root;
+        if(args.length>2&&args[2].equals("snapshot")){snapshotCodec();return;}
         if(args.length>2){if(args[2].equals("aba"))overlappingReconciliationCase(false);else renewalRevisionCase(args[2].equals("upload"),args[2].equals("epoch"));System.out.println("CARRY_IO_CHECKS="+checks);return;}
-        fixRoundOneCases();wireCases();readCases();identityCases();receiptHints();scopeCases();restartAndMarkCases();recoveryCases();effectCases();uploadCases();System.out.println("CARRY_IO_CHECKS="+checks);
+        snapshotCodec();fixRoundOneCases();wireCases();readCases();identityCases();receiptHints();scopeCases();restartAndMarkCases();recoveryCases();effectCases();uploadCases();System.out.println("CARRY_IO_CHECKS="+checks);
     }
 }
