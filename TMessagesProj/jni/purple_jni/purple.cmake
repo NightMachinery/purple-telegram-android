@@ -56,7 +56,10 @@ add_library(purplecore SHARED
         purple/purple/purple_sync_auto_state.cpp
         purple/purple/purple_engine.cpp)
 
-target_compile_options(purplecore PRIVATE -std=c++20 -Oz)
+# C++20 as the target's standard, not a -std flag: upstream sets
+# CMAKE_CXX_STANDARD 17, and CMake appends its -std=c++17 after compile options.
+set_target_properties(purplecore PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+target_compile_options(purplecore PRIVATE -Oz)
 
 target_include_directories(purplecore PRIVATE
         purple
