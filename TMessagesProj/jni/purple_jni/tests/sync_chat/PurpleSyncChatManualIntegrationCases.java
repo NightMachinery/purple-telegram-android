@@ -93,10 +93,15 @@ final class PurpleSyncChatManualIntegrationCases {
         }
         public void cancel(){}
         PurpleSyncRunner runner(){PurpleSyncChatManual manual=new PurpleSyncChatManual(this,()->foreground);return new PurpleSyncRunner(1,202,manual,manual,this::worker,this::ui);}
+        /** Marks the setup journal as a channel this device created, as setup records it after creating one. */
+        void createdBySetup()throws Exception{
+            File journal=new File(context.files.syncDirectory,"sync-chat-setup.json");
+            write(journal,new JSONObject(new String(Files.readAllBytes(journal.toPath()),StandardCharsets.UTF_8)).put("create",true).put("created",true).toString());
+        }
     }
     static PurpleSyncRunner.Check reviewed(PurpleSyncRunner runner){PurpleSyncRunner.CheckOutcome[] result={null};PurpleModernSyncCases.check(runner.check(null,value->result[0]=value)==PurpleSyncRunner.Start.Started,"manual check starts");PurpleModernSyncCases.check(result[0]!=null&&result[0].status==PurpleSyncRunner.CheckStatus.Finished,"manual typed inventory reaches settings review");return result[0].check;}
     static void controls(File root)throws Exception{
-        for(String fault:new String[]{"unfinished","corrupt","authority","occupied","source","existing-self","other-typed","inactive"}){
+        for(String fault:new String[]{"unfinished","corrupt","authority","occupied","occupied-mixed","source","existing-self","other-typed","inactive"}){
             Port p=new Port(root,PurpleSyncChatRequestCases.CHANNEL);
             byte[] original=null;
             if(fault.equals("existing-self")||fault.equals("other-typed")){
@@ -111,6 +116,11 @@ final class PurpleSyncChatManualIntegrationCases {
             if(fault.equals("occupied")){
                 PurpleAccountSyncCore.Result record=PurpleAccountSyncCore.buildConfigRecord(OWN,new byte[0][],p.files.newSpace(),install(2),device(2),"Desktop","fixture",1,1700000000);
                 PurpleModernSyncCases.check(record.isValid(),"occupied inventory is a genuine canonical record");p.records.add(record.record);
+                p.createdBySetup();
+            }
+            if(fault.equals("occupied-mixed"))for(int writer=2;writer<=3;++writer){
+                PurpleAccountSyncCore.Result record=PurpleAccountSyncCore.buildConfigRecord(OWN,new byte[0][],p.files.newSpace(),install(writer),device(writer),"Desktop","fixture",1,1700000000);
+                PurpleModernSyncCases.check(record.isValid(),"mixed-space inventory holds genuine canonical records");p.records.add(record.record);
             }
             PurpleSyncRunner runner=p.runner();PurpleSyncRunner.Check shown=reviewed(runner);
             File journal=new File(p.context.files.syncDirectory,"sync-chat-setup.json");
@@ -143,6 +153,48 @@ final class PurpleSyncChatManualIntegrationCases {
         shown=reviewed(runner);PurpleSyncPublisher.Result[] finished={null};runner.publish(shown,PurpleSyncCore.PostRequest.finishSending(),value->finished[0]=value);
         PurpleModernSyncCases.check(finished[0]!=null&&finished[0].status==PurpleSyncCore.PublishStatus.Confirmed&&p.posts==1,"restart reconciliation confirms found exact pending bytes without another send");
         runner.close();
+    }
+    /**
+     * A device without sync state joins the one sync space another device already uses in a chat the user chose:
+     * Saved Messages (selfJoin, in the shape the D1 Android check reached), an existing channel picked at setup
+     * (existingChannelJoin) and a channel another device set up, found by discovery with no setup journal here
+     * (discoveredChannelJoin). Keeping this device's settings joins that space, publishes once and deletes nothing.
+     */
+    static void existingJoins(File root)throws Exception{
+        for(String name:new String[]{"selfJoin","existingChannelJoin","discoveredChannelJoin"}){
+            Peer target=name.equals("selfJoin")?Peer.self():PurpleSyncChatRequestCases.CHANNEL;
+            Port p=new Port(root,target);File sync=p.context.files.syncDirectory;
+            if(name.equals("discoveredChannelJoin"))Files.delete(new File(sync,"sync-chat-setup.json").toPath());
+            if(target.equals(Peer.self())){
+                p.files.initialize(1);PurpleModernSyncCases.check(p.files.token(1)!=null,name+" keeps the account binding preference");
+                File archive=new File(sync,"orphaned-20261031-190558");PurpleModernSyncCases.check(archive.mkdir(),name+" archive folder");
+                Files.move(new File(sync,"state.json").toPath(),new File(archive,"state.json").toPath());
+                if(new File(sync,"pending").exists())Files.move(new File(sync,"pending").toPath(),new File(archive,"pending").toPath());
+                Files.delete(new File(sync,"sync-chat-setup.json").toPath());
+                TreeSet<String> names=new TreeSet<>(Arrays.asList(sync.list()));names.remove("lock");
+                PurpleModernSyncCases.check(names.equals(new TreeSet<>(Collections.singleton(archive.getName()))),name+" sync folder holds only the lock and the archive");
+            }
+            PurpleAccountSyncCore.Result other=PurpleAccountSyncCore.buildConfigRecord(REMOTE,new byte[0][],p.files.newSpace(),install(2),device(2),"Desktop","fixture",1,1700000000);
+            PurpleModernSyncCases.check(other.isValid(),name+" other install's canonical record");p.records.add(other.record);
+            String space=PurpleAccountSyncCore.inspectConfigRecord(other.record).space;
+            PurpleSyncRunner runner=p.runner();PurpleSyncRunner.Check shown=reviewed(runner);
+            PurpleModernSyncCases.check(shown.review.status==PurpleSyncCore.ReviewStatus.Ready&&!shown.review.bound
+                    &&shown.review.verdict==PurpleSyncCore.Verdict.Choose&&shown.inventory.count()==1,name+" offers the other device's settings or this device's");
+            int scans=p.scans;PurpleSyncRunner.ApplyOutcome[] applied={null};
+            PurpleModernSyncCases.check(runner.apply(shown,null,value->applied[0]=value)==PurpleSyncRunner.Start.Started,name+" keep-local join starts");
+            PurpleModernSyncCases.check(applied[0]!=null&&applied[0].result.status==PurpleSyncCore.ApplyStatus.Applied&&applied[0].result.joined
+                    &&applied[0].post!=null,name+" joins and prepares one post, status="+(applied[0]!=null?applied[0].result.status:null));
+            PurpleModernSyncCases.check(p.scans>scans,name+" re-reads the chat before joining");
+            byte[] state=Files.readAllBytes(new File(sync,"state.json").toPath());JSONObject ledger=new JSONObject(new String(state,StandardCharsets.UTF_8));
+            PurpleModernSyncCases.check(space.equals(ledger.getString("space")),name+" joins the other device's sync space");
+            PurpleModernSyncCases.check(PurpleSyncChatIO.ledgerMatches(target,state)&&ledger.getInt("version")==(target.equals(Peer.self())?1:2),name+" ledger is typed for its chat");
+            PurpleSyncRunner.Check fresh=reviewed(runner);PurpleSyncPublisher.Result[] sent={null};
+            PurpleModernSyncCases.check(runner.publish(fresh,applied[0].post,value->sent[0]=value)==PurpleSyncRunner.Start.Started,name+" share starts after the fresh check");
+            PurpleModernSyncCases.check(sent[0]!=null&&sent[0].status==PurpleSyncCore.PublishStatus.Confirmed&&p.posts==1,name+" share confirms");
+            PurpleModernSyncCases.check(space.equals(PurpleAccountSyncCore.inspectConfigRecord(p.posted).space),name+" posts into the joined space");
+            PurpleModernSyncCases.check(p.records.size()==2&&Arrays.equals(p.records.get(0),other.record),name+" keeps the other device's record");
+            runner.close();PurpleModernSyncCases.check(!PurpleSyncOperations.busy(p.key()),name+" releases the operation");
+        }
     }
     static void initializer(File root)throws Exception{
         Frame frame=new Frame(root,"initializer-controls",true);byte[] entropy=new byte[16];Arrays.fill(entropy,(byte)7);
@@ -198,5 +250,7 @@ final class PurpleSyncChatManualIntegrationCases {
         }
         controls(root);initializer(root);
         System.out.println("MANUAL_TYPED_FIRST_POST_CHECKS="+(checks-before));
+        int joins=checks;existingJoins(root);
+        System.out.println("MANUAL_EXISTING_JOIN_CHECKS="+(checks-joins));
     }
 }

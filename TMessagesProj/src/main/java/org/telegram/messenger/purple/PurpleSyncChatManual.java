@@ -73,9 +73,10 @@ final class PurpleSyncChatManual extends PurpleSyncRunner.Platform implements Pu
         if(!available()||owner==null||!PurpleSyncOperations.owned(port.key(),owner)||!port.current())return false;
         PurpleSyncChatScreen.Frame value=frame;
         PurpleSyncChatService.Binding binding=port.binding();
-        if(!binding.ok||!binding.bound&&(reviewedInventory==null||reviewedInventory.count()!=0))return false;
+        if(!binding.ok)return false;
         PurpleAccountFileSnapshot journal=PurpleAccountFileSnapshot.read(journalFile(),16384);
         if(journal.status==PurpleAccountFileSnapshot.Status.ReadError)return false;
+        if(!binding.bound&&!unboundAdmits(reviewedInventory,journal.bytes))return false;
         try {
             if(consent==null){
                 PurpleSyncInventory inventory=pendingConsent;
@@ -98,6 +99,38 @@ final class PurpleSyncChatManual extends PurpleSyncRunner.Platform implements Pu
             }
             return true;
         }catch(RuntimeException|LinkageError error){return false;}
+    }
+    /**
+     * Whether a device without sync state may start using the reviewed chat. An empty chat always may. A chat that
+     * already holds records may be joined only when this device did not create it, and every record belongs to one and
+     * the same sync space. Saved Messages is never created; a chat found by discovery (another device's pinned mark)
+     * leaves no setup journal; a chat picked at setup leaves a Complete journal without create or created. A chat this
+     * device's setup created must still be empty, and unreadable or mixed-space records refuse.
+     */
+    private boolean unboundAdmits(PurpleSyncInventory inventory,byte[] journal){
+        if(inventory==null||!inventory.scanComplete)return false;
+        if(inventory.count()==0)return true;
+        if(!Peer.self().equals(inventory.chat)&&!notCreatedHere(journal,inventory.chat))return false;
+        return oneSpace(inventory);
+    }
+    private boolean notCreatedHere(byte[] journal,Peer chat){
+        if(chat==null)return false;
+        if(journal==null)return true;
+        try {
+            PurpleSyncChatSetup.Journal value=PurpleSyncChatSetup.Journal.parse(journal,port.origin(),PurpleSyncChatSetup.authority(port.authority()));
+            return value.step==PurpleSyncChatSetup.Step.Complete&&!value.create&&!value.created&&chat.equals(value.chat);
+        }catch(Exception|LinkageError error){return false;}
+    }
+    static boolean oneSpace(PurpleSyncInventory inventory){
+        String space=null;
+        for(int i=0;i<inventory.count();++i){
+            if(inventory.transport[i]!=PurpleSyncInventory.FETCHED||inventory.bytes[i]==null)return false;
+            PurpleAccountSyncCore.Result record=PurpleAccountSyncCore.inspectConfigRecord(inventory.bytes[i]);
+            if(!"Valid".equals(record.envelopeStatus)||record.space==null||record.space.isEmpty()
+                    ||space!=null&&!space.equals(record.space))return false;
+            space=record.space;
+        }
+        return space!=null;
     }
     private boolean pendingEmpty(){return frame!=null&&frame.binding!=null&&!frame.binding.bound;}
     @Override public void prepareApply(Object owner,String key,BooleanSupplier current,Consumer<Boolean> done){
