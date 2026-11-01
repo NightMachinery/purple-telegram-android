@@ -11,8 +11,24 @@ public final class PurpleSyncChatChange implements AutoCloseable {
         public final String phase,reason;
         public final boolean committed;
         public final PurpleSyncChatMoveCleanup.Progress cleanup;
+        /** MarkRecoveryWaiting: the wall-clock time the next mark check is due; 0 otherwise. */
+        public final long recheckAt;
+        /** FinishedForFollow: the winner sync follows next, or null when none was named. */
+        public final Cache supersededBy;
         public State(String phase,String reason,boolean committed){this(phase,reason,committed,null);}
-        public State(String phase,String reason,boolean committed,PurpleSyncChatMoveCleanup.Progress cleanup){this.phase=phase;this.reason=reason;this.committed=committed;this.cleanup=cleanup;}
+        public State(String phase,String reason,boolean committed,PurpleSyncChatMoveCleanup.Progress cleanup){this(phase,reason,committed,cleanup,0,null);}
+        State(String phase,String reason,boolean committed,PurpleSyncChatMoveCleanup.Progress cleanup,long recheckAt,Cache supersededBy){
+            this.phase=phase;this.reason=reason;this.committed=committed;this.cleanup=cleanup;this.recheckAt=recheckAt;this.supersededBy=supersededBy;
+        }
+    }
+    /**
+     * The controller state for a move status. FinishedForFollow is its own terminal phase, never Complete: the
+     * settings went to N, no Committed receipt exists, and sync follows the winner through the separate Follow offer
+     * (D-M2B5-13). The waiting time and the winner travel with the state.
+     */
+    static State state(PurpleSyncChatMove.Status status,boolean committed){
+        String phase=status.terminal?(status.reason.equals("FinishedForFollow")?"FinishedForFollow":"Complete"):held(status)?"Held":"Carrying";
+        return new State(phase,status.reason,committed,status.cleanup,status.recheckAt,status.supersededBy);
     }
     interface Port {
         PurpleSyncChatOrigin origin();
@@ -61,9 +77,10 @@ public final class PurpleSyncChatChange implements AutoCloseable {
     void start(){if(started||closed)return;started=true;port.worker(()->guard(()->fresh(selection.offer.createChannel)));}
     private interface Work{void run()throws Exception;}
     private void guard(Work task){try{PurpleAccountFileSnapshot.worker();if(live())task.run();}catch(Exception|LinkageError e){hold("ChangeUnavailable");}}
-    private boolean publish(String phase,String reason,boolean committed){
+    private boolean publish(String phase,String reason,boolean committed){return publish(new State(phase,reason,committed,cleanupProgress));}
+    private boolean publish(State state){
         if(!live())return false;
-        try{port.status(new State(phase,reason,committed,cleanupProgress));}catch(RuntimeException|LinkageError e){close();return false;}
+        try{port.status(state);}catch(RuntimeException|LinkageError e){close();return false;}
         return live();
     }
     private void hold(String reason){publish("Held",reason,commit!=null);}
@@ -147,7 +164,7 @@ public final class PurpleSyncChatChange implements AutoCloseable {
             else if(decoration==Decoration.Waiting)publish(decorationPhase,"",true);
             return;
         }
-        publish(status.terminal?"Complete":held(status)?"Held":"Carrying",status.reason,commit!=null);
+        publish(state(status,commit!=null));
     }
     static boolean held(PurpleSyncChatMove.Status state){return !state.terminal&&state.cleanup!=null&&state.cleanup.canAct&&!state.reason.isEmpty()&&!state.reason.equals("Running")&&!state.reason.equals("MovedCleanupPending");}
     private void decorate(){

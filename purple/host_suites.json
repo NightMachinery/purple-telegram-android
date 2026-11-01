@@ -1257,14 +1257,16 @@
         "--dispatcher",
         "{out:sync-chat-carry}"
       ],
-      "coverage": "Real activated facade owner, Change/Follow/Fill/Recovery controllers, startup resume before ordinary sync, cleanup OFF and cancellation through fake carry dispatch. Real initial renewal through the owning Move for accepted Follow/Fill, recovery replacement marks, ordinary forward/own sends and cleanup, with no direct command replies.",
+      "coverage": "Real activated facade owner, Change/Follow/Fill/Recovery controllers, startup resume before ordinary sync, cleanup OFF and cancellation through fake carry dispatch. Real initial renewal through the owning Move for accepted Follow/Fill, recovery replacement marks, ordinary forward/own sends and cleanup, with no direct command replies. FinishThenFollow on the screen through the real Change/Move/carry/core with switches injected ON: losing-mark and uncertain-attempt FinishedForFollow state, line and actions, the 30/120/600 checks on Retry, restart and overdue startup resume, and the separately consented Follow.",
       "expects": {
         "wire:SYNC_CHAT_WIRE_CHECKS": 50,
         "sync-chat-wire:SYNC_CHAT_WIRE_CHECKS": 50,
         "wire:WIRE_RENEWAL_CHECKS": 40,
         "sync-chat-wire:WIRE_RENEWAL_CHECKS": 40,
         "wire:WIRE_VIEW_CHECKS": 85,
-        "sync-chat-wire:WIRE_VIEW_CHECKS": 85
+        "wire:WIRE_FINISH_CHECKS": 88,
+        "sync-chat-wire:WIRE_VIEW_CHECKS": 85,
+        "sync-chat-wire:WIRE_FINISH_CHECKS": 88
       }
     }
   ]

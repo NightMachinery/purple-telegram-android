@@ -537,9 +537,12 @@ Switch or RepairMark has a mark attempt, each command sets `seedTarget`. The
 dispatcher's read-only pass then searches N's own history after the account-wide
 and Saved Messages searches.
 
-The A5M-wire slice adds what calls this: Resume at startup for a held journal, a
-foreground timer that resumes at `recheckAt`, and ordinary discovery after the
-terminal.
+On Android, startup resume and Retry run these checks. Startup resumes a held
+journal once per process, so a check that came due while the app was closed runs
+at the next start. Returning to the foreground runs no check, and no timer
+resumes at `recheckAt` yet; that foreground cadence is a follow-up. After the
+terminal, startup resume starts ordinary sync, and the screen reloads its frame,
+which offers the existing Follow ("FinishThenFollow on the screen" below).
 
 ### Interrupted Discard and terminal evidence
 
@@ -778,6 +781,42 @@ directly. These cases require fresh host qualification before activation.
 Held text describes an unconfirmed or paused operation. It does not establish
 another winner or claim that no earlier request was sent. An unreadable journal
 is preserved for inspection and explicit retry, without a claim about its history.
+
+### FinishThenFollow on the screen
+
+`PurpleSyncChatChange.State` carries the move's `recheckAt` and `supersededBy`.
+FinishedForFollow keeps its own phase and is never `Complete`.
+`PurpleSyncChatMoveView.line` picks the status line, and the recovery dialog
+uses the same lines:
+
+- FinishedForFollow with a named winner says the settings were copied to the new
+  chat but another sync chat has newer settings, and points to Follow. Without a
+  named winner it says the move could not be confirmed and Purple is looking for
+  the chat with the newest settings. Neither says the sync chat changed, and
+  neither offers Retry. The screen reloads its frame, which shows the existing
+  Follow offer. That Follow is a separate operation with its own consent; nothing
+  follows automatically.
+- `MarkRecoveryWaiting` is Held. Its line says Purple is checking whether the
+  move finished and names the due time, and the screen offers Retry. Retry
+  before the due time decides nothing and does not count; Retry at or after it
+  runs the check.
+- A committed move still reads "The sync chat has changed.", and other holds keep
+  the paused line.
+
+The checks run on Retry and at startup resume. Returning to the foreground runs
+none, and no timer fires at `recheckAt`. The foreground cadence (schedule the
+next check at the persisted `recheckAt` while the app is in the foreground, run
+an overdue one on resume, cancel on leave or revocation) is a follow-up. Until
+it lands, a user who leaves the screen open past the due time sees the waiting
+line until they press Retry.
+
+The wire suite's finish cases drive this through the real Change, Move, carry
+dispatcher and core with the switches injected ON. A losing mark finishes for
+Follow. An uncertain attempt goes through its 30, 120 and 600 second checks on
+Retry, with an early Retry that neither counts nor moves the due time. A restart
+before the last due time keeps the cadence; one after it runs the overdue check
+at startup and finishes for Follow. Each case then needs consent for the
+separate Follow.
 
 ### Switch-safe move progress
 

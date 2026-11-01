@@ -61,7 +61,7 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
         if(identity==null||!identity.current()){finishFragment();return;}
         if(control==null||!control.current())control=PurpleSyncChat.screen(currentAccount,()->visible&&identity!=null&&identity.current());
         if(moveWatch!=null)moveWatch.run();
-        moveWatch=PurpleSyncChat.observeMove(currentAccount,()->visible&&identity!=null&&identity.current(),state->{if(moveFlow!=null&&moveFlow.current())return;recordMoveState(PurpleSyncChatMoveView.Feature.Startup,state);if(state.phase.equals("Complete"))reload();});
+        moveWatch=PurpleSyncChat.observeMove(currentAccount,()->visible&&identity!=null&&identity.current(),state->{if(moveFlow!=null&&moveFlow.current())return;recordMoveState(PurpleSyncChatMoveView.Feature.Startup,state);if(PurpleSyncChatMoveView.terminal(state))reload();});
         openSetup();reload();
     }
     private void openSetup() {
@@ -167,7 +167,7 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
             }
         }
         if(moveState!=null){
-            items.add(UItem.asShadow(text(moveState.phase.equals("Complete")?"ChangeComplete":moveState.phase.equals("Held")?"MoveHeld":"MoveWorking")));
+            items.add(UItem.asShadow(moveLine(moveState)));
             if(PurpleSyncChatMoveView.retry(moveFeature,moveState,moveLive()))items.add(UItem.asButton(MOVE_RETRY,LocaleController.getString(org.telegram.messenger.R.string.PurpleWriteActionRetry)));
         }
         if(cleanupProgress!=null){
@@ -317,7 +317,8 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
     private void recoveryStatus(org.telegram.messenger.purple.PurpleSyncChatChange.State state){
         if(!visible||!recordMoveState(PurpleSyncChatMoveView.Feature.Recovery,state))return;
         if(state.phase.equals("Warning"))message(text("RecoveryNewReaders"));
-        else if(state.phase.equals("Held"))message(recoveryReason(state.reason));
+        else if(state.phase.equals("Held"))message(state.reason.equals("MarkRecoveryWaiting")?moveLine(state):recoveryReason(state.reason));
+        else if(state.phase.equals("FinishedForFollow"))message(moveLine(state));
         else if(state.phase.equals("Complete")&&(state.cleanup==null||!state.cleanup.pending))message(text("RecoveryComplete"));
     }
     private static String recoveryReason(String value){
@@ -360,7 +361,7 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
                     moveFlow=PurpleSyncChat.recover(currentAccount,recoveryFrame,create?org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.ActionChoice.Create:org.telegram.messenger.purple.PurpleSyncChatMoveRecovery.ActionChoice.Choose,selection,()->visible,this::recoveryStatus);return;
                 }
                 moveFlow=PurpleSyncChat.change(currentAccount,selection,()->visible&&identity!=null&&identity.current(),state->{
-                    if(visible&&control==opening&&opening.current()){recordMoveState(PurpleSyncChatMoveView.Feature.Change,state);if(state.phase.equals("Complete"))reload();}
+                    if(visible&&control==opening&&opening.current()){recordMoveState(PurpleSyncChatMoveView.Feature.Change,state);if(PurpleSyncChatMoveView.terminal(state))reload();}
                 });
             }));
             dialog.setNegativeButton(LocaleController.getString(org.telegram.messenger.R.string.Cancel),null);showDialog(dialog.create());
@@ -388,6 +389,11 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
     }
     static String disclosure(PurpleSyncChatScreen.Candidate candidate) {
         return PurpleSyncChatScreen.disclosure(candidate,PurpleSyncChatActivity::text);
+    }
+    /** The move status line; a waiting mark check shows when it is due (D-M2B5-13). */
+    private static String moveLine(org.telegram.messenger.purple.PurpleSyncChatChange.State state) {
+        String key=PurpleSyncChatMoveView.line(state);
+        return key.equals("MoveRecoveryWaiting")?text(key,LocaleController.getInstance().getFormatterDay().format(state.recheckAt)):text(key);
     }
     private static String refusal(PurpleSyncChatCore.Refusal value) { return text("Refusal"+value.name()); }
     private static String reason(String value) {

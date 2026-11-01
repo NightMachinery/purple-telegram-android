@@ -135,7 +135,7 @@ public final class PurpleSyncChatMoveRecovery implements AutoCloseable {
             move.start(begin,info);
         })));
     }
-    private void statusRecovery(PurpleSyncChatMove.Status s){status(new PurpleSyncChatChange.State(s.terminal?"Complete":PurpleSyncChatChange.held(s)?"Held":"Carrying",s.reason,s.committed!=null,s.cleanup));}
+    private void statusRecovery(PurpleSyncChatMove.Status s){status(PurpleSyncChatChange.state(s,s.committed!=null));}
     @Override public void close(){
         if(closed)return;closed=true;++ticket;
         try{if(change!=null)change.close();}finally{try{if(move!=null)move.close();}finally{if(change==null)port.worker(port::cancel);}}

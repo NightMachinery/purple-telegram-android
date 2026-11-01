@@ -90,7 +90,7 @@ final class PurpleSyncChatStartup implements AutoCloseable {
                     if(info==null||!target.equals(info.chat)||!info.readable()){publish(new PurpleSyncChatChange.State("Held","TargetFactsRequired",false));return;}
                     move=flows.resume(port.carry(status->{
                         if(!live(run))return;
-                        publish(new PurpleSyncChatChange.State(status.terminal?"Complete":PurpleSyncChatChange.held(status)?"Held":"Carrying",status.reason,status.committed!=null,status.cleanup));
+                        publish(PurpleSyncChatChange.state(status,status.committed!=null));
                         if(status.terminal){port.cancel();port.ordinary();}
                     }),info,cleanup);
                 }));

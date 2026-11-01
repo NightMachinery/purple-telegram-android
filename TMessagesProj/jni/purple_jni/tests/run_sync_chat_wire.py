@@ -35,7 +35,10 @@ for required in ['if(PurpleSyncChatMoveView.retry(moveFeature,moveState,moveLive
                  'if(!PurpleSyncChatMoveView.retry(moveFeature,moveState,moveLive()))return;',
                  'if(PurpleSyncChatMoveView.enabled(PurpleSyncChatMoveView.Feature.Change))items.add(UItem.asButton(CHANGE',
                  'if(PurpleSyncChatMoveView.enabled(PurpleSyncChatMoveView.Feature.FollowFill))items.add(UItem.asButton(FOLLOW_FILL',
-                 'moveState=PurpleSyncChatMoveView.progress(state)']:
+                 'moveState=PurpleSyncChatMoveView.progress(state)',
+                 'items.add(UItem.asShadow(moveLine(moveState)));',
+                 'if(PurpleSyncChatMoveView.terminal(state))reload();',
+                 'else if(state.phase.equals("FinishedForFollow"))message(moveLine(state));']:
     assert required in view_source,required
 (args.output/'ui-source.json').write_text(json.dumps({'path':str(ui),'sha256':hashlib.sha256(ui.read_bytes()).hexdigest()},indent=2)+'\n')
 sources = sorted((tests / 'sync_chat_wire').glob('*.java')) + [main]
