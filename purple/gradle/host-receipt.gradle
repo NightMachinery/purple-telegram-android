@@ -3,7 +3,8 @@
 // library module, for the variant PURPLE_HOST_TASK names: the javac Gradle
 // chose, the class output, both class paths and every source with its hash.
 // It refuses a task graph that would build native code, assemble, minify,
-// sign or install anything, or touch an app module.
+// sign or install anything, or touch an app module. Upstream's Media3 library
+// modules (:TMessagesProj_Modules:...) are compile dependencies and may run.
 import groovy.json.JsonOutput
 import java.security.MessageDigest
 
@@ -19,7 +20,7 @@ gradle.taskGraph.whenReady { graph ->
         return
     }
     def refused = graph.allTasks.collect { it.path }.findAll {
-        it =~ /(?i)externalNative|cmake|assemble|minify|sign|install/ || it.startsWith(':TMessagesProj_')
+        it =~ /(?i)externalNative|cmake|assemble|minify|sign|install/ || it.startsWith(':TMessagesProj_App')
     }
     if (refused) {
         throw new GradleException('host-receipt.gradle refuses these tasks: ' + refused)
