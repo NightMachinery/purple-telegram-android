@@ -17,6 +17,7 @@ package org.telegram.messenger.purple;
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.MessagesController;
+import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
 
 public final class PurpleDefaults {
@@ -78,25 +79,35 @@ public final class PurpleDefaults {
     private PurpleDefaults() {
     }
 
-    public static String ownAppName(String key, int res, int fallbackRes) {
-        if (!"AppName".equals(key) && !"AppNameBeta".equals(key)) {
+    /**
+     * The app's own name, read from Android resources, where the standalone
+     * module's purple_app_name.xml overlays upstream's AppName and AppNameBeta.
+     *
+     * LocaleController.getStringV2 asks here first. Both of its own sources
+     * carry Telegram's name: the server's language pack, and the lookup asset
+     * upstream's TelegramStringsTask builds from strings.xml files only. A call
+     * may name the string by key, by resource id or both, since upstream is
+     * moving callers to getString(R.string.AppName) with no key, so either one
+     * matches. Returns null for every other string, and never null for these
+     * two, so the cloud lookup is never reached for them.
+     */
+    public static String ownAppName(String key, int res) {
+        final int own;
+        if (res == R.string.AppName || res == 0 && "AppName".equals(key)) {
+            own = R.string.AppName;
+        } else if (res == R.string.AppNameBeta || res == 0 && "AppNameBeta".equals(key)) {
+            own = R.string.AppNameBeta;
+        } else if ("AppName".equals(key) || "AppNameBeta".equals(key)) {
+            own = res;
+        } else {
             return null;
         }
-        String value = null;
         try {
-            value = ApplicationLoader.applicationContext.getString(res);
+            return ApplicationLoader.applicationContext.getString(own);
         } catch (Exception e) {
-            if (fallbackRes != 0) {
-                try {
-                    value = ApplicationLoader.applicationContext.getString(fallbackRes);
-                } catch (Exception ignored) {}
-            }
             FileLog.e(e);
+            return "LOC_ERR:" + (key != null ? key : own);
         }
-        if (value == null) {
-            value = "LOC_ERR:" + key;
-        }
-        return value;
     }
 
     public static boolean pushServiceDefault() {

@@ -29,6 +29,30 @@ android {
     }
 }
 
+// LocaleController reads strings from an asset that upstream's
+// org.telegram.build-app-plugin builds out of the strings.xml files alone, and
+// it no longer falls back to Android resources, so a string missing from that
+// asset shows as LOC_ERR. Purple's strings live in purple_strings.xml; feed it
+// to the same task, after upstream's files, where a name upstream also uses
+// would silently win, so Purple names stay distinct from upstream's. If
+// upstream renames the task, the check below stops the build instead of
+// shipping an app whose Purple screens read LOC_ERR.
+def purpleStrings = rootProject.file('TMessagesProj/src/main/res/values/purple_strings.xml')
+def purpleStringsTask = { it.project == project && it.name ==~ /generate\w*TelegramStrings/ }
+tasks.matching(purpleStringsTask).configureEach {
+    it.stringsXml.from(purpleStrings)
+}
+gradle.taskGraph.whenReady { graph ->
+    def packsResources = graph.allTasks.any {
+        it.project == project && it.name ==~ /process\w*Resources/
+    }
+    if (packsResources && !graph.allTasks.any(purpleStringsTask)) {
+        throw new GradleException("purple/gradle/standalone.gradle found no " +
+                "generate<Variant>TelegramStrings task to add purple_strings.xml to; " +
+                "Purple's strings would be missing from the app.")
+    }
+}
+
 // A standalone build without api credentials compiles fine and then dies at
 // runtime with API_ID_INVALID, so refuse it up front. Other build types stay
 // usable with the 0/"" fallback that purple/gradle/library.gradle sets.

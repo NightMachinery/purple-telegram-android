@@ -4442,6 +4442,7 @@ public class LocaleController {
 
     @Nullable
     private String getStringV2(String key, @StringRes int stringRes, String fallback) {
+        String own = org.telegram.messenger.purple.PurpleDefaults.ownAppName(key, stringRes); if (own != null) return own;
         final Context context = ApplicationLoader.applicationContext;
         String value;
 

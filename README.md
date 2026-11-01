@@ -1639,13 +1639,13 @@ original logging setup. BuildConfig values still come from the existing
 build scripts, with no alternate identifiers or credential source.
 
 `PurpleDefaults` keeps its existing compile-time constants and constructor.
-Its ownAppName(key, res, fallbackRes) handles only AppName and AppNameBeta,
-before LocaleController consults a cloud pack. It reads the original resource,
-tries the same fallback resource after a primary exception and logs that
-primary exception even if fallback succeeds. If no value is available it
-returns LOC_ERR:key, so an own-name error cannot fall through to cloud names.
-Other keys return null from this helper and follow the exact upstream cloud,
-fallback and resource path. The two-argument locale delegator is unchanged.
+Its ownAppName(key, res) handles only AppName and AppNameBeta, matched by
+resource id or key, before LocaleController's getStringV2 consults the cloud
+pack or the generated strings asset, both of which carry Telegram's name. It
+reads the Android resource that the standalone overlay sets and logs any
+failure. If no value is available it returns LOC_ERR, so an own-name error
+cannot fall through to cloud names. Other strings return null from this helper
+and follow upstream's cloud and asset path unchanged.
 
 The keep-alive helper is deliberately only the existing pushService `else`
 fallback, rather than an override after an eager upstream preference read.

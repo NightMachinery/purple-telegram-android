@@ -4920,7 +4920,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                     }
                     closePhoto(true, false);
                 } else if (id == gallery_menu_save) {
-                    if (pageBlocksAdapter != null && !allowShare) {
+                    if (pageBlocksAdapter != null && org.telegram.messenger.purple.PurpleContentPolicy.restrictSaving(!allowShare)) {
                         return;
                     }
                     if (org.telegram.messenger.purple.PurpleMediaSave.saveEncrypted(parentActivity, currentMessageObject, true)) return;

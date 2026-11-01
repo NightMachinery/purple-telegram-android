@@ -47,7 +47,9 @@ protected regular chats. Its encrypted-dialog exclusion, encrypted cache route
 and `SaveToGallerySettingsHelper` exclusion for secret media remain in place,
 so automatic saving does not archive disappearing media.
 The photo viewer's gallery visibility is independent of its forwarding/share
-visibility. Secret-media save controls use a supplier of the current message,
+visibility. Its Save action keeps upstream's guard for protected photos in
+rich-text page blocks first, routed through `PurpleContentPolicy.restrictSaving`
+like the viewer's other protection checks, then the encrypted-cache save hook. Secret-media save controls use a supplier of the current message,
 so a viewer reused for another message does not save a previous one.
 
 Validation for this change is headless: the upstream hook checker and actual

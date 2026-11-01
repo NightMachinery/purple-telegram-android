@@ -1,4 +1,4 @@
-base 62b56a07ca7e30e39f7fd00a6728d6bbd716ca1c
+base 3de37c8cfb039452be7398909461da6288babf15
 caller TMessagesProj/src/main/java/org/telegram/messenger/ChatsWidgetService.java isDialogMuted 1
 caller TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java getDialogFilters 2
 caller TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java isDialogMuted 14
@@ -83,7 +83,7 @@ file TMessagesProj/src/main/java/org/telegram/ui/MainTabsActivity.java 6 2 3
 file TMessagesProj/src/main/java/org/telegram/ui/MultiContactsSelectorBottomSheet.java 1 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/NotificationsCustomSettingsActivity.java 8 5 4
 file TMessagesProj/src/main/java/org/telegram/ui/NotificationsSettingsActivity.java 6 4 5
-file TMessagesProj/src/main/java/org/telegram/ui/PhotoViewer.java 6 5 5
+file TMessagesProj/src/main/java/org/telegram/ui/PhotoViewer.java 7 6 5
 file TMessagesProj/src/main/java/org/telegram/ui/ProfileActivity.java 17 13 14
 file TMessagesProj/src/main/java/org/telegram/ui/SecretMediaViewer.java 2 1 2
 file TMessagesProj/src/main/java/org/telegram/ui/SecretVoicePlayer.java 2 1 2

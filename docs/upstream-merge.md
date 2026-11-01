@@ -13,8 +13,8 @@ that measure how far Purple's edits reach into upstream files.
   submodule) are not upstream files.
 - **Upstream base**: the upstream commit Purple last merged, recorded in
   `purple/UPSTREAM_BASE`. This repository has no upstream remote, so the base
-  lives in that file. Today it is 62b56a07c, upstream's "update to 12.10.1
-  (7038)".
+  lives in that file. Today it is 3de37c8cf, upstream's "update to 13.1.1
+  (7237)".
 - **Ratchet**: `docs/upstream-hooks.baseline`, the recorded size of every
   Purple edit to an upstream file. The check refuses to let an edit grow
   without the file being regenerated in the same commit. A change that
@@ -128,6 +128,22 @@ hand out those modules. The repo-root `Dockerfile` is upstream's and builds
 TMessagesProj_App and TMessagesProj_AppHuawei alongside the standalone module;
 do not use its unchanged build command for Purple.
 
+Since 13.1.1, LocaleController no longer reads strings from Android
+resources. Upstream's `org.telegram.build-app-plugin` (buildSrc
+`TelegramStringsTask`) packs every string named in a `values*/strings.xml`
+file into a `localization_<lang>.bin` asset, and `getStringV2` looks strings
+up there and in the cloud pack only, so any other string shows as `LOC_ERR`.
+`standalone.gradle` therefore adds Purple's `values/purple_strings.xml` to the
+default inputs of each `generate<Variant>TelegramStrings` task. The task
+removes every backslash after reading the XML, so `purple_strings.xml` writes
+characters literally (`…`, not `\u2026`); `\n`, `\'` and `\"` still work.
+Upstream's discard list then drops these names from the resource table under
+`shrinkResources`, which is harmless because nothing reads them from there.
+AppName and AppNameBeta stay in the table; see the Locale entry in step 8.
+
+13.1.1 also raised `minSdkVersion` from 21 to 23, so Purple now needs
+Android 6.0 or newer.
+
 An upstream change that breaks these scripts fails the Gradle configuration
 instead of building something different:
 
@@ -141,6 +157,9 @@ instead of building something different:
 - If upstream renames the `debug` or `standalone` build type or the `afat`
   flavor, standalone.gradle's `getByName` fails, where the DSL's `debug { }`
   form would quietly create an empty one.
+- If a standalone build processes resources without a
+  `generate<Variant>TelegramStrings` task in its graph, standalone.gradle
+  fails, since Purple's strings would be missing from the app.
 
 ## Work Mode hooks carry the account
 
@@ -310,10 +329,12 @@ rather than inventing an account.
    guard, plain-before-native ordering and finally reset. The two UI callers
    support the non-null/single-thread source domain; qualify extra wrong-input
    hashes and exception logging rather than claiming all failures are inert.
-   Locale ownAppName must take key, primary resource and fallback resource:
-   primary failure still tries fallback and logs the primary error, and own
-   names never return null to cloud lookup. Keep the stock non-own cloud path
-   and two-argument delegator. PushService uses only the original fallback
+   Locale ownAppName sits at the top of `getStringV2`, the one lookup that
+   getString, formatString and formatSpannable share. It matches AppName and
+   AppNameBeta by resource id or by key, because upstream callers increasingly
+   pass `R.string.AppName` with no key, and reads the Android resource the
+   standalone overlay sets. Own names never return null to the cloud or asset
+   lookup. Keep the stock non-own cloud and asset path unchanged. PushService uses only the original fallback
    branch, preserving constant short-circuit and one contains/explicit-choice
    read, with no eager main settings lookup. Rebind ApplicationLoader's startup
    intersection only after preceding startup changes are accepted. Keep every

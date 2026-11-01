@@ -22,7 +22,7 @@
     <string name="PurpleEditorOk">OK</string>
     <string name="PurpleEditorWarnings_one">%1$d warning</string>
     <string name="PurpleEditorWarnings_other">%1$d warnings</string>
-    <string name="PurpleEditorChecking">Checking\u2026</string>
+    <string name="PurpleEditorChecking">Checking…</string>
     <string name="PurpleEditorRevert">Revert</string>
     <string name="PurpleEditorSaveBroken">Fix the error before saving; nothing was written.</string>
     <string name="PurpleEditorTooBig">That is over 4 MiB, so it was not saved.</string>
@@ -42,7 +42,7 @@
     <string name="PurpleLists">Work Mode lists</string>
     <string name="PurpleListsInfo">A preset decides what each list does. Membership is the same in all of them.</string>
     <string name="PurpleListsFailed">Could not edit settings.toml, so nothing was changed.</string>
-    <string name="PurpleNewList">New list\u2026</string>
+    <string name="PurpleNewList">New list…</string>
     <string name="PurpleNewListTitle">New list</string>
     <string name="PurpleNewListHint">List name</string>
     <string name="PurpleListsReadOnly">Lists can’t be edited right now: %1$s</string>
@@ -138,7 +138,7 @@
     <string name="PurpleScheduleDeviceWindows">Windows</string>
     <string name="PurpleScheduleDeviceLinux">Linux</string>
     <string name="PurpleScheduleDeviceThis">This device</string>
-    <string name="PurpleScheduleDeviceOther">Another device\u2019s id</string>
+    <string name="PurpleScheduleDeviceOther">Another device’s id</string>
     <string name="PurpleScheduleOutsideRow">Outside these windows</string>
     <string name="PurpleScheduleOutsideSame">Same as the schedule</string>
     <string name="PurpleScheduleOutsideInfo">The preset in force whenever no window covers the moment. A window ending moves to this, and only undoes a preset the schedule itself put there. A ruleset can name its own instead, and on the devices that ruleset runs on its answer is the one used.</string>
@@ -163,9 +163,9 @@
     <string name="PurpleScheduleSameTime">From and To cannot be the same time.</string>
     <string name="PurpleScheduleNoPreset">Pick a preset.</string>
     <string name="PurpleScheduleDeleteTitle">Delete this rule?</string>
-    <string name="PurpleShowUntil">Show until\u2026</string>
-    <string name="PurpleHideUntil">Hide until\u2026</string>
-    <string name="PurpleNotifyUntil">Notify until\u2026</string>
+    <string name="PurpleShowUntil">Show until…</string>
+    <string name="PurpleHideUntil">Hide until…</string>
+    <string name="PurpleNotifyUntil">Notify until…</string>
     <string name="PurpleUntilShow">show until</string>
     <string name="PurpleUntilHide">hide until</string>
     <string name="PurpleUntilNotify">notify until</string>
@@ -222,14 +222,14 @@
     <string name="PurpleSendRefused">settings.toml does not parse, so nothing was sent.</string>
     <string name="PurpleSendFailed">Could not stage settings.toml, so nothing was sent.</string>
     <string name="PurpleNothingNewer">Nothing newer in Saved Messages.</string>
-    <string name="PurpleCheckingSaved">Looking in Saved Messages\u2026</string>
+    <string name="PurpleCheckingSaved">Looking in Saved Messages…</string>
     <string name="PurpleSendAfterSave">Send to Saved Messages after every save</string>
     <string name="PurpleSendAfterSaveInfo">Every change this app makes to settings.toml, other than a sync restore or undo, is queued for Saved Messages five seconds after the last one, so a run of taps is one document. A file imported from Saved Messages is never sent back, and unchanged files are not automatically sent again after delivery. It sends only if the first account is selected when those five seconds end; otherwise that save is not sent.</string>
     <string name="PurpleWriteFailed">Could not edit settings.toml: %1$s</string>
     <!-- Purple: why a last seen is coarse, appended to the status line -->
     <string name="PurpleLastSeenByMe">Last Seen Peek</string>
-    <string name="PurpleLastSeenByMeShort">\uD83D\uDC40</string>
-    <string name="PurpleLastSeenAsOf">%1$s \u00b7 as of %2$s</string>
+    <string name="PurpleLastSeenByMeShort">👀</string>
+    <string name="PurpleLastSeenAsOf">%1$s · as of %2$s</string>
     <string name="PurpleLastSeenAgoNow">just now</string>
     <string name="PurpleLastSeenAgoMinutes_one">%1$d min ago</string>
     <string name="PurpleLastSeenAgoMinutes_other">%1$d min ago</string>
@@ -247,21 +247,21 @@
     <string name="PurpleTradeNotNeeded">A Last Seen Peek is unavailable because %1$s\'s status is not hidden by your settings.</string>
     <string name="PurpleTradeCooldown">You peeked at %1$s\'s last seen a moment ago.</string>
     <string name="PurpleTradeRunning">A Last Seen Peek is already in progress.</string>
-    <string name="PurpleTradeDisabled">Last Seen Peek is switched off. Turn it on in Settings \u2192 Purple \u2192 Last seen \u2192 Allow Last Seen Peeks.</string>
+    <string name="PurpleTradeDisabled">Last Seen Peek is switched off. Turn it on in Settings → Purple → Last seen → Allow Last Seen Peeks.</string>
     <string name="PurpleTradeRefresh">Peek Again</string>
     <string name="PurpleTradeRemembered">Your last peek at %1$s found %2$s, read %3$s.</string>
     <string name="PurpleTradeCooldownLeft">You can peek again in %1$s</string>
     <string name="PurpleTradeCooldownNow">You can peek again now</string>
-    <string name="PurpleTradeWorking">Starting Last Seen Peek\u2026</string>
-    <string name="PurpleTradeUnresolved">Some of your Last Seen exceptions name people this app cannot address right now, so nothing was changed. Open Settings \u2192 Privacy and Security \u2192 Last Seen once, then try again.</string>
+    <string name="PurpleTradeWorking">Starting Last Seen Peek…</string>
+    <string name="PurpleTradeUnresolved">Some of your Last Seen exceptions name people this app cannot address right now, so nothing was changed. Open Settings → Privacy and Security → Last Seen once, then try again.</string>
     <string name="PurpleTradeFailed">The Last Seen Peek did not complete: %1$s. Your privacy settings are unchanged.</string>
-    <string name="PurpleTradeRestoreFailed">Could not put your privacy settings back: %1$s. Check Settings \u2192 Privacy and Security \u2192 Last Seen.</string>
+    <string name="PurpleTradeRestoreFailed">Could not put your privacy settings back: %1$s. Check Settings → Privacy and Security → Last Seen.</string>
     <string name="PurpleTradeTimedOut">Nothing exact arrived in time. Your privacy settings are back as they were.</string>
     <string name="PurpleTradeDone">%1$s. Your privacy settings are back as they were.</string>
     <!-- Purple: the same peek, started from a message's seen-by sheet -->
     <string name="PurpleTradeSheetText">Temporarily share your Last Seen with %1$s only, for up to %2$d seconds, so you can read theirs once. Your privacy settings will then be restored exactly as they were. Nobody is notified. If they hide their Last Seen for another reason, nothing will be read.</string>
     <string name="PurpleTradeSheetUnavailable">A Last Seen Peek is unavailable because %1$s\'s status is not hidden by your settings.</string>
-    <string name="PurpleTradeSheetOff">Last Seen Peek is switched off. Turn it on in Settings \u2192 Purple \u2192 Last seen \u2192 Allow Last Seen Peeks ([last_seen] trade_p). A peek temporarily shares your Last Seen with %1$s only, so you can read theirs once. Your privacy settings will then be restored exactly as they were. Nobody is notified. If they hide their Last Seen for another reason, nothing will be read.\n\nThis app never makes your last seen visible to everybody on one tap. If that is what you want, use Settings \u2192 Privacy and Security \u2192 Last Seen.</string>
+    <string name="PurpleTradeSheetOff">Last Seen Peek is switched off. Turn it on in Settings → Purple → Last seen → Allow Last Seen Peeks ([last_seen] trade_p). A peek temporarily shares your Last Seen with %1$s only, so you can read theirs once. Your privacy settings will then be restored exactly as they were. Nobody is notified. If they hide their Last Seen for another reason, nothing will be read.\n\nThis app never makes your last seen visible to everybody on one tap. If that is what you want, use Settings → Privacy and Security → Last Seen.</string>
     <string name="PurpleLastSeenHeader">Last seen</string>
     <string name="PurpleLastSeenReasonsRow">Say why a last seen is hidden</string>
     <string name="PurpleLastSeenTradeRow">Allow Last Seen Peeks</string>
@@ -325,7 +325,7 @@
     <string name="PurplePinnedMusicListMissing">This song is no longer on the device.</string>
     <string name="PurpleChatStorage">Storage used by this chat</string>
     <string name="PurpleChatStorageEmpty">No files in Telegram’s storage are attributed to this chat. Telegram records a file’s chat when it downloads the file, so older files may not be counted here.</string>
-    <string name="PurpleTradeRowValue">%1$s \u00b7 read %2$s</string>
+    <string name="PurpleTradeRowValue">%1$s · read %2$s</string>
     <string name="PurpleTradeRowNothing">nothing arrived</string>
     <!-- Purple: screen time - the recorder, the screen and the budgets -->
     <string name="PurpleScreenTimeRow">Screen time</string>
@@ -333,12 +333,12 @@
     <string name="PurpleScreenTimeOff">Off</string>
     <string name="PurpleScreenTimeDigest">Last week: %1$s, %2$d%% active, top: %3$s</string>
     <string name="PurpleScreenTimeInfo">Records which chat is in front of you and for how long, in an append-only screentime.log next to settings.toml. Raw events and nothing else, so changing action_span, active_gap or idle_after in [screen_time] re-reads the history you already have rather than only shaping what happens next. The file never leaves this phone and nothing here is ever sent anywhere.</string>
-    <string name="PurpleScreenTimeLoading">Reading the log\u2026</string>
+    <string name="PurpleScreenTimeLoading">Reading the log…</string>
     <string name="PurpleScreenTimeNoData">Nothing recorded in this period.</string>
     <string name="PurpleScreenTimeToday">Today</string>
     <string name="PurpleScreenTimeWeek">Week</string>
     <string name="PurpleScreenTimeMonth">Month</string>
-    <string name="PurpleScreenTimeCustom">Custom\u2026</string>
+    <string name="PurpleScreenTimeCustom">Custom…</string>
     <string name="PurpleScreenTimeActiveShare">%1$d%% active</string>
     <string name="PurpleScreenTimeActiveOnly">Active only</string>
     <string name="PurpleScreenTimeUp">up %1$d%% on the period before</string>
