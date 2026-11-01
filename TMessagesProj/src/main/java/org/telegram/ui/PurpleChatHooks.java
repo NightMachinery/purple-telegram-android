@@ -5,7 +5,8 @@
  *
  * ChatActivity is upstream's busiest file (27 of the 43 upstream commits
  * since 2025-12 touched it), so it keeps only one-line calls into this class:
- * the menu rows (pinned music, keep media, chat storage, Last Seen Peek), the
+ * the menu rows (Work Mode lists, pinned music, keep media, chat storage, Last
+ * Seen Peek), the
  * pinned-music bar, Screen Time's open/close/input and its budget cover, the
  * translate-availability log line and the Local Premium sponsored-message
  * check. The calls are `purple.x()` on a field, so ChatActivity imports
@@ -35,6 +36,7 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.purple.PurpleGate;
 import org.telegram.messenger.purple.PurpleLastSeen;
+import org.telegram.messenger.purple.PurpleListMenu;
 import org.telegram.messenger.purple.PurpleScreenTime;
 import org.telegram.messenger.purple.PurpleSettingsMessage;
 import org.telegram.messenger.purple.PurpleTranslate;
@@ -61,6 +63,7 @@ final class PurpleChatHooks {
     private static final int KEEP_MEDIA = 0x70750003;
     private static final int CHAT_STORAGE = 0x70750004;
     private static final int DELETED_MESSAGES = 0x70750400;
+    private static final int WORK_MODE_LISTS = 0x7075000a;
 
     private final ChatActivity chat;
     private final PurpleScreenTimeCover.Host screenTime;
@@ -158,7 +161,9 @@ final class PurpleChatHooks {
      * any other id, so upstream's dispatch goes on.
      */
     boolean onMenuItem(int id) {
-        if (id == PEEK_LAST_SEEN) {
+        if (id == WORK_MODE_LISTS) {
+            PurpleListBox.show(chat, chat.getCurrentAccount(), chat.getDialogId());
+        } else if (id == PEEK_LAST_SEEN) {
             final TLRPC.User user = lastSeenPeekUser();
             if (user != null) {
                 PurpleLastSeenTrade.show(chat, chat.getCurrentAccount(), user.id);
@@ -179,11 +184,15 @@ final class PurpleChatHooks {
     }
 
     /**
-     * The header menu is about to open: the peek row follows the user's
-     * current status and the keep-media row the current setting.
+     * The header menu is about to open: the lists row follows the running
+     * preset, the peek row the user's current status and the keep-media row
+     * the current setting.
      */
     void onShowSubMenu() {
         final ActionBarMenuItem headerItem = chat.getHeaderItem();
+        if (headerItem.hasSubItem(WORK_MODE_LISTS)) {
+            headerItem.setSubItemShown(WORK_MODE_LISTS, PurpleListMenu.available());
+        }
         if (headerItem.hasSubItem(PEEK_LAST_SEEN)) {
             headerItem.setSubItemShown(
                     PEEK_LAST_SEEN, PurpleLastSeen.peekEligible(chat.getCurrentAccount(), lastSeenPeekUser()));
@@ -192,11 +201,17 @@ final class PurpleChatHooks {
     }
 
     /**
-     * The rows at the top of the header menu: download pinned music (not in a
-     * secret chat), and keep media and chat storage where the chat has a
-     * keep-media bucket.
+     * The rows at the top of the header menu: the Work Mode lists box (the one
+     * the chat list's menus open, shown when PurpleListMenu offers it), download
+     * pinned music (not in a secret chat), and keep media and chat storage
+     * where the chat has a keep-media bucket.
      */
     void addHeaderItems(ActionBarMenuItem headerItem) {
+        if (chat.getChatMode() == ChatActivity.MODE_DEFAULT) {
+            PurpleGate.ensureLoaded();
+            headerItem.lazilyAddSubItem(WORK_MODE_LISTS, R.drawable.msg_customize, getString(R.string.PurpleLists));
+            headerItem.setSubItemShown(WORK_MODE_LISTS, PurpleListMenu.available());
+        }
         if (android.os.Build.VERSION.SDK_INT >= 23 && chat.getChatMode() == ChatActivity.MODE_DEFAULT && (!chat.isThreadChat() || chat.isTopic))
             headerItem.lazilyAddSubItem(DELETED_MESSAGES,R.drawable.msg_delete,getString(R.string.PurpleArchiveDeletedMessages));
         if (chat.currentEncryptedChat == null) {
