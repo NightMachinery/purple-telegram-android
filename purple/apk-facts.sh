@@ -129,13 +129,17 @@ section "AndroidManifest.xml"
 
 section "BuildConfig.java"
 for dir in TMessagesProj TMessagesProj_AppStandalone; do
-    { command find "$Root/$dir/build/generated/source/buildConfig" -name BuildConfig.java 2> /dev/null || true; } |
+    { if [ -d "$Root/$dir/build/generated/source/buildConfig" ]; then
+        command find "$Root/$dir/build/generated/source/buildConfig" -name BuildConfig.java
+    fi; } |
         command sort | print_files "$dir/build/generated/source/buildConfig" mask
 done
 
 section "CMake configure commands and compile_commands.json"
 for dir in TMessagesProj TMessagesProj_AppStandalone; do
-    { command find "$Root/$dir/.cxx" \( -name metadata_generation_command.txt -o -name compile_commands.json \) 2> /dev/null || true; } |
+    { if [ -d "$Root/$dir/.cxx" ]; then
+        command find "$Root/$dir/.cxx" \( -name metadata_generation_command.txt -o -name compile_commands.json \)
+    fi; } |
         command sort | print_files "$dir/.cxx" command cat
 done
 
