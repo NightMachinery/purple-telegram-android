@@ -58,6 +58,21 @@ public final class PurpleDiagLogStore {
     static final Set<String> VOCABULARY = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
             // diagnostics itself
             "diag", "export", "exported", "export_failed", "cleared", "clear_failed", "lines",
+            // the repeat limit (PurpleDiagRepeats): diag repeated area=<word> event=<word> count=<dropped>
+            "repeated", "area", "event", "count",
+            // the sync chat (PurpleSyncMagicChat): lookup, Telegram requests, pauses and migration
+            "sync_chat", "lookup_start", "lookup_result", "request", "wait_honored", "auto_paused", "auto_resumed",
+            "problem_shown", "migration", "trigger", "startup", "screen", "manual", "auto", "post",
+            "main", "loaded", "partial", "result", "found", "created", "absent_waiting", "ineligible", "bound",
+            "rebound", "method", "outcome", "ok", "flood", "network", "timeout", "error", "seconds", "rpc",
+            "messages.getallchats", "channels.getfullchannel", "channels.createchannel", "folders.editpeerfolders",
+            "account.updatenotifysettings", "messages.gethistory", "messages.getmessages", "channels.getmessages",
+            "messages.sendmedia", "messages.editmessage", "messages.deletemessages", "channels.deletemessages",
+            "upload.savefilepart", "upload.savebigfilepart", "upload.getfile",
+            "chat_gone", "chat_left", "not_megagroup", "not_creator", "extra_member", "extra_admin",
+            "public_username", "restricted", "cannot_post", "foreign_record", "forwarded_record", "via_bot_record",
+            "create_limit", "create_uncertain", "magic_ineligible", "space_mismatch", "list_partial",
+            "drop_pending", "move", "inventory", "publish", "joined", "user_check", "user_resume", "chat_changed",
             // the settings owner plan (PurpleAccountOwner)
             "owner", "planned", "accounts", "state", "ready", "owned", "pending_owner_writes",
             "waiting_for_first_sign_in", "needs_choice", "single_file_error", "invalid_input",

@@ -62,8 +62,8 @@ public final class PurpleDiagLog {
                 if (task instanceof Control) control.execute(task);
             });
     private static PurpleDiagLogStore store;
-    private static String lastBody;
-    private static long lastAt;
+    /** Package-private for the host cases. */
+    static final PurpleDiagRepeats repeats = new PurpleDiagRepeats();
 
     private static ThreadPoolExecutor executor(String name, BlockingQueue<Runnable> queue,
             RejectedExecutionHandler rejected) {
@@ -109,27 +109,35 @@ public final class PurpleDiagLog {
 
     /**
      * Records one event. {@code area}, {@code event} and every field name and
-     * code are words of {@link PurpleDiagLogStore#VOCABULARY}. The same event
-     * with the same fields within five seconds is recorded once, so a screen
-     * that rebuilds repeatedly cannot flood the log.
+     * code are words of {@link PurpleDiagLogStore#VOCABULARY}. Identical lines
+     * are limited by {@link PurpleDiagRepeats}: a few per ten minutes, then
+     * one {@code diag repeated} line with the count of the dropped copies, so
+     * a failure that repeats cannot evict every other line from the log.
      */
     public static void event(String area, String event, PurpleDiagLogStore.Field... fields) {
         try {
             final long now = System.currentTimeMillis();
             final String line = PurpleDiagLogStore.line(now, area, event, fields);
             final String body = line.substring(line.indexOf(' ') + 1);
-            synchronized (PurpleDiagLog.class) {
-                if (body.equals(lastBody) && now - lastAt >= 0 && now - lastAt < 5000) return;
-                lastBody = body;
-                lastAt = now;
-            }
-            FileLog.e("Purple: " + line);
-            writer.execute(() -> {
-                PurpleDiagLogStore target = store();
-                if (target != null) target.append(line);
-            });
+            PurpleDiagRepeats.Decision decision = repeats.offer(now, body,
+                    PurpleDiagLogStore.token(area), PurpleDiagLogStore.token(event));
+            for (PurpleDiagRepeats.Summary summary : decision.summaries) write(repeated(now, summary));
+            if (decision.write) write(line);
         } catch (Throwable ignored) {
         }
+    }
+
+    static String repeated(long now, PurpleDiagRepeats.Summary summary) {
+        return PurpleDiagLogStore.line(now, "diag", "repeated", code("area", summary.area),
+                code("event", summary.event), count("count", summary.dropped));
+    }
+
+    private static void write(String line) {
+        FileLog.e("Purple: " + line);
+        writer.execute(() -> {
+            PurpleDiagLogStore target = store();
+            if (target != null) target.append(line);
+        });
     }
 
     private static synchronized PurpleDiagLogStore store() {
@@ -207,6 +215,11 @@ public final class PurpleDiagLog {
             computed = "Purple Telegram diagnostic log\n----\n";
         }
         final String header = computed + section;
+        try {
+            final long now = System.currentTimeMillis();
+            for (PurpleDiagRepeats.Summary summary : repeats.flush()) write(repeated(now, summary));
+        } catch (Throwable ignored) {
+        }
         submit(() -> {
             File file = null;
             Throwable failure = null;

@@ -336,10 +336,12 @@
         "{output}"
       ],
       "expects": {
-        "diag-log-facade:DIAG_LOG_FACADE_CHECKS": 45,
-        "diag-log-store:DIAG_LOG_CHECKS": 4527,
-        "diag-log:DIAG_LOG_CHECKS": 4527,
-        "diag-log:DIAG_LOG_FACADE_CHECKS": 45
+        "diag-log-facade:DIAG_LOG_FACADE_CHECKS": 52,
+        "diag-log-store:DIAG_LOG_CHECKS": 5100,
+        "diag-log-store:DIAG_REPEATS_CHECKS": 6000,
+        "diag-log:DIAG_LOG_CHECKS": 5100,
+        "diag-log:DIAG_LOG_FACADE_CHECKS": 52,
+        "diag-log:DIAG_REPEATS_CHECKS": 6000
       }
     },
     {

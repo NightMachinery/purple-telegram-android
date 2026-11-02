@@ -87,6 +87,12 @@ public final class PurpleDiagLogFacadeCases {
         return new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
     }
 
+    private static int occurrences(String text, String part) {
+        int count = 0;
+        for (int at = text.indexOf(part); at >= 0; at = text.indexOf(part, at + 1)) ++count;
+        return count;
+    }
+
     public static int run(File root) throws Exception {
         checks = 0;
         File app = new File(root, "app");
@@ -197,6 +203,21 @@ public final class PurpleDiagLogFacadeCases {
         drained();
         String after = read(new File(store, PurpleDiagLogStore.CURRENT));
         check(after.contains("lines=1000") && !after.contains("lines=1299"), "queued lines were kept and the overflow dropped");
+
+        // A line that repeats is written a few times, and the export names how many copies were dropped.
+        String flood = " sync_chat request method=messages.getallchats outcome=flood seconds=43200\n";
+        for (int i = 0; i < 10; ++i) {
+            PurpleDiagLog.event("sync_chat", "request", PurpleDiagLog.code("method", "messages.getallchats"),
+                    PurpleDiagLog.code("outcome", "flood"), PurpleDiagLog.count("seconds", 43200));
+        }
+        drained();
+        String repeatedLines = read(new File(store, PurpleDiagLogStore.CURRENT));
+        check(occurrences(repeatedLines, flood) == PurpleDiagRepeats.BURST, "only a burst of the repeated line was written: " + repeatedLines);
+        File withRepeats = export("export with dropped repeats");
+        check(withRepeats != null && read(withRepeats).contains(" diag repeated area=sync_chat event=request count=7\n"),
+                "the export carries the dropped count");
+        File again = export("second export with no new repeats");
+        check(again != null && occurrences(read(again), " diag repeated ") == 1, "the count is written once");
         return checks;
     }
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Run the diagnostic log cases against the AGP-compiled PurpleDiagLogStore
-and PurpleDiagLog.
+"""Run the diagnostic log cases against the AGP-compiled PurpleDiagLogStore,
+PurpleDiagRepeats and PurpleDiagLog.
 
 The store cases need no platform. The facade cases (export, header, Clear
 and the full-queue path) run in a JVM of their own with the modern sync
@@ -38,15 +38,17 @@ classpath = os.pathsep.join([str(classes), str(args.json)] + [item["path"] for k
 main = args.output / "DiagLogHostMain.java"
 main.write_text('import java.io.File;public final class DiagLogHostMain{public static void main(String[] a)throws Exception{'
                 'File expected=new File(a[0]).getCanonicalFile();'
-                'for(String n:new String[]{"PurpleDiagLogStore","PurpleDiagLog"}){'
+                'for(String n:new String[]{"PurpleDiagLogStore","PurpleDiagLog","PurpleDiagRepeats"}){'
                 'File origin=new File(Class.forName("org.telegram.messenger.purple."+n).getProtectionDomain().getCodeSource().getLocation().toURI()).getCanonicalFile();'
                 'if(!expected.equals(origin))throw new AssertionError("business class shadow: "+n);'
                 'System.out.println(n+" origin="+origin);}'
                 'File root=new File(a[2]);if(!root.mkdir())throw new AssertionError("exclusive fixture");'
-                'if(a[1].equals("store"))System.out.println("DIAG_LOG_CHECKS="+org.telegram.messenger.purple.PurpleDiagLogCases.run(root));'
+                'if(a[1].equals("store")){System.out.println("DIAG_LOG_CHECKS="+org.telegram.messenger.purple.PurpleDiagLogCases.run(root));'
+                'System.out.println("DIAG_REPEATS_CHECKS="+org.telegram.messenger.purple.PurpleDiagRepeatsCases.run());}'
                 'else System.out.println("DIAG_LOG_FACADE_CHECKS="+org.telegram.messenger.purple.PurpleDiagLogFacadeCases.run(root));}}\n')
 adapters = [path for path in (tests / "modern_sync").rglob("*.java") if "/messenger/purple/" not in str(path)]
-sources = adapters + [tests / "diag_log/PurpleDiagLogCases.java", tests / "diag_log/PurpleDiagLogFacadeCases.java", main]
+sources = adapters + [tests / "diag_log/PurpleDiagLogCases.java", tests / "diag_log/PurpleDiagRepeatsCases.java",
+                      tests / "diag_log/PurpleDiagLogFacadeCases.java", main]
 (args.output / "inputs.json").write_text(json.dumps([{"path": str(p), "sha256": hashlib.sha256(p.read_bytes()).hexdigest()} for p in sources + [args.receipt]], indent=2) + "\n")
 
 
