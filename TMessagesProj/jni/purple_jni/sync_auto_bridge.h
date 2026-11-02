@@ -120,6 +120,13 @@ extern "C" JNIEXPORT jstring JNICALL Java_org_telegram_messenger_purple_PurpleSy
         facts.state = s.state;
     }
     facts.chat = Purple::PeerToken();
+    if (f.contains("chat")) {
+        const auto chat = Purple::ParsePeerToken(f.value("chat").toString(), account->userId);
+        if (!chat)
+            return nullptr;
+        facts.chat = *chat;
+    }
+    facts.chatProblem = f.contains("chatProblem") && boolean("chatProblem");
     const auto localStatus = f.value("localStatus").toInt(-1);
     if (localStatus < 0 || localStatus > 2)
         return nullptr;

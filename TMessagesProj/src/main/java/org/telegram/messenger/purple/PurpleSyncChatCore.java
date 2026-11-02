@@ -212,7 +212,7 @@ public final class PurpleSyncChatCore {
         try { PurpleCore.ensureLoaded(); return new JSONObject(requestNative(operation, input.toString())); }
         catch (Exception | LinkageError error) { return new JSONObject(); }
     }
-    private static Peer decodedPeer(String token) {
+    static Peer decodedPeer(String token) {
         if (token == null || token.isEmpty()) return null;
         if (token.equals("self")) return Peer.self();
         String[] parts = token.split(":", -1); if (parts.length != 2) return null;

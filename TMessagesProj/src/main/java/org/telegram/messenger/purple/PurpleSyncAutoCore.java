@@ -44,7 +44,8 @@ final class PurpleSyncAutoCore {
         DeletionRefused,
         RetryStopped,
         InterruptedApply,
-        StateChanged
+        StateChanged,
+        SyncChatProblem
     }
     static final class Record {
         final byte[] bytes;

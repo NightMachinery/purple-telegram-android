@@ -56,6 +56,28 @@
       }
     },
     {
+      "name": "sync-magic",
+      "driver": "TMessagesProj/jni/purple_jni/tests/run_sync_magic.py",
+      "args": [
+        "--receipt",
+        "{receipt}",
+        "--json",
+        "{json}",
+        "--library",
+        "{library}",
+        "--output",
+        "{output}"
+      ],
+      "phases": [
+        "compile",
+        "run"
+      ],
+      "expects": {
+        "run:SYNC_MAGIC_CHECKS": 130,
+        "sync-magic:SYNC_MAGIC_CHECKS": 130
+      }
+    },
+    {
       "name": "sync-chat-discovery",
       "driver": "TMessagesProj/jni/purple_jni/tests/run_sync_chat.py",
       "args": [

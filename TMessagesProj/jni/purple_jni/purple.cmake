@@ -15,6 +15,7 @@ add_library(purplecore SHARED
         purple_jni/account_sync_bridge.cpp
         purple_jni/config_sync_bridge.cpp
         purple_jni/sync_chat_bridge.cpp
+        purple_jni/sync_magic_bridge.cpp
         purple_jni/sync_chat_move_bridge.cpp
         purple_jni/retained_config_bases.cpp
         purple_jni/sync_chat_move_store_bridge.cpp
@@ -40,6 +41,7 @@ add_library(purplecore SHARED
         purple/purple/purple_sync_chat_carry.cpp
         purple/purple/purple_sync_chat_carry_codec.cpp
         purple/purple/purple_sync_chat_journal.cpp
+        purple/purple/purple_sync_chat_magic.cpp
         purple/purple/purple_archive_codec.cpp
         purple/purple/purple_archive_model.cpp
         purple/purple/purple_archive_store.cpp

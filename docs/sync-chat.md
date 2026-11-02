@@ -2,6 +2,8 @@
 
 Purple maps Android TL objects to the shared sync-chat contract. `PurpleSyncChatCore` exposes typed ownership, eligibility, exact mark parsing, ordering and resolution through `sync_chat_bridge.cpp`. `PurpleSyncChatFacts` consumes current native messages, peers and matching full info. Missing, contradictory or unsupported facts remain Unknown.
 
+`PurpleSyncMagicCore` carries the Magic Purple Sync policy of purple-core (`purple_sync_chat_magic.h`) through `sync_magic_bridge.cpp`: the title and eligibility check, the lookup plan, the Verify step and every edit of the per-device binding (sync/chat.json), whose waits, problem and migration step it stores. Each operation refuses a null binding, so a failed edit is never read as "no binding".
+
 The broadcast policy is CreatorAndSoleAdmin. Broad outgoing-only acceptance stays disabled. Saved Messages does not need `out=true` or a sender, but excludes forwarded, bot, scheduled, TTL and nonregular messages. Private ownership uses `out`; groups also need the self sender. Android substitutes the dialog peer when `from_id` is absent. The mapper preserves the original sender flag: an absent group/supergroup sender stays Unknown, explicit other senders stay Other, and outgoing private behavior is unchanged. Channel admin counts require affirmative full-info flags. Basic groups use a unique full roster containing self; forbidden rosters remain unknown. Active secondary channel usernames count as public.
 
 ## Requests and incomplete evidence
@@ -31,6 +33,8 @@ Complete Follow and Fill resolutions stay Paused with their original cache until
 ## Host checks and qualification limits
 
 `TMessagesProj/jni/purple_jni/tests/run_sync_chat.py` uses an existing qualified Java classpath and a host library containing this bridge and pinned core. Supply `--receipt`, `--json`, `--library`, `--output` and `--suite facts` or `discovery`. Run `--phase compile` under compiler:local, release it, then run the same arguments with `--phase run`. The integration suite additionally takes `--overlay <discovery-output>/classes`; it compiles the retained modern-sync fixtures and exercises the changed runner against that production overlay. It does not rebuild the application.
+
+`TMessagesProj/jni/purple_jni/tests/run_sync_magic.py` takes the same `--receipt`, `--json`, `--library`, `--output` and `--phase` arguments and runs `PurpleSyncMagicCases` against the bridge: every operation, the problem codes both ways and the refusal of malformed or null input.
 
 Facts/request cases use genuine `TLRPC` objects and serialized request bytes. Injected client/model/service cases cover pagination, caps, stale replies, independent exact reads, Q/inventory completeness, C0 tri-state, login/cache fencing, real private-file CAS, Searching timers, shared locks, cancellation and reentrant logout. Class-origin assertions distinguish production overlays, genuine TL classes and Android process/file fixture ports.
 
