@@ -61,8 +61,15 @@ public final class PurpleArchiveLoginCases {
         check(PurpleArchiveLogin.context(0).equals(opening), "DC or key identity notification cannot rotate login nonce");
         prefs.fail = true; prefs.value.edit().clear().apply(); prefs.value.edit().remove("user").apply(); prefs.restart();
         check(prefs.memory.get("user").equals("11") && PurpleArchiveLogin.context(0).equals(opening), "all failed logout writes leave complete old login pair");
+        // The upgrade start order: no user is in memory, then the same user becomes current while the
+        // slot still holds this user's persisted pair. Minting here would orphan the bound archive.
+        PurpleArchive.loginChanging(0, 0, 11);
+        check(PurpleArchiveLogin.context(0).equals(opening), "no user becoming the persisted user keeps its nonce");
+        check(prefs.disk.get("purpleArchiveLoginUserV1").equals("11"), "the nonce's owner is persisted beside it");
+        // A real login clears the preferences first (LoginActivity calls clearConfig), even when that write fails on disk.
+        prefs.value.edit().clear().apply();
         PurpleArchive.loginChanging(0, 0, 11); String replacement = PurpleArchiveLogin.context(0);
-        check(!replacement.equals(opening), "new login rotates despite identical retained user and transport keys");
+        check(!replacement.equals(opening), "a login after logout rotates despite identical user and transport keys");
         save(0, 11, prefs); prefs.restart();
         check(PurpleArchiveLogin.context(0).equals(opening) && prefs.memory.get("user").equals("11"), "failed login write cannot persist nonce without its user");
         PurpleArchive.loginChanging(0, 0, 22); user.user = 22; String other = PurpleArchiveLogin.context(0);
@@ -74,7 +81,38 @@ public final class PurpleArchiveLoginCases {
         prefs.value.edit().remove("purpleArchiveLoginV1").apply(); boolean refused = false;
         try { PurpleArchiveLogin.context(0); } catch (Exception expected) { refused = true; }
         check(refused, "missing persisted login nonce refuses without regeneration");
+        upgrade();
         System.out.println("ARCHIVE_LOGIN_CHECKS=" + checks);
+    }
+    /** Nonces saved before their owner was kept beside them, and the owner check itself. */
+    static void upgrade() throws Exception {
+        Preferences prefs = new Preferences(); UserConfig user = UserConfig.getInstance(0); user.user = 44; user.active = true; user.preferences = prefs.value;
+        prefs.restart();
+        String legacy = "0123456789abcdef0123456789abcdef";
+        prefs.value.edit().putString("user", "serialized-44").putString("purpleArchiveLoginV1", legacy).apply(); prefs.restart();
+        PurpleArchive.loginChanging(0, 0, 44);
+        check(!PurpleArchiveLogin.context(0).equals(legacy), "a nonce without a recorded owner is not adopted");
+        prefs.restart();
+        PurpleArchive.loginLoaded(0, prefs.value, "serialized-44", 44);
+        check(prefs.disk.get("purpleArchiveLoginUserV1").equals("44") && prefs.disk.get("purpleArchiveLoginV1").equals(legacy),
+            "loading the persisted user records the owner of its existing nonce");
+        PurpleArchive.loginChanging(0, 0, 44);
+        check(PurpleArchiveLogin.context(0).equals(legacy), "after that, the upgrade start order keeps the nonce");
+        prefs.restart();
+        PurpleArchive.loginChanging(0, 0, 55); user.user = 55;
+        check(!PurpleArchiveLogin.context(0).equals(legacy), "another user's persisted nonce is never adopted");
+        prefs.restart(); user.user = 44;
+        prefs.value.edit().putString("purpleArchiveLoginV1", "not-a-nonce").apply(); prefs.restart();
+        PurpleArchive.loginChanging(0, 0, 44);
+        check(PurpleArchiveLogin.context(0).matches("[0-9a-f]{32}"), "an invalid persisted nonce is replaced, not adopted");
+        Preferences fresh = new Preferences(); user.preferences = fresh.value; fresh.restart();
+        fresh.value.edit().putString("user", "serialized-44").apply();
+        PurpleArchive.loginLoaded(0, fresh.value, "serialized-44", 44);
+        check(fresh.disk.get("purpleArchiveLoginUserV1").equals("44") && fresh.disk.get("purpleArchiveLoginV1").matches("[0-9a-f]{32}")
+            && fresh.disk.get("purpleArchiveBootstrapV1").equals("true"), "a bootstrapped nonce records its owner in the same commit");
+        String bootstrapped = fresh.disk.get("purpleArchiveLoginV1");
+        PurpleArchive.loginChanging(0, 0, 44);
+        check(PurpleArchiveLogin.context(0).equals(bootstrapped), "the upgrade start order keeps a bootstrapped nonce");
     }
     public static void main(String[] args) throws Exception { run(); }
 }

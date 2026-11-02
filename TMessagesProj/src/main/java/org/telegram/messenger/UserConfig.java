@@ -377,7 +377,7 @@ public class UserConfig extends BaseController {
             if (currentUser != null) {
                 checkPremiumSelf(null, currentUser);
                 clientUserId = currentUser.id;
-                org.telegram.messenger.purple.PurpleArchive.loginLoaded(currentAccount, preferences, string);
+                org.telegram.messenger.purple.PurpleArchive.loginLoaded(currentAccount, preferences, string, currentUser.id);
             }
             configLoaded = true;
         }

@@ -7,6 +7,12 @@ final class PurpleArchiveFailures {
         if (value.contains("schema")) return "archive_schema_unsupported";
         if (value.startsWith("Archive login persistence")) return "archive_login_persist_failed";
         if (value.startsWith("Archive login nonce")) return "archive_login_nonce_missing";
+        if (value.startsWith("Archive login changed")) return "archive_login_changed";
+        if (value.startsWith("Archive login record missing")) return "archive_login_record_missing";
+        if (value.startsWith("Archive login binding missing")) return "archive_login_binding_missing";
+        if (value.startsWith("Archive login record invalid")) return "archive_login_record_invalid";
+        if (value.startsWith("Archive login record cannot be authenticated")) return "archive_login_unauthenticated";
+        if (value.startsWith("Archive login key")) return "archive_login_key_unavailable";
         if (value.startsWith("Archive login")) return "archive_login_admission_failed";
         if (value.startsWith("Archive catalogue")) return "archive_catalogue_ambiguous";
         if (value.startsWith("Archive interrupted") || value.startsWith("Archive prior capture")) return "archive_capture_recovery_failed";
@@ -37,7 +43,9 @@ final class PurpleArchiveFailures {
             case "archive_schema_mismatch": return "SchemaMismatch";
             case "archive_schema_unsupported": return "ReadOnly";
             case "archive_login_persist_failed": case "archive_login_nonce_missing": return "LoginUnavailable";
-            case "archive_login_admission_failed": return "LoginRecordUnavailable";
+            case "archive_login_admission_failed": case "archive_login_changed": case "archive_login_record_missing":
+            case "archive_login_binding_missing": case "archive_login_record_invalid": case "archive_login_unauthenticated":
+            case "archive_login_key_unavailable": return "LoginRecordUnavailable";
             case "archive_key_failed": return "KeyUnavailable";
             case "archive_catalogue_ambiguous": return "CatalogueUnavailable";
             case "archive_capture_recovery_failed": return "CaptureRecoveryUnavailable";

@@ -14,11 +14,14 @@ import org.telegram.messenger.UserConfig;
 final class PurpleArchiveLogin {
     interface Source { String nonce(int slot) throws Exception; }
     private static final String PREF = "purpleArchiveLoginV1";
+    /** The user id the persisted nonce belongs to, written beside it in the same editor. */
+    private static final String PREF_USER = "purpleArchiveLoginUserV1";
     private static final String BOOTSTRAP = "purpleArchiveBootstrapV1";
     private static final class Login {
         final long user;
         final String nonce;
-        Login(long user) { this.user = user; nonce = PurpleArchiveBinding.token(); }
+        Login(long user) { this(user, PurpleArchiveBinding.token()); }
+        Login(long user, String nonce) { this.user = user; this.nonce = nonce; }
     }
     private static final ConcurrentHashMap<Integer, Login> logins = new ConcurrentHashMap<>();
     private static final java.util.Set<Integer> bootstrapFailed = ConcurrentHashMap.newKeySet();
@@ -30,21 +33,57 @@ final class PurpleArchiveLogin {
         }
         return UserConfig.getInstance(slot).getPreferences().getString(PREF, null);
     };
+    /**
+     * A user becomes current. A different user, or no user becoming one,
+     * starts a new login with a fresh nonce, except when the slot still holds
+     * a persisted nonce of this same user: then no login ended (logout clears
+     * the preferences first, and every login screen path calls clearConfig),
+     * the in-memory user was only missing, and minting would orphan the
+     * archive bound to that nonce.
+     */
     static void changing(int slot, long before, long after) {
-        if (after != 0 && (before == 0 || before != after)) { logins.put(slot, new Login(after)); bootstrapFailed.remove(slot); }
+        if (after == 0 || (before != 0 && before == after)) return;
+        Login login = before == 0 ? persisted(slot, after) : null;
+        logins.put(slot, login != null ? login : new Login(after));
+        bootstrapFailed.remove(slot);
+    }
+    /** The persisted nonce of {@code user} in this slot, or null when it is absent, invalid or another user's. */
+    private static Login persisted(int slot, long user) {
+        try {
+            SharedPreferences preferences = UserConfig.getInstance(slot).getPreferences();
+            String nonce = preferences == null ? null : preferences.getString(PREF, null);
+            String owner = nonce == null ? null : preferences.getString(PREF_USER, null);
+            if (nonce == null || !nonce.matches("[0-9a-f]{32}") || owner == null || !owner.equals(Long.toString(user))) return null;
+            return new Login(user, nonce);
+        } catch (Exception | LinkageError e) {
+            return null;
+        }
     }
     static void write(int slot, long user, SharedPreferences.Editor editor) {
         Login login = logins.get(slot);
         if (login != null) {
             if (login.user != user) throw new IllegalStateException("Archive login changed");
-            editor.putString(PREF, login.nonce).remove(BOOTSTRAP);
+            editor.putString(PREF, login.nonce).putString(PREF_USER, Long.toString(user)).remove(BOOTSTRAP);
         }
     }
-    static void loaded(int slot, SharedPreferences preferences, String serializedUser) {
+    static void loaded(int slot, SharedPreferences preferences, String serializedUser) { loaded(slot, preferences, serializedUser, 0); }
+    /**
+     * A persisted user decoded. Bootstraps a nonce for a login made before
+     * the archive existed, and records the nonce's owner for a nonce saved
+     * before the owner was kept beside it.
+     */
+    static void loaded(int slot, SharedPreferences preferences, String serializedUser, long user) {
         try {
-            if (serializedUser == null || preferences.getString(PREF, null) != null) return;
+            if (serializedUser == null) return;
+            String existing = preferences.getString(PREF, null);
+            if (existing != null) {
+                if (user != 0 && preferences.getString(PREF_USER, null) == null) preferences.edit().putString(PREF_USER, Long.toString(user)).apply();
+                return;
+            }
             String nonce = PurpleArchiveBinding.token();
-            if (preferences.edit().putString("user", serializedUser).putString(PREF, nonce).putBoolean(BOOTSTRAP, true).commit()) bootstrapFailed.remove(slot);
+            SharedPreferences.Editor editor = preferences.edit().putString("user", serializedUser).putString(PREF, nonce).putBoolean(BOOTSTRAP, true);
+            if (user != 0) editor.putString(PREF_USER, Long.toString(user));
+            if (editor.commit()) bootstrapFailed.remove(slot);
             else {
                 bootstrapFailed.add(slot);
                 PurpleArchiveFailures.record(slot, "login_bootstrap", new PurpleArchiveStore.Failure("Archive login persistence failed"));

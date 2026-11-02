@@ -486,6 +486,7 @@ public final class PurpleArchive {
     }
     static Worker existing(PurpleAccountFiles.Identity identity) { return identity == null ? null : workers.get(identity.key); }
     public static void loginLoaded(int slot, android.content.SharedPreferences preferences, String serializedUser) { PurpleArchiveLogin.loaded(slot, preferences, serializedUser); }
+    public static void loginLoaded(int slot, android.content.SharedPreferences preferences, String serializedUser, long user) { PurpleArchiveLogin.loaded(slot, preferences, serializedUser, user); }
     public static void loginChanging(int slot, long before, long after) { PurpleArchiveLogin.changing(slot, before, after); }
     public static void writeLogin(int slot, long user, android.content.SharedPreferences.Editor editor) { PurpleArchiveLogin.write(slot, user, editor); }
     private PurpleArchive() {}
