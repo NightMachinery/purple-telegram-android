@@ -30,6 +30,8 @@ public final class PurpleSyncMagicCore {
     public static final String ALL_CHATS = "messages.getAllChats";
     public static final String CREATE = "channels.createChannel";
     public static final String FULL_INFO = "channels.getFullChannel";
+    public static final String EDIT_FOLDERS = "folders.editPeerFolders";
+    public static final String NOTIFY = "account.updateNotifySettings";
 
     public enum Problem {
         None, ChatGone, ChatLeft, NotMegagroup, NotCreator, ExtraMember, ExtraAdmin, PublicUsername,

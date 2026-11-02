@@ -22,11 +22,24 @@ public final class PurpleSyncChat {
         public final String reason;
         public final boolean complete, postingHeld, newReaders;
         public final long retryAt;
+        /** The chat to read and post in while phase is Use, otherwise null. */
+        public final Peer chat;
+        /** A Magic Purple Sync problem that pauses sync, and whether it still has to be shown once. */
+        public final PurpleSyncMagicCore.Problem problem;
+        public final boolean showProblem;
         Status(PurpleSyncChatDiscovery.Status status) {
             phase=Phase.valueOf(status.phase.name());resolution=status.resolution;reason=status.reason;
             newReaders=status.newReaders;complete=status.complete;postingHeld=status.postingHeld;retryAt=status.retryAt;
+            chat=phase==Phase.Use&&resolution.action==Action.Use?resolution.readChat:null;problem=PurpleSyncMagicCore.Problem.None;showProblem=false;
         }
-        public boolean selfReadable() { return complete&&phase==Phase.Use&&resolution.action==Action.Use&&Peer.self().equals(resolution.readChat); }
+        Status(PurpleSyncMagicChat.Result result) {
+            boolean use=result.kind==PurpleSyncMagicChat.Result.Kind.Use;
+            phase=use?Phase.Use:Phase.Paused;resolution=resolve(new ResolveInput(1));
+            reason=use?"Use":result.kind==PurpleSyncMagicChat.Result.Kind.Problem?result.problem.code():result.kind==PurpleSyncMagicChat.Result.Kind.Wait?"Waiting":"AccountUnavailable";
+            newReaders=false;complete=use;postingHeld=!use;retryAt=0;
+            chat=use?result.chat:null;problem=result.problem;showProblem=result.show;
+        }
+        public boolean selfReadable() { return complete&&phase==Phase.Use&&Peer.self().equals(chat); }
         public boolean selfPostable() { return selfReadable()&&!postingHeld; }
     }
     static final class Holder {
@@ -34,8 +47,9 @@ public final class PurpleSyncChat {
         final PurpleSyncChatService service;
         final PurpleSyncChatFlows flows=new PurpleSyncChatFlows();
         final PurpleSyncChatStartup startup;
-        Holder(Platform env) { this.env=env;service=new PurpleSyncChatService(env);startup=new PurpleSyncChatStartup(this); }
-        void close(boolean logout){try{startup.close();}finally{try{flows.close();}finally{service.close(logout);}}}
+        final PurpleSyncMagicChat magic;
+        Holder(Platform env) { this.env=env;service=new PurpleSyncChatService(env);startup=new PurpleSyncChatStartup(this);magic=new PurpleSyncMagicChat(new PurpleSyncMagicTelegram(env)); }
+        void close(boolean logout){try{magic.close();}finally{try{startup.close();}finally{try{flows.close();}finally{service.close(logout);}}}}
     }
     private static final java.util.concurrent.ConcurrentHashMap<Integer,Holder> accounts=new java.util.concurrent.ConcurrentHashMap<>();
     private static DispatchQueue queue;
@@ -52,14 +66,23 @@ public final class PurpleSyncChat {
         }
         return holder;
     }
-    public static void startSession(int slot) { AndroidUtilities.runOnUIThread(()->{Holder holder=account(slot);if(holder!=null)holder.startup.start();}); }
+    /** Finds or creates the Magic Purple Sync chat once the account's chat list is up; never searches. */
+    public static void startSession(int slot) { AndroidUtilities.runOnUIThread(()->{Holder holder=account(slot);if(holder!=null)holder.magic.lookup(PurpleSyncMagicChat.Trigger.startup,false,null);}); }
     public static void ensureResolved(int slot,boolean force,Consumer<Status> done) {
-        AndroidUtilities.runOnUIThread(()->{Holder holder=account(slot);if(holder==null){done.accept(unavailable());return;}holder.service.ensureResolved(force,"config",null,status->done.accept(new Status(status)));});
+        lookup(slot,force?PurpleSyncMagicChat.Trigger.manual:PurpleSyncMagicChat.Trigger.screen,force,()->true,done);
     }
     public static void checkBeforePost(int slot,String stream,Consumer<Status> done) {
-        AndroidUtilities.runOnUIThread(()->{Holder holder=account(slot);if(holder==null){done.accept(unavailable());return;}holder.service.checkBeforePost(stream,null,status->done.accept(new Status(status)));});
+        lookup(slot,PurpleSyncMagicChat.Trigger.post,true,()->true,done);
     }
-    public static Status status(int slot) { Holder holder=accounts.get(slot);return holder!=null&&holder.env.current()?new Status(holder.service.status()):unavailable(); }
+    private static void lookup(int slot,PurpleSyncMagicChat.Trigger trigger,boolean fresh,BooleanSupplier current,Consumer<Status> done) {
+        AndroidUtilities.runOnUIThread(()->{
+            Holder holder=account(slot);if(holder==null){done.accept(unavailable());return;}
+            holder.magic.lookup(trigger,fresh,result->AndroidUtilities.runOnUIThread(()->{if(current.getAsBoolean())done.accept(new Status(result));}));
+        });
+    }
+    /** The problem in the last status was shown to the user; it is not shown again until it changes. */
+    public static void problemShown(int slot){Holder holder=accounts.get(slot);if(holder!=null)holder.magic.shown();}
+    public static Status status(int slot) { Holder holder=accounts.get(slot);return holder!=null&&holder.env.current()?new Status(holder.magic.last()):unavailable(); }
     public static PurpleSyncChatScreen.Control screen(int slot) { return screen(slot,()->true); }
     public static PurpleSyncChatScreen.Control screen(int slot,BooleanSupplier foreground) {
         Holder holder=account(slot);
@@ -291,10 +314,8 @@ public final class PurpleSyncChat {
             if(context==null||context.origin==null||!context.current()||!lockCurrent.getAsBoolean()||!current.getAsBoolean()){done.accept(unavailable());return;}
             Holder holder=account(context.origin.slot);
             if(holder==null||holder.env.context.origin.lifetime!=context.origin.lifetime||!holder.env.context.origin.key.equals(context.origin.key)){done.accept(unavailable());return;}
-            PurpleSyncChatService.Borrowed borrowed=new PurpleSyncChatService.Borrowed(key,owner,lockCurrent);
-            Consumer<PurpleSyncChatDiscovery.Status> reply=status->{if(current.getAsBoolean())done.accept(new Status(status));};
-            if(beforePost)holder.service.checkBeforePost("config",borrowed,reply);
-            else holder.service.ensureResolved(false,"config",borrowed,reply);
+            holder.magic.lookup(beforePost?PurpleSyncMagicChat.Trigger.post:PurpleSyncMagicChat.Trigger.auto,beforePost,
+                    result->AndroidUtilities.runOnUIThread(()->{if(current.getAsBoolean())done.accept(lockCurrent.getAsBoolean()?new Status(result):unavailable());}));
         });
     }
     static void cancelOperation(int slot,Object owner){AndroidUtilities.runOnUIThread(()->{Holder holder=accounts.get(slot);if(holder!=null)holder.service.cancelBorrowed(owner);});}

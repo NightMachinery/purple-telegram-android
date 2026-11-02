@@ -43,16 +43,14 @@ public final class PurpleDialogsHooks {
 
     /**
      * Resolves the preset before the first list is built, keeping native loading
-     * and settings reads off the adapter's background diff path. The unchanged
-     * sync offer is checked at this same activated-account creation point;
-     * its own once-per-process/account and asynchronous bulletin behavior stay.
+     * and settings reads off the adapter's background diff path, and starts
+     * the sync chat lookup, which never searches Telegram.
      */
     public void onFragmentCreate() {
         PurpleGate.ensureLoaded();
         if(fragment.getArguments()==null||!fragment.getArguments().getBoolean("onlySelect",false))
             org.telegram.messenger.purple.PurpleSyncChat.startSession(fragment.getCurrentAccount());
         org.telegram.messenger.purple.PurpleSyncAuto.sessionReady(fragment.getCurrentAccount());
-        PurpleSyncOffer.checkOnLaunch(fragment, fragment.getCurrentAccount());
     }
 
     public void addEndPeek(org.telegram.ui.ActionBar.ActionBarMenu menu) {

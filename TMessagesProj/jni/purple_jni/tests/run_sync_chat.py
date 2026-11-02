@@ -23,12 +23,12 @@ compiler = Path(receipt['compiler'])
 classes = args.output / 'classes'
 empty = args.output / 'empty-sourcepath'
 classpath = os.pathsep.join([str(base), str(args.json)] + [item['path'] for key in ['classpath', 'bootstrapClasspath'] for item in receipt[key]])
-sources = [repo / 'TMessagesProj/src/main/java/org/telegram/messenger/purple' / (name + '.java') for name in ['PurpleSyncChatCore', 'PurpleSyncChatOrigin', 'PurpleSyncChatFacts']]
+sources = [repo / 'TMessagesProj/src/main/java/org/telegram/messenger/purple' / (name + '.java') for name in ['PurpleSyncChatCore', 'PurpleSyncChatOrigin', 'PurpleSyncChatFacts', 'PurpleSyncMagicCore']]
 sources += [tests / 'sync_chat/PurpleSyncChatCases.java'] + list((tests / 'sync_chat/ports').rglob('*.java'))
 if args.suite == 'discovery':
     production = repo / 'TMessagesProj/src/main/java'
     owned = production / 'org/telegram/messenger/purple'
-    sources = list(owned.glob('PurpleSyncChat*.java')) + list(owned.glob('PurpleRpc*.java'))
+    sources = list(owned.glob('PurpleSyncChat*.java')) + list(owned.glob('PurpleSyncMagic*.java')) + list(owned.glob('PurpleRpc*.java'))
     sources += [owned / (name + '.java') for name in ['PurpleSyncClient','PurpleSyncOperations','PurpleSyncTelegramClient','PurpleSyncRunner','PurpleSyncTransport','PurpleSyncAuto','PurpleAccountFiles','PurpleSyncAutoClient','PurpleSyncAutoNetwork','PurpleSyncManagedReads','PurpleSyncReadScope','PurpleSyncReader','PurpleSyncInventory','PurpleSyncCheck','PurpleSyncCore','PurpleSyncPost','PurpleAccountSyncStore','PurpleSyncAutoCore','PurpleSyncTelegramTransport','PurpleSyncPublisher','PurpleSyncAutoUpload','PurpleSyncAutoEngine','PurpleAccountSyncCore','PurpleSyncApply','PurpleSyncAutoEdits','PurpleSyncHistory','PurpleSyncMutation','PurpleAccountEditorModel']]
     sources += [production / 'org/telegram/ui' / (name + '.java') for name in ['PurpleDialogsHooks','PurpleSyncActivity','PurpleSyncChatActivity','PurpleSyncChatSetupUI','PurpleSyncReviewDialog']]
     sources += list((tests / 'modern_sync/android/system').glob('*.java'))

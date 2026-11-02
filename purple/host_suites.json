@@ -73,8 +73,10 @@
         "run"
       ],
       "expects": {
-        "run:SYNC_MAGIC_CHECKS": 130,
-        "sync-magic:SYNC_MAGIC_CHECKS": 130
+        "run:SYNC_MAGIC_CHAT_CHECKS": 194,
+        "run:SYNC_MAGIC_CHECKS": 141,
+        "sync-magic:SYNC_MAGIC_CHAT_CHECKS": 194,
+        "sync-magic:SYNC_MAGIC_CHECKS": 141
       }
     },
     {

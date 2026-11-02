@@ -189,6 +189,33 @@ public final class PurpleSyncMagicCases {
         check(new org.json.JSONObject(PurpleSyncMagicCore.requestNative("check", "{\"chat\":{\"channelId\":\"-1\"}}")).optBoolean("ok", true) == false,
             "a negative channel id is refused");
 
+        // The TL mapping: local facts leave the counts unknown, full info makes them exact.
+        org.telegram.tgnet.TLRPC.TL_channel channel = new org.telegram.tgnet.TLRPC.TL_channel();
+        channel.id = 1000; channel.title = PurpleSyncMagicCore.TITLE; channel.megagroup = true; channel.creator = true;
+        PurpleSyncMagicCore.Candidate local = PurpleSyncChatFacts.magic(channel, null);
+        check(local != null && local.channelId == 1000 && local.megagroup && local.facts.creator && local.facts.otherMembers == null, "a local channel maps without counts");
+        check(PurpleSyncMagicCore.check(local).verdict == PurpleSyncMagicCore.Verdict.Unverified, "and is unverified");
+        org.telegram.tgnet.TLRPC.TL_channelFull full = new org.telegram.tgnet.TLRPC.TL_channelFull();
+        full.id = 1000; full.flags = 1 | (1 << 1); full.participants_count = 1; full.admins_count = 1;
+        PurpleSyncMagicCore.Candidate exact = PurpleSyncChatFacts.magic(channel, full);
+        check(exact != null && exact.facts.otherMembers == 0L && exact.facts.otherAdmins == 0L, "full info gives exact counts");
+        check(PurpleSyncMagicCore.check(exact).verdict == PurpleSyncMagicCore.Verdict.Eligible, "a sole-member channel is eligible");
+        full.participants_count = 2;
+        check(PurpleSyncMagicCore.check(PurpleSyncChatFacts.magic(channel, full)).problem == PurpleSyncMagicCore.Problem.ExtraMember, "a second member is seen");
+        full.id = 1001;
+        check(PurpleSyncChatFacts.magic(channel, full) == null, "full info of another chat is refused");
+        channel.left = true;
+        check(PurpleSyncMagicCore.check(PurpleSyncChatFacts.magic(channel, null)).problem == PurpleSyncMagicCore.Problem.ChatLeft, "a left channel is not a member");
+        org.telegram.tgnet.TLRPC.TL_channelForbidden forbidden = new org.telegram.tgnet.TLRPC.TL_channelForbidden();
+        forbidden.id = 1000;
+        check(PurpleSyncChatFacts.magic(forbidden, null) != null && !PurpleSyncChatFacts.magic(forbidden, null).member, "a forbidden channel is not a member");
+        check(PurpleSyncChatFacts.magic(null, null) == null, "no chat, no candidate");
+
+        // No sync path may send a Telegram search.
+        check(PurpleSyncChatTelegram.searches(new org.telegram.tgnet.TLRPC.TL_messages_search())
+            && PurpleSyncChatTelegram.searches(new org.telegram.tgnet.TLRPC.TL_messages_searchGlobal()), "both searches are refused");
+        check(!PurpleSyncChatTelegram.searches(new org.telegram.tgnet.TLRPC.TL_messages_getAllChats()), "the absence proof is not a search");
+
         System.out.println("SYNC_MAGIC_CHECKS=" + checks);
     }
 }

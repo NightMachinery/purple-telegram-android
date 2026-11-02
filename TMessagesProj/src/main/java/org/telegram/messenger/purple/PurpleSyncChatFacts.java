@@ -140,6 +140,44 @@ public final class PurpleSyncChatFacts {
         return result;
     }
 
+    /**
+     * A channel as a Magic Purple Sync candidate. Without {@code full} only the
+     * local chat is known, so member and admin counts stay null (Unverified);
+     * with a matching channelFull they are exact. Null for anything that is
+     * not a full channel object of that id.
+     */
+    public static PurpleSyncMagicCore.Candidate magic(TLRPC.Chat chat, TLRPC.ChatFull full) {
+        if (chat == null || chat.min || chat.id <= 0) return null;
+        PurpleSyncMagicCore.Candidate result = new PurpleSyncMagicCore.Candidate();
+        result.channelId = chat.id; result.title = chat.title != null ? chat.title : "";
+        ChatFacts facts = result.facts;
+        if (chat.getClass() != TLRPC.TL_channel.class) {
+            result.member = false;
+            return chat instanceof TLRPC.TL_channelForbidden && chat.id > 0 ? result : null;
+        }
+        result.member = !chat.left && !chat.kicked;
+        result.megagroup = chat.megagroup; result.gigagroup = chat.gigagroup;
+        facts.kind = chat.monoforum ? Kind.ChannelDirectMessages : chat.megagroup ? Kind.Supergroup : Kind.Broadcast;
+        facts.creator = chat.creator; facts.admin = chat.creator || chat.admin_rights != null;
+        facts.publicUsername = chat.username != null && !chat.username.isEmpty();
+        for (TLRPC.TL_username username : chat.usernames) if (username != null && username.active) facts.publicUsername = true;
+        facts.protectedContent = chat.noforwards; facts.forum = chat.forum; facts.slowMode = chat.slowmode_enabled;
+        facts.anonymousAdmin = chat.admin_rights != null && chat.admin_rights.anonymous;
+        facts.paidMessages = chat.send_paid_messages_stars != 0; facts.migrated = chat.deactivated;
+        facts.canSendFiles = result.member && chat.creator;
+        if (full == null) return result;
+        if (full.getClass() != TLRPC.TL_channelFull.class || full.id != chat.id) return null;
+        facts.linkedDiscussion = full.linked_chat_id != 0 || (full.flags & (1 << 14)) != 0;
+        facts.autoDelete = full.ttl_period != 0; facts.paidMessages |= full.send_paid_messages_stars != 0;
+        facts.slowMode |= full.slowmode_seconds != 0;
+        if (full.default_send_as != null) facts.postsAsOther = !(full.default_send_as instanceof TLRPC.TL_peerUser);
+        if ((full.flags & (1 << 1)) != 0 && full.admins_count > 0) {
+            facts.soleAdmin = full.admins_count == 1; facts.otherAdmins = (long) full.admins_count - (facts.admin ? 1 : 0);
+        }
+        if (result.member && (full.flags & 1) != 0 && full.participants_count > 0) facts.otherMembers = (long) full.participants_count - 1;
+        return result;
+    }
+
     private static Truth mediaTtl(TLRPC.MessageMedia media, boolean present) {
         if (media == null) return present ? Truth.Unknown : Truth.False;
         if (media.getClass() == TLRPC.TL_messageMediaEmpty.class) return Truth.False;

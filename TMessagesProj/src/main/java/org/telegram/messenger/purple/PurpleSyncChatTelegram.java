@@ -222,12 +222,21 @@ final class PurpleSyncChatTelegram implements PurpleSyncChatClient {
         requests.clear();
     }
 
+    /** A Telegram search, which no Purple sync path may send. */
+    static boolean searches(TLObject request) {
+        return request instanceof TLRPC.TL_messages_search || request instanceof TLRPC.TL_messages_searchGlobal;
+    }
+
     static Platform platform(PurpleSyncChatOrigin origin, BooleanSupplier current) {
         return new Platform() {
             public boolean current() { return current.getAsBoolean(); }
             public void dispatch(Runnable task) { AndroidUtilities.runOnUIThread(task); }
-            public int send(TLObject request, Reply done) { return ConnectionsManager.getInstance(origin.slot).sendRequest(request,done::accept,ConnectionsManager.RequestFlagFailOnServerErrors); }
-            public void cancel(int token) { ConnectionsManager.getInstance(origin.slot).cancelRequest(token,true); }
+            public int send(TLObject request, Reply done) {
+                // WHY: searching for the sync chat caused a 12 hour flood wait; PurpleSyncMagicChat finds it from the chat list instead.
+                if (searches(request)) return 0;
+                return ConnectionsManager.getInstance(origin.slot).sendRequest(request,done::accept,ConnectionsManager.RequestFlagFailOnServerErrors);
+            }
+            public void cancel(int token) { if (token > 0) ConnectionsManager.getInstance(origin.slot).cancelRequest(token,true); }
             public void delay(Runnable task, long millis) { AndroidUtilities.runOnUIThread(task,millis); }
             public void cancelDelay(Runnable task) { AndroidUtilities.cancelRunOnUIThread(task); }
             public void waiting(Object owner,PurpleRpcRetry.Transient value){PurpleRpcRequests.waiting(origin.slot,owner,value);}
