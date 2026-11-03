@@ -71,6 +71,12 @@ final class PurpleSyncMagicDevices {
             return heads;
         }
         int writes() { return posts + edits; }
+        /** The Check numbered {@code failCheckAt} (counting from 1) does not finish, as when the network drops. */
+        int checks, failCheckAt = -1;
+        @Override public void check(Progress progress, CheckDone done) {
+            if (++checks == failCheckAt) { done.onCheckDone(new CheckResult(CheckStatus.Cancelled, null, false)); return; }
+            super.check(progress, done);
+        }
     }
 
     /** One device of the account. */
@@ -283,9 +289,15 @@ final class PurpleSyncMagicDevices {
         }
         @Override public boolean held() { return !failures.isEmpty() || firstUse != null && firstUse.result == PurpleSyncFirstUse.Result.Ask; }
         @Override public void failed(Throwable error) { failures.add(PurpleSyncAutoEngine.failureCode(error)); }
+        long firstChecked;
+        int firstScans;
         @Override public boolean firstUse(PurpleSyncAutoCore.Event event) {
             ++firstUses;
             if (!runFirstUse || event == PurpleSyncAutoCore.Event.Disable) return false;
+            // As PurpleSyncAuto.Runtime.firstUse: the lifecycle triggers read the chat once per 15 minutes.
+            if (!PurpleSyncFirstUse.due(event, clock, firstChecked)) return true;
+            firstChecked = clock;
+            ++firstScans;
             firstUse = PurpleSyncFirstUseCases.firstUse(device, group, PurpleSyncCore.FirstUseChoice.None, "automatic first use of " + device.id);
             if (firstUse.result == PurpleSyncFirstUse.Result.Joined || firstUse.result == PurpleSyncFirstUse.Result.Published) {
                 engine.enabled(true, () -> true);

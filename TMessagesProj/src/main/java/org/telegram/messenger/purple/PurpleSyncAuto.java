@@ -153,6 +153,11 @@ public final class PurpleSyncAuto {
             PurpleSyncChatCore.Peer bound = PurpleSyncChat.boundChat(opening.slot);
             if (bound == null || PurpleSyncChatCore.Peer.self().equals(bound)) return false;
             if (event != PurpleSyncAutoCore.Event.Enable && !enabledHint()) return false;
+            android.content.SharedPreferences preferences = MessagesController.getMainSettings(account.account);
+            String checkedKey = "purple_sync_first_checked_" + opening.key;
+            long now = now();
+            if (!PurpleSyncFirstUse.due(event, now, preferences.getLong(checkedKey, 0))) return true;
+            preferences.edit().putLong(checkedKey, now).commit();
             AndroidUtilities.runOnUIThread(() -> runFirstUse(event == PurpleSyncAutoCore.Event.Enable));
             return true;
         }
@@ -188,6 +193,8 @@ public final class PurpleSyncAuto {
                 if (runner == null) { firstUseRunning = false; return; }
                 PurpleSyncRunner.Start started = runner.check(null, checked -> {
                     if (checked.status != PurpleSyncRunner.CheckStatus.Finished || checked.check == null) {
+                        PurpleDiagLog.event("sync", "first_use", PurpleDiagLogStore.slot(account.account),
+                                PurpleDiagLogStore.code("outcome", "refused"), PurpleDiagLogStore.reason("check_failed"));
                         firstUseRunning = false; runner.close(); render(); return;
                     }
                     PurpleSyncFirstUse.run(runner, checked.check, PurpleSyncCore.FirstUseChoice.None, outcome -> {
@@ -196,7 +203,11 @@ public final class PurpleSyncAuto {
                         settle(outcome, enabling);
                     });
                 });
-                if (started != PurpleSyncRunner.Start.Started) { firstUseRunning = false; runner.close(); }
+                if (started != PurpleSyncRunner.Start.Started) {
+                    PurpleDiagLog.event("sync", "first_use", PurpleDiagLogStore.slot(account.account),
+                            PurpleDiagLogStore.code("outcome", "refused"), PurpleDiagLogStore.reason(started == PurpleSyncRunner.Start.Busy ? "busy" : "check_failed"));
+                    firstUseRunning = false; runner.close();
+                }
             });
         }
         void settle(PurpleSyncFirstUse.Outcome outcome, boolean enabling) {
