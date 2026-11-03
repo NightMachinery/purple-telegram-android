@@ -891,6 +891,8 @@
     <string name="PurpleSyncChatMagicPicked">You chose this chat on this device.</string>
     <string name="PurpleSyncChatMagicWaiting">Telegram asked Purple to wait. Sync looks again at %1$s.</string>
     <string name="PurpleSyncChatMagicWaitingLater">Telegram asked Purple to wait. Sync looks again later.</string>
+    <string name="PurpleSyncChatMagicRetrying">Sync looks again at %1$s.</string>
+    <string name="PurpleSyncChatMagicRetryingLater">Sync looks again later.</string>
     <string name="PurpleSyncChatMagicPaused">Automatic sync is paused: %1$s</string>
     <string name="PurpleSyncChatMagicCheck">Check now</string>
     <string name="PurpleSyncChatMagicOpen">Open sync chat</string>
@@ -921,6 +923,7 @@
     <string name="PurpleSyncChatProblemCreateLimit">Telegram did not let Purple create the sync chat; you may be in too many groups.</string>
     <string name="PurpleSyncChatProblemMagicIneligible">a Magic Purple Sync chat exists but Purple cannot use it.</string>
     <string name="PurpleSyncChatProblemSpaceMismatch">the sync chat holds settings from devices in another sync group.</string>
+    <string name="PurpleSyncChatProblemRequestRefused">Telegram refused a sync chat request. Check again, or choose another chat.</string>
     <string name="PurpleSyncChatQualificationHeld">Fresh setup is prepared but remains unavailable until native setup qualification is authorized.</string>
     <string name="PurpleSyncChatUseTitle">Use %1$s for sync?</string>
     <string name="PurpleSyncChatUse">Use this chat</string>

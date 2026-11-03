@@ -205,9 +205,9 @@ public final class PurpleDiagLogFacadeCases {
         check(after.contains("lines=1000") && !after.contains("lines=1299"), "queued lines were kept and the overflow dropped");
 
         // A line that repeats is written a few times, and the export names how many copies were dropped.
-        String flood = " sync_chat request method=messages.getallchats outcome=flood seconds=43200\n";
+        String flood = " sync_chat request method=channels.createchannel outcome=flood seconds=43200\n";
         for (int i = 0; i < 10; ++i) {
-            PurpleDiagLog.event("sync_chat", "request", PurpleDiagLog.code("method", "messages.getallchats"),
+            PurpleDiagLog.event("sync_chat", "request", PurpleDiagLog.code("method", "channels.createchannel"),
                     PurpleDiagLog.code("outcome", "flood"), PurpleDiagLog.count("seconds", 43200));
         }
         drained();

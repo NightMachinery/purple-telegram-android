@@ -26,16 +26,24 @@ import java.util.function.Consumer;
 
 /**
  * The Android side of {@link PurpleSyncMagicChat}: the binding file
- * sync/chat.json, the local chat lists of MessagesController and the five
- * Telegram requests the lookup may send. Every request goes straight to
+ * sync/chat.json, the local chat lists of MessagesController and the four
+ * Telegram requests the lookup may send (createChannel, getFullChannel,
+ * editPeerFolders, updateNotifySettings). Every request goes straight to
  * ConnectionsManager with a 30 second timeout; the lookup itself decides
  * whether and when to retry, so a flood wait is never waited out in memory.
+ * The lists are paged only through upstream's own dialog loader.
+ *
+ * The lists are read from the account's real dialogs ({@code dialogs_dict}),
+ * never from the arrays Work Mode, folders or Purple's hidden sync chat
+ * filter, so no view can hide a magic chat from the absence proof.
  */
 final class PurpleSyncMagicTelegram implements PurpleSyncMagicChat.Port {
     static final String FILE = "chat.json";
     static final int LIMIT = 16 * 1024;
     static final String ABOUT = "Purple Telegram keeps sync data for your devices here.";
     private static final long TIMEOUT = 30000;
+    /** Upstream's page size when the chat list scrolls (DialogsActivity). */
+    private static final int PAGE = 100;
 
     private final PurpleSyncChat.Platform env;
     private final File file;
@@ -73,6 +81,8 @@ final class PurpleSyncMagicTelegram implements PurpleSyncMagicChat.Port {
             if (!current()) { done.accept(null); return; }
             MessagesController controller = MessagesController.getInstance(slot());
             List<PurpleSyncMagicCore.Candidate> visible = new ArrayList<>();
+            // WHY: dialogs_dict holds every loaded dialog of both lists; the per-folder arrays and the filter views
+            // skip what Work Mode or the list hiding leave out, and must not decide that no magic chat exists.
             for (int i = 0; i < controller.dialogs_dict.size(); ++i) {
                 long dialogId = controller.dialogs_dict.keyAt(i);
                 if (dialogId >= 0) continue;
@@ -120,23 +130,28 @@ final class PurpleSyncMagicTelegram implements PurpleSyncMagicChat.Port {
         });
     }
 
-    @Override public void allChats(List<Long> except, Consumer<PurpleSyncMagicChat.Reply<PurpleSyncMagicChat.Chats>> done) {
-        TLRPC.TL_messages_getAllChats request = new TLRPC.TL_messages_getAllChats();
-        if (except != null) request.except_ids.addAll(except);
-        send(request, reply -> {
-            if (!(reply.value instanceof TLRPC.messages_Chats)) { done.accept(failed(reply)); return; }
-            TLRPC.messages_Chats value = (TLRPC.messages_Chats) reply.value;
-            ArrayList<TLRPC.Chat> chats = value.chats;
-            MessagesController.getInstance(slot()).putChats(chats, false);
-            List<PurpleSyncMagicCore.Candidate> result = new ArrayList<>();
-            List<Long> ids = new ArrayList<>();
-            for (TLRPC.Chat chat : chats) {
-                if (chat != null) ids.add(chat.id);
-                PurpleSyncMagicCore.Candidate candidate = chat != null && chat.megagroup ? PurpleSyncChatFacts.magic(chat, null) : null;
-                if (candidate != null) result.add(candidate);
-            }
-            int count = value instanceof TLRPC.TL_messages_chatsSlice ? value.count : -1;
-            done.accept(PurpleSyncMagicChat.Reply.ok(new PurpleSyncMagicChat.Chats(result, ids, count)));
+    @Override public void more(Runnable changed) {
+        AndroidUtilities.runOnUIThread(() -> {
+            if (!current()) { changed.run(); return; }
+            MessagesController controller = MessagesController.getInstance(slot());
+            int folder = !controller.isServerDialogsEndReached(0) ? 0 : !controller.isServerDialogsEndReached(1) ? 1 : -1;
+            if (folder < 0) { changed.run(); return; }
+            NotificationCenter center = NotificationCenter.getInstance(slot());
+            AtomicBoolean answered = new AtomicBoolean();
+            NotificationCenter.NotificationCenterDelegate[] observer = { null };
+            Runnable landed = () -> {
+                if (!answered.compareAndSet(false, true)) return;
+                center.removeObserver(observer[0], NotificationCenter.dialogsNeedReload);
+                changed.run();
+            };
+            observer[0] = (id, account, args) -> {
+                if (id == NotificationCenter.dialogsNeedReload && (!current() || !controller.isLoadingDialogs(folder))) landed.run();
+            };
+            center.addObserver(observer[0], NotificationCenter.dialogsNeedReload);
+            // WHY: the observer must not outlive a page that never lands; the lookup's own cap answers by then.
+            AndroidUtilities.runOnUIThread(landed, PurpleSyncMagicChat.LISTS_CAP * 1000);
+            // As DialogsActivity pages: from the cache until its end, then from the server; one page in flight.
+            if (!controller.isLoadingDialogs(folder)) controller.loadDialogs(folder, -1, PAGE, !controller.isDialogsEndReached(folder));
         });
     }
 

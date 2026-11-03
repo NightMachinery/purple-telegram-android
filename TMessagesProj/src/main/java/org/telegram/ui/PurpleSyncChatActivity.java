@@ -95,7 +95,10 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
     private String line(PurpleSyncMagicScreen.Frame shown) {
         switch(shown.line){
             case Using:return text("MagicUsing",title(shown.chat));
-            case Waiting:return shown.retryAt>0?text("MagicWaiting",LocaleController.getInstance().getFormatterDay().format(shown.retryAt*1000)):text("MagicWaitingLater");
+            case Waiting:{
+                String prefix=shown.telegram?"MagicWaiting":"MagicRetrying";
+                return shown.retryAt>0?text(prefix,LocaleController.getInstance().getFormatterDay().format(shown.retryAt*1000)):text(prefix+"Later");
+            }
             case Problem:return text("MagicPaused",problem(shown));
             default:return text("MagicLooking");
         }

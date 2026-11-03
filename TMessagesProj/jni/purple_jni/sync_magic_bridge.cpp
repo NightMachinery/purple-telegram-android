@@ -121,9 +121,17 @@ QString ActionName(SyncChatLookupAction action) {
     case SyncChatLookupAction::Use: return u"Use"_q;
     case SyncChatLookupAction::Verify: return u"Verify"_q;
     case SyncChatLookupAction::Wait: return u"Wait"_q;
-    case SyncChatLookupAction::ProveAbsent: return u"ProveAbsent"_q;
     case SyncChatLookupAction::Create: return u"Create"_q;
     case SyncChatLookupAction::Problem: return u"Problem"_q;
+    }
+    return QString();
+}
+
+QString ErrorKindName(SyncChatErrorKind kind) {
+    switch (kind) {
+    case SyncChatErrorKind::Wait: return u"Wait"_q;
+    case SyncChatErrorKind::Transient: return u"Transient"_q;
+    case SyncChatErrorKind::Refused: return u"Refused"_q;
     }
     return QString();
 }
@@ -220,7 +228,8 @@ QJsonObject Evaluate(const QString &operation, const QJsonObject &object) {
         auto now = int64_t(0);
         const auto state = object.value(u"boundState"_q).toString();
         if (!Binding(object.value(u"binding"_q), input.binding) || !Decimal(object.value(u"now"_q), now) || now <= 0
-            || !Boolean(object, u"fresh"_q, input.fresh) || !Candidates(object.value(u"visible"_q), input.visible)) return Failure();
+            || !Boolean(object, u"fresh"_q, input.fresh) || !Boolean(object, u"listsComplete"_q, input.listsComplete)
+            || !Candidates(object.value(u"visible"_q), input.visible)) return Failure();
         input.now = now;
         if (state == u"Present"_q) {
             input.boundState = SyncChatBoundState::Present;
@@ -230,17 +239,13 @@ QJsonObject Evaluate(const QString &operation, const QJsonObject &object) {
         } else if (state != u"Unknown"_q) {
             return Failure();
         }
-        if (object.contains(u"allChats"_q)) {
-            auto all = std::vector<MagicChatCandidate>();
-            if (!Candidates(object.value(u"allChats"_q), all)) return Failure();
-            input.allChats = std::move(all);
-        }
         const auto plan = PlanSyncChatLookup(input);
         result.insert(u"action"_q, ActionName(plan.action));
         if (plan.chat) result.insert(u"chat"_q, *PeerTokenText(*plan.chat));
         result.insert(u"problem"_q, SyncChatProblemCode(plan.problem));
         result.insert(u"show"_q, plan.show);
         result.insert(u"retryAt"_q, QString::number(plan.retryAt));
+        result.insert(u"telegram"_q, plan.telegram);
         result.insert(u"rebind"_q, plan.rebind);
     } else if (operation == u"verify"_q) {
         auto chat = MagicChatCandidate();
@@ -251,6 +256,28 @@ QJsonObject Evaluate(const QString &operation, const QJsonObject &object) {
         result.insert(u"problem"_q, SyncChatProblemCode(problem));
         result.insert(u"rejected"_q, problem != SyncChatProblem::None && SyncChatCandidateRejected(binding, chat.channelId));
         if (!Put(result, binding)) return Failure();
+    } else if (operation == u"verifyProblem"_q) {
+        auto id = int64_t(0);
+        auto now = int64_t(0);
+        const auto problem = ParseSyncChatProblemCode(object.value(u"problem"_q).toString());
+        if (!Binding(object.value(u"binding"_q), binding) || !Decimal(object.value(u"channelId"_q), id) || id <= 0
+            || !Decimal(object.value(u"now"_q), now) || now <= 0 || !problem || *problem == SyncChatProblem::None) return Failure();
+        RecordSyncChatVerifyProblem(binding, uint64_t(id), *problem, now);
+        result.insert(u"problem"_q, SyncChatProblemCode(*problem));
+        result.insert(u"rejected"_q, SyncChatCandidateRejected(binding, uint64_t(id)));
+        if (!Put(result, binding)) return Failure();
+    } else if (operation == u"classify"_q) {
+        auto code = int64_t(0);
+        auto timeout = false;
+        if (!Decimal(object.value(u"code"_q), code) || code < std::numeric_limits<int>::min() || code > std::numeric_limits<int>::max()
+            || !object.value(u"type"_q).isString() || !Boolean(object, u"timeout"_q, timeout)) return Failure();
+        const auto error = ClassifySyncChatError(int(code), object.value(u"type"_q).toString(), timeout);
+        result.insert(u"kind"_q, ErrorKindName(error.kind));
+        result.insert(u"seconds"_q, QString::number(error.seconds));
+    } else if (operation == u"refusalProblem"_q) {
+        if (!object.value(u"method"_q).isString() || !object.value(u"type"_q).isString()) return Failure();
+        result.insert(u"problem"_q, SyncChatProblemCode(SyncChatRefusalProblem(object.value(u"method"_q).toString(),
+            object.value(u"type"_q).toString())));
     } else if (operation == u"wait"_q) {
         auto retryAt = int64_t(0);
         if (!Binding(object.value(u"binding"_q), binding) || !Decimal(object.value(u"retryAt"_q), retryAt)) return Failure();

@@ -21,8 +21,10 @@ public final class PurpleSyncMagicScreen {
         /** Using: the chat sync reads and posts in. Problem: the chat the problem concerns, or null. */
         public final Peer chat;
         public final PurpleSyncMagicCore.Problem problem;
-        /** Waiting: unix seconds when Telegram allows the next request, 0 when unknown. */
+        /** Waiting: unix seconds when sync looks again, 0 when unknown. */
         public final long retryAt;
+        /** Waiting: Telegram asked for the wait (a flood wait); any other wait is Purple's own. */
+        public final boolean telegram;
         /** The user picked the chat rather than the magic chat. */
         public final boolean manual;
         /** The user chose to see the magic chat in Purple's chat lists. */
@@ -30,8 +32,9 @@ public final class PurpleSyncMagicScreen {
         /** The problem has not been shown yet: the screen shows it once and reports it shown. */
         public final boolean showProblem;
 
-        Frame(Line line, Peer chat, PurpleSyncMagicCore.Problem problem, long retryAt, boolean manual, boolean listed, boolean showProblem) {
-            this.line = line; this.chat = chat; this.problem = problem; this.retryAt = retryAt;
+        Frame(Line line, Peer chat, PurpleSyncMagicCore.Problem problem, long retryAt, boolean telegram, boolean manual, boolean listed,
+              boolean showProblem) {
+            this.line = line; this.chat = chat; this.problem = problem; this.retryAt = retryAt; this.telegram = telegram;
             this.manual = manual; this.listed = listed; this.showProblem = showProblem;
         }
         public boolean savedMessages() { return Peer.self().equals(chat); }
@@ -47,12 +50,15 @@ public final class PurpleSyncMagicScreen {
     static Frame frame(PurpleSyncMagicChat.Result result, PurpleSyncMagicCore.Binding binding) {
         boolean manual = binding != null && binding.mode == PurpleSyncMagicCore.Mode.Manual;
         boolean listed = binding != null && binding.listed;
-        if (result == null) return new Frame(Line.Looking, null, PurpleSyncMagicCore.Problem.None, 0, manual, listed, false);
+        if (result == null) return new Frame(Line.Looking, null, PurpleSyncMagicCore.Problem.None, 0, false, manual, listed, false);
         switch (result.kind) {
-            case Use: return new Frame(Line.Using, result.chat, PurpleSyncMagicCore.Problem.None, 0, manual, listed, false);
-            case Wait: return new Frame(Line.Waiting, null, PurpleSyncMagicCore.Problem.None, result.retryAt, manual, listed, false);
-            case Problem: return new Frame(Line.Problem, result.chat, result.problem, 0, manual, listed, result.show);
-            default: return new Frame(Line.Looking, null, PurpleSyncMagicCore.Problem.None, 0, manual, listed, false);
+            case Use: return new Frame(Line.Using, result.chat, PurpleSyncMagicCore.Problem.None, 0, false, manual, listed, false);
+            case Wait:
+                // WHY: while the lists load the lookup is still looking; only a flood wait is worded as Telegram's.
+                if (result.loading && !result.telegram) return new Frame(Line.Looking, null, PurpleSyncMagicCore.Problem.None, 0, false, manual, listed, false);
+                return new Frame(Line.Waiting, null, PurpleSyncMagicCore.Problem.None, result.retryAt, result.telegram, manual, listed, false);
+            case Problem: return new Frame(Line.Problem, result.chat, result.problem, 0, false, manual, listed, result.show);
+            default: return new Frame(Line.Looking, null, PurpleSyncMagicCore.Problem.None, 0, false, manual, listed, false);
         }
     }
 

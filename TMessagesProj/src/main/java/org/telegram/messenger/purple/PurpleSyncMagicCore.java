@@ -27,7 +27,6 @@ import static org.telegram.messenger.purple.PurpleSyncChatCore.put;
  */
 public final class PurpleSyncMagicCore {
     public static final String TITLE = "Magic Purple Sync";
-    public static final String ALL_CHATS = "messages.getAllChats";
     public static final String CREATE = "channels.createChannel";
     public static final String FULL_INFO = "channels.getFullChannel";
     public static final String EDIT_FOLDERS = "folders.editPeerFolders";
@@ -35,7 +34,9 @@ public final class PurpleSyncMagicCore {
 
     public enum Problem {
         None, ChatGone, ChatLeft, NotMegagroup, NotCreator, ExtraMember, ExtraAdmin, PublicUsername,
-        Restricted, CannotPost, ForeignRecord, ForwardedRecord, ViaBotRecord, CreateLimit, MagicIneligible, SpaceMismatch;
+        Restricted, CannotPost, ForeignRecord, ForwardedRecord, ViaBotRecord, CreateLimit, MagicIneligible, SpaceMismatch,
+        /** Telegram refused a lookup request outright (a 400-class error that is not a flood). */
+        RequestRefused;
 
         /** The lowercase code used in the binding file and in diagnostics. */
         public String code() { return name().replaceAll("([a-z])([A-Z])", "$1_$2").toLowerCase(Locale.ROOT); }
@@ -45,7 +46,9 @@ public final class PurpleSyncMagicCore {
         }
     }
     public enum Verdict { Eligible, Unverified, Ineligible }
-    public enum Action { Invalid, Use, Verify, Wait, ProveAbsent, Create, Problem }
+    public enum Action { Invalid, Use, Verify, Wait, Create, Problem }
+    /** How core sorts a failed lookup request: a flood Telegram asked to wait out, a transient failure, or a refusal. */
+    public enum ErrorKind { Wait, Transient, Refused }
     public enum BoundState { Unknown, Present, Gone }
     public enum Mode { None, Magic, Manual }
     public enum CreateStep { None, Requested, Uncertain, Created, Archived, Muted }
@@ -87,8 +90,11 @@ public final class PurpleSyncMagicCore {
         public BoundState boundState = BoundState.Unknown;
         public Candidate bound;
         public List<Candidate> visible = Collections.emptyList();
-        /** The titled chats of a messages.getAllChats reply, or null when none was read in this lookup. */
-        public List<Candidate> allChats;
+        /**
+         * The account's main list and archive folder are both fully loaded by upstream's own dialog loaders,
+         * unfiltered: the only proof that no magic chat exists, or that a bound chat missing from them is gone.
+         */
+        public boolean listsComplete;
         public boolean fresh;
         public long now;
     }
@@ -99,6 +105,8 @@ public final class PurpleSyncMagicCore {
         public final Problem problem;
         public final boolean show, rebind;
         public final long retryAt;
+        /** The wait is one Telegram asked for: a flood wait kept in the binding. */
+        public final boolean telegram;
         Plan(JSONObject value) {
             boolean ok = value.optBoolean("ok");
             action = ok ? named(Action.class, value.optString("action"), Action.Invalid) : Action.Invalid;
@@ -108,6 +116,7 @@ public final class PurpleSyncMagicCore {
             show = value.optBoolean("show");
             rebind = value.optBoolean("rebind");
             retryAt = number(value, "retryAt");
+            telegram = ok && value.optBoolean("telegram");
         }
     }
 
@@ -148,6 +157,13 @@ public final class PurpleSyncMagicCore {
         Verified(Problem problem, String binding, boolean rejected) { this.problem = problem; this.binding = binding; this.rejected = rejected; }
     }
 
+    /** A classified failure; {@link #seconds} is Telegram's wait, for {@link ErrorKind#Wait} only. */
+    public static final class Classified {
+        public final ErrorKind kind;
+        public final long seconds;
+        Classified(ErrorKind kind, long seconds) { this.kind = kind; this.seconds = seconds; }
+    }
+
     public static boolean isTitle(String title) {
         return title != null && call("title", json("title", title)).optBoolean("magic");
     }
@@ -159,9 +175,8 @@ public final class PurpleSyncMagicCore {
     public static Plan plan(LookupInput input) {
         if (input == null || input.binding == null || input.visible == null || (input.boundState == BoundState.Present && input.bound == null)) return new Plan(new JSONObject());
         JSONObject value = json("binding", input.binding, "boundState", input.boundState.name(),
-            "visible", candidates(input.visible), "fresh", input.fresh, "now", Long.toString(input.now));
+            "visible", candidates(input.visible), "fresh", input.fresh, "listsComplete", input.listsComplete, "now", Long.toString(input.now));
         if (input.bound != null) put(value, "bound", input.bound.json());
-        if (input.allChats != null) put(value, "allChats", candidates(input.allChats));
         return new Plan(call("plan", value));
     }
 
@@ -170,6 +185,35 @@ public final class PurpleSyncMagicCore {
         JSONObject answer = call("verify", json("binding", text(binding), "chat", chat.json(), "now", Long.toString(now)));
         Problem problem = Problem.parse(answer.optString("problem"));
         return answer.optBoolean("ok") && problem != null ? new Verified(problem, answer.optString("binding"), answer.optBoolean("rejected")) : null;
+    }
+
+    /**
+     * A verify of {@code channelId} found {@code problem} without a full-info reply (Telegram refused the read):
+     * raised for the bound chat, only a rejection for any other candidate.
+     */
+    public static Verified verifyProblem(String binding, long channelId, Problem problem, long now) {
+        if (problem == null || problem == Problem.None) return null;
+        JSONObject answer = call("verifyProblem", json("binding", text(binding), "channelId", Long.toString(channelId), "problem", problem.code(),
+            "now", Long.toString(now)));
+        Problem parsed = Problem.parse(answer.optString("problem"));
+        return answer.optBoolean("ok") && parsed != null ? new Verified(parsed, answer.optString("binding"), answer.optBoolean("rejected")) : null;
+    }
+
+    /**
+     * Core's sorting of a failed request: {@code code} is the TL error code (negative for a transport failure),
+     * {@code type} its text. A failed native call answers Transient, so it never raises a problem on its own.
+     */
+    public static Classified classify(int code, String type, boolean timeout) {
+        JSONObject answer = call("classify", json("code", Integer.toString(code), "type", type != null ? type : "", "timeout", timeout));
+        ErrorKind kind = answer.optBoolean("ok") ? named(ErrorKind.class, answer.optString("kind"), null) : null;
+        return kind != null ? new Classified(kind, Math.max(0, number(answer, "seconds"))) : new Classified(ErrorKind.Transient, 0);
+    }
+
+    /** The problem a refused {@code method} raises: create_limit, chat_gone, or request_refused. */
+    public static Problem refusalProblem(String method, String type) {
+        JSONObject answer = call("refusalProblem", json("method", method != null ? method : "", "type", type != null ? type : ""));
+        Problem parsed = answer.optBoolean("ok") ? Problem.parse(answer.optString("problem")) : null;
+        return parsed != null && parsed != Problem.None ? parsed : Problem.RequestRefused;
     }
 
     /** Records that {@code method} must not be sent before {@code retryAt}; a recorded deadline only grows. */

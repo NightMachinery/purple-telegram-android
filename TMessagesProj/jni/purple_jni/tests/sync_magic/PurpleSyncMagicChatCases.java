@@ -5,15 +5,19 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
 
 /**
  * Host cases for PurpleSyncMagicChat, the lookup service, against a fake
- * Telegram (scripted replies per method), fake local lists and a fake clock,
- * with the real core policy over JNI. Each case asserts the exact requests
- * sent, so a lookup that searches, asks twice or creates behind a wait fails.
+ * Telegram (scripted replies per method, any other method refused), fake
+ * local lists that load page by page, and a fake clock, with the real core
+ * policy over JNI. Each case asserts the exact requests sent, so a lookup
+ * that searches, asks twice or creates behind a wait or before its lists are
+ * complete fails.
  */
 public final class PurpleSyncMagicChatCases {
     private static int checks;
@@ -43,6 +47,25 @@ public final class PurpleSyncMagicChatCases {
         /** Chats in the fake local database, which a cold start has not loaded into memory yet. */
         final Map<Long, PurpleSyncMagicCore.Candidate> database = new HashMap<>();
         int storedReads;
+        /** The main list and the archive are fully loaded; the default, so a case opts into loading lists. */
+        boolean main = true, archive = true;
+        /** The pages upstream's loader still holds, each with the magic chats it brings; the last one completes the lists. */
+        final ArrayDeque<List<PurpleSyncMagicCore.Candidate>> pages = new ArrayDeque<>();
+        /** Pages keep landing but the lists never complete, as on an account with very many chats. */
+        boolean endless;
+        /** A page asked for never lands. */
+        boolean stalled;
+        int pagesAsked, inFlight;
+        /** The only methods the lookup may send; anything else is answered 400 INPUT_METHOD_INVALID and fails the case. */
+        static final Set<String> ALLOWED = new HashSet<>(Arrays.asList(PurpleSyncMagicCore.CREATE, PurpleSyncMagicCore.FULL_INFO,
+            PurpleSyncMagicCore.EDIT_FOLDERS, PurpleSyncMagicCore.NOTIFY));
+        final List<String> refused = new ArrayList<>();
+
+        /** Lists that load in {@code count} more pages, the magic chats of page i in {@code chats[i]} when given. */
+        @SafeVarargs final void loading(int count, List<PurpleSyncMagicCore.Candidate>... chats) {
+            main = false; archive = false;
+            for (int i = 0; i < count; ++i) pages.addLast(i < chats.length ? chats[i] : Collections.emptyList());
+        }
 
         void reply(String method, PurpleSyncMagicChat.Reply<?> value) { replies.computeIfAbsent(method, k -> new ArrayDeque<>()).add(value); }
         void drain() { for (int i = 0; i < 10000 && !tasks.isEmpty(); ++i) tasks.removeFirst().run(); check(tasks.isEmpty(), "the loop settles"); }
@@ -70,17 +93,35 @@ public final class PurpleSyncMagicChatCases {
                 state = PurpleSyncMagicCore.BoundState.Present; value = local(known.get(chat.id));
             }
             if (chat != null && chat.kind == PurpleSyncChatCore.PeerKind.Self) state = PurpleSyncMagicCore.BoundState.Present;
-            done.accept(new PurpleSyncMagicChat.Local(new ArrayList<>(visible), state, value, true, true));
+            done.accept(new PurpleSyncMagicChat.Local(new ArrayList<>(visible), state, value, main, archive));
+        }
+        /** Upstream's loader: one page at a time, landing a second later through the task queue. */
+        public void more(Runnable changed) {
+            check(inFlight == 0, "one page in flight at a time");
+            ++pagesAsked; ++inFlight;
+            if (stalled) return;
+            tasks.addLast(() -> {
+                --inFlight; now += 1;
+                if (!endless) {
+                    List<PurpleSyncMagicCore.Candidate> page = pages.isEmpty() ? Collections.emptyList() : pages.removeFirst();
+                    visible.addAll(page);
+                    if (pages.isEmpty()) { main = true; archive = true; }
+                }
+                changed.run();
+            });
         }
         @SuppressWarnings("unchecked")
         private <T> void answer(String method, Consumer<PurpleSyncMagicChat.Reply<T>> done) {
             sent.add(method);
+            if (!ALLOWED.contains(method)) {
+                refused.add(method);
+                done.accept(PurpleSyncMagicChat.Reply.failed("INPUT_METHOD_INVALID", 400));
+                check(false, "the lookup sent a method outside the allowlist: " + method);
+            }
             ArrayDeque<PurpleSyncMagicChat.Reply<?>> queue = replies.get(method);
             check(queue != null && !queue.isEmpty(), "a scripted reply for " + method);
             PurpleSyncMagicChat.Reply<?> reply = queue.removeFirst();
             if (reply.value instanceof PurpleSyncMagicCore.Candidate) remember((PurpleSyncMagicCore.Candidate) reply.value);
-            if (reply.value instanceof List) for (Object item : (List<?>) reply.value) remember((PurpleSyncMagicCore.Candidate) item);
-            if (reply.value instanceof PurpleSyncMagicChat.Chats) for (PurpleSyncMagicCore.Candidate item : ((PurpleSyncMagicChat.Chats) reply.value).candidates) remember(item);
             done.accept((PurpleSyncMagicChat.Reply<T>) reply);
         }
         private void remember(PurpleSyncMagicCore.Candidate chat) { known.put(chat.channelId, chat); }
@@ -94,19 +135,6 @@ public final class PurpleSyncMagicChatCases {
             if (row != null) known.put(id, row);
             done.accept(new PurpleSyncMagicChat.Local(new ArrayList<>(), row != null ? PurpleSyncMagicCore.BoundState.Present : PurpleSyncMagicCore.BoundState.Unknown,
                 row != null ? local(row) : null, true, true));
-        }
-        /** The except_ids of every getAllChats sent. */
-        final List<List<Long>> excepts = new ArrayList<>();
-        @SuppressWarnings("unchecked")
-        public void allChats(List<Long> except, Consumer<PurpleSyncMagicChat.Reply<PurpleSyncMagicChat.Chats>> done) {
-            excepts.add(new ArrayList<>(except));
-            this.<Object>answer(PurpleSyncMagicCore.ALL_CHATS, reply -> {
-                if (!(reply.value instanceof List)) { done.accept((PurpleSyncMagicChat.Reply<PurpleSyncMagicChat.Chats>) (PurpleSyncMagicChat.Reply<?>) reply); return; }
-                List<PurpleSyncMagicCore.Candidate> list = (List<PurpleSyncMagicCore.Candidate>) reply.value;
-                List<Long> ids = new ArrayList<>();
-                for (PurpleSyncMagicCore.Candidate chat : list) ids.add(chat.channelId);
-                done.accept(PurpleSyncMagicChat.Reply.ok(new PurpleSyncMagicChat.Chats(list, ids, -1)));
-            });
         }
         public void fullInfo(long id, Consumer<PurpleSyncMagicChat.Reply<PurpleSyncMagicCore.Candidate>> done) { answer(PurpleSyncMagicCore.FULL_INFO, done); }
         public void create(Consumer<PurpleSyncMagicChat.Reply<PurpleSyncMagicCore.Candidate>> done) { answer(PurpleSyncMagicCore.CREATE, done); }
@@ -147,29 +175,26 @@ public final class PurpleSyncMagicChatCases {
     }
 
     static <T> PurpleSyncMagicChat.Reply<T> ok(T value) { return PurpleSyncMagicChat.Reply.ok(value); }
-    /** A messages.chatsSlice page: {@code ids} are the chats it names, {@code magic} the magic chats among them. */
-    static PurpleSyncMagicChat.Reply<PurpleSyncMagicChat.Chats> slice(int count, List<PurpleSyncMagicCore.Candidate> magic, Long... ids) {
-        List<Long> all = new ArrayList<>(Arrays.asList(ids));
-        for (PurpleSyncMagicCore.Candidate chat : magic) all.add(chat.channelId);
-        return PurpleSyncMagicChat.Reply.ok(new PurpleSyncMagicChat.Chats(magic, all, count));
+    static String source(String path) {
+        try { return new String(java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(path)), java.nio.charset.StandardCharsets.UTF_8); }
+        catch (java.io.IOException error) { throw new AssertionError("readable: " + path); }
     }
     static <T> PurpleSyncMagicChat.Reply<T> error(String text, int code) { return PurpleSyncMagicChat.Reply.failed(text, code); }
 
     public static void main(String[] args) {
         PurpleCore.ensureLoaded();
 
-        // Fresh device, no magic chat anywhere: one getAllChats, then create, archive, mute and verify.
+        // Fresh device, complete lists without a magic chat: create, archive, mute and verify.
         Fake fake = new Fake();
         PurpleSyncMagicChat service = new PurpleSyncMagicChat(fake);
-        fake.reply(PurpleSyncMagicCore.ALL_CHATS, ok(Collections.emptyList()));
         fake.reply(PurpleSyncMagicCore.CREATE, ok(chat(5000, null, null)));
         fake.reply(PurpleSyncMagicCore.EDIT_FOLDERS, ok(true));
         fake.reply(PurpleSyncMagicCore.NOTIFY, ok(true));
         fake.reply(PurpleSyncMagicCore.FULL_INFO, ok(chat(5000, 0L, 0L)));
         PurpleSyncMagicChat.Result result = run(fake, service, PurpleSyncMagicChat.Trigger.startup, false);
         check(result.kind == PurpleSyncMagicChat.Result.Kind.Use && channel(5000).equals(result.chat), "the created chat is used");
-        check(fake.sent.equals(Arrays.asList(PurpleSyncMagicCore.ALL_CHATS, PurpleSyncMagicCore.CREATE, PurpleSyncMagicCore.EDIT_FOLDERS,
-            PurpleSyncMagicCore.NOTIFY, PurpleSyncMagicCore.FULL_INFO)), "absence proof, create, archive, mute, verify: " + fake.sent);
+        check(fake.sent.equals(Arrays.asList(PurpleSyncMagicCore.CREATE, PurpleSyncMagicCore.EDIT_FOLDERS,
+            PurpleSyncMagicCore.NOTIFY, PurpleSyncMagicCore.FULL_INFO)) && fake.pagesAsked == 0, "create, archive, mute, verify: " + fake.sent);
         PurpleSyncMagicCore.Binding binding = PurpleSyncMagicCore.parse(fake.binding);
         check(binding != null && binding.mode == PurpleSyncMagicCore.Mode.Magic && channel(5000).equals(binding.chat), "the binding names the new chat");
         check(fake.logged("lookup_start trigger=startup") && fake.logged("lookup_result result=created"), "diagnostics name the trigger and the creation");
@@ -236,23 +261,29 @@ public final class PurpleSyncMagicChatCases {
         check(result.kind == PurpleSyncMagicChat.Result.Kind.Problem && result.problem == PurpleSyncMagicCore.Problem.MagicIneligible && fake.sent.isEmpty(),
             "an ineligible magic chat is never replaced behind the user's back");
 
-        // A long flood on getAllChats is kept across a restart, for every trigger.
+        // A long flood on createChannel is kept across a restart, for every trigger, and is Telegram's wait.
         fake = new Fake(); service = new PurpleSyncMagicChat(fake);
-        fake.reply(PurpleSyncMagicCore.ALL_CHATS, error("FLOOD_WAIT_43200", 420));
+        fake.reply(PurpleSyncMagicCore.CREATE, error("FLOOD_WAIT_43200", 420));
         result = run(fake, service, PurpleSyncMagicChat.Trigger.startup, false);
-        check(result.kind == PurpleSyncMagicChat.Result.Kind.Wait && result.retryAt == START + 43201, "a flood is a wait until its end");
-        check(fake.logged("request method=messages.getallchats outcome=flood seconds=43200"), "the flood is logged with its seconds");
+        check(result.kind == PurpleSyncMagicChat.Result.Kind.Wait && result.retryAt == START + 43201 && result.telegram, "a flood is Telegram's wait until its end");
+        check(fake.logged("request method=channels.createchannel outcome=flood seconds=43200"), "the flood is logged with its seconds");
+        PurpleSyncMagicScreen.Frame waitFrame = PurpleSyncMagicScreen.frame(result, service.binding());
+        check(waitFrame.line == PurpleSyncMagicScreen.Line.Waiting && waitFrame.telegram && waitFrame.retryAt == START + 43201,
+            "the screen words it as Telegram's wait");
         String kept = fake.binding;
         for (PurpleSyncMagicChat.Trigger trigger : PurpleSyncMagicChat.Trigger.values()) {
             Fake restarted = new Fake(); restarted.binding = kept; restarted.now = START + 60;
             result = run(restarted, new PurpleSyncMagicChat(restarted), trigger, trigger == PurpleSyncMagicChat.Trigger.post);
-            check(result.kind == PurpleSyncMagicChat.Result.Kind.Wait && restarted.sent.isEmpty(), "after a restart, " + trigger + " sends nothing during the wait");
+            check(result.kind == PurpleSyncMagicChat.Result.Kind.Wait && result.telegram && restarted.sent.isEmpty(),
+                "after a restart, " + trigger + " sends nothing during the wait");
         }
         Fake later = new Fake(); later.binding = kept; later.now = START + 43201;
-        later.reply(PurpleSyncMagicCore.ALL_CHATS, ok(Collections.singletonList(chat(8000, null, null))));
+        later.reply(PurpleSyncMagicCore.CREATE, ok(chat(8000, null, null)));
+        later.reply(PurpleSyncMagicCore.EDIT_FOLDERS, ok(true));
+        later.reply(PurpleSyncMagicCore.NOTIFY, ok(true));
         later.reply(PurpleSyncMagicCore.FULL_INFO, ok(chat(8000, 0L, 0L)));
         result = run(later, new PurpleSyncMagicChat(later), PurpleSyncMagicChat.Trigger.auto, false);
-        check(result.kind == PurpleSyncMagicChat.Result.Kind.Use && channel(8000).equals(result.chat), "after the wait the listed chat is bound");
+        check(result.kind == PurpleSyncMagicChat.Result.Kind.Use && channel(8000).equals(result.chat), "after the wait the chat is created and bound");
         // The wait also wakes the lookup up by itself.
         check(!fake.delayed.isEmpty(), "a wake-up is scheduled for the end of the wait");
 
@@ -261,19 +292,19 @@ public final class PurpleSyncMagicChatCases {
         fake.visible = new ArrayList<>(Collections.singletonList(chat(6000, null, null)));
         fake.reply(PurpleSyncMagicCore.FULL_INFO, error("FLOOD_WAIT_3600", 420));
         result = run(fake, service, PurpleSyncMagicChat.Trigger.screen, false);
-        check(result.kind == PurpleSyncMagicChat.Result.Kind.Wait && result.retryAt == START + 3601, "a full-info flood is a wait");
+        check(result.kind == PurpleSyncMagicChat.Result.Kind.Wait && result.retryAt == START + 3601 && result.telegram, "a full-info flood is a wait");
         Fake again = new Fake(); again.binding = fake.binding; again.now = START + 60;
         again.visible = new ArrayList<>(Collections.singletonList(chat(6000, null, null)));
         result = run(again, new PurpleSyncMagicChat(again), PurpleSyncMagicChat.Trigger.manual, true);
-        check(result.kind == PurpleSyncMagicChat.Result.Kind.Wait && again.sent.isEmpty() && again.logged("wait_honored method=channels.getfullchannel"),
+        check(result.kind == PurpleSyncMagicChat.Result.Kind.Wait && result.telegram && again.sent.isEmpty() && again.logged("wait_honored method=channels.getfullchannel"),
             "the restarted lookup honours it without a request");
 
         // The wake-up after a manual check that ended in a wait is a retry, not another user check.
         fake = new Fake(); service = new PurpleSyncMagicChat(fake);
-        fake.reply(PurpleSyncMagicCore.ALL_CHATS, error("FLOOD_WAIT_600", 420));
+        fake.reply(PurpleSyncMagicCore.CREATE, error("FLOOD_WAIT_600", 420));
         result = run(fake, service, PurpleSyncMagicChat.Trigger.manual, true);
         check(result.kind == PurpleSyncMagicChat.Result.Kind.Wait, "the manual check waits");
-        fake.reply(PurpleSyncMagicCore.ALL_CHATS, ok(Collections.singletonList(chat(8100, null, null))));
+        fake.visible = new ArrayList<>(Collections.singletonList(chat(8100, null, null)));
         fake.reply(PurpleSyncMagicCore.FULL_INFO, ok(chat(8100, 0L, 0L)));
         check(fake.tick() && service.last().kind == PurpleSyncMagicChat.Result.Kind.Use, "the wake-up finds the chat");
         check(fake.logged("lookup_start trigger=retry") && fake.diag.stream().filter(line -> line.contains("trigger=manual")).count() == 1,
@@ -292,14 +323,13 @@ public final class PurpleSyncMagicChatCases {
 
         // A lost create reply blocks another creation for a day; an error reply does not.
         fake = new Fake(); service = new PurpleSyncMagicChat(fake);
-        fake.reply(PurpleSyncMagicCore.ALL_CHATS, ok(Collections.emptyList()));
         fake.reply(PurpleSyncMagicCore.CREATE, PurpleSyncMagicChat.Reply.timedOut());
         result = run(fake, service, PurpleSyncMagicChat.Trigger.startup, false);
-        check(result.kind == PurpleSyncMagicChat.Result.Kind.Wait && result.retryAt == START + 24 * 60 * 60, "an uncertain creation waits a day");
+        check(result.kind == PurpleSyncMagicChat.Result.Kind.Wait && result.retryAt == START + 24 * 60 * 60 && !result.telegram,
+            "an uncertain creation waits a day, as Purple's own wait");
         fake.now += 3600; fake.sent.clear();
-        fake.reply(PurpleSyncMagicCore.ALL_CHATS, ok(Collections.emptyList()));
         result = run(fake, service, PurpleSyncMagicChat.Trigger.screen, false);
-        check(result.kind == PurpleSyncMagicChat.Result.Kind.Wait && !fake.sent.contains(PurpleSyncMagicCore.CREATE), "no second creation within the day");
+        check(result.kind == PurpleSyncMagicChat.Result.Kind.Wait && !result.telegram && fake.sent.isEmpty(), "no second creation within the day");
         fake.now += 3600; fake.sent.clear();
         fake.visible = new ArrayList<>(Collections.singletonList(chat(9000, null, null)));
         fake.reply(PurpleSyncMagicCore.FULL_INFO, ok(chat(9000, 0L, 0L)));
@@ -307,59 +337,104 @@ public final class PurpleSyncMagicChatCases {
         check(result.kind == PurpleSyncMagicChat.Result.Kind.Use && channel(9000).equals(result.chat), "the chat arriving through updates is bound");
 
         fake = new Fake(); service = new PurpleSyncMagicChat(fake);
-        fake.reply(PurpleSyncMagicCore.ALL_CHATS, ok(Collections.emptyList()));
         fake.reply(PurpleSyncMagicCore.CREATE, error("FLOOD_WAIT_600", 420));
         result = run(fake, service, PurpleSyncMagicChat.Trigger.startup, false);
         check(result.kind == PurpleSyncMagicChat.Result.Kind.Wait && result.retryAt == START + 601, "a flood on create waits only for the flood");
         fake.now += 601; fake.sent.clear();
-        fake.reply(PurpleSyncMagicCore.ALL_CHATS, ok(Collections.emptyList()));
         fake.reply(PurpleSyncMagicCore.CREATE, error("CHANNELS_TOO_MUCH", 400));
         result = run(fake, service, PurpleSyncMagicChat.Trigger.screen, false);
         check(fake.sent.contains(PurpleSyncMagicCore.CREATE), "after a flood ends, creation is tried again");
         check(result.kind == PurpleSyncMagicChat.Result.Kind.Problem && result.problem == PurpleSyncMagicCore.Problem.CreateLimit && result.show, "the channel limit is a problem");
 
-        // A sliced getAllChats reply is paged with except_ids; only the complete list may lead to Create.
+        // Incomplete lists prove nothing absent: the lookup asks upstream for pages and never creates meanwhile.
         fake = new Fake(); service = new PurpleSyncMagicChat(fake);
-        fake.reply(PurpleSyncMagicCore.ALL_CHATS, slice(3, Collections.emptyList(), 11L, 12L));
-        fake.reply(PurpleSyncMagicCore.ALL_CHATS, slice(3, Collections.emptyList(), 13L));
+        fake.loading(1); fake.stalled = true;
+        PurpleSyncMagicChat.Result[] listResult = { null };
+        service.lookup(PurpleSyncMagicChat.Trigger.startup, false, value -> listResult[0] = value);
+        fake.drain();
+        check(listResult[0] == null && fake.pagesAsked == 1 && fake.sent.isEmpty(), "one page is asked of upstream, and nothing is sent");
+        check(fake.tick() && listResult[0] != null && listResult[0].kind == PurpleSyncMagicChat.Result.Kind.Wait && !listResult[0].telegram
+            && listResult[0].loading && listResult[0].retryAt == START + PurpleSyncMagicChat.LISTS_CAP + PurpleSyncMagicChat.LISTS_RETRY,
+            "a page that never lands ends in a wait of Purple's own at the cap: " + (listResult[0] != null ? listResult[0].retryAt : -1));
+        check(fake.sent.isEmpty() && fake.pagesAsked == 1 && fake.logged("result=absent_waiting reason=lists_loading")
+            && PurpleSyncMagicCore.waitUntil(fake.binding, PurpleSyncMagicCore.CREATE, fake.now) == 0, "nothing was sent or kept, and the wait is logged");
+        PurpleSyncMagicScreen.Frame listFrame = PurpleSyncMagicScreen.frame(listResult[0], service.binding());
+        check(listFrame.line == PurpleSyncMagicScreen.Line.Looking, "the screen keeps looking, never 'Telegram asked'");
+        check(fake.delayed.size() == 1, "a retry is scheduled: " + fake.delayed.size());
+        fake.stalled = false; fake.inFlight = 0;
+        fake.reply(PurpleSyncMagicCore.CREATE, PurpleSyncMagicChat.Reply.timedOut());
+        check(fake.tick() && fake.sent.equals(Collections.singletonList(PurpleSyncMagicCore.CREATE)), "the retry pages on and creates once complete: " + fake.sent);
+        // Pages that land but never complete the lists: the cap holds, still without a request.
+        fake = new Fake(); service = new PurpleSyncMagicChat(fake);
+        fake.loading(1); fake.endless = true;
+        result = run(fake, service, PurpleSyncMagicChat.Trigger.startup, false);
+        check(result.kind == PurpleSyncMagicChat.Result.Kind.Wait && !result.telegram && fake.sent.isEmpty()
+            && fake.pagesAsked == PurpleSyncMagicChat.LISTS_CAP, "endless pages stop at the cap, one per landing: " + fake.pagesAsked);
+        // Complete after two pages without a magic chat: then createChannel.
+        fake = new Fake(); service = new PurpleSyncMagicChat(fake);
+        fake.loading(2);
         fake.reply(PurpleSyncMagicCore.CREATE, PurpleSyncMagicChat.Reply.timedOut());
         result = run(fake, service, PurpleSyncMagicChat.Trigger.startup, false);
-        check(fake.sent.equals(Arrays.asList(PurpleSyncMagicCore.ALL_CHATS, PurpleSyncMagicCore.ALL_CHATS, PurpleSyncMagicCore.CREATE)),
-            "two pages, then create: " + fake.sent);
-        check(fake.excepts.equals(Arrays.asList(Collections.emptyList(), Arrays.asList(11L, 12L))), "the second page excludes the first: " + fake.excepts);
-        // A list still partial after the page limit proves nothing: no create, a recorded wait.
+        check(fake.pagesAsked == 2 && fake.sent.equals(Collections.singletonList(PurpleSyncMagicCore.CREATE)), "two pages, then create: " + fake.sent);
+        // A magic chat on a page (in the archive, say) is bound without creating.
         fake = new Fake(); service = new PurpleSyncMagicChat(fake);
-        for (int i = 0; i < PurpleSyncMagicChat.ALL_CHATS_PAGES; ++i) fake.reply(PurpleSyncMagicCore.ALL_CHATS, slice(1000, Collections.emptyList(), 100L + i));
-        result = run(fake, service, PurpleSyncMagicChat.Trigger.startup, false);
-        check(result.kind == PurpleSyncMagicChat.Result.Kind.Wait && result.retryAt == START + PurpleSyncMagicChat.PARTIAL_WAIT
-            && fake.sent.size() == PurpleSyncMagicChat.ALL_CHATS_PAGES && !fake.sent.contains(PurpleSyncMagicCore.CREATE), "a partial list waits: " + fake.sent);
-        check(fake.logged("result=absent_waiting reason=list_partial")
-            && PurpleSyncMagicCore.waitUntil(fake.binding, PurpleSyncMagicCore.ALL_CHATS, START) == START + PurpleSyncMagicChat.PARTIAL_WAIT,
-            "it is logged and the wait is kept across restarts");
-        // A magic chat in a partial list is still found.
-        fake = new Fake(); service = new PurpleSyncMagicChat(fake);
-        for (int i = 0; i < PurpleSyncMagicChat.ALL_CHATS_PAGES; ++i)
-            fake.reply(PurpleSyncMagicCore.ALL_CHATS, slice(1000, i == 2 ? Collections.singletonList(chat(6100, null, null)) : Collections.emptyList(), 100L + i));
+        fake.loading(3, Collections.emptyList(), Collections.singletonList(chat(6100, null, null)));
         fake.reply(PurpleSyncMagicCore.FULL_INFO, ok(chat(6100, 0L, 0L)));
         result = run(fake, service, PurpleSyncMagicChat.Trigger.startup, false);
-        check(result.kind == PurpleSyncMagicChat.Result.Kind.Use && channel(6100).equals(result.chat) && !fake.sent.contains(PurpleSyncMagicCore.CREATE),
-            "a magic chat on a page is bound without creating");
-        // A bound chat missing from a partial list is not called gone.
+        check(result.kind == PurpleSyncMagicChat.Result.Kind.Use && channel(6100).equals(result.chat) && fake.pagesAsked == 2
+            && fake.sent.equals(Collections.singletonList(PurpleSyncMagicCore.FULL_INFO)), "a magic chat on a page is bound without creating: " + fake.sent);
+        // Work Mode, folders and the list hiding filter views, never the dialogs the lookup reads (static: the port reads
+        // MessagesController, which the host cannot run).
+        String port = source("TMessagesProj/src/main/java/org/telegram/messenger/purple/PurpleSyncMagicTelegram.java");
+        String local = port.substring(port.indexOf("public void local("), port.indexOf("public void stored("));
+        check(local.contains("controller.dialogs_dict") && !local.contains("dialogsByFolder") && !local.contains("getDialogs(")
+            && !local.contains("hiddenFromLists") && !local.contains("hiddenEverywhere") && !local.contains("PurpleFolders")
+            && !local.contains("dialogFilters") && !local.contains("selectedDialogFilter"), "the lists are read unfiltered");
+        check(local.contains("isServerDialogsEndReached(0)") && local.contains("isServerDialogsEndReached(1)"), "complete means both lists reached the server's end");
+        String more = port.substring(port.indexOf("public void more("), port.indexOf("public void fullInfo("));
+        check(more.contains("controller.loadDialogs(") && !more.contains("sendRequest") && !more.contains("new TLRPC"),
+            "pages come from upstream's loader, never a request of Purple's own");
+        // The port builds only the allowed requests, and the lookup names no list-wide server read.
+        java.util.regex.Matcher built = java.util.regex.Pattern.compile("new (TLRPC\\.TL_[a-z]+_[A-Za-z]+|TL_account\\.[A-Za-z]+)\\(").matcher(port);
+        Set<String> requests = new HashSet<>();
+        while (built.find()) requests.add(built.group(1));
+        check(requests.equals(new HashSet<>(Arrays.asList("TLRPC.TL_channels_getFullChannel", "TLRPC.TL_channels_createChannel",
+            "TLRPC.TL_folders_editPeerFolders", "TL_account.updateNotifySettings"))), "only the four allowed requests are built: " + requests);
+        String driver = source("TMessagesProj/src/main/java/org/telegram/messenger/purple/PurpleSyncMagicChat.java");
+        String removed = "getAll" + "Chats";
+        check(!port.contains(removed) && !driver.contains(removed) && !port.contains("ALL_CHATS") && !driver.contains("ALL_CHATS"),
+            "the method outside the pinned layer is gone");
+
+        // A bound chat missing from memory and the database waits for the lists, and is gone once they are complete.
         fake = new Fake(); service = new PurpleSyncMagicChat(fake);
         fake.binding = PurpleSyncMagicCore.verify("", chat(4000, 0L, 0L), START).binding;
-        for (int i = 0; i < PurpleSyncMagicChat.ALL_CHATS_PAGES; ++i)
-            fake.reply(PurpleSyncMagicCore.ALL_CHATS, slice(1000, i == 0 ? Collections.singletonList(chat(6100, null, null)) : Collections.emptyList(), 100L + i));
+        fake.loading(2); fake.stalled = true;
+        listResult[0] = null;
+        service.lookup(PurpleSyncMagicChat.Trigger.startup, false, value -> listResult[0] = value);
+        fake.drain();
+        check(fake.tick() && listResult[0].kind == PurpleSyncMagicChat.Result.Kind.Wait && fake.storedReads == 1
+            && PurpleSyncMagicCore.parse(fake.binding).problem == PurpleSyncMagicCore.Problem.None, "incomplete lists: the bound chat waits instead of being gone");
+        fake = new Fake(); service = new PurpleSyncMagicChat(fake);
+        fake.binding = PurpleSyncMagicCore.verify("", chat(4000, 0L, 0L), START).binding;
+        fake.loading(2);
         result = run(fake, service, PurpleSyncMagicChat.Trigger.startup, false);
-        check(result.kind == PurpleSyncMagicChat.Result.Kind.Wait && PurpleSyncMagicCore.parse(fake.binding).problem == PurpleSyncMagicCore.Problem.None,
-            "the bound chat waits instead of being gone: " + result.kind);
+        check(result.kind == PurpleSyncMagicChat.Result.Kind.Problem && result.problem == PurpleSyncMagicCore.Problem.ChatGone && result.show
+            && fake.sent.isEmpty() && fake.pagesAsked == 2, "complete lists without it: gone, shown, without a request");
+        fake = new Fake(); service = new PurpleSyncMagicChat(fake);
+        fake.binding = PurpleSyncMagicCore.verify("", chat(4000, 0L, 0L), START).binding;
+        fake.loading(3, Collections.emptyList(), Collections.singletonList(chat(4000, null, null)));
+        result = run(fake, service, PurpleSyncMagicChat.Trigger.startup, false);
+        check(result.kind == PurpleSyncMagicChat.Result.Kind.Use && channel(4000).equals(result.chat) && fake.sent.isEmpty() && fake.pagesAsked == 2,
+            "a bound chat on a later page is used");
 
         // A cold start: the bound chat is only in the local database. It is read from there, with no request.
         fake = new Fake(); service = new PurpleSyncMagicChat(fake);
         fake.binding = PurpleSyncMagicCore.verify("", chat(4000, 0L, 0L), START).binding;
         fake.database.put(4000L, chat(4000, null, null));
+        fake.loading(5);
         result = run(fake, service, PurpleSyncMagicChat.Trigger.startup, false);
-        check(result.kind == PurpleSyncMagicChat.Result.Kind.Use && channel(4000).equals(result.chat) && fake.sent.isEmpty() && fake.storedReads == 1,
-            "a stored bound chat costs no getAllChats: " + fake.sent);
+        check(result.kind == PurpleSyncMagicChat.Result.Kind.Use && channel(4000).equals(result.chat) && fake.sent.isEmpty() && fake.storedReads == 1
+            && fake.pagesAsked == 0, "a stored bound chat costs no request and no page: " + fake.sent);
         result = run(fake, service, PurpleSyncMagicChat.Trigger.auto, false);
         check(result.kind == PurpleSyncMagicChat.Result.Kind.Use && fake.sent.isEmpty() && fake.storedReads == 1, "once loaded, memory answers");
         fake = new Fake(); service = new PurpleSyncMagicChat(fake);
@@ -370,44 +445,84 @@ public final class PurpleSyncMagicChatCases {
         check(result.kind == PurpleSyncMagicChat.Result.Kind.Problem && result.problem == PurpleSyncMagicCore.Problem.ChatLeft && fake.sent.isEmpty(),
             "a stored chat the user left is a problem, also without a request");
 
-        // A refused create that is not a flood waits ten minutes, kept across restarts, then twice as long.
-        fake = new Fake(); service = new PurpleSyncMagicChat(fake);
-        fake.reply(PurpleSyncMagicCore.ALL_CHATS, ok(Collections.emptyList()));
-        fake.reply(PurpleSyncMagicCore.CREATE, error("PEER_FLOOD", 400));
-        result = run(fake, service, PurpleSyncMagicChat.Trigger.startup, false);
-        check(result.kind == PurpleSyncMagicChat.Result.Kind.Wait && result.retryAt == START + PurpleSyncMagicChat.ERROR_WAIT,
-            "PEER_FLOOD is a wait: " + result.kind + " " + result.retryAt);
-        fake.sent.clear(); fake.now += 60;
-        Fake restarted = new Fake(); restarted.binding = fake.binding; restarted.now = fake.now;
-        restarted.reply(PurpleSyncMagicCore.ALL_CHATS, ok(Collections.emptyList()));
-        result = run(restarted, new PurpleSyncMagicChat(restarted), PurpleSyncMagicChat.Trigger.screen, false);
-        check(result.kind == PurpleSyncMagicChat.Result.Kind.Wait && !restarted.sent.contains(PurpleSyncMagicCore.CREATE),
-            "no create during the wait, after a restart too: " + restarted.sent);
-        fake.now = START + PurpleSyncMagicChat.ERROR_WAIT;
-        fake.reply(PurpleSyncMagicCore.ALL_CHATS, ok(Collections.emptyList()));
-        fake.reply(PurpleSyncMagicCore.CREATE, error("CHAT_INVALID", 400));
-        result = run(fake, service, PurpleSyncMagicChat.Trigger.screen, false);
-        check(fake.sent.contains(PurpleSyncMagicCore.CREATE) && result.kind == PurpleSyncMagicChat.Result.Kind.Wait
-            && result.retryAt == fake.now + 2 * PurpleSyncMagicChat.ERROR_WAIT, "the next refusal waits twice as long");
-        fake = new Fake(); service = new PurpleSyncMagicChat(fake);
-        fake.reply(PurpleSyncMagicCore.ALL_CHATS, error("CHAT_INVALID", 400));
-        result = run(fake, service, PurpleSyncMagicChat.Trigger.startup, false);
-        check(result.kind == PurpleSyncMagicChat.Result.Kind.Wait
-            && PurpleSyncMagicCore.waitUntil(fake.binding, PurpleSyncMagicCore.ALL_CHATS, START) == START + PurpleSyncMagicChat.ERROR_WAIT,
-            "a refused getAllChats waits the same way");
+        // A refused createChannel (400) raises request_refused once, shown; later lookups send nothing until the user checks.
+        for (String refusal : new String[] { "INPUT_METHOD_INVALID", "PEER_FLOOD" }) {
+            fake = new Fake(); service = new PurpleSyncMagicChat(fake);
+            fake.reply(PurpleSyncMagicCore.CREATE, error(refusal, 400));
+            result = run(fake, service, PurpleSyncMagicChat.Trigger.startup, false);
+            check(result.kind == PurpleSyncMagicChat.Result.Kind.Problem && result.problem == PurpleSyncMagicCore.Problem.RequestRefused && result.show,
+                refusal + " is request_refused, to show: " + result.kind);
+            check(PurpleSyncMagicCore.parse(fake.binding).problem == PurpleSyncMagicCore.Problem.RequestRefused
+                && PurpleSyncMagicCore.waitUntil(fake.binding, PurpleSyncMagicCore.CREATE, START) == 0
+                && fake.logged("result=ineligible reason=request_refused"), "it is recorded as a problem, not a wait, and logged");
+            service.shown(); fake.drain(); fake.sent.clear();
+            Fake restarted = new Fake(); restarted.binding = fake.binding; restarted.now = START + 7 * 24 * 60 * 60;
+            for (PurpleSyncMagicChat.Trigger trigger : PurpleSyncMagicChat.Trigger.values()) {
+                if (trigger == PurpleSyncMagicChat.Trigger.manual) continue;
+                result = run(restarted, new PurpleSyncMagicChat(restarted), trigger, trigger == PurpleSyncMagicChat.Trigger.post);
+                check(result.kind == PurpleSyncMagicChat.Result.Kind.Problem && !result.show, trigger + " keeps it, shown once");
+            }
+            check(restarted.sent.isEmpty(), "a second lookup sends nothing, after a restart too: " + restarted.sent);
+            restarted.reply(PurpleSyncMagicCore.CREATE, PurpleSyncMagicChat.Reply.timedOut());
+            run(restarted, new PurpleSyncMagicChat(restarted), PurpleSyncMagicChat.Trigger.manual, true);
+            check(restarted.sent.equals(Collections.singletonList(PurpleSyncMagicCore.CREATE)), "a manual check tries again");
+        }
 
-        // A bound chat missing from memory: one getAllChats settles present or gone.
+        // A refused getFullChannel of the bound chat raises its problem; CHANNEL_PRIVATE means the chat is gone.
+        String[][] fullRefusals = { { "CHAT_ADMIN_REQUIRED", "RequestRefused" }, { "CHANNEL_PRIVATE", "ChatGone" } };
+        for (String[] refusal : fullRefusals) {
+            fake = new Fake(); service = new PurpleSyncMagicChat(fake);
+            fake.binding = PurpleSyncMagicCore.verify("", chat(6000, 0L, 0L), START).binding;
+            fake.boundState = PurpleSyncMagicCore.BoundState.Present; fake.bound = chat(6000, null, null);
+            fake.now += 24 * 60 * 60;
+            fake.reply(PurpleSyncMagicCore.FULL_INFO, error(refusal[0], 400));
+            result = run(fake, service, PurpleSyncMagicChat.Trigger.post, true);
+            check(result.kind == PurpleSyncMagicChat.Result.Kind.Problem && result.problem.name().equals(refusal[1]) && result.show
+                && channel(6000).equals(result.chat) && PurpleSyncMagicCore.parse(fake.binding).problem.name().equals(refusal[1]),
+                refusal[0] + " on the bound chat: " + result.problem);
+        }
+        // On a candidate that is not the bound chat it is only rejected, and sync goes on in the bound chat.
+        fake = new Fake(); service = new PurpleSyncMagicChat(fake);
+        fake.binding = PurpleSyncMagicCore.verify("", chat(6000, 0L, 0L), START).binding;
+        fake.boundState = PurpleSyncMagicCore.BoundState.Present; fake.bound = chat(6000, null, null);
+        fake.visible = new ArrayList<>(Arrays.asList(chat(5000, null, null), chat(6000, null, null)));
+        fake.reply(PurpleSyncMagicCore.FULL_INFO, error("CHANNEL_PRIVATE", 400));
+        result = run(fake, service, PurpleSyncMagicChat.Trigger.auto, false);
+        check(result.kind == PurpleSyncMagicChat.Result.Kind.Use && channel(6000).equals(result.chat)
+            && PurpleSyncMagicCore.parse(fake.binding).problem == PurpleSyncMagicCore.Problem.None && fake.logged("rejected reason=chat_gone"),
+            "a refused older candidate is rejected: " + result.kind);
+        fake.sent.clear();
+        result = run(fake, service, PurpleSyncMagicChat.Trigger.auto, false);
+        check(result.kind == PurpleSyncMagicChat.Result.Kind.Use && fake.sent.isEmpty(), "and not read again");
+
+        // A timeout or network failure backs off in memory only: a wait of Purple's own, never kept in the binding.
+        fake = new Fake(); service = new PurpleSyncMagicChat(fake);
+        fake.visible = new ArrayList<>(Collections.singletonList(chat(6000, null, null)));
+        fake.reply(PurpleSyncMagicCore.FULL_INFO, PurpleSyncMagicChat.Reply.timedOut());
+        result = run(fake, service, PurpleSyncMagicChat.Trigger.screen, false);
+        check(result.kind == PurpleSyncMagicChat.Result.Kind.Wait && !result.telegram && result.retryAt == START + 5, "a timeout waits five seconds: " + result.retryAt);
+        check(fake.binding.isEmpty() || PurpleSyncMagicCore.waitUntil(fake.binding, PurpleSyncMagicCore.FULL_INFO, START) == 0, "and is not kept in the binding");
+        PurpleSyncMagicScreen.Frame ownFrame = PurpleSyncMagicScreen.frame(result, service.binding());
+        check(ownFrame.line == PurpleSyncMagicScreen.Line.Waiting && !ownFrame.telegram, "the screen words it as Purple's own wait");
+        fake.sent.clear();
+        result = run(fake, service, PurpleSyncMagicChat.Trigger.screen, false);
+        check(result.kind == PurpleSyncMagicChat.Result.Kind.Wait && fake.sent.isEmpty(), "the same process holds the request meanwhile");
+        Fake fresh = new Fake(); fresh.binding = fake.binding; fresh.visible = new ArrayList<>(fake.visible);
+        fresh.reply(PurpleSyncMagicCore.FULL_INFO, ok(chat(6000, 0L, 0L)));
+        result = run(fresh, new PurpleSyncMagicChat(fresh), PurpleSyncMagicChat.Trigger.screen, false);
+        check(result.kind == PurpleSyncMagicChat.Result.Kind.Use && fresh.sent.equals(Collections.singletonList(PurpleSyncMagicCore.FULL_INFO)),
+            "a restart does not inherit it");
+        fake.reply(PurpleSyncMagicCore.FULL_INFO, error("INTERNAL", 500));
+        fake.now = START + 5;
+        check(fake.tick() && service.last().kind == PurpleSyncMagicChat.Result.Kind.Wait && service.last().retryAt == fake.now + 10
+            && !service.last().telegram, "a 5xx is transient too, and backs off longer: " + service.last().retryAt);
+        fake.reply(PurpleSyncMagicCore.FULL_INFO, ok(chat(6000, 0L, 0L)));
+        check(fake.tick() && service.last().kind == PurpleSyncMagicChat.Result.Kind.Use, "the wake-up after it binds the chat");
+
+        // A chat known gone costs no request.
         fake = new Fake(); service = new PurpleSyncMagicChat(fake);
         fake.binding = PurpleSyncMagicCore.verify("", chat(4000, 0L, 0L), START).binding;
-        fake.reply(PurpleSyncMagicCore.ALL_CHATS, ok(Collections.singletonList(chat(4000, null, null))));
-        result = run(fake, service, PurpleSyncMagicChat.Trigger.startup, false);
-        check(result.kind == PurpleSyncMagicChat.Result.Kind.Use && channel(4000).equals(result.chat), "a listed bound chat is used");
-        fake.known.clear(); fake.sent.clear();
-        fake.reply(PurpleSyncMagicCore.ALL_CHATS, ok(Collections.emptyList()));
-        result = run(fake, service, PurpleSyncMagicChat.Trigger.startup, false);
-        check(result.kind == PurpleSyncMagicChat.Result.Kind.Problem && result.problem == PurpleSyncMagicCore.Problem.ChatGone
-            && fake.sent.equals(Collections.singletonList(PurpleSyncMagicCore.ALL_CHATS)), "an unlisted bound chat is gone, after one request");
-        fake.boundState = PurpleSyncMagicCore.BoundState.Gone; fake.sent.clear();
+        fake.boundState = PurpleSyncMagicCore.BoundState.Gone;
         result = run(fake, service, PurpleSyncMagicChat.Trigger.startup, false);
         check(result.kind == PurpleSyncMagicChat.Result.Kind.Problem && fake.sent.isEmpty(), "a chat known gone costs no request");
 
