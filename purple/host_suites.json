@@ -943,6 +943,21 @@
       }
     },
     {
+      "name": "recording",
+      "driver": "TMessagesProj/jni/purple_jni/tests/run_recording.py",
+      "args": [
+        "--receipt",
+        "{standalone-receipt}",
+        "--output",
+        "{output}"
+      ],
+      "coverage": "F11 crash capture on the real AGP classes: frame, native frame, build id and signal factories, the Java crash record, tombstone protobuf and ANR trace parsing, the pending file, its merge with exit reasons and the repeat limit; pins the ApplicationLoader.onCreate hook.",
+      "expects": {
+        "crash:CRASH_CAPTURE_CHECKS": 20000,
+        "pins:RECORDING_HOOK_PINS": 1
+      }
+    },
+    {
       "name": "search-refresh",
       "driver": "TMessagesProj/jni/purple_jni/tests/run_search_refresh.py",
       "args": [

@@ -69,10 +69,25 @@ final class PurpleDiagRepeats {
     }
 
     private final LinkedHashMap<String, Window> windows = new LinkedHashMap<>(16, 0.75f, true);
+    private final long window;
+    private final int burst;
+    private final int keys;
+
+    /** The diagnostic log's limit: {@link #BURST} per {@link #WINDOW}, over the {@link #KEYS} most recent bodies. */
+    PurpleDiagRepeats() {
+        this(WINDOW, BURST, KEYS);
+    }
+
+    /** A limit of its own, such as crash capture's few records per start. */
+    PurpleDiagRepeats(long window, int burst, int keys) {
+        this.window = window;
+        this.burst = burst;
+        this.keys = keys;
+    }
 
     /** A clock that went backwards ends the window too, so a wrong clock cannot silence a line. */
-    private static boolean ended(Window window, long now) {
-        return now < window.start || now - window.start >= WINDOW;
+    private boolean ended(Window window, long now) {
+        return now < window.start || now - window.start >= this.window;
     }
 
     private static void summarize(Window window, List<Summary> out) {
@@ -100,7 +115,7 @@ final class PurpleDiagRepeats {
             window.start = now;
             window.written = 1;
             write = true;
-        } else if (window.written < BURST) {
+        } else if (window.written < burst) {
             ++window.written;
             write = true;
         } else {
@@ -108,7 +123,7 @@ final class PurpleDiagRepeats {
             write = false;
         }
         Iterator<Map.Entry<String, Window>> eldest = windows.entrySet().iterator();
-        while (windows.size() > KEYS && eldest.hasNext()) {
+        while (windows.size() > keys && eldest.hasNext()) {
             summarize(eldest.next().getValue(), due);
             eldest.remove();
         }

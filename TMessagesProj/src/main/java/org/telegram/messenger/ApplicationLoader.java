@@ -294,6 +294,7 @@ public class ApplicationLoader extends Application {
         }
 
         super.onCreate();
+        org.telegram.messenger.purple.PurpleCrashCapture.start(this);
 
         // AndroidUtilities must be initialized before FileLog
         final String helloWorld = AndroidUtilities.getHelloWorld();

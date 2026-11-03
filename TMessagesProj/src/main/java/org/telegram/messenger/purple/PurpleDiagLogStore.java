@@ -102,7 +102,29 @@ public final class PurpleDiagLogStore {
             "archive_removal_failed", "archive_metadata_invalid", "archive_storage_failed", "archive_lock_failed", "archive_database_failed", "archive_open_failed",
             "archive", "capture_committed", "capture_unchanged", "capture_stale", "capture_gap",
             "capture_overflow", "capture_preimage_failed", "capture_identity_missing", "capture_write_failed", "capture_timeout", "capture_interrupted",
-            "action", "peek_start", "peek_end", "peek_extend", "delay_edit", "ready_timeout_edit", "preset_change", "mode_change", "source_change", "peek_focus_policy"
+            "action", "peek_start", "peek_end", "peek_extend", "delay_edit", "ready_timeout_edit", "preset_change", "mode_change", "source_change", "peek_focus_policy",
+            // crash capture (PurpleCrashCapture, PurpleCrashRecord): record layout, field names and the codes the factories below emit
+            "crash", "start", "frame", "end", "cause", "library", "exit", "n", "at", "line", "frames", "depth",
+            "class", "main_thread", "status", "importance", "pss_mb", "rss_mb", "signal", "sigcode", "abort",
+            "memory", "tool", "lib", "fn", "pc", "build_id", "system", "other",
+            // ApplicationExitInfo reasons
+            "unknown", "exit_self", "signaled", "low_memory", "crash_native", "anr", "initialization_failure",
+            "permission_change", "excessive_resource_usage", "user_requested", "user_stopped", "dependency_died",
+            "freezer", "package_state_change", "package_updated",
+            // signals and their codes
+            "sighup", "sigint", "sigquit", "sigill", "sigtrap", "sigabrt", "sigbus", "sigfpe", "sigkill", "sigusr1",
+            "sigsegv", "sigusr2", "sigpipe", "sigalrm", "sigterm", "sigstkflt", "sigsys",
+            "segv_maperr", "segv_accerr", "segv_bnderr", "segv_pkuerr", "segv_mteaerr", "segv_mteserr",
+            "bus_adraln", "bus_adrerr", "bus_objerr", "bus_mceerr_ar", "bus_mceerr_ao",
+            "fpe_intdiv", "fpe_intovf", "fpe_fltdiv", "fpe_fltovf", "fpe_fltund", "fpe_fltres", "fpe_fltinv", "fpe_fltsub",
+            "ill_illopc", "ill_illopn", "ill_illadr", "ill_illtrp", "ill_prvopc", "ill_prvreg", "ill_coproc", "ill_badstk",
+            "trap_brkpt", "trap_trace", "trap_branch", "trap_hwbkpt", "sys_seccomp",
+            "si_user", "si_kernel", "si_queue", "si_timer", "si_mesgq", "si_asyncio", "si_sigio", "si_tkill",
+            // abort message classes, memory error tools and types (PurpleCrashTombstone)
+            "jni_error", "fortify", "check_failed", "scudo", "gwp_asan", "out_of_memory", "assertion", "mutex",
+            "use_after_free", "double_free", "invalid_free", "buffer_overflow", "buffer_underflow",
+            // ANR main thread states (PurpleCrashRecord)
+            "runnable", "sleeping", "native", "suspended", "blocked", "timed_waiting", "gc"
     )));
 
     /** One {@code key=value} pair of a line. Only the factories below make one. */
@@ -158,6 +180,238 @@ public final class PurpleDiagLogStore {
         name = clean(dot < 0 ? name : name.substring(dot + 1), 60).replace(' ', '_');
         String message = name.equals("JSONException") ? "" : sanitize(error.getMessage());
         return new Field("error", message.isEmpty() ? name : name + ":\"" + message + "\"");
+    }
+
+    /** Packages whose names a crash frame keeps; any other class is logged as {@code other}. */
+    static final String[] CODE_PACKAGES = {"org.telegram", "android", "androidx", "java", "javax", "kotlin", "com.google"};
+    static final int FRAME_NAME_LIMIT = 200;
+    static final int FUNCTION_LIMIT = 96;
+
+    /**
+     * One Java stack frame of a crash: {@code at=<class>.<method> line=<n>}.
+     * Names pass {@link #codeClass} and {@link #codeMethod}, so a class of a
+     * package outside {@link #CODE_PACKAGES} becomes {@code at=other} without
+     * its method, and anything that is not an ASCII Java identifier with dots
+     * becomes {@value #INVALID}. The line is a clamped count, and a negative
+     * one (unknown, native) is left out.
+     */
+    public static Field frame(String className, String method, int line) {
+        String cls = codeClass(className);
+        String at = cls;
+        if (!cls.equals("other") && !cls.equals(INVALID)) {
+            String name = codeMethod(method);
+            at = name.equals(INVALID) ? INVALID : cls + "." + name;
+        }
+        return new Field("at", line < 0 ? at : at + " line=" + clampCount(line));
+    }
+
+    /**
+     * One native frame of a crash: {@code lib=<library> fn=<function> pc=0x<hex>}.
+     * The library is kept only when it is one of the app's own
+     * ({@link #appLibrary}) and is {@code system} otherwise; the relative pc,
+     * a code offset into that library, is logged only for the app's own
+     * libraries, so a frame in them can be symbolised later against the
+     * build's unstripped library. The function name, when present, is cut at
+     * its parameter list and kept only as identifier characters, colons,
+     * dots, {@code ~} and {@code $}.
+     */
+    public static Field nativeFrame(String library, String function, long relativePc) {
+        String lib = appLibrary(library);
+        StringBuilder value = new StringBuilder(lib == null ? "system" : lib);
+        String fn = codeFunction(function);
+        if (fn != null) value.append(" fn=").append(fn);
+        if (lib != null && relativePc >= 0) value.append(" pc=0x").append(Long.toHexString(relativePc));
+        return new Field("lib", value.toString());
+    }
+
+    /**
+     * The build id of one of the app's own libraries, logged once per crash
+     * record so its relative pcs can be matched to the right unstripped
+     * library: {@code lib=<library> build_id=<hex>}. Null for any other
+     * library, and {@code ?} for an id that is not lowercase hex of at most 64
+     * characters.
+     */
+    public static Field library(String library, String buildId) {
+        String lib = appLibrary(library);
+        if (lib == null) return null;
+        String id = buildId == null ? "" : buildId.toLowerCase(Locale.US);
+        boolean hex = !id.isEmpty() && id.length() <= 64;
+        for (int i = 0; i < id.length() && hex; ++i) hex = Character.digit(id.charAt(i), 16) >= 0;
+        return new Field("lib", lib + " build_id=" + (hex ? id : "?"));
+    }
+
+    /** A signal and its code by number: {@code signal=sigsegv sigcode=segv_maperr}, or {@code other}. */
+    public static Field signal(int signo, int code) {
+        return new Field("signal", signalName(signo) + " sigcode=" + signalCode(signo, code));
+    }
+
+    /** A class name through {@link #codeClass}, such as an exception's: {@code class=java.lang.IllegalStateException}. */
+    public static Field codeName(String key, String className) {
+        return new Field(token(key), codeClass(className));
+    }
+
+    private static String clampCount(int value) {
+        return value < 0 ? "neg" : value > MAX_COUNT ? MAX_COUNT + "+" : Integer.toString(value);
+    }
+
+    private static boolean identifier(String value, boolean dots) {
+        if (value.isEmpty()) return false;
+        for (int i = 0; i < value.length(); ++i) {
+            char c = value.charAt(i);
+            boolean ok = c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '$'
+                    || dots && c == '.';
+            if (!ok) return false;
+        }
+        return true;
+    }
+
+    /**
+     * A class name for a crash line: the synthetic lambda part (from
+     * {@code $$}, and the older {@code -$$Lambda$} prefix) is dropped, the
+     * rest must be ASCII identifier characters and dots of at most
+     * {@value #FRAME_NAME_LIMIT} characters ({@value #INVALID} otherwise),
+     * and a class outside {@link #CODE_PACKAGES} is {@code other}.
+     */
+    static String codeClass(String className) {
+        if (className == null) return INVALID;
+        String name = className.replace("-$$Lambda$", "");
+        int lambda = name.indexOf("$$");
+        if (lambda >= 0) name = name.substring(0, lambda);
+        if (name.length() > FRAME_NAME_LIMIT || !identifier(name, true) || name.startsWith(".") || name.endsWith(".")
+                || name.contains("..")) return INVALID;
+        for (String pkg : CODE_PACKAGES) {
+            if (name.startsWith(pkg + ".")) return name;
+        }
+        return "other";
+    }
+
+    /**
+     * A method name for a crash line: {@code <init>} and {@code <clinit>}
+     * as they are, otherwise ASCII identifier characters of at most 80, with
+     * synthetic numeric suffixes ({@code lambda$onPause$12} becomes
+     * {@code lambda$onPause}) dropped.
+     */
+    static String codeMethod(String method) {
+        if (method == null) return INVALID;
+        if (method.equals("<init>") || method.equals("<clinit>")) return method;
+        String name = method;
+        while (true) {
+            int dollar = name.lastIndexOf('$');
+            if (dollar <= 0 || dollar == name.length() - 1) break;
+            boolean digits = true;
+            for (int i = dollar + 1; i < name.length() && digits; ++i) digits = Character.isDigit(name.charAt(i));
+            if (!digits) break;
+            name = name.substring(0, dollar);
+        }
+        return name.length() <= 80 && identifier(name, false) ? name : INVALID;
+    }
+
+    /**
+     * A native function name, or null when there is none: cut at the
+     * parameter list and at a {@code +offset}, then kept only when it is
+     * identifier characters, {@code :}, {@code .}, {@code ~} and {@code $};
+     * {@value #INVALID} otherwise. At most {@value #FUNCTION_LIMIT} characters.
+     */
+    static String codeFunction(String function) {
+        if (function == null) return null;
+        String name = function.trim();
+        int cut = name.indexOf('(');
+        if (cut >= 0) name = name.substring(0, cut);
+        cut = name.indexOf('+');
+        if (cut >= 0) name = name.substring(0, cut);
+        name = name.trim();
+        if (name.isEmpty()) return null;
+        if (name.length() > FUNCTION_LIMIT) name = name.substring(0, FUNCTION_LIMIT);
+        for (int i = 0; i < name.length(); ++i) {
+            char c = name.charAt(i);
+            boolean ok = c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '$'
+                    || c == ':' || c == '.' || c == '~';
+            if (!ok) return INVALID;
+        }
+        return name;
+    }
+
+    /**
+     * The base name of one of the app's own native libraries
+     * ({@code libtmessages.*}, {@code libpurplecore*}, {@code libQt6Core*}),
+     * or null for any other library. Only the part after the last {@code /}
+     * or {@code !} (a library inside the APK) is looked at, so no directory
+     * of the device is ever kept.
+     */
+    static String appLibrary(String library) {
+        if (library == null) return null;
+        String name = library.trim();
+        int slash = Math.max(name.lastIndexOf('/'), Math.max(name.lastIndexOf('\\'), name.lastIndexOf('!')));
+        if (slash >= 0) name = name.substring(slash + 1);
+        if (name.isEmpty() || name.length() > 48) return null;
+        for (int i = 0; i < name.length(); ++i) {
+            char c = name.charAt(i);
+            boolean ok = c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '.'
+                    || c == '-';
+            if (!ok) return null;
+        }
+        boolean own = name.startsWith("libtmessages.") && name.length() > "libtmessages.".length()
+                || name.startsWith("libpurplecore") || name.startsWith("libQt6Core");
+        return own ? name : null;
+    }
+
+    static String signalName(int signo) {
+        switch (signo) {
+            case 1: return "sighup";
+            case 2: return "sigint";
+            case 3: return "sigquit";
+            case 4: return "sigill";
+            case 5: return "sigtrap";
+            case 6: return "sigabrt";
+            case 7: return "sigbus";
+            case 8: return "sigfpe";
+            case 9: return "sigkill";
+            case 10: return "sigusr1";
+            case 11: return "sigsegv";
+            case 12: return "sigusr2";
+            case 13: return "sigpipe";
+            case 14: return "sigalrm";
+            case 15: return "sigterm";
+            case 16: return "sigstkflt";
+            case 31: return "sigsys";
+            default: return "other";
+        }
+    }
+
+    private static final String[] SEGV = {"segv_maperr", "segv_accerr", "segv_bnderr", "segv_pkuerr", null, null, null,
+            "segv_mteaerr", "segv_mteserr"};
+    private static final String[] BUS = {"bus_adraln", "bus_adrerr", "bus_objerr", "bus_mceerr_ar", "bus_mceerr_ao"};
+    private static final String[] FPE = {"fpe_intdiv", "fpe_intovf", "fpe_fltdiv", "fpe_fltovf", "fpe_fltund",
+            "fpe_fltres", "fpe_fltinv", "fpe_fltsub"};
+    private static final String[] ILL = {"ill_illopc", "ill_illopn", "ill_illadr", "ill_illtrp", "ill_prvopc",
+            "ill_prvreg", "ill_coproc", "ill_badstk"};
+    private static final String[] TRAP = {"trap_brkpt", "trap_trace", "trap_branch", "trap_hwbkpt"};
+
+    /** The name of a signal's {@code si_code}: the generic sender codes, then the codes of SEGV, BUS, FPE, ILL, TRAP and SYS. */
+    static String signalCode(int signo, int code) {
+        switch (code) {
+            case 0: return "si_user";
+            case 0x80: return "si_kernel";
+            case -1: return "si_queue";
+            case -2: return "si_timer";
+            case -3: return "si_mesgq";
+            case -4: return "si_asyncio";
+            case -5: return "si_sigio";
+            case -6: return "si_tkill";
+            default: break;
+        }
+        String[] names;
+        switch (signo) {
+            case 11: names = SEGV; break;
+            case 7: names = BUS; break;
+            case 8: names = FPE; break;
+            case 4: names = ILL; break;
+            case 5: names = TRAP; break;
+            case 31: names = new String[]{"sys_seccomp"}; break;
+            default: names = null;
+        }
+        String name = names != null && code >= 1 && code <= names.length ? names[code - 1] : null;
+        return name == null ? "other" : name;
     }
 
     /**
@@ -250,14 +504,24 @@ public final class PurpleDiagLogStore {
 
     /** One line, without its newline: {@code <UTC time> <area> <event> key=value...}. */
     public static String line(long unixMillis, String area, String event, Field... fields) {
-        SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US);
-        format.setTimeZone(TimeZone.getTimeZone("UTC"));
-        StringBuilder out = new StringBuilder(format.format(new Date(unixMillis)))
-                .append(' ').append(token(area)).append(' ').append(token(event));
+        return stamped(unixMillis, body(area, event, fields));
+    }
+
+    /** A line without its time, {@code <area> <event> key=value...}, as a crash record keeps it before it is stamped. */
+    static String body(String area, String event, Field... fields) {
+        StringBuilder out = new StringBuilder(token(area)).append(' ').append(token(event));
         if (fields != null) for (Field field : fields) {
             if (field != null) out.append(' ').append(field.key).append('=').append(field.value);
         }
         return out.length() > LINE_LIMIT ? out.substring(0, LINE_LIMIT) : out.toString();
+    }
+
+    /** {@code body} with its UTC time in front, bounded to {@value #LINE_LIMIT} characters. */
+    static String stamped(long unixMillis, String body) {
+        SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US);
+        format.setTimeZone(TimeZone.getTimeZone("UTC"));
+        String out = format.format(new Date(unixMillis)) + ' ' + body;
+        return out.length() > LINE_LIMIT ? out.substring(0, LINE_LIMIT) : out;
     }
 
     private final File directory;

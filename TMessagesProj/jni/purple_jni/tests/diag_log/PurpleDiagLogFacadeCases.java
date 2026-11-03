@@ -143,7 +143,8 @@ public final class PurpleDiagLogFacadeCases {
         check(lines[6].startsWith("android: "), "Android version: " + lines[6]);
         check(lines[7].equals("signed-in accounts: 2"), "account count: " + lines[7]);
         check(lines[8].startsWith("privacy: "), "privacy note");
-        check(lines.length == 11, "no other header lines: " + lines.length);
+        check(lines[11].startsWith("  Crash lines add code names"), "crash note: " + lines[11]);
+        check(lines.length == 13, "no other header lines: " + lines.length);
 
         // No identifiers anywhere in the file.
         for (String secret : new String[]{"5550123456", "777000111", "alice", "example.com", "johnsmith", "2345678",

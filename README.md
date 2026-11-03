@@ -143,6 +143,56 @@ shared-media Voice tab is built elsewhere, so while an earlier confined queue
 of the same chat is still the remembered one, your own new messages are not
 appended to it live.
 
+### Media recording
+
+The design is [docs/media-recording-design.md](docs/media-recording-design.md)
+(F6-F11).
+
+**Crash capture into the diagnostic log (F11).** Crashes, Purple's or
+upstream's, land in the always-on diagnostic log, so exporting it after a crash
+replaces asking for a device log. `PurpleCrashCapture.start` runs right after
+`super.onCreate()` in `ApplicationLoader.onCreate`, the one upstream line this
+adds, so a crash in the rest of start-up is captured too. It installs an
+uncaught exception handler that chains to the one set before it (upstream's
+`BuildVars` installs one only when its logs are on; whichever comes second
+calls the other), and on API 30 and later reads the exit reasons Android kept
+since the last start (`ApplicationExitInfo`, at most 16).
+
+- A Java crash is written at crash time, synchronously with an fsync, to
+  `files/purple-diagnostics/pending-crash.log` (bounded at 64 KB), because the
+  log's writer thread dies with the process. The next start moves it into the
+  log and deletes it; a `REASON_CRASH` exit within 10 s of it joins the same
+  record.
+- A native crash (API 31 and later) is read from its tombstone, the protobuf
+  that `getTraceInputStream()` returns, by a small reader without
+  dependencies: signal and code names, the class of the abort message (such
+  as `jni_error` or `fortify`, never its text), a memory error's tool and type,
+  and the crashing thread's top 12 frames. Frames in the app's own libraries
+  (`libtmessages.*`, `libpurplecore*`, `libQt6Core*`) keep the library's base
+  name and the relative pc in hex, and the record names each such library's
+  build id once, so the frames can be symbolised against the build's
+  unstripped libraries. Any other library is `system`, without a pc.
+- An ANR keeps the main thread's state and its top 12 frames; lock lines and
+  other threads are skipped.
+- Every other exit reason (low memory, a user stop and the others) is one
+  `crash exit` line: reason, status, importance, whether it was the main
+  process, and PSS and RSS in MB.
+
+A record reads `crash start reason=... signal=...`, its `crash exit` line,
+`crash library` lines, one `crash frame n=3 at=org.telegram.ui.ChatActivity.onPause line=30303`
+line per frame (and `crash cause` lines with three frames each for a Java
+exception's causes), then `crash end frames=12`. Exception messages are dropped
+entirely; a class outside `org.telegram`, `android`, `androidx`, `java`,
+`javax`, `kotlin` and `com.google` is `other`; names that are not ASCII Java
+identifiers are `invalid`; synthetic lambda suffixes are dropped and line
+numbers are clamped counts. At most five records are written per start, and
+the rest are counted in one `crash repeated count=n` line. The factories that
+build these lines (`frame`, `nativeFrame`, `library`, `signal`, `codeName`) are
+in `PurpleDiagLogStore`, and the host suite `recording`
+(`TMessagesProj/jni/purple_jni/tests/recording/`) runs the scrubbing, a
+synthetic tombstone (and every truncation of it), an ANR trace, the pending
+file, the merge and the limit on the AGP-compiled classes, and pins the hook.
+
 ### Keep Media per chat
 
 The chat menu shows how long this chat's cached media is kept, for example
@@ -765,6 +815,8 @@ copies it drops are counted and reported once as
 `diag repeated area=<area> event=<event> count=<n>`, when the ten minutes end,
 when the line falls out of the 64 most recent ones, or at the next Export, so
 one failure that repeats thousands of times cannot push every other line out.
+Crashes and other process exits are recorded there too, as code names and
+codes only (see **Media recording** above).
 
 Export also includes **Frequent contacts**, an anonymous snapshot for each signed-in account (index and selected flag only). It shows raw slot order, ratings, current visibility and user flags, sync/anchor ages and timestamps, clock offset, decay and loading state. Local read-only queries use captured server time for outgoing windows and ages, and compute the next increment from the same MAX(mid), MAX(date) and anchor inputs as Telegram. Deferred reads are bound to the opening login in RAM and revalidated before/after reads and before formatting; changed accounts are replaced with a fixed note. Visibility sampling uses the quiet folder projection. Missing DB reads are marked unavailable; local retention is not a lifetime total, and a future send can change the increment. Up to 50 numeric hint events across accounts stay in memory since process start or Clear, never in the always-on log. No peer identifiers, names, phones, text or hashes enter this section; it makes no requests and changes no ratings, database rows or config. The existing user-triggered export file is its only durable output.
 

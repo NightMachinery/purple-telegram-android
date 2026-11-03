@@ -140,6 +140,23 @@ public final class PurpleDiagLog {
         });
     }
 
+    /**
+     * Appends finished lines in order on the calling thread, outside the
+     * repeat limit, for a crash record that {@link PurpleCrashRecord} has
+     * already bounded. Crash capture calls it from its own background thread
+     * so the record is on disk before its pending file is deleted.
+     */
+    static void appendNow(java.util.List<String> lines) {
+        try {
+            PurpleDiagLogStore target = store();
+            for (String line : lines) {
+                FileLog.e("Purple: " + line);
+                if (target != null) target.append(line);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
     private static synchronized PurpleDiagLogStore store() {
         if (store == null) {
             try {
@@ -290,6 +307,8 @@ public final class PurpleDiagLog {
                 + "privacy: lines hold fixed vocabulary words, slot indexes, modes, versions,\n"
                 + "  counts and flags, and exception types with scrubbed messages (no ids,\n"
                 + "  phone numbers, emails, @handles, hex tokens, paths or quoted text).\n"
+                + "  Crash lines add code names, and the relative pc and build id of frames in\n"
+                + "  the app's own native libraries, in hex.\n"
                 + "----\n";
     }
 }
