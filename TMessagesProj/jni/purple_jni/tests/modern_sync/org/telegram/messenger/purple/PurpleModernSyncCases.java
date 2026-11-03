@@ -209,5 +209,5 @@ public final class PurpleModernSyncCases {
         }
     }
     public static int run(File parent)throws Exception{
-        checks=0;PurpleSyncAutoCases.run(parent);flowCases(parent);missingCases(parent);PurpleSyncRecoveryCases.run(parent);PurpleSyncLifecycleCases.run(parent);PurpleSyncReviewFixCases.run(parent);PurpleSyncMagicMoveCases.run(parent);return checks;}
+        checks=0;PurpleSyncAutoCases.run(parent);flowCases(parent);missingCases(parent);PurpleSyncRecoveryCases.run(parent);PurpleSyncLifecycleCases.run(parent);PurpleSyncReviewFixCases.run(parent);PurpleSyncMagicMoveCases.run(parent);PurpleSyncMagicBindingFileCases.run(parent);return checks;}
 }

@@ -95,6 +95,13 @@ final class PurpleAccountFileSnapshot {
         return status == Status.ReadError ? now.status == Status.ReadError : same(now);
     }
 
+    /**
+     * The temporary {@link #replace} writes beside its target ({@code File.createTempFile}: the prefix, a number that
+     * may be negative on Android, the suffix). A crash before its cleanup can leave one behind.
+     */
+    static boolean temporary(String name) { return name.matches("owner--?[0-9]+\\.tmp"); }
+    private static final String TEMPORARY_PREFIX = "owner-", TEMPORARY_SUFFIX = ".tmp";
+
     static boolean replace(File file, PurpleAccountFileSnapshot expected, byte[] bytes) {
         if (expected == null || bytes == null || bytes.length > expected.limit || !expected.matches(file)) return false;
         File temp = null;
@@ -104,7 +111,7 @@ final class PurpleAccountFileSnapshot {
             if (!parent.isDirectory() && !parent.mkdirs()) return false;
             Os.chmod(PurpleAccountFiles.root().getPath(), 0700);
             Os.chmod(parent.getPath(), 0700);
-            temp = File.createTempFile("owner-", ".tmp", parent);
+            temp = File.createTempFile(TEMPORARY_PREFIX, TEMPORARY_SUFFIX, parent);
             Os.chmod(temp.getPath(), 0600);
             try (FileOutputStream out = new FileOutputStream(temp)) {
                 out.write(bytes);

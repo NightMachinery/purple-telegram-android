@@ -254,12 +254,29 @@ public final class PurpleSyncMagicChatCases {
         check(result.kind == PurpleSyncMagicChat.Result.Kind.Use && channel(5500).equals(result.chat), "devices converge on the oldest chat");
         check(fake.logged("lookup_result result=rebound"), "the rebind is logged");
 
-        // Only ineligible magic chats: a problem, and nothing is created.
+        // Only ineligible magic chats in complete lists (the Fake's default): a problem, and nothing is created.
         fake = new Fake(); service = new PurpleSyncMagicChat(fake);
         fake.visible = new ArrayList<>(Collections.singletonList(chat(6000, 2L, 0L)));
         result = run(fake, service, PurpleSyncMagicChat.Trigger.startup, false);
         check(result.kind == PurpleSyncMagicChat.Result.Kind.Problem && result.problem == PurpleSyncMagicCore.Problem.MagicIneligible && fake.sent.isEmpty(),
             "an ineligible magic chat is never replaced behind the user's back");
+        // The same chat while the lists are partial proves nothing yet: the owner's usable chat may be on a later page.
+        fake = new Fake(); service = new PurpleSyncMagicChat(fake);
+        fake.visible = new ArrayList<>(Collections.singletonList(chat(6000, 2L, 0L)));
+        fake.loading(1); fake.stalled = true;
+        PurpleSyncMagicChat.Result[] unusable = { null };
+        service.lookup(PurpleSyncMagicChat.Trigger.startup, false, value -> unusable[0] = value);
+        fake.drain();
+        check(unusable[0] == null && fake.pagesAsked == 1 && fake.sent.isEmpty(), "an unusable magic chat in partial lists: a page is asked, nothing sent");
+        check(fake.tick() && unusable[0] != null && unusable[0].kind == PurpleSyncMagicChat.Result.Kind.Wait && unusable[0].loading
+            && !unusable[0].telegram && fake.sent.isEmpty(), "and the lookup ends in the list wait, not a problem");
+        check(PurpleSyncMagicCore.parse(fake.binding).problem == PurpleSyncMagicCore.Problem.None
+            && PurpleSyncMagicScreen.frame(unusable[0], service.binding()).line == PurpleSyncMagicScreen.Line.Looking,
+            "no problem is stored while the lists load, and the screen keeps looking");
+        fake.stalled = false; fake.inFlight = 0;
+        check(fake.tick() && fake.pagesAsked == 2 && service.last().kind == PurpleSyncMagicChat.Result.Kind.Problem
+            && service.last().problem == PurpleSyncMagicCore.Problem.MagicIneligible && service.last().show && fake.sent.isEmpty(),
+            "once the lists are complete it is magic_ineligible, shown, and nothing is created: " + fake.sent);
 
         // A long flood on createChannel is kept across a restart, for every trigger, and is Telegram's wait.
         fake = new Fake(); service = new PurpleSyncMagicChat(fake);
@@ -559,6 +576,15 @@ public final class PurpleSyncMagicChatCases {
         result = run(fake, service, PurpleSyncMagicChat.Trigger.startup, false);
         check(result.kind == PurpleSyncMagicChat.Result.Kind.Problem && result.problem == PurpleSyncMagicCore.Problem.MagicIneligible
             && !fake.sent.contains(PurpleSyncMagicCore.CREATE), "with no candidate left it is magic_ineligible, and nothing is created");
+        // A candidate rejected while the lists are partial: the lists are paged first, then magic_ineligible, never a create.
+        fake = new Fake(); service = new PurpleSyncMagicChat(fake);
+        fake.visible = new ArrayList<>(Collections.singletonList(chat(5000, null, null)));
+        fake.loading(2);
+        fake.reply(PurpleSyncMagicCore.FULL_INFO, ok(chat(5000, 2L, 0L)));
+        result = run(fake, service, PurpleSyncMagicChat.Trigger.startup, false);
+        check(result.kind == PurpleSyncMagicChat.Result.Kind.Problem && result.problem == PurpleSyncMagicCore.Problem.MagicIneligible
+            && fake.pagesAsked == 2 && fake.sent.equals(Collections.singletonList(PurpleSyncMagicCore.FULL_INFO)),
+            "a rejected candidate in partial lists waits for both pages before magic_ineligible: " + fake.pagesAsked + " " + fake.sent);
 
         // Saved Messages chosen by hand is used as it is.
         fake = new Fake(); service = new PurpleSyncMagicChat(fake);

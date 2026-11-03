@@ -309,6 +309,23 @@ public final class PurpleSyncChatMoveStoreCases {
         Looper.mainThread=Thread.currentThread();try{expect("WrongThread",()->PurpleSyncRetainedFiles.records(frame.sync(1)));}finally{Looper.mainThread=null;}
         frame.unchangedA();
     }
+    /**
+     * The magic chat binding beside the store (native check A2): a carry opens beside it; only exact names pass. Runs
+     * before the cases that build a new app frame, which moves the account files root away from this fixture.
+     */
+    static void bindingCases(File parent) throws Exception {
+        Fixture fixture = new Fixture(parent, "magic-binding", true);
+        File binding = new File(fixture.root, "chat.json"), temporary = new File(fixture.root, "owner-77.tmp");
+        byte[] bytes = PurpleSyncMagicBindingFileCases.r2Binding();
+        PurpleModernSyncCases.write(binding, bytes); PurpleModernSyncCases.write(temporary, bytes);
+        try (PurpleSyncChatMoveStore store = fixture.open()) { check(store.stateBytes() != null, "the move store opens beside chat.json and its writer's temporary"); }
+        check(Arrays.equals(bytes, Files.readAllBytes(binding.toPath())), "and leaves chat.json byte for byte");
+        Files.delete(temporary.toPath());
+        File other = new File(fixture.root, "chat.json.bak"); PurpleModernSyncCases.write(other, bytes);
+        expect("AmbiguousFiles", fixture::open); Files.delete(other.toPath());
+        Files.delete(binding.toPath()); PurpleModernSyncCases.directory(binding);
+        expect("AmbiguousFiles", fixture::open); Files.delete(binding.toPath());
+    }
     public static void main(String[] args) throws Exception {
         if (args.length == 2 && args[0].equals("--lock")) {
             try(java.io.RandomAccessFile file=new java.io.RandomAccessFile(args[1],"rw")) {
@@ -321,7 +338,7 @@ public final class PurpleSyncChatMoveStoreCases {
         initial = decode(beginning.getString("state")); BINDING = new String(decode(beginning.getString("preferenceToken")), StandardCharsets.UTF_8); baseRecord = decode(rows.get(0).getJSONObject("input").getString("stagedRecord"));
         File parent = new File(args[1]); PurpleModernSyncCases.directory(parent);
         PurpleModernSyncCases.Frame frame = new PurpleModernSyncCases.Frame(parent, "routing", true);
-        fileCases(frame.root); retentionCases(frame.root); storeCases(frame.root); imageCases(frame.root); journalFailures(frame.root); lockCases(frame.root); corruptCases(frame.root); writerCases(frame.root); checkpointCases(frame.root);
+        fileCases(frame.root); retentionCases(frame.root); storeCases(frame.root); imageCases(frame.root); journalFailures(frame.root); lockCases(frame.root); corruptCases(frame.root); bindingCases(frame.root); writerCases(frame.root); checkpointCases(frame.root);
         System.out.println("SYNC_CHAT_MOVE_STORE_CHECKS=" + checks);
     }
 }

@@ -38,7 +38,7 @@ import java.util.function.Consumer;
  * filter, so no view can hide a magic chat from the absence proof.
  */
 final class PurpleSyncMagicTelegram implements PurpleSyncMagicChat.Port {
-    static final String FILE = "chat.json";
+    static final String FILE = PurpleAccountSyncStore.MAGIC_BINDING;
     static final int LIMIT = 16 * 1024;
     static final String ABOUT = "Purple Telegram keeps sync data for your devices here.";
     private static final long TIMEOUT = 30000;

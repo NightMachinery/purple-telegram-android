@@ -329,7 +329,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
             if (!recover(stageFile) || !recoverAuto(new File(root,"auto.json"),PurpleAccountFiles.capture(account)!=null?PurpleAccountFiles.capture(account).key:"")) {
                 return fail(Status.IoError);
             }
-            if (!knownFiles(root, "lock", "state.json", "pending", "auto.json", "sync-chat-setup.json", "sync-chat-setup-create.json", "sync-chat-setup-mark.json", "sync-chat-move-create.json", "retained-bases", "carry.json", "carry-cache.json", "carry-objects", "carry-history")
+            if (!knownFiles(root, "lock", "state.json", "pending", "auto.json", MAGIC_BINDING, "sync-chat-setup.json", "sync-chat-setup-create.json", "sync-chat-setup-mark.json", "sync-chat-move-create.json", "retained-bases", "carry.json", "carry-cache.json", "carry-objects", "carry-history")
                     || !knownFiles(pending, "config.json")) {
                 return fail(Status.AmbiguousFiles);
             }
@@ -800,6 +800,17 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
     }
     static void releaseRecovery(String key) { synchronized (OWNED_ROOTS) { OWNED_ROOTS.remove(key); } }
 
+    /**
+     * The magic chat binding ({@link PurpleSyncMagicTelegram#FILE}), kept in this root beside the sync state. It is
+     * the account's, not the state's: every scan of the root tolerates it, and Start again or a set aside leaves it.
+     */
+    static final String MAGIC_BINDING = "chat.json";
+
+    /** The binding, or a temporary its writer ({@link PurpleAccountFileSnapshot#replace}) can leave after a crash. */
+    static boolean bindingFile(String name) {
+        return MAGIC_BINDING.equals(name) || PurpleAccountFileSnapshot.temporary(name);
+    }
+
     static boolean hasState(File root) {
         try {
             if (!root.exists()) {
@@ -811,6 +822,8 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
             }
             for (File file : files) {
                 if (PurpleSyncRecoveryFiles.archiveName(file.getName()) && file.isDirectory() && !isLink(file)) continue;
+                // WHY: the magic chat binding belongs to the account, not to a sync state.
+                if (bindingFile(file.getName()) && plainFile(file)) continue;
                 if (file.getName().equals("lock") && file.isFile()
                         && !isLink(file)) {
                     continue;
@@ -927,7 +940,9 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
         for (File file : files) {
             boolean archive = file.getName().matches("orphaned-[0-9]{8}-[0-9]{6}") && file.isDirectory()
                     && Arrays.asList(expected).contains("state.json");
-            if ((!Arrays.asList(expected).contains(file.getName()) && !archive) || isLink(file)) {
+            boolean temporary = PurpleAccountFileSnapshot.temporary(file.getName()) && file.isFile()
+                    && Arrays.asList(expected).contains("state.json");
+            if ((!Arrays.asList(expected).contains(file.getName()) && !archive && !temporary) || isLink(file)) {
                 return false;
             }
         }
@@ -968,6 +983,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
                 File file=new File(directory,name);
                 if(name.equals("pending")||PurpleSyncRecoveryFiles.archiveName(name))inputs.capture(file,true);
                 else if(java.util.Arrays.asList("lock","state.json","state.json.new","state.json.bak","auto.json","auto.json.new","auto.json.bak").contains(name))inputs.capture(file,false);
+                else if(bindingFile(name)&&plainFile(file))continue;
                 else return false;
             }
             PurpleSyncRecoveryFiles.Snapshot pending=inputs.capture(new File(directory,"pending"),true);

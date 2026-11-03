@@ -270,6 +270,9 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
                         || PurpleAccountFileSnapshot.durableDirectoryIdentity(path).equals("missing")) throw new IOException("AmbiguousFiles");
             } else if (name.equals("lock")) {
                 PurpleAccountFileSnapshot.durable("lock", path, null, null, LIMIT, 0);
+            } else if (PurpleAccountSyncStore.bindingFile(name)) {
+                // WHY: the magic chat binding and its writer's temporary belong to the account; a carry never reads them.
+                if (!path.isFile() || !path.getCanonicalFile().equals(path.getAbsoluteFile())) throw new IOException("AmbiguousFiles");
             } else if (Arrays.asList("state.json", "auto.json", "carry.json", "carry-cache.json", "sync-chat-setup.json", "sync-chat-setup-create.json", "sync-chat-setup-mark.json", "sync-chat-move-create.json").contains(name)) read(path, LIMIT);
             else throw new IOException("AmbiguousFiles");
         }

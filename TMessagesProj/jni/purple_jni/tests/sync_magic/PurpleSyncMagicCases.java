@@ -90,10 +90,12 @@ public final class PurpleSyncMagicCases {
         check(plan.action == PurpleSyncMagicCore.Action.Verify && channel(1000).equals(plan.chat) && plan.rebind, "the oldest visible chat is verified");
         input.visible = new ArrayList<>(Collections.singletonList(chat(3000, 2L, 0L)));
         plan = PurpleSyncMagicCore.plan(input);
-        check(plan.action == PurpleSyncMagicCore.Action.Problem && plan.problem == PurpleSyncMagicCore.Problem.MagicIneligible && plan.show,
-            "only ineligible magic chats: a problem, shown");
+        check(plan.action == PurpleSyncMagicCore.Action.Wait && plan.retryAt == 0 && !plan.telegram,
+            "only ineligible magic chats, lists loading: a wait for the lists, not a problem");
         input.listsComplete = true;
-        check(PurpleSyncMagicCore.plan(input).action == PurpleSyncMagicCore.Action.Problem, "and complete lists never make another one");
+        plan = PurpleSyncMagicCore.plan(input);
+        check(plan.action == PurpleSyncMagicCore.Action.Problem && plan.problem == PurpleSyncMagicCore.Problem.MagicIneligible && plan.show,
+            "only ineligible magic chats, lists complete: a problem, shown, never a new chat");
 
         // Verify binds; the bound chat is then used until it is due again.
         PurpleSyncMagicCore.Verified verified = PurpleSyncMagicCore.verify("", chat(1000, 0L, 0L), NOW);
