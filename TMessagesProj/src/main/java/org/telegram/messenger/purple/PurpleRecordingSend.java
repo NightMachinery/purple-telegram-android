@@ -38,13 +38,13 @@ public final class PurpleRecordingSend {
      * whether the send was handed over, on the UI thread.
      */
     public static void send(PurpleRecordingEntry item, int account, long dialogId, long topicId, int replyId,
-            Done done) {
+            boolean original, Done done) {
         PurpleRecordingRegistry.onWorker(() -> {
             boolean ok = false;
             try {
                 final UserConfig config = UserConfig.getInstance(account);
                 // From the bin's own chat, only the account that recorded it sends (review P2-4).
-                if (account == item.account && !item.sameAccount(config.isClientActivated(), config.getClientUserId())) {
+                if (original && !item.sameAccount(config.isClientActivated(), config.getClientUserId())) {
                     throw new IOException("another account");
                 }
                 final File source = new File(item.media);

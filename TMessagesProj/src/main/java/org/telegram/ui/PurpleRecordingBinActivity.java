@@ -285,7 +285,7 @@ public class PurpleRecordingBinActivity extends UniversalFragment {
             if (e.account == currentAccount) presentFragment(new ChatActivity(args));
             return;
         }
-        PurpleRecordingSend.send(e, e.account, e.dialogId, e.topicId, e.replyId, this::sentResult);
+        PurpleRecordingSend.send(e, e.account, e.dialogId, e.topicId, e.replyId, true, this::sentResult);
     }
 
     private void sendElsewhere(PurpleRecordingEntry e) {
@@ -298,7 +298,7 @@ public class PurpleRecordingBinActivity extends UniversalFragment {
             if (dids.isEmpty()) return false;
             final MessagesStorage.TopicKey key = dids.get(0);
             fragment.finishFragment();
-            PurpleRecordingSend.send(e, currentAccount, key.dialogId, key.topicId, 0, this::sentResult);
+            PurpleRecordingSend.send(e, currentAccount, key.dialogId, key.topicId, 0, false, this::sentResult);
             return true;
         });
         presentFragment(picker);
