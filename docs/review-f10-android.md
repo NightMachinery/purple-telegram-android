@@ -220,3 +220,112 @@ Then add the sequences from P1-1 to P1-4, including a truncate-then-unlink disca
   a clean Ogg by then, so recovery drops it as `finishedCleanly`.
 
 REVIEW F10 android: CHANGES P1=4 P2=7 P3=5
+
+## Re-check 1
+
+Head `b99a1a4bdb4e6c5d2b40fe8db3e618217670e157` (six commits on top of `1456bd45f7`). Only the P1 and P2 findings
+above were re-checked, plus defects that the fixes introduce. The event handling now lives in the new
+`PurpleRecordingSessions`, which is pure Java over an `Env` and is driven by the host suite. `PurpleRecordingRegistry`
+only forwards events to it. No upstream file changed in this round. Nothing was built or run.
+
+Verdict: **CHANGES**. Open: P1 = 2, P2 = 4.
+
+### Status of the earlier findings
+
+- **P1-1, fixed for the cases reported.**
+  - `started()` now settles a paused or stopped session it finds: `supersede` counts it as sent if its file is
+    there and discarded if not. V2 voice and rounds therefore get a fresh entry for the next recording in the chat.
+  - `checkPaused` runs every 5 s and turns a paused session whose file upstream deleted into a Discarded item.
+  - A round cancel after a pause now clears `paused` and discards.
+  - The rule for telling a legacy resume from a new recording, and a session of the other kind in the same chat,
+    are both wrong. See N1 and P2-1.
+- **P1-2, still open.** A registration no longer goes to a paused, stopped or sending session. But `resumed()`
+  still un-pauses every paused session of the account, and the fix keeps sessions paused on purpose until they are
+  settled. Trace: V2 voice in chat X, pause, send from preview. The file stays, so X's session stays paused. Then in
+  chat Y: record, pause, resume. `recordResumed(account)` has no guid, so `resumed()` un-pauses both X and Y and runs
+  `discover` for both. `newestVoice(X.startedAt)` returns Y's live file, so X's entry now points at Y's file. On a
+  crash, `recoverAtStart` handles X's older entry first: Y's recording moves into the bin under chat X, and Y's
+  entry is dropped as `missing`. "Send to the original chat" then sends it to X. The same path hands a fresh round
+  registration (a V2 resume after a trim) to whichever paused round session comes first in the `HashMap`. Fix: only
+  un-pause the session the resume belongs to. That is the account's single live recording: the most recent one that
+  paused, and never one superseded by a send from preview. Also never let `discover` attach a file that another
+  session holds.
+- **P1-3, fixed.** For rounds, `didSent` no longer replaces `media` or `journal`, and a resume keeps the registered
+  file. A crash after a resume recovers the real recording with its journal.
+- **P1-4, fixed, with a new cost (N4).** `snapshotCancel` copies the round's bytes while the `recordStopped(0/6)`
+  notification is being posted, before `RoundVideoSession.cancel` queues the `erase`. `discard` then uses the
+  snapshot.
+- **P2-1, still open.** The fix assumes legacy voice resumes with `recordStarted`. The class Javadoc says so, and
+  the host case scripts `sessions.started("0:9", ...)` for the resume. Upstream does not send that.
+  `MediaController.toggleRecordingPause` resumes legacy with `recordResumed` (`MediaController.java:5185`).
+  `recordStarted` is posted only by `startRecording` (`:5326`) and V2's `onRecordingStarted` (`:4584`). So on a real
+  legacy resume, `resumed()` runs `discover`, which re-points `current` to the second segment. The first segment
+  still belongs to no entry, and a crash after a resume still recovers only what came after it. Because the test
+  encodes the invented sequence, it passes. The 15 s discard decision does fix the slow-join misreading. The
+  `earlier` branch in `started()` now fires on a *new* recording instead (N1, N2).
+- **P2-2, fixed.** `settle` reads `mvhd` (`mp4DurationMs`) for rounds that are already finished.
+- **P2-3, fixed.** View-once is read from `ChatActivityEnterView.voiceOnce` at start and again at the stop. Bin
+  sends pass `ttl` `0x7FFFFFFF`, and "Save to Downloads" and "Send to another chat" are hidden for it.
+- **P2-4, fixed.** The entry stores the client user id, and "Send to the original chat" is offered and allowed only
+  while the slot holds the same signed-in user. It brings a new defect (N3).
+- **P2-5, fixed.** Rounds go to `sending` at reason 5 and are settled once the file has `moov` or is gone. A crash
+  before that finds them unfinished and recovers them.
+- **P2-6, fixed.** A topic is stored only for forum topics (`isTopic`), quick-reply recordings are never sent to
+  their chat, and a send to a topic whose root is not cached is refused rather than sent to General.
+- **P2-7, mostly fixed.** The suite now drives the sessions with event sequences. The legacy voice resume sequence
+  is wrong (P2-1), and no case covers a session of the other kind in the same chat (N1) or a resume while another
+  session is paused (P1-2).
+
+### New defects from the fixes
+
+**N1 (P1). A paused round followed by a voice message in the same chat is treated as a legacy voice resume of the round session.**
+`started(voice)` takes the legacy-resume branch whenever the existing session is paused and
+`legacyVoice(existing.current.file)` holds. That check is only "the name does not start with `audio_recording_`",
+which is true for `round_video_*.mp4` and `<time>_<id>.mp4`. Trace:
+1. Record a round in chat A, stop into preview and send it. Legacy, or V2 without a trim, keeps the file, so the
+   session stays paused.
+2. Record a voice message in chat A. The round part moves to `earlier`, and the voice gets a new part, but
+   `session.round` stays true.
+3. The voice's stop is then handled by the round rules:
+   - A send posts `recordStopped(0)`, which reaches the "a cancel is final" branch: `discard(session)` copies the
+     *sent* round and the voice being sent into the bin as "Discarded". `snapshotCancel` also copies the voice
+     file on the UI thread.
+   - A pause posts `recordStopped(1)`, which takes the same branch. The session is removed while upstream is still
+     paused, so after a resume there is no crash protection, and the bin already shows a "Discarded" copy of a
+     recording still in progress.
+
+Fix: a session of a different kind in the same chat is always superseded. Better, decide "legacy resume" from the
+event upstream actually sends (P2-1), not from the file name.
+
+**N2 (P2). Sent recordings can come back as "Discarded" bin items.** A session that ended from preview stays
+paused, and it is later settled as discarded if its file is gone. That happens to recordings that were in fact
+sent:
+- A V2 round sent from preview after a trim or with sound muted: `finishFromPreview` remuxes into a new generation
+  and `erase`s the old file. Within 5 s `checkPaused` discards the session from its held descriptor, which reads 0
+  bytes. The bin gets an empty "Could not be recovered" item for a round that was delivered. The same timer can also
+  land between the erase and the `recordResumed` of a trimmed resume, and discard a live recording's session.
+- Legacy voice: send from preview, then record again in the chat and discard. The new recording goes through the
+  `earlier` branch (P2-1), so `discard` copies the earlier, sent segment too.
+- Any later deletion of a lingering session's file while the app runs, for example clearing media, is likewise
+  copied in as "Discarded".
+
+Do not infer a discard from a missing file for a session that ended from preview, or end such sessions when
+upstream consumes the preview (the draft is cleared, or `sendMedia` runs).
+
+**N3 (P2). "Send to another chat" is refused for items without a matching user id.** `PurpleRecordingSend.send`
+throws "another account" whenever `account == item.account && !item.sameAccount(...)`. "Send to another chat"
+passes the bin's `currentAccount`, so the check also blocks it. Affected are every item recorded before this
+change (`userId` 0 in the manifest), every recording from a chat the registry did not know (target null, for
+example a story reply), and items of a previous identity in that slot. All of them show "Send failed", even though
+the picker lists the current account's own chats. Apply the identity check only to "Send to the original chat".
+
+**N4 (P2). `snapshotCancel` copies a whole round, synced, on the main thread.** It runs inside the `recordStopped`
+observer, on the UI thread. It calls `PurpleRecordingFiles.copy`, which ends in `getFD().sync()`, for every round
+cancel, legacy ones included, though they do not need it. It also holds the `PurpleRecordingSessions` monitor, which
+the worker can hold for a whole `discard` copy. A cancelled 60 s round of several MB on slow storage stalls the UI,
+with an ANR risk. Copy without the sync. Better, hard-link the file (`Os.link`) at the stop: that is instant and
+survives the unlink, but not the truncation, so V2 still needs the bytes copied before `erase`. Keep it off the UI
+thread by having the cancel path wait for the worker, or snapshot only V2 cancels and do the copy without the
+monitor.
+
+RECHECK F10 android: CHANGES P1=2 P2=4
