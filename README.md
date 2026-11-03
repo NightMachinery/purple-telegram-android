@@ -206,6 +206,24 @@ in `PurpleDiagLogStore`, and the host suite `recording`
 (`TMessagesProj/jni/purple_jni/tests/recording/`) runs the scrubbing, a
 synthetic tombstone (and every truncation of it), an ANR trace, the pending
 file, the merge and the limit on the AGP-compiled classes, and pins the hook.
+Each section prints its own counter with its own floor.
+
+Known follow-ups from the F11 review (`docs/review-f11.md` on `review-f11`),
+not yet done:
+
+- Collection is not atomic across a death: the lines are written, then the
+  taken files deleted, then the cursor saved, so a death in between logs the
+  same records again (chosen: a duplicate over a lost record).
+- Both caps keep the oldest records: the five-record limit and the 64 KB
+  pending file. Keeping the newest would suit a crash loop better.
+- A Java crash and its `REASON_CRASH` exit are joined only within 10 s; the
+  system can record the death later, which splits one crash in two.
+- Parsing details: an ANR `native:` frame of `memfd:jit-cache (deleted)` gives
+  `fn=deleted`; a tombstone without the crashing thread's id falls back to the
+  first thread without marking it; a native crash without a tombstone prints
+  `abort=none` where the abort is unknown.
+- Release Java frames are R8-renamed and have no line table: archive each
+  release's `mapping.txt` next to its unstripped libraries.
 
 ### Keep Media per chat
 

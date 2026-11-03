@@ -819,21 +819,33 @@ public final class PurpleCrashCaptureCases {
         }
     }
 
+    private interface Section {
+        void run() throws Exception;
+    }
+
+    private static void section(String key, Section section) throws Exception {
+        int before = checks;
+        section.run();
+        System.out.println(key + "=" + (checks - before));
+    }
+
     public static void main(String[] args) throws Exception {
         checks = 0;
         origins(new File(args[0]));
-        File root = new File(args[1]);
+        final File root = new File(args[1]);
         if (!root.mkdir()) throw new AssertionError("exclusive fixture");
-        frames();
-        nativeFrames();
-        signals();
-        javaCrash();
-        tombstones();
-        anrs();
-        pending(root);
-        merge();
-        traceBounds();
-        collection(root);
+        // One counter per section, so a section that silently loses its
+        // cases fails its own floor instead of hiding behind the sweeps.
+        section("CRASH_FRAME_CHECKS", PurpleCrashCaptureCases::frames);
+        section("CRASH_NATIVE_FRAME_CHECKS", PurpleCrashCaptureCases::nativeFrames);
+        section("CRASH_SIGNAL_CHECKS", PurpleCrashCaptureCases::signals);
+        section("CRASH_JAVA_CHECKS", PurpleCrashCaptureCases::javaCrash);
+        section("CRASH_TOMBSTONE_CHECKS", PurpleCrashCaptureCases::tombstones);
+        section("CRASH_ANR_CHECKS", PurpleCrashCaptureCases::anrs);
+        section("CRASH_PENDING_CHECKS", () -> pending(root));
+        section("CRASH_MERGE_CHECKS", PurpleCrashCaptureCases::merge);
+        section("CRASH_TRACE_CHECKS", PurpleCrashCaptureCases::traceBounds);
+        section("CRASH_COLLECT_CHECKS", () -> collection(root));
         System.out.println("CRASH_CAPTURE_CHECKS=" + checks);
     }
 }
