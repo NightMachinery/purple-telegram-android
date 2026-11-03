@@ -143,6 +143,17 @@ public final class PurpleRecordingRegistry {
             if (started) return;
             started = true;
         }
+        PurpleRoundJournal.listener = new PurpleRoundJournal.Listener() {
+            @Override
+            public void registered(File media, File journal) {
+                roundRegistered(media, journal);
+            }
+
+            @Override
+            public void stopped() {
+                PurpleDiagLog.event("recordings", "journal_stopped");
+            }
+        };
         worker.execute(PurpleRecordingRegistry::startOnWorker);
         AndroidUtilities.runOnUIThread(() -> {
             for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
@@ -260,14 +271,17 @@ public final class PurpleRecordingRegistry {
             existing.paused = false;
             return;
         }
-        if (!voice) return;
         try {
             final PurpleRecordingEntry entry = store.begin(account,
                     target == null ? 0 : target[1], target == null ? 0 : target[2], target == null ? 0 : (int) target[3],
                     voice ? PurpleRecordingEntry.VOICE : PurpleRecordingEntry.ROUND, startedAt);
             final Session session = new Session(key, entry, !voice);
             sessions.put(key, session);
-            worker.schedule(() -> discover(session), DISCOVER_DELAY_MS, TimeUnit.MILLISECONDS);
+            if (voice) {
+                worker.schedule(() -> discover(session), DISCOVER_DELAY_MS, TimeUnit.MILLISECONDS);
+            } else {
+                attachPendingRound(session);
+            }
         } catch (IOException e) {
             PurpleDiagLog.event("recordings", "begin", PurpleDiagLog.reason("io_failed"));
         }
@@ -313,6 +327,7 @@ public final class PurpleRecordingRegistry {
             // preview, 4 too short, 5 send.
             if (reason == 2) {
                 session.paused = true;
+                PurpleRoundJournal.flush(session.entry.journal);
             } else if (reason == 5 || reason == 4) {
                 end(key);
             } else {
@@ -343,6 +358,7 @@ public final class PurpleRecordingRegistry {
         if (sessions.get(session.key) != session || !session.stopped || session.paused) return;
         if (session.file != null && session.file.exists()) return;
         sessions.remove(session.key);
+        PurpleRoundJournal.close(session.entry.journal);
         final boolean keep = PurpleRecordingSettings.read().keepDiscarded;
         try {
             final boolean kept = store.discard(session.entry, session.held, keep && session.held != null,
@@ -383,8 +399,60 @@ public final class PurpleRecordingRegistry {
         final Session session = sessions.remove(key);
         if (session == null) return;
         session.close();
+        PurpleRoundJournal.close(session.entry.journal);
         try {
             store.finish(session.entry);
+        } catch (IOException ignored) {
+        }
+    }
+
+    // ---- Rounds (F10 round) ------------------------------------------------------
+
+    /** A registration that came before its recording's recordStarted (legacy creates the movie first). */
+    private static File pendingRoundMedia;
+    private static File pendingRoundJournal;
+    private static long pendingRoundAt;
+
+    /**
+     * A round recorder registered a movie. Legacy registers once, just before
+     * recordStarted; V2 registers each output generation, the first after
+     * recordStarted. The newest generation is the recording's file.
+     */
+    static void roundRegistered(File media, File journal) {
+        worker.execute(() -> {
+            Session latest = null;
+            for (Session s : sessions.values()) {
+                if (s.round && (latest == null || s.entry.startedAt > latest.entry.startedAt)) latest = s;
+            }
+            if (latest != null) {
+                attachRound(latest, media, journal);
+            } else {
+                pendingRoundMedia = media;
+                pendingRoundJournal = journal;
+                pendingRoundAt = System.currentTimeMillis();
+            }
+        });
+    }
+
+    private static void attachPendingRound(Session session) {
+        if (pendingRoundMedia == null) return;
+        if (System.currentTimeMillis() - pendingRoundAt < 10000) {
+            attachRound(session, pendingRoundMedia, pendingRoundJournal);
+        }
+        pendingRoundMedia = null;
+        pendingRoundJournal = null;
+    }
+
+    private static void attachRound(Session session, File media, File journal) {
+        if (media.equals(session.file)) return;
+        if (session.entry.journal != null && !session.entry.journal.equals(journal.getPath())) {
+            // An earlier V2 generation: upstream replaces its file, and its journal goes with it.
+            PurpleRoundJournal.close(session.entry.journal);
+            new File(session.entry.journal).delete();
+        }
+        session.hold(media);
+        try {
+            store.attach(session.entry, media, journal);
         } catch (IOException ignored) {
         }
     }
@@ -487,7 +555,7 @@ public final class PurpleRecordingRegistry {
 
         @Override
         public PurpleRecordingStore.RoundResult recoverRound(File media, File journal, File out) {
-            return null;
+            return PurpleRoundRecovery.recover(media, journal, out);
         }
     };
 }

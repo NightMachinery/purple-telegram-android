@@ -65,6 +65,7 @@ public class Mp4Movie {
     }
 
     public void addSample(int trackIndex, long offset, MediaCodec.BufferInfo bufferInfo) {
+        org.telegram.messenger.purple.PurpleRoundJournal.onSample(this, trackIndex, offset, bufferInfo);
         if (trackIndex < 0 || trackIndex >= tracks.size()) {
             return;
         }
@@ -73,6 +74,7 @@ public class Mp4Movie {
     }
 
     public int addTrack(MediaFormat mediaFormat, boolean isAudio) {
+        org.telegram.messenger.purple.PurpleRoundJournal.onTrack(this, tracks.size(), mediaFormat, isAudio);
         tracks.add(new Track(tracks.size(), mediaFormat, isAudio));
         return tracks.size() - 1;
     }

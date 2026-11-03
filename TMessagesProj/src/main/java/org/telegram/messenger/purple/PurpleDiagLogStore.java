@@ -106,7 +106,7 @@ public final class PurpleDiagLogStore {
             // F10 recordings (PurpleRecordingRegistry): counts and states only, never a path, chat or id
             "recordings", "recovery", "orphan_scan", "sweep", "begin", "discarded", "bin_cleared", "bin_send",
             "recovered", "unrecoverable", "missing", "finished_cleanly", "orphans", "failures", "expired",
-            "kind", "kept", "io_failed", "voice", "round"
+            "kind", "kept", "io_failed", "voice", "round", "journal_stopped"
     )));
 
     /** One {@code key=value} pair of a line. Only the factories below make one. */

@@ -8,6 +8,7 @@
 
 package org.telegram.messenger.purple;
 
+import org.telegram.messenger.AccountInstance;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLoader;
 import org.telegram.messenger.MediaController;
@@ -16,6 +17,7 @@ import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.SendMessagesHelper;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
+import org.telegram.messenger.VideoEditedInfo;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 
@@ -94,9 +96,30 @@ public final class PurpleRecordingSend {
         return true;
     }
 
-    /** Rounds are sent by PurpleRoundSend (F10 round); a build without it keeps them in the bin. */
+    /**
+     * As InstantCameraView sends a finished round: a VideoEditedInfo with
+     * {@code roundVideo}, no trim (so nothing is converted) and the file as it
+     * is, through SendMessagesHelper.prepareSendingVideo.
+     */
     private static boolean sendRound(PurpleRecordingEntry item, File source, int account, long dialogId,
             MessageObject reply, MessageObject top) throws IOException {
-        return false;
+        final File target = new File(FileLoader.getDirectory(FileLoader.MEDIA_DIR_DOCUMENT),
+                System.currentTimeMillis() + "_" + SharedConfig.getLastLocalId() + ".mp4");
+        SharedConfig.saveConfig();
+        PurpleRecordingFiles.move(source, target);
+        final VideoEditedInfo info = new VideoEditedInfo();
+        info.startTime = -1;
+        info.endTime = -1;
+        info.estimatedSize = Math.max(1, target.length());
+        info.estimatedDuration = item.durationMs;
+        info.roundVideo = true;
+        info.framerate = 25;
+        info.resultWidth = info.originalWidth = 360;
+        info.resultHeight = info.originalHeight = 360;
+        info.originalPath = target.getAbsolutePath();
+        final String path = target.getAbsolutePath();
+        AndroidUtilities.runOnUIThread(() -> SendMessagesHelper.prepareSendingVideo(AccountInstance.getInstance(account), path, info,
+                null, null, dialogId, reply, top, null, null, null, 0, null, true, 0, 0, false, false, null, null, 0, 0));
+        return true;
     }
 }

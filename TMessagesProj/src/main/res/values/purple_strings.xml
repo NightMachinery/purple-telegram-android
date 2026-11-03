@@ -1063,4 +1063,9 @@
     <string name="PurpleRecordingBinDeleteConfirm">Delete this recording? This cannot be undone.</string>
     <string name="PurpleRecordingBinSendFailed">Could not send the recording</string>
     <string name="PurpleRecordingBinPlayFailed">Could not play the recording</string>
+    <string name="PurpleRecordingJournal">Video message crash safety</string>
+    <string name="PurpleRecordingJournalOff">Off</string>
+    <string name="PurpleRecordingJournalEvery">Save the index every %1$s</string>
+    <string name="PurpleRecordingJournalSeconds">%1$d s</string>
+    <string name="PurpleRecordingJournalInfo">If the app closes unexpectedly, a video message can be recovered exactly up to the last save. Without it, Purple tries to rebuild it, which can drift slightly.</string>
 </resources>

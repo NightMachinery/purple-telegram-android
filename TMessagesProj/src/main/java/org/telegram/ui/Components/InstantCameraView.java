@@ -3300,6 +3300,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
                     }
                     Mp4Movie movie = new Mp4Movie();
                     movie.setCacheFile(fileToWrite);
+                    org.telegram.messenger.purple.PurpleRoundJournal.register(movie, isSecretChat, SharedConfig.deviceIsHigh());
                     movie.setRotation(0);
                     movie.setSize(videoWidth, videoHeight);
                     mediaMuxer = new MP4Builder().createMovie(movie, isSecretChat, false);

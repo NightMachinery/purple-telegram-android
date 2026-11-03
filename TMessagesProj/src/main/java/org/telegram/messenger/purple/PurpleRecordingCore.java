@@ -25,6 +25,15 @@ public final class PurpleRecordingCore {
 
     private static native boolean binItemExpiredNative(long binnedAt, long now, int keepSeconds);
 
+    static native byte[] journalStartNative(boolean splitMdat, int rotation, int width, int height);
+
+    static native byte[] journalTrackNative(int index, boolean audio, byte[] mime, int timescale, int first, int second,
+            byte[][] csd);
+
+    static native byte[] journalBatchNative(long[] samples, int count);
+
+    static native long[] journalReadNative(byte[] journal);
+
     /** What finalising an interrupted Ogg/Opus voice recording did. */
     public static final class OggFinish {
         public static final int CLEAN = 0;
@@ -123,6 +132,44 @@ public final class PurpleRecordingCore {
         } catch (UnsatisfiedLinkError | RuntimeException e) {
             FileLog.e(e);
             return false;
+        }
+    }
+
+    /** What purple-core read from a journal's bytes. */
+    public static final class JournalRead {
+        public static final int MISSING = 0;
+        public static final int UNKNOWN_VERSION = 1;
+        public static final int NO_CONFIG = 2;
+        public static final int OK = 3;
+
+        public final int status;
+        public final int tracks;
+        public final int batches;
+        public final int samples;
+        public final long goodBytes;
+        public final boolean damaged;
+        public final boolean splitMdat;
+
+        JournalRead(long[] packed) {
+            final boolean ok = packed != null && packed.length == 7;
+            status = ok ? (int) packed[0] : MISSING;
+            tracks = ok ? (int) packed[1] : 0;
+            batches = ok ? (int) packed[2] : 0;
+            samples = ok ? (int) packed[3] : 0;
+            goodBytes = ok ? packed[4] : 0;
+            damaged = ok && packed[5] != 0;
+            splitMdat = ok && packed[6] != 0;
+        }
+    }
+
+    /** Reads a journal with purple-core's reader (the bin's checks and the host suite). */
+    public static JournalRead readJournal(byte[] journal) {
+        try {
+            PurpleCore.ensureLoaded();
+            return new JournalRead(journalReadNative(journal));
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return new JournalRead(null);
         }
     }
 

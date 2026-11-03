@@ -169,6 +169,7 @@ public final class RecordingCases {
      */
     static void bin(File voice, File mp4, File work) throws Exception {
         PurpleCore.ensureLoaded();
+        work.mkdirs();
         final byte[] whole = Files.readAllBytes(voice.toPath());
         final PurpleRecordingCore.OggScan full = PurpleRecordingCore.scanOgg(voice);
         check(full.clean() && full.opus && full.durationMs > 2000, "the test recording is a finished Opus stream");

@@ -260,6 +260,70 @@ instead of deleting it. Both are rows of Purple Settings > Media recording.
 for auto-clear), so the recording host suite runs it on real Opus files that
 ffmpeg encodes at test time. F10 voice touches no upstream file.
 
+**Round videos (F10 round).** The sent file keeps upstream's `MP4Builder`
+layout; crash safety is a sidecar journal, `<file>.pjr`, written by
+`PurpleRoundJournal`. Its config header (track formats and the codec
+configuration) is written once at the start; then the samples are appended as
+one batch every `[recording] round_journal` interval (Purple Settings > Media
+recording > **Video message crash safety**: Off, 1 s by default, 2 s or 5 s),
+from the muxer's own thread. Off still writes the config header, so repair
+works. Every record is encoded by purple-core, and the journal is synced every
+5 s only where the recorder's `MP4Builder` syncs too. A write that fails (a
+full disk) stops the journal quietly, with one `journal_stopped` diag line; the
+recording continues.
+
+Recovery (`PurpleRoundRecovery`) asks purple-core's `RecoverRound`: the
+journal's exact samples, then a scan of the media data for the rest, timed on
+the audio clock. Raw AAC frames carry no length, so the scan measures them with
+the AAC measure shim (FFmpeg's decoder, `purple_jni/aac_measure.cpp`), which is
+compiled with the recovery bridge into upstream's native library because that
+library links avcodec. The result is rebuilt through upstream's own
+`MP4Builder` (`createMovie`, `addTrack`, `writeSampleData(..., false)`,
+`finishMovie`), so it has the layout upstream sends; the H.264 profile and
+level for the avcC box are read from the recorded SPS. A partial result is
+marked "Partly recovered"; a round with no config header (no journal) is kept
+raw. Rounds are sent from the bin as `InstantCameraView` sends them: a
+`VideoEditedInfo` with `roundVideo` and no trim, through
+`SendMessagesHelper.prepareSendingVideo`.
+
+The registry handles rounds like voice, except that the file comes from the
+journal's registration instead of a directory listing: legacy registers just
+before `recordStarted`, V2 once per output generation, and the newest
+generation is the recording's file (an older generation's journal is
+dropped, because upstream finishes that file). The round recorders' stop
+reasons are 0 or 6 cancel, 2 pause into preview (the journal is flushed), 4
+too short and 5 send.
+
+Checked against the source: `MP4Builder` writes a split `mdat`'s 16-byte
+header in place before that box's first sample (`writeSampleData`,
+`writeNewMdat`) as a placeholder (size 16, `mdat`, eight zero bytes) that
+`flushCurrentMdat` patches later, so a crash never leaves a reserved header the scanner cannot read. Still
+to confirm on a device: whether a resumed V2 generation contains the retained
+prefix (the design's spike), and the planned corpus check of real rounds
+truncated at random offsets.
+
+Upstream files it touches, and why:
+
+- `Mp4Movie`: one call at the top of `addTrack` and one at the top of
+  `addSample` into `PurpleRoundJournal`, which returns at once for any movie
+  that was not registered (video conversions, the camera screen, stories).
+  `MP4Builder` keeps the sample table only in memory, and these two methods
+  are where every sample's offset and time pass.
+- `InstantCameraView` (`VideoRecorder`, after `movie.setCacheFile`) and
+  `RoundVideoMp4Writer` (`initializeIfReady`, after `movie.setCacheFile`):
+  one registration line each, with the split flag and whether that recorder's
+  `MP4Builder` syncs.
+
+The recording host suite pins these hooks, runs the journal from real
+`Mp4Movie` calls and reads it back with purple-core, and recovers rounds
+recorded through the real `MP4Builder` (synthetic H.264-shaped video and real
+AAC frames ffmpeg encodes at test time, at a camera rate that drops from 30 to
+15 fps), comparing the rebuilt sample tables byte for byte with what
+`finishMovie` wrote. It needs ffmpeg (with libopus) and libavcodec's
+pkg-config files on the host; `android.media.MediaFormat` and
+`MediaCodec.BufferInfo` come from small host stand-ins in
+`tests/recording/host_stubs`.
+
 ### Keep Media per chat
 
 The chat menu shows how long this chat's cached media is kept, for example

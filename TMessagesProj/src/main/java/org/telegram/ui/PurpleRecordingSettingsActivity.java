@@ -32,6 +32,7 @@ public class PurpleRecordingSettingsActivity extends UniversalFragment {
     static final int ROW_BIN = 0x70750503;
     static final int ROW_BIN_KEEP = 0x70750504;
     static final int ROW_KEEP_DISCARDED = 0x70750505;
+    static final int ROW_JOURNAL = 0x70750506;
 
     @Override
     protected CharSequence getTitle() {
@@ -55,6 +56,10 @@ public class PurpleRecordingSettingsActivity extends UniversalFragment {
         discarded.checked = settings.keepDiscarded;
         items.add(discarded);
         items.add(UItem.asShadow(getString(R.string.PurpleRecordingKeepDiscardedInfo)));
+
+        items.add(UItem.asHeader(getString(R.string.PurpleRecordingJournal)));
+        items.add(UItem.asButton(ROW_JOURNAL, getString(R.string.PurpleRecordingJournal), journalLabel(settings.roundJournalSeconds)));
+        items.add(UItem.asShadow(getString(R.string.PurpleRecordingJournalInfo)));
     }
 
     @Override
@@ -65,6 +70,9 @@ public class PurpleRecordingSettingsActivity extends UniversalFragment {
             break;
         case ROW_BIN_KEEP:
             chooseBinKeep();
+            break;
+        case ROW_JOURNAL:
+            chooseJournal();
             break;
         case ROW_KEEP_DISCARDED: {
             final PurpleWriter.Session session = PurpleWriterUI.captureOrExplain(this, true, this::rebuild);
@@ -88,6 +96,31 @@ public class PurpleRecordingSettingsActivity extends UniversalFragment {
             return formatString(R.string.PurpleRecordingBinKeepDays, seconds / (24 * 3600));
         }
         return formatString(R.string.PurpleRecordingBinKeepHours, seconds / 3600);
+    }
+
+    static String journalLabel(int seconds) {
+        if (seconds <= 0) return getString(R.string.PurpleRecordingJournalOff);
+        return formatString(R.string.PurpleRecordingJournalEvery, formatString(R.string.PurpleRecordingJournalSeconds, seconds));
+    }
+
+    /** {@code round_journal}: Off, 1, 2 or 5 s; Off still writes the config header, so repair works. */
+    private void chooseJournal() {
+        if (getParentActivity() == null) return;
+        final int[] choices = PurpleRecordingSettings.JOURNAL_CHOICES;
+        final int current = PurpleRecordingSettings.read().roundJournalSeconds;
+        final CharSequence[] labels = new CharSequence[choices.length];
+        for (int i = 0; i < choices.length; i++) labels[i] = journalLabel(choices[i]);
+        final AlertDialog.Builder dialog = new AlertDialog.Builder(getParentActivity());
+        dialog.setTitle(getString(R.string.PurpleRecordingJournal));
+        dialog.setItems(labels, (d, which) -> {
+            if (choices[which] == current) return;
+            final PurpleWriter.Session session = PurpleWriterUI.captureOrExplain(this, true, this::rebuild);
+            if (session == null) return;
+            write(PurpleWriter.setTableString(session, "recording", "round_journal",
+                    PurpleRecordingSettings.journalValue(choices[which]), "round journal chooser"));
+        });
+        dialog.setNegativeButton(getString(R.string.Cancel), null);
+        showDialog(dialog.create());
     }
 
     private void chooseBinKeep() {

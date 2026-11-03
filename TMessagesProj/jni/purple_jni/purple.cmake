@@ -91,4 +91,11 @@ target_sources(${NATIVE_LIB} PRIVATE purple_jni/archive_sqlite_bridge.cpp purple
 # F10 round video repair: the AAC measure shim needs avcodec, which upstream's
 # library links and libpurplecore does not (docs/media-recording-design.md,
 # "Round video: repair").
-target_sources(${NATIVE_LIB} PRIVATE purple_jni/aac_measure.cpp)
+target_sources(${NATIVE_LIB} PRIVATE
+        purple_jni/aac_measure.cpp
+        purple_jni/round_recovery_bridge.cpp
+        purple/purple/purple_mp4_repair.cpp
+        purple/purple/purple_round_journal.cpp
+        purple/purple/purple_recording_file.cpp)
+# The repair sources include "purple/...", relative to the submodule.
+target_include_directories(${NATIVE_LIB} PRIVATE purple)

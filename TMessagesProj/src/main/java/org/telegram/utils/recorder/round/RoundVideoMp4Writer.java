@@ -148,6 +148,7 @@ final class RoundVideoMp4Writer {
         if (videoFormat == null || includeAudio && audioFormat == null) return;
         Mp4Movie movie = new Mp4Movie();
         movie.setCacheFile(file);
+        org.telegram.messenger.purple.PurpleRoundJournal.register(movie, true, true);
         movie.setSize(outputSize, outputSize);
         try {
             builder = new MP4Builder().createMovie(movie, true, false);
