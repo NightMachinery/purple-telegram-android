@@ -113,6 +113,8 @@ final class PurpleSyncMagicChat {
     private final List<Consumer<Result>> waiters = new ArrayList<>();
     private final Set<String> retried = new HashSet<>();
     private volatile Result last = Result.unavailable();
+    /** The stored binding as last read or written, for readers off the lookup thread. */
+    private volatile PurpleSyncMagicCore.Binding binding;
     private boolean running, fresh, closed, created, resumed;
     private Trigger trigger;
     private List<PurpleSyncMagicCore.Candidate> allChats;
@@ -123,6 +125,49 @@ final class PurpleSyncMagicChat {
     PurpleSyncMagicChat(Port port) { this.port = port; }
 
     Result last() { return last; }
+    PurpleSyncMagicCore.Binding binding() { return binding; }
+
+    /**
+     * The magic chat Purple's chat lists hide: the chat a lookup bound in magic mode, unless the user chose to
+     * see it. A chat the user picked is never hidden.
+     */
+    PurpleSyncChatCore.Peer hidden() {
+        Result current = last;
+        PurpleSyncMagicCore.Binding stored = binding;
+        if (current.kind == Result.Kind.Unavailable || current.manual || current.chat == null || stored == null) return null;
+        return stored.mode == PurpleSyncMagicCore.Mode.Magic && !stored.listed && current.chat.equals(stored.chat) ? current.chat : null;
+    }
+
+    /** The user picked {@code chat}; it is checked like any manual binding by a fresh lookup. */
+    void choose(PurpleSyncChatCore.Peer chat, Consumer<Result> done) {
+        userEdit("choose", binding -> chat == null ? null : PurpleSyncMagicCore.manual(PurpleSyncMagicCore.clear(binding), chat), done);
+    }
+
+    /** Forgets the user's pick or the bound chat, keeping waits and the list choice, and looks up the magic chat. */
+    void useDefault(Consumer<Result> done) { userEdit("default", PurpleSyncMagicCore::reset, done); }
+
+    /** The user set this device's own state aside to join the chat's records; the problem is cleared. */
+    void joined(Consumer<Result> done) { userEdit("join", PurpleSyncMagicCore::clear, done); }
+
+    /** Whether the magic chat shows in Purple's chat lists; {@code done} gets false when the binding could not be written. */
+    void list(boolean listed, Consumer<Boolean> done) {
+        port.post(() -> {
+            boolean ok = !closed && port.current() && edit(binding -> PurpleSyncMagicCore.listed(binding, listed)) != null;
+            if (ok) port.diag("listed", code("value", listed ? "on" : "off"));
+            if (done != null) done.accept(ok);
+        });
+    }
+
+    private void userEdit(String action, UnaryOperator<String> change, Consumer<Result> done) {
+        port.post(() -> {
+            if (closed || !port.current() || edit(change) == null) { if (done != null) done.accept(Result.unavailable()); return; }
+            port.diag("user_action", code("action", action));
+            if (wake != null) { port.cancelDelay(wake); wake = null; }
+            // WHY: a lookup still running read the old binding; its replies are dropped and its waiters get the new result.
+            ++generation; running = false;
+            lookup(Trigger.manual, true, done);
+        });
+    }
 
     /** Runs a lookup for {@code trigger}, or joins the one running; {@code done} gets the result on the lookup thread. */
     void lookup(Trigger trigger, boolean fresh, Consumer<Result> done) {
@@ -181,6 +226,7 @@ final class PurpleSyncMagicChat {
         String binding = port.readBinding();
         PurpleSyncMagicCore.Binding parsed = binding != null ? PurpleSyncMagicCore.parse(binding) : null;
         if (parsed == null) { unavailable(run, "binding_unreadable"); return; }
+        this.binding = parsed;
         if (parsed.problem != PurpleSyncMagicCore.Problem.None && trigger == Trigger.manual && !resumed) {
             // WHY: core keeps a problem until the user acts; a manual check is that act, so it decides afresh.
             resumed = true;
@@ -432,7 +478,11 @@ final class PurpleSyncMagicChat {
             if (current == null) return null;
             String next = change.apply(current);
             if (next == null) return null;
-            if (next.equals(current) || port.writeBinding(current, next)) return next;
+            if (next.equals(current) || port.writeBinding(current, next)) {
+                PurpleSyncMagicCore.Binding parsed = PurpleSyncMagicCore.parse(next);
+                if (parsed != null) binding = parsed;
+                return next;
+            }
         }
         return null;
     }

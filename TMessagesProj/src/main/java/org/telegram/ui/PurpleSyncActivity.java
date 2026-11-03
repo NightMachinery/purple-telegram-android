@@ -86,7 +86,7 @@ public class PurpleSyncActivity extends UniversalFragment {
         final long userId = config.isClientActivated() ? config.getClientUserId() : 0;
         if (userId > 0 && org.telegram.messenger.purple.PurpleAccountOwner.modernOperation(currentAccount)) {
             runner = null;
-            org.telegram.messenger.purple.PurpleSyncChat.ensureResolved(currentAccount,false,ignored->{});
+            org.telegram.messenger.purple.PurpleSyncChat.ensureResolved(currentAccount,false,this::problemOnce);
             status = getString(R.string.PurpleSyncReady);
         } else {
             status = getString(R.string.PurpleAccountWriteHeld);
@@ -147,6 +147,16 @@ public class PurpleSyncActivity extends UniversalFragment {
     @Override
     protected CharSequence getTitle() {
         return getString(R.string.PurpleSyncTitle);
+    }
+
+    /** A sync chat problem not shown before gets one dialog, which leads to the Sync chat screen. */
+    private void problemOnce(org.telegram.messenger.purple.PurpleSyncChat.Status chat) {
+        if(destroyed||chat==null||!chat.showProblem||getParentActivity()==null)return;
+        org.telegram.messenger.purple.PurpleSyncChat.problemShown(currentAccount);
+        new AlertDialog.Builder(getParentActivity()).setTitle(PurpleSyncChatActivity.text("Title"))
+                .setMessage(PurpleSyncChatActivity.text("MagicPaused",PurpleSyncChatActivity.text("Problem"+chat.problem.name())))
+                .setPositiveButton(PurpleSyncChatActivity.text("Title"),(dialog,which)->{if(!destroyed)presentFragment(new PurpleSyncChatActivity(currentAccount));})
+                .setNegativeButton(getString(R.string.Cancel),null).show();
     }
 
     @Override

@@ -420,6 +420,32 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
         }
     }
 
+    /**
+     * Sets this device's own sync state aside so the next check can join the records already in the chat: the
+     * pending stage, the automatic record, the retained bases and last the state move into a new
+     * {@code orphaned-<date>} folder, which {@link #open} tolerates. Nothing is deleted. A crash midway leaves
+     * the state in place, so it either still opens or is moved by the next attempt.
+     */
+    synchronized Result setAside() {
+        if (status != Status.Ready || !bound()) return result(Status.InvalidTransition);
+        try {
+            if (!Arrays.equals(state, read(stateFile, STATE_LIMIT))) return result(Status.InvalidTransition);
+            String date = new java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.ROOT).format(new java.util.Date());
+            File archive = new File(root, "orphaned-" + date);
+            if (archive.exists() || !archive.mkdir()) return result(Status.IoError);
+            android.system.Os.chmod(archive.getPath(), 0700);
+            for (String name : new String[] { "pending", "auto.json", "retained-bases", "state.json" }) {
+                File file = new File(root, name);
+                if (file.exists() && !isLink(file) && !file.renameTo(new File(archive, name))) return fail(Status.IoError);
+            }
+            state = null;
+            status = Status.Uninitialized;
+            return result(Status.Uninitialized);
+        } catch (IOException | android.system.ErrnoException | RuntimeException | LinkageError e) {
+            return fail(Status.IoError);
+        }
+    }
+
     /** Whether {@code bytes} is the config stage the state abandoned when it moved to another chat. */
     private boolean abandonedStage(byte[] bytes) {
         try {

@@ -121,6 +121,8 @@ public final class PurpleSyncMagicCore {
         public final long verifiedAt;
         public final Migration migration;
         public final String login;
+        /** The user chose to see the bound chat in Purple's chat lists. */
+        public final boolean listed;
         Binding(JSONObject value) {
             text = value.optString("binding");
             mode = named(Mode.class, capitalized(value.optString("mode")), Mode.None);
@@ -131,6 +133,7 @@ public final class PurpleSyncMagicCore {
             verifiedAt = number(value, "verifiedAt");
             migration = named(Migration.class, capitalized(value.optString("migration")), Migration.None);
             login = value.optString("login");
+            listed = value.optBoolean("listed");
         }
     }
 
@@ -195,6 +198,9 @@ public final class PurpleSyncMagicCore {
     }
     public static String migration(String binding, Migration step) {
         return step == null ? null : edited(call("edit", json("binding", text(binding), "set", json("migration", step.name().toLowerCase(Locale.ROOT)))));
+    }
+    public static String listed(String binding, boolean listed) {
+        return edited(call("edit", json("binding", text(binding), "set", json("listed", listed))));
     }
     public static String login(String binding, String login) {
         return login == null ? null : edited(call("edit", json("binding", text(binding), "set", json("login", login))));

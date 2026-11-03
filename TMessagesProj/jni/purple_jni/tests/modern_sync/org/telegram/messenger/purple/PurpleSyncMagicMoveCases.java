@@ -25,6 +25,7 @@ final class PurpleSyncMagicMoveCases {
     static void run(File parent) throws Exception {
         moveWithoutStage(parent);
         moveAbandonsStage(parent);
+        setAside(parent);
     }
 
     static void moveWithoutStage(File parent) throws Exception {
@@ -94,6 +95,34 @@ final class PurpleSyncMagicMoveCases {
         Files.write(stage.toPath(), "not a record".getBytes(StandardCharsets.UTF_8));
         try (PurpleAccountSyncStore store = magic(frame)) {
             check(store.open(true, 0, device(0)).status != PurpleAccountSyncStore.Status.Ready, "any other orphan stage still refuses");
+        }
+    }
+
+    /** Join for space_mismatch: the device's own state moves into an orphaned folder and the store is empty again. */
+    static void setAside(File parent) throws Exception {
+        Frame frame = new Frame(parent, "magic-set-aside", false);
+        String key = PurpleAccountFiles.capture(0).key;
+        File auto = new File(frame.sync(0), "auto.json");
+        Files.write(auto.toPath(), PurpleSyncAutoCore.decodeRecord(null, key).bytes);
+        try (PurpleAccountSyncStore store = self(frame)) {
+            check(store.open(true, 0, device(0)).status == PurpleAccountSyncStore.Status.Ready, "Saved Messages store opens");
+            check(store.moveTo(MAGIC, 101, key, fingerprint(frame)).status == PurpleAccountSyncStore.Status.Ready, "the state moves to the bound chat");
+        }
+        byte[] state = frame.state(0), record = Files.readAllBytes(auto.toPath());
+        try (PurpleAccountSyncStore store = magic(frame)) {
+            check(store.setAside().status == PurpleAccountSyncStore.Status.InvalidTransition, "a store that is not open sets nothing aside");
+            check(store.open(true, 0, device(0)).status == PurpleAccountSyncStore.Status.Ready, "the bound chat's store opens");
+            check(store.setAside().status == PurpleAccountSyncStore.Status.Uninitialized, "the state is set aside");
+            check(store.setAside().status == PurpleAccountSyncStore.Status.InvalidTransition, "only once");
+        }
+        File[] archives = frame.sync(0).listFiles((dir, name) -> PurpleSyncRecoveryFiles.archiveName(name));
+        check(archives != null && archives.length == 1, "one orphaned folder holds it");
+        check(!new File(frame.sync(0), "state.json").exists() && !auto.exists(), "the state and the automatic record left the sync folder");
+        check(Arrays.equals(state, Files.readAllBytes(new File(archives[0], "state.json").toPath()))
+                && Arrays.equals(record, Files.readAllBytes(new File(archives[0], "auto.json").toPath())), "nothing is deleted: both are kept byte for byte");
+        try (PurpleAccountSyncStore store = magic(frame)) {
+            check(store.open(true, 0, device(0)).status == PurpleAccountSyncStore.Status.Uninitialized,
+                    "the store opens empty beside the orphaned folder, so the next check can join the chat's records");
         }
     }
 

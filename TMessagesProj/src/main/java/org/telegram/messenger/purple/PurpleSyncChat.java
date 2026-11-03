@@ -70,7 +70,14 @@ public final class PurpleSyncChat {
         return holder;
     }
     /** Finds or creates the Magic Purple Sync chat once the account's chat list is up; never searches. */
-    public static void startSession(int slot) { AndroidUtilities.runOnUIThread(()->{Holder holder=account(slot);if(holder!=null)holder.magic.lookup(PurpleSyncMagicChat.Trigger.startup,false,null);}); }
+    public static void startSession(int slot) { startSession(slot,null); }
+    /** {@code done}, when given, gets the startup lookup's status on the UI thread, to show a problem once. */
+    public static void startSession(int slot,Consumer<Status> done) {
+        AndroidUtilities.runOnUIThread(()->{
+            Holder holder=account(slot);if(holder==null)return;
+            holder.magic.lookup(PurpleSyncMagicChat.Trigger.startup,false,done==null?null:result->AndroidUtilities.runOnUIThread(()->{if(holder.env.current())done.accept(new Status(result));}));
+        });
+    }
     public static void ensureResolved(int slot,boolean force,Consumer<Status> done) {
         lookup(slot,force?PurpleSyncMagicChat.Trigger.manual:PurpleSyncMagicChat.Trigger.screen,force,()->true,done);
     }
@@ -123,6 +130,73 @@ public final class PurpleSyncChat {
     static boolean chatProblem(int slot) {
         Holder holder=accounts.get(slot);
         return holder!=null&&holder.magic.last().kind==PurpleSyncMagicChat.Result.Kind.Problem;
+    }
+    /** The Sync chat screen's view of the account, from the last lookup, without a request. */
+    public static PurpleSyncMagicScreen.Frame magicFrame(int slot) {
+        Holder holder=accounts.get(slot);
+        return holder!=null&&holder.env.current()?PurpleSyncMagicScreen.frame(holder.magic.last(),holder.magic.binding()):PurpleSyncMagicScreen.frame(null,null);
+    }
+    /** A manual check: clears a recorded problem and looks the chat up afresh. */
+    public static void magicCheck(int slot,BooleanSupplier current,Consumer<PurpleSyncMagicScreen.Frame> done) {
+        magicAction(slot,current,done,(holder,reply)->holder.magic.lookup(PurpleSyncMagicChat.Trigger.manual,true,reply));
+    }
+    /** Whether the user may pick {@code chat} (Saved Messages, or a supergroup the user is in alone), from local data. */
+    public static PurpleSyncMagicScreen.Pick magicPick(int slot,Peer chat) {
+        if(chat==null||Peer.self().equals(chat))return PurpleSyncMagicScreen.pick(chat,null);
+        org.telegram.messenger.MessagesController messages=org.telegram.messenger.MessagesController.getInstance(slot);
+        org.telegram.tgnet.TLRPC.Chat local=chat.kind==PeerKind.Channel?messages.getChat(chat.id):null;
+        PurpleSyncMagicCore.Candidate candidate=local!=null?PurpleSyncChatFacts.magic(local,messages.getChatFull(chat.id)):null;
+        if(candidate==null&&local!=null)candidate=PurpleSyncChatFacts.magic(local,null);
+        return PurpleSyncMagicScreen.pick(chat,candidate);
+    }
+    public static void magicChoose(int slot,Peer chat,BooleanSupplier current,Consumer<PurpleSyncMagicScreen.Frame> done) {
+        if(magicPick(slot,chat)!=PurpleSyncMagicScreen.Pick.Allowed){done.accept(magicFrame(slot));return;}
+        magicAction(slot,current,done,(holder,reply)->holder.magic.choose(chat,reply));
+    }
+    public static void magicUseDefault(int slot,BooleanSupplier current,Consumer<PurpleSyncMagicScreen.Frame> done) {
+        magicAction(slot,current,done,(holder,reply)->holder.magic.useDefault(reply));
+    }
+    public static void magicList(int slot,boolean listed,BooleanSupplier current,Consumer<Boolean> done) {
+        AndroidUtilities.runOnUIThread(()->{
+            Holder holder=account(slot);if(holder==null){done.accept(false);return;}
+            holder.magic.list(listed,ok->AndroidUtilities.runOnUIThread(()->{if(current.getAsBoolean())done.accept(ok);if(ok)org.telegram.messenger.NotificationCenter.getInstance(slot).postNotificationName(org.telegram.messenger.NotificationCenter.dialogsNeedReload);}));
+        });
+    }
+    /**
+     * Join for space_mismatch: this device's own sync state for the bound chat is set aside (nothing is deleted)
+     * and the problem cleared, so the next check on the Sync screen offers to join the records already there.
+     * {@code done} gets false when the state could not be set aside, for example while a sync runs.
+     */
+    public static void magicJoin(int slot,BooleanSupplier current,Consumer<Boolean> done) {
+        AndroidUtilities.runOnUIThread(()->{
+            Holder holder=account(slot);
+            PurpleSyncMagicChat.Result last=holder!=null?holder.magic.last():null;
+            if(last==null||last.kind!=PurpleSyncMagicChat.Result.Kind.Problem||last.problem!=PurpleSyncMagicCore.Problem.SpaceMismatch||last.chat==null){done.accept(false);return;}
+            Peer chat=last.chat;
+            queue().postRunnable(()->{
+                boolean ok=false;
+                try(PurpleAccountSyncStore store=PurpleAccountSyncStore.following(holder.env.context,chat)){
+                    ok=holder.env.current()&&store.open(true,slot,PurpleDevice.id()).status==PurpleAccountSyncStore.Status.Ready
+                            &&chat.equals(store.chat())&&store.setAside().status==PurpleAccountSyncStore.Status.Uninitialized;
+                }catch(Exception|LinkageError ignored){ok=false;}
+                PurpleDiagLog.event("sync_chat","migration",PurpleDiagLogStore.code("step","joined"),PurpleDiagLogStore.code("outcome",ok?"ok":"error"));
+                boolean setAside=ok;
+                if(!setAside){AndroidUtilities.runOnUIThread(()->{if(current.getAsBoolean())done.accept(false);});return;}
+                holder.magic.joined(result->AndroidUtilities.runOnUIThread(()->{if(current.getAsBoolean())done.accept(true);}));
+            });
+        });
+    }
+    /** The magic chat Purple's chat lists hide for this account, or null (the user picked a chat or chose to see it). */
+    public static Peer hiddenChat(int slot) {
+        Holder holder=accounts.get(slot);
+        return holder!=null?holder.magic.hidden():null;
+    }
+    private interface MagicCall { void start(Holder holder,Consumer<PurpleSyncMagicChat.Result> reply); }
+    private static void magicAction(int slot,BooleanSupplier current,Consumer<PurpleSyncMagicScreen.Frame> done,MagicCall call) {
+        AndroidUtilities.runOnUIThread(()->{
+            Holder holder=account(slot);if(holder==null){done.accept(PurpleSyncMagicScreen.frame(null,null));return;}
+            call.start(holder,result->AndroidUtilities.runOnUIThread(()->{if(current.getAsBoolean())done.accept(PurpleSyncMagicScreen.frame(result,holder.magic.binding()));}));
+        });
     }
     public static Status status(int slot) { Holder holder=accounts.get(slot);return holder!=null&&holder.env.current()?new Status(holder.magic.last()):unavailable(); }
     public static PurpleSyncChatScreen.Control screen(int slot) { return screen(slot,()->true); }

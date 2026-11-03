@@ -326,6 +326,61 @@ public final class PurpleSyncMagicChatCases {
         result = run(fake, service, PurpleSyncMagicChat.Trigger.auto, false);
         check(result.kind == PurpleSyncMagicChat.Result.Kind.Problem && result.problem == PurpleSyncMagicCore.Problem.SpaceMismatch && fake.sent.isEmpty(),
             "later automatic lookups keep the pause and send nothing");
+        // The Sync chat screen: the mismatch is shown once and offers Join, which clears it.
+        PurpleSyncMagicScreen.Frame frame = PurpleSyncMagicScreen.frame(service.last(), service.binding());
+        check(frame.line == PurpleSyncMagicScreen.Line.Problem && frame.showProblem && frame.canJoin() && frame.canOpen() && !frame.manual,
+            "the screen shows the mismatch once and offers Join");
+        check(channel(6000).equals(service.hidden()), "the magic chat stays hidden from the lists while paused");
+        fake.sent.clear();
+        PurpleSyncMagicChat.Result[] action = { null };
+        service.joined(value -> action[0] = value); fake.drain();
+        check(action[0] != null && action[0].kind == PurpleSyncMagicChat.Result.Kind.Use && channel(6000).equals(action[0].chat)
+            && PurpleSyncMagicCore.parse(fake.binding).problem == PurpleSyncMagicCore.Problem.None, "Join clears the problem and the chat is used again");
+        check(fake.logged("user_action action=join") && fake.sent.isEmpty(), "Join is logged, and the chat verified today costs no request: " + fake.sent);
+        check(!PurpleSyncMagicScreen.frame(service.last(), service.binding()).canJoin(), "Join is offered only for the mismatch");
+
+        // The list toggle is kept in the binding; only the magic chat is hidden.
+        check(channel(6000).equals(service.hidden()), "the magic chat is hidden from the lists by default");
+        Boolean[] listed = { null };
+        service.list(true, value -> listed[0] = value); fake.drain();
+        check(Boolean.TRUE.equals(listed[0]) && PurpleSyncMagicCore.parse(fake.binding).listed && service.hidden() == null, "showing it in the lists is kept");
+        frame = PurpleSyncMagicScreen.frame(service.last(), service.binding());
+        check(frame.canList() && frame.listed && !frame.canUseDefault(), "the screen shows the toggle on");
+        service.list(false, value -> listed[0] = value); fake.drain();
+        check(Boolean.TRUE.equals(listed[0]) && channel(6000).equals(service.hidden()), "turning it off hides the chat again");
+        service.list(true, null); fake.drain();
+
+        // Only Saved Messages or a supergroup the user is alone in may be picked (Q2).
+        check(PurpleSyncMagicScreen.pick(PurpleSyncChatCore.Peer.self(), null) == PurpleSyncMagicScreen.Pick.Allowed, "Saved Messages may be picked");
+        check(PurpleSyncMagicScreen.pick(channel(7100), chat(7100, 0L, 0L)) == PurpleSyncMagicScreen.Pick.Allowed, "a supergroup the user is alone in");
+        check(PurpleSyncMagicScreen.pick(channel(7100), chat(7100, 1L, 0L)) == PurpleSyncMagicScreen.Pick.NotAlone, "not one with another member");
+        check(PurpleSyncMagicScreen.pick(channel(7100), chat(7100, null, null)) == PurpleSyncMagicScreen.Pick.Unknown, "nor one whose members are unknown");
+        PurpleSyncMagicCore.Candidate broadcast = chat(7100, 0L, 0L); broadcast.megagroup = false;
+        check(PurpleSyncMagicScreen.pick(channel(7100), broadcast) == PurpleSyncMagicScreen.Pick.Unsupported, "nor a broadcast channel");
+        check(PurpleSyncMagicScreen.pick(channel(7100), chat(7200, 0L, 0L)) == PurpleSyncMagicScreen.Pick.Unsupported, "nor facts of another chat");
+        check(PurpleSyncMagicScreen.pick(PurpleSyncChatCore.Peer.of(PurpleSyncChatCore.PeerKind.User, 42), null) == PurpleSyncMagicScreen.Pick.Unsupported
+            && PurpleSyncMagicScreen.pick(PurpleSyncChatCore.Peer.of(PurpleSyncChatCore.PeerKind.Chat, 42), null) == PurpleSyncMagicScreen.Pick.Unsupported,
+            "nor a private chat or a basic group");
+
+        // A picked chat is used as a manual binding, never hidden; Use Magic Purple Sync binds the magic chat again.
+        fake.sent.clear(); fake.bound = chat(7100, 0L, 0L); fake.boundState = PurpleSyncMagicCore.BoundState.Present;
+        service.choose(channel(7100), value -> action[0] = value); fake.drain();
+        check(action[0].kind == PurpleSyncMagicChat.Result.Kind.Use && channel(7100).equals(action[0].chat) && action[0].manual && fake.sent.isEmpty(),
+            "a picked chat is used without requests");
+        frame = PurpleSyncMagicScreen.frame(service.last(), service.binding());
+        check(service.hidden() == null && frame.manual && frame.canUseDefault() && !frame.canList(), "a picked chat is never hidden and offers the default");
+        check(PurpleSyncMagicCore.parse(fake.binding).listed, "picking keeps the list choice");
+        fake.bound = null; fake.boundState = PurpleSyncMagicCore.BoundState.Unknown;
+        fake.visible = new ArrayList<>(Collections.singletonList(chat(6000, null, null)));
+        fake.reply(PurpleSyncMagicCore.FULL_INFO, ok(chat(6000, 0L, 0L)));
+        service.useDefault(value -> action[0] = value); fake.drain();
+        check(action[0].kind == PurpleSyncMagicChat.Result.Kind.Use && channel(6000).equals(action[0].chat) && !action[0].manual,
+            "Use Magic Purple Sync binds the magic chat again");
+        PurpleSyncMagicCore.Binding back = PurpleSyncMagicCore.parse(fake.binding);
+        check(back.mode == PurpleSyncMagicCore.Mode.Magic && back.listed, "the list choice survives returning to the default");
+        check(fake.logged("user_action action=choose") && fake.logged("user_action action=default") && fake.logged("listed value=on")
+            && fake.logged("listed value=off"), "each choice is logged");
+
         // "reason" is the one fixed field name; its value is a vocabulary word like every other.
         for (String line : fake.diag) for (String part : line.split(" ")) {
             for (String word : part.split("=")) if (!word.matches("[0-9]+") && !word.equals("reason"))

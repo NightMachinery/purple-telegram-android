@@ -44,13 +44,24 @@ public final class PurpleDialogsHooks {
     /**
      * Resolves the preset before the first list is built, keeping native loading
      * and settings reads off the adapter's background diff path, and starts
-     * the sync chat lookup, which never searches Telegram.
+     * the sync chat lookup, which never searches Telegram. A sync chat problem
+     * not shown before gets one dialog leading to the Sync chat screen.
      */
     public void onFragmentCreate() {
         PurpleGate.ensureLoaded();
         if(fragment.getArguments()==null||!fragment.getArguments().getBoolean("onlySelect",false))
-            org.telegram.messenger.purple.PurpleSyncChat.startSession(fragment.getCurrentAccount());
+            org.telegram.messenger.purple.PurpleSyncChat.startSession(fragment.getCurrentAccount(),this::syncChatProblem);
         org.telegram.messenger.purple.PurpleSyncAuto.sessionReady(fragment.getCurrentAccount());
+    }
+
+    private void syncChatProblem(org.telegram.messenger.purple.PurpleSyncChat.Status chat) {
+        int account = fragment.getCurrentAccount();
+        if (chat == null || !chat.showProblem || fragment.isFinished || fragment.getParentActivity() == null || fragment.getParentLayout() == null) return;
+        org.telegram.messenger.purple.PurpleSyncChat.problemShown(account);
+        new org.telegram.ui.ActionBar.AlertDialog.Builder(fragment.getParentActivity()).setTitle(PurpleSyncChatActivity.text("Title"))
+                .setMessage(PurpleSyncChatActivity.text("MagicPaused", PurpleSyncChatActivity.text("Problem" + chat.problem.name())))
+                .setPositiveButton(PurpleSyncChatActivity.text("Title"), (dialog, which) -> fragment.presentFragment(new PurpleSyncChatActivity(account)))
+                .setNegativeButton(org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.Cancel), null).show();
     }
 
     public void addEndPeek(org.telegram.ui.ActionBar.ActionBarMenu menu) {

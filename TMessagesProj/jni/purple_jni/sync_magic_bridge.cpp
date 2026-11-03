@@ -273,6 +273,7 @@ QJsonObject Evaluate(const QString &operation, const QJsonObject &object) {
             next.waits = binding.waits;
             next.login = binding.login;
             next.migration = binding.migration;
+            next.listed = binding.listed;
             next.preserved = binding.preserved;
             binding = next;
         }
@@ -312,6 +313,10 @@ QJsonObject Evaluate(const QString &operation, const QJsonObject &object) {
             if (!found) return Failure();
         }
         if (fields.contains(u"login"_q)) binding.login = fields.value(u"login"_q).toString();
+        if (fields.contains(u"listed"_q)) {
+            if (!fields.value(u"listed"_q).isBool()) return Failure();
+            binding.listed = fields.value(u"listed"_q).toBool();
+        }
         if (!Put(result, binding)) return Failure();
     } else if (operation == u"parse"_q) {
         if (!Binding(object.value(u"binding"_q), binding)) return Failure();
@@ -324,6 +329,7 @@ QJsonObject Evaluate(const QString &operation, const QJsonObject &object) {
         result.insert(u"verifiedAt"_q, QString::number(binding.verifiedAt));
         result.insert(u"migration"_q, MigrationName(binding.migration));
         result.insert(u"login"_q, binding.login);
+        result.insert(u"listed"_q, binding.listed);
     } else {
         return Failure();
     }
