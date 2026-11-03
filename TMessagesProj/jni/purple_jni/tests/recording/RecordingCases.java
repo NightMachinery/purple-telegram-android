@@ -195,6 +195,10 @@ public final class RecordingCases {
         writeUnfinishedMp4(split, 3);
         check(PurpleRecordingFiles.mp4Finished(split) == 0, "split mdat without moov is unfinished");
         check(PurpleRecordingFiles.mp4Finished(voice) == -1, "an Ogg file is not an MP4");
+        final long mp4Ms = PurpleRecordingFiles.mp4DurationMs(mp4);
+        check(mp4Ms >= 900 && mp4Ms <= 1100, "a finished MP4's duration comes from mvhd: " + mp4Ms);
+        check(PurpleRecordingFiles.mp4DurationMs(unfinished) == 0 && PurpleRecordingFiles.mp4DurationMs(voice) == 0,
+                "no mvhd, no duration");
 
         // The manifest: atomic writes and what a reader does with damage.
         final File dir = new File(work, "purple-recordings");
@@ -263,6 +267,13 @@ public final class RecordingCases {
         check(PurpleRecordingEntry.UNSENT.equals(slip.state) && slip.discarded, "it is a Discarded item");
         check(PurpleRecordingCore.scanOgg(new File(slip.media)).clean(), "its bytes are whole");
         check(slip.durationMs > 2000, "its duration comes from the core");
+        // A discarded round that the recorder had already finished (legacy cancel) keeps its duration.
+        final PurpleRecordingEntry legacyRound = store.begin(0, 786, 0, 0, PurpleRecordingEntry.ROUND, NOW * 1000 + 9);
+        try (FileChannel held = new RandomAccessFile(mp4, "r").getChannel()) {
+            check(store.discard(legacyRound, held, true, NOW + 32), "a finished round is kept");
+        }
+        check(legacyRound.durationMs >= 900 && legacyRound.durationMs <= 1100, "with the duration of the file");
+        store.delete(legacyRound);
         final PurpleRecordingEntry slip2 = store.begin(0, 782, 0, 0, PurpleRecordingEntry.VOICE, NOW * 1000 + 5);
         check(!store.discard(slip2, null, false, NOW + 31), "without keep_discarded_p nothing is kept");
         check(store.find(slip2.id) == null, "and the entry is dropped");

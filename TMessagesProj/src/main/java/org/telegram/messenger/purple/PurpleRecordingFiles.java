@@ -119,6 +119,48 @@ public final class PurpleRecordingFiles {
         }
     }
 
+    /**
+     * A finished MP4's duration from its {@code moov/mvhd} (timescale and
+     * duration, version 0 or 1), in milliseconds; 0 when there is none.
+     */
+    public static long mp4DurationMs(File file) {
+        try (RandomAccessFile in = new RandomAccessFile(file, "r")) {
+            final long length = in.length();
+            long at = 0;
+            long end = length;
+            final byte[] head = new byte[8];
+            while (at + 8 <= end) {
+                in.seek(at);
+                in.readFully(head);
+                long size = ((head[0] & 0xffL) << 24) | ((head[1] & 0xffL) << 16) | ((head[2] & 0xffL) << 8) | (head[3] & 0xffL);
+                final String type = new String(head, 4, 4, java.nio.charset.StandardCharsets.ISO_8859_1);
+                long body = at + 8;
+                if (size == 1) {
+                    size = in.readLong();
+                    body = at + 16;
+                }
+                if (size < 8 || at + size > length) return 0;
+                if (type.equals("moov")) {
+                    end = at + size;
+                    at = body;
+                    continue;
+                }
+                if (type.equals("mvhd")) {
+                    in.seek(body);
+                    final int version = in.readUnsignedByte();
+                    in.skipBytes(3 + (version == 1 ? 16 : 8));
+                    final long timescale = in.readInt() & 0xffffffffL;
+                    final long duration = version == 1 ? in.readLong() : in.readInt() & 0xffffffffL;
+                    return timescale == 0 || duration < 0 ? 0 : duration * 1000 / timescale;
+                }
+                at += size;
+            }
+            return 0;
+        } catch (IOException e) {
+            return 0;
+        }
+    }
+
     private static boolean printable(String type) {
         for (int i = 0; i < type.length(); i++) {
             final char c = type.charAt(i);

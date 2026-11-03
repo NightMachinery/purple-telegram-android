@@ -346,6 +346,8 @@ public final class PurpleRecordingStore {
             return;
         }
         if (PurpleRecordingFiles.mp4Finished(media) == 1) {
+            final long duration = PurpleRecordingFiles.mp4DurationMs(media);
+            if (duration > 0) e.durationMs = duration;
             e.state = inBinState;
             count(e, outcome);
             return;
