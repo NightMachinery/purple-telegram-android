@@ -269,3 +269,40 @@ Purple's own `PurpleSettingsActivity`. No hook carries a comment beyond the allo
 The new drawables and strings are Purple's.
 
 RECHECK F9 android: CHANGES P1=1 P2=0
+
+## Re-check 2
+
+Scope: `8e70f5c..f1eef62` on `recording` (one commit, "F9: keep music's shuffle and
+repeat in the system controls; move the Seek step row"). Read-only. The purple-core
+gitlink is still `d7f378534f`. `purple/upstream-hooks.sh check` passes,
+`purple/run_host_suites.py --list` passes (37 configurations), and no upstream file
+changed in this commit. Nothing was built.
+
+Verdict: **APPROVE**.
+
+- **P1-R1, fixed.** `sessionActions(state)` now adds the two seek custom actions only
+  when `seekButtons(playing.isMusic())` is true, which means only for non-music. For
+  music, both state builders (`createNotification` and `updatePlaybackState`) add no
+  custom actions of Purple's. Upstream's shuffle and repeat custom actions are therefore
+  first again, in upstream's order, and the Android 13+ controls show previous, play/pause,
+  next, shuffle and repeat exactly as before F9. The only remaining difference for music
+  is the `ACTION_REWIND | ACTION_FAST_FORWARD` bits. System media controls do not draw
+  those; they only enable headset keys, as accepted in the first review.
+  `MediaController.getPlayingMessageObject()`, which the check reads, is the same message
+  that every `createNotification` call site passes in, so the music test cannot disagree
+  with the notification being built.
+- **Voice and round** still get "Back N s" and "Forward N s" in the empty previous and
+  next slots. The step is read on every state rebuild, and `onCustomAction` is unchanged.
+- **P3-R1, fixed.** The Seek step row now comes before the voice queue's closing info
+  text, so it sits inside the "Media playback" card.
+- **Tests.** `seek` gains two checks for `seekButtons` (music no, voice and round yes) and
+  now checks the constant `SESSION_ACTIONS` instead of calling `sessionActions(null)`,
+  which would have reached `MediaController` on the host. The count is 76, above the
+  floor of 70. The wiring from `isMusic()` to `seekButtons` is one line and is not
+  host-tested, which is fine.
+- **README** says music has no seek buttons in the system controls and keeps upstream's.
+- **Nothing new found.** P3-R2 (a seek before a stream knows its duration briefly posts
+  0:00 to the session) and P3-R3 (notification labels follow a new step on the next
+  rebuild) stay as noted. Neither blocks.
+
+RECHECK2 F9 android: APPROVE P1=0 P2=0
