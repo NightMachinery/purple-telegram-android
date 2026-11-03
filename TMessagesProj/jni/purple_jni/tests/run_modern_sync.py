@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 
 parser = argparse.ArgumentParser(description="Run account sync fixtures against actual AGP classes and host JNI")
 parser.add_argument("--receipt", type=Path, required=True)
@@ -40,20 +41,29 @@ case_sources += [tests / path for path in [
 main = args.output / "SyncHostMain.java"
 main.write_text('import java.io.File;public final class SyncHostMain{public static void main(String[] a)throws Exception{org.telegram.messenger.purple.PurpleCore.ensureLoaded();File expected=new File(a[0]).getCanonicalFile();for(String n:new String[]{"PurpleSyncRunner","PurpleSyncApply","PurpleSyncPublisher","PurpleSyncCore","PurpleAccountSyncStore","PurpleSyncHistory","PurpleAccountBinding","PurpleSyncRecoveryCore","PurpleSyncRecoveryModel","PurpleSyncRecoveryFiles","PurpleSyncRecovery","PurpleAccountFiles","PurpleAccountSettings","PurpleAccountEditorModel","PurpleConfigImpact","PurpleRoutedWriteModel","PurpleSyncAutoCore","PurpleSyncAutoEngine","PurpleSyncAutoNetwork","PurpleSyncAutoClient","PurpleSyncAutoEdits","PurpleSyncAuto","PurpleSyncMutation","PurpleSyncTelegramClient","PurpleSyncAutoOutbox","PurpleSyncAutoUpload"}){File origin=new File(Class.forName("org.telegram.messenger.purple."+n).getProtectionDomain().getCodeSource().getLocation().toURI()).getCanonicalFile();if(!expected.equals(origin))throw new AssertionError("business class shadow: "+n);System.out.println(n+" origin="+origin);}String suite=a[1];File root=new File(a[2]);if(!root.mkdir())throw new AssertionError("exclusive fixture");if(suite.equals("auto")){System.out.println("AUTO_CHECKS="+org.telegram.messenger.purple.PurpleSyncAutoCases.run(root));return;}if(suite.equals("modern")){System.out.println("MODERN_CHECKS="+org.telegram.messenger.purple.PurpleModernSyncCases.run(root));return;}if(suite.equals("routed")){File routed=new File(root,"routed"),editor=new File(root,"editor"),transfers=new File(root,"transfers");if(!routed.mkdir()||!editor.mkdir()||!transfers.mkdir())throw new AssertionError("fixtures");System.out.println("ROUTED_CHECKS="+org.telegram.messenger.purple.PurpleRoutedWriteCases.run(routed));System.out.println("EDITOR_CHECKS="+org.telegram.messenger.purple.PurpleAccountEditorCases.run(editor));System.out.println("TRANSFER_CHECKS="+org.telegram.messenger.purple.PurpleTransferCases.run(transfers));return;}String name=suite.equals("core")?"PurpleSyncCoreTest":suite.equals("store")?"PurpleAccountSyncStoreTest":"PurpleSyncHistoryTest";Class.forName("org.telegram.messenger.purple."+name).getMethod("main",String[].class).invoke(null,(Object)(suite.startsWith("history")?new String[]{suite.substring(8)}:new String[0]));}}\n')
 sources = adapters + case_sources + [main]
-def run(name, command):
+# WHY: Android refuses an app any read of the root directory "/" (native check A3: the durable file layer walked from
+# "/" and every magic publish failed with IoError). Every Java run here gets the same refusal, through rootdeny.c.
+deny_env = None
+deny_props = []
+if sys.platform == "darwin":
+    rootdeny = args.output / "librootdeny.dylib"
+    subprocess.run(["cc", "-dynamiclib", "-O1", "-o", str(rootdeny), str(tests / "modern_sync/rootdeny.c")], check=True)
+    deny_env = dict(os.environ, DYLD_INSERT_LIBRARIES=str(rootdeny), ROOTDENY_LOG=str(args.output / "rootdeny.log"))
+    deny_props = ["-Dpurple.test.rootdeny=" + str(args.output / "rootdeny.log")]
+def run(name, command, env=None):
     (args.output / (name + ".argv.json")).write_text(json.dumps(list(map(str, command)), indent=2) + "\n")
     with (args.output / (name + ".log")).open("w") as log:
-        result = subprocess.run(list(map(str, command)), cwd=repo, stdout=log, stderr=subprocess.STDOUT)
+        result = subprocess.run(list(map(str, command)), cwd=repo, stdout=log, stderr=subprocess.STDOUT, env=env)
     print(name, result.returncode, flush=True)
     print((args.output / (name + ".log")).read_text()[-5000:], flush=True)
     if result.returncode:
         raise SystemExit(result.returncode)
-manifest = [{"path": str(p), "sha256": hashlib.sha256(p.read_bytes()).hexdigest()} for p in sources + [args.library, args.receipt]]
+manifest = [{"path": str(p), "sha256": hashlib.sha256(p.read_bytes()).hexdigest()} for p in sources + [args.library, args.receipt, tests / "modern_sync/rootdeny.c"]]
 (args.output / "inputs.json").write_text(json.dumps(manifest, indent=2) + "\n")
 run("javac", [compiler, "-source", "8", "-target", "8", "-proc:none", "-sourcepath", empty, "-cp", classpath, "-d", out] + sources)
 suites = ["modern", "routed", "store", "core", "history-rules", "history-native"] if args.suite == "all" else ["store", "core", "history-rules", "history-native"] if args.suite == "existing" else ["history-rules", "history-native"] if args.suite == "history" else [args.suite]
 for suite in suites:
-    run(suite, [java, "-Xcheck:jni", "-Xmx768m", "-XX:ActiveProcessorCount=2", "-Djava.library.path=" + str(args.library.parent), "-Djava.io.tmpdir=" + str(fixtures), "-Dscratch=" + str(fixtures), "-Dpurple.test.strings=" + str(repo / "TMessagesProj/src/main/res/values/purple_strings.xml"), "-cp", str(out) + os.pathsep + classpath, "SyncHostMain", classes, suite, fixtures / suite])
+    run(suite, [java, "-Xcheck:jni", "-Xmx768m", "-XX:ActiveProcessorCount=2"] + deny_props + ["-Djava.library.path=" + str(args.library.parent), "-Djava.io.tmpdir=" + str(fixtures), "-Dscratch=" + str(fixtures), "-Dpurple.test.strings=" + str(repo / "TMessagesProj/src/main/res/values/purple_strings.xml"), "-cp", str(out) + os.pathsep + classpath, "SyncHostMain", classes, suite, fixtures / suite], deny_env)
 
 if args.suite in ["all", "modern", "auto"]:
     retry_out=args.output / "outbox-classes"
@@ -62,4 +72,4 @@ if args.suite in ["all", "modern", "auto"]:
     retry_main.write_text('import java.io.File;public class OutboxHostMain{public static void main(String[] a)throws Exception{org.telegram.messenger.purple.PurpleCore.ensureLoaded();for(String n:new String[]{"PurpleSync","PurpleSyncAutoOutbox","PurpleSyncAutoUpload","PurpleSyncAutoEdits"})if(!new File(Class.forName("org.telegram.messenger.purple."+n).getProtectionDomain().getCodeSource().getLocation().toURI()).getCanonicalFile().equals(new File(a[0]).getCanonicalFile()))throw new AssertionError("shadow "+n);File root=new File(a[1]);if(!root.mkdir())throw new AssertionError("fixtures");System.out.println("OUTBOX_CHECKS="+org.telegram.messenger.purple.PurpleSyncAutoOutboxCases.run(root));}}\n')
     retry_cp=str(out)+os.pathsep+classpath
     run("outbox-javac", [compiler,"-source","8","-target","8","-proc:none","-sourcepath",empty,"-cp",retry_cp,"-d",retry_out]+list((tests/"auto_outbox").glob("*.java"))+[retry_main])
-    run("outbox", [java,"-Xcheck:jni","-Xmx768m","-XX:ActiveProcessorCount=2","-Djava.library.path="+str(args.library.parent),"-Dscratch="+str(fixtures),"-cp",str(retry_out)+os.pathsep+retry_cp,"OutboxHostMain",classes,fixtures/"outbox"])
+    run("outbox", [java,"-Xcheck:jni","-Xmx768m","-XX:ActiveProcessorCount=2"]+deny_props+["-Djava.library.path="+str(args.library.parent),"-Dscratch="+str(fixtures),"-cp",str(retry_out)+os.pathsep+retry_cp,"OutboxHostMain",classes,fixtures/"outbox"],deny_env)

@@ -105,13 +105,17 @@ bool Private(const struct stat &s, bool directory) {
     return (directory ? S_ISDIR(s.st_mode) : S_ISREG(s.st_mode) && s.st_nlink == 1)
         && s.st_uid == geteuid() && (s.st_mode & 07777) == (directory ? 0700 : 0600);
 }
-int Parent(const QString &path, QByteArray &name) {
-    Need(path.startsWith(u'/') && !path.endsWith(u'/'), u"AmbiguousFiles"_q);
-    const auto parts = path.toUtf8().split('/');
-    Need(parts.size() >= 2, u"AmbiguousFiles"_q);
-    auto fd = open("/", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+// WHY: the walk starts at the app's files directory, never at "/": Android refuses an app any read of the root
+// directory (SELinux, rootfs), so opening "/" failed every durable operation with IoError (native check A3). The
+// anchor comes from Java (PurpleAccountFileSnapshot.anchor) and every path must lie strictly below it.
+int Parent(const QString &anchor, const QString &path, QByteArray &name) {
+    Need(anchor.size() > 1 && anchor.startsWith(u'/') && !anchor.endsWith(u'/') && !path.endsWith(u'/')
+        && path.startsWith(anchor + u'/'), u"PathOutsideRoot"_q);
+    const auto parts = path.mid(anchor.size() + 1).toUtf8().split('/');
+    for (const auto &part : path.toUtf8().split('/').mid(1)) Need(!part.isEmpty() && part != "." && part != "..", u"PathOutsideRoot"_q);
+    auto fd = open(anchor.toUtf8().constData(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
     Need(fd >= 0, u"IoError"_q);
-    for (int i = 1; i < parts.size(); ++i) {
+    for (int i = 0; i < parts.size(); ++i) {
         const auto &part = parts[i];
         if (part.isEmpty() || part == "." || part == "..") { close(fd); throw Failure{u"AmbiguousFiles"_q}; }
         if (i + 1 == parts.size()) { name = part; return fd; }
@@ -158,9 +162,9 @@ QJsonObject Snapshot(int parent, const QByteArray &name, int limit) {
     object.insert(u"bytes"_q, Blob(bytes));
     return object;
 }
-void ParentCurrent(const QString &path, int fd) {
+void ParentCurrent(const QString &anchor, const QString &path, int fd) {
     auto name = QByteArray();
-    const auto reopened = Fd(Parent(path, name));
+    const auto reopened = Fd(Parent(anchor, path, name));
     struct stat current{}, old{};
     Need(fstat(reopened.value, &current) == 0 && fstat(fd, &old) == 0 && Identity(current) == Identity(old)
         && Private(current, true), u"Changed"_q);
@@ -168,13 +172,13 @@ void ParentCurrent(const QString &path, int fd) {
 void Barrier(int fd, int fault, int point) {
     Need(fault != point && fsync(fd) == 0, u"DurabilityFailed"_q);
 }
-QJsonObject FileOperation(const QString &op, const QString &path, const QByteArray &expectedBytes,
+QJsonObject FileOperation(const QString &op, const QString &anchor, const QString &path, const QByteArray &expectedBytes,
         const QByteArray &bytes, int limit, int fault) {
     Need(limit > 0 && limit <= 4194304 && bytes.size() <= limit);
     auto name = QByteArray();
-    const auto parent = Fd(Parent(path, name));
+    const auto parent = Fd(Parent(anchor, path, name));
     if (op == u"directory"_q || op == u"directoryRead"_q) {
-        ParentCurrent(path, parent.value);
+        ParentCurrent(anchor, path, parent.value);
         struct stat st{};
         if (fstatat(parent.value, name.constData(), &st, AT_SYMLINK_NOFOLLOW) != 0) {
             Need(errno == ENOENT, u"IoError"_q);
@@ -184,7 +188,7 @@ QJsonObject FileOperation(const QString &op, const QString &path, const QByteArr
         const auto fd = Fd(openat(parent.value, name.constData(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC));
         Need(fd.value >= 0 && fstat(fd.value, &st) == 0 && Private(st, true), u"InsecurePermissions"_q);
         if (op == u"directory"_q) { Barrier(fd.value, fault, 5); Barrier(parent.value, fault, 5); }
-        ParentCurrent(path, parent.value);
+        ParentCurrent(anchor, path, parent.value);
         struct stat named{};
         Need(fstatat(parent.value, name.constData(), &named, AT_SYMLINK_NOFOLLOW) == 0
             && Identity(named) == Identity(st) && Private(named, true), u"Changed"_q);
@@ -195,7 +199,7 @@ QJsonObject FileOperation(const QString &op, const QString &path, const QByteArr
         Need(fstat(parent.value, &directory) == 0 && Private(directory, true), u"InsecurePermissions"_q);
         Need(fstatat(parent.value, name.constData(), &file, AT_SYMLINK_NOFOLLOW) == 0
             && Private(file, false) && file.st_size == 0, u"InsecurePermissions"_q);
-        ParentCurrent(path, parent.value);
+        ParentCurrent(anchor, path, parent.value);
         return {{u"status"_q, u"Ready"_q}, {u"parent"_q, Identity(directory)},
             {u"identity"_q, Identity(file)}, {u"revision"_q, Revision(file)}, {u"bytes"_q, QString()}};
     }
@@ -210,13 +214,13 @@ QJsonObject FileOperation(const QString &op, const QString &path, const QByteArr
             Need(fd.value >= 0 && fstat(fd.value, &st) == 0 && Revision(st) == current.value(u"revision"_q).toString(), u"Changed"_q);
             Barrier(fd.value, fault, 4);
         }
-        ParentCurrent(path, parent.value); Barrier(parent.value, fault, 5);
+        ParentCurrent(anchor, path, parent.value); Barrier(parent.value, fault, 5);
         Need(Snapshot(parent.value, name, limit) == current, u"Changed"_q);
         return current;
     }
     if (op == u"remove"_q) {
         Need(current.value(u"identity"_q) != u"missing"_q, u"Changed"_q);
-        ParentCurrent(path, parent.value);
+        ParentCurrent(anchor, path, parent.value);
         Need(Snapshot(parent.value, name, limit) == current && unlinkat(parent.value, name.constData(), 0) == 0, u"Changed"_q);
         Barrier(parent.value, fault, 5);
         return Snapshot(parent.value, name, limit);
@@ -245,7 +249,7 @@ QJsonObject FileOperation(const QString &op, const QString &path, const QByteArr
             Need(fault != 2, u"DurabilityFailed"_q);
         }
         Barrier(fd.value, fault, 4);
-        ParentCurrent(path, parent.value);
+        ParentCurrent(anchor, path, parent.value);
         Need(Snapshot(parent.value, name, limit) == current, u"Changed"_q);
         struct stat named{};
         Need(fstatat(parent.value, temporary.constData(), &named, AT_SYMLINK_NOFOLLOW) == 0
@@ -255,7 +259,7 @@ QJsonObject FileOperation(const QString &op, const QString &path, const QByteArr
         renamed = true;
         Need(fault != 6, u"DurabilityFailed"_q);
         Barrier(fd.value, fault, 7); Barrier(parent.value, fault, 5);
-        ParentCurrent(path, parent.value);
+        ParentCurrent(anchor, path, parent.value);
         const auto result = Snapshot(parent.value, name, limit);
         Need(Unblob(result.value(u"bytes"_q)) == bytes, u"Changed"_q);
         return result;
@@ -499,8 +503,8 @@ QJsonObject StorageCodec(const QString &op, const QJsonObject &input) {
 
 extern "C" JNIEXPORT jbyteArray JNICALL
 Java_org_telegram_messenger_purple_PurpleAccountFileSnapshot_durableNative(
-        JNIEnv *env, jclass, jstring op, jstring path, jbyteArray expected, jbyteArray data, jint limit, jint fault) {
-    try { return Reply(env, FileOperation(Text(env, op), Text(env, path), Bytes(env, expected, 8 * 1024 * 1024), Bytes(env, data), limit, fault)); }
+        JNIEnv *env, jclass, jstring op, jstring anchor, jstring path, jbyteArray expected, jbyteArray data, jint limit, jint fault) {
+    try { return Reply(env, FileOperation(Text(env, op), Text(env, anchor), Text(env, path), Bytes(env, expected, 8 * 1024 * 1024), Bytes(env, data), limit, fault)); }
     catch (const Failure &e) { return Reply(env, {{u"status"_q, e.status}}); }
     catch (...) { return Reply(env, {{u"status"_q, u"IoError"_q}}); }
 }

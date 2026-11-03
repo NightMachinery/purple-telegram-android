@@ -75,6 +75,8 @@ public final class PurpleDiagLogStore {
             "drop_pending", "move", "inventory", "publish", "joined", "user_check", "user_resume", "chat_changed",
             "binding_unreadable", "code", "user_action", "choose", "default", "join", "listed", "value", "on", "off",
             "rejected", "wait_recorded", "retry",
+            // the durable file guard (PurpleAccountFileSnapshot.inside): a sync path outside the app's files directory
+            "path_refused", "path_outside_root",
             // the settings owner plan (PurpleAccountOwner)
             "owner", "planned", "accounts", "state", "ready", "owned", "pending_owner_writes",
             "waiting_for_first_sign_in", "needs_choice", "single_file_error", "invalid_input",

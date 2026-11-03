@@ -21,6 +21,8 @@ final class PurpleSyncImpactGuard {
                 if(!directories.containsKey(parent))directories.put(parent,physical.mark(parent,true));
             files.add(new PurpleGlobalChoiceFiles.Snapshot(file,false,PurpleGlobalChoiceFiles.LIMIT,physical));
         }
+        if(targetDirectory!=null&&!targetDirectory.getAbsolutePath().startsWith(root.getAbsolutePath()+File.separator)&&!targetDirectory.equals(root))
+            throw new IllegalStateException("impact path outside root");
         for(File directory=targetDirectory;directory!=null&&!directory.equals(root.getParentFile());directory=directory.getParentFile())
             if(!directories.containsKey(directory))directories.put(directory,physical.mark(directory,true));
         if(!current())throw new IllegalStateException("impact context changed");

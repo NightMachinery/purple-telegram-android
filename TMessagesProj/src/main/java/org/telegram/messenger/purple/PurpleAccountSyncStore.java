@@ -187,15 +187,20 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
      * lookup bound, differs, {@link #open} moves the state there; see {@link #moveTo}.
      */
     static PurpleAccountSyncStore following(PurpleSyncFileContext context,PurpleSyncChatCore.Peer target) {
-        PurpleAccountSyncStore store=new PurpleAccountSyncStore(context,stateChat(context));
+        // WHY: without a state the first publish initializes one for the bound chat (Platform.initialize), so the
+        // store must name that chat too; naming Saved Messages made the join refuse the new magic state as
+        // AccountUnbound. Automatic sync still waits for that manual first publish (PurpleSyncRunner.hasState).
+        PurpleAccountSyncStore store=new PurpleAccountSyncStore(context,stateChat(context,target!=null?target:PurpleSyncChatCore.Peer.self()));
         store.target=target;
         return store;
     }
     /** The chat named by the account's sync state, Saved Messages without one. */
-    static PurpleSyncChatCore.Peer stateChat(PurpleSyncFileContext context) {
+    static PurpleSyncChatCore.Peer stateChat(PurpleSyncFileContext context) { return stateChat(context,PurpleSyncChatCore.Peer.self()); }
+    /** The chat named by the account's sync state, {@code absent} when there is no state file yet. */
+    static PurpleSyncChatCore.Peer stateChat(PurpleSyncFileContext context,PurpleSyncChatCore.Peer absent) {
         try {
             File file=new File(requireFiles(context).syncDirectory,"state.json");
-            if(!file.exists())return PurpleSyncChatCore.Peer.self();
+            if(!file.exists())return absent;
             PurpleSyncChatCore.Peer chat=PurpleSyncChatCore.Peer.parse(NATIVE.inspectState(read(file,STATE_LIMIT)).chat,context.origin.userId);
             return chat!=null?chat:PurpleSyncChatCore.Peer.self();
         } catch(Exception|LinkageError error) { return PurpleSyncChatCore.Peer.self(); }

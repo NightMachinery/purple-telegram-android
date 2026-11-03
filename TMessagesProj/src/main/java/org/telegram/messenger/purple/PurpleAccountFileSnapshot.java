@@ -61,7 +61,8 @@ final class PurpleAccountFileSnapshot {
     }
 
     static boolean plainParents(File dir) throws Exception {
-        File base = PurpleAccountFiles.root().getParentFile();
+        File base = anchor();
+        if (dir == null || !dir.equals(base) && !below(base.getAbsolutePath(), dir.getAbsolutePath())) return false;
         while (dir != null && !dir.equals(base)) {
             try {
                 if (!OsConstants.S_ISDIR(Os.lstat(dir.getPath()).st_mode)) return false;
@@ -146,20 +147,50 @@ final class PurpleAccountFileSnapshot {
         if (android.os.Looper.getMainLooper() != null
                 && android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) throw new java.io.IOException("WrongThread");
     }
+    /**
+     * The directory every durable path lies below: the app's files directory, the parent of
+     * {@link PurpleAccountFiles#root()}. The native walk opens it and goes down from there, never from "/": Android
+     * refuses an app any read of the root directory, which failed every durable operation with IoError (native check A3).
+     */
+    static File anchor() { return PurpleAccountFiles.root().getParentFile(); }
+
+    /** Whether {@code path} names an entry strictly below {@code anchor}, both absolute, with no empty, "." or ".." part. */
+    static boolean below(String anchor, String path) {
+        if (anchor == null || path == null || anchor.length() < 2 || !anchor.startsWith("/") || anchor.endsWith("/")
+                || !path.startsWith(anchor + "/")) return false;
+        for (String part : path.substring(1).split("/", -1)) if (part.isEmpty() || part.equals(".") || part.equals("..")) return false;
+        return true;
+    }
+
+    /**
+     * The guard in front of every durable list, open and walk: a path outside the anchor (in particular "/") is refused
+     * with status PathOutsideRoot and one diagnostic line ({@code sync_chat path_refused reason=path_outside_root})
+     * before anything is opened. The native layer refuses the same paths again with the same status.
+     */
+    static String inside(File file) throws java.io.IOException {
+        File anchor = anchor();
+        String path = file == null ? null : file.getAbsolutePath();
+        if (anchor != null && below(anchor.getAbsolutePath(), path)) return path;
+        PurpleDiagLog.event("sync_chat", "path_refused", PurpleDiagLog.reason("path_outside_root"));
+        throw new java.io.IOException("PathOutsideRoot");
+    }
+
     static Durable durable(String operation, File file, Durable expected, byte[] data, int limit, int fault) throws java.io.IOException {
+        String path = inside(file);
         worker();
         PurpleCore.ensureLoaded();
         try {
-            byte[] response = durableNative(operation, file.getAbsolutePath(), expected == null ? null : expected.token, data, limit, fault);
+            byte[] response = durableNative(operation, anchor().getAbsolutePath(), path, expected == null ? null : expected.token, data, limit, fault);
             if (response == null) throw new java.io.IOException("IoError");
             return new Durable(response);
         } catch (java.io.IOException e) { throw e; }
         catch (Exception e) { throw new java.io.IOException("IoError", e); }
     }
     static String durableDirectoryIdentity(File directory) throws java.io.IOException {
+        String path = inside(directory);
         worker(); PurpleCore.ensureLoaded();
         try {
-            byte[] response = durableNative("directoryRead", directory.getAbsolutePath(), null, null, LIMIT, 0);
+            byte[] response = durableNative("directoryRead", anchor().getAbsolutePath(), path, null, null, LIMIT, 0);
             org.json.JSONObject value = new org.json.JSONObject(new String(response, StandardCharsets.UTF_8));
             if (!"Ready".equals(value.getString("status"))) throw new java.io.IOException(value.getString("status"));
             return value.getString("identity");
@@ -167,16 +198,17 @@ final class PurpleAccountFileSnapshot {
         catch (Exception e) { throw new java.io.IOException("IoError", e); }
     }
     static void durableDirectory(File directory) throws java.io.IOException {
+        String path = inside(directory);
         worker(); PurpleCore.ensureLoaded();
         try {
-            byte[] response = durableNative("directory", directory.getAbsolutePath(), null, null, LIMIT, 0);
+            byte[] response = durableNative("directory", anchor().getAbsolutePath(), path, null, null, LIMIT, 0);
             org.json.JSONObject value = new org.json.JSONObject(new String(response, StandardCharsets.UTF_8));
             if (!"Ready".equals(value.getString("status"))) throw new java.io.IOException(value.getString("status"));
         } catch (java.io.IOException e) { throw e; }
         catch (Exception e) { throw new java.io.IOException("IoError", e); }
     }
     @androidx.annotation.Keep
-    private static native byte[] durableNative(String operation, String path, byte[] expected, byte[] data, int limit, int fault);
+    private static native byte[] durableNative(String operation, String anchor, String path, byte[] expected, byte[] data, int limit, int fault);
 
     private static PurpleAccountFileSnapshot error() {
         return new PurpleAccountFileSnapshot(Status.ReadError, null);
