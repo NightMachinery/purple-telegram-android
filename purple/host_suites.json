@@ -965,7 +965,7 @@
         "pins:RECORDING_HOOK_PINS": 6,
         "recovery:ROUND_RECOVERY_CHECKS": 380,
         "settings:RECORDING_SETTINGS_CHECKS": 140,
-        "events:RECORDING_EVENT_CHECKS": 28
+        "events:RECORDING_EVENT_CHECKS": 40
       }
     },
     {

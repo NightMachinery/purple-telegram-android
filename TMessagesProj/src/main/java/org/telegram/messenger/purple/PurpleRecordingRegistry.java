@@ -82,6 +82,14 @@ public final class PurpleRecordingRegistry {
     /** Chat screens by class guid; touched on the UI thread only. */
     private static final Map<Integer, ChatTarget> chats = new HashMap<>();
 
+    /** Copies a cancelled V2 round before upstream empties it; never the UI thread. */
+    private static final java.util.concurrent.ExecutorService copier = Executors.newSingleThreadExecutor(r -> {
+        final Thread t = new Thread(r, "PurpleRecordingCopy");
+        t.setDaemon(true);
+        t.setPriority(Thread.MAX_PRIORITY);
+        return t;
+    });
+
     private static final ScheduledExecutorService worker = Executors.newSingleThreadScheduledExecutor(r -> {
         final Thread t = new Thread(r, "PurpleRecordings");
         t.setDaemon(true);
@@ -221,11 +229,30 @@ public final class PurpleRecordingRegistry {
         } else if (event == NotificationCenter.recordStopped) {
             final int reason = args.length > 1 && args[1] instanceof Integer ? (Integer) args[1] : 0;
             final long[] target = target(guid);
-            // A round cancel: copy the bytes now, on the thread that posted it,
-            // before V2's file executor empties the file.
+            // A V2 round cancel: its file executor will empty the file, so the
+            // bytes are copied first, on the copier thread (not the UI thread,
+            // and without the sessions' lock), and the stop follows the copy.
             final PurpleRecordingSessions now = sessions;
-            if (now != null && (reason == 0 || reason == 6)) now.snapshotCancel(key);
-            worker.execute(() -> { if (sessions != null) sessions.stopped(key, reason, target); });
+            final File source = now != null && (reason == 0 || reason == 6) ? now.snapshotSource(key) : null;
+            if (source != null) {
+                final long expected = source.length();
+                copier.execute(() -> {
+                    File copy = now.snapshotTarget(key);
+                    try {
+                        if (copy != null) PurpleRecordingFiles.copyUnsynced(source, copy);
+                    } catch (IOException e) {
+                        if (copy != null) copy.delete();
+                        copy = null;
+                    }
+                    final File done = copy;
+                    worker.execute(() -> {
+                        now.snapshotDone(key, done, expected);
+                        now.stopped(key, reason, target);
+                    });
+                });
+            } else {
+                worker.execute(() -> { if (sessions != null) sessions.stopped(key, reason, target); });
+            }
         } else if (event == NotificationCenter.audioDidSent) {
             final boolean draft = args.length > 1 && args[1] != null;
             final String path = args.length > 2 && args[2] instanceof String ? (String) args[2] : null;

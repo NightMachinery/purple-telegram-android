@@ -322,21 +322,42 @@ public final class PurpleRecordingSessions {
         pendingAt = env.now();
     }
 
+    /** V2 rounds' current files by session key, read without the monitor (re-check N4). */
+    private final java.util.concurrent.ConcurrentHashMap<String, File> v2Files = new java.util.concurrent.ConcurrentHashMap<>();
+
     /**
-     * A round was cancelled: called on the thread that posts the cancel,
-     * before upstream's file executor runs. V2 empties the file
-     * ({@code RoundVideoRemuxer.erase}: setLength(0), then delete), so the
-     * descriptor held open would read nothing; this copies the bytes first.
+     * A round was cancelled: the file to copy before upstream's file executor
+     * runs, or null. Only V2 needs it: its {@code RoundVideoRemuxer.erase}
+     * empties the file (setLength(0), then delete), so the held descriptor
+     * would read nothing; legacy only deletes. Lock-free, so the thread that
+     * posts the cancel never waits for the worker.
      */
-    public synchronized void snapshotCancel(String key) {
+    public File snapshotSource(String key) {
+        return v2Files.get(key);
+    }
+
+    /**
+     * The copy of {@link #snapshotSource} finished (off the UI thread). It is
+     * used only if it holds all {@code expected} bytes, the size seen at the
+     * cancel: if upstream's erase won the race the copy is short and dropped.
+     */
+    public synchronized void snapshotDone(String key, File copy, long expected) {
         final Session session = sessions.get(key);
-        if (session == null || !session.round || session.current.file == null || !session.current.file.isFile()) return;
+        if (session == null || copy == null || expected <= 0 || copy.length() != expected) {
+            if (copy != null) copy.delete();
+            return;
+        }
+        deleteSnapshot(session);
+        session.snapshot = copy;
+    }
+
+    /** Where a snapshot of {@code key}'s recording goes, in the bin directory. */
+    public synchronized File snapshotTarget(String key) {
+        final Session session = sessions.get(key);
         try {
-            final File copy = store.scratch(session.current.entry.id + ".snapshot");
-            PurpleRecordingFiles.copy(session.current.file, copy);
-            session.snapshot = copy;
+            return session == null ? null : store.scratch(session.current.entry.id + ".snapshot");
         } catch (IOException e) {
-            session.snapshot = null;
+            return null;
         }
     }
 
@@ -416,6 +437,9 @@ public final class PurpleRecordingSessions {
 
     private void attach(Part part, File media, File journal) {
         part.hold(media);
+        for (Session s : sessions.values()) {
+            if (s.round && s.current == part && media.getName().startsWith("round_video_")) v2Files.put(s.key, media);
+        }
         try {
             store.attach(part.entry, media, journal);
         } catch (IOException ignored) {
@@ -480,6 +504,7 @@ public final class PurpleRecordingSessions {
     /** Sent, or too short: the entries go, and so do the descriptors and the journal. */
     private void end(Session session) {
         sessions.remove(session.key);
+        v2Files.remove(session.key);
         for (Part part : session.parts()) {
             part.close();
             env.closeJournal(part.entry.journal);
@@ -493,6 +518,7 @@ public final class PurpleRecordingSessions {
 
     private void discard(Session session) {
         sessions.remove(session.key);
+        v2Files.remove(session.key);
         final boolean keep = env.keepDiscarded();
         boolean kept = false;
         boolean failed = false;
@@ -505,7 +531,8 @@ public final class PurpleRecordingSessions {
                     snapshot = new RandomAccessFile(session.snapshot, "r").getChannel();
                     bytes = snapshot;
                 }
-                kept |= store.discard(part.entry, bytes, keep && bytes != null, env.now() / 1000);
+                // An emptied file (an erase that won the race) is not kept as an empty item.
+                kept |= store.discard(part.entry, bytes, keep && bytes != null && bytes.size() > 0, env.now() / 1000);
             } catch (IOException e) {
                 failed = true;
             } finally {

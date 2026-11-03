@@ -491,6 +491,16 @@ public final class RoundCases {
         }
     }
 
+    /** What the registry does at a V2 cancel: copy off the UI thread, then hand the copy back. */
+    static void snapshot(PurpleRecordingSessions sessions, String key) throws Exception {
+        final File source = sessions.snapshotSource(key);
+        check(source != null, "the cancelled V2 round is offered for the snapshot");
+        final long expected = source.length();
+        final File copy = sessions.snapshotTarget(key);
+        PurpleRecordingFiles.copyUnsynced(source, copy);
+        sessions.snapshotDone(key, copy, expected);
+    }
+
     static long[] target(long dialog) {
         return new long[]{0, dialog, 0, 0, 4242, 0};
     }
@@ -720,7 +730,7 @@ public final class RoundCases {
         Files.copy(new File(crashC.getPath() + ".pjr").toPath(), journalC.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
         sessions.roundRegistered(roundC, journalC);
         sessions.started("0:30", 0, target(300), false, script.now);
-        sessions.snapshotCancel("0:30");
+        snapshot(sessions, "0:30");
         try (RandomAccessFile erase = new RandomAccessFile(roundC, "rw")) {
             erase.setLength(0);
         }
@@ -757,10 +767,38 @@ public final class RoundCases {
         sessions.roundRegistered(roundE, new File(roundE.getPath() + ".pjr"));
         sessions.started("0:50", 0, target(500), false, script.now);
         sessions.stopped("0:50", 2, target(500));
-        sessions.snapshotCancel("0:50");
+        snapshot(sessions, "0:50");
         roundE.delete();
         sessions.stopped("0:50", 0, target(500));
         check(sessions.count() == 0 && store.bin().size() == 1 && store.bin().get(0).discarded, "a cancel after a pause is a Discarded item");
+
+        // N4: an erase that wins the race leaves a short copy, which is dropped,
+        // and the emptied file is not kept as an empty item.
+        store.clear();
+        final File roundH = new File(rounds, "round_video_h.mp4");
+        Files.copy(crashE.toPath(), roundH.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        sessions.roundRegistered(roundH, new File(rounds, "round_video_h.mp4.pjr"));
+        sessions.started("0:55", 0, target(550), false, script.now);
+        final File sourceH = sessions.snapshotSource("0:55");
+        check(sourceH != null && sourceH.equals(roundH), "a V2 round's file is offered for the snapshot");
+        final long expectedH = sourceH.length();
+        try (RandomAccessFile erase = new RandomAccessFile(roundH, "rw")) {
+            erase.setLength(0);
+        }
+        final File copyH = sessions.snapshotTarget("0:55");
+        PurpleRecordingFiles.copyUnsynced(roundH, copyH);
+        sessions.snapshotDone("0:55", copyH, expectedH);
+        check(!copyH.exists(), "a short snapshot is dropped");
+        roundH.delete();
+        sessions.stopped("0:55", 6, target(550));
+        check(store.bin().isEmpty() && sessions.count() == 0, "an emptied round is not kept as an empty item");
+        // Legacy rounds are not snapshotted: they are only deleted.
+        final File legacyRound = new File(rounds, "1800000900000_-5.mp4");
+        Files.copy(crashE.toPath(), legacyRound.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        sessions.roundRegistered(legacyRound, new File(rounds, "1800000900000_-5.mp4.pjr"));
+        sessions.started("0:56", 0, target(560), false, script.now);
+        check(sessions.snapshotSource("0:56") == null, "a legacy round needs no snapshot");
+        sessions.tooShort("0:56");
 
         // A registration nobody claims is dropped with its journal when the next one comes.
         final File orphanJournal = new File(rounds, "round_video_f.mp4.pjr");

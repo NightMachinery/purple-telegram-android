@@ -178,6 +178,21 @@ public final class PurpleRecordingFiles {
         }
     }
 
+    /** Copies a file without syncing it: a snapshot that only has to outlive the process's next step. */
+    public static void copyUnsynced(File from, File to) throws IOException {
+        try (FileInputStream in = new FileInputStream(from); FileOutputStream out = new FileOutputStream(to)) {
+            final FileChannel source = in.getChannel();
+            final FileChannel target = out.getChannel();
+            final long size = source.size();
+            long done = 0;
+            while (done < size) {
+                final long n = source.transferTo(done, size - done, target);
+                if (n <= 0) break;
+                done += n;
+            }
+        }
+    }
+
     /** Copies a file, synced. */
     public static void copy(File from, File to) throws IOException {
         try (FileInputStream in = new FileInputStream(from)) {
