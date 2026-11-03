@@ -43,7 +43,6 @@ import org.telegram.messenger.purple.PurpleGate;
 import org.telegram.messenger.purple.PurpleLastSeen;
 import org.telegram.messenger.purple.PurpleSettings;
 import org.telegram.messenger.purple.PurpleSync;
-import org.telegram.messenger.purple.PurpleSyncOffer;
 import org.telegram.messenger.purple.PurpleVersion;
 import org.telegram.messenger.purple.PurpleWriter;
 import org.telegram.tgnet.TLRPC;
@@ -72,7 +71,6 @@ public class PurpleSettingsActivity extends UniversalFragment
     private static final int ROW_SUGGESTIONS = 4;
     private static final int ROW_EDIT = 5;
     private static final int ROW_SEND = 6;
-    private static final int ROW_CHECK = 7;
     private static final int ROW_IMPORT = 8;
     private static final int ROW_SHARE = 9;
     private static final int ROW_PATH = 10;
@@ -109,7 +107,6 @@ public class PurpleSettingsActivity extends UniversalFragment
      */
     private static final int REQUEST_IMPORT = 4711;
 
-    private boolean checkingSaved;
     private org.telegram.messenger.purple.PurpleAccountFiles.Identity importOrigin;
     private View versionFooter;
     private PurpleWriter.Session rowWriter;
@@ -315,7 +312,6 @@ public class PurpleSettingsActivity extends UniversalFragment
         PurpleAccountEditorUI.add(items, currentAccount);
         items.add(UItem.asButton(ROW_SYNC, getString(R.string.PurpleSyncTitle)));
         items.add(UItem.asButton(ROW_SEND, getString(R.string.PurpleSendToSaved)));
-        items.add(UItem.asButton(ROW_CHECK, getString(R.string.PurpleCheckSaved)));
         items.add(UItem.asButton(ROW_IMPORT, getString(R.string.PurpleImportFromFile)));
         items.add(UItem.asButton(ROW_SHARE, getString(R.string.PurpleShareFile)));
         items.add(UItem.asButton(ROW_PATH, getString(R.string.PurpleFilePath),
@@ -472,7 +468,7 @@ public class PurpleSettingsActivity extends UniversalFragment
         if (PurplePeekWaitOptions.click(this, item, this::rebuild)) return;
         if (!org.telegram.messenger.purple.PurpleAccountOwner.legacyEditorAllowed(currentAccount)
                 && item.id != ROW_PRESET && item.id != ROW_SEND && item.id != ROW_SHARE
-                && item.id != ROW_IMPORT && item.id != ROW_CHECK && item.id != ROW_PATH && item.id != ROW_SYNC
+                && item.id != ROW_IMPORT && item.id != ROW_PATH && item.id != ROW_SYNC
                 && item.id != ROW_SCREEN_TIME && item.id != ROW_DEVICE && item.id != ROW_NOTIFICATIONS
                 && item.id != ROW_LAST_SEEN_SKIP_CONFIRMATION
                 && item.id != ROW_PEEK_DURATION && item.id != ROW_PEEK_DELAY && item.id != ROW_PEEK_EXIT && item.id != ROW_PEEK_READY_TIMEOUT
@@ -541,9 +537,6 @@ public class PurpleSettingsActivity extends UniversalFragment
         case ROW_LAST_SEEN_SKIP_CONFIRMATION:
             PurpleLastSeenTrade.setNoAsk(!item.checked);
             listView.adapter.update(true);
-            break;
-        case ROW_CHECK:
-            checkSaved();
             break;
         case ROW_IMPORT:
             startImportPicker();
@@ -727,30 +720,6 @@ public class PurpleSettingsActivity extends UniversalFragment
                     .createSimpleBulletin(R.raw.info, getString(R.string.PurpleQueuedForSaved))
                     .show();
         }
-    }
-
-    /** The launch offer, asked for on purpose instead of waiting for a launch. */
-    private void checkSaved() {
-        if (checkingSaved) {
-            return;
-        }
-        checkingSaved = true;
-        if (BulletinFactory.canShowBulletin(this)) {
-            BulletinFactory.of(this)
-                    .createSimpleBulletin(R.raw.info, getString(R.string.PurpleCheckingSaved))
-                    .show();
-        }
-        PurpleSyncOffer.checkNow(this, currentAccount, offered -> {
-            checkingSaved = false;
-            if (!offered && BulletinFactory.canShowBulletin(this)) {
-                // Silence would read as a broken button, so the "no" is said
-                // out loud - which is the whole difference from the launch
-                // check, where nobody asked.
-                BulletinFactory.of(this)
-                        .createSimpleBulletin(R.raw.info, getString(R.string.PurpleNothingNewer))
-                        .show();
-            }
-        });
     }
 
     private void startImportPicker() {

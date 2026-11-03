@@ -663,8 +663,8 @@ preset as its subtitle, the schedule, the Local Premium switch, the
 hide-from-suggestions switch, this device's name and id, and a section for the
 settings file - an editor,
 Sync across devices (below), Send to Saved Messages (the desktop's shape and
-caption, so either client can import it), a check of Saved Messages for a newer
-file, Import from a file, Share the file, and the path with a tap to copy.
+caption, so either client can import it), Import from a file, Share the file,
+and the path with a tap to copy.
 Its last line is the Purple version (see **Purple version** above).
 Import from a file reads the picked file through the picker's grant whenever
 the app may not open its path itself, such as a file another app saved in

@@ -10,7 +10,6 @@ import org.telegram.messenger.purple.PurpleFolders;
 import org.telegram.messenger.purple.PurpleGate;
 import org.telegram.messenger.purple.PurpleListMenu;
 import org.telegram.messenger.purple.PurpleStripWatch;
-import org.telegram.messenger.purple.PurpleSyncOffer;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBarMenuItem;
 import org.telegram.ui.ActionBar.ActionBarMenuSubItem;
