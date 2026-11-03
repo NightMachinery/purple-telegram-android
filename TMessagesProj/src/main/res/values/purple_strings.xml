@@ -193,6 +193,9 @@
     <string name="PurplePremiumLocalInfo">Unlocks the Premium features this client withholds on its own. Nothing is bought and nothing reaches the server.</string>
     <string name="PurpleHideSuggestions">Hide hidden chats from suggestions</string>
     <string name="PurpleHideSuggestionsInfo">Keeps a chat the preset hides out of recent and frequent chats, the share sheet and the direct-share targets. It stays in search and in the forward picker.</string>
+    <string name="PurpleMediaPlayback">Media playback</string>
+    <string name="PurpleVoiceQueuePrivate">Keep the voice queue to the other person</string>
+    <string name="PurpleVoiceQueuePrivateInfo">In a private chat, when you play the other person\'s voice or video message, only their next messages play automatically.</string>
     <string name="PurpleFollowDnd">Follow Do Not Disturb</string>
     <string name="PurpleFollowDndInfo">Do Not Disturb on: %1$s. Off: %2$s.</string>
     <string name="PurpleFollowDndPrevious">whatever was running before</string>

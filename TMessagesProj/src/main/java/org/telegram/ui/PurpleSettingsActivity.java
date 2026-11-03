@@ -88,6 +88,7 @@ public class PurpleSettingsActivity extends UniversalFragment
     private static final int ROW_PEEK_EXIT = 22;
     private static final int ROW_PEEK_FOCUS = 0x70750021;
     private static final int ROW_PEEK_READY_TIMEOUT = 0x70750026;
+    private static final int ROW_VOICE_QUEUE = 0x70750027;
 
     /**
      * Where the trade log's rows start numbering.
@@ -258,6 +259,14 @@ public class PurpleSettingsActivity extends UniversalFragment
         suggestions.checked = (state == null || state.hideInvisibleSuggestions);
         items.add(suggestions);
         items.add(UItem.asShadow(getString(R.string.PurpleHideSuggestionsInfo)));
+
+        // [playback] private_chat_queue_p: app-wide like [suggestions], and
+        // read through the core's own rule rather than a second copy of the key.
+        items.add(UItem.asHeader(getString(R.string.PurpleMediaPlayback)));
+        final UItem voiceQueue = UItem.asCheck(ROW_VOICE_QUEUE, getString(R.string.PurpleVoiceQueuePrivate));
+        voiceQueue.checked = org.telegram.messenger.purple.PurpleVoiceQueue.enabled();
+        items.add(voiceQueue);
+        items.add(UItem.asShadow(getString(R.string.PurpleVoiceQueuePrivateInfo)));
 
         final UItem focus = UItem.asCheck(ROW_FOCUS, getString(R.string.PurpleFollowDnd));
         // The parser's answer rather than the raw key: it turns focus sync off
@@ -472,7 +481,7 @@ public class PurpleSettingsActivity extends UniversalFragment
                 && item.id != ROW_SCREEN_TIME && item.id != ROW_DEVICE && item.id != ROW_NOTIFICATIONS
                 && item.id != ROW_LAST_SEEN_SKIP_CONFIRMATION
                 && item.id != ROW_PEEK_DURATION && item.id != ROW_PEEK_DELAY && item.id != ROW_PEEK_EXIT && item.id != ROW_PEEK_READY_TIMEOUT
-                && item.id != ROW_SCHEDULE && item.id != ROW_PREMIUM && item.id != ROW_SUGGESTIONS
+                && item.id != ROW_SCHEDULE && item.id != ROW_PREMIUM && item.id != ROW_SUGGESTIONS && item.id != ROW_VOICE_QUEUE
                 && item.id != ROW_FOCUS && item.id != ROW_PEEK_FOCUS) {
             String held = PurpleWriter.ownerRefusal();
             if (held != null) PurpleWriterUI.explain(this, held, this::rebuild);
@@ -483,7 +492,7 @@ public class PurpleSettingsActivity extends UniversalFragment
         // the rows were built without one; when none can be had, the tap
         // says why rather than passing no session to the writer.
         final boolean writes = item.id == ROW_PREMIUM
-                || item.id == ROW_SUGGESTIONS || item.id == ROW_FOCUS;
+                || item.id == ROW_SUGGESTIONS || item.id == ROW_FOCUS || item.id == ROW_VOICE_QUEUE;
         final PurpleWriter.Session session = writes && writer == null
                 ? PurpleWriterUI.captureOrExplain(this, true, this::rebuild) : writer;
         if (writes && session == null) return;
@@ -520,6 +529,10 @@ public class PurpleSettingsActivity extends UniversalFragment
         case ROW_SUGGESTIONS:
             write(PurpleWriter.setTableBool(session,
                     "suggestions", "hide_invisible_p", !item.checked, "suggestions switch"));
+            break;
+        case ROW_VOICE_QUEUE:
+            write(PurpleWriter.setTableBool(session,
+                    "playback", "private_chat_queue_p", !item.checked, "voice queue switch"));
             break;
         case ROW_FOCUS:
             write(PurpleWriter.setTableBool(session,

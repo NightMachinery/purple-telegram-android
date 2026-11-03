@@ -515,5 +515,15 @@ final class PurpleChatHooks {
         return message.isRoundVideo();
     }
 
+    /**
+     * Whether {@code createVoiceMessagesPlaylist} leaves a message out of the
+     * queue a manual play on {@code start} builds: your own messages, when the
+     * play started on the other person's message in a one-to-one chat. See
+     * {@link org.telegram.messenger.purple.PurpleVoiceQueue}.
+     */
+    boolean skipsInVoicePlaylist(MessageObject start, MessageObject candidate) {
+        return org.telegram.messenger.purple.PurpleVoiceQueue.skipsInPlaylist(start, candidate);
+    }
+
 
 }

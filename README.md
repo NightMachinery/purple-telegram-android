@@ -111,6 +111,27 @@ single if/else-if, so there is no place for an early return that would not
 change the branch around it. The pull-back was inferred from the code; a device
 check confirms it.
 
+**Private-chat voice queue.** Purple Settings > Media playback > **Keep the
+voice queue to the other person** (on by default) is `[playback]
+private_chat_queue_p` in settings.toml, app-wide, so it syncs with the file. In
+a one-to-one chat (a user, a bot or a secret chat; not Saved Messages or a
+service chat), when you start playing the other person's voice or round
+message, the automatic "play next" plays only their messages and skips yours,
+including a voice message you record while listening. Starting on your own
+message, in Saved Messages, in a group or in a channel plays everything as
+before. "Theirs" is Telegram's direction: a message they forwarded to you is
+theirs. The setting is read when you start playing, so changing it applies
+from the next manual play. The rule is purple-core's (`purple_playback.h`),
+reached through `PurpleCore.voiceQueueKeeps`; `PurpleVoiceQueue` keeps what the
+last manual play decided. Hooks: one guarded `continue` in
+`ChatActivity.createVoiceMessagesPlaylist`'s loop (through `PurpleChatHooks`),
+which every manual play goes through, and one in the `didReceiveNewMessages`
+append loop of `MediaController.didReceivedNotification`, the first Purple line
+in `MediaController`. Known limit: a voice playlist started from a profile's
+shared-media Voice tab is built elsewhere, so while an earlier confined queue
+of the same chat is still the remembered one, your own new messages are not
+appended to it live.
+
 ### Keep Media per chat
 
 The chat menu shows how long this chat's cached media is kept, for example

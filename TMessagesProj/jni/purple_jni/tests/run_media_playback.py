@@ -25,10 +25,10 @@ assert classes.is_dir() and args.json.is_file() and args.library.is_file()
 # The Purple classes the cases load from the receipt, which must be the ones
 # in this tree, and the files whose hooks are pinned below.
 purple = [java / 'messenger/purple' / name for name in [
-    'PurpleDoubleTap.java', 'PurpleMediaRestart.java', 'PurpleRoundPip.java', 'PurpleCore.java']]
+    'PurpleDoubleTap.java', 'PurpleMediaRestart.java', 'PurpleRoundPip.java', 'PurpleCore.java', 'PurpleVoiceQueue.java']]
 hooked = {name: java / name for name in [
     'ui/Cells/ChatMessageCell.java', 'ui/Components/PipRoundVideoView.java', 'ui/ChatActivity.java',
-    'ui/PurpleChatHooks.java']}
+    'ui/PurpleChatHooks.java', 'messenger/MediaController.java']}
 hashes = {Path(item['path']): item['sha256'] for item in receipt['sources']}
 for path in purple + list(hooked.values()):
     assert hashes.get(path) == hashlib.sha256(path.read_bytes()).hexdigest(), str(path) + ' receipt mismatch'
@@ -45,20 +45,31 @@ PINS = [
     ('ui/ChatActivity.java',
      '                        if (messageObject.isRoundVideo() || messageObject.isVideo()) {\n',
      '                            if (checkTextureViewPosition || PipRoundVideoView.getInstance() != null || purple.roundLeavesToPip(messageObject)) {\n'),
+    ('ui/ChatActivity.java',
+     '                if (messageObject.getDialogId() == mergeDialogId && startMessageObject.getDialogId() != mergeDialogId) {\n'
+     '                    continue;\n'
+     '                }\n',
+     '                if (purple.skipsInVoicePlaylist(startMessageObject, messageObject)) continue;\n'),
+    ('messenger/MediaController.java',
+     '                        messageObject = arr.get(a);\n',
+     '                        if (org.telegram.messenger.purple.PurpleVoiceQueue.skipsAppended(messageObject)) continue;\n'),
 ]
-PROGRAMS = [('restart', 'MEDIA_RESTART_CHECKS'), ('pip', 'MEDIA_PIP_CHECKS'), ('core', 'MEDIA_QUEUE_CORE_CHECKS')]
+PROGRAMS = [('restart', 'MEDIA_RESTART_CHECKS'), ('pip', 'MEDIA_PIP_CHECKS'), ('core', 'MEDIA_QUEUE_CORE_CHECKS'), ('queue', 'MEDIA_QUEUE_CHECKS')]
 
 assert not args.output.exists(), 'output must be an unused directory'
 args.output.mkdir(parents=True)
 pinned = 0
 for name, signature, hook in PINS:
-    text = hooked[name].read_text()
+    text = hooked[name].read_text(encoding='utf-8')
     assert text.count(signature) == 1, name + ': ' + signature.strip()
     assert text.count(hook) == 1, name + ': the hook appears once'
     assert text.index(signature) + len(signature) == text.index(hook), name + ': ' + hook.strip() + ' opens ' + signature.strip()
     pinned += 1
-helper = hooked['ui/PurpleChatHooks.java'].read_text().split('boolean roundLeavesToPip(MessageObject message) {', 1)[1].split('}', 1)[0]
+helper = hooked['ui/PurpleChatHooks.java'].read_text(encoding='utf-8').split('boolean roundLeavesToPip(MessageObject message) {', 1)[1].split('}', 1)[0]
 assert helper.strip() == 'return message.isRoundVideo();', 'only rounds leave to the PiP'
+pinned += 1
+helper = hooked['ui/PurpleChatHooks.java'].read_text(encoding='utf-8').split('boolean skipsInVoicePlaylist(MessageObject start, MessageObject candidate) {', 1)[1].split('}', 1)[0]
+assert helper.strip() == 'return org.telegram.messenger.purple.PurpleVoiceQueue.skipsInPlaylist(start, candidate);'
 pinned += 1
 (args.output / 'pins.log').write_text('MEDIA_HOOK_PINS=%d\n' % pinned)
 
