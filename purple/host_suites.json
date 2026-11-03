@@ -73,10 +73,12 @@
         "run"
       ],
       "expects": {
-        "run:SYNC_MAGIC_CHAT_CHECKS": 344,
+        "run:SYNC_MAGIC_CHAT_CHECKS": 440,
         "run:SYNC_MAGIC_CHECKS": 141,
-        "sync-magic:SYNC_MAGIC_CHAT_CHECKS": 344,
-        "sync-magic:SYNC_MAGIC_CHECKS": 141
+        "run:SYNC_MAGIC_WAIT_CHECKS": 26,
+        "sync-magic:SYNC_MAGIC_CHAT_CHECKS": 440,
+        "sync-magic:SYNC_MAGIC_CHECKS": 141,
+        "sync-magic:SYNC_MAGIC_WAIT_CHECKS": 26
       }
     },
     {
@@ -159,7 +161,7 @@
         "run:MANAGED_READ_WATCHDOG_CHECKS": 105,
         "run:MANUAL_EXISTING_JOIN_CHECKS": 210,
         "run:MANUAL_TYPED_FIRST_POST_CHECKS": 583,
-        "run:MODERN_AFFECTED_CHECKS": 4140,
+        "run:MODERN_AFFECTED_CHECKS": 4166,
         "run:OPERATIONS_ACQUISITION_RACE_CHECKS": 746,
         "run:PurpleAccountSyncStore": "PASS",
         "run:QUEUED_MUTATION_REGRESSION_CHECKS": 561,
@@ -175,7 +177,7 @@
         "sync-chat-integration:MANAGED_READ_WATCHDOG_CHECKS": 105,
         "sync-chat-integration:MANUAL_EXISTING_JOIN_CHECKS": 210,
         "sync-chat-integration:MANUAL_TYPED_FIRST_POST_CHECKS": 583,
-        "sync-chat-integration:MODERN_AFFECTED_CHECKS": 4140,
+        "sync-chat-integration:MODERN_AFFECTED_CHECKS": 4166,
         "sync-chat-integration:OPERATIONS_ACQUISITION_RACE_CHECKS": 746,
         "sync-chat-integration:PurpleAccountSyncStore": "PASS",
         "sync-chat-integration:QUEUED_MUTATION_REGRESSION_CHECKS": 561,
@@ -238,7 +240,7 @@
         "history-rules:rules": 198,
         "modern-sync:EDITOR_CHECKS": 54,
         "modern-sync:MANAGED_READ_WATCHDOG_CHECKS": 105,
-        "modern-sync:MODERN_CHECKS": 4140,
+        "modern-sync:MODERN_CHECKS": 4166,
         "modern-sync:OUTBOX_CHECKS": 254,
         "modern-sync:PurpleAccountSyncStore": "PASS",
         "modern-sync:READ_SCOPE_LIFETIME_CHECKS": 65,
@@ -248,7 +250,7 @@
         "modern-sync:native": 16,
         "modern-sync:rules": 198,
         "modern:MANAGED_READ_WATCHDOG_CHECKS": 105,
-        "modern:MODERN_CHECKS": 4140,
+        "modern:MODERN_CHECKS": 4166,
         "modern:READ_SCOPE_LIFETIME_CHECKS": 65,
         "outbox:OUTBOX_CHECKS": 254,
         "routed:EDITOR_CHECKS": 54,
