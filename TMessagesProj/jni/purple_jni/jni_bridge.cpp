@@ -1927,6 +1927,19 @@ Java_org_telegram_messenger_purple_PurpleCore_voiceQueueKeepsNative(
 		: JNI_FALSE;
 }
 
+// The seek step of the media seek buttons and the headset rewind and
+// fast-forward keys (F9, `[playback] seek_step'), in seconds: one of 5, 10, 15
+// or 30, which the core's parser already enforces. A gate that has never
+// loaded answers with the core's default (10).
+extern "C" JNIEXPORT jint JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_seekStepSecondsNative(
+		JNIEnv *,
+		jclass) {
+	auto &gate = TheGate();
+	const auto lock = std::lock_guard(gate.mutex);
+	return jint(gate.settings.playback.seekStepSeconds);
+}
+
 // Ends one. The deadline is cleared with the flag, so a peek started again
 // later cannot inherit a stale one.
 extern "C" JNIEXPORT jstring JNICALL

@@ -54,7 +54,8 @@ PINS = [
      '                        messageObject = arr.get(a);\n',
      '                        if (org.telegram.messenger.purple.PurpleVoiceQueue.skipsAppended(messageObject)) continue;\n'),
 ]
-PROGRAMS = [('restart', 'MEDIA_RESTART_CHECKS'), ('pip', 'MEDIA_PIP_CHECKS'), ('core', 'MEDIA_QUEUE_CORE_CHECKS'), ('queue', 'MEDIA_QUEUE_CHECKS')]
+PROGRAMS = [('restart', 'MEDIA_RESTART_CHECKS'), ('pip', 'MEDIA_PIP_CHECKS'), ('core', 'MEDIA_QUEUE_CORE_CHECKS'), ('queue', 'MEDIA_QUEUE_CHECKS'),
+            ('seekcore', 'MEDIA_SEEK_CORE_CHECKS')]
 
 assert not args.output.exists(), 'output must be an unused directory'
 args.output.mkdir(parents=True)
@@ -84,7 +85,7 @@ case = tests / 'media_playback/MediaPlaybackCases.java'
     for p in [args.receipt, args.library, case, *purple, *hooked.values()]], indent=2) + '\n')
 commands = {'javac': [str(compiler), '-source', '8', '-target', '8', '-proc:none', '-sourcepath', str(empty),
                       '-cp', str(classes), '-d', str(destination), str(case)]}
-# The core program loads the host libpurplecore through the real PurpleCore,
+# The core and seekcore programs load the host libpurplecore through the real PurpleCore,
 # which reads its load result with org.json.
 for program, _ in PROGRAMS:
     commands[program] = [str(compiler.with_name('java')), '-Xmx256m', '-Xcheck:jni', '-Djava.library.path=' + str(args.library.parent),

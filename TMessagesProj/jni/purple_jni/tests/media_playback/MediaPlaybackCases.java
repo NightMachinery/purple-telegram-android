@@ -27,6 +27,10 @@ public final class MediaPlaybackCases {
             core();
             System.out.println("MEDIA_QUEUE_CORE_CHECKS=" + checks);
             break;
+        case "seekcore":
+            seekCore();
+            System.out.println("MEDIA_SEEK_CORE_CHECKS=" + checks);
+            break;
         case "queue":
             queue();
             System.out.println("MEDIA_QUEUE_CHECKS=" + checks);
@@ -169,6 +173,40 @@ public final class MediaPlaybackCases {
                 check(PurpleCore.voiceQueueKeeps(chat, false, true), "an unknown chat kind " + chat + " keeps everything");
             }
         }
+    }
+
+    /**
+     * The real seekStepSeconds bridge over the real core (F9): each allowed
+     * step, the default, and values the core refuses, read from a loaded
+     * settings.toml.
+     */
+    static void seekCore() throws Exception {
+        final String[] files = {
+            "",
+            "[playback]\nseek_step = \"5s\"\n",
+            "[playback]\nseek_step = \"10s\"\n",
+            "[playback]\nseek_step = \"15s\"\n",
+            "[playback]\nseek_step = \"30s\"\n",
+            "[playback]\nseek_step = \"20s\"\n",
+            "[playback]\nseek_step = \"1m\"\n",
+            "[playback]\nseek_step = \"abc\"\n",
+            "[playback]\nseek_step = 15\n",
+            "[playback]\nprivate_chat_queue_p = false\nseek_step = \"30s\"\n",
+        };
+        final int[] steps = {10, 5, 10, 15, 30, 10, 10, 10, 10, 30};
+        final boolean[] warns = {false, false, false, false, false, true, true, true, true, false};
+        for (int f = 0; f < files.length; f++) {
+            final PurpleCore.Loaded loaded = PurpleCore.load(files[f].getBytes("UTF-8"), null, "fixture", "android", "mobile");
+            check(loaded.ok, "settings file " + f + " loads");
+            check(PurpleCore.seekStepSeconds() == steps[f], "file " + f + " gives a step of " + steps[f]);
+            boolean warned = false;
+            for (String warning : loaded.warnings) {
+                warned |= warning.contains("seek_step");
+            }
+            check(warned == warns[f], "file " + f + (warns[f] ? " warns" : " does not warn") + " about seek_step");
+        }
+        check(PurpleCore.voiceQueueKeeps(PurpleCore.PLAYBACK_ONE_TO_ONE, false, true) == false,
+                "the last file's other playback key is read alongside the step");
     }
 
     /** A stand-in for the core's rule with the setting on or off; the core program runs the real one. */

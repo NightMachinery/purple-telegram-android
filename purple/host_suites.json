@@ -933,13 +933,14 @@
         "--output",
         "{output}"
       ],
-      "coverage": "Double-tap restart, round PiP (double-tap restart, long-press open) and private-chat voice queue decisions on the real AGP classes; the real voiceQueueKeeps bridge over the host core library; pins the ChatMessageCell, PipRoundVideoView, ChatActivity and MediaController hooks.",
+      "coverage": "Double-tap restart, round PiP (double-tap restart, long-press open) and private-chat voice queue decisions on the real AGP classes; the real voiceQueueKeeps and seekStepSeconds bridges over the host core library; pins the ChatMessageCell, PipRoundVideoView, ChatActivity and MediaController hooks.",
       "expects": {
         "core:MEDIA_QUEUE_CORE_CHECKS": 60,
         "pins:MEDIA_HOOK_PINS": 8,
         "pip:MEDIA_PIP_CHECKS": 40,
         "queue:MEDIA_QUEUE_CHECKS": 28,
-        "restart:MEDIA_RESTART_CHECKS": 37
+        "restart:MEDIA_RESTART_CHECKS": 37,
+        "seekcore:MEDIA_SEEK_CORE_CHECKS": 28
       }
     },
     {

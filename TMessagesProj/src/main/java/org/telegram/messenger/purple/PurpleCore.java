@@ -168,6 +168,8 @@ public final class PurpleCore {
 
     private static native boolean voiceQueueKeepsNative(int chat, boolean startOutgoing, boolean candidateOutgoing);
 
+    private static native int seekStepSecondsNative();
+
     /**
      * The screen locked, or the app's own passcode lock engaged. Prefer
      * {@link PurpleGate#locked}.
@@ -793,6 +795,30 @@ public final class PurpleCore {
         } catch (UnsatisfiedLinkError | RuntimeException e) {
             FileLog.e(e);
             return true;
+        }
+    }
+
+    /** The seek step when the core could not be asked: the core's own default. */
+    public static final int SEEK_STEP_DEFAULT = 10;
+
+    /**
+     * The seek step of the strip's seek buttons and the headset rewind and
+     * fast-forward keys ({@code [playback] seek_step}), in seconds: 5, 10, 15
+     * or 30. Read from the loaded settings each time, so a changed step applies
+     * to the next press.
+     *
+     * @return the step, or {@link #SEEK_STEP_DEFAULT} when the core could not
+     *         be asked
+     */
+    public static int seekStepSeconds() {
+        try {
+            if (!loaded) {
+                ensureLoaded();
+            }
+            return seekStepSecondsNative();
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return SEEK_STEP_DEFAULT;
         }
     }
 
