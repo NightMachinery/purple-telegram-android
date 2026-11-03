@@ -32,6 +32,16 @@ device then acts as one with no state. Once a state exists in the chat's space t
 question cannot come back. After first use joined or published, automatic sync
 writes its record for the new state.
 
+The answer is kept per account with the chat space it answered for until first
+use acted on it, so a crash or a failed step does not ask again. The lifecycle
+triggers run first use for a device with no state at most once per 15 minutes.
+
+An exception of an automatic pass is never silent: it is logged as `sync
+auto_failed reason=<code>`, pauses automatic sync with an attention line and one
+dialog on the Sync screen, and a finished Check or turning automatic sync on
+resumes it. Automatic sync reads the magic group like Saved Messages: the inventory
+must come from the stored state's chat, and core gets that chat with it.
+
 A device that synced through Saved Messages before keeps its space: its store
 moves the state into the magic chat as it opens (core `MoveSyncStateToChat`), and
 the next run publishes it there. Automatic sync consults the account recovery
