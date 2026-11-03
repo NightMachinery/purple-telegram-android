@@ -921,6 +921,21 @@
       }
     },
     {
+      "name": "media-playback",
+      "driver": "TMessagesProj/jni/purple_jni/tests/run_media_playback.py",
+      "args": [
+        "--receipt",
+        "{standalone-receipt}",
+        "--output",
+        "{output}"
+      ],
+      "coverage": "Double-tap restart decisions and tap timing on the real AGP classes; pins the ChatMessageCell hooks.",
+      "expects": {
+        "pins:MEDIA_HOOK_PINS": 2,
+        "restart:MEDIA_RESTART_CHECKS": 36
+      }
+    },
+    {
       "name": "search-refresh",
       "driver": "TMessagesProj/jni/purple_jni/tests/run_search_refresh.py",
       "args": [

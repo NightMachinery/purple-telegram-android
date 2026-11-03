@@ -69,6 +69,22 @@ Selection uses Telegram's music classification: non-voice audio document
 attributes and its MIME fallbacks for FLAC, OGG, and Opus. Generic audio
 documents without those attributes can be excluded even when named MP3 or M4A.
 
+### Media playback
+
+The design is [docs/media-design.md](docs/media-design.md) (F1-F3 on Android).
+
+**Double-tap restarts.** Double-tap a playing or paused voice message's play
+button, or a round video message's circle, to play it again from 0:00. The
+first tap still does what it always did (pause, resume or play), so a playing
+message pauses for a moment and then restarts; waiting on every single tap for a
+possible second one would slow down the common case. A message that is not the
+one playing, one still downloading and a view-once message are left to
+Telegram's own handling. Double-tap to react still works outside the circle and
+the button. `PurpleMediaRestart` decides; `ChatMessageCell` has one early return
+at the top of `didClickedImage` (the round's circle) and one at the top of
+`didPressButton` (the voice play button), each declining unless it handles that
+kind of tap, so a tap that the first hands on to the second is counted once.
+
 ### Keep Media per chat
 
 The chat menu shows how long this chat's cached media is kept, for example

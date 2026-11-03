@@ -49,7 +49,7 @@ file TMessagesProj/src/main/java/org/telegram/ui/Adapters/DialogsSearchAdapter.j
 file TMessagesProj/src/main/java/org/telegram/ui/Adapters/SearchAdapter.java 28 18 6
 file TMessagesProj/src/main/java/org/telegram/ui/ArchiveSettingsActivity.java 1 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/CacheControlActivity.java 23 3 7
-file TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java 19 1 5
+file TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java 21 1 7
 file TMessagesProj/src/main/java/org/telegram/ui/Cells/DialogCell.java 15 1 8
 file TMessagesProj/src/main/java/org/telegram/ui/Cells/GroupCreateUserCell.java 1 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/Cells/ManageChatUserCell.java 1 1 1
