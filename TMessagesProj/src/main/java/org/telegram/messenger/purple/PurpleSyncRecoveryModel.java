@@ -162,7 +162,7 @@ final class PurpleSyncRecoveryModel {
             }
             else if(name.equals("start-again.json")&&directory.equals(sync))tree.capture(entry,false,PurpleSyncRecoveryFiles.JOURNAL_LIMIT);
             // WHY: the magic chat binding is the account's: Start again neither reads nor moves it, so it stays.
-            else if(PurpleAccountSyncStore.bindingFile(name)){if(!entry.isFile()||!entry.getCanonicalFile().equals(entry.getAbsoluteFile()))throw new IllegalStateException("unknown sync entry");}
+            else if(PurpleAccountSyncStore.bindingFile(name)){if(!entry.isFile()||!PurpleAccountFileSnapshot.notLink(entry))throw new IllegalStateException("unknown sync entry");}
             else throw new IllegalStateException("unknown sync entry");
         }
         PurpleSyncRecoveryFiles.Snapshot state=tree.capture(new File(directory,"state.json"),false);

@@ -18,7 +18,7 @@ final class PurpleSyncRetainedFiles {
         File directory = new File(root, "retained-bases");
         if (missing(directory)) return new byte[0][];
         String identity = PurpleAccountFileSnapshot.durableDirectoryIdentity(directory);
-        if (identity.equals("missing") || !directory.isDirectory() || !directory.getCanonicalFile().equals(directory.getAbsoluteFile())) throw new IOException("InvalidRetention");
+        if (identity.equals("missing") || !directory.isDirectory() || !PurpleAccountFileSnapshot.notLink(directory)) throw new IOException("InvalidRetention");
         File[] files = directory.listFiles();
         if (files == null || files.length > 1024) throw new IOException("RetentionFull");
         ArrayList<byte[]> records = new ArrayList<>(); long total = 0;

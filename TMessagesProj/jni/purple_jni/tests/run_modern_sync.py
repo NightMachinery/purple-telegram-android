@@ -63,7 +63,9 @@ manifest = [{"path": str(p), "sha256": hashlib.sha256(p.read_bytes()).hexdigest(
 run("javac", [compiler, "-source", "8", "-target", "8", "-proc:none", "-sourcepath", empty, "-cp", classpath, "-d", out] + sources)
 suites = ["modern", "routed", "store", "core", "history-rules", "history-native"] if args.suite == "all" else ["store", "core", "history-rules", "history-native"] if args.suite == "existing" else ["history-rules", "history-native"] if args.suite == "history" else [args.suite]
 for suite in suites:
-    run(suite, [java, "-Xcheck:jni", "-Xmx768m", "-XX:ActiveProcessorCount=2"] + deny_props + ["-Djava.library.path=" + str(args.library.parent), "-Djava.io.tmpdir=" + str(fixtures), "-Dscratch=" + str(fixtures), "-Dpurple.test.strings=" + str(repo / "TMessagesProj/src/main/res/values/purple_strings.xml"), "-cp", str(out) + os.pathsep + classpath, "SyncHostMain", classes, suite, fixtures / suite], deny_env)
+    # --add-opens: the Os.fstat stub reads the lock's inode through sun.nio.fs, as the move store's suite does, so the
+    # magic scenario can open the move store (its known paths) over the modern fixtures.
+    run(suite, [java, "--add-opens=java.base/sun.nio.fs=ALL-UNNAMED", "-Xcheck:jni", "-Xmx768m", "-XX:ActiveProcessorCount=2"] + deny_props + ["-Djava.library.path=" + str(args.library.parent), "-Djava.io.tmpdir=" + str(fixtures), "-Dscratch=" + str(fixtures), "-Dpurple.test.strings=" + str(repo / "TMessagesProj/src/main/res/values/purple_strings.xml"), "-cp", str(out) + os.pathsep + classpath, "SyncHostMain", classes, suite, fixtures / suite], deny_env)
 
 if args.suite in ["all", "modern", "auto"]:
     retry_out=args.output / "outbox-classes"

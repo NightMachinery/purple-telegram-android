@@ -148,6 +148,17 @@ final class PurpleAccountFileSnapshot {
                 && android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) throw new java.io.IOException("WrongThread");
     }
     /**
+     * Whether the last component of {@code file} is a plain entry, not a symbolic link. Links above it are the
+     * platform's: Android's files directory is /data/user/0/..., a link to /data/data/.... Comparing the whole canonical
+     * path with the absolute one refused every retained base there (device run A4: the magic publish's commit and every
+     * later store open failed with InvalidRetention).
+     */
+    static boolean notLink(File file) throws java.io.IOException {
+        File absolute = file.getAbsoluteFile(), parent = absolute.getParentFile();
+        return parent != null && absolute.getCanonicalFile().equals(new File(parent.getCanonicalFile(), absolute.getName()));
+    }
+
+    /**
      * The directory every durable path lies below: the app's files directory, the parent of
      * {@link PurpleAccountFiles#root()}. The native walk opens it and goes down from there, never from "/": Android
      * refuses an app any read of the root directory, which failed every durable operation with IoError (native check A3).

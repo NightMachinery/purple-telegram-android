@@ -56,7 +56,8 @@ else:
     command = [str(compiler.with_name('java')), '-Xcheck:jni', '-Xmx512m', '-XX:ActiveProcessorCount=2', '-Djava.library.path=' + str(args.library.parent), '-cp', str(classes) + os.pathsep + classpath, 'org.telegram.messenger.purple.' + ('PurpleSyncChatCases' if args.suite == 'facts' else 'PurpleSyncChatIntegrationCases' if args.suite == 'integration' else 'PurpleSyncChatDiscoveryCases'), str(classes), str(base), str(args.output)]
     if args.suite == 'integration':
         command = command[:-3] + [str(args.overlay),str(args.output)]
-        command[1:1] = ['-Dscratch=' + str(args.output), '-Djava.io.tmpdir=' + str(args.output), '-Dpurple.test.strings=' + str(repo / 'TMessagesProj/src/main/res/values/purple_strings.xml')]
+        # --add-opens: the modern cases it reruns open the move store, whose lock check reads an inode through sun.nio.fs.
+        command[1:1] = ['--add-opens=java.base/sun.nio.fs=ALL-UNNAMED', '-Dscratch=' + str(args.output), '-Djava.io.tmpdir=' + str(args.output), '-Dpurple.test.strings=' + str(repo / 'TMessagesProj/src/main/res/values/purple_strings.xml')]
 (args.output / (args.phase + '.argv.json')).write_text(json.dumps(command, indent=2) + '\n')
 with (args.output / (args.phase + '.log')).open('w') as log:
     result = subprocess.run(command, cwd=repo, stdout=log, stderr=subprocess.STDOUT)

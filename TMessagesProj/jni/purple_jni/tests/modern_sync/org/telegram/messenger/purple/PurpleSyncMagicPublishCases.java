@@ -24,7 +24,7 @@ final class PurpleSyncMagicPublishCases {
     static final PurpleSyncChatOrigin ORIGIN = new PurpleSyncChatOrigin(1, 0, 202, "magic-fixture");
 
     /** The bound chat as the lookup's transport sees it: its inventory and post replies name the magic chat. */
-    static final class Chat implements PurpleSyncTransport {
+    static class Chat implements PurpleSyncTransport {
         final ArrayList<byte[]> records = new ArrayList<>();
         int posts;
         PurpleSyncInventory inventory() {
@@ -84,12 +84,13 @@ final class PurpleSyncMagicPublishCases {
             movedPublish(parent);
             firstPublish(parent);
             guard(parent);
+            PurpleSyncMagicScenarioCases.run(parent);
         } finally {
             for (Map.Entry<String, Object> entry : saved.entrySet()) field(entry.getKey(), entry.getValue());
         }
     }
 
-    /** The refusal log of rootdeny.c, or null when the run does not refuse "/" (not macOS). */
+    /** The refusal log of rootdeny.c, or null when the run does not refuse "/" (not macOS, or a driver other than run_modern_sync.py). */
     static File rootLog() {
         String log = System.getProperty("purple.test.rootdeny");
         return log == null ? null : new File(log);
@@ -100,7 +101,7 @@ final class PurpleSyncMagicPublishCases {
     }
     /** The run refuses "/" as Android does: a listing of "/" fails and is logged, while paths below it still open. */
     static void rootRefused() throws Exception {
-        if (rootLog() == null) { System.out.println("ROOTDENY=unavailable (not macOS)"); return; }
+        if (rootLog() == null) { System.out.println("ROOTDENY=off (this run does not refuse \"/\")"); return; }
         int before = rootRefusals();
         check(new File("/").list() == null && rootRefusals() == before + 1, "the host refuses a read of \"/\" like Android");
         check(new File(System.getProperty("java.io.tmpdir")).list() != null, "and only \"/\"");

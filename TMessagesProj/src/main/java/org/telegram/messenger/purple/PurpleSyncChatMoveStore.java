@@ -261,18 +261,18 @@ public final class PurpleSyncChatMoveStore implements AutoCloseable {
         for (String name : entries) {
             File path = new File(root, name);
             if (name.equals("pending")) {
-                if (PurpleAccountFileSnapshot.directory(path) != 1 || !path.getCanonicalFile().equals(path.getAbsoluteFile())
+                if (PurpleAccountFileSnapshot.directory(path) != 1 || !PurpleAccountFileSnapshot.notLink(path)
                         || PurpleAccountFileSnapshot.durableDirectoryIdentity(path).equals("missing")) throw new IOException("AmbiguousFiles");
                 String[] pending = path.list(); if (pending == null) throw new IOException("AmbiguousFiles");
                 for (String item : pending) { if (!item.equals("config.json")) throw new IOException("AmbiguousFiles"); read(new File(path, item), 262144); }
             } else if (name.equals("carry-objects") || name.equals("retained-bases") || name.equals("carry-history")) {
-                if (PurpleAccountFileSnapshot.directory(path) != 1 || !path.getCanonicalFile().equals(path.getAbsoluteFile())
+                if (PurpleAccountFileSnapshot.directory(path) != 1 || !PurpleAccountFileSnapshot.notLink(path)
                         || PurpleAccountFileSnapshot.durableDirectoryIdentity(path).equals("missing")) throw new IOException("AmbiguousFiles");
             } else if (name.equals("lock")) {
                 PurpleAccountFileSnapshot.durable("lock", path, null, null, LIMIT, 0);
             } else if (PurpleAccountSyncStore.bindingFile(name)) {
                 // WHY: the magic chat binding and its writer's temporary belong to the account; a carry never reads them.
-                if (!path.isFile() || !path.getCanonicalFile().equals(path.getAbsoluteFile())) throw new IOException("AmbiguousFiles");
+                if (!path.isFile() || !PurpleAccountFileSnapshot.notLink(path)) throw new IOException("AmbiguousFiles");
             } else if (Arrays.asList("state.json", "auto.json", "carry.json", "carry-cache.json", "sync-chat-setup.json", "sync-chat-setup-create.json", "sync-chat-setup-mark.json", "sync-chat-move-create.json").contains(name)) read(path, LIMIT);
             else throw new IOException("AmbiguousFiles");
         }
