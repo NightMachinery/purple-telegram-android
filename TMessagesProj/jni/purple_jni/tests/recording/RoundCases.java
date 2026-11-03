@@ -559,38 +559,105 @@ public final class RoundCases {
                 && PurpleRecordingCore.scanOgg(new File(store.bin().get(0).media)).clean(), "a preview discard is a Discarded item with its bytes");
         store.clear();
 
-        // P2-1: legacy voice pause and resume: each segment is its own entry; a send drops both.
+        // P2-1: legacy voice, in upstream's real order. Pause: no recordStopped; the
+        // segments are joined into a new file, then recordPaused and audioDidSent
+        // with the draft. Resume: recordResumed (no guid) and a new segment.
         sessions.started("0:9", 0, target(102), true, script.now);
-        voiceFile(audio, "1800000300000_-1.ogg", ogg, script);
+        final File seg1 = voiceFile(audio, "1800000300000_-1.ogg", torn, script);
         script.advance(1000);
-        sessions.stopped("0:9", 1, target(102));
-        sessions.didSent("0:9", true, new File(audio, "1800000300000_-1.ogg").getPath());
+        final File joined1 = voiceFile(audio, "1800000301000_-1.ogg", ogg, script);
+        seg1.delete();
+        sessions.didSent("0:9", true, joined1.getPath());
         script.advance(1000);
-        sessions.started("0:9", 0, target(102), true, script.now);
-        voiceFile(audio, "1800000302000_-2.ogg", torn, script);
+        sessions.resumed(0);
+        final File seg2 = voiceFile(audio, "1800000302000_-1.ogg", torn, script);
         script.advance(1000);
-        check(store.entries().size() == 2, "a legacy resume keeps the paused segment and adds the new one");
+        check(store.entries().size() == 2, "a legacy resume keeps the joined file and adds the new segment");
+        boolean both = false;
+        for (PurpleRecordingEntry e : store.entries()) both |= joined1.getPath().equals(e.media) && e.segment;
+        check(both, "the joined file before the resume is a segment entry");
+        // A crash now recovers both parts: the joined file although it is a finished stream.
+        PurpleRecordingStore crashed = new PurpleRecordingStore(manifest, CORE, 1_800_000_400L);
+        outcome = crashed.recoverAtStart(1_800_000_400L);
+        check(outcome.recovered == 2 && crashed.bin().size() == 2, "after a crash each part is in the bin");
+        crashed.clear();
+        // Without a crash: the next pause joins both into a new file; then the send.
         store = new PurpleRecordingStore(manifest, CORE, 1_800_000_400L);
-        outcome = store.recoverAtStart(1_800_000_400L);
-        check(outcome.finishedCleanly == 1 && outcome.recovered == 1, "after a crash the unfinished segment is recovered; the finished one is upstream's draft");
-        store.clear();
         sessions = new PurpleRecordingSessions(store, script);
         sessions.started("0:9", 0, target(102), true, script.now);
-        voiceFile(audio, "1800000500000_-3.ogg", ogg, script);
+        final File s1 = voiceFile(audio, "1800000500000_-3.ogg", torn, script);
         script.advance(1000);
-        sessions.stopped("0:9", 1, target(102));
-        sessions.didSent("0:9", true, null);
-        sessions.started("0:9", 0, target(102), true, script.now);
-        voiceFile(audio, "1800000501000_-4.ogg", ogg, script);
+        final File j1 = voiceFile(audio, "1800000501000_-3.ogg", ogg, script);
+        s1.delete();
+        sessions.didSent("0:9", true, j1.getPath());
+        sessions.resumed(0);
+        final File s2 = voiceFile(audio, "1800000502000_-3.ogg", torn, script);
         script.advance(1000);
-        // A slow join: both segments are deleted before audioDidSent arrives.
+        final File j2 = voiceFile(audio, "1800000503000_-3.ogg", ogg, script);
+        j1.delete();
+        s2.delete();
+        sessions.didSent("0:9", true, j2.getPath());
+        check(store.entries().size() == 1 && j2.getPath().equals(store.entries().get(0).media),
+                "the next pause's join retires the earlier segment");
+        sessions.resumed(0);
+        final File s3 = voiceFile(audio, "1800000504000_-3.ogg", torn, script);
+        script.advance(1000);
+        // A slow join at the send: both files are deleted before audioDidSent arrives.
         sessions.stopped("0:9", 0, target(102));
-        new File(audio, "1800000500000_-3.ogg").delete();
-        new File(audio, "1800000501000_-4.ogg").delete();
+        j2.delete();
+        s3.delete();
         script.advance(10000);
         sessions.didSent("0:9", false, null);
         script.advance(10000);
         check(store.entries().isEmpty() && store.bin().isEmpty(), "a send whose join is slow is not taken for a discard");
+
+        // P1-2: a resume while another session of the account is paused goes to the
+        // one that paused last; the other keeps its own file.
+        sessions.started("0:11", 0, target(110), true, script.now);
+        final File x = voiceFile(audio, "audio_recording_voice_1800000550000_1.ogg", ogg, script);
+        script.advance(1000);
+        sessions.stopped("0:11", 1, target(110));
+        sessions.didSent("0:11", true, x.getPath());
+        script.advance(1000);
+        sessions.started("0:12", 0, target(111), true, script.now);
+        final File y = voiceFile(audio, "audio_recording_voice_1800000552000_2.ogg", ogg, script);
+        script.advance(1000);
+        sessions.stopped("0:12", 1, target(111));
+        sessions.didSent("0:12", true, y.getPath());
+        script.advance(1000);
+        sessions.resumed(0);
+        final File y2 = voiceFile(audio, "audio_recording_voice_1800000554000_3.ogg", torn, script);
+        script.advance(3000);
+        PurpleRecordingEntry ex = null;
+        PurpleRecordingEntry ey = null;
+        for (PurpleRecordingEntry e : store.entries()) {
+            if (e.dialogId == 110) ex = e;
+            if (e.dialogId == 111) ey = e;
+        }
+        check(ex != null && x.getPath().equals(ex.media), "the older paused session keeps its file");
+        check(ey != null && y2.getPath().equals(ey.media), "the resumed session finds its new file");
+        sessions.tooShort("0:11");
+        sessions.tooShort("0:12");
+
+        // N1: a paused round, then a voice message in the same chat: another recording.
+        final File roundN = new File(work, "round_video_n.mp4");
+        Files.write(roundN.toPath(), new byte[]{0, 0, 0, 8, 'f', 'r', 'e', 'e'});
+        sessions.roundRegistered(roundN, new File(roundN.getPath() + ".pjr"));
+        sessions.started("0:13", 0, target(130), false, script.now);
+        sessions.stopped("0:13", 2, target(130));
+        sessions.didSent("0:13", true, new File(work, "preview_n.mp4").getPath());
+        script.advance(1000);
+        sessions.started("0:13", 0, target(130), true, script.now);
+        final File vn = voiceFile(audio, "audio_recording_voice_1800000560000_4.ogg", ogg, script);
+        script.advance(1000);
+        sessions.stopped("0:13", 1, target(130));
+        check(sessions.count() == 1 && store.bin().isEmpty(), "a voice pause after a round in the same chat is not a round cancel");
+        boolean voiceEntry = false;
+        for (PurpleRecordingEntry e : store.entries()) voiceEntry |= !e.round() && vn.getPath().equals(e.media);
+        check(voiceEntry, "the voice message has its own entry");
+        sessions.tooShort("0:13");
+        script.advance(10000);
+        check(store.bin().isEmpty(), "nothing went to the bin");
 
         // A plain voice discard is still kept.
         final int before = script.kept;

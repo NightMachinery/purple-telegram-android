@@ -200,7 +200,7 @@ public final class PurpleRecordingStore {
                 deleteJournal(e);
                 continue;
             }
-            if (finished(e, media)) {
+            if (finished(e, media) && !e.segment) {
                 outcome.finishedCleanly++;
                 entries.remove(e);
                 deleteJournal(e);

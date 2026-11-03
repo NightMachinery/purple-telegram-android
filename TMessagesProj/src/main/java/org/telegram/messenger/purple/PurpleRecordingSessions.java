@@ -23,11 +23,14 @@ import java.util.Map;
  * class guid. What upstream sends, by recorder (13.1.1):
  *
  * <ul>
- * <li>Voice: {@code recordStarted} at the start, and again on a legacy resume
- *     (V2 resumes with {@code recordResumed}); {@code recordStopped} 1 for a
- *     pause into preview, then {@code audioDidSent} with a draft; 0 for a send
- *     (then {@code audioDidSent} without a draft) or a cancel (the file is
- *     deleted). Sending or discarding from preview sends nothing at all.</li>
+ * <li>Voice: {@code recordStarted} at the start only. V2 pauses with
+ *     {@code recordStopped} 1 and then {@code audioDidSent} with a draft;
+ *     legacy pauses with no {@code recordStopped}: it joins the segments into a
+ *     new file and posts {@code recordPaused} and {@code audioDidSent} with the
+ *     draft. Both resume with {@code recordResumed}, which names no chat;
+ *     legacy records into a new segment. A send is {@code recordStopped} 0 then
+ *     {@code audioDidSent} without a draft; a cancel is {@code recordStopped} 0
+ *     and the file deleted. Sending or discarding from preview sends nothing.</li>
  * <li>Rounds: a registration from PurpleRoundJournal before
  *     {@code recordStarted} (legacy in prepareEncoder, V2 in
  *     RoundVideoSession.start); {@code recordStopped} 0 or 6 cancel, 2 pause
@@ -162,19 +165,11 @@ public final class PurpleRecordingSessions {
     public synchronized void started(String key, int account, long[] target, boolean voice, long startedAt) {
         final Session existing = sessions.get(key);
         if (existing != null) {
-            if (!existing.paused && !existing.stopped) return;
-            if (voice && existing.paused && legacyVoice(existing.current.file)) {
-                // A legacy resume records into a new segment file; the paused
-                // segment stays its own entry until the recording ends.
-                existing.earlier.add(existing.current);
-                existing.current = new Part(begin(account, existing.target != null ? existing.target : target, true, startedAt));
-                existing.paused = false;
-                existing.stopped = false;
-                existing.tries = 0;
-                env.schedule(() -> discover(existing), DISCOVER_DELAY_MS);
-                return;
-            }
-            if (!voice && !pendingFresh()) {
+            if (!existing.paused && !existing.stopped && existing.round == !voice) return;
+            // Voice never resumes with recordStarted (both recorders send
+            // recordResumed), and a session of the other kind is another
+            // recording: only a round may resume here.
+            if (!voice && existing.round && !pendingFresh()) {
                 // A round resumes into the file it was writing.
                 existing.paused = false;
                 existing.stopped = false;
@@ -183,6 +178,7 @@ public final class PurpleRecordingSessions {
             // The previous recording ended from preview, which upstream does not announce.
             supersede(existing);
         }
+        lastPaused.remove(account);
         final PurpleRecordingEntry entry = begin(account, target, voice, startedAt);
         if (entry == null) return;
         final Session session = new Session(key, !voice, target);
@@ -205,7 +201,7 @@ public final class PurpleRecordingSessions {
         session.stopped = true;
         if (session.round) {
             if (reason == 2) {
-                session.paused = true;
+                paused(session);
                 env.flushJournal(session.current.entry.journal);
                 schedulePausedCheck();
             } else if (reason == 4) {
@@ -220,7 +216,7 @@ public final class PurpleRecordingSessions {
             return;
         }
         if (reason == 1) {
-            session.paused = true;
+            paused(session);
             schedulePausedCheck();
         } else {
             session.paused = false;
@@ -236,7 +232,7 @@ public final class PurpleRecordingSessions {
             end(session);
             return;
         }
-        session.paused = true;
+        paused(session);
         schedulePausedCheck();
         if (session.round) {
             // The preview is a finished copy; the recording continues in the
@@ -244,6 +240,15 @@ public final class PurpleRecordingSessions {
             env.flushJournal(session.current.entry.journal);
             return;
         }
+        // A legacy pause joins the earlier segments into one new file: they are in it now.
+        for (Part part : session.earlier) {
+            part.close();
+            try {
+                store.finish(part.entry);
+            } catch (IOException ignored) {
+            }
+        }
+        session.earlier.clear();
         if (path != null) {
             final File file = new File(path);
             if (!file.equals(session.current.file) && file.isFile()) attach(session.current, file, null);
@@ -258,8 +263,12 @@ public final class PurpleRecordingSessions {
 
     /** {@code recordResumed} (no guid): the account's paused recording continues. */
     public synchronized void resumed(int account) {
-        for (Session session : new ArrayList<>(sessions.values())) {
-            if (session.current.entry.account != account || !session.paused) continue;
+        // recordResumed names no chat. It belongs to the account's one live
+        // recording: the session that paused last, never an older one left
+        // paused by a send from preview.
+        final Session session = sessions.get(lastPaused.get(account));
+        lastPaused.remove(account);
+        if (session != null && session.paused) {
             session.paused = false;
             session.stopped = false;
             if (session.round) {
@@ -269,11 +278,34 @@ public final class PurpleRecordingSessions {
                     pendingJournal = null;
                 }
             } else {
+                if (legacyVoice(session.current.file)) {
+                    // Legacy resumes into a new segment and keeps the paused,
+                    // joined file as the one before it: that file stays its own
+                    // entry until the next pause joins both, or the recording ends.
+                    session.current.entry.segment = true;
+                    try {
+                        store.update(session.current.entry);
+                    } catch (IOException ignored) {
+                    }
+                    final PurpleRecordingEntry next = begin(account, session.target, true, env.now());
+                    if (next != null) {
+                        session.earlier.add(session.current);
+                        session.current = new Part(next);
+                    }
+                }
                 // V2 may continue into a new file after a pause; look again.
                 session.tries = 0;
                 env.schedule(() -> discover(session), DISCOVER_DELAY_MS);
             }
         }
+    }
+
+    /** The session that paused last on each account, which a guid-less recordResumed continues. */
+    private final Map<Integer, String> lastPaused = new HashMap<>();
+
+    private void paused(Session session) {
+        session.paused = true;
+        lastPaused.put(session.current.entry.account, session.key);
     }
 
     /**
@@ -377,7 +409,9 @@ public final class PurpleRecordingSessions {
         if (sessions.get(session.key) != session || session.paused) return;
         final File found = env.newestVoice(session.current.entry.startedAt);
         boolean taken = false;
-        for (Part part : session.earlier) taken |= found != null && found.equals(part.file);
+        for (Session other : sessions.values()) {
+            for (Part part : other.parts()) taken |= found != null && part != session.current && found.equals(part.file);
+        }
         if (found == null || taken) {
             if (session.tries++ < 3) env.schedule(() -> discover(session), DISCOVER_DELAY_MS * 2);
             return;
