@@ -957,14 +957,15 @@
         "--output",
         "{output}"
       ],
-      "coverage": "F10 crash-safe recordings: the real recordingSettings bridge over the host core library; the registry's store, manifest and bin (atomic writes, crash states becoming recovered through the real Ogg finaliser, discard from a held descriptor, bin_keep expiry at the boundary, the orphan scan patterns) on Opus files ffmpeg encodes at test time; the round journal written from the Mp4Movie hooks and read back by the core (interval, Off writing the config header only, CRC failure, torn append); round recovery through the host build of the recovery bridge and the real MP4Builder, Mp4Movie and Track, compared with finishMovie's tables (fresh journal, truncation inside the last samples, Off, stale journal plus repaired tail, no journal); the AAC measure shim against AAC streams encoded at test time; pins the Mp4Movie, InstantCameraView and RoundVideoMp4Writer hooks.",
+      "coverage": "F10 crash-safe recordings: the real recordingSettings bridge over the host core library; the registry's store, manifest and bin (atomic writes, crash states becoming recovered through the real Ogg finaliser, discard from a held descriptor, bin_keep expiry at the boundary, the orphan scan patterns) on Opus files ffmpeg encodes at test time; the round journal written from the Mp4Movie hooks and read back by the core (interval, Off writing the config header only, CRC failure, torn append); round recovery through the host build of the recovery bridge and the real MP4Builder, Mp4Movie and Track, compared with finishMovie's tables (fresh journal, truncation inside the last samples, Off, stale journal plus repaired tail, no journal); the registry's event handling (PurpleRecordingSessions) on upstream's event sequences: send and discard from preview, a new recording after a preview, legacy voice segments, round registration pairing across chats, a round's preview, a V2 cancel that empties the file, a round send in flight, view-once; the AAC measure shim against AAC streams encoded at test time; pins the Mp4Movie, InstantCameraView and RoundVideoMp4Writer hooks.",
       "expects": {
         "aac:AAC_MEASURE_CHECKS": 540,
         "bin:RECORDING_BIN_CHECKS": 62,
         "journal:ROUND_JOURNAL_CHECKS": 22,
         "pins:RECORDING_HOOK_PINS": 6,
         "recovery:ROUND_RECOVERY_CHECKS": 380,
-        "settings:RECORDING_SETTINGS_CHECKS": 140
+        "settings:RECORDING_SETTINGS_CHECKS": 140,
+        "events:RECORDING_EVENT_CHECKS": 28
       }
     },
     {

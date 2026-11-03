@@ -125,6 +125,22 @@ public final class PurpleRecordingStore {
         save();
     }
 
+    /** Writes an entry whose fields the caller changed (view-once, the account's user id). */
+    public void update(PurpleRecordingEntry e) throws IOException {
+        save();
+    }
+
+    /** Upstream's send path has the recording; a start finds it unfinished only if the send never finished. */
+    public void sending(PurpleRecordingEntry e) throws IOException {
+        e.state = PurpleRecordingEntry.SENDING;
+        save();
+    }
+
+    /** A file in the bin directory for a copy no entry owns yet (a cancelled round's snapshot). */
+    public File scratch(String name) throws IOException {
+        return new File(manifest.binDir(), name);
+    }
+
     public void duration(PurpleRecordingEntry e, long durationMs) throws IOException {
         if (durationMs <= e.durationMs) return;
         e.durationMs = durationMs;

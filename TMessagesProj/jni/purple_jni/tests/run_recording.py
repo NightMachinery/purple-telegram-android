@@ -33,7 +33,7 @@ assert classes.is_dir() and args.json.is_file() and args.library.is_file()
 purple = [java / 'messenger/purple' / name for name in [
     'PurpleCore.java', 'PurpleRecordingSettings.java', 'PurpleRecordingCore.java', 'PurpleRecordingEntry.java',
     'PurpleRecordingManifest.java', 'PurpleRecordingFiles.java', 'PurpleRecordingStore.java',
-    'PurpleRoundJournal.java', 'PurpleRoundRecovery.java']]
+    'PurpleRoundJournal.java', 'PurpleRoundRecovery.java', 'PurpleRecordingSessions.java']]
 upstream = [java / 'messenger/video' / name for name in ['Mp4Movie.java', 'MP4Builder.java', 'Track.java']]
 hooked = {name: java / name for name in [
     'messenger/video/Mp4Movie.java', 'ui/Components/InstantCameraView.java',
@@ -62,7 +62,9 @@ PROGRAMS = [('settings', 'RecordingCases', 'RECORDING_SETTINGS_CHECKS', []),
             ('bin', 'RecordingCases', 'RECORDING_BIN_CHECKS',
              [str(args.output / 'voice.ogg'), str(args.output / 'finished.mp4'), str(work / 'bin')]),
             ('journal', 'RoundCases', 'ROUND_JOURNAL_CHECKS', [str(work / 'journal')]),
-            ('recovery', 'RoundCases', 'ROUND_RECOVERY_CHECKS', [str(host_library), str(adts), str(work / 'recovery')])]
+            ('recovery', 'RoundCases', 'ROUND_RECOVERY_CHECKS', [str(host_library), str(adts), str(work / 'recovery')]),
+            ('events', 'RoundCases', 'RECORDING_EVENT_CHECKS',
+             [str(host_library), str(adts), str(args.output / 'voice.ogg'), str(work / 'events')])]
 
 assert not args.output.exists(), 'output must be an unused directory'
 args.output.mkdir(parents=True)
@@ -152,11 +154,11 @@ for name, command in commands.items():
         # FFmpeg's decoder reports each refused prefix on stderr, so the aac
         # and recovery programs keep their stderr apart from the completion
         # records.
-        separate = name in ('aac', 'recovery')
+        separate = name in ('aac', 'recovery', 'events')
         result = subprocess.run(command, stdin=subprocess.DEVNULL, stdout=log,
                                 stderr=errors if separate else subprocess.STDOUT)
     output = (args.output / (name + '.log')).read_text()
-    if result.returncode and name in ('aac', 'recovery'):
+    if result.returncode and name in ('aac', 'recovery', 'events'):
         output += ''.join(line for line in (args.output / (name + '.stderr.log')).read_text().splitlines(True)
                           if not line.startswith('[aac @'))
     print(name, result.returncode, output[-2000:], flush=True)

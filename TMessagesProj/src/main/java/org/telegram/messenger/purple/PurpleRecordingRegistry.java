@@ -20,8 +20,6 @@ import org.telegram.messenger.UserConfig;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.RandomAccessFile;
-import java.nio.channels.FileChannel;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -65,14 +63,16 @@ public final class PurpleRecordingRegistry {
 
     /** What a chat screen tells the registry about the recording it starts. */
     public interface ChatTarget {
-        /** {account, dialog id, topic id, reply message id}, read when a recording starts. */
+        /**
+         * {account, dialog id, topic id, reply message id, client user id,
+         * flags (PurpleRecordingSessions.FLAG_*)}, read when a recording
+         * starts and again when it stops.
+         */
         long[] target();
     }
 
     private static final String PREFS = "purple_recordings";
     private static final String ORPHAN_SCAN_DONE = "orphan_scan_v1";
-    private static final long DISCOVER_DELAY_MS = 1000;
-    private static final long[] DISCARD_CHECKS_MS = {2000, 6000, 15000};
 
     private static final int[] EVENTS = {
         NotificationCenter.recordStarted, NotificationCenter.recordStopped, NotificationCenter.recordResumed,
@@ -88,48 +88,10 @@ public final class PurpleRecordingRegistry {
         return t;
     });
 
-    /** The store and the live sessions; touched on the worker thread only. */
+    /** The store and the event handling; touched on the worker thread, except snapshotCancel. */
     private static PurpleRecordingStore store;
-    private static final Map<String, Session> sessions = new HashMap<>();
+    private static volatile PurpleRecordingSessions sessions;
     private static boolean started;
-
-    /** A recording in progress, by account and guid. */
-    private static final class Session {
-        final String key;
-        final PurpleRecordingEntry entry;
-        final boolean round;
-        FileChannel held;
-        File file;
-        boolean stopped;
-        boolean paused;
-        int generation;
-
-        Session(String key, PurpleRecordingEntry entry, boolean round) {
-            this.key = key;
-            this.entry = entry;
-            this.round = round;
-        }
-
-        void hold(File f) {
-            close();
-            file = f;
-            try {
-                held = new RandomAccessFile(f, "r").getChannel();
-            } catch (IOException e) {
-                held = null;
-            }
-        }
-
-        void close() {
-            if (held != null) {
-                try {
-                    held.close();
-                } catch (IOException ignored) {
-                }
-                held = null;
-            }
-        }
-    }
 
     // ---- Start -----------------------------------------------------------------
 
@@ -174,6 +136,7 @@ public final class PurpleRecordingRegistry {
         try {
             final long now = System.currentTimeMillis() / 1000;
             store = new PurpleRecordingStore(new PurpleRecordingManifest(directory()), CORE, now);
+            sessions = new PurpleRecordingSessions(store, ENV);
             final PurpleRecordingStore.Outcome recovered = store.recoverAtStart(now);
             log("recovery", recovered);
             sweep();
@@ -236,9 +199,15 @@ public final class PurpleRecordingRegistry {
 
     // ---- Events ----------------------------------------------------------------
 
+    /** {account, dialog, topic, reply, client user id, flags} of a chat, read now; null if not registered. */
+    private static long[] target(int guid) {
+        final ChatTarget chat = chats.get(guid);
+        return chat == null ? null : chat.target();
+    }
+
     private static void onEvent(int event, int account, Object... args) {
         if (event == NotificationCenter.recordResumed) {
-            worker.execute(() -> resumed(account));
+            worker.execute(() -> { if (sessions != null) sessions.resumed(account); });
             return;
         }
         if (args.length == 0 || !(args[0] instanceof Integer)) return;
@@ -246,216 +215,76 @@ public final class PurpleRecordingRegistry {
         final String key = account + ":" + guid;
         if (event == NotificationCenter.recordStarted) {
             final boolean voice = args.length < 2 || !(args[1] instanceof Boolean) || (Boolean) args[1];
-            final ChatTarget chat = chats.get(guid);
-            final long[] target = chat == null ? null : chat.target();
+            final long[] target = target(guid);
             final long startedAt = System.currentTimeMillis();
-            worker.execute(() -> started(key, account, target, voice, startedAt));
+            worker.execute(() -> { if (sessions != null) sessions.started(key, account, target, voice, startedAt); });
         } else if (event == NotificationCenter.recordStopped) {
             final int reason = args.length > 1 && args[1] instanceof Integer ? (Integer) args[1] : 0;
-            worker.execute(() -> stopped(key, reason));
+            final long[] target = target(guid);
+            // A round cancel: copy the bytes now, on the thread that posted it,
+            // before V2's file executor empties the file.
+            final PurpleRecordingSessions now = sessions;
+            if (now != null && (reason == 0 || reason == 6)) now.snapshotCancel(key);
+            worker.execute(() -> { if (sessions != null) sessions.stopped(key, reason, target); });
         } else if (event == NotificationCenter.audioDidSent) {
             final boolean draft = args.length > 1 && args[1] != null;
             final String path = args.length > 2 && args[2] instanceof String ? (String) args[2] : null;
-            worker.execute(() -> didSent(key, draft, path));
+            worker.execute(() -> { if (sessions != null) sessions.didSent(key, draft, path); });
         } else if (event == NotificationCenter.audioRecordTooShort) {
-            worker.execute(() -> end(key));
+            worker.execute(() -> { if (sessions != null) sessions.tooShort(key); });
         }
     }
 
-    private static void started(String key, int account, long[] target, boolean voice, long startedAt) {
-        if (store == null) return;
-        final Session existing = sessions.get(key);
-        if (existing != null) {
-            // A resume after a pause into preview: the same recording.
-            existing.stopped = false;
-            existing.paused = false;
-            return;
-        }
-        try {
-            final PurpleRecordingEntry entry = store.begin(account,
-                    target == null ? 0 : target[1], target == null ? 0 : target[2], target == null ? 0 : (int) target[3],
-                    voice ? PurpleRecordingEntry.VOICE : PurpleRecordingEntry.ROUND, startedAt);
-            final Session session = new Session(key, entry, !voice);
-            sessions.put(key, session);
-            if (voice) {
-                worker.schedule(() -> discover(session), DISCOVER_DELAY_MS, TimeUnit.MILLISECONDS);
-            } else {
-                attachPendingRound(session);
-            }
-        } catch (IOException e) {
-            PurpleDiagLog.event("recordings", "begin", PurpleDiagLog.reason("io_failed"));
-        }
-    }
-
-    /** Finds the voice file and holds it open; tried again once if the recorder was slow. */
-    private static void discover(Session session) {
-        if (sessions.get(session.key) != session) return;
-        final File found = PurpleRecordingFiles.newestVoice(FileLoader.getDirectory(FileLoader.MEDIA_DIR_AUDIO),
-                session.entry.startedAt);
-        if (found == null) {
-            if (session.generation++ < 3) {
-                worker.schedule(() -> discover(session), DISCOVER_DELAY_MS * 2, TimeUnit.MILLISECONDS);
-            }
-            return;
-        }
-        if (found.equals(session.file)) return;
-        session.hold(found);
-        try {
-            store.attach(session.entry, found, null);
-        } catch (IOException ignored) {
-        }
-    }
-
-    private static void resumed(int account) {
-        // V2 may continue into a new file after a pause; look again.
-        for (Session session : new ArrayList<>(sessions.values())) {
-            if (!session.round && session.entry.account == account && session.paused) {
-                session.paused = false;
-                session.stopped = false;
-                session.generation = 0;
-                worker.schedule(() -> discover(session), DISCOVER_DELAY_MS, TimeUnit.MILLISECONDS);
-            }
-        }
-    }
-
-    private static void stopped(String key, int reason) {
-        final Session session = sessions.get(key);
-        if (session == null) return;
-        session.stopped = true;
-        if (session.round) {
-            // InstantCameraView and InstantCameraView2: 0 or 6 cancel, 2 pause into
-            // preview, 4 too short, 5 send.
-            if (reason == 2) {
-                session.paused = true;
-                PurpleRoundJournal.flush(session.entry.journal);
-            } else if (reason == 5 || reason == 4) {
-                end(key);
-            } else {
-                scheduleDiscardChecks(session);
-            }
-            return;
-        }
-        // MediaController: 1 is a pause into preview (send 2), 0 a send or a cancel.
-        if (reason == 1) {
-            session.paused = true;
-        } else {
-            scheduleDiscardChecks(session);
-        }
-    }
-
-    private static void scheduleDiscardChecks(Session session) {
-        for (long delay : DISCARD_CHECKS_MS) {
-            worker.schedule(() -> checkDiscarded(session), delay, TimeUnit.MILLISECONDS);
-        }
-    }
-
-    /**
-     * A stop that upstream answered by deleting the file, with no send: a
-     * discard. A file still there after the last check is left in the
-     * recording state for the next start to settle.
-     */
-    private static void checkDiscarded(Session session) {
-        if (sessions.get(session.key) != session || !session.stopped || session.paused) return;
-        if (session.file != null && session.file.exists()) return;
-        sessions.remove(session.key);
-        PurpleRoundJournal.close(session.entry.journal);
-        final boolean keep = PurpleRecordingSettings.read().keepDiscarded;
-        try {
-            final boolean kept = store.discard(session.entry, session.held, keep && session.held != null,
-                    System.currentTimeMillis() / 1000);
-            PurpleDiagLog.event("recordings", "discarded", PurpleDiagLog.code("kind", session.entry.kind),
-                    PurpleDiagLog.flag("kept", kept));
-            if (kept) changed();
-        } catch (IOException e) {
-            PurpleDiagLog.event("recordings", "discarded", PurpleDiagLog.reason("io_failed"));
-        } finally {
-            session.close();
-        }
-    }
-
-    private static void didSent(String key, boolean draft, String path) {
-        final Session session = sessions.get(key);
-        if (session == null) return;
-        if (!draft) {
-            end(key);
-            return;
-        }
-        // Paused into the voice draft: the draft's file is now the recording.
-        session.paused = true;
-        if (path != null) {
-            final File file = new File(path);
-            if (!file.equals(session.file) && file.isFile()) {
-                session.hold(file);
-                try {
-                    store.attach(session.entry, file, null);
-                } catch (IOException ignored) {
-                }
-            }
-        }
-    }
-
-    /** Sent, or too short: the entry goes, and so does the descriptor. */
-    private static void end(String key) {
-        final Session session = sessions.remove(key);
-        if (session == null) return;
-        session.close();
-        PurpleRoundJournal.close(session.entry.journal);
-        try {
-            store.finish(session.entry);
-        } catch (IOException ignored) {
-        }
-    }
-
-    // ---- Rounds (F10 round) ------------------------------------------------------
-
-    /** A registration that came before its recording's recordStarted (legacy creates the movie first). */
-    private static File pendingRoundMedia;
-    private static File pendingRoundJournal;
-    private static long pendingRoundAt;
-
-    /**
-     * A round recorder registered a movie. Legacy registers once, just before
-     * recordStarted; V2 registers each output generation, the first after
-     * recordStarted. The newest generation is the recording's file.
-     */
+    /** A round recorder registered a movie (PurpleRoundJournal's listener). */
     static void roundRegistered(File media, File journal) {
-        worker.execute(() -> {
-            Session latest = null;
-            for (Session s : sessions.values()) {
-                if (s.round && (latest == null || s.entry.startedAt > latest.entry.startedAt)) latest = s;
-            }
-            if (latest != null) {
-                attachRound(latest, media, journal);
+        worker.execute(() -> { if (sessions != null) sessions.roundRegistered(media, journal); });
+    }
+
+    private static final PurpleRecordingSessions.Env ENV = new PurpleRecordingSessions.Env() {
+        @Override
+        public long now() {
+            return System.currentTimeMillis();
+        }
+
+        @Override
+        public void schedule(Runnable task, long delayMs) {
+            worker.schedule(task, delayMs, TimeUnit.MILLISECONDS);
+        }
+
+        @Override
+        public File newestVoice(long startedAt) {
+            return PurpleRecordingFiles.newestVoice(FileLoader.getDirectory(FileLoader.MEDIA_DIR_AUDIO), startedAt);
+        }
+
+        @Override
+        public boolean keepDiscarded() {
+            return PurpleRecordingSettings.read().keepDiscarded;
+        }
+
+        @Override
+        public void flushJournal(String path) {
+            PurpleRoundJournal.flush(path);
+        }
+
+        @Override
+        public void closeJournal(String path) {
+            PurpleRoundJournal.close(path);
+        }
+
+        @Override
+        public void changed() {
+            PurpleRecordingRegistry.changed();
+        }
+
+        @Override
+        public void discarded(String kind, boolean kept, boolean failed) {
+            if (failed) {
+                PurpleDiagLog.event("recordings", "discarded", PurpleDiagLog.reason("io_failed"));
             } else {
-                pendingRoundMedia = media;
-                pendingRoundJournal = journal;
-                pendingRoundAt = System.currentTimeMillis();
+                PurpleDiagLog.event("recordings", "discarded", PurpleDiagLog.code("kind", kind), PurpleDiagLog.flag("kept", kept));
             }
-        });
-    }
-
-    private static void attachPendingRound(Session session) {
-        if (pendingRoundMedia == null) return;
-        if (System.currentTimeMillis() - pendingRoundAt < 10000) {
-            attachRound(session, pendingRoundMedia, pendingRoundJournal);
         }
-        pendingRoundMedia = null;
-        pendingRoundJournal = null;
-    }
-
-    private static void attachRound(Session session, File media, File journal) {
-        if (media.equals(session.file)) return;
-        if (session.entry.journal != null && !session.entry.journal.equals(journal.getPath())) {
-            // An earlier V2 generation: upstream replaces its file, and its journal goes with it.
-            PurpleRoundJournal.close(session.entry.journal);
-            new File(session.entry.journal).delete();
-        }
-        session.hold(media);
-        try {
-            store.attach(session.entry, media, journal);
-        } catch (IOException ignored) {
-        }
-    }
+    };
 
     // ---- The bin ---------------------------------------------------------------
 

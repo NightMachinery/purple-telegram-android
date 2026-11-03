@@ -35,6 +35,11 @@ public final class RoundCases {
             journal(new File(args[1]));
             System.out.println("ROUND_JOURNAL_CHECKS=" + checks);
             break;
+        case "events":
+            System.load(args[1]);
+            events(new File(args[2]), new File(args[3]), new File(args[4]));
+            System.out.println("RECORDING_EVENT_CHECKS=" + checks);
+            break;
         case "recovery":
             System.load(args[1]);
             recovery(new File(args[2]), new File(args[3]));
@@ -431,6 +436,274 @@ public final class RoundCases {
         check(PurpleRecordingFiles.mp4Finished(new File(item.media)) == 1 && item.journal == null
                 && !live.exists() && !new File(live.getPath() + ".pjr").exists(), "as a finished file, its journal used up");
         check(item.durationMs > 3000, "with its duration");
+    }
+
+    // ---- The registry's event handling (review P1-1 to P1-4, P2-1, P2-5) ---------------
+
+    /** A scripted Env: a clock the cases move, and tasks that run when it passes them. */
+    static final class Script implements PurpleRecordingSessions.Env {
+        long now = 1_800_000_000_000L;
+        final List<long[]> due = new ArrayList<>();
+        final List<Runnable> tasks = new ArrayList<>();
+        File voiceDir;
+        boolean keep = true;
+        int discards;
+        int kept;
+        final List<String> closed = new ArrayList<>();
+
+        @Override public long now() { return now; }
+
+        @Override public void schedule(Runnable task, long delayMs) {
+            due.add(new long[]{now + delayMs, tasks.size()});
+            tasks.add(task);
+        }
+
+        @Override public File newestVoice(long startedAt) { return PurpleRecordingFiles.newestVoice(voiceDir, startedAt); }
+
+        @Override public boolean keepDiscarded() { return keep; }
+
+        @Override public void flushJournal(String path) { PurpleRoundJournal.flush(path); }
+
+        @Override public void closeJournal(String path) {
+            if (path != null) closed.add(path);
+            PurpleRoundJournal.close(path);
+        }
+
+        @Override public void changed() { }
+
+        @Override public void discarded(String kind, boolean wasKept, boolean failed) {
+            discards++;
+            if (wasKept) kept++;
+        }
+
+        /** Moves the clock, running each task as it falls due. */
+        void advance(long ms) {
+            final long until = now + ms;
+            while (true) {
+                long[] next = null;
+                for (long[] d : due) if (d[0] <= until && (next == null || d[0] < next[0])) next = d;
+                if (next == null) break;
+                due.remove(next);
+                now = Math.max(now, next[0]);
+                tasks.get((int) next[1]).run();
+            }
+            now = until;
+        }
+    }
+
+    static long[] target(long dialog) {
+        return new long[]{0, dialog, 0, 0, 4242, 0};
+    }
+
+    /** Writes a voice file named as the recorder would, modified "now" on the script's clock. */
+    static File voiceFile(File dir, String name, byte[] bytes, Script script) throws Exception {
+        final File f = new File(dir, name);
+        Files.write(f.toPath(), bytes);
+        f.setLastModified(script.now);
+        return f;
+    }
+
+    static void events(File adts, File voice, File work) throws Exception {
+        work.mkdirs();
+        PurpleRoundJournal.listener = null;
+        settings("[recording]\nround_journal = \"5s\"\n");
+        final byte[] ogg = Files.readAllBytes(voice.toPath());
+        final byte[] torn = Arrays.copyOf(ogg, ogg.length * 2 / 3);
+        final Aac aac = readAdts(adts);
+        final List<In> samples = stream(aac.frames, aac.sampleRate, 11);
+        final File dir = new File(work, "purple-recordings");
+        final File audio = new File(work, "audio");
+        audio.mkdirs();
+        final PurpleRecordingManifest manifest = new PurpleRecordingManifest(dir);
+        PurpleRecordingStore store = new PurpleRecordingStore(manifest, CORE, 1_800_000_000L);
+        final Script script = new Script();
+        script.voiceDir = audio;
+        PurpleRecordingSessions sessions = new PurpleRecordingSessions(store, script);
+
+        // P1-1: V2 voice, pause into preview, send from preview (no event), then a
+        // new recording in the same chat. The new one gets its own entry and file.
+        sessions.started("0:7", 0, target(100), true, script.now);
+        final File first = voiceFile(audio, "audio_recording_voice_1800000000000_1.ogg", ogg, script);
+        script.advance(1000);
+        check(store.entries().size() == 1 && first.getPath().equals(store.entries().get(0).media), "V2 voice: the file is found");
+        check(store.entries().get(0).userId == 4242, "the account's user id is recorded");
+        sessions.stopped("0:7", 1, target(100));
+        final File preview = voiceFile(audio, "audio_recording_voice_1800000001000_2.ogg", ogg, script);
+        sessions.didSent("0:7", true, preview.getPath());
+        check(preview.getPath().equals(store.entries().get(0).media), "the preview file is the recording while paused");
+        script.advance(20000);
+        script.now += 60000;
+        sessions.started("0:7", 0, target(100), true, script.now);
+        check(store.entries().size() == 1 && store.entries().get(0).media == null, "the preview's session ended; the new recording has its own entry");
+        final File second = voiceFile(audio, "audio_recording_voice_1800000080000_3.ogg", torn, script);
+        script.advance(1000);
+        check(second.getPath().equals(store.entries().get(0).media), "the new recording's file is found");
+        // A crash now: the next start recovers the new recording.
+        store = new PurpleRecordingStore(manifest, CORE, 1_800_000_100L);
+        PurpleRecordingStore.Outcome outcome = store.recoverAtStart(1_800_000_100L);
+        check(outcome.recovered == 1 && store.bin().size() == 1 && store.bin().get(0).dialogId == 100,
+                "after a crash the new recording is in the bin, under its chat");
+        store.clear();
+
+        // P1-1: discard from preview (the preview file deleted, no event) becomes a Discarded item.
+        sessions = new PurpleRecordingSessions(store, script);
+        sessions.started("0:8", 0, target(101), true, script.now);
+        voiceFile(audio, "audio_recording_voice_1800000200000_4.ogg", ogg, script);
+        script.advance(1000);
+        sessions.stopped("0:8", 1, target(101));
+        final File preview2 = voiceFile(audio, "audio_recording_voice_1800000201000_5.ogg", ogg, script);
+        sessions.didSent("0:8", true, preview2.getPath());
+        check(preview2.delete(), "upstream deletes the preview on discard");
+        script.advance(6000);
+        check(sessions.count() == 0 && store.bin().size() == 1 && store.bin().get(0).discarded
+                && PurpleRecordingCore.scanOgg(new File(store.bin().get(0).media)).clean(), "a preview discard is a Discarded item with its bytes");
+        store.clear();
+
+        // P2-1: legacy voice pause and resume: each segment is its own entry; a send drops both.
+        sessions.started("0:9", 0, target(102), true, script.now);
+        voiceFile(audio, "1800000300000_-1.ogg", ogg, script);
+        script.advance(1000);
+        sessions.stopped("0:9", 1, target(102));
+        sessions.didSent("0:9", true, new File(audio, "1800000300000_-1.ogg").getPath());
+        script.advance(1000);
+        sessions.started("0:9", 0, target(102), true, script.now);
+        voiceFile(audio, "1800000302000_-2.ogg", torn, script);
+        script.advance(1000);
+        check(store.entries().size() == 2, "a legacy resume keeps the paused segment and adds the new one");
+        store = new PurpleRecordingStore(manifest, CORE, 1_800_000_400L);
+        outcome = store.recoverAtStart(1_800_000_400L);
+        check(outcome.finishedCleanly == 1 && outcome.recovered == 1, "after a crash the unfinished segment is recovered; the finished one is upstream's draft");
+        store.clear();
+        sessions = new PurpleRecordingSessions(store, script);
+        sessions.started("0:9", 0, target(102), true, script.now);
+        voiceFile(audio, "1800000500000_-3.ogg", ogg, script);
+        script.advance(1000);
+        sessions.stopped("0:9", 1, target(102));
+        sessions.didSent("0:9", true, null);
+        sessions.started("0:9", 0, target(102), true, script.now);
+        voiceFile(audio, "1800000501000_-4.ogg", ogg, script);
+        script.advance(1000);
+        // A slow join: both segments are deleted before audioDidSent arrives.
+        sessions.stopped("0:9", 0, target(102));
+        new File(audio, "1800000500000_-3.ogg").delete();
+        new File(audio, "1800000501000_-4.ogg").delete();
+        script.advance(10000);
+        sessions.didSent("0:9", false, null);
+        script.advance(10000);
+        check(store.entries().isEmpty() && store.bin().isEmpty(), "a send whose join is slow is not taken for a discard");
+
+        // A plain voice discard is still kept.
+        final int before = script.kept;
+        sessions.started("0:10", 0, target(103), true, script.now);
+        final File cancelled = voiceFile(audio, "audio_recording_voice_1800000600000_6.ogg", ogg, script);
+        script.advance(1000);
+        sessions.stopped("0:10", 0, target(103));
+        cancelled.delete();
+        script.advance(16000);
+        check(script.kept == before + 1 && store.bin().size() == 1, "a cancel whose file upstream deleted is a Discarded item");
+        store.clear();
+
+        // Rounds. A recording's file comes from its own registration.
+        final File rounds = new File(work, "rounds");
+        rounds.mkdirs();
+        final File roundA = new File(rounds, "round_video_a.mp4");
+        final File crashA = record(roundA, samples, aac, true, 77, Integer.MAX_VALUE);
+        final File roundB = new File(rounds, "round_video_b.mp4");
+        final File crashB = record(roundB, samples, aac, true, 77, Integer.MAX_VALUE);
+        Files.copy(crashB.toPath(), roundB.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        final File journalB = new File(roundB.getPath() + ".pjr");
+        Files.copy(new File(crashB.getPath() + ".pjr").toPath(), journalB.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+
+        // P1-2: round A sent from preview (no event), then round B in another chat.
+        sessions.roundRegistered(roundA, new File(roundA.getPath() + ".pjr"));
+        sessions.started("0:20", 0, target(200), false, script.now);
+        sessions.stopped("0:20", 2, target(200));
+        sessions.didSent("0:20", true, new File(rounds, "preview.mp4").getPath());
+        PurpleRecordingEntry a = null;
+        for (PurpleRecordingEntry e : store.entries()) if (e.dialogId == 200) a = e;
+        // P1-3: pausing into preview keeps the recording's file and journal.
+        check(a != null && roundA.getPath().equals(a.media) && a.journal != null, "a round's preview does not replace its file or journal");
+        script.advance(1000);
+        sessions.roundRegistered(roundB, journalB);
+        check(roundA.getPath().equals(a.media), "B's registration does not go to A's paused session");
+        sessions.started("0:21", 0, target(201), false, script.now);
+        PurpleRecordingEntry b = null;
+        for (PurpleRecordingEntry e : store.entries()) if (e.dialogId == 201) b = e;
+        check(b != null && roundB.getPath().equals(b.media) && journalB.getPath().equals(b.journal), "B's file and journal go to B's entry");
+        // A crash during B: B is recovered under chat B.
+        store = new PurpleRecordingStore(manifest, CORE, 1_800_000_700L);
+        outcome = store.recoverAtStart(1_800_000_700L);
+        boolean underB = false;
+        for (PurpleRecordingEntry e : store.bin()) underB |= e.dialogId == 201 && e.round() && PurpleRecordingEntry.RECOVERED.equals(e.state);
+        check(underB, "B's round is recovered under chat B");
+        for (PurpleRecordingEntry e : store.bin()) check(e.dialogId != 200 || !e.round() || !PurpleRecordingEntry.RECOVERED.equals(e.state)
+                || PurpleRecordingFiles.mp4Finished(new File(e.media)) == 1, "nothing of B is filed under A");
+        store.clear();
+
+        // P1-4: a V2 cancel empties the file, then deletes it; the snapshot keeps the bytes.
+        sessions = new PurpleRecordingSessions(store, script);
+        final File roundC = new File(rounds, "round_video_c.mp4");
+        final File crashC = record(roundC, samples, aac, true, 77, Integer.MAX_VALUE);
+        Files.copy(crashC.toPath(), roundC.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        final File journalC = new File(roundC.getPath() + ".pjr");
+        Files.copy(new File(crashC.getPath() + ".pjr").toPath(), journalC.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        sessions.roundRegistered(roundC, journalC);
+        sessions.started("0:30", 0, target(300), false, script.now);
+        sessions.snapshotCancel("0:30");
+        try (RandomAccessFile erase = new RandomAccessFile(roundC, "rw")) {
+            erase.setLength(0);
+        }
+        check(roundC.delete(), "upstream erases the file");
+        sessions.stopped("0:30", 6, target(300));
+        check(store.bin().size() == 1, "the cancelled round is in the bin");
+        final PurpleRecordingEntry c = store.bin().get(0);
+        check(c.discarded && PurpleRecordingEntry.UNSENT.equals(c.state) && PurpleRecordingFiles.mp4Finished(new File(c.media)) == 1,
+                "rebuilt from the snapshot, not from the emptied file");
+        check(c.durationMs > 3000, "with its duration");
+        String[] left = manifest.bin.list((d, n) -> n.endsWith(".snapshot"));
+        check(left != null && left.length == 0, "the snapshot is deleted");
+        store.clear();
+
+        // P2-5: a round send keeps its entry in sending until the file is finished.
+        final File roundD = new File(rounds, "round_video_d.mp4");
+        final File crashD = record(roundD, samples, aac, true, 77, Integer.MAX_VALUE);
+        final byte[] finishedD = Files.readAllBytes(roundD.toPath());
+        Files.copy(crashD.toPath(), roundD.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        sessions.roundRegistered(roundD, new File(roundD.getPath() + ".pjr"));
+        sessions.started("0:40", 0, target(400), false, script.now);
+        sessions.stopped("0:40", 5, target(400));
+        check(store.entries().size() == 1 && PurpleRecordingEntry.SENDING.equals(store.entries().get(0).state), "a sent round is in sending");
+        script.advance(2000);
+        check(store.entries().size() == 1, "still there while the movie is not finished");
+        Files.write(roundD.toPath(), finishedD);
+        script.advance(2000);
+        check(store.entries().isEmpty() && sessions.count() == 0, "dropped once the file has moov");
+
+        // P1-1: a round discarded after a pause into preview is settled (cancel clears the pause).
+        final File roundE = new File(rounds, "round_video_e.mp4");
+        final File crashE = record(roundE, samples, aac, true, 77, Integer.MAX_VALUE);
+        Files.copy(crashE.toPath(), roundE.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        sessions.roundRegistered(roundE, new File(roundE.getPath() + ".pjr"));
+        sessions.started("0:50", 0, target(500), false, script.now);
+        sessions.stopped("0:50", 2, target(500));
+        sessions.snapshotCancel("0:50");
+        roundE.delete();
+        sessions.stopped("0:50", 0, target(500));
+        check(sessions.count() == 0 && store.bin().size() == 1 && store.bin().get(0).discarded, "a cancel after a pause is a Discarded item");
+
+        // A registration nobody claims is dropped with its journal when the next one comes.
+        final File orphanJournal = new File(rounds, "round_video_f.mp4.pjr");
+        Files.write(orphanJournal.toPath(), new byte[]{1});
+        sessions.roundRegistered(new File(rounds, "round_video_f.mp4"), orphanJournal);
+        sessions.roundRegistered(new File(rounds, "round_video_g.mp4"), new File(rounds, "round_video_g.mp4.pjr"));
+        check(!orphanJournal.exists(), "an unclaimed registration's journal is deleted");
+        // The view-once flag is read at start and at the stop.
+        sessions.started("0:60", 0, new long[]{0, 600, 0, 0, 4242, PurpleRecordingSessions.FLAG_ONCE}, true, script.now);
+        PurpleRecordingEntry once = null;
+        for (PurpleRecordingEntry e : store.entries()) if (e.dialogId == 600) once = e;
+        check(once != null && once.once, "view-once is recorded at the start");
+        sessions.stopped("0:60", 1, new long[]{0, 600, 0, 0, 4242, 0});
+        check(!once.once, "and follows the toggle at the stop");
     }
 
     static final PurpleRecordingStore.Core CORE = new PurpleRecordingStore.Core() {

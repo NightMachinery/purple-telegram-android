@@ -48,8 +48,12 @@ public final class PurpleRecordingEntry {
     /** Wall-clock start, in milliseconds. */
     public long startedAt;
     public long durationMs;
-    /** The view-once flag, when the registry knows it. */
+    /** The view-once flag, read from the chat's enter view at start and at each stop. */
     public boolean once;
+    /** The account's client user id when it was recorded: Send to the original chat only from the same account. */
+    public long userId;
+    /** Recorded in the quick-reply editor: never sent to a chat as a message. */
+    public boolean quickReply;
     /** The media file: the recorder's while recording, the bin's afterwards. */
     public String media;
     /** The round's journal ({@code <media>.pjr}), or null. */
@@ -97,6 +101,8 @@ public final class PurpleRecordingEntry {
         o.put("started", startedAt);
         o.put("duration", durationMs);
         o.put("once", once);
+        o.put("user", userId);
+        o.put("quick_reply", quickReply);
         if (media != null) o.put("media", media);
         if (journal != null) o.put("journal", journal);
         o.put("state", state);
@@ -134,6 +140,8 @@ public final class PurpleRecordingEntry {
         e.startedAt = o.optLong("started", 0);
         e.durationMs = o.optLong("duration", 0);
         e.once = o.optBoolean("once", false);
+        e.userId = o.optLong("user", 0);
+        e.quickReply = o.optBoolean("quick_reply", false);
         e.state = o.optString("state", RECORDING);
         e.binnedAt = o.optLong("binned", 0);
         e.partial = o.optBoolean("partial", false);
