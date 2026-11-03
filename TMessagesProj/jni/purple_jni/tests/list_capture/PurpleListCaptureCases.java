@@ -154,7 +154,8 @@ public final class PurpleListCaptureCases {
         check(text.contains("owner planned accounts=2 state=needs_choice ready=0 owner=0"), "the plan says why: " + text);
         int lines = 0;
         for (String line : text.split("\n")) if (line.contains(" writer capture_refused ")) ++lines;
-        check(lines == 2, "a repeated refusal within seconds is one line, got " + lines);
+        // PurpleDiagRepeats lets an identical line through three times in ten minutes, so both slot 0 refusals stay.
+        check(lines == 3, "each refusal is a line within the repeat limit, got " + lines);
         noIdentifiers(text);
 
         // Choosing the owner, which the box's button opens, makes the rows editable.
