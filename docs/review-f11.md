@@ -208,3 +208,89 @@ handler when nothing else touched them yet. Under an `OutOfMemoryError` that sta
   updated; `upstream-hooks.sh check` passes.
 
 REVIEW F11 android: CHANGES P1=2 P2=3 P3=7
+
+## Re-check 1
+
+Scope: `2f7217a6..d4493915` on `crash-capture` (`75bdf620`, `ad01a8eb`, `d4493915`). Read-only for `crash-capture`.
+
+What was run here: the five pure classes at `d4493915` (`PurpleDiagLogStore`, `PurpleDiagRepeats`,
+`PurpleCrashRecord`, `PurpleCrashTombstone`, the new `PurpleCrashCollect`) and `PurpleCrashCaptureCases` compiled
+with plain javac 21 (not the AGP receipt). All sections pass, each above its new floor:
+
+```
+CRASH_FRAME_CHECKS=46 CRASH_NATIVE_FRAME_CHECKS=29 CRASH_SIGNAL_CHECKS=6373 CRASH_JAVA_CHECKS=34
+CRASH_TOMBSTONE_CHECKS=16051 CRASH_ANR_CHECKS=40 CRASH_PENDING_CHECKS=11 CRASH_MERGE_CHECKS=215
+CRASH_TRACE_CHECKS=16 CRASH_COLLECT_CHECKS=35 CRASH_CAPTURE_CHECKS=22855
+```
+
+`ApplicationLoader.java` is unchanged by the fixes, so the hook and the baseline stand.
+
+### Status of the requested findings
+
+- **P1-1, `FileLog` touched before `AndroidUtilities`: fixed.** `appendNow` no longer calls `FileLog` and opens the
+  store on the files folder passed in, not through `ApplicationLoader`. I grepped `PurpleCrashCapture`,
+  `PurpleCrashCollect`, `PurpleCrashRecord`, `PurpleCrashTombstone` and `PurpleDiagLog`'s static initialisers:
+  nothing on the collector or handler path reaches `FileLog`, `AndroidUtilities` or `ApplicationLoader` any more.
+  `start`'s Javadoc and the README now state the ordering rule. The store creation in `appendNow` and
+  `PurpleDiagLog.store()` take the same monitor (`PurpleDiagLog.class`), so they cannot open two stores.
+- **P1-2, foreign class names in native function names: fixed for the Java form.** `codeFunction` now sends a dotted
+  name through `codeClass` and `codeMethod`, after cutting a return type and the parameter list. Probes:
+  `com.vendor.secret.Tracker.upload+40` gives `other`, `void com.vendor.Secret.leak(int)` gives `other`,
+  `com.vendor.Secret$Inner.run` gives `other`, `org.telegram.A$$ExternalSyntheticLambda0.run` gives
+  `org.telegram.A.run`, `com.vendor.Secret::leak` gives `invalid`, and `_Zcom.vendor.X` gives `_Zcom` (dots never
+  survive in the C++ branch). The cases now carry odex and JIT fixtures. One residual form remains: see R1-P3-1.
+- **P2-1, a crash during collection deletes its own record: fixed.** `PurpleCrashCollect.run` renames the pending
+  file to `pending-crash.log.taken-<time>` before reading it, so a crash during collection writes to a fresh
+  `pending-crash.log`. Leftover taken files from an earlier start are picked up. A narrow residual race is R1-P3-2.
+- **P2-2, a failed write still clears the records: fixed.** `appendNow` returns whether every line was appended, and
+  `run` deletes the taken files and advances the cursor only then. At most four taken files are kept for a retry.
+  A partial write followed by a retry duplicates the lines that did land; that is documented.
+- **P2-3, up to 16 traces of 4 MB in memory: fixed.** `Exit` builds its record from the stream in its constructor and
+  keeps only the lines. A tombstone is read through `Bounded` up to 1 MB. An ANR is read line by line, up to 1 MB,
+  and stops at the end of the main thread's block. Start-up now holds at most one trace of at most 1 MB (plus the
+  byte array's growth). Any `Throwable` while opening or parsing falls back to the record without a trace.
+- **P3-1, suite floors: fixed.** There are now ten section counters, each with its own floor in `host_suites.json`.
+  The floors sit about 5% below this run's counts, and the meaningful sections (frames, Java crash, ANR, pending,
+  merge, collect) can no longer vanish behind the signal sweep and the truncation loop. `PurpleCrashCollect` brings
+  the take, retry and cursor logic under host coverage.
+- **P3-7, lazy class loading in the dying process: fixed as far as it can be.** The collector calls
+  `PurpleCrashRecord.preload()` first, which runs `javaCrash` and `pendingBody` once, so `PurpleCrashRecord` and
+  `PurpleDiagLogStore` are initialised. A crash that comes before the collector gets there still loads them in the
+  handler; that is inherent and harmless (the handler catches everything and keeps the chain).
+
+The other P3s (2 to 6) are listed in the README as known follow-ups, which is fine for this round.
+
+### Crash-handler path
+
+The handler itself is unchanged: `try/catch Throwable` around `writePending`, then the previous handler, or
+`killProcess` plus `System.exit`. The fixes added nothing to it and no lock it could wait on. The collector's new
+work (rename, directory listing, at most four file deletes) runs on its own daemon thread.
+
+### New findings
+
+No new P1 or P2.
+
+**R1-P3-1. JNI-mangled names still carry foreign class names.** A function such as
+`Java_com_vendor_secret_Tracker_upload` has no dot and no `::`, so it is kept as is (probe:
+`Java_com_vendor_secret_Tracker_upload` gives the same string). Such a frame can only come from a native library
+the app itself ships (an `.so` from a bundled AAR, or WebRTC inside `libtmessages`, as `Java_org_webrtc_...`), so it
+names the app's own bundled code, not anything on the user's device. For consistency, either map a `Java_<pkg>_...`
+name through the same package test (the package is the underscore-separated prefix, which is ambiguous but a prefix
+match on `Java_org_telegram_`, `Java_android_` and so on is enough), or say in the README and the log header that
+JNI symbols of bundled libraries are kept.
+
+**R1-P3-2. A record written during the rename can be read half-written and then deleted.** If the handler has
+already opened `pending-crash.log` for append when the collector renames it, the handler's write lands in the taken
+file (the open descriptor follows the inode). If the collector reads the taken file before that write and fsync
+finish, it parses a partial record or none, logs it, and then deletes the taken file with the rest of the record.
+The window is the few milliseconds of one append and fsync, against a rename at a random moment, so this is very
+narrow. A cheap guard: after taking, skip any taken file whose modification time is under about a second old until
+the next start, or have the handler write each record with a single `write` call to a new
+`pending-crash-<time>.log` file, not appending to a shared one.
+
+Carried over and unchanged (not requested this round): P3-2 to P3-6 as listed above and in the README. The probe
+`native: ... /memfd:jit-cache (deleted) ... (com.vendor.Tracker.track+164)` still gives `fn=deleted`, as P3-5 said.
+
+Verdict after re-check 1: **APPROVE**. P1 = 0, P2 = 0; new P3 = 2.
+
+RECHECK F11 android: APPROVE P1=0 P2=0
