@@ -26,6 +26,48 @@ final class PurpleSyncMagicMoveCases {
         moveWithoutStage(parent);
         moveAbandonsStage(parent);
         setAside(parent);
+        interruptedMove(parent, ".new");
+        interruptedMove(parent, ".bak");
+    }
+
+    /**
+     * A crash inside the atomic state.json write of a move: Android 11+ leaves the moved state in state.json.new
+     * beside the old one, older Android the old state in state.json.bak beside the moved one. A store following
+     * the binding recovers either and opens, so the move can run again; a store of a fixed chat still refuses.
+     */
+    static void interruptedMove(File parent, String suffix) throws Exception {
+        Frame frame = new Frame(parent, "magic-move-crash" + suffix, false);
+        String key = PurpleAccountFiles.capture(0).key;
+        byte[] before = frame.state(0);
+        try (PurpleAccountSyncStore store = self(frame)) {
+            check(store.open(true, 0, device(0)).status == PurpleAccountSyncStore.Status.Ready, "Saved Messages store opens");
+            check(store.moveTo(MAGIC, 101, key, fingerprint(frame)).status == PurpleAccountSyncStore.Status.Ready, "the move succeeds");
+        }
+        byte[] moved = frame.state(0);
+        File state = new File(frame.sync(0), "state.json");
+        PurpleSyncChatCore.Peer named;
+        if (suffix.equals(".new")) {
+            Files.write(state.toPath(), before);
+            Files.write(new File(state.getPath() + ".new").toPath(), moved);
+            named = PurpleSyncChatCore.Peer.self();
+        } else {
+            Files.write(new File(state.getPath() + ".bak").toPath(), before);
+            named = MAGIC;
+        }
+        try (PurpleAccountSyncStore store = new PurpleAccountSyncStore(frame.sync(0), PurpleAccountSyncStore.NATIVE, MAGIC)) {
+            check(store.open(true, 0, device(0)).status == PurpleAccountSyncStore.Status.AccountUnbound,
+                    "a store of a fixed chat still refuses a leftover naming another chat (" + suffix + ")");
+        }
+        try (PurpleAccountSyncStore store = new PurpleAccountSyncStore(frame.sync(0), PurpleAccountSyncStore.NATIVE, named, MAGIC)) {
+            PurpleAccountSyncStore.Result opened = store.open(true, 0, device(0));
+            check(opened.status == PurpleAccountSyncStore.Status.Ready, "the following store opens after the crash (" + suffix + "): " + opened.status);
+            check(PurpleSyncChatCore.Peer.self().equals(store.chat()) && Arrays.equals(before, frame.state(0)),
+                    "it recovered the old state, so the move is not half done (" + suffix + ")");
+            check(store.moveTo(MAGIC, 101, key, fingerprint(frame)).status == PurpleAccountSyncStore.Status.Ready && MAGIC.equals(store.chat()),
+                    "and the move runs again (" + suffix + ")");
+        }
+        check(!new File(state.getPath() + suffix).exists() && MAGIC.token().equals(json(frame.state(0)).getString("chat")),
+                "no leftover remains and state.json names the bound chat (" + suffix + ")");
     }
 
     static void moveWithoutStage(File parent) throws Exception {

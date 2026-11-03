@@ -220,9 +220,13 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
         production = true;
     }
 
-    PurpleAccountSyncStore(File root, Core core) { this(root, core, null, null); }
+    /** A {@link #following} store over {@code root}, for host cases. */
+    PurpleAccountSyncStore(File root,Core core,PurpleSyncChatCore.Peer stateChat,PurpleSyncChatCore.Peer target) {
+        this(root,core,stateChat);this.target=target;
+    }
+    PurpleAccountSyncStore(File root, Core core) { this(root, core, (PurpleGlobalChoiceFiles.Physical) null, null); }
     PurpleAccountSyncStore(File root,Core core,PurpleSyncChatCore.Peer chat) {
-        this(root,core,null,null);this.chat=java.util.Objects.requireNonNull(chat);
+        this(root,core,(PurpleGlobalChoiceFiles.Physical)null,null);this.chat=java.util.Objects.requireNonNull(chat);
     }
     PurpleAccountSyncStore(File root, Core core, PurpleGlobalChoiceFiles.Physical physical, PurpleEditorDirectories.Creator directoryCreator) {
         this.physical = physical; this.directoryCreator = directoryCreator;
@@ -303,13 +307,20 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
                 return fail(Status.IoError);
             }
             if (!safeAutoPaths())return fail(Status.IoError);
-            for(File candidate:new File[]{stateFile,new File(stateFile.getPath()+".bak"),new File(stateFile.getPath()+".new")}) {
+            // WHY: a store following the binding takes its chat from the recovered state: a move interrupted
+            // in the atomic write leaves the old chat in one file and the new one beside it.
+            if(target==null)for(File candidate:new File[]{stateFile,new File(stateFile.getPath()+".bak"),new File(stateFile.getPath()+".new")}) {
                 if(plainFile(candidate) && candidate.length()>0) {
                     Reply inspected=core.inspectState(read(candidate,STATE_LIMIT));
                     if(inspected.valid() && !chat.token().equals(inspected.chat))return fail(Status.AccountUnbound);
                 }
             }
             if(!recover(stateFile))return fail(Status.IoError);
+            if(target!=null&&plainFile(stateFile)) {
+                Reply recovered=core.inspectState(read(stateFile,STATE_LIMIT));
+                PurpleSyncChatCore.Peer named=recovered.valid()?PurpleSyncChatCore.Peer.parse(recovered.chat,origin!=null?origin.userId:0):null;
+                if(named!=null)chat=named;
+            }
             if(stateFile.exists()) {
                 byte[] opening=read(stateFile,STATE_LIMIT);
                 Reply inspected=core.inspectState(opening);
