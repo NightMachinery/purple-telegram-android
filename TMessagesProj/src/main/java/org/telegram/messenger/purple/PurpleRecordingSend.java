@@ -42,6 +42,11 @@ public final class PurpleRecordingSend {
         PurpleRecordingRegistry.onWorker(() -> {
             boolean ok = false;
             try {
+                final UserConfig config = UserConfig.getInstance(account);
+                // From the bin's own chat, only the account that recorded it sends (review P2-4).
+                if (account == item.account && !item.sameAccount(config.isClientActivated(), config.getClientUserId())) {
+                    throw new IOException("another account");
+                }
                 final File source = new File(item.media);
                 if (!source.isFile()) throw new IOException("gone");
                 final MessagesStorage storage = MessagesStorage.getInstance(account);

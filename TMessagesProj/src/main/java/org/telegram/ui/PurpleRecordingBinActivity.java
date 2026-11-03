@@ -135,8 +135,15 @@ public class PurpleRecordingBinActivity extends UniversalFragment {
      * The chat's name, "Hidden chat" when the running Work Mode preset hides
      * it (never its name), or "Unknown chat" for an orphan.
      */
+    /** The recording's account is still the one in its slot (review P2-4). */
+    private static boolean sameAccount(PurpleRecordingEntry e) {
+        if (e.account < 0 || e.account >= UserConfig.MAX_ACCOUNT_COUNT) return false;
+        final UserConfig config = UserConfig.getInstance(e.account);
+        return e.sameAccount(config.isClientActivated(), config.getClientUserId());
+    }
+
     private String chatName(PurpleRecordingEntry e) {
-        if (!e.hasChat()) return getString(R.string.PurpleRecordingBinUnknownChat);
+        if (!e.hasChat() || !sameAccount(e)) return getString(R.string.PurpleRecordingBinUnknownChat);
         if (PurpleGate.hiddenEverywhere(e.account, e.dialogId)) return getString(R.string.PurpleRecordingBinHiddenChat);
         final MessagesController controller = MessagesController.getInstance(e.account);
         String name = null;
@@ -188,7 +195,7 @@ public class PurpleRecordingBinActivity extends UniversalFragment {
             labels.add(getString(R.string.PurpleRecordingBinPlay));
             actions.add(() -> play(e));
         }
-        if (playable && e.hasChat()) {
+        if (playable && e.hasChat() && sameAccount(e) && !e.quickReply) {
             labels.add(getString(R.string.PurpleRecordingBinSendOriginal));
             actions.add(() -> sendOriginal(e));
         }

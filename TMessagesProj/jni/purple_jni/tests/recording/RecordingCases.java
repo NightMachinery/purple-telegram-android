@@ -212,6 +212,20 @@ public final class RecordingCases {
         check(read.size() == 1 && read.get(0).id.equals(started.id) && read.get(0).dialogId == 777
                 && read.get(0).topicId == 5 && read.get(0).replyId == 42 && read.get(0).account == 1
                 && PurpleRecordingEntry.RECORDING.equals(read.get(0).state), "the entry reads back whole");
+        started.userId = 4242;
+        started.quickReply = true;
+        started.once = true;
+        store.update(started);
+        final PurpleRecordingEntry again = manifest.load(NOW).get(0);
+        check(again.userId == 4242 && again.quickReply && again.once, "the user id, quick-reply mark and view-once flag read back");
+        check(again.sameAccount(true, 4242), "the same account in the slot may send it");
+        check(!again.sameAccount(false, 4242), "a signed-out slot may not");
+        check(!again.sameAccount(true, 777), "another account in the slot may not");
+        again.userId = 0;
+        check(!again.sameAccount(true, 0), "an entry without a user id is never sent to its chat");
+        started.quickReply = false;
+        started.once = false;
+        store.update(started);
         final String before = new String(Files.readAllBytes(new File(dir, "recordings.json").toPath()), StandardCharsets.UTF_8);
         check(!before.contains("\n") && before.startsWith("{"), "the manifest is one JSON object");
 

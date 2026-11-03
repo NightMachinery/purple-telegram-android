@@ -89,6 +89,17 @@ public final class PurpleRecordingEntry {
         return !orphan && account >= 0 && dialogId != 0;
     }
 
+    /**
+     * Whether its account slot still holds the account that recorded it: the
+     * slot is signed in with the same client user id. After a logout, or with
+     * another account in the slot, the item stays in the bin as "Unknown
+     * chat" and cannot be sent to its original chat (ids are global, so the
+     * dialog would resolve from the other identity).
+     */
+    public boolean sameAccount(boolean activated, long clientUserId) {
+        return activated && userId != 0 && userId == clientUserId;
+    }
+
     JSONObject toJson() throws JSONException {
         final JSONObject o = new JSONObject();
         o.put("v", version);
