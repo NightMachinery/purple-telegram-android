@@ -945,6 +945,25 @@
       }
     },
     {
+      "name": "recording",
+      "driver": "TMessagesProj/jni/purple_jni/tests/run_recording.py",
+      "args": [
+        "--receipt",
+        "{standalone-receipt}",
+        "--json",
+        "{json}",
+        "--library",
+        "{library}",
+        "--output",
+        "{output}"
+      ],
+      "coverage": "F10 crash-safe recordings: the real recordingSettings bridge over the host core library, and the AAC measure shim against AAC streams encoded at test time with the host's ffmpeg and libavcodec.",
+      "expects": {
+        "aac:AAC_MEASURE_CHECKS": 450,
+        "settings:RECORDING_SETTINGS_CHECKS": 140
+      }
+    },
+    {
       "name": "search-refresh",
       "driver": "TMessagesProj/jni/purple_jni/tests/run_search_refresh.py",
       "args": [

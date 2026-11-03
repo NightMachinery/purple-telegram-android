@@ -170,6 +170,8 @@ public final class PurpleCore {
 
     private static native int seekStepSecondsNative();
 
+    private static native int[] recordingSettingsNative();
+
     /**
      * The screen locked, or the app's own passcode lock engaged. Prefer
      * {@link PurpleGate#locked}.
@@ -819,6 +821,26 @@ public final class PurpleCore {
         } catch (UnsatisfiedLinkError | RuntimeException e) {
             FileLog.e(e);
             return SEEK_STEP_DEFAULT;
+        }
+    }
+
+    /**
+     * The {@code [recording]} table, packed in the order
+     * {@link PurpleRecordingSettings} reads it. Read from the loaded settings
+     * each time, so a changed value applies to the next recording.
+     *
+     * @return the packed values, or null when the core could not be asked
+     *         (the caller then uses the core's defaults)
+     */
+    public static int[] recordingSettings() {
+        try {
+            if (!loaded) {
+                ensureLoaded();
+            }
+            return recordingSettingsNative();
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return null;
         }
     }
 

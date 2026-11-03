@@ -1940,6 +1940,46 @@ Java_org_telegram_messenger_purple_PurpleCore_seekStepSecondsNative(
 	return jint(gate.settings.playback.seekStepSeconds);
 }
 
+// The `[recording]' table, packed for PurpleRecordingSettings in this order:
+// keep_across_chats_p, background_p, round_float_p, round_journal (seconds,
+// 0 for off), bin_keep (seconds, 0 for never), keep_discarded_p,
+// send_elsewhere_p, call_pause_p, headset_p, headset_hold_start_p,
+// long_nudge (seconds, 0 for off), preview_trim_p. Booleans are 0 or 1. The
+// core's parser already holds every value to its allowed choices, and a gate
+// that has never loaded answers with the core's defaults.
+extern "C" JNIEXPORT jintArray JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_recordingSettingsNative(
+		JNIEnv *env,
+		jclass) {
+	jint packed[12];
+	{
+		auto &gate = TheGate();
+		const auto lock = std::lock_guard(gate.mutex);
+		const auto &r = gate.settings.recording;
+		const jint values[12] = {
+			r.keepAcrossChats ? 1 : 0,
+			r.background ? 1 : 0,
+			r.roundFloat ? 1 : 0,
+			jint(r.roundJournalSeconds),
+			jint(r.binKeepSeconds),
+			r.keepDiscarded ? 1 : 0,
+			r.sendElsewhere ? 1 : 0,
+			r.callPause ? 1 : 0,
+			r.headset ? 1 : 0,
+			r.headsetHoldStart ? 1 : 0,
+			jint(r.longNudgeSeconds),
+			r.previewTrim ? 1 : 0,
+		};
+		std::copy(std::begin(values), std::end(values), packed);
+	}
+	const auto result = env->NewIntArray(12);
+	if (!result) {
+		return nullptr;
+	}
+	env->SetIntArrayRegion(result, 0, 12, packed);
+	return result;
+}
+
 // Ends one. The deadline is cleared with the flag, so a peek started again
 // later cannot inherit a stale one.
 extern "C" JNIEXPORT jstring JNICALL
