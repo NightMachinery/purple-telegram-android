@@ -20,6 +20,7 @@ add_library(purplecore SHARED
         purple_jni/retained_config_bases.cpp
         purple_jni/sync_chat_move_store_bridge.cpp
         purple_jni/archive_core_bridge.cpp
+        purple_jni/recording_bridge.cpp
         purple/purple/purple_passcode.cpp
         purple/purple/purple_playback.cpp
         purple/purple/purple_recording.cpp

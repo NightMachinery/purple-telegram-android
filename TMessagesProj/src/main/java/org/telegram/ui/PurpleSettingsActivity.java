@@ -91,6 +91,9 @@ public class PurpleSettingsActivity extends UniversalFragment
     private static final int ROW_VOICE_QUEUE = 0x70750027;
     /** F9's step chooser, first of the media recording block 0x70750500-0x7075050f. */
     private static final int ROW_SEEK_STEP = 0x70750500;
+    /** F10: the Media recording screen and the Recording bin. */
+    private static final int ROW_MEDIA_RECORDING = 0x70750501;
+    private static final int ROW_RECORDING_BIN = 0x70750502;
 
     /**
      * Where the trade log's rows start numbering.
@@ -101,6 +104,9 @@ public class PurpleSettingsActivity extends UniversalFragment
      * do to it.
      */
     private static final int ROW_TRADE_FIRST = 1000;
+
+    /** The Recording bin's item count for its row; -1 until asked. */
+    private int recordingBinCount = -1;
 
     /**
      * The file picker's request code. Its result arrives at
@@ -272,6 +278,19 @@ public class PurpleSettingsActivity extends UniversalFragment
         items.add(UItem.asButton(ROW_SEEK_STEP, getString(R.string.PurpleSeekStep),
                 formatString(R.string.PurpleSeekStepValue, org.telegram.messenger.purple.PurpleSeek.stepSeconds())));
         items.add(UItem.asShadow(getString(R.string.PurpleVoiceQueuePrivateInfo)));
+
+        // [recording] (F10): its own screen, and the bin with its count.
+        items.add(UItem.asHeader(getString(R.string.PurpleMediaRecording)));
+        items.add(UItem.asButton(ROW_MEDIA_RECORDING, getString(R.string.PurpleMediaRecording)));
+        items.add(UItem.asButton(ROW_RECORDING_BIN, getString(R.string.PurpleRecordingBin),
+                recordingBinCount > 0 ? Integer.toString(recordingBinCount) : ""));
+        if (recordingBinCount < 0) {
+            recordingBinCount = 0;
+            org.telegram.messenger.purple.PurpleRecordingRegistry.count(list -> {
+                recordingBinCount = list.size();
+                if (recordingBinCount > 0) rebuild();
+            });
+        }
 
         final UItem focus = UItem.asCheck(ROW_FOCUS, getString(R.string.PurpleFollowDnd));
         // The parser's answer rather than the raw key: it turns focus sync off
@@ -463,6 +482,11 @@ public class PurpleSettingsActivity extends UniversalFragment
     @Override
     protected void onClick(UItem item, View view, int position, float x, float y) {
         final PurpleWriter.Session writer = rowWriter;
+        if (item.id == ROW_MEDIA_RECORDING || item.id == ROW_RECORDING_BIN) {
+            recordingBinCount = -1;
+            presentFragment(item.id == ROW_MEDIA_RECORDING ? new PurpleRecordingSettingsActivity() : new PurpleRecordingBinActivity());
+            return;
+        }
         if (PurpleArchiveUI.click(this, item.id)) return;
         if (PurpleDiagnosticsUI.click(this, item.id)) return;
         if (PurpleAccountEditorUI.click(this, item.id, rowCurrent())) return;

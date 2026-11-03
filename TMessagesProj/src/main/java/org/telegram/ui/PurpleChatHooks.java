@@ -82,6 +82,17 @@ final class PurpleChatHooks {
         this.chat = chat;
         this.screenTime = new PurpleScreenTimeCover.Host(chat, finishing);
         markdownCopy = new PurpleMarkdownCopy(chat, lookup);
+        // F10: a recording this chat starts is registered with its target.
+        org.telegram.messenger.purple.PurpleRecordingRegistry.watchChat(chat.getClassGuid(), this::recordingTarget);
+    }
+
+    /**
+     * {account, dialog, topic, reply} of a recording this chat starts, read
+     * when it starts, for the Recording bin's "Send to the original chat".
+     */
+    private long[] recordingTarget() {
+        final MessageObject reply = chat.getReplyMessage();
+        return new long[]{chat.getCurrentAccount(), chat.getDialogId(), chat.getTopicId(), reply == null ? 0 : reply.getId()};
     }
 
     View addSelectionCopy(org.telegram.ui.ActionBar.ActionBarMenu menu) {
@@ -476,6 +487,7 @@ final class PurpleChatHooks {
     }
 
     void onDestroy() {
+        org.telegram.messenger.purple.PurpleRecordingRegistry.unwatchChat(chat.getClassGuid());
         if (archiveScope != null) { archiveScope.close(); archiveScope = null; }
         PurplePeekControls.chatDestroyed(chat);
         markdownCopy.onDestroy();

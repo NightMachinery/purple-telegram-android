@@ -55,6 +55,9 @@ public final class PurpleAccountOwner {
      * app-wide fallback during that loop, reloads it under the plan.
      */
     public static void onAccountsLoaded() {
+        // F10: recordings are registered by account slot, so the registry
+        // starts (and recovers last run's crashes) once the slots are loaded.
+        PurpleRecordingRegistry.start();
         ensureStarted();
         if (!PurpleGate.everLoaded()) return;
         AndroidUtilities.runOnUIThread(() -> {

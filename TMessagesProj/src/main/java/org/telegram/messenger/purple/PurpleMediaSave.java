@@ -260,9 +260,6 @@ public final class PurpleMediaSave {
     }
 
     private static void export(Context context, MessageObject message, boolean gallery) {
-        Uri outputUri = null;
-        File outputFile = null;
-        boolean saved = false;
         try {
             PurpleMediaSaveSource selected = localFile(message);
             if (selected == null || selected.file.length() == 0) {
@@ -283,10 +280,36 @@ public final class PurpleMediaSave {
                 String extension = android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(mime);
                 name = AndroidUtilities.generateFileName(video ? 1 : 0, extension == null ? "bin" : extension);
             }
-            name = new File(name).getName();
+            publish(context, source, selected.encrypted, mime, new File(name).getName(), gallery, video);
+        } catch (Exception error) {
+            FileLog.e(error);
+            notify(context, R.string.ErrorOccurred);
+        }
+    }
+
+    /**
+     * Saves one of Purple's own files (a Recording bin item) to Downloads,
+     * through the same MediaStore route as a message's media. Runs the copy
+     * on the calling thread.
+     */
+    public static void saveFileToDownloads(Context context, File source, String mime, String name) {
+        try {
+            publish(context, source, false, mime, new File(name).getName(), false, mime.startsWith("video/"));
+        } catch (Exception error) {
+            FileLog.e(error);
+            notify(context, R.string.ErrorOccurred);
+        }
+    }
+
+    private static void publish(Context context, File source, boolean encrypted, String mime, String name,
+            boolean gallery, boolean video) throws Exception {
+        Uri outputUri = null;
+        File outputFile = null;
+        boolean saved = false;
+        try {
             String directory = gallery ? (video ? Environment.DIRECTORY_MOVIES : Environment.DIRECTORY_PICTURES)
                     : Environment.DIRECTORY_DOWNLOADS;
-            InputStream input = selected.encrypted
+            InputStream input = encrypted
                     ? new EncryptedFileInputStream(source, new File(FileLoader.getInternalCacheDir(), source.getName() + ".key"))
                     : new FileInputStream(source);
             try (InputStream in = input) {
@@ -321,7 +344,7 @@ public final class PurpleMediaSave {
                     throw new java.io.IOException("Media output unavailable");
                 }
                 try (OutputStream out = new BufferedOutputStream(destination)) {
-                    PurpleMediaSaveStream.copy(in, out, size, selected.encrypted);
+                    PurpleMediaSaveStream.copy(in, out, size, encrypted);
                 }
             }
             if (Build.VERSION.SDK_INT >= 29) {
@@ -335,9 +358,6 @@ public final class PurpleMediaSave {
             }
             saved = true;
             notify(context, R.string.PurpleMediaSaved);
-        } catch (Exception error) {
-            FileLog.e(error);
-            notify(context, R.string.ErrorOccurred);
         } finally {
             if (!saved) {
                 try {

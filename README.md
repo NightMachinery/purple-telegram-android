@@ -146,7 +146,7 @@ appended to it live.
 ### Media recording
 
 The design is [docs/media-recording-design.md](docs/media-recording-design.md)
-(F6-F11 and extras). Android has F9 so far.
+(F6-F11 and extras). Android has F9 and F10 so far.
 
 **Seek back and forward (F9).** The audio player strip at the top of a screen
 (`FragmentContextView`, where a playing voice, round or music message shows)
@@ -198,6 +198,67 @@ Upstream files it touches, and why:
 
 The media-playback host suite pins these hooks and runs the seek targets and
 the real `seekStepSeconds` bridge over the host core library.
+
+**Crash-safe recordings and the Recording bin (F10).** A voice or video
+message that was being recorded when the app crashed, or was killed, is found
+at the next start and put in the **Recording bin** (Purple Settings > Media
+recording), together with recordings you discarded. From the bin you can play
+an item, send it to its original chat or another one, save it to Downloads, or
+delete it; Clear bin empties it. Items are deleted automatically after
+`[recording] bin_keep` (12 h, 24 h, 48 h by default, 7 days, or never:
+`"12h"`, `"24h"`, `"48h"`, `"7d"`, `"off"`), at start and once an hour.
+`keep_discarded_p` (default on) is what sends a discarded recording to the bin
+instead of deleting it. Both are rows of Purple Settings > Media recording.
+
+- **The registry.** `PurpleRecordingRegistry` keeps
+  `files/purple-recordings/recordings.json`, one entry per recording (account
+  slot, chat, topic and reply ids, kind, start, the file, and a state:
+  recording, unsent, recovered or unrecoverable). Every change is written
+  atomically (a synced temporary file, then a rename). The chat comes from the
+  chat screen's `PurpleChatHooks`, which registers its class guid; the entry is
+  written on upstream's `recordStarted`. The ids stay in Purple's directory and
+  never reach the diag log, which gets counts and states only.
+- **Voice needs no upstream hook.** Upstream's recorders already write voice to
+  disk as they record; what a crash loses is the file's link to a chat, and V2
+  deletes its temporary file on a clean release. One second after
+  `recordStarted` the registry takes the newest recorder-named file in
+  `MEDIA_DIR_AUDIO` (V2's `audio_recording_voice_*.ogg`, legacy's
+  `<time>_*.ogg`) and holds it open. `audioDidSent` without a draft means it was
+  sent, and the entry goes; with a draft it paused into upstream's voice draft.
+  A stop followed by upstream deleting the file is a discard: the bytes are
+  still readable through the held descriptor and are copied into the bin.
+- **Recovery.** At start, an entry still recording belongs to a crash. A file
+  that is already a finished recording (an Ogg stream that ended) ended cleanly
+  and is left to upstream; a missing one is dropped; any other moves into
+  `files/purple-recordings/bin/` (out of Telegram's cache, which "Clear cache"
+  empties) and is finalised by purple-core's Ogg finaliser (`FinaliseOggFile`:
+  cut after the last good page, end-of-stream flag, duration from the granule).
+  What cannot be made playable is kept raw as "Could not be recovered" until
+  auto-clear, so it can still be saved.
+- **The orphan scan** runs once per install, for recordings that crashed
+  before Purple kept a registry: V2's temporary voice files and unfinished
+  `.ogg` recordings in `MEDIA_DIR_AUDIO`, and recorder-named `.mp4` files with
+  `ftyp` and `mdat` but no `moov` in `MEDIA_DIR_DOCUMENT`, `files/cache` and
+  the files directory, become "Unknown chat" items. Finished files are never
+  touched. The marker is device-local.
+- **Sending from the bin** uses upstream's routes: a voice document with the
+  waveform and duration through `SendMessagesHelper`, as
+  `MediaController.stopRecordingInternal` builds it. The file first moves out
+  of the bin into the directory upstream sends from. A reply whose message no
+  longer exists is dropped. A chat the running Work Mode preset hides is shown
+  as "Hidden chat" and opened through the stock route instead of sent to;
+  secret-chat items are never offered "Send to another chat" or "Save to
+  Downloads".
+- **Known limits.** A send whose message was queued just before a crash can
+  come back as a recovered item (the entry is dropped only on
+  `audioDidSent`). A discard of a paused draft that posts no stop is not
+  caught; its file is then simply gone at the next start. Discard detection
+  waits up to 15 s for upstream to delete the file.
+
+`PurpleRecordingStore` holds the rules and is plain Java over purple-core
+(`PurpleRecordingCore`: the Ogg finaliser and page walker, and `BinItemExpired`
+for auto-clear), so the recording host suite runs it on real Opus files that
+ffmpeg encodes at test time. F10 voice touches no upstream file.
 
 ### Keep Media per chat
 
