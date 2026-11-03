@@ -178,12 +178,26 @@ final class PurpleSyncText {
         }
     }
 
+    /** The line for a NeedsReview review's reason code (PurpleSyncCheckReason), or null without one. */
+    static String refusedText(PurpleSyncCore.Review review) {
+        switch (review.reason != null ? review.reason : "") {
+            case "space_mismatch": return getString(R.string.PurpleSyncRefusedSpaceMismatch);
+            case "unreadable": return getString(R.string.PurpleSyncRefusedUnreadable);
+            case "ambiguous": return getString(R.string.PurpleSyncRefusedAmbiguous);
+            case "newer_schema": return getString(R.string.PurpleSyncRefusedNewerSchema);
+            case "heads_unclear": return getString(R.string.PurpleSyncRefusedHeadsUnclear);
+            case "own_records": return getString(R.string.PurpleSyncRefusedOwnRecords);
+            default: return null;
+        }
+    }
+
     static String describe(PurpleSyncCore.Review review, long checkedAt) {
         switch (review.message) {
             case NeedsReviewWithPending:
-                return getString(R.string.PurpleSyncNeedsReviewWithPending);
+                return refusedText(review) != null ? joined(getString(R.string.PurpleSyncRefusedPendingPrefix), refusedText(review))
+                        : getString(R.string.PurpleSyncNeedsReviewWithPending);
             case NeedsReview:
-                return getString(R.string.PurpleSyncNeedsReview);
+                return refusedText(review) != null ? refusedText(review) : getString(R.string.PurpleSyncNeedsReview);
             case Incomplete:
                 return getString(R.string.PurpleSyncIncomplete);
             case CloneDetected:

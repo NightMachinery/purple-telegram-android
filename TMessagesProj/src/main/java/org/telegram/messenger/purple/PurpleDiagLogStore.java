@@ -75,6 +75,14 @@ public final class PurpleDiagLogStore {
             "drop_pending", "move", "inventory", "publish", "joined", "user_check", "user_resume", "chat_changed",
             "binding_unreadable", "code", "user_action", "choose", "default", "join", "listed", "value", "on", "off",
             "rejected", "wait_recorded", "retry",
+            // first use of the sync chat (PurpleSyncFirstUse) and the Check screen's named refusals (PurpleSyncCheckReason)
+            "sync", "first_use", "check_refused", "ask", "join_silently", "published", "archived", "refused",
+            "not_first_use", "first_use_unavailable", "archive_refused", "check_changed", "check_failed", "apply_refused",
+            "busy", "account_unavailable", "unreadable", "ambiguous", "newer_schema", "heads_unclear", "own_records",
+            "synced", "this_device", "incomplete", "clone_detected", "account_unbound", "store_error", "invalid_settings",
+            "using_last_good",
+            // an automatic pass that threw (PurpleSyncAutoEngine.failureCode): sync auto_failed reason=<code>
+            "auto_failed", "automatic_chat_mismatch", "illegal_argument", "illegal_state", "json", "io", "unexpected",
             // the durable file guard (PurpleAccountFileSnapshot.inside): a sync path outside the app's files directory
             "path_refused", "path_outside_root",
             // the settings owner plan (PurpleAccountOwner)

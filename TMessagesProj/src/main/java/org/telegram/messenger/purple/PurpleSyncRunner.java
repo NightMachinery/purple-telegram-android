@@ -383,6 +383,39 @@ public final class PurpleSyncRunner {
         return Start.Started;
     }
 
+    /**
+     * Sets this device's state aside for first use ({@link PurpleSyncFirstUse}) when {@code shown}, the current
+     * check, found it in another sync space: the store moves it into an {@code orphaned-<date>} folder
+     * ({@link PurpleAccountSyncStore#setAside}); settings, History and the chat binding stay. {@code done} gets
+     * whether it was set aside, and the next check sees no state.
+     */
+    public Start setAside(Check shown, Listener<Boolean> done) {
+        final Start refused = refusal(true);
+        if (refused != null) return refused;
+        if (shown == null || shown != current || shown.generation != generation || !PurpleSyncFirstUse.mismatch(shown)) return Start.Stale;
+        if (!begin()) return Start.Busy;
+        final long started = ++generation;
+        current = null;
+        queue.post(() -> {
+            boolean ok = false;
+            if (session.available()) {
+                try (PurpleAccountSyncStore store = session.env.store().require(session::available)) {
+                    ok = store.open(true, session.account, session.env.device()).status == PurpleAccountSyncStore.Status.Ready
+                            && store.setAside().status == PurpleAccountSyncStore.Status.Uninitialized;
+                } catch (RuntimeException | LinkageError e) {
+                    ok = false;
+                }
+            }
+            final boolean result = ok;
+            ui.post(() -> {
+                if (!live(started)) return;
+                end();
+                done.onResult(result);
+            });
+        });
+        return Start.Started;
+    }
+
     public boolean cancel() {
         if (closed || !checking) {
             return false;

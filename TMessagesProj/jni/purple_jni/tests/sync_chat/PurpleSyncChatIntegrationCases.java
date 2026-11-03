@@ -74,9 +74,12 @@ public final class PurpleSyncChatIntegrationCases {
         check(!PurpleSyncCore.checkCommit(inspected.state,inspected.state).isValid(),"raw Self commit refuses typed ledger");
         check(PurpleSyncCore.checkCommit(chat,inspected.state,inspected.state).isValid(),"scoped core commit control");
         PurpleSyncInventory inventory=new PurpleSyncInventory.Builder(202,chat,null).build(true);
-        boolean refused=false;try { new PurpleSyncAutoCore.Inventory(inventory,"synthetic","1",1,new org.json.JSONArray()); }
+        boolean refused=false;try { new PurpleSyncAutoCore.Inventory(inventory,PurpleSyncChatCore.Peer.self(),"synthetic","1",1,new org.json.JSONArray()); }
         catch(IllegalArgumentException expected){refused=true;}
-        check(refused,"typed inventory cannot enter Self-only automatic bridge");
+        check(refused,"typed inventory cannot enter the automatic bridge of a Saved Messages state");
+        try { check(new PurpleSyncAutoCore.Inventory(inventory,chat,"synthetic","1",1,new org.json.JSONArray()).json.getString("chat").equals(chat.token()),
+                "typed inventory enters the automatic bridge of a state in its own chat, naming that chat"); }
+        catch(IllegalArgumentException unexpected){check(false,"typed inventory of the state's own chat refused: "+unexpected.getMessage());}
         frame.unchangedA();
     }
     public static void main(String[] args)throws Exception {

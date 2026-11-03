@@ -85,6 +85,7 @@ final class PurpleSyncMagicPublishCases {
             firstPublish(parent);
             guard(parent);
             PurpleSyncMagicScenarioCases.run(parent);
+            PurpleSyncFirstUseCases.run(parent);
         } finally {
             for (Map.Entry<String, Object> entry : saved.entrySet()) field(entry.getKey(), entry.getValue());
         }

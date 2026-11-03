@@ -122,15 +122,15 @@ public final class PurpleSyncChat {
         return PurpleSyncTelegramClient.create(info,()->current.getAsBoolean()&&holder.env.current());
     }
     /**
-     * Raises space_mismatch when the bound chat holds sync records, none of them in this device's sync space:
-     * another device set up sync there first, so joining its space is the user's choice.
+     * Whether the bound chat holds sync records, none of them in this device's sync space {@code space}: another
+     * device set up sync there first. Automatic sync then runs first use ({@link PurpleSyncFirstUse}), which joins
+     * or asks once, instead of pausing on a space_mismatch problem.
      */
-    static void checkSpace(int slot,Peer chat,PurpleSyncInventory inventory,String space) {
-        Holder holder=accounts.get(slot);
-        if(holder==null||chat==null||Peer.self().equals(chat)||inventory==null||!chat.equals(inventory.chat)
-                ||!inventory.scanComplete||space==null||space.isEmpty())return;
+    static boolean spaceMismatch(Peer chat,PurpleSyncInventory inventory,String space) {
+        if(chat==null||Peer.self().equals(chat)||inventory==null||!chat.equals(inventory.chat)
+                ||!inventory.scanComplete||space==null||space.isEmpty())return false;
         java.util.Set<String> spaces=PurpleSyncMagicManual.spaces(inventory);
-        if(spaces!=null&&!spaces.isEmpty()&&!spaces.contains(space))holder.magic.raise(PurpleSyncMagicCore.Problem.SpaceMismatch);
+        return spaces!=null&&!spaces.isEmpty()&&!spaces.contains(space);
     }
     /** Whether the last lookup recorded a problem that pauses automatic sync. */
     static boolean chatProblem(int slot) {

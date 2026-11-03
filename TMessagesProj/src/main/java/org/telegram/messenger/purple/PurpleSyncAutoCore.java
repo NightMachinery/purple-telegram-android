@@ -133,12 +133,19 @@ final class PurpleSyncAutoCore {
     static final class Inventory {
         final PurpleSyncInventory inventory;
         final JSONObject json;
-        Inventory(PurpleSyncInventory inventory, String session, String ticket, long readAt, JSONArray reads)
-            throws Exception {
-            if(inventory==null || !PurpleSyncChatCore.Peer.self().equals(inventory.chat))
-                throw new IllegalArgumentException("AutomaticNonSelfHeld");
+        /**
+         * An inventory automatic sync read from {@code chat}, the chat of the stored state: Saved Messages, or the
+         * magic group the state moved to. One read from another chat is refused. Core gets the inventory's own chat
+         * and compares it with the state's again. Until R4b this required Saved Messages ("AutomaticNonSelfHeld"),
+         * the rule of automatic sync before the magic chat, so every automatic check of the magic group threw.
+         */
+        Inventory(PurpleSyncInventory inventory, PurpleSyncChatCore.Peer chat, String session, String ticket, long readAt,
+            JSONArray reads) throws Exception {
+            if (inventory == null || chat == null || !chat.equals(inventory.chat))
+                throw new IllegalArgumentException("AutomaticChatMismatch");
             this.inventory = inventory;
             json = new JSONObject()
+                       .put("chat", inventory.chat.token())
                        .put("session", session)
                        .put("ticket", ticket)
                        .put("readAt", Long.toString(readAt))
