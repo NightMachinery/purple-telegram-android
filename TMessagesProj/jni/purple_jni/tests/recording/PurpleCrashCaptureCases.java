@@ -393,7 +393,18 @@ public final class PurpleCrashCaptureCases {
 
     private static PurpleCrashRecord.Exit exit(long time, int reason, byte[] trace) {
         return new PurpleCrashRecord.Exit(time, reason, reason == 5 ? 11 : 0, 100, true, 150 * 1024, 300 * 1024 + 512,
-                trace, trace == null ? 0 : trace.length);
+                trace == null ? null : new java.io.ByteArrayInputStream(trace));
+    }
+
+    /** A stream that counts how much of it was read. */
+    private static final class Counting extends java.io.ByteArrayInputStream {
+        Counting(byte[] data) {
+            super(data);
+        }
+
+        int consumed() {
+            return pos;
+        }
     }
 
     private static void tombstones() {
@@ -407,7 +418,7 @@ public final class PurpleCrashCaptureCases {
                 && parsed.frames.get(2).function == null && TM_ID.equals(parsed.frames.get(1).buildId),
                 "the crashing thread's frames, not the other thread's");
 
-        List<String> record = PurpleCrashRecord.nativeCrash(exit(1792886400000L, 5, data));
+        List<String> record = exit(1792886400000L, 5, data).record;
         for (String line : record) clean(line, "native record");
         List<String> expected = new ArrayList<>(Arrays.asList(
                 "crash start reason=crash_native signal=sigsegv sigcode=segv_maperr abort=jni_error tool=scudo memory=use_after_free",
@@ -429,7 +440,7 @@ public final class PurpleCrashCaptureCases {
         for (int cut = 0; cut <= data.length; ++cut) {
             PurpleCrashTombstone partial = PurpleCrashTombstone.parse(data, cut);
             check(partial.frames.size() <= PurpleCrashTombstone.FRAMES, "truncated at " + cut);
-            for (String line : PurpleCrashRecord.nativeCrash(exit(1L, 5, Arrays.copyOf(data, cut)))) clean(line, "truncated");
+            for (String line : exit(1L, 5, Arrays.copyOf(data, cut)).record) clean(line, "truncated");
         }
         // Damage: a corrupt length, a bad wire type, and random bytes.
         byte[] damaged = data.clone();
@@ -441,11 +452,11 @@ public final class PurpleCrashCaptureCases {
             byte[] noise = new byte[random.nextInt(200)];
             random.nextBytes(noise);
             PurpleCrashTombstone noisy = PurpleCrashTombstone.parse(noise, noise.length);
-            for (String line : PurpleCrashRecord.nativeCrash(exit(1L, 5, noise))) clean(line, "noise");
+            for (String line : exit(1L, 5, noise).record) clean(line, "noise");
             check(noisy.frames.size() <= PurpleCrashTombstone.FRAMES, "noise is bounded");
         }
         check(PurpleCrashTombstone.parse(null, 0).frames.isEmpty(), "no trace");
-        List<String> bare = PurpleCrashRecord.nativeCrash(exit(1L, 5, null));
+        List<String> bare = exit(1L, 5, null).record;
         check(bare.equals(Arrays.asList("crash start reason=crash_native abort=none",
                 "crash exit reason=crash_native status=11 importance=100 main=1 pss_mb=150 rss_mb=300", "crash end frames=0")),
                 "a native crash without a tombstone: " + bare);
@@ -496,7 +507,7 @@ public final class PurpleCrashCaptureCases {
 
     private static void anrs() {
         byte[] data = anrTrace().getBytes(StandardCharsets.UTF_8);
-        List<String> record = PurpleCrashRecord.anr(exit(1792886400000L, 6, data));
+        List<String> record = exit(1792886400000L, 6, data).record;
         for (String line : record) clean(line, "anr record");
         List<String> expected = Arrays.asList(
                 "crash start reason=anr state=blocked",
@@ -518,18 +529,18 @@ public final class PurpleCrashCaptureCases {
         check(record.equals(expected), "the ANR record: " + record);
         for (String line : record) check(!line.contains("Wrong") && !line.contains("AfterMain") && !line.contains("0x0a1b"),
                 "only the main thread, no lock lines");
-        List<String> none = PurpleCrashRecord.anr(exit(1L, 6, "no threads at all\n".getBytes(StandardCharsets.UTF_8)));
+        List<String> none = exit(1L, 6, "no threads at all\n".getBytes(StandardCharsets.UTF_8)).record;
         check(none.equals(Arrays.asList("crash start reason=anr",
                 "crash exit reason=anr status=0 importance=100 main=1 pss_mb=150 rss_mb=300", "crash end frames=0")),
                 "an ANR trace without a main thread: " + none);
-        check(PurpleCrashRecord.anr(exit(1L, 6, null)).size() == 3, "an ANR without a trace");
+        check(exit(1L, 6, null).record.size() == 3, "an ANR without a trace");
         check(PurpleCrashRecord.javaTraceFrame("broken", 1).equals("crash frame n=1 at=invalid"), "a broken at line");
         check(PurpleCrashRecord.javaTraceFrame("a.b.C.d(C.java:x)", 2).equals("crash frame n=2 at=other"), "a bad line number");
         check(PurpleCrashRecord.nativeTraceFrame("native: #00 pc", 1, new java.util.LinkedHashMap<>()) == null, "a short native line");
         check(PurpleCrashRecord.hex("00000000000a1234") == 0xa1234 && PurpleCrashRecord.hex("zz") == -1
                 && PurpleCrashRecord.hex("") == -1 && PurpleCrashRecord.hex("1234567890abcdef1") == -1, "hex");
         String gc = "\"main\" prio=5 tid=1 WaitingForGcToComplete\n  at a.B.c(B.java:1)\n";
-        check(PurpleCrashRecord.anr(exit(1L, 6, gc.getBytes(StandardCharsets.UTF_8))).get(0)
+        check(exit(1L, 6, gc.getBytes(StandardCharsets.UTF_8)).record.get(0)
                 .equals("crash start reason=anr state=gc"), "a GC state");
     }
 
@@ -589,10 +600,10 @@ public final class PurpleCrashCaptureCases {
         PurpleCrashRecord.Pending lonely = new PurpleCrashRecord.Pending(at + 600_000, PurpleCrashRecord.javaCrash(bare, false));
         List<PurpleCrashRecord.Exit> exits = Arrays.asList(
                 exit(at + 900_000, 3, null),
-                new PurpleCrashRecord.Exit(at + 5000, 4, 0, 100, true, 200 * 1024, 400 * 1024, null, 0),
+                new PurpleCrashRecord.Exit(at + 5000, 4, 0, 100, true, 200 * 1024, 400 * 1024, null),
                 exit(at + 300_000, 4, null),
                 exit(at + 1_200_000, 6, anrTrace().getBytes(StandardCharsets.UTF_8)),
-                new PurpleCrashRecord.Exit(at + 1_500_000, 10, -1, 400, false, -1, 123456789L * 1024, null, 0));
+                new PurpleCrashRecord.Exit(at + 1_500_000, 10, -1, 400, false, -1, 123456789L * 1024, null));
         List<String> lines = PurpleCrashRecord.plan(exits, Arrays.asList(lonely, java), at + 2_000_000);
         for (String line : lines) clean(line, "plan");
         check(lines.get(0).equals("2026-10-25T00:00:02Z crash start reason=crash class=java.lang.IllegalStateException main_thread=1"),
@@ -647,8 +658,160 @@ public final class PurpleCrashCaptureCases {
         for (String line : five) check(!line.contains("repeated"), "five records need no count");
     }
 
+    // ---- Trace memory (review P2-3) ---------------------------------------------
+
+    private static void traceBounds() throws Exception {
+        // An exit keeps its record, never the trace's bytes or stream.
+        for (java.lang.reflect.Field field : PurpleCrashRecord.Exit.class.getDeclaredFields()) {
+            check(!field.getType().isArray() && !java.io.InputStream.class.isAssignableFrom(field.getType()),
+                    "an exit holds no trace: " + field.getName());
+        }
+        // An ANR stops reading at the end of the main thread's block.
+        StringBuilder tail = new StringBuilder();
+        while (tail.length() < 3 * 1024 * 1024) tail.append("\"Thread-9\" prio=5 tid=99 Native\n  at a.B.c(B.java:1)\n\n");
+        byte[] anr = (anrTrace() + tail).getBytes(StandardCharsets.UTF_8);
+        Counting anrIn = new Counting(anr);
+        List<String> record = new PurpleCrashRecord.Exit(1L, 6, 0, 100, true, 0, 0, anrIn).record;
+        check(record.size() == 16 && record.get(0).equals("crash start reason=anr state=blocked"), "the ANR record is whole");
+        check(anrIn.consumed() < 64 * 1024, "the ANR stream is read only up to the main block: " + anrIn.consumed());
+        // No main block at all: the read stops at the cap.
+        Counting noMain = new Counting(tail.toString().getBytes(StandardCharsets.UTF_8));
+        new PurpleCrashRecord.Exit(1L, 6, 0, 100, true, 0, 0, noMain).record.size();
+        check(noMain.consumed() <= PurpleCrashRecord.ANR_LIMIT + 16384, "an ANR read is capped: " + noMain.consumed());
+        // A tombstone with megabytes after its threads is read only up to its cap, and keeps its frames.
+        byte[] head = tombstone();
+        byte[] padding = new Proto().bytes(18, new byte[3 * 1024 * 1024]).toByteArray();
+        byte[] big = Arrays.copyOf(head, head.length + padding.length);
+        System.arraycopy(padding, 0, big, head.length, padding.length);
+        Counting tombIn = new Counting(big);
+        List<String> nativeRecord = new PurpleCrashRecord.Exit(1792886400000L, 5, 11, 100, true, 150 * 1024, 300 * 1024 + 512, tombIn).record;
+        check(tombIn.consumed() <= PurpleCrashRecord.TOMBSTONE_LIMIT, "a tombstone read is capped: " + tombIn.consumed());
+        check(nativeRecord.equals(exit(1792886400000L, 5, head).record), "the capped tombstone keeps the same record");
+        check(PurpleCrashRecord.readUpTo(null, 10) == null && PurpleCrashRecord.readUpTo(new Counting(new byte[50]), 10).length == 10,
+                "readUpTo bounds");
+        java.io.InputStream failing = new java.io.InputStream() {
+            int left = 5;
+
+            @Override
+            public int read() throws java.io.IOException {
+                if (left-- > 0) return 1;
+                throw new java.io.IOException("gone");
+            }
+        };
+        check(PurpleCrashRecord.readUpTo(failing, 100).length == 5, "a failing stream keeps what was read");
+        PurpleCrashRecord.preload();
+        check(true, "preload runs");
+    }
+
+    // ---- Collection (review P2-1, P2-2) ----------------------------------------
+
+    private static final class Sink implements PurpleCrashCollect.Sink {
+        final List<String> lines = new ArrayList<>();
+        boolean ok = true;
+        Runnable during;
+
+        @Override
+        public boolean append(List<String> batch) {
+            if (during != null) during.run();
+            if (ok) lines.addAll(batch);
+            return ok;
+        }
+    }
+
+    private static final class Cursor implements PurpleCrashCollect.Cursor {
+        long value = -1;
+
+        @Override
+        public void advance(long newest) {
+            value = newest;
+        }
+    }
+
+    private static int count(List<String> lines, String part) {
+        int n = 0;
+        for (String line : lines) if (line.contains(part)) ++n;
+        return n;
+    }
+
+    private static void collection(File root) throws Exception {
+        long at = 1792886400000L;
+        File directory = new File(root, "collect/purple-diagnostics");
+        final File pending = new File(directory, PurpleCrashRecord.PENDING);
+        final IllegalStateException first = new IllegalStateException(SECRET_TEXT);
+        first.setStackTrace(trace(1, "org.telegram.ui.ChatActivity"));
+        check(PurpleCrashRecord.writePending(pending, at, PurpleCrashRecord.javaCrash(first, true)), "a pending record");
+
+        // P2-1: a crash while the collector writes appends to a fresh pending file, which survives.
+        final NullPointerException second = new NullPointerException();
+        second.setStackTrace(trace(1, "org.telegram.ui.DialogsActivity"));
+        Sink sink = new Sink();
+        sink.during = () -> PurpleCrashRecord.writePending(pending, at + 1000, PurpleCrashRecord.javaCrash(second, false));
+        Cursor cursor = new Cursor();
+        check(PurpleCrashCollect.run(pending, Collections.<PurpleCrashRecord.Exit>emptyList(), 0, 0, at + 2000, sink, cursor),
+                "the first collection writes");
+        check(count(sink.lines, "IllegalStateException") == 1 && count(sink.lines, "NullPointerException") == 0,
+                "the first collection logs the taken record only");
+        check(pending.isFile() && PurpleCrashRecord.readPending(pending).size() == 1,
+                "the record written during collection is still pending");
+        check(PurpleCrashCollect.taken(pending).isEmpty(), "the taken file is gone after the write");
+        check(cursor.value == -1, "a cursor that did not move is not written");
+        Sink next = new Sink();
+        check(PurpleCrashCollect.run(pending, Collections.<PurpleCrashRecord.Exit>emptyList(), 0, 0, at + 3000, next, cursor),
+                "the next start writes");
+        check(count(next.lines, "NullPointerException") == 1 && count(next.lines, "IllegalStateException") == 0,
+                "the next start logs the crash from during collection, once");
+        check(!pending.exists() && PurpleCrashCollect.taken(pending).isEmpty(), "nothing is left");
+
+        // P2-2: a failed write keeps the record and the cursor.
+        check(PurpleCrashRecord.writePending(pending, at + 4000, PurpleCrashRecord.javaCrash(first, true)), "another record");
+        List<PurpleCrashRecord.Exit> exits = Collections.singletonList(exit(at + 5000, 3, null));
+        Sink full = new Sink();
+        full.ok = false;
+        Cursor kept = new Cursor();
+        check(!PurpleCrashCollect.run(pending, exits, at, at + 5000, at + 6000, full, kept), "a failed write is reported");
+        check(kept.value == -1, "the cursor stays when the write failed");
+        check(PurpleCrashCollect.taken(pending).size() == 1 && !pending.exists(), "the taken file stays for a retry");
+        Sink retry = new Sink();
+        check(PurpleCrashCollect.run(pending, exits, at, at + 5000, at + 7000, retry, kept), "the retry writes");
+        check(count(retry.lines, "IllegalStateException") == 1 && count(retry.lines, "reason=low_memory") == 1,
+                "the retry logs both the record and the exit: " + retry.lines);
+        check(kept.value == at + 5000, "the cursor moves after a good write");
+        check(PurpleCrashCollect.taken(pending).isEmpty() && !pending.exists(), "and the files are gone");
+
+        // A leftover taken file from a start that died mid-collection is picked up with a new pending one.
+        check(PurpleCrashRecord.writePending(pending, at + 8000, PurpleCrashRecord.javaCrash(first, true)), "a record");
+        check(PurpleCrashCollect.take(pending, at + 8500), "taken by a start that died");
+        check(PurpleCrashRecord.writePending(pending, at + 9000, PurpleCrashRecord.javaCrash(second, false)), "and a new one");
+        Sink both = new Sink();
+        check(PurpleCrashCollect.run(pending, Collections.<PurpleCrashRecord.Exit>emptyList(), 0, 0, at + 9500, both, cursor),
+                "both are collected");
+        check(count(both.lines, "crash start ") == 2 && both.lines.get(0).contains("IllegalStateException"),
+                "the leftover first, then the new one: " + both.lines);
+        check(directory.list().length == 0, "the folder is empty: " + Arrays.toString(directory.list()));
+
+        // Taken names never collide, and at most TAKEN_FILES are kept.
+        for (int i = 0; i < 7; ++i) {
+            PurpleCrashRecord.writePending(pending, at + i, PurpleCrashRecord.javaCrash(first, true));
+            check(PurpleCrashCollect.take(pending, at + 10_000), "taken " + i);
+        }
+        check(PurpleCrashCollect.taken(pending).size() == PurpleCrashCollect.TAKEN_FILES, "taken files are capped");
+        check(directory.list().length == PurpleCrashCollect.TAKEN_FILES, "the dropped ones are deleted");
+        Sink capped = new Sink();
+        PurpleCrashCollect.run(pending, Collections.<PurpleCrashRecord.Exit>emptyList(), 0, 0, at + 20_000, capped, cursor);
+        check(count(capped.lines, "crash start ") == Math.min(PurpleCrashCollect.TAKEN_FILES, PurpleCrashRecord.RECORDS),
+                "the kept ones are logged: " + count(capped.lines, "crash start "));
+
+        // Nothing at all: no write, and the cursor still moves.
+        Sink empty = new Sink();
+        Cursor moved = new Cursor();
+        check(PurpleCrashCollect.run(pending, Collections.<PurpleCrashRecord.Exit>emptyList(), 5, 9, at, empty, moved)
+                && empty.lines.isEmpty() && moved.value == 9, "an empty start");
+        check(!PurpleCrashCollect.take(new File(root, "absent/" + PurpleCrashRecord.PENDING), at), "nothing to take");
+    }
+
     private static void origins(File expected) throws Exception {
-        for (String name : new String[]{"PurpleDiagLogStore", "PurpleDiagRepeats", "PurpleCrashRecord", "PurpleCrashTombstone"}) {
+        for (String name : new String[]{"PurpleDiagLogStore", "PurpleDiagRepeats", "PurpleCrashRecord", "PurpleCrashTombstone",
+                "PurpleCrashCollect"}) {
             File origin = new File(Class.forName("org.telegram.messenger.purple." + name).getProtectionDomain()
                     .getCodeSource().getLocation().toURI()).getCanonicalFile();
             check(origin.equals(expected.getCanonicalFile()), "business class shadow: " + name + " from " + origin);
@@ -669,6 +832,8 @@ public final class PurpleCrashCaptureCases {
         anrs();
         pending(root);
         merge();
+        traceBounds();
+        collection(root);
         System.out.println("CRASH_CAPTURE_CHECKS=" + checks);
     }
 }

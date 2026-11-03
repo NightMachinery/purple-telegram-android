@@ -6,10 +6,14 @@
  */
 package org.telegram.messenger.purple;
 
+import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -48,8 +52,14 @@ final class PurpleCrashRecord {
     static final int RECORDS = 5;
     /** A Java crash and a {@code REASON_CRASH} exit this close in time are one crash. */
     static final long MATCH = 10_000L;
-    /** A trace is read up to this many bytes; the threads come early in a tombstone. */
-    static final int TRACE_LIMIT = 4 * 1024 * 1024;
+    /**
+     * A tombstone is read up to this many bytes. Its threads (field 16) come
+     * before the memory maps, the log buffers and the open files, so the
+     * crashing thread's frames are well inside it.
+     */
+    static final int TOMBSTONE_LIMIT = 1024 * 1024;
+    /** An ANR trace is read as a stream, at most this many bytes, and only up to the end of the main thread's block. */
+    static final int ANR_LIMIT = 1024 * 1024;
 
     // ApplicationExitInfo reason codes, which are stable public API constants.
     static final int REASON_CRASH = 4;
@@ -64,6 +74,19 @@ final class PurpleCrashRecord {
     private PurpleCrashRecord() {
     }
 
+    /**
+     * Loads and initialises this class, {@link PurpleDiagLogStore} (with its
+     * vocabulary and patterns) and the record path once, so the uncaught
+     * exception handler later runs on loaded classes and allocates little in
+     * a process that may be out of memory. Called from the collector thread.
+     */
+    static void preload() {
+        Throwable probe = new Throwable();
+        probe.setStackTrace(new StackTraceElement[]{new StackTraceElement("org.telegram.messenger.purple.Preload", "run", null, 1)});
+        javaCrash(probe, false);
+        pendingBody("crash end frames=0");
+    }
+
     static String reasonName(int reason) {
         return reason >= 0 && reason < REASONS.length ? REASONS[reason] : "other";
     }
@@ -72,7 +95,12 @@ final class PurpleCrashRecord {
         return PurpleDiagLogStore.body("crash", event, fields);
     }
 
-    /** One exit reason, as it was read from {@code ApplicationExitInfo}. */
+    /**
+     * One exit reason, as it was read from {@code ApplicationExitInfo}. A
+     * native crash or an ANR builds its record here, from its trace stream,
+     * so only the record's few lines are kept and the trace's bytes are
+     * garbage before the next exit is read.
+     */
     static final class Exit {
         final long time;
         final int reason;
@@ -81,12 +109,11 @@ final class PurpleCrashRecord {
         final boolean main;
         final long pssKb;
         final long rssKb;
-        /** The trace stream's bytes for a native crash or an ANR, or null. */
-        final byte[] trace;
-        final int traceLength;
+        /** The record of a native crash or an ANR, or null for any other reason. */
+        final List<String> record;
 
-        Exit(long time, int reason, int status, int importance, boolean main, long pssKb, long rssKb,
-                byte[] trace, int traceLength) {
+        /** {@code trace} may be null; it is read here and not closed. */
+        Exit(long time, int reason, int status, int importance, boolean main, long pssKb, long rssKb, InputStream trace) {
             this.time = time;
             this.reason = reason;
             this.status = status;
@@ -94,9 +121,52 @@ final class PurpleCrashRecord {
             this.main = main;
             this.pssKb = pssKb;
             this.rssKb = rssKb;
-            this.trace = trace;
-            this.traceLength = trace == null ? 0 : Math.min(traceLength, trace.length);
+            this.record = reason == REASON_CRASH_NATIVE ? nativeCrash(this, trace)
+                    : reason == REASON_ANR ? anr(this, trace) : null;
         }
+    }
+
+    /** Counts what is read and ends at {@code limit}, so a trace never costs more than its cap. */
+    static final class Bounded extends InputStream {
+        private final InputStream in;
+        private final int limit;
+        int consumed;
+
+        Bounded(InputStream in, int limit) {
+            this.in = in;
+            this.limit = limit;
+        }
+
+        @Override
+        public int read() throws IOException {
+            if (consumed >= limit) return -1;
+            int b = in.read();
+            if (b >= 0) ++consumed;
+            return b;
+        }
+
+        @Override
+        public int read(byte[] buffer, int offset, int length) throws IOException {
+            if (consumed >= limit) return -1;
+            int count = in.read(buffer, offset, Math.min(length, limit - consumed));
+            if (count > 0) consumed += count;
+            return count;
+        }
+    }
+
+    /** At most {@code limit} bytes of {@code in}, or what was read before an error; null for no stream. */
+    static byte[] readUpTo(InputStream in, int limit) {
+        if (in == null) return null;
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try {
+            InputStream bounded = new Bounded(in, limit);
+            byte[] buffer = new byte[16384];
+            int count;
+            while ((count = bounded.read(buffer, 0, buffer.length)) != -1) out.write(buffer, 0, count);
+        } catch (Throwable ignored) {
+            // Keep what was read.
+        }
+        return out.toByteArray();
     }
 
     /** A record built at crash time and kept in the pending file until the next start. */
@@ -172,8 +242,10 @@ final class PurpleCrashRecord {
     // ---- Native crashes --------------------------------------------------
 
     /** The record of a native crash from its tombstone, or from the exit line alone when there is none. */
-    static List<String> nativeCrash(Exit exit) {
-        PurpleCrashTombstone tombstone = PurpleCrashTombstone.parse(exit.trace, exit.traceLength);
+    static List<String> nativeCrash(Exit exit, InputStream trace) {
+        byte[] data = readUpTo(trace, TOMBSTONE_LIMIT);
+        PurpleCrashTombstone tombstone = PurpleCrashTombstone.parse(data, data == null ? 0 : data.length);
+        data = null;
         List<String> out = new ArrayList<>();
         out.add(body("start", PurpleDiagLogStore.reason("crash_native"),
                 tombstone.signal < 0 ? null : PurpleDiagLogStore.signal(tombstone.signal, tombstone.code),
@@ -220,15 +292,25 @@ final class PurpleCrashRecord {
      * its top {@value #FRAMES} frames, Java ({@code at ...}) and native
      * ({@code native: #nn pc ...}) in their order. Lock lines, which hold
      * object addresses and thread numbers, and every other thread are skipped.
+     * The trace is read line by line, at most {@value #ANR_LIMIT} bytes, and
+     * reading stops at the end of the main thread's block, which ART prints
+     * first.
      */
-    static List<String> anr(Exit exit) {
-        String text = exit.trace == null ? "" : new String(exit.trace, 0, exit.traceLength, StandardCharsets.UTF_8);
-        String[] lines = text.split("\n", -1);
+    static List<String> anr(Exit exit, InputStream trace) {
         String state = null;
         List<String> frames = new ArrayList<>();
         Map<String, String> libraries = new LinkedHashMap<>();
         boolean inMain = false;
-        for (String raw : lines) {
+        BufferedReader reader = trace == null ? null
+                : new BufferedReader(new InputStreamReader(new Bounded(trace, ANR_LIMIT), StandardCharsets.UTF_8), 4096);
+        while (reader != null) {
+            String raw;
+            try {
+                raw = reader.readLine();
+            } catch (Throwable e) {
+                raw = null;
+            }
+            if (raw == null) break;
             String line = raw.trim();
             if (!inMain) {
                 if (line.startsWith("\"main\" ") && line.contains(" tid=1 ")) {
@@ -433,7 +515,9 @@ final class PurpleCrashRecord {
         List<Pending> unused = new ArrayList<>(pending);
         List<Item> items = new ArrayList<>();
         for (Exit exit : sorted) {
-            if (exit.reason == REASON_CRASH) {
+            if (exit.record != null) {
+                items.add(new Item(exit.time, exit.record, true));
+            } else if (exit.reason == REASON_CRASH) {
                 Pending match = null;
                 for (Pending candidate : unused) {
                     long gap = Math.abs(candidate.time - exit.time);
@@ -447,10 +531,6 @@ final class PurpleCrashRecord {
                 } else {
                     items.add(new Item(exit.time, Collections.singletonList(exitBody(exit)), false));
                 }
-            } else if (exit.reason == REASON_CRASH_NATIVE) {
-                items.add(new Item(exit.time, nativeCrash(exit), true));
-            } else if (exit.reason == REASON_ANR) {
-                items.add(new Item(exit.time, anr(exit), true));
             } else {
                 items.add(new Item(exit.time, Collections.singletonList(exitBody(exit)), false));
             }

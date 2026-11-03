@@ -14,7 +14,6 @@ import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Looper;
 
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -88,13 +87,16 @@ public final class PurpleCrashCapture {
     }
 
     /**
-     * Writes the pending Java crashes and the exit reasons newer than the
-     * last one recorded, as one start's lines ({@link PurpleCrashRecord#plan}),
-     * then deletes the pending file and remembers the newest exit.
+     * Preloads the handler's classes, then hands the exit reasons newer than
+     * the last one recorded to {@link PurpleCrashCollect#run}, which takes the
+     * pending file before reading it, and deletes it and advances the cursor
+     * only once every line is in the log. Each exit's trace is read and
+     * turned into its record before the next exit is read.
      */
     private static void collect(Context app, File pending) {
         try {
-            SharedPreferences prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+            PurpleCrashRecord.preload();
+            final SharedPreferences prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
             long last = prefs.getLong(LAST_EXIT, 0);
             long newest = last;
             List<PurpleCrashRecord.Exit> exits = new ArrayList<>();
@@ -109,15 +111,10 @@ public final class PurpleCrashCapture {
                     exits.add(exit(app, info));
                 }
             }
-            List<PurpleCrashRecord.Pending> records = PurpleCrashRecord.readPending(pending);
-            if (exits.isEmpty() && records.isEmpty()) {
-                if (pending.exists()) pending.delete();
-                return;
-            }
-            List<String> lines = PurpleCrashRecord.plan(exits, records, System.currentTimeMillis());
-            PurpleDiagLog.appendNow(app.getFilesDir(), lines);
-            if (pending.exists()) pending.delete();
-            if (newest != last) prefs.edit().putLong(LAST_EXIT, newest).commit();
+            final File files = app.getFilesDir();
+            PurpleCrashCollect.run(pending, exits, last, newest, System.currentTimeMillis(),
+                    lines -> PurpleDiagLog.appendNow(files, lines),
+                    value -> prefs.edit().putLong(LAST_EXIT, value).commit());
         } catch (Throwable ignored) {
         }
     }
@@ -125,28 +122,19 @@ public final class PurpleCrashCapture {
     @TargetApi(30)
     private static PurpleCrashRecord.Exit exit(Context app, ApplicationExitInfo info) {
         int reason = info.getReason();
-        byte[] trace = null;
-        int length = 0;
         boolean traced = reason == PurpleCrashRecord.REASON_ANR
                 || reason == PurpleCrashRecord.REASON_CRASH_NATIVE && Build.VERSION.SDK_INT >= 31;
+        String process = info.getProcessName();
+        boolean main = process != null && process.equals(app.getPackageName());
         if (traced) {
             try (InputStream in = info.getTraceInputStream()) {
-                if (in != null) {
-                    ByteArrayOutputStream out = new ByteArrayOutputStream();
-                    byte[] buffer = new byte[16384];
-                    int count;
-                    while (out.size() < PurpleCrashRecord.TRACE_LIMIT && (count = in.read(buffer)) != -1) {
-                        out.write(buffer, 0, count);
-                    }
-                    trace = out.toByteArray();
-                    length = Math.min(trace.length, PurpleCrashRecord.TRACE_LIMIT);
-                }
+                return new PurpleCrashRecord.Exit(info.getTimestamp(), reason, info.getStatus(), info.getImportance(),
+                        main, info.getPss(), info.getRss(), in);
             } catch (Throwable ignored) {
-                trace = null;
+                // The trace could not be opened: the record without it.
             }
         }
-        String process = info.getProcessName();
         return new PurpleCrashRecord.Exit(info.getTimestamp(), reason, info.getStatus(), info.getImportance(),
-                process != null && process.equals(app.getPackageName()), info.getPss(), info.getRss(), trace, length);
+                main, info.getPss(), info.getRss(), null);
     }
 }

@@ -2,8 +2,8 @@
 """Run the media recording cases (docs/media-recording-design.md) on real AGP classes and pin their upstream hooks.
 
 F11, crash capture: PurpleCrashCaptureCases runs against the AGP-compiled
-PurpleDiagLogStore, PurpleDiagRepeats, PurpleCrashRecord and
-PurpleCrashTombstone, and the ApplicationLoader.onCreate hook is pinned.
+PurpleDiagLogStore, PurpleDiagRepeats, PurpleCrashRecord,
+PurpleCrashTombstone and PurpleCrashCollect, and the ApplicationLoader.onCreate hook is pinned.
 The receipt is the JSON the compile-evidence init script writes for
 :TMessagesProj:compileStandaloneJavaWithJavac.
 """
@@ -31,7 +31,7 @@ assert classes.is_dir()
 # in this tree, and the files whose hooks are pinned below.
 purple = [java / 'messenger/purple' / name for name in [
     'PurpleDiagLogStore.java', 'PurpleDiagRepeats.java', 'PurpleCrashRecord.java', 'PurpleCrashTombstone.java',
-    'PurpleCrashCapture.java']]
+    'PurpleCrashCollect.java', 'PurpleCrashCapture.java']]
 hooked = {name: java / name for name in ['messenger/ApplicationLoader.java']}
 hashes = {Path(item['path']): item['sha256'] for item in receipt['sources']}
 for path in purple + list(hooked.values()):

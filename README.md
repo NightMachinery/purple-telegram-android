@@ -160,12 +160,23 @@ since the last start (`ApplicationExitInfo`, at most 16).
 
 - A Java crash is written at crash time, synchronously with an fsync, to
   `files/purple-diagnostics/pending-crash.log` (bounded at 64 KB), because the
-  log's writer thread dies with the process. The next start moves it into the
-  log and deletes it; a `REASON_CRASH` exit within 10 s of it joins the same
-  record.
+  log's writer thread dies with the process. The next start first renames it
+  to `pending-crash.log.taken-<time>`, so a crash during collection goes to a
+  fresh pending file, then moves the taken records into the log; a
+  `REASON_CRASH` exit within 10 s of one joins the same record. The taken
+  files are deleted, and the last handled exit time is remembered, only when
+  every line was written, so a full disk loses nothing (at most four taken
+  files wait for a retry). A death between the write and the delete logs the
+  records again on the next start: a duplicate over a lost record.
+- The collector thread starts before `ApplicationLoader.onCreate` has set up
+  `AndroidUtilities`, so it never touches `FileLog`, `AndroidUtilities` or
+  `ApplicationLoader`, and crash lines are not mirrored to `FileLog`. It first
+  preloads the handler's classes, so the handler runs on loaded code in a
+  dying process.
 - A native crash (API 31 and later) is read from its tombstone, the protobuf
   that `getTraceInputStream()` returns, by a small reader without
-  dependencies: signal and code names, the class of the abort message (such
+  dependencies, from at most its first 1 MB (the threads come before the
+  memory maps, logs and open files): signal and code names, the class of the abort message (such
   as `jni_error` or `fortify`, never its text), a memory error's tool and type,
   and the crashing thread's top 12 frames. Frames in the app's own libraries
   (`libtmessages.*`, `libpurplecore*`, `libQt6Core*`) keep the library's base
@@ -173,7 +184,9 @@ since the last start (`ApplicationExitInfo`, at most 16).
   build id once, so the frames can be symbolised against the build's
   unstripped libraries. Any other library is `system`, without a pc.
 - An ANR keeps the main thread's state and its top 12 frames; lock lines and
-  other threads are skipped.
+  other threads are skipped. Its trace is streamed and reading stops at the end
+  of the main thread's block (at most 1 MB). Each exit's record is built as its
+  trace is read, so start-up never holds more than one trace.
 - Every other exit reason (low memory, a user stop and the others) is one
   `crash exit` line: reason, status, importance, whether it was the main
   process, and PSS and RSS in MB.
