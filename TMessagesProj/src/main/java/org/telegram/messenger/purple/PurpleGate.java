@@ -1098,7 +1098,21 @@ public final class PurpleGate {
      * mentions either of these costs.
      */
     public static boolean hiddenEverywhere(int currentAccount, TLRPC.Dialog dialog) {
-        return hiddenEverywhere(currentAccount, dialog, true);
+        return syncChat(currentAccount, dialog) || hiddenEverywhere(currentAccount, dialog, true);
+    }
+
+    /**
+     * The account's Magic Purple Sync chat stays out of the chat lists (main,
+     * archive, folders and Work Mode views) unless the user chose to see it on
+     * the Sync chat screen. Search and links still reach it. Any dialog that
+     * is not a channel answers before anything is read.
+     */
+    static boolean syncChat(int currentAccount, TLRPC.Dialog dialog) {
+        if (dialog == null || dialog.id >= 0 || DialogObject.isFolderDialogId(dialog.id)) {
+            return false;
+        }
+        final PurpleSyncChatCore.Peer chat = PurpleSyncChat.hiddenChat(currentAccount);
+        return chat != null && chat.kind == PurpleSyncChatCore.PeerKind.Channel && dialog.id == -chat.id;
     }
 
     public static boolean hiddenEverywhereWithoutRecent(int currentAccount, TLRPC.Dialog dialog) {

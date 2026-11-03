@@ -51,6 +51,8 @@ public final class PurpleSyncChat {
         final PurpleSyncChatFlows flows=new PurpleSyncChatFlows();
         final PurpleSyncChatStartup startup;
         final PurpleSyncMagicChat magic;
+        /** The chat the lists were last rebuilt to hide; UI thread only. */
+        Peer listsHide;
         Holder(Platform env) { this.env=env;service=new PurpleSyncChatService(env);startup=new PurpleSyncChatStartup(this);magic=new PurpleSyncMagicChat(new PurpleSyncMagicTelegram(env)); }
         void close(boolean logout){try{magic.close();}finally{try{startup.close();}finally{try{flows.close();}finally{service.close(logout);}}}}
     }
@@ -75,7 +77,7 @@ public final class PurpleSyncChat {
     public static void startSession(int slot,Consumer<Status> done) {
         AndroidUtilities.runOnUIThread(()->{
             Holder holder=account(slot);if(holder==null)return;
-            holder.magic.lookup(PurpleSyncMagicChat.Trigger.startup,false,done==null?null:result->AndroidUtilities.runOnUIThread(()->{if(holder.env.current())done.accept(new Status(result));}));
+            holder.magic.lookup(PurpleSyncMagicChat.Trigger.startup,false,result->AndroidUtilities.runOnUIThread(()->{refreshLists(slot,holder);if(done!=null&&holder.env.current())done.accept(new Status(result));}));
         });
     }
     public static void ensureResolved(int slot,boolean force,Consumer<Status> done) {
@@ -87,7 +89,7 @@ public final class PurpleSyncChat {
     private static void lookup(int slot,PurpleSyncMagicChat.Trigger trigger,boolean fresh,BooleanSupplier current,Consumer<Status> done) {
         AndroidUtilities.runOnUIThread(()->{
             Holder holder=account(slot);if(holder==null){done.accept(unavailable());return;}
-            holder.magic.lookup(trigger,fresh,result->AndroidUtilities.runOnUIThread(()->{if(current.getAsBoolean())done.accept(new Status(result));}));
+            holder.magic.lookup(trigger,fresh,result->AndroidUtilities.runOnUIThread(()->{refreshLists(slot,holder);if(current.getAsBoolean())done.accept(new Status(result));}));
         });
     }
     /** The problem in the last status was shown to the user; it is not shown again until it changes. */
@@ -159,7 +161,7 @@ public final class PurpleSyncChat {
     public static void magicList(int slot,boolean listed,BooleanSupplier current,Consumer<Boolean> done) {
         AndroidUtilities.runOnUIThread(()->{
             Holder holder=account(slot);if(holder==null){done.accept(false);return;}
-            holder.magic.list(listed,ok->AndroidUtilities.runOnUIThread(()->{if(current.getAsBoolean())done.accept(ok);if(ok)org.telegram.messenger.NotificationCenter.getInstance(slot).postNotificationName(org.telegram.messenger.NotificationCenter.dialogsNeedReload);}));
+            holder.magic.list(listed,ok->AndroidUtilities.runOnUIThread(()->{refreshLists(slot,holder);if(current.getAsBoolean())done.accept(ok);}));
         });
     }
     /**
@@ -191,11 +193,19 @@ public final class PurpleSyncChat {
         Holder holder=accounts.get(slot);
         return holder!=null?holder.magic.hidden():null;
     }
+    /** Rebuilds the chat lists when the chat they hide changed, so a new or shown sync chat leaves or returns at once. */
+    private static void refreshLists(int slot,Holder holder) {
+        Peer hide=holder.magic.hidden();
+        if(java.util.Objects.equals(hide,holder.listsHide))return;
+        holder.listsHide=hide;
+        org.telegram.messenger.MessagesController.getInstance(slot).sortDialogs(null);
+        org.telegram.messenger.NotificationCenter.getInstance(slot).postNotificationName(org.telegram.messenger.NotificationCenter.dialogsNeedReload);
+    }
     private interface MagicCall { void start(Holder holder,Consumer<PurpleSyncMagicChat.Result> reply); }
     private static void magicAction(int slot,BooleanSupplier current,Consumer<PurpleSyncMagicScreen.Frame> done,MagicCall call) {
         AndroidUtilities.runOnUIThread(()->{
             Holder holder=account(slot);if(holder==null){done.accept(PurpleSyncMagicScreen.frame(null,null));return;}
-            call.start(holder,result->AndroidUtilities.runOnUIThread(()->{if(current.getAsBoolean())done.accept(PurpleSyncMagicScreen.frame(result,holder.magic.binding()));}));
+            call.start(holder,result->AndroidUtilities.runOnUIThread(()->{refreshLists(slot,holder);if(current.getAsBoolean())done.accept(PurpleSyncMagicScreen.frame(result,holder.magic.binding()));}));
         });
     }
     public static Status status(int slot) { Holder holder=accounts.get(slot);return holder!=null&&holder.env.current()?new Status(holder.magic.last()):unavailable(); }
