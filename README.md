@@ -85,6 +85,32 @@ at the top of `didClickedImage` (the round's circle) and one at the top of
 `didPressButton` (the voice play button), each declining unless it handles that
 kind of tap, so a tap that the first hands on to the second is counted once.
 
+**The floating round.** A round video message that leaves the chat keeps
+playing in Telegram's floating round (`PipRoundVideoView`), over the chat list,
+other chats and Settings. A single tap on it still pauses or resumes. A double
+tap undoes that first tap and opens the message: the chat scrolls to it when it
+is on top, otherwise it opens at the message, by the same route the player bar
+at the top of a screen uses, so Work Mode's chat-open policy applies as it does
+there. A message that was deleted, or a chat of another account on top, leaves
+the double tap as two plain taps. `PurpleRoundPip` decides; the PiP's
+`onTouchEvent` has one line in its `ACTION_UP` tap branch that clears the
+playing message when Purple handled the tap, so upstream's toggle is skipped
+while its drag reset and edge snap still run.
+
+The chat no longer pulls you back to a playing round. Upstream switches to the
+floating round only when your finger scrolled the round away, and otherwise
+scrolls back to it, so tapping a reply quote, a search result or the
+scroll-to-bottom button while a round played jumped back to the round. Now a
+round that leaves the visible list for any reason continues in the floating
+round. Ordinary videos keep upstream's behaviour. This is the one hook that
+widens an existing upstream line instead of adding one:
+`ChatActivity.updateTextureViewPosition`'s condition
+`checkTextureViewPosition || PipRoundVideoView.getInstance() != null` gains
+`|| purple.roundLeavesToPip(messageObject)`. The PiP-or-scroll choice is a
+single if/else-if, so there is no place for an early return that would not
+change the branch around it. The pull-back was inferred from the code; a device
+check confirms it.
+
 ### Keep Media per chat
 
 The chat menu shows how long this chat's cached media is kept, for example

@@ -494,5 +494,26 @@ final class PurpleChatHooks {
         PurpleScreenTime.input();
     }
 
+    /**
+     * Whether the playing message, now off the visible part of the list,
+     * continues in the floating round instead of the chat scrolling back to it.
+     *
+     * Upstream switches to the floating round only when your finger moved the
+     * list ({@code checkTextureViewPosition}) or a PiP already exists, and
+     * otherwise calls {@code scrollToMessageId} back to the round. So a reply
+     * quote, a search result or the scroll-to-bottom button tapped while a
+     * round plays yanks the chat back to it. This term in
+     * {@code updateTextureViewPosition}'s condition makes a round go to the PiP
+     * whatever moved the list, the same as a manual scroll. Ordinary videos are
+     * not rounds and keep upstream's choice: the floating view is round-only.
+     *
+     * It is the one F1 hook that widens an existing line rather than adding
+     * one: the PiP-or-scroll choice is a single if/else-if with no place for an
+     * early return. See README "Media playback" and docs/media-design.md, F1.
+     */
+    boolean roundLeavesToPip(MessageObject message) {
+        return message.isRoundVideo();
+    }
+
 
 }

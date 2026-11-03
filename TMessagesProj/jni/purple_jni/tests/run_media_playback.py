@@ -21,13 +21,14 @@ compiler = Path(receipt['compiler'])
 assert classes.is_dir()
 
 # The Purple classes the cases load from the receipt, which must be the ones
-# in this tree, and the upstream files whose hooks are pinned below.
+# in this tree, and the files whose hooks are pinned below.
 purple = [java / 'messenger/purple' / name for name in [
-    'PurpleDoubleTap.java', 'PurpleMediaRestart.java']]
-upstream = {name: java / name for name in [
-    'ui/Cells/ChatMessageCell.java']}
+    'PurpleDoubleTap.java', 'PurpleMediaRestart.java', 'PurpleRoundPip.java']]
+hooked = {name: java / name for name in [
+    'ui/Cells/ChatMessageCell.java', 'ui/Components/PipRoundVideoView.java', 'ui/ChatActivity.java',
+    'ui/PurpleChatHooks.java']}
 hashes = {Path(item['path']): item['sha256'] for item in receipt['sources']}
-for path in purple + list(upstream.values()):
+for path in purple + list(hooked.values()):
     assert hashes.get(path) == hashlib.sha256(path.read_bytes()).hexdigest(), str(path) + ' receipt mismatch'
 
 # Each hook is the first statement of its function, or the one line named.
@@ -36,18 +37,27 @@ PINS = [
      '        if (org.telegram.messenger.purple.PurpleMediaRestart.onImageTap(currentMessageObject, buttonState)) return;\n'),
     ('ui/Cells/ChatMessageCell.java', '    private void didPressButton(boolean animated, boolean video) {\n',
      '        if (org.telegram.messenger.purple.PurpleMediaRestart.onButton(currentMessageObject, buttonState)) return;\n'),
+    ('ui/Components/PipRoundVideoView.java',
+     '                        MessageObject messageObject = MediaController.getInstance().getPlayingMessageObject();\n',
+     '                        if (org.telegram.messenger.purple.PurpleRoundPip.onTap(messageObject)) messageObject = null;\n'),
+    ('ui/ChatActivity.java',
+     '                        if (messageObject.isRoundVideo() || messageObject.isVideo()) {\n',
+     '                            if (checkTextureViewPosition || PipRoundVideoView.getInstance() != null || purple.roundLeavesToPip(messageObject)) {\n'),
 ]
-PROGRAMS = [('restart', 'MEDIA_RESTART_CHECKS')]
+PROGRAMS = [('restart', 'MEDIA_RESTART_CHECKS'), ('pip', 'MEDIA_PIP_CHECKS')]
 
 assert not args.output.exists(), 'output must be an unused directory'
 args.output.mkdir(parents=True)
 pinned = 0
 for name, signature, hook in PINS:
-    text = upstream[name].read_text()
+    text = hooked[name].read_text()
     assert text.count(signature) == 1, name + ': ' + signature.strip()
     assert text.count(hook) == 1, name + ': the hook appears once'
     assert text.index(signature) + len(signature) == text.index(hook), name + ': ' + hook.strip() + ' opens ' + signature.strip()
     pinned += 1
+helper = hooked['ui/PurpleChatHooks.java'].read_text().split('boolean roundLeavesToPip(MessageObject message) {', 1)[1].split('}', 1)[0]
+assert helper.strip() == 'return message.isRoundVideo();', 'only rounds leave to the PiP'
+pinned += 1
 (args.output / 'pins.log').write_text('MEDIA_HOOK_PINS=%d\n' % pinned)
 
 destination = args.output / 'classes'
@@ -57,7 +67,7 @@ empty.mkdir()
 case = tests / 'media_playback/MediaPlaybackCases.java'
 (args.output / 'inputs.json').write_text(json.dumps([
     {'path': str(p), 'sha256': hashlib.sha256(p.read_bytes()).hexdigest()}
-    for p in [args.receipt, case, *purple, *upstream.values()]], indent=2) + '\n')
+    for p in [args.receipt, case, *purple, *hooked.values()]], indent=2) + '\n')
 commands = {'javac': [str(compiler), '-source', '8', '-target', '8', '-proc:none', '-sourcepath', str(empty),
                       '-cp', str(classes), '-d', str(destination), str(case)]}
 for program, _ in PROGRAMS:

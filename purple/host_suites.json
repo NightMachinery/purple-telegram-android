@@ -929,9 +929,10 @@
         "--output",
         "{output}"
       ],
-      "coverage": "Double-tap restart decisions and tap timing on the real AGP classes; pins the ChatMessageCell hooks.",
+      "coverage": "Double-tap restart and round PiP decisions and tap timing on the real AGP classes; pins the ChatMessageCell, PipRoundVideoView and ChatActivity hooks.",
       "expects": {
-        "pins:MEDIA_HOOK_PINS": 2,
+        "pins:MEDIA_HOOK_PINS": 5,
+        "pip:MEDIA_PIP_CHECKS": 27,
         "restart:MEDIA_RESTART_CHECKS": 36
       }
     },

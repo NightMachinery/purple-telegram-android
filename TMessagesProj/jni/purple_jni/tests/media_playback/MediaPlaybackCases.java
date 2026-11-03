@@ -23,6 +23,10 @@ public final class MediaPlaybackCases {
             restart();
             System.out.println("MEDIA_RESTART_CHECKS=" + checks);
             break;
+        case "pip":
+            pip();
+            System.out.println("MEDIA_PIP_CHECKS=" + checks);
+            break;
         default:
             throw new IllegalArgumentException("unknown program " + program);
         }
@@ -88,5 +92,24 @@ public final class MediaPlaybackCases {
         if (PurpleMediaRestart.imageTapCounts(true, buttonState)) recorded++;
         if (buttonState != -1 && PurpleMediaRestart.buttonCounts(true, buttonState)) recorded++;
         return recorded;
+    }
+
+    static void pip() {
+        doubleTap();
+        check(PurpleRoundPip.action(false, true, true, true) == PurpleRoundPip.TOGGLE, "a single tap keeps upstream's toggle");
+        check(PurpleRoundPip.action(false, true, true, false) == PurpleRoundPip.TOGGLE, "in any chat");
+        check(PurpleRoundPip.action(true, true, true, true) == PurpleRoundPip.SCROLL, "a double tap scrolls when the chat is on top");
+        check(PurpleRoundPip.action(true, true, true, false) == PurpleRoundPip.OPEN, "and opens the chat otherwise");
+        check(PurpleRoundPip.action(true, false, true, false) == PurpleRoundPip.TOGGLE, "a deleted or finished message opens nothing");
+        check(PurpleRoundPip.action(true, false, true, true) == PurpleRoundPip.TOGGLE, "not even in its own chat");
+        check(PurpleRoundPip.action(true, true, false, false) == PurpleRoundPip.TOGGLE, "another account on top opens nothing");
+        check(PurpleRoundPip.action(true, true, false, true) == PurpleRoundPip.TOGGLE, "nor scrolls a chat of another account");
+        // Taps on the floating round and on the chat are timed apart: a tap in
+        // the chat and then one on the PiP are not a double tap.
+        final PurpleDoubleTap chat = new PurpleDoubleTap();
+        final PurpleDoubleTap floating = new PurpleDoubleTap();
+        check(!chat.tap(0, 5, 9, 100, 300), "a tap in the chat");
+        check(!floating.tap(0, 5, 9, 150, 300), "then one on the PiP is a first tap there");
+        check(floating.tap(0, 5, 9, 250, 300), "and the next PiP tap completes the PiP pair");
     }
 }
