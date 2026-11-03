@@ -196,7 +196,7 @@ public class PurpleRecordingBinActivity extends UniversalFragment {
             labels.add(getString(R.string.PurpleRecordingSendElsewhere));
             actions.add(() -> sendElsewhere(e));
         }
-        if (!secret) {
+        if (!secret && !e.once) {
             labels.add(getString(R.string.PurpleRecordingBinSave));
             actions.add(() -> save(e));
         }

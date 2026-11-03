@@ -91,7 +91,7 @@ public final class PurpleRecordingSend {
         audio.duration = item.durationMs / 1000.0;
         document.attributes.add(audio);
         final SendMessagesHelper.SendMessageParams params = SendMessagesHelper.SendMessageParams.of(document, null,
-                target.getAbsolutePath(), dialogId, reply, top, null, null, null, null, true, 0, 0, 0, null, null, false);
+                target.getAbsolutePath(), dialogId, reply, top, null, null, null, null, true, 0, 0, item.once ? 0x7FFFFFFF : 0, null, null, false);
         AndroidUtilities.runOnUIThread(() -> SendMessagesHelper.getInstance(account).sendMessage(params));
         return true;
     }
@@ -119,7 +119,7 @@ public final class PurpleRecordingSend {
         info.originalPath = target.getAbsolutePath();
         final String path = target.getAbsolutePath();
         AndroidUtilities.runOnUIThread(() -> SendMessagesHelper.prepareSendingVideo(AccountInstance.getInstance(account), path, info,
-                null, null, dialogId, reply, top, null, null, null, 0, null, true, 0, 0, false, false, null, null, 0, 0));
+                null, null, dialogId, reply, top, null, null, null, item.once ? 0x7FFFFFFF : 0, null, true, 0, 0, false, false, null, null, 0, 0));
         return true;
     }
 }

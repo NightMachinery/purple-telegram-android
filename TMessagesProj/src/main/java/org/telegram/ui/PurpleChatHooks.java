@@ -87,12 +87,17 @@ final class PurpleChatHooks {
     }
 
     /**
-     * {account, dialog, topic, reply} of a recording this chat starts, read
-     * when it starts, for the Recording bin's "Send to the original chat".
+     * {account, dialog, topic, reply, client user id, flags} of a recording
+     * this chat starts, read when it starts and again when it stops, for the
+     * Recording bin's "Send to the original chat". The flags carry the enter
+     * view's view-once toggle.
      */
     private long[] recordingTarget() {
         final MessageObject reply = chat.getReplyMessage();
-        return new long[]{chat.getCurrentAccount(), chat.getDialogId(), chat.getTopicId(), reply == null ? 0 : reply.getId()};
+        final boolean once = chat.chatActivityEnterView != null && chat.chatActivityEnterView.voiceOnce;
+        return new long[]{chat.getCurrentAccount(), chat.getDialogId(), chat.getTopicId(), reply == null ? 0 : reply.getId(),
+                org.telegram.messenger.UserConfig.getInstance(chat.getCurrentAccount()).getClientUserId(),
+                once ? org.telegram.messenger.purple.PurpleRecordingSessions.FLAG_ONCE : 0};
     }
 
     View addSelectionCopy(org.telegram.ui.ActionBar.ActionBarMenu menu) {
