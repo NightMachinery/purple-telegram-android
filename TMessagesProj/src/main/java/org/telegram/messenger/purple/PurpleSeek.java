@@ -192,20 +192,35 @@ public final class PurpleSeek {
      * It also adds two custom actions to {@code state}, "Back N s" and
      * "Forward N s" at the current step, so the system media controls (the
      * notification and the lock screen on Android 13 and later, which draw a
-     * session's custom actions) show seek buttons. They are added before
-     * upstream's shuffle action, so for a voice or round message, which has
-     * no previous and next, they take those two slots.
-     * {@link #onCustomAction} handles them.
+     * session's custom actions) show seek buttons. Only for a voice or round
+     * message, which has no previous and next, so they take those two slots:
+     * music keeps its system controls as upstream draws them, because custom
+     * actions added here come before upstream's shuffle and repeat and would
+     * push those out of the slots the system shows (see
+     * {@link #seekButtons}). {@link #onCustomAction} handles them.
      */
     public static long sessionActions(PlaybackStateCompat.Builder state) {
-        if (state != null) {
+        final MessageObject playing = MediaController.getInstance().getPlayingMessageObject();
+        if (state != null && seekButtons(playing != null && playing.isMusic())) {
             final int step = stepSeconds();
             state.addCustomAction(new PlaybackStateCompat.CustomAction.Builder(ACTION_BACK,
                     LocaleController.formatString(R.string.PurpleSeekBack, step), R.drawable.purple_seek_back).build());
             state.addCustomAction(new PlaybackStateCompat.CustomAction.Builder(ACTION_FORWARD,
                     LocaleController.formatString(R.string.PurpleSeekForward, step), R.drawable.purple_seek_forward).build());
         }
-        return PlaybackStateCompat.ACTION_REWIND | PlaybackStateCompat.ACTION_FAST_FORWARD;
+        return SESSION_ACTIONS;
+    }
+
+    /** Rewind and fast-forward, which {@link #sessionActions} adds for every message. */
+    static final long SESSION_ACTIONS = PlaybackStateCompat.ACTION_REWIND | PlaybackStateCompat.ACTION_FAST_FORWARD;
+
+    /**
+     * Whether the session's state carries the seek custom actions: not for
+     * music, whose shuffle and repeat custom actions would otherwise lose
+     * their slots in the system media controls.
+     */
+    static boolean seekButtons(boolean music) {
+        return !music;
     }
 
     /**

@@ -268,10 +268,10 @@ public class PurpleSettingsActivity extends UniversalFragment
         final UItem voiceQueue = UItem.asCheck(ROW_VOICE_QUEUE, getString(R.string.PurpleVoiceQueuePrivate));
         voiceQueue.checked = org.telegram.messenger.purple.PurpleVoiceQueue.enabled();
         items.add(voiceQueue);
-        items.add(UItem.asShadow(getString(R.string.PurpleVoiceQueuePrivateInfo)));
         // [playback] seek_step (F9): read through the core like the switch above.
         items.add(UItem.asButton(ROW_SEEK_STEP, getString(R.string.PurpleSeekStep),
                 formatString(R.string.PurpleSeekStepValue, org.telegram.messenger.purple.PurpleSeek.stepSeconds())));
+        items.add(UItem.asShadow(getString(R.string.PurpleVoiceQueuePrivateInfo)));
 
         final UItem focus = UItem.asCheck(ROW_FOCUS, getString(R.string.PurpleFollowDnd));
         // The parser's answer rather than the raw key: it turns focus sync off

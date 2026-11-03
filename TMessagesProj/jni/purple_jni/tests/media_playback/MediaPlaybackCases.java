@@ -223,7 +223,9 @@ public final class MediaPlaybackCases {
         final long day = 24L * 3600 * 1000;
         check(PurpleSeek.targetMs(day, 2 * day, 1, 30) == day + 30_000, "a day-long position");
         // The media session's added actions are rewind and fast-forward only.
-        check(PurpleSeek.sessionActions(null) == (64L | 8L), "the session adds ACTION_FAST_FORWARD and ACTION_REWIND");
+        check(PurpleSeek.SESSION_ACTIONS == (64L | 8L), "the session adds ACTION_FAST_FORWARD and ACTION_REWIND");
+        check(!PurpleSeek.seekButtons(true), "music keeps shuffle and repeat: no seek custom actions");
+        check(PurpleSeek.seekButtons(false), "voice and round get the seek custom actions");
         // The session's custom actions map to a direction; anything else is upstream's.
         check(PurpleSeek.direction(PurpleSeek.ACTION_BACK) == -1, "the back custom action seeks back");
         check(PurpleSeek.direction(PurpleSeek.ACTION_FORWARD) == 1, "the forward custom action seeks forward");

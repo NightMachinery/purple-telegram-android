@@ -167,7 +167,9 @@ rewind and fast-forward keys to them. The session also carries two custom
 actions, "Back N s" and "Forward N s" at the current step, which the system
 media controls (the notification and lock screen on Android 13 and later) draw
 as seek buttons; for a voice or round message they take the empty previous and
-next slots. Older Android versions build the notification's buttons from
+next slots. Music has no seek buttons in the system controls: its previous,
+next, shuffle and repeat stay as upstream shows them, and the strip buttons and
+headset keys still seek. Older Android versions build the notification's buttons from
 upstream's own action list, so they show no seek buttons. The expanded player
 keeps upstream's long-press rewinding. Keyboard shortcut commands for seeking
 are Desktop only; on Android, hardware media keys (a keyboard's or headset's
