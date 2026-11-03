@@ -223,7 +223,85 @@ public final class MediaPlaybackCases {
         final long day = 24L * 3600 * 1000;
         check(PurpleSeek.targetMs(day, 2 * day, 1, 30) == day + 30_000, "a day-long position");
         // The media session's added actions are rewind and fast-forward only.
-        check(PurpleSeek.sessionActions() == (64L | 8L), "the session adds ACTION_FAST_FORWARD and ACTION_REWIND");
+        check(PurpleSeek.sessionActions(null) == (64L | 8L), "the session adds ACTION_FAST_FORWARD and ACTION_REWIND");
+        // The session's custom actions map to a direction; anything else is upstream's.
+        check(PurpleSeek.direction(PurpleSeek.ACTION_BACK) == -1, "the back custom action seeks back");
+        check(PurpleSeek.direction(PurpleSeek.ACTION_FORWARD) == 1, "the forward custom action seeks forward");
+        check(PurpleSeek.direction("org.telegram.messenger.NOTIFY_SHUFFLE") == 0, "shuffle is not Purple's");
+        check(PurpleSeek.direction(null) == 0, "no action is not Purple's");
+        check(!PurpleSeek.ACTION_BACK.equals(PurpleSeek.ACTION_FORWARD), "the two actions differ");
+        // The Seek step row's choices and how it spells them.
+        check(java.util.Arrays.equals(PurpleSeek.choices(), new int[] {5, 10, 15, 30}), "the row offers 5, 10, 15 and 30 s");
+        PurpleSeek.choices()[0] = 99;
+        check(PurpleSeek.choices()[0] == 5, "the row's choices are a copy");
+        check(PurpleSeek.settingValue(15).equals("15s"), "15 s is written as \"15s\"");
+        check(PurpleSeek.settingValue(7).equals("10s"), "an invalid step is written as the default");
+        stepSeam();
+    }
+
+    /** A player for step(): a live position, a duration, and the seeks it was asked for. */
+    private static final class StubPlayer implements PurpleSeek.Player {
+        long position;
+        final long duration;
+        final boolean takes;
+        final java.util.List<Long> seeks = new java.util.ArrayList<>();
+
+        StubPlayer(long position, long duration, boolean takes) {
+            this.position = position;
+            this.duration = duration;
+            this.takes = takes;
+        }
+
+        @Override
+        public long positionMs() {
+            return position;
+        }
+
+        @Override
+        public long durationMs() {
+            return duration;
+        }
+
+        @Override
+        public boolean seekMs(long ms) {
+            seeks.add(ms);
+            if (takes) position = ms;
+            return takes;
+        }
+    }
+
+    /**
+     * step() reads the live position each press and seeks in milliseconds: a
+     * paused round that does not update its cached progress still moves on
+     * every press (review P2-1).
+     */
+    static void stepSeam() {
+        final StubPlayer paused = new StubPlayer(5_000, 40_000, true);
+        check(PurpleSeek.step(1, paused, 10), "a paused round seeks forward");
+        check(PurpleSeek.step(1, paused, 10), "and again");
+        check(paused.seeks.equals(java.util.Arrays.asList(15_000L, 25_000L)), "two presses are two steps: " + paused.seeks);
+        check(PurpleSeek.step(1, paused, 10), "a third press");
+        check(paused.position == 35_000, "lands at 0:35");
+        check(PurpleSeek.step(1, paused, 10) && paused.position == 39_000, "the fourth stops a second before the end");
+        check(!PurpleSeek.step(1, paused, 10), "the fifth seeks nothing");
+        check(paused.seeks.size() == 4, "and asks the player nothing");
+        check(PurpleSeek.step(-1, paused, 30) && paused.position == 9_000, "back 30 s from 0:39");
+        check(PurpleSeek.step(-1, paused, 30) && paused.position == 0, "back again goes to 0:00");
+        check(!PurpleSeek.step(-1, paused, 30), "back at 0:00 seeks nothing");
+
+        final StubPlayer idle = new StubPlayer(-1, 40_000, true);
+        check(!PurpleSeek.step(1, idle, 10) && idle.seeks.isEmpty(), "no player position seeks nothing");
+        final StubPlayer unknown = new StubPlayer(5_000, 0, true);
+        check(!PurpleSeek.step(1, unknown, 10) && unknown.seeks.isEmpty(), "an unknown duration seeks nothing");
+        final StubPlayer refused = new StubPlayer(5_000, 40_000, false);
+        check(!PurpleSeek.step(-1, refused, 5), "a player that refuses the seek reports no seek");
+        check(refused.seeks.equals(java.util.Collections.singletonList(0L)), "after being asked for 0:00");
+        // The player's duration, not the attribute's: a 300 s file tagged 600 s
+        // steps by the full step and keeps a full second's margin.
+        final StubPlayer music = new StubPlayer(295_000, 300_000, true);
+        check(PurpleSeek.step(1, music, 10) && music.position == 299_000, "the end margin is a second of the real duration");
+        final StubPlayer start = new StubPlayer(100_000, 300_000, true);
+        check(PurpleSeek.step(1, start, 10) && start.position == 110_000, "a full 10 s step");
     }
 
     /**

@@ -2,8 +2,11 @@ package org.telegram.messenger.purple;
 
 import android.support.v4.media.session.PlaybackStateCompat;
 
+import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MediaController;
 import org.telegram.messenger.MessageObject;
+import org.telegram.messenger.NotificationCenter;
+import org.telegram.messenger.R;
 
 /**
  * F9, seek back and forward (docs/media-recording-design.md): the strip's seek
@@ -35,6 +38,16 @@ public final class PurpleSeek {
      */
     public static int stepSeconds() {
         return validStep(PurpleCore.seekStepSeconds());
+    }
+
+    /** The steps the Seek step row offers, in seconds. */
+    public static int[] choices() {
+        return STEPS.clone();
+    }
+
+    /** How settings.toml spells a step: {@code "10s"}. */
+    public static String settingValue(int seconds) {
+        return validStep(seconds) + "s";
     }
 
     static int validStep(int seconds) {
@@ -70,36 +83,147 @@ public final class PurpleSeek {
         return target == position ? -1 : target;
     }
 
+    /** The playing message as {@link #step(int, Player, int)} sees it. */
+    interface Player {
+        /** The player's live position, or a negative value when nothing plays. */
+        long positionMs();
+
+        /** The duration; zero or less is unknown. */
+        long durationMs();
+
+        /** Seeks to {@code ms}; whether the player took it. */
+        boolean seekMs(long ms);
+    }
+
     /**
      * Jumps the playing message one step back ({@code direction < 0}) or
      * forward. Called from the strip's buttons and from the media session's
-     * {@code onRewind} and {@code onFastForward}, on the main thread.
+     * {@code onRewind}, {@code onFastForward} and seek custom actions, on the
+     * main thread.
      *
      * @return whether a seek was made
      */
     public static boolean step(int direction) {
         final MediaController controller = MediaController.getInstance();
         final MessageObject playing = controller.getPlayingMessageObject();
-        if (playing == null) {
-            return false;
-        }
-        final long durationMs = (long) (playing.getDuration() * 1000);
-        final long positionMs = (long) (playing.audioProgress * durationMs);
-        final long target = targetMs(positionMs, durationMs, direction, stepSeconds());
-        if (target < 0) {
-            return false;
-        }
-        return controller.seekToProgress(playing, target / (float) durationMs);
+        return playing != null && step(direction, new Live(controller, playing), stepSeconds());
     }
+
+    /**
+     * The seek itself, from the player's own position and duration rather
+     * than the message's cached progress: a paused round's {@code videoPlayer}
+     * branch never writes {@code audioProgress}, and a message's attribute
+     * duration can disagree with the file's.
+     */
+    static boolean step(int direction, Player player, int stepSeconds) {
+        final long positionMs = player.positionMs();
+        if (positionMs < 0) {
+            return false;
+        }
+        final long target = targetMs(positionMs, player.durationMs(), direction, stepSeconds);
+        return target >= 0 && player.seekMs(target);
+    }
+
+    /** The real player: {@code MediaController}'s live position and its millisecond seek. */
+    private static final class Live implements Player {
+        private final MediaController controller;
+        private final MessageObject playing;
+
+        Live(MediaController controller, MessageObject playing) {
+            this.controller = controller;
+            this.playing = playing;
+        }
+
+        @Override
+        public long positionMs() {
+            return controller.getProgressMs(playing);
+        }
+
+        /**
+         * The audio player's duration when it has one, else the duration a
+         * player last reported for this message (either player writes it),
+         * else the message's own.
+         */
+        @Override
+        public long durationMs() {
+            final long audio = controller.getDuration();
+            if (audio > 0) {
+                return audio;
+            }
+            if (playing.audioPlayerDuration > 0) {
+                return playing.audioPlayerDuration * 1000L;
+            }
+            return (long) (playing.getDuration() * 1000);
+        }
+
+        /**
+         * Seeks, then writes the message's progress and posts a progress
+         * change, so a paused message's cell and the floating round show the
+         * new position at once (the player's progress timer does neither
+         * while paused).
+         */
+        @Override
+        public boolean seekMs(long ms) {
+            if (!controller.seekToProgressMs(playing, ms)) {
+                return false;
+            }
+            final long duration = durationMs();
+            if (duration > 0) {
+                final float progress = Math.max(0f, Math.min(1f, ms / (float) duration));
+                playing.audioProgress = progress;
+                playing.audioProgressSec = (int) (ms / 1000);
+                NotificationCenter.getInstance(playing.currentAccount).postNotificationName(
+                        NotificationCenter.messagePlayingProgressDidChanged, playing.getId(), progress);
+            }
+            return true;
+        }
+    }
+
+    /** The media session's custom action names for the seek buttons. */
+    static final String ACTION_BACK = "org.telegram.purple.SEEK_BACK";
+    static final String ACTION_FORWARD = "org.telegram.purple.SEEK_FORWARD";
 
     /**
      * The actions the media session adds to upstream's, so headsets, car
      * systems and watches can send rewind and fast-forward; the session's
      * default {@code onMediaButtonEvent} maps {@code KEYCODE_MEDIA_REWIND} and
      * {@code KEYCODE_MEDIA_FAST_FORWARD} to them.
+     *
+     * It also adds two custom actions to {@code state}, "Back N s" and
+     * "Forward N s" at the current step, so the system media controls (the
+     * notification and the lock screen on Android 13 and later, which draw a
+     * session's custom actions) show seek buttons. They are added before
+     * upstream's shuffle action, so for a voice or round message, which has
+     * no previous and next, they take those two slots.
+     * {@link #onCustomAction} handles them.
      */
-    public static long sessionActions() {
+    public static long sessionActions(PlaybackStateCompat.Builder state) {
+        if (state != null) {
+            final int step = stepSeconds();
+            state.addCustomAction(new PlaybackStateCompat.CustomAction.Builder(ACTION_BACK,
+                    LocaleController.formatString(R.string.PurpleSeekBack, step), R.drawable.purple_seek_back).build());
+            state.addCustomAction(new PlaybackStateCompat.CustomAction.Builder(ACTION_FORWARD,
+                    LocaleController.formatString(R.string.PurpleSeekForward, step), R.drawable.purple_seek_forward).build());
+        }
         return PlaybackStateCompat.ACTION_REWIND | PlaybackStateCompat.ACTION_FAST_FORWARD;
+    }
+
+    /**
+     * The media session callback's early return for the seek custom actions.
+     *
+     * @return whether {@code action} was one of Purple's, which then seeks
+     */
+    public static boolean onCustomAction(String action) {
+        final int direction = direction(action);
+        if (direction == 0) {
+            return false;
+        }
+        step(direction);
+        return true;
+    }
+
+    static int direction(String action) {
+        return ACTION_BACK.equals(action) ? -1 : ACTION_FORWARD.equals(action) ? 1 : 0;
     }
 
     /** The button label, "−10" or "+10", with a real minus sign. */

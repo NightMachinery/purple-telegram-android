@@ -1032,4 +1032,6 @@
     <string name="PurpleSyncChatMoveFinishedSearching">Your settings were copied to the new chat, but the move could not be confirmed. Purple is looking for the chat with the newest settings.</string>
     <string name="PurpleSeekBack">Back %1$s s</string>
     <string name="PurpleSeekForward">Forward %1$s s</string>
+    <string name="PurpleSeekStep">Seek step</string>
+    <string name="PurpleSeekStepValue">%1$d s</string>
 </resources>

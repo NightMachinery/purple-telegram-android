@@ -61,16 +61,18 @@ PINS = [
      '    private final org.telegram.ui.PurpleRecordingStrip purple = new org.telegram.ui.PurpleRecordingStrip(this);\n'),
     ('ui/Components/FragmentContextView.java', '        currentStyle = style;\n',
      '        purple.updateStyle(style, titleTextView, resourcesProvider);\n'),
+    ('messenger/MusicPlayerService.java', '                public void onCustomAction(String action, android.os.Bundle extras) {\n',
+     '                    if (PurpleSeek.onCustomAction(action)) return;\n'),
     ('messenger/MusicPlayerService.java', '                public void onRewind() {\n',
      '                    PurpleSeek.step(-1);\n'),
     ('messenger/MusicPlayerService.java', '                public void onFastForward() {\n',
      '                    PurpleSeek.step(1);\n'),
     ('messenger/MusicPlayerService.java',
      '\n                long actions = PlaybackStateCompat.ACTION_PLAY_PAUSE | PlaybackStateCompat.ACTION_PLAY | PlaybackStateCompat.ACTION_PAUSE | PlaybackStateCompat.ACTION_SEEK_TO | PlaybackStateCompat.ACTION_SET_REPEAT_MODE | PlaybackStateCompat.ACTION_SET_SHUFFLE_MODE;\n',
-     '                actions |= PurpleSeek.sessionActions();\n'),
+     '                actions |= PurpleSeek.sessionActions(playbackState);\n'),
     ('messenger/MusicPlayerService.java',
      '\n            long actions = PlaybackStateCompat.ACTION_PLAY_PAUSE | PlaybackStateCompat.ACTION_PLAY | PlaybackStateCompat.ACTION_PAUSE | PlaybackStateCompat.ACTION_SEEK_TO | PlaybackStateCompat.ACTION_SET_REPEAT_MODE | PlaybackStateCompat.ACTION_SET_SHUFFLE_MODE;\n',
-     '            actions |= PurpleSeek.sessionActions();\n'),
+     '            actions |= PurpleSeek.sessionActions(playbackState);\n'),
 ]
 PROGRAMS = [('restart', 'MEDIA_RESTART_CHECKS'), ('pip', 'MEDIA_PIP_CHECKS'), ('core', 'MEDIA_QUEUE_CORE_CHECKS'), ('queue', 'MEDIA_QUEUE_CHECKS'),
             ('seek', 'MEDIA_SEEK_CHECKS'), ('seekcore', 'MEDIA_SEEK_CORE_CHECKS')]
@@ -92,12 +94,12 @@ helper = hooked['ui/PurpleChatHooks.java'].read_text(encoding='utf-8').split('bo
 assert helper.strip() == 'return org.telegram.messenger.purple.PurpleVoiceQueue.skipsInPlaylist(start, candidate);'
 pinned += 1
 # No other Purple call in the two F9 files: the strip routes everything through
-# its one helper, and the media session calls PurpleSeek four times.
+# its one helper, and the media session calls PurpleSeek five times.
 text = hooked['ui/Components/FragmentContextView.java'].read_text(encoding='utf-8')
 assert text.count('org.telegram.ui.PurpleRecordingStrip') == 2 and text.count('purple.') == 1, 'FragmentContextView: one helper, one call'
 pinned += 1
 text = hooked['messenger/MusicPlayerService.java'].read_text(encoding='utf-8')
-assert text.count('PurpleSeek.') == 4 and text.count('import org.telegram.messenger.purple.PurpleSeek;\n') == 1, 'MusicPlayerService: four PurpleSeek calls'
+assert text.count('PurpleSeek.') == 5 and text.count('import org.telegram.messenger.purple.PurpleSeek;\n') == 1, 'MusicPlayerService: five PurpleSeek calls'
 assert 'purple.Purple' not in text.replace('import org.telegram.messenger.purple.PurpleSeek;', ''), 'MusicPlayerService: no other Purple class'
 pinned += 1
 helper = hooked['ui/PurpleRecordingStrip.java'].read_text(encoding='utf-8')

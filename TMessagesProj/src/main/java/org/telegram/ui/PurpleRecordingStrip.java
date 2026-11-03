@@ -4,6 +4,7 @@ import static org.telegram.messenger.AndroidUtilities.dp;
 import static org.telegram.messenger.LocaleController.formatString;
 
 import android.content.Context;
+import android.graphics.Canvas;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
@@ -25,7 +26,10 @@ import org.telegram.ui.Components.LayoutHelper;
  * The two buttons sit left of the speed button and show only in the audio
  * player style. Their labels follow {@code [playback] seek_step}: they are
  * read again whenever the strip enters the audio style, the buttons are
- * attached, or one is pressed, so a changed step shows without a restart.
+ * attached, one is pressed, or the Seek step row writes a new step
+ * ({@link #relabelAll}). Their colour follows the theme: each draw checks it,
+ * because {@code FragmentContextView.updateColors} recolours only upstream's
+ * buttons.
  */
 public final class PurpleRecordingStrip {
 
@@ -35,7 +39,13 @@ public final class PurpleRecordingStrip {
     /** Where the speed button ends, counted from the strip's right edge. */
     static final int SPEED_END_DP = 72;
 
+    /** The live strips, for {@link #relabelAll}. Main thread only. */
+    private static final java.util.Set<PurpleRecordingStrip> STRIPS =
+            java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
+
     private final FragmentContextView strip;
+    private Theme.ResourcesProvider resourcesProvider;
+    private int color;
     private TextView back;
     private TextView forward;
     private View paddedTitle;
@@ -43,6 +53,14 @@ public final class PurpleRecordingStrip {
 
     public PurpleRecordingStrip(FragmentContextView strip) {
         this.strip = strip;
+        STRIPS.add(this);
+    }
+
+    /** Relabels every live strip's buttons after the step changed. Main thread. */
+    public static void relabelAll() {
+        for (PurpleRecordingStrip strip : new java.util.ArrayList<>(STRIPS)) {
+            strip.relabel();
+        }
     }
 
     /**
@@ -57,10 +75,11 @@ public final class PurpleRecordingStrip {
      */
     public void updateStyle(int style, View title, Theme.ResourcesProvider resourcesProvider) {
         final boolean audio = style == FragmentContextView.STYLE_AUDIO_PLAYER;
+        this.resourcesProvider = resourcesProvider;
         if (audio && back == null) {
             final Context context = strip.getContext();
-            back = button(context, -1, resourcesProvider);
-            forward = button(context, 1, resourcesProvider);
+            back = button(context, -1);
+            forward = button(context, 1);
             strip.addView(forward, LayoutHelper.createFrame(BUTTON_DP, BUTTON_DP, Gravity.TOP | Gravity.RIGHT, 0, 0, SPEED_END_DP, 0));
             strip.addView(back, LayoutHelper.createFrame(BUTTON_DP, BUTTON_DP, Gravity.TOP | Gravity.RIGHT, 0, 0, SPEED_END_DP + BUTTON_DP, 0));
         }
@@ -87,21 +106,24 @@ public final class PurpleRecordingStrip {
         }
     }
 
-    private TextView button(Context context, int direction, Theme.ResourcesProvider resourcesProvider) {
+    private TextView button(Context context, int direction) {
         final TextView button = new TextView(context) {
             @Override
             protected void onAttachedToWindow() {
                 super.onAttachedToWindow();
                 relabel();
             }
+
+            @Override
+            protected void onDraw(Canvas canvas) {
+                recolor();
+                super.onDraw(canvas);
+            }
         };
-        final int color = Theme.getColor(Theme.key_inappPlayerClose, resourcesProvider);
-        button.setTextColor(color);
         button.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
         button.setGravity(Gravity.CENTER);
         button.setSingleLine(true);
         button.setIncludeFontPadding(false);
-        button.setBackground(Theme.createSelectorDrawable(color & 0x19ffffff, 1, dp(14)));
         button.setTag(direction);
         button.setOnClickListener(v -> {
             PurpleSeek.step(direction);
@@ -117,6 +139,27 @@ public final class PurpleRecordingStrip {
         final int step = PurpleSeek.stepSeconds();
         label(back, -1, step);
         label(forward, 1, step);
+        recolor();
+    }
+
+    /**
+     * Sets both buttons' text colour and selector from the current theme when
+     * it changed since the last time, so a day and night switch with the strip
+     * alive recolours them on their next draw.
+     */
+    private void recolor() {
+        if (back == null) {
+            return;
+        }
+        final int now = Theme.getColor(Theme.key_inappPlayerClose, resourcesProvider);
+        if (now == color && back.getBackground() != null) {
+            return;
+        }
+        color = now;
+        for (TextView button : new TextView[] {back, forward}) {
+            button.setTextColor(now);
+            button.setBackground(Theme.createSelectorDrawable(now & 0x19ffffff, 1, dp(14)));
+        }
     }
 
     private static void label(TextView button, int direction, int step) {

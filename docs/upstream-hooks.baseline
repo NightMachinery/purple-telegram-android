@@ -33,7 +33,7 @@ file TMessagesProj/src/main/java/org/telegram/messenger/MediaDataController.java
 file TMessagesProj/src/main/java/org/telegram/messenger/MessageObject.java 1 1 1
 file TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java 65 3 29
 file TMessagesProj/src/main/java/org/telegram/messenger/MessagesStorage.java 119 41 28
-file TMessagesProj/src/main/java/org/telegram/messenger/MusicPlayerService.java 13 0 4
+file TMessagesProj/src/main/java/org/telegram/messenger/MusicPlayerService.java 14 0 5
 file TMessagesProj/src/main/java/org/telegram/messenger/NotificationsController.java 87 62 53
 file TMessagesProj/src/main/java/org/telegram/messenger/OpenAttachedMenuBotReceiver.java 1 0 1
 file TMessagesProj/src/main/java/org/telegram/messenger/OpenChatReceiver.java 1 0 1

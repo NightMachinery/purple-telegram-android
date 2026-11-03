@@ -89,6 +89,8 @@ public class PurpleSettingsActivity extends UniversalFragment
     private static final int ROW_PEEK_FOCUS = 0x70750021;
     private static final int ROW_PEEK_READY_TIMEOUT = 0x70750026;
     private static final int ROW_VOICE_QUEUE = 0x70750027;
+    /** F9's step chooser, first of the media recording block 0x70750500-0x7075050f. */
+    private static final int ROW_SEEK_STEP = 0x70750500;
 
     /**
      * Where the trade log's rows start numbering.
@@ -267,6 +269,9 @@ public class PurpleSettingsActivity extends UniversalFragment
         voiceQueue.checked = org.telegram.messenger.purple.PurpleVoiceQueue.enabled();
         items.add(voiceQueue);
         items.add(UItem.asShadow(getString(R.string.PurpleVoiceQueuePrivateInfo)));
+        // [playback] seek_step (F9): read through the core like the switch above.
+        items.add(UItem.asButton(ROW_SEEK_STEP, getString(R.string.PurpleSeekStep),
+                formatString(R.string.PurpleSeekStepValue, org.telegram.messenger.purple.PurpleSeek.stepSeconds())));
 
         final UItem focus = UItem.asCheck(ROW_FOCUS, getString(R.string.PurpleFollowDnd));
         // The parser's answer rather than the raw key: it turns focus sync off
@@ -482,6 +487,7 @@ public class PurpleSettingsActivity extends UniversalFragment
                 && item.id != ROW_LAST_SEEN_SKIP_CONFIRMATION
                 && item.id != ROW_PEEK_DURATION && item.id != ROW_PEEK_DELAY && item.id != ROW_PEEK_EXIT && item.id != ROW_PEEK_READY_TIMEOUT
                 && item.id != ROW_SCHEDULE && item.id != ROW_PREMIUM && item.id != ROW_SUGGESTIONS && item.id != ROW_VOICE_QUEUE
+                && item.id != ROW_SEEK_STEP
                 && item.id != ROW_FOCUS && item.id != ROW_PEEK_FOCUS) {
             String held = PurpleWriter.ownerRefusal();
             if (held != null) PurpleWriterUI.explain(this, held, this::rebuild);
@@ -492,7 +498,8 @@ public class PurpleSettingsActivity extends UniversalFragment
         // the rows were built without one; when none can be had, the tap
         // says why rather than passing no session to the writer.
         final boolean writes = item.id == ROW_PREMIUM
-                || item.id == ROW_SUGGESTIONS || item.id == ROW_FOCUS || item.id == ROW_VOICE_QUEUE;
+                || item.id == ROW_SUGGESTIONS || item.id == ROW_FOCUS || item.id == ROW_VOICE_QUEUE
+                || item.id == ROW_SEEK_STEP;
         final PurpleWriter.Session session = writes && writer == null
                 ? PurpleWriterUI.captureOrExplain(this, true, this::rebuild) : writer;
         if (writes && session == null) return;
@@ -533,6 +540,9 @@ public class PurpleSettingsActivity extends UniversalFragment
         case ROW_VOICE_QUEUE:
             write(PurpleWriter.setTableBool(session,
                     "playback", "private_chat_queue_p", !item.checked, "voice queue switch"));
+            break;
+        case ROW_SEEK_STEP:
+            chooseSeekStep(session);
             break;
         case ROW_FOCUS:
             write(PurpleWriter.setTableBool(session,
@@ -608,6 +618,31 @@ public class PurpleSettingsActivity extends UniversalFragment
                     .show();
         }
         rebuild();
+    }
+
+    /**
+     * The Seek step chooser (F9): 5, 10, 15 or 30 s, written as {@code
+     * [playback] seek_step}; the row shows the current step. After the write
+     * every live strip relabels its seek buttons at once.
+     */
+    private void chooseSeekStep(PurpleWriter.Session session) {
+        if (getParentActivity() == null) return;
+        final int[] steps = org.telegram.messenger.purple.PurpleSeek.choices();
+        final int current = org.telegram.messenger.purple.PurpleSeek.stepSeconds();
+        final CharSequence[] labels = new CharSequence[steps.length];
+        for (int i = 0; i < steps.length; i++) {
+            labels[i] = formatString(R.string.PurpleSeekStepValue, steps[i]);
+        }
+        AlertDialog.Builder dialog = new AlertDialog.Builder(getParentActivity());
+        dialog.setTitle(getString(R.string.PurpleSeekStep));
+        dialog.setItems(labels, (d, which) -> {
+            if (steps[which] == current) return;
+            write(PurpleWriter.setTableString(session, "playback", "seek_step",
+                    org.telegram.messenger.purple.PurpleSeek.settingValue(steps[which]), "seek step chooser"));
+            PurpleRecordingStrip.relabelAll();
+        });
+        dialog.setNegativeButton(getString(R.string.Cancel), null);
+        showDialog(dialog.create());
     }
 
     /** Rebuilds the rows from the file, which is also what trying a held write again means here. */

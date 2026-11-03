@@ -151,22 +151,32 @@ The design is [docs/media-recording-design.md](docs/media-recording-design.md)
 **Seek back and forward (F9).** The audio player strip at the top of a screen
 (`FragmentContextView`, where a playing voice, round or music message shows)
 gains two buttons left of the speed button, "−10" and "+10", that jump the
-playing message back or forward. The step is `[playback] seek_step` in
-settings.toml: `"5s"`, `"10s"` (the default), `"15s"` or `"30s"`; anything else
-warns and keeps 10 s. It is app-wide and syncs with the file. The labels follow
-the step when the strip next enters the player style or is shown again, and a
-press always uses the current step. A seek before the start goes to 0:00; a
+playing message back or forward. The step is chosen in Purple Settings > Media
+playback > **Seek step** (5, 10, 15 or 30 s), which is `[playback] seek_step`
+in settings.toml: `"5s"`, `"10s"` (the default), `"15s"` or `"30s"`; anything
+else warns and keeps 10 s. It is app-wide and syncs with the file. Choosing a
+step in the row relabels every open strip at once, and a press always uses the
+current step. A seek starts from the player's live position and uses the
+player's own duration, so a paused round moves on every press and a music file
+with a wrong duration tag still steps by the full step. A seek before the start goes to 0:00; a
 seek forward stops one second before the end, so the queue does not advance by
 surprise, and inside that last second it stays put. Headsets, car systems and
 watches get the same step: the media session now advertises rewind and fast
 forward, and the session's default media-button handling maps the headset's
-rewind and fast-forward keys to them. The expanded player keeps upstream's
-long-press rewinding. `PurpleSeek` computes the target and seeks through
-`MediaController.seekToProgress`, the call the session's seek-to already
-makes; `PurpleCore.seekStepSeconds` reads the step from purple-core.
+rewind and fast-forward keys to them. The session also carries two custom
+actions, "Back N s" and "Forward N s" at the current step, which the system
+media controls (the notification and lock screen on Android 13 and later) draw
+as seek buttons; for a voice or round message they take the empty previous and
+next slots. Older Android versions build the notification's buttons from
+upstream's own action list, so they show no seek buttons. The expanded player
+keeps upstream's long-press rewinding. Keyboard shortcut commands for seeking
+are Desktop only; on Android, hardware media keys (a keyboard's or headset's
+rewind and fast-forward) do the same through the media session. `PurpleSeek`
+computes the target and seeks through `MediaController.seekToProgressMs`;
+`PurpleCore.seekStepSeconds` reads the step from purple-core.
 `PurpleRecordingStrip` is the strip's per-instance helper (the recording dock
-will share it). The settings chooser row is not built yet; set the step in
-settings.toml.
+will share it); its buttons take their colour from the theme on each draw, so
+they follow a day and night switch.
 
 Upstream files it touches, and why:
 
@@ -175,11 +185,14 @@ Upstream files it touches, and why:
   branches, that shows or hides the buttons and keeps the title clear of them by
   its right padding. It runs before the branches so the group call styles, which
   set the title's padding outright, do so after Purple has taken its share back.
-- `MusicPlayerService`: one `actions |= PurpleSeek.sessionActions()` line at
-  each of the two places that build the session's actions (the notification and
-  `updatePlaybackState`), and `onRewind` and `onFastForward` in the session
-  callback, each a one-line call to `PurpleSeek.step`. The file calls
-  `PurpleSeek` four times, so it imports it once.
+- `MusicPlayerService`: one `actions |= PurpleSeek.sessionActions(playbackState)`
+  line at each of the two places that build the session's state (the
+  notification and `updatePlaybackState`), which adds the rewind and
+  fast-forward actions and the two seek custom actions; `onRewind` and
+  `onFastForward` in the session callback, each a one-line call to
+  `PurpleSeek.step`; and one early return at the top of `onCustomAction` for
+  the seek custom actions. The file calls `PurpleSeek` five times, so it imports
+  it once.
 
 The media-playback host suite pins these hooks and runs the seek targets and
 the real `seekStepSeconds` bridge over the host core library.

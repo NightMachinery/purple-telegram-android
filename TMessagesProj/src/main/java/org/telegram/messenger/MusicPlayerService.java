@@ -208,6 +208,7 @@ public class MusicPlayerService extends Service implements NotificationCenter.No
 
                 @Override
                 public void onCustomAction(String action, android.os.Bundle extras) {
+                    if (PurpleSeek.onCustomAction(action)) return;
                     if (NOTIFY_REPEAT.equals(action)) {
                         SharedConfig.setRepeatMode((SharedConfig.repeatMode + 1) % 3);
                         updateRepeatMode();
@@ -496,7 +497,7 @@ public class MusicPlayerService extends Service implements NotificationCenter.No
                 }
             } else {
                 long actions = PlaybackStateCompat.ACTION_PLAY_PAUSE | PlaybackStateCompat.ACTION_PLAY | PlaybackStateCompat.ACTION_PAUSE | PlaybackStateCompat.ACTION_SEEK_TO | PlaybackStateCompat.ACTION_SET_REPEAT_MODE | PlaybackStateCompat.ACTION_SET_SHUFFLE_MODE;
-                actions |= PurpleSeek.sessionActions();
+                actions |= PurpleSeek.sessionActions(playbackState);
                 if (messageObject.isMusic()) {
                     actions |= PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS | PlaybackStateCompat.ACTION_SKIP_TO_NEXT;
                 }
@@ -739,7 +740,7 @@ public class MusicPlayerService extends Service implements NotificationCenter.No
             playbackState.setState(PlaybackStateCompat.STATE_BUFFERING, 0, 1).setActions(0);
         } else {
             long actions = PlaybackStateCompat.ACTION_PLAY_PAUSE | PlaybackStateCompat.ACTION_PLAY | PlaybackStateCompat.ACTION_PAUSE | PlaybackStateCompat.ACTION_SEEK_TO | PlaybackStateCompat.ACTION_SET_REPEAT_MODE | PlaybackStateCompat.ACTION_SET_SHUFFLE_MODE;
-            actions |= PurpleSeek.sessionActions();
+            actions |= PurpleSeek.sessionActions(playbackState);
             MessageObject messageObject = MediaController.getInstance().getPlayingMessageObject();
             if (messageObject != null && messageObject.isMusic()) {
                 actions |= PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS | PlaybackStateCompat.ACTION_SKIP_TO_NEXT;
