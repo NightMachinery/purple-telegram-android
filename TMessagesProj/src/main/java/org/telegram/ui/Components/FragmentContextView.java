@@ -212,6 +212,7 @@ public class FragmentContextView extends FrameLayout implements NotificationCent
 
     private FragmentContextViewDelegate delegate;
     private final Theme.ResourcesProvider resourcesProvider;
+    private final org.telegram.ui.PurpleRecordingStrip purple = new org.telegram.ui.PurpleRecordingStrip(this);
     private final boolean isSideMenued;
 
     private boolean firstLocationsLoaded;
@@ -1172,6 +1173,7 @@ public class FragmentContextView extends FrameLayout implements NotificationCent
             }
         }
         currentStyle = style;
+        purple.updateStyle(style, titleTextView, resourcesProvider);
         frameLayout.setWillNotDraw(currentStyle != STYLE_INACTIVE_GROUP_CALL);
         if (style != STYLE_INACTIVE_GROUP_CALL) {
             notifyButtonEnabled = false;

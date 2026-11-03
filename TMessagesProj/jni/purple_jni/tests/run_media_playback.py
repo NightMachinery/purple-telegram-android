@@ -25,10 +25,12 @@ assert classes.is_dir() and args.json.is_file() and args.library.is_file()
 # The Purple classes the cases load from the receipt, which must be the ones
 # in this tree, and the files whose hooks are pinned below.
 purple = [java / 'messenger/purple' / name for name in [
-    'PurpleDoubleTap.java', 'PurpleMediaRestart.java', 'PurpleRoundPip.java', 'PurpleCore.java', 'PurpleVoiceQueue.java']]
+    'PurpleDoubleTap.java', 'PurpleMediaRestart.java', 'PurpleRoundPip.java', 'PurpleCore.java', 'PurpleVoiceQueue.java',
+    'PurpleSeek.java']]
 hooked = {name: java / name for name in [
     'ui/Cells/ChatMessageCell.java', 'ui/Components/PipRoundVideoView.java', 'ui/ChatActivity.java',
-    'ui/PurpleChatHooks.java', 'messenger/MediaController.java']}
+    'ui/PurpleChatHooks.java', 'messenger/MediaController.java', 'ui/Components/FragmentContextView.java',
+    'messenger/MusicPlayerService.java', 'ui/PurpleRecordingStrip.java']}
 hashes = {Path(item['path']): item['sha256'] for item in receipt['sources']}
 for path in purple + list(hooked.values()):
     assert hashes.get(path) == hashlib.sha256(path.read_bytes()).hexdigest(), str(path) + ' receipt mismatch'
@@ -53,9 +55,25 @@ PINS = [
     ('messenger/MediaController.java',
      '                        messageObject = arr.get(a);\n',
      '                        if (org.telegram.messenger.purple.PurpleVoiceQueue.skipsAppended(messageObject)) continue;\n'),
+    # F9: the strip's per-instance helper, handed each new style before the
+    # style branches run, and the media session's rewind and fast-forward.
+    ('ui/Components/FragmentContextView.java', '    private final Theme.ResourcesProvider resourcesProvider;\n',
+     '    private final org.telegram.ui.PurpleRecordingStrip purple = new org.telegram.ui.PurpleRecordingStrip(this);\n'),
+    ('ui/Components/FragmentContextView.java', '        currentStyle = style;\n',
+     '        purple.updateStyle(style, titleTextView, resourcesProvider);\n'),
+    ('messenger/MusicPlayerService.java', '                public void onRewind() {\n',
+     '                    PurpleSeek.step(-1);\n'),
+    ('messenger/MusicPlayerService.java', '                public void onFastForward() {\n',
+     '                    PurpleSeek.step(1);\n'),
+    ('messenger/MusicPlayerService.java',
+     '\n                long actions = PlaybackStateCompat.ACTION_PLAY_PAUSE | PlaybackStateCompat.ACTION_PLAY | PlaybackStateCompat.ACTION_PAUSE | PlaybackStateCompat.ACTION_SEEK_TO | PlaybackStateCompat.ACTION_SET_REPEAT_MODE | PlaybackStateCompat.ACTION_SET_SHUFFLE_MODE;\n',
+     '                actions |= PurpleSeek.sessionActions();\n'),
+    ('messenger/MusicPlayerService.java',
+     '\n            long actions = PlaybackStateCompat.ACTION_PLAY_PAUSE | PlaybackStateCompat.ACTION_PLAY | PlaybackStateCompat.ACTION_PAUSE | PlaybackStateCompat.ACTION_SEEK_TO | PlaybackStateCompat.ACTION_SET_REPEAT_MODE | PlaybackStateCompat.ACTION_SET_SHUFFLE_MODE;\n',
+     '            actions |= PurpleSeek.sessionActions();\n'),
 ]
 PROGRAMS = [('restart', 'MEDIA_RESTART_CHECKS'), ('pip', 'MEDIA_PIP_CHECKS'), ('core', 'MEDIA_QUEUE_CORE_CHECKS'), ('queue', 'MEDIA_QUEUE_CHECKS'),
-            ('seekcore', 'MEDIA_SEEK_CORE_CHECKS')]
+            ('seek', 'MEDIA_SEEK_CHECKS'), ('seekcore', 'MEDIA_SEEK_CORE_CHECKS')]
 
 assert not args.output.exists(), 'output must be an unused directory'
 args.output.mkdir(parents=True)
@@ -63,8 +81,8 @@ pinned = 0
 for name, signature, hook in PINS:
     text = hooked[name].read_text(encoding='utf-8')
     assert text.count(signature) == 1, name + ': ' + signature.strip()
-    assert text.count(hook) == 1, name + ': the hook appears once'
-    assert text.index(signature) + len(signature) == text.index(hook), name + ': ' + hook.strip() + ' opens ' + signature.strip()
+    assert text.count('\n' + hook) == 1, name + ': the hook appears once'
+    assert text.startswith(hook, text.index(signature) + len(signature)), name + ': ' + hook.strip() + ' opens ' + signature.strip()
     pinned += 1
 helper = hooked['ui/PurpleChatHooks.java'].read_text(encoding='utf-8').split('boolean roundLeavesToPip(MessageObject message, boolean needScroll) {', 1)[1].split('}', 1)[0]
 assert ' '.join(helper.split()) == ('return org.telegram.messenger.purple.PurpleRoundPip.leavesToPip( '
@@ -72,6 +90,18 @@ assert ' '.join(helper.split()) == ('return org.telegram.messenger.purple.Purple
 pinned += 1
 helper = hooked['ui/PurpleChatHooks.java'].read_text(encoding='utf-8').split('boolean skipsInVoicePlaylist(MessageObject start, MessageObject candidate) {', 1)[1].split('}', 1)[0]
 assert helper.strip() == 'return org.telegram.messenger.purple.PurpleVoiceQueue.skipsInPlaylist(start, candidate);'
+pinned += 1
+# No other Purple call in the two F9 files: the strip routes everything through
+# its one helper, and the media session calls PurpleSeek four times.
+text = hooked['ui/Components/FragmentContextView.java'].read_text(encoding='utf-8')
+assert text.count('org.telegram.ui.PurpleRecordingStrip') == 2 and text.count('purple.') == 1, 'FragmentContextView: one helper, one call'
+pinned += 1
+text = hooked['messenger/MusicPlayerService.java'].read_text(encoding='utf-8')
+assert text.count('PurpleSeek.') == 4 and text.count('import org.telegram.messenger.purple.PurpleSeek;\n') == 1, 'MusicPlayerService: four PurpleSeek calls'
+assert 'purple.Purple' not in text.replace('import org.telegram.messenger.purple.PurpleSeek;', ''), 'MusicPlayerService: no other Purple class'
+pinned += 1
+helper = hooked['ui/PurpleRecordingStrip.java'].read_text(encoding='utf-8')
+assert helper.count('PurpleSeek.step(direction);') == 1, 'the strip buttons seek through PurpleSeek'
 pinned += 1
 (args.output / 'pins.log').write_text('MEDIA_HOOK_PINS=%d\n' % pinned)
 

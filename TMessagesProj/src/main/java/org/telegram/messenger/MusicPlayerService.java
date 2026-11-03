@@ -40,6 +40,7 @@ import androidx.core.app.NotificationCompat;
 import androidx.media3.common.C;
 
 import org.telegram.messenger.audioinfo.AudioInfo;
+import org.telegram.messenger.purple.PurpleSeek;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.Theme;
@@ -143,6 +144,16 @@ public class MusicPlayerService extends Service implements NotificationCenter.No
                     if (playingMessageObject != null && playingMessageObject.isMusic()) {
                         MediaController.getInstance().playPreviousMessage();
                     }
+                }
+
+                @Override
+                public void onRewind() {
+                    PurpleSeek.step(-1);
+                }
+
+                @Override
+                public void onFastForward() {
+                    PurpleSeek.step(1);
                 }
 
                 @Override
@@ -485,6 +496,7 @@ public class MusicPlayerService extends Service implements NotificationCenter.No
                 }
             } else {
                 long actions = PlaybackStateCompat.ACTION_PLAY_PAUSE | PlaybackStateCompat.ACTION_PLAY | PlaybackStateCompat.ACTION_PAUSE | PlaybackStateCompat.ACTION_SEEK_TO | PlaybackStateCompat.ACTION_SET_REPEAT_MODE | PlaybackStateCompat.ACTION_SET_SHUFFLE_MODE;
+                actions |= PurpleSeek.sessionActions();
                 if (messageObject.isMusic()) {
                     actions |= PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS | PlaybackStateCompat.ACTION_SKIP_TO_NEXT;
                 }
@@ -727,6 +739,7 @@ public class MusicPlayerService extends Service implements NotificationCenter.No
             playbackState.setState(PlaybackStateCompat.STATE_BUFFERING, 0, 1).setActions(0);
         } else {
             long actions = PlaybackStateCompat.ACTION_PLAY_PAUSE | PlaybackStateCompat.ACTION_PLAY | PlaybackStateCompat.ACTION_PAUSE | PlaybackStateCompat.ACTION_SEEK_TO | PlaybackStateCompat.ACTION_SET_REPEAT_MODE | PlaybackStateCompat.ACTION_SET_SHUFFLE_MODE;
+            actions |= PurpleSeek.sessionActions();
             MessageObject messageObject = MediaController.getInstance().getPlayingMessageObject();
             if (messageObject != null && messageObject.isMusic()) {
                 actions |= PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS | PlaybackStateCompat.ACTION_SKIP_TO_NEXT;

@@ -143,6 +143,47 @@ shared-media Voice tab is built elsewhere, so while an earlier confined queue
 of the same chat is still the remembered one, your own new messages are not
 appended to it live.
 
+### Media recording
+
+The design is [docs/media-recording-design.md](docs/media-recording-design.md)
+(F6-F11 and extras). Android has F9 so far.
+
+**Seek back and forward (F9).** The audio player strip at the top of a screen
+(`FragmentContextView`, where a playing voice, round or music message shows)
+gains two buttons left of the speed button, "−10" and "+10", that jump the
+playing message back or forward. The step is `[playback] seek_step` in
+settings.toml: `"5s"`, `"10s"` (the default), `"15s"` or `"30s"`; anything else
+warns and keeps 10 s. It is app-wide and syncs with the file. The labels follow
+the step when the strip next enters the player style or is shown again, and a
+press always uses the current step. A seek before the start goes to 0:00; a
+seek forward stops one second before the end, so the queue does not advance by
+surprise, and inside that last second it stays put. Headsets, car systems and
+watches get the same step: the media session now advertises rewind and fast
+forward, and the session's default media-button handling maps the headset's
+rewind and fast-forward keys to them. The expanded player keeps upstream's
+long-press rewinding. `PurpleSeek` computes the target and seeks through
+`MediaController.seekToProgress`, the call the session's seek-to already
+makes; `PurpleCore.seekStepSeconds` reads the step from purple-core.
+`PurpleRecordingStrip` is the strip's per-instance helper (the recording dock
+will share it). The settings chooser row is not built yet; set the step in
+settings.toml.
+
+Upstream files it touches, and why:
+
+- `FragmentContextView`: a field holding the per-instance helper, and one call
+  in `updateStyle`, right after the new style is set and before the style
+  branches, that shows or hides the buttons and keeps the title clear of them by
+  its right padding. It runs before the branches so the group call styles, which
+  set the title's padding outright, do so after Purple has taken its share back.
+- `MusicPlayerService`: one `actions |= PurpleSeek.sessionActions()` line at
+  each of the two places that build the session's actions (the notification and
+  `updatePlaybackState`), and `onRewind` and `onFastForward` in the session
+  callback, each a one-line call to `PurpleSeek.step`. The file calls
+  `PurpleSeek` four times, so it imports it once.
+
+The media-playback host suite pins these hooks and runs the seek targets and
+the real `seekStepSeconds` bridge over the host core library.
+
 ### Keep Media per chat
 
 The chat menu shows how long this chat's cached media is kept, for example

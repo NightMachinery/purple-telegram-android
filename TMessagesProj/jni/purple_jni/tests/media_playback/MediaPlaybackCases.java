@@ -27,6 +27,10 @@ public final class MediaPlaybackCases {
             core();
             System.out.println("MEDIA_QUEUE_CORE_CHECKS=" + checks);
             break;
+        case "seek":
+            seek();
+            System.out.println("MEDIA_SEEK_CHECKS=" + checks);
+            break;
         case "seekcore":
             seekCore();
             System.out.println("MEDIA_SEEK_CORE_CHECKS=" + checks);
@@ -175,6 +179,53 @@ public final class MediaPlaybackCases {
         }
     }
 
+    /** F9's seek targets, step validation and labels, without a player. */
+    static void seek() {
+        final long min = 60_000;
+        // Back and forward by every step from the middle of a 10-minute message.
+        for (int step : PurpleSeek.STEPS) {
+            check(PurpleSeek.validStep(step) == step, step + " s is a valid step");
+            check(PurpleSeek.targetMs(5 * min, 10 * min, -1, step) == 5 * min - step * 1000L, "back " + step + " s");
+            check(PurpleSeek.targetMs(5 * min, 10 * min, 1, step) == 5 * min + step * 1000L, "forward " + step + " s");
+            check(PurpleSeek.label(-1, step).equals("\u2212" + step), "the back label for " + step);
+            check(PurpleSeek.label(1, step).equals("+" + step), "the forward label for " + step);
+        }
+        for (int bad : new int[] {-10, 0, 1, 20, 60, Integer.MAX_VALUE}) {
+            check(PurpleSeek.validStep(bad) == PurpleCore.SEEK_STEP_DEFAULT, bad + " falls back to the default step");
+        }
+        check(PurpleCore.SEEK_STEP_DEFAULT == 10, "the default step is 10 s");
+        // Before the start goes to 0:00.
+        check(PurpleSeek.targetMs(4_000, 60_000, -1, 10) == 0, "back from 0:04 goes to 0:00");
+        check(PurpleSeek.targetMs(10_000, 60_000, -1, 10) == 0, "back from exactly one step goes to 0:00");
+        check(PurpleSeek.targetMs(0, 60_000, -1, 10) == -1, "back at 0:00 seeks nothing");
+        // Past the end stops one second before it.
+        check(PurpleSeek.targetMs(55_000, 60_000, 1, 10) == 59_000, "forward near the end stops a second before it");
+        check(PurpleSeek.targetMs(49_000, 60_000, 1, 10) == 59_000, "forward to exactly a second before the end");
+        check(PurpleSeek.targetMs(48_999, 60_000, 1, 10) == 58_999, "forward short of the margin is a full step");
+        check(PurpleSeek.targetMs(59_000, 60_000, 1, 10) == -1, "forward at the margin seeks nothing");
+        check(PurpleSeek.targetMs(59_500, 60_000, 1, 10) == -1, "forward inside the last second stays put");
+        check(PurpleSeek.targetMs(59_500, 60_000, -1, 10) == 49_500, "back from the last second is a full step");
+        check(PurpleSeek.targetMs(60_000, 60_000, -1, 30) == 30_000, "back from the end");
+        // Short messages.
+        check(PurpleSeek.targetMs(0, 3_000, 1, 10) == 2_000, "forward on a 3 s message stops at 0:02");
+        check(PurpleSeek.targetMs(0, 800, 1, 10) == -1, "forward on a message under a second seeks nothing");
+        check(PurpleSeek.targetMs(500, 800, -1, 5) == 0, "back on a message under a second goes to 0:00");
+        // Positions outside the message are clamped first.
+        check(PurpleSeek.targetMs(-5_000, 60_000, 1, 10) == 10_000, "a negative position counts as 0:00");
+        check(PurpleSeek.targetMs(90_000, 60_000, -1, 10) == 50_000, "a position past the end counts as the end");
+        // Nothing to seek.
+        check(PurpleSeek.targetMs(5_000, 0, 1, 10) == -1, "an unknown duration seeks nothing");
+        check(PurpleSeek.targetMs(5_000, -1, -1, 10) == -1, "a negative duration seeks nothing");
+        check(PurpleSeek.targetMs(5_000, 60_000, 0, 10) == -1, "no direction seeks nothing");
+        check(PurpleSeek.targetMs(5_000, 60_000, -7, 10) == 0, "any negative direction is back");
+        check(PurpleSeek.targetMs(5_000, 60_000, 7, 10) == 15_000, "any positive direction is forward");
+        // A long message does not overflow.
+        final long day = 24L * 3600 * 1000;
+        check(PurpleSeek.targetMs(day, 2 * day, 1, 30) == day + 30_000, "a day-long position");
+        // The media session's added actions are rewind and fast-forward only.
+        check(PurpleSeek.sessionActions() == (64L | 8L), "the session adds ACTION_FAST_FORWARD and ACTION_REWIND");
+    }
+
     /**
      * The real seekStepSeconds bridge over the real core (F9): each allowed
      * step, the default, and values the core refuses, read from a loaded
@@ -199,6 +250,7 @@ public final class MediaPlaybackCases {
             final PurpleCore.Loaded loaded = PurpleCore.load(files[f].getBytes("UTF-8"), null, "fixture", "android", "mobile");
             check(loaded.ok, "settings file " + f + " loads");
             check(PurpleCore.seekStepSeconds() == steps[f], "file " + f + " gives a step of " + steps[f]);
+            check(PurpleSeek.stepSeconds() == steps[f], "PurpleSeek reads the same step from file " + f);
             boolean warned = false;
             for (String warning : loaded.warnings) {
                 warned |= warning.contains("seek_step");

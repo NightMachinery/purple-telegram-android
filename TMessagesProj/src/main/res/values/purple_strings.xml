@@ -1030,4 +1030,6 @@
     <string name="PurpleSyncChatMoveRecoveryWaiting">Checking whether the move to the new sync chat finished. The next check is due at %1$s. Tap Retry after that time to check.</string>
     <string name="PurpleSyncChatMoveFinishedForFollow">Your settings were copied to the new chat, but another sync chat has newer settings. Use Follow to keep syncing with it.</string>
     <string name="PurpleSyncChatMoveFinishedSearching">Your settings were copied to the new chat, but the move could not be confirmed. Purple is looking for the chat with the newest settings.</string>
+    <string name="PurpleSeekBack">Back %1$s s</string>
+    <string name="PurpleSeekForward">Forward %1$s s</string>
 </resources>
