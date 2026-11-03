@@ -941,6 +941,61 @@ Java_org_telegram_messenger_purple_PurpleSyncCore_classifyHistoryPageNative(
 	return Reply(env, metadata);
 }
 
+// First use of the sync chat by a device with no state in its space: core's
+// SyncFirstUseInputOf and PlanSyncFirstUse, with the user's answer as `choice`
+// (0 none, 1 synced, 2 this device). `available` is false when the inventory
+// gives no input (incomplete, ambiguous or a newer schema).
+extern "C" JNIEXPORT jobject JNICALL
+Java_org_telegram_messenger_purple_PurpleSyncCore_firstUseNative(
+		JNIEnv *env, jclass, jlong accountUserId, jboolean scanComplete,
+		jintArray ids, jintArray transport, jlongArray documentIds,
+		jlongArray editDates, jobjectArray records, jint localStatus,
+		jbyteArray localText, jboolean localLastGood, jint choice) {
+	auto error = QString();
+	const auto inventory = ReadInventory(env, accountUserId, scanComplete,
+		ids, transport, documentIds, editDates, records, error);
+	if (!inventory) {
+		return Invalid(env, error);
+	}
+	const auto local = ReadLocal(env, localStatus, localText, localLastGood,
+		error);
+	if (!local) {
+		return Invalid(env, error);
+	} else if (choice < 0 || choice > 2) {
+		return Invalid(env, u"InvalidChoice"_q);
+	}
+	auto input = Purple::SyncFirstUseInputOf(*inventory, *local);
+	auto metadata = Valid();
+	metadata.insert(u"available"_q, bool(input));
+	metadata.insert(u"defaults"_q, Purple::IsDefaultSyncSettings(*local));
+	if (input) {
+		input->choice = (choice == 1)
+			? Purple::SyncFirstUseChoice::Synced
+			: (choice == 2)
+			? Purple::SyncFirstUseChoice::ThisDevice
+			: Purple::SyncFirstUseChoice::None;
+		const auto action = Purple::PlanSyncFirstUse(*input);
+		metadata.insert(u"action"_q, [&] {
+			switch (action) {
+			case Purple::SyncFirstUseAction::Wait: return u"Wait"_q;
+			case Purple::SyncFirstUseAction::Publish: return u"Publish"_q;
+			case Purple::SyncFirstUseAction::Join: return u"Join"_q;
+			case Purple::SyncFirstUseAction::JoinSilently: return u"JoinSilently"_q;
+			case Purple::SyncFirstUseAction::Ask: return u"Ask"_q;
+			}
+			return QString();
+		}());
+		metadata.insert(u"groupEmpty"_q, input->groupEmpty);
+		metadata.insert(u"head"_q, bool(input->head));
+		metadata.insert(u"sameBytes"_q, input->head
+			&& local->status == Purple::SyncSettingsFileStatus::Present
+			&& input->head->text == local->text);
+		metadata.insert(u"space"_q, inventory->directory.selectedSpace
+			? *inventory->directory.selectedSpace : QString());
+	}
+	return Reply(env, metadata);
+}
+
 extern "C" JNIEXPORT jstring JNICALL
 Java_org_telegram_messenger_purple_PurpleSyncCore_settingsFingerprintNative(
 		JNIEnv *env, jclass, jbyteArray input) {
@@ -1050,6 +1105,7 @@ Java_org_telegram_messenger_purple_PurpleSyncCore_reviewConfigNative(
 	auto metadata = Valid();
 	metadata.insert(u"inventory"_q, Name(inventory->status));
 	metadata.insert(u"review"_q, Name(review.status));
+	metadata.insert(u"reason"_q, Purple::SyncConfigReviewReasonCode(review.reason));
 	metadata.insert(u"accountUserId"_q, QString::number(review.accountUserId));
 	metadata.insert(u"bound"_q, review.bound);
 	metadata.insert(u"space"_q, review.space);

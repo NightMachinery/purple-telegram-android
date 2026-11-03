@@ -224,6 +224,11 @@ public final class PurpleSyncCore {
     public static final class Review extends Answer {
         public final InventoryStatus inventory;
         public final ReviewStatus status;
+        /**
+         * Why a NeedsReview review refused, as core's code ({@code space_mismatch}, {@code unreadable},
+         * {@code ambiguous}, {@code newer_schema}, {@code heads_unclear}, {@code own_records}); empty otherwise.
+         */
+        public final String reason;
         public final long accountUserId;
         public final boolean bound;
         public final String space;
@@ -250,6 +255,7 @@ public final class PurpleSyncCore {
             super(error);
             inventory = InventoryStatus.Incomplete;
             this.status = status;
+            reason = "";
             accountUserId = 0;
             bound = false;
             space = "";
@@ -277,6 +283,7 @@ public final class PurpleSyncCore {
             super(null);
             inventory = enumOf(InventoryStatus.class, string(json, "inventory"));
             status = enumOf(ReviewStatus.class, string(json, "review"));
+            reason = json.optString("reason", "");
             accountUserId = decimal(json, "accountUserId");
             bound = bool(json, "bound");
             space = string(json, "space");
@@ -746,6 +753,10 @@ public final class PurpleSyncCore {
             boolean impactEnabled, boolean appWide, int mode, byte[] globalFile,
             String[] accounts, byte[][] accountFiles, int[] modes);
     private static native RawReply diffConfigNative(byte[] before, byte[] after);
+    private static native RawReply firstUseNative(long accountUserId,
+            boolean scanComplete, int[] ids, int[] transport,
+            long[] documentIds, long[] editDates, byte[][] records,
+            int localStatus, byte[] localText, boolean localLastGood, int choice);
     private static native RawReply planConfigApplyNative(long accountUserId,
             boolean scanComplete, int[] ids, int[] transport,
             long[] documentIds, long[] editDates, byte[][] records,
@@ -896,6 +907,44 @@ public final class PurpleSyncCore {
                         impact != null ? impact.accounts : null, impact != null ? impact.files : null,
                         impact != null ? impact.modes : null),
                 (raw, json) -> new Review(json, raw.texts), Review::failure);
+    }
+
+    /** What core's first-use policy does for a device with no state in the chat's space. */
+    public enum FirstUseAction { Wait, Publish, Join, JoinSilently, Ask }
+    /** The user's one-time answer: None until asked and answered. */
+    public enum FirstUseChoice { None, Synced, ThisDevice }
+
+    /** {@code PlanSyncFirstUse(SyncFirstUseInputOf(inventory, local))} with the user's {@code choice}. */
+    public static final class FirstUse extends Answer {
+        /** False when the inventory gives core no input: incomplete, ambiguous, or a newer schema. */
+        public final boolean available;
+        public final FirstUseAction action;
+        public final boolean groupEmpty, head, sameBytes, defaults;
+        public final String space;
+
+        FirstUse(String error) {
+            super(error);
+            available = false; action = null; groupEmpty = false; head = false; sameBytes = false; defaults = false; space = "";
+        }
+
+        FirstUse(JSONObject json) throws JSONException {
+            super(null);
+            available = bool(json, "available");
+            action = available ? enumOf(FirstUseAction.class, string(json, "action")) : null;
+            groupEmpty = available && bool(json, "groupEmpty");
+            head = available && bool(json, "head");
+            sameBytes = available && bool(json, "sameBytes");
+            defaults = bool(json, "defaults");
+            space = available ? string(json, "space") : "";
+        }
+    }
+
+    public static FirstUse firstUse(PurpleSyncInventory inventory, PurpleSyncSettingsFile.Contents local, FirstUseChoice choice) {
+        if (inventory == null || local == null || choice == null) return new FirstUse("NullInput");
+        return answer(() -> firstUseNative(inventory.accountUserId, inventory.scanComplete, inventory.ids,
+                        inventory.transport, inventory.documentIds, inventory.editDates, inventory.bytes,
+                        localStatus(local), localText(local), lastGood(local), choice.ordinal()),
+                (raw, json) -> new FirstUse(json), FirstUse::new);
     }
 
     public static Diff diff(byte[] before, byte[] after) {
