@@ -40,8 +40,8 @@ import java.util.Map;
  * </ul>
  *
  * Because a recording that ends from preview sends nothing, a paused session
- * is settled by the next start in its chat (sent if its file is still there,
- * discarded if not) or by a periodic check that finds its file deleted.
+ * ends at the next start in its chat, or stays until the next app start
+ * settles its entry. A discard from preview is therefore not kept.
  *
  * <p>Thread safety: every method is synchronized. The registry calls them on
  * its worker, except {@link #snapshotCancel}, which must run on the thread
@@ -79,7 +79,6 @@ public final class PurpleRecordingSessions {
     static final long DISCOVER_DELAY_MS = 1000;
     /** A voice stop is a discard if upstream deleted the file and sent nothing by then (a legacy join can take seconds). */
     static final long DISCARD_DECIDE_MS = 15000;
-    static final long PAUSED_CHECK_MS = 5000;
     static final long SENDING_CHECK_MS = 2000;
     static final int SENDING_CHECKS = 30;
     /** A registration older than this when its recordStarted comes is not that recording's. */
@@ -91,7 +90,6 @@ public final class PurpleRecordingSessions {
     private File pendingMedia;
     private File pendingJournal;
     private long pendingAt;
-    private boolean pausedCheckScheduled;
 
     public PurpleRecordingSessions(PurpleRecordingStore store, Env env) {
         this.store = store;
@@ -203,8 +201,7 @@ public final class PurpleRecordingSessions {
             if (reason == 2) {
                 paused(session);
                 env.flushJournal(session.current.entry.journal);
-                schedulePausedCheck();
-            } else if (reason == 4) {
+                    } else if (reason == 4) {
                 end(session);
             } else if (reason == 5) {
                 sending(session);
@@ -217,8 +214,7 @@ public final class PurpleRecordingSessions {
         }
         if (reason == 1) {
             paused(session);
-            schedulePausedCheck();
-        } else {
+            } else {
             session.paused = false;
             env.schedule(() -> checkDiscarded(session), DISCARD_DECIDE_MS);
         }
@@ -233,7 +229,6 @@ public final class PurpleRecordingSessions {
             return;
         }
         paused(session);
-        schedulePausedCheck();
         if (session.round) {
             // The preview is a finished copy; the recording continues in the
             // registered file, which stays the entry's media.
@@ -438,36 +433,14 @@ public final class PurpleRecordingSessions {
         attach(session.current, media, journal);
     }
 
-    /** The previous recording in this chat ended from preview: sent if its file is there, discarded if not. */
+    /**
+     * The previous recording in this chat ended from preview. A missing file
+     * does not mean a discard: a V2 round sent after a trim is remuxed and its
+     * old file erased, and clearing media deletes files too. So it simply
+     * ends; a discard from preview is not kept (re-check N2).
+     */
     private void supersede(Session session) {
-        final File file = session.current.file;
-        if (file != null && !file.exists()) {
-            discard(session);
-        } else {
-            end(session);
-        }
-    }
-
-    private void schedulePausedCheck() {
-        if (pausedCheckScheduled) return;
-        pausedCheckScheduled = true;
-        env.schedule(this::checkPaused, PAUSED_CHECK_MS);
-    }
-
-    /** A paused recording whose file upstream deleted was discarded from preview. */
-    private synchronized void checkPaused() {
-        pausedCheckScheduled = false;
-        boolean any = false;
-        for (Session session : new ArrayList<>(sessions.values())) {
-            if (!session.paused) continue;
-            final File file = session.current.file;
-            if (file != null && !file.exists()) {
-                discard(session);
-            } else {
-                any = true;
-            }
-        }
-        if (any) schedulePausedCheck();
+        end(session);
     }
 
     private synchronized void checkDiscarded(Session session) {

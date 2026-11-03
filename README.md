@@ -250,12 +250,12 @@ instead of deleting it. Both are rows of Purple Settings > Media recording.
   secret-chat items are never offered "Send to another chat" or "Save to
   Downloads".
 - **Ending from preview.** Upstream announces nothing when a paused recording
-  is sent or discarded from its preview. `PurpleRecordingSessions` settles it
-  at the next recording in that chat (sent if its file is still there,
-  discarded into the bin if not) or when a periodic check finds the preview
-  file deleted. A legacy voice resume records into a new segment, which gets
-  its own entry, so a crash after a resume recovers each segment as its own
-  item. A voice stop counts as a discard only if upstream deleted the file and
+  is sent or discarded from its preview. `PurpleRecordingSessions` ends it at
+  the next recording in that chat; a missing file is not taken for a discard
+  (a V2 round sent after a trim is remuxed and its old file erased), so a
+  discard from preview is not kept in the bin. A legacy voice resume records
+  into a new segment and keeps the joined file before it as its own entry, so
+  a crash after a resume recovers both parts as separate items. A voice stop counts as a discard only if upstream deleted the file and
   sent nothing within 15 s. A send queued just before a crash leaves a clean
   Ogg file, which the next start leaves to upstream.
 - **Ids.** Besides the settings rows (0x70750501-0x70750506), the bin uses

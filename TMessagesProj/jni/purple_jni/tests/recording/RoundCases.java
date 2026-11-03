@@ -555,8 +555,12 @@ public final class RoundCases {
         sessions.didSent("0:8", true, preview2.getPath());
         check(preview2.delete(), "upstream deletes the preview on discard");
         script.advance(6000);
-        check(sessions.count() == 0 && store.bin().size() == 1 && store.bin().get(0).discarded
-                && PurpleRecordingCore.scanOgg(new File(store.bin().get(0).media)).clean(), "a preview discard is a Discarded item with its bytes");
+        check(sessions.count() == 1 && store.bin().isEmpty(), "a missing preview file is not taken for a discard (re-check N2)");
+        // The next recording in the chat ends it without a bin item: the file may
+        // have been sent (a V2 remux erases it) or cleared.
+        sessions.started("0:8", 0, target(101), true, script.now);
+        check(store.bin().isEmpty() && store.entries().size() == 1, "the superseded session ends without a Discarded item");
+        sessions.tooShort("0:8");
         store.clear();
 
         // P2-1: legacy voice, in upstream's real order. Pause: no recordStopped; the
