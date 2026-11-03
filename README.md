@@ -249,11 +249,17 @@ instead of deleting it. Both are rows of Purple Settings > Media recording.
   as "Hidden chat" and opened through the stock route instead of sent to;
   secret-chat items are never offered "Send to another chat" or "Save to
   Downloads".
-- **Known limits.** A send whose message was queued just before a crash can
-  come back as a recovered item (the entry is dropped only on
-  `audioDidSent`). A discard of a paused draft that posts no stop is not
-  caught; its file is then simply gone at the next start. Discard detection
-  waits up to 15 s for upstream to delete the file.
+- **Ending from preview.** Upstream announces nothing when a paused recording
+  is sent or discarded from its preview. `PurpleRecordingSessions` settles it
+  at the next recording in that chat (sent if its file is still there,
+  discarded into the bin if not) or when a periodic check finds the preview
+  file deleted. A legacy voice resume records into a new segment, which gets
+  its own entry, so a crash after a resume recovers each segment as its own
+  item. A voice stop counts as a discard only if upstream deleted the file and
+  sent nothing within 15 s. A send queued just before a crash leaves a clean
+  Ogg file, which the next start leaves to upstream.
+- **Ids.** Besides the settings rows (0x70750501-0x70750506), the bin uses
+  0x70750510 for its Clear bin item and 0x70750600-0x707506ff for its rows.
 
 `PurpleRecordingStore` holds the rules and is plain Java over purple-core
 (`PurpleRecordingCore`: the Ogg finaliser and page walker, and `BinItemExpired`
@@ -290,7 +296,12 @@ The registry handles rounds like voice, except that the file comes from the
 journal's registration instead of a directory listing: legacy registers just
 before `recordStarted`, V2 once per output generation, and the newest
 generation is the recording's file (an older generation's journal is
-dropped, because upstream finishes that file). The round recorders' stop
+dropped, because upstream finishes that file). Both recorders register before
+their `recordStarted`, so a registration waits until the `recordStarted` that
+names its session and never goes to a paused or finished one. A cancel copies
+the file at once, on the thread that posts it, because V2's `erase` empties
+the file before deleting it; a send keeps the entry in `sending` until the
+file has its index. The round recorders' stop
 reasons are 0 or 6 cancel, 2 pause into preview (the journal is flushed), 4
 too short and 5 send.
 

@@ -257,6 +257,7 @@ public final class PurpleRecordingStore {
             final File[] files = dir == null ? null : dir.listFiles();
             for (int i = 0; files != null && i < files.length; i++) {
                 final File f = files[i];
+                if (nowSeconds * 1000 - f.lastModified() < 10_000) continue; // a recording that may be live right now
                 if (!f.isFile() || known.contains(f.getAbsolutePath()) || !PurpleRecordingFiles.orphanVoiceName(f.getName())) continue;
                 final PurpleRecordingCore.OggScan scan = core.scanOgg(f);
                 if (!scan.read || scan.clean() || !scan.hasAudio) continue;
@@ -267,6 +268,7 @@ public final class PurpleRecordingStore {
             final File[] files = dir == null ? null : dir.listFiles();
             for (int i = 0; files != null && i < files.length; i++) {
                 final File f = files[i];
+                if (nowSeconds * 1000 - f.lastModified() < 10_000) continue; // a recording that may be live right now
                 if (!f.isFile() || known.contains(f.getAbsolutePath()) || !PurpleRecordingFiles.roundName(f.getName())) continue;
                 if (PurpleRecordingFiles.mp4Finished(f) != 0) continue;
                 adoptOrphan(f, PurpleRecordingEntry.ROUND, f.lastModified(), nowSeconds, outcome);
