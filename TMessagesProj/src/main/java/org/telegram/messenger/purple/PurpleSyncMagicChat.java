@@ -232,6 +232,24 @@ final class PurpleSyncMagicChat {
         });
     }
 
+    /** The unix time before which any of {@code methods} must not be sent, kept in the binding across restarts; 0 for none. */
+    long waitUntil(String... methods) {
+        String text = port.readBinding();
+        if (text == null || text.isEmpty()) return 0;
+        long now = port.now(), until = 0;
+        for (String method : methods) until = Math.max(until, PurpleSyncMagicCore.waitUntil(text, method, now));
+        return until;
+    }
+
+    /** Keeps a flood wait a sync request got outside the lookup (record reads, posts, edits, deletions). */
+    void recordWait(String method, long retryAt) {
+        port.post(() -> {
+            if (closed || !port.current() || edit(binding -> PurpleSyncMagicCore.recordWait(binding, method, retryAt)) == null) return;
+            port.diag("wait_recorded", code("method", method.toLowerCase(Locale.ROOT)),
+                count("seconds", (int) Math.max(0, Math.min(Integer.MAX_VALUE, retryAt - port.now()))));
+        });
+    }
+
     void close() {
         port.post(() -> {
             closed = true; ++generation;

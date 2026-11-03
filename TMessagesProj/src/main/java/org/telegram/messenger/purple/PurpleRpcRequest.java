@@ -19,6 +19,10 @@ public final class PurpleRpcRequest {
         int send(TLObject request,Reply done);
         void cancel(int token);
         default void waiting(PurpleRpcRetry.Transient value){}
+        /** Unix millis before which this request must not be sent, from a wait kept across restarts; 0 for none. */
+        default long heldUntil(TLObject request){return 0;}
+        /** A flood longer than one in-place retry; a port may keep it across restarts. */
+        default void flooded(TLObject request,long retryAt){}
     }
     public static final class Stream {
         private final ArrayDeque<PurpleRpcRequest> requests=new ArrayDeque<>();
@@ -82,6 +86,14 @@ public final class PurpleRpcRequest {
     private void cancelTimeout(){if(timeout!=null){port.cancelDelay(timeout);timeout=null;}}
     private void attempt(){
         if(finished||!port.current()){finish(null,null,false);return;}
+        long held=port.heldUntil(request);
+        if(held>port.now()){
+            sending=true;++generation;
+            PurpleRpcRetry.Transient wait=new PurpleRpcRetry.Transient(PurpleRpcRetry.Kind.Flood,held,false);
+            stream.waitFor(this,wait);
+            try{port.waiting(wait);}catch(RuntimeException error){if(!port.current()){finish(null,null,false);stream.drive();}}
+            return;
+        }
         if(port.now()>=budget.deadline()){sending=true;failed(-504,"REQUEST_TIMEOUT",true);return;}
         sending=true;long run=++generation;
         timeout=()->{
@@ -125,6 +137,7 @@ public final class PurpleRpcRequest {
         PurpleRpcRetry.Transient outcome=budget.failed(port.now(),code,type,ownTimeout);
         if(outcome==null){TLRPC.TL_error error=new TLRPC.TL_error();error.code=code;error.text=type;finish(null,error,true);stream.drive();return;}
         stream.waitFor(this,outcome);
+        if(outcome.kind==PurpleRpcRetry.Kind.Flood&&!outcome.shortRetry){try{port.flooded(request,outcome.retryAt);}catch(RuntimeException ignored){}}
         try{port.waiting(outcome);}catch(RuntimeException error){if(!port.current()){finish(null,null,false);stream.drive();}}
     }
     private void finish(TLObject response,TLRPC.TL_error error,boolean deliver){

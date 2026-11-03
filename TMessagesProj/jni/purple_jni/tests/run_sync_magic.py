@@ -13,7 +13,7 @@ parser.add_argument('--library', type=Path, required=True)
 parser.add_argument('--output', type=Path, required=True)
 parser.add_argument('--phase', choices=['compile', 'run'], required=True)
 args = parser.parse_args()
-CASES = ['PurpleSyncMagicCases', 'PurpleSyncMagicChatCases']
+CASES = ['PurpleSyncMagicCases', 'PurpleSyncMagicChatCases', 'PurpleSyncMagicWaitCases']
 repo = Path(__file__).resolve().parents[4]
 tests = Path(__file__).resolve().parent
 receipt = json.loads(args.receipt.read_text())
@@ -24,7 +24,7 @@ empty = args.output / 'empty-sourcepath'
 classpath = os.pathsep.join([str(base), str(args.json)] + [item['path'] for key in ['classpath', 'bootstrapClasspath'] for item in receipt[key]])
 production = repo / 'TMessagesProj/src/main/java/org/telegram/messenger/purple'
 sources = [production / (name + '.java') for name in ['PurpleSyncMagicCore', 'PurpleSyncChatCore', 'PurpleSyncMagicChat', 'PurpleDiagLogStore', 'PurpleRpcRetry',
-    'PurpleSyncChatFacts', 'PurpleSyncChatTelegram']]
+    'PurpleSyncChatFacts', 'PurpleSyncChatTelegram', 'PurpleRpcRequest']]
 sources += [tests / 'sync_magic' / (name + '.java') for name in CASES]
 args.output.mkdir(parents=True, exist_ok=True)
 if args.phase == 'compile':

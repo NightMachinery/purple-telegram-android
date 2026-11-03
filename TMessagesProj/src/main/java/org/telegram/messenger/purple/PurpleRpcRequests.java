@@ -71,6 +71,8 @@ public final class PurpleRpcRequests {
                 waits.put(holder[0].id,new Waiting(account,purpose,origin,value));
                 changed(account);if(waiting!=null)waiting.accept(value);
             }
+            public long heldUntil(TLObject value){return READS.equals(purpose)?PurpleRpcRetry.multiply(PurpleSyncChat.requestWait(account,method(value)),1000):0;}
+            public void flooded(TLObject value,long retryAt){if(READS.equals(purpose)&&current())PurpleSyncChat.recordRequestWait(account,method(value),(retryAt+999)/1000);}
         };
         PurpleRpcRequest call=new PurpleRpcRequest(stream,port,request,timeout>0?timeout:30000,done::run,ended->{
             calls.remove(ended.id,ended);waits.remove(ended.id);if(retired!=null)retired.run();changed(account);
@@ -83,6 +85,26 @@ public final class PurpleRpcRequests {
         return send(account,purpose,current,request,(response,error)->{
             @SuppressWarnings("unchecked") T value=(T)response;done.run(value,error);
         },waiting,30000);
+    }
+    /** Record reads in the sync chat: their flood waits are kept in the account's sync chat binding, across restarts. */
+    static final String READS="record-read";
+    /** Sync writes share one cooldown; a flood on any of them is kept the same way and holds them all. */
+    static final String WRITES="sync-write";
+    static final String[] WRITE_METHODS={"messages.sendMedia","messages.editMessage","messages.deleteMessages","channels.deleteMessages",
+        "upload.saveFilePart","upload.saveBigFilePart"};
+    /** The Telegram method name of a request, such as messages.getHistory for TL_messages_getHistory. */
+    static String method(TLObject request){
+        if(request==null)return "";
+        Class<?> type=request.getClass();String name=type.getSimpleName();Class<?> outer=type.getEnclosingClass();
+        if(name.startsWith("TL_")){name=name.substring(3);int split=name.indexOf('_');return split>0?name.substring(0,split)+"."+name.substring(split+1):name;}
+        return outer!=null&&outer.getSimpleName().startsWith("TL_")?outer.getSimpleName().substring(3)+"."+name:name;
+    }
+    public static PurpleRpcRetry.Transient writeFailure(int account,String purpose,TLObject request,org.telegram.tgnet.TLRPC.TL_error error){
+        Long flood=error!=null?PurpleRpcRetry.floodSeconds(error.text):null;
+        PurpleAccountFiles.Identity origin=PurpleAccountFiles.capture(account);
+        if(flood!=null&&flood>30&&WRITES.equals(purpose)&&origin!=null&&origin.current())
+            PurpleSyncChat.recordRequestWait(account,method(request),PurpleRpcRetry.add(System.currentTimeMillis()/1000,flood+1));
+        return writeFailure(account,purpose,error);
     }
     public static PurpleRpcRetry.Transient writeFailure(int account,String purpose,org.telegram.tgnet.TLRPC.TL_error error){
         PurpleAccountFiles.Identity origin=PurpleAccountFiles.capture(account);
@@ -109,7 +131,9 @@ public final class PurpleRpcRequests {
     public static PurpleRpcRetry.Transient writeWaiting(int account,String purpose){
         PurpleAccountFiles.Identity origin=PurpleAccountFiles.capture(account);
         Waiting value=origin!=null?waits.get(origin.key+"/"+origin.lifetime+"/write/"+purpose):null;
-        return value!=null&&value.origin.current()&&value.value.retryAt>System.currentTimeMillis()?value.value:null;
+        if(value!=null&&value.origin.current()&&value.value.retryAt>System.currentTimeMillis())return value.value;
+        long kept=WRITES.equals(purpose)&&origin!=null&&origin.current()?PurpleRpcRetry.multiply(PurpleSyncChat.requestWait(account,WRITE_METHODS),1000):0;
+        return kept>System.currentTimeMillis()?new PurpleRpcRetry.Transient(PurpleRpcRetry.Kind.Flood,kept,false):null;
     }
     public static PurpleRpcRetry.Transient waiting(int account){return waiting(account,null);}
     public static PurpleRpcRetry.Transient waiting(int account,String purpose){

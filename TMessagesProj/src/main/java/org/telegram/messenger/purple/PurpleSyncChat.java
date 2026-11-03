@@ -93,6 +93,10 @@ public final class PurpleSyncChat {
         });
     }
     /** The problem in the last status was shown to the user; it is not shown again until it changes. */
+    /** Unix seconds before which a sync request for any of {@code methods} must not be sent, from the binding; 0 for none. */
+    static long requestWait(int slot,String... methods){Holder holder=account(slot);return holder!=null?holder.magic.waitUntil(methods):0;}
+    /** Keeps a flood wait of a sync request in the binding, so it is honoured after a restart too. */
+    static void recordRequestWait(int slot,String method,long retryAt){Holder holder=account(slot);if(holder!=null)holder.magic.recordWait(method,retryAt);}
     public static void problemShown(int slot){Holder holder=accounts.get(slot);if(holder!=null)holder.magic.shown();}
     /** The chat the last lookup bound, or null while it waits, has a problem or has not run. */
     static Peer boundChat(int slot) {

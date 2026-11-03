@@ -102,7 +102,7 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
     @Override public long transientRetryAt(){PurpleRpcRetry.Transient value=PurpleRpcRequests.waiting(account,"record-read");return value!=null?value.retryAt:0;}
     private java.util.function.Consumer<PurpleRpcRetry.Transient> waiting=ignored->{};
     @Override public void transientWait(java.util.function.Consumer<PurpleRpcRetry.Transient> observer){waiting=observer!=null?observer:ignored->{};}
-    private void noteWriteFailure(TLRPC.TL_error error){if(!loginCurrent())return;PurpleRpcRetry.Transient wait=PurpleRpcRequests.writeFailure(account,"sync-write",error);if(wait!=null)runOnMain(()->{if(loginCurrent())waiting.accept(wait);});}
+    private void noteWriteFailure(TLObject request,TLRPC.TL_error error){if(!loginCurrent())return;PurpleRpcRetry.Transient wait=PurpleRpcRequests.writeFailure(account,"sync-write",request,error);if(wait!=null)runOnMain(()->{if(loginCurrent())waiting.accept(wait);});}
     private boolean loginCurrent() {
         return origin!=null && origin.userId==userId && origin.current()
                 && io!=null && io.origin.environment==(origin.key.startsWith("1-")?1:0);
@@ -272,7 +272,7 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
                         TLRPC.TL_upload_saveFilePart request=new TLRPC.TL_upload_saveFilePart();
                         request.file_id=id;request.file_part=0;request.bytes=new NativeByteBuffer(data.length);request.bytes.writeBytes(data);
                         return ConnectionsManager.getInstance(account).sendRequest(request,(response,error)->{
-                            if(operation[0].live())noteWriteFailure(error);
+                            if(operation[0].live())noteWriteFailure(request,error);
                             reply.onReply(new PurpleSyncAutoUpload.Result(error==null&&response instanceof TLRPC.TL_boolTrue?1:0,
                                     error!=null?error.text:"OutcomeUnknown",error!=null?error.code:0));
                         },ConnectionsManager.RequestFlagFailOnServerErrors,ConnectionsManager.ConnectionTypeUpload);
@@ -296,7 +296,7 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
                     if(request==null){reply.onReply(new PurpleSyncAutoUpload.Result(0,"ChatUnavailable"));return 0;}
                     authority.issued();
                     return ConnectionsManager.getInstance(account).sendRequest(request,(response,error)->{
-                        if(operation[0].live())noteWriteFailure(error);
+                        if(operation[0].live())noteWriteFailure(request,error);
                         int resultId=error==null?PurpleSyncChatUpload.receipt(io,response,randomId,id)
                                 :id>0&&"MESSAGE_NOT_MODIFIED".equals(error.text)?id:0;
                         if(error==null)processUpdates(origin(),response);
@@ -349,7 +349,7 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
             if(request==null){reply.onReply(PurpleSyncAutoCore.Outcome.OutcomeUnknown);return;}
             ConnectionsManager.getInstance(account).sendRequest(request,(response,error)->{
                 if(!isActive()||!current.getAsBoolean()){reply.onReply(PurpleSyncAutoCore.Outcome.OutcomeUnknown);return;}
-                noteWriteFailure(error);
+                noteWriteFailure(request,error);
                 reply.onReply(error==null&&response instanceof TLRPC.TL_messages_affectedMessages?PurpleSyncAutoCore.Outcome.Deleted
                     :error!=null&&("MESSAGE_DELETE_FORBIDDEN".equals(error.text)||"CHAT_ADMIN_REQUIRED".equals(error.text))?PurpleSyncAutoCore.Outcome.DeletionRefused:PurpleSyncAutoCore.Outcome.OutcomeUnknown);
             }, ConnectionsManager.RequestFlagFailOnServerErrors);
