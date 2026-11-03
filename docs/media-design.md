@@ -156,6 +156,11 @@ the window, and "double-click to open" is invisible.
 
 ### Android: current behaviour
 
+Note (after implementation): the "chat pulls you back" reading of Gap 2 below is wrong for 13.1.1; only an
+automatic advance scrolls to a starting round, and the hook is `roundLeavesToPip(messageObject, needScroll)`.
+The floating round's double tap restarts and a long press opens the message (owner decision). README "Media
+playback" describes what was built.
+
 - **Leaving the chat.** The playing round moves to `PipRoundVideoView` when you leave the chat, including
   when you open another screen on top of it.
   - `ActionBarLayout` calls `onRemoveFromParent` on the previous fragment

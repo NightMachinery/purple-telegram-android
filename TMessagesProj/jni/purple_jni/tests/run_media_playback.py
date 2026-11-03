@@ -41,7 +41,7 @@ PINS = [
      '        if (org.telegram.messenger.purple.PurpleMediaRestart.onButton(currentMessageObject, buttonState)) return;\n'),
     ('ui/Components/PipRoundVideoView.java',
      '                        MessageObject messageObject = MediaController.getInstance().getPlayingMessageObject();\n',
-     '                        if (org.telegram.messenger.purple.PurpleRoundPip.onTap(messageObject)) messageObject = null;\n'),
+     '                        if (org.telegram.messenger.purple.PurpleRoundPip.onTap(messageObject, event.getEventTime() - event.getDownTime())) messageObject = null;\n'),
     ('ui/ChatActivity.java',
      '                        if (messageObject.isRoundVideo() || messageObject.isVideo()) {\n',
      '                            if (checkTextureViewPosition || PipRoundVideoView.getInstance() != null || purple.roundLeavesToPip(messageObject, needScroll)) {\n'),

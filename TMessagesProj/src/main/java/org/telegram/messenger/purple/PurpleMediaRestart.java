@@ -53,7 +53,8 @@ public final class PurpleMediaRestart {
      *         nothing else with it
      */
     public static boolean onButton(MessageObject message, int buttonState) {
-        if (message == null || !buttonCounts(message.isVoice() || message.isRoundVideo(), buttonState)) return false;
+        if (message == null || !buttonCounts(message.isVoice()
+                || message.isRoundVideo() && message.isVoiceTranscriptionOpen(), buttonState)) return false;
         return tapped(message);
     }
 
@@ -67,8 +68,10 @@ public final class PurpleMediaRestart {
     }
 
     /**
-     * Whether a press of the play button counts: a voice or round showing
-     * play (0) or pause (1). Download and cancel states have nothing to seek.
+     * Whether a press of the play button counts: a voice message, or a round
+     * whose transcription is open (then its button is play and pause), showing
+     * play (0) or pause (1). A round without an open transcription reads 0 and
+     * 1 as download and cancel, so the caller never counts it here.
      */
     static boolean buttonCounts(boolean voiceOrRound, int buttonState) {
         return voiceOrRound && (buttonState == 0 || buttonState == 1);
@@ -85,6 +88,18 @@ public final class PurpleMediaRestart {
         if (!second) return false;
         final MediaController player = MediaController.getInstance();
         if (!restarts(player.isPlayingMessage(message), message.isVoiceOnce() || message.isRoundOnce())) return false;
+        return restart(message);
+    }
+
+    /**
+     * Plays the playing message again from 0:00, resuming it if paused; also
+     * the floating round's double tap (PurpleRoundPip).
+     *
+     * @return false when the player could not seek, so the caller's upstream
+     *         handling runs instead
+     */
+    static boolean restart(MessageObject message) {
+        final MediaController player = MediaController.getInstance();
         if (!player.seekToProgress(message, 0f)) return false;
         if (player.isMessagePaused()) player.playMessage(message);
         return true;

@@ -86,6 +86,9 @@ public final class MediaPlaybackCases {
         check(recordedPerTap(3) == 0, "a round still downloading is never recorded");
         check(recordedPerTap(-1) == 1, "a downloaded round is recorded once, by the image entry");
         check(recordedPerTap(1) == 1, "a transcribed round is recorded once, by the button entry");
+        // A round without an open transcription reads 0 and 1 as download and
+        // cancel; onButton passes voiceOrRound=false for it, so it never counts.
+        check(!PurpleMediaRestart.buttonCounts(false, 0) && !PurpleMediaRestart.buttonCounts(false, 1), "a loading round's download and cancel do not count");
         final PurpleDoubleTap taps = new PurpleDoubleTap();
         boolean second = false;
         for (int tap = 0; tap < 2; tap++) {
@@ -104,17 +107,24 @@ public final class MediaPlaybackCases {
 
     static void pip() {
         doubleTap();
-        check(PurpleRoundPip.action(false, true, true, true) == PurpleRoundPip.TOGGLE, "a single tap keeps upstream's toggle");
-        check(PurpleRoundPip.action(false, true, true, false) == PurpleRoundPip.TOGGLE, "in any chat");
-        check(PurpleRoundPip.action(true, true, true, true) == PurpleRoundPip.SCROLL, "a double tap scrolls when the chat is on top");
-        check(PurpleRoundPip.action(true, true, true, false) == PurpleRoundPip.OPEN, "and opens the chat otherwise");
-        check(PurpleRoundPip.action(true, false, true, false) == PurpleRoundPip.TOGGLE, "a deleted or finished message opens nothing");
-        check(PurpleRoundPip.action(true, false, true, true) == PurpleRoundPip.TOGGLE, "not even in its own chat");
-        check(PurpleRoundPip.action(true, true, false, false) == PurpleRoundPip.TOGGLE, "another account on top opens nothing");
-        check(PurpleRoundPip.action(true, true, false, true) == PurpleRoundPip.TOGGLE, "nor scrolls a chat of another account");
-        // Off the visible list: a round goes to the PiP, except that an
-        // automatic advance follows the queue while it is on screen.
-        check(PurpleRoundPip.leavesToPip(true, false, false), "a jump away from a playing round floats it");
+        // action(longPress, second, exists, logEvent, sameAccount, chatOnTop)
+        check(PurpleRoundPip.action(false, false, true, false, true, true) == PurpleRoundPip.TOGGLE, "a single tap keeps upstream's toggle");
+        check(PurpleRoundPip.action(false, true, true, false, true, true) == PurpleRoundPip.RESTART, "a double tap restarts, as in the chat");
+        check(PurpleRoundPip.action(false, true, true, false, false, false) == PurpleRoundPip.RESTART, "whatever screen is on top");
+        check(PurpleRoundPip.action(false, true, true, true, true, true) == PurpleRoundPip.RESTART, "an admin-log round restarts too");
+        check(PurpleRoundPip.action(false, true, false, false, true, true) == PurpleRoundPip.TOGGLE, "a finished or deleted message does not restart");
+        check(PurpleRoundPip.action(true, false, true, false, true, true) == PurpleRoundPip.SCROLL, "a long press scrolls when the chat is on top");
+        check(PurpleRoundPip.action(true, false, true, false, true, false) == PurpleRoundPip.OPEN, "and opens the chat otherwise");
+        check(PurpleRoundPip.action(true, true, true, false, true, false) == PurpleRoundPip.OPEN, "a long press never restarts");
+        check(PurpleRoundPip.action(true, false, false, false, true, false) == PurpleRoundPip.TOGGLE, "a deleted or finished message opens nothing");
+        check(PurpleRoundPip.action(true, false, false, false, true, true) == PurpleRoundPip.TOGGLE, "not even in its own chat");
+        check(PurpleRoundPip.action(true, false, true, false, false, false) == PurpleRoundPip.TOGGLE, "another account on top opens nothing");
+        check(PurpleRoundPip.action(true, false, true, false, false, true) == PurpleRoundPip.TOGGLE, "nor scrolls a chat of another account");
+        check(PurpleRoundPip.action(true, false, true, true, true, false) == PurpleRoundPip.TOGGLE, "an admin-log round has no message to open");
+        // At playback start, off the visible list: a round goes to the PiP,
+        // except that an automatic advance follows the queue while it is on
+        // screen. (Only messagePlayingDidStart asks; see P2-1 in the review.)
+        check(PurpleRoundPip.leavesToPip(true, false, false), "a round starting far from the previous one floats");
         check(PurpleRoundPip.leavesToPip(true, false, true), "whatever is on screen");
         check(!PurpleRoundPip.leavesToPip(true, true, true), "an advance you are following scrolls, as upstream");
         check(PurpleRoundPip.leavesToPip(true, true, false), "an advance after you scrolled away floats, no scroll");
@@ -185,39 +195,40 @@ public final class MediaPlaybackCases {
         PurpleVoiceQueue.forget();
         PurpleVoiceQueue.Anchor anchor = PurpleVoiceQueue.anchorFor(0, 42, 10, one, false, true, on);
         check(anchor.confined, "their message confines");
-        check(anchor.skips(true, on), "your next message is skipped");
-        check(!anchor.skips(false, on), "theirs plays");
-        check(PurpleVoiceQueue.skipsAppended(0, 42, true, on), "your new message is not appended");
-        check(!PurpleVoiceQueue.skipsAppended(0, 42, false, on), "their new message is");
-        check(!PurpleVoiceQueue.skipsAppended(0, 43, true, on), "another dialog is not confined");
-        check(!PurpleVoiceQueue.skipsAppended(1, 42, true, on), "nor the same dialog id in another account");
+        check(anchor.skips(true), "your next message is skipped");
+        check(!anchor.skips(false), "theirs plays");
+        check(PurpleVoiceQueue.skipsAppended(0, 42, true), "your new message is not appended");
+        check(!PurpleVoiceQueue.skipsAppended(0, 42, false), "their new message is");
+        check(!PurpleVoiceQueue.skipsAppended(0, 43, true), "another dialog is not confined");
+        check(!PurpleVoiceQueue.skipsAppended(1, 42, true), "nor the same dialog id in another account");
 
         // Later visits of the same build keep the anchor; the setting is read
         // when the anchor is made, so turning it off mid-queue changes nothing
         // until the next manual play.
         check(PurpleVoiceQueue.anchorFor(0, 42, 10, one, false, false, off) == anchor, "a later candidate keeps the anchor");
         check(PurpleVoiceQueue.anchorFor(0, 42, 10, one, false, false, off).confined, "still confined after a toggle");
+        check(PurpleVoiceQueue.skipsAppended(0, 42, true), "and the live append still drops yours after a toggle");
         // The next manual play, even on the same message, re-reads it.
         anchor = PurpleVoiceQueue.anchorFor(0, 42, 10, one, false, true, off);
         check(!anchor.confined, "the next manual play reads the switch off");
-        check(!anchor.skips(true, off), "and keeps your messages");
-        check(!PurpleVoiceQueue.skipsAppended(0, 42, true, off), "and appends them");
+        check(!anchor.skips(true), "and keeps your messages");
+        check(!PurpleVoiceQueue.skipsAppended(0, 42, true), "and appends them");
 
         // A manual play on your own message never confines.
         anchor = PurpleVoiceQueue.anchorFor(0, 42, 11, one, true, true, on);
         check(!anchor.confined, "your own message does not confine");
-        check(!anchor.skips(true, on) && !anchor.skips(false, on), "both directions play");
+        check(!anchor.skips(true) && !anchor.skips(false), "both directions play");
         // Saved Messages, groups and channels never confine.
         for (int chat : new int[] {PurpleCore.PLAYBACK_SELF, PurpleCore.PLAYBACK_OTHER}) {
             anchor = PurpleVoiceQueue.anchorFor(0, 44, 12, chat, false, true, on);
             check(!anchor.confined, "chat kind " + chat + " does not confine");
-            check(!PurpleVoiceQueue.skipsAppended(0, 44, true, on), "chat kind " + chat + " appends everything");
+            check(!PurpleVoiceQueue.skipsAppended(0, 44, true), "chat kind " + chat + " appends everything");
         }
         // A play in another chat moves the anchor even without the start visit.
         PurpleVoiceQueue.anchorFor(0, 42, 10, one, false, true, on);
         anchor = PurpleVoiceQueue.anchorFor(0, 50, 3, one, false, false, on);
         check(anchor.dialogId == 50 && anchor.confined, "a new start in another chat re-anchors");
-        check(!PurpleVoiceQueue.skipsAppended(0, 42, true, on), "and the old chat is free again");
+        check(!PurpleVoiceQueue.skipsAppended(0, 42, true), "and the old chat is free again");
 
         // A whole build, as createVoiceMessagesPlaylist runs it: oldest first,
         // the started message among them, upstream's filter after the hook.
@@ -228,7 +239,7 @@ public final class MediaPlaybackCases {
         queue.add(start);
         for (int id = 0; id < out.length; id++) {
             final PurpleVoiceQueue.Anchor a = PurpleVoiceQueue.anchorFor(0, 77, start, one, out[start], id == start, on);
-            if (a.skips(out[id], on)) continue;
+            if (a.skips(out[id])) continue;
             if (id > start) queue.add(id);
         }
         check(queue.equals(java.util.Arrays.asList(2, 5, 6)), "their later messages only: " + queue);
@@ -237,16 +248,19 @@ public final class MediaPlaybackCases {
         queue.add(1);
         for (int id = 0; id < out.length; id++) {
             final PurpleVoiceQueue.Anchor a = PurpleVoiceQueue.anchorFor(0, 77, 1, one, out[1], id == 1, on);
-            if (a.skips(out[id], on)) continue;
+            if (a.skips(out[id])) continue;
             if (id > 1) queue.add(id);
         }
         check(queue.equals(java.util.Arrays.asList(1, 2, 3, 4, 5, 6)), "started on yours, everything: " + queue);
         PurpleVoiceQueue.forget();
-        check(!PurpleVoiceQueue.skipsAppended(0, 77, true, on), "no anchor, no confinement");
-        // An unconfined queue never asks the core per candidate.
-        anchor = PurpleVoiceQueue.anchorFor(0, 78, 1, PurpleCore.PLAYBACK_OTHER, false, true, on);
-        final int before = calls[0];
-        for (int i = 0; i < 100; i++) anchor.skips(i % 2 == 0, on);
-        check(calls[0] == before, "an unconfined queue makes no core calls");
+        check(!PurpleVoiceQueue.skipsAppended(0, 77, true), "no anchor, no confinement");
+        // The rule is asked twice per manual play, never per candidate.
+        int before = calls[0];
+        anchor = PurpleVoiceQueue.anchorFor(0, 78, 1, one, false, true, on);
+        check(calls[0] - before == 2, "a manual play asks the rule twice: " + (calls[0] - before));
+        before = calls[0];
+        for (int i = 0; i < 100; i++) anchor.skips(i % 2 == 0);
+        for (int i = 0; i < 100; i++) PurpleVoiceQueue.skipsAppended(0, 78, i % 2 == 0);
+        check(calls[0] == before, "candidates and appends make no core calls");
     }
 }

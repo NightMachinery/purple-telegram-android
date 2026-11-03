@@ -12,16 +12,26 @@ import org.telegram.ui.ChatActivity;
 import org.telegram.ui.LaunchActivity;
 
 /**
- * The floating round video (PipRoundVideoView): a double tap opens its message.
+ * The floating round video (PipRoundVideoView): double tap restarts, long
+ * press opens the message.
  *
- * Upstream's PiP pauses or resumes on a tap and has no way back to the
- * message; only the player bar at the top of a screen has one. A double tap
- * here undoes the first tap's pause or resume, as Desktop's floating player
- * does on a double click, and then opens the chat at the message by the same
- * route the player bar takes (FragmentContextView): {@code scrollToMessageId}
- * when that chat is on top, otherwise a new ChatActivity with the message id.
- * That route already runs Work Mode's chat-open policy, so a chat the running
- * preset hides behaves exactly as it does from the player bar.
+ * A single tap keeps upstream's pause or resume, and dragging is untouched. A
+ * double tap restarts the round from 0:00, the same as a double tap on the
+ * round in the chat (PurpleMediaRestart) and a double click on Desktop's
+ * floating player: the owner's rule is that restart wins the double gesture on
+ * both clients. It undoes nothing explicitly; the restart resumes a round the
+ * first tap paused.
+ *
+ * A long press (held for the long-press timeout without moving far enough to
+ * start a drag) opens the chat at the message, the way back that upstream's
+ * PiP lacks; only the player bar at the top of a screen has one. It takes the
+ * player bar's route (FragmentContextView): {@code scrollToMessageId} when that
+ * chat is on top, otherwise a new ChatActivity with the message id. That route
+ * already runs Work Mode's chat-open policy, so a chat the running preset hides
+ * behaves exactly as it does from the player bar. It acts on release, because
+ * the PiP's touch handler sees the press only then. A round played from a
+ * channel's admin log ({@code eventId != 0}) has no message to open, so its
+ * long press stays upstream's toggle.
  *
  * The hook is one line in the {@code ACTION_UP} branch of the PiP's
  * {@code onTouchEvent}, right after it reads the playing message: when this
@@ -31,8 +41,8 @@ import org.telegram.ui.LaunchActivity;
  */
 public final class PurpleRoundPip {
 
-    /** What a tap on the PiP does beyond upstream's toggle. */
-    static final int TOGGLE = 0, SCROLL = 1, OPEN = 2;
+    /** What a tap on the PiP does: upstream's toggle, or Purple's restart, scroll or open. */
+    static final int TOGGLE = 0, SCROLL = 1, OPEN = 2, RESTART = 3;
 
     private static final PurpleDoubleTap TAPS = new PurpleDoubleTap();
 
@@ -43,40 +53,53 @@ public final class PurpleRoundPip {
      * From the PiP's tap.
      *
      * @param message the playing message the PiP is about to pause or resume
+     * @param pressed how long the finger was down, in milliseconds
      * @return true when this tap was handled here and upstream must not toggle
      */
-    public static boolean onTap(MessageObject message) {
+    public static boolean onTap(MessageObject message, long pressed) {
         if (message == null) return false;
-        final boolean second = TAPS.tap(message.currentAccount, message.getDialogId(), message.getId(),
+        final boolean longPress = pressed >= ViewConfiguration.getLongPressTimeout();
+        // A long press is not half of a double tap.
+        final boolean second = !longPress && TAPS.tap(message.currentAccount, message.getDialogId(), message.getId(),
                 SystemClock.uptimeMillis(), ViewConfiguration.getDoubleTapTimeout());
+        if (longPress) TAPS.reset();
         final MediaController player = MediaController.getInstance();
         final BaseFragment top = LaunchActivity.getSafeLastFragment();
-        final int action = action(second, !message.deleted && player.isPlayingMessage(message),
-                top != null && top.getCurrentAccount() == message.currentAccount,
+        final int action = action(longPress, second, !message.deleted && player.isPlayingMessage(message),
+                message.eventId != 0, top != null && top.getCurrentAccount() == message.currentAccount,
                 top instanceof ChatActivity && ((ChatActivity) top).getDialogId() == message.getDialogId());
-        if (action == TOGGLE) return false;
-        // Undo the first tap: it paused a playing round or resumed a paused one.
-        if (player.isMessagePaused()) player.playMessage(message);
-        else player.pauseMessage(message);
-        if (action == SCROLL) {
+        switch (action) {
+        case RESTART:
+            return PurpleMediaRestart.restart(message);
+        case SCROLL:
             ((ChatActivity) top).scrollToMessageId(message.getId(), 0, false, 0, true, 0);
-        } else {
+            return true;
+        case OPEN:
             top.presentFragment(new ChatActivity(chatArgs(message.getDialogId(), message.getId())), top instanceof ChatActivity);
+            return true;
+        default:
+            return false;
         }
-        return true;
     }
 
     /**
      * What a tap does.
      *
-     * @param second    whether it completes a double tap on the same message
-     * @param exists    whether the message is still the playing one and not deleted
+     * @param longPress   whether the finger was held for the long-press timeout
+     * @param second      whether a short tap completes a double tap on the same message
+     * @param exists      whether the message is still the playing one and not deleted
+     * @param logEvent    whether it plays from a channel's admin log
      * @param sameAccount whether the screen on top belongs to the message's account
-     * @param chatOnTop whether the message's own chat is the screen on top
+     * @param chatOnTop   whether the message's own chat is the screen on top
      */
-    static int action(boolean second, boolean exists, boolean sameAccount, boolean chatOnTop) {
-        if (!second || !exists || !sameAccount) return TOGGLE;
-        return chatOnTop ? SCROLL : OPEN;
+    static int action(boolean longPress, boolean second, boolean exists, boolean logEvent,
+            boolean sameAccount, boolean chatOnTop) {
+        if (!exists) return TOGGLE;
+        if (longPress) {
+            if (logEvent || !sameAccount) return TOGGLE;
+            return chatOnTop ? SCROLL : OPEN;
+        }
+        return second ? RESTART : TOGGLE;
     }
 
     /**

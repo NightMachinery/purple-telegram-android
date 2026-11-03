@@ -495,17 +495,23 @@ final class PurpleChatHooks {
     }
 
     /**
-     * Whether the playing message, now off the visible part of the list,
-     * continues in the floating round instead of the chat scrolling to it.
+     * Whether a round that just started playing off the visible part of the
+     * list goes to the floating round instead of the chat scrolling to it.
      *
-     * Upstream switches to the floating round only when your finger moved the
-     * list ({@code checkTextureViewPosition}) or a PiP already exists. With
+     * It is asked only at playback start: the block it sits in runs only for
+     * {@code updateTextureViewPosition(true, needScroll)}, which only
+     * {@code messagePlayingDidStart} calls. A reply-quote, search or
+     * scroll-to-bottom jump while a round plays never reaches it; that stays
+     * upstream's (it floats the round only if the visible part is measured
+     * again after the jump's scroll animation), and is on the device checklist.
+     *
+     * Upstream floats a starting round only when your finger moved the list
+     * ({@code checkTextureViewPosition}) or a PiP already exists. With
      * {@code needScroll} (the queue advanced to a round within five messages)
      * it otherwise scrolls the chat to the round, and without it leaves the
-     * round playing with its frame off screen. This term in
-     * {@code updateTextureViewPosition}'s condition sends a round to the PiP
-     * in both cases, except that an automatic advance still follows the queue
-     * while you are reading it: when a message within those five is on screen.
+     * round playing with its frame off screen. This term floats it in both
+     * cases, except that an automatic advance still follows the queue while
+     * you are reading it: when a message within those five is on screen.
      * Scrolled away (for example while a voice message played), the next round
      * plays in the PiP and the chat stays where you are. Ordinary videos are
      * not rounds and keep upstream's choice: the floating view is round-only.

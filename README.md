@@ -87,34 +87,40 @@ kind of tap, so a tap that the first hands on to the second is counted once.
 
 **The floating round.** A round video message that leaves the chat keeps
 playing in Telegram's floating round (`PipRoundVideoView`), over the chat list,
-other chats and Settings. A single tap on it still pauses or resumes. A double
-tap undoes that first tap and opens the message: the chat scrolls to it when it
-is on top, otherwise it opens at the message, by the same route the player bar
-at the top of a screen uses, so Work Mode's chat-open policy applies as it does
-there. A message that was deleted, or a chat of another account on top, leaves
-the double tap as two plain taps. `PurpleRoundPip` decides; the PiP's
-`onTouchEvent` has one line in its `ACTION_UP` tap branch that clears the
-playing message when Purple handled the tap, so upstream's toggle is skipped
-while its drag reset and edge snap still run.
+other chats and Settings. A single tap on it still pauses or resumes, and
+dragging it still moves or dismisses it. A double tap restarts it from 0:00,
+like a double tap on the round in the chat and a double click on the Desktop
+floating player (restart wins the double gesture on both clients). A long press
+(held without moving far enough to drag, acting on release) opens the message:
+the chat scrolls to it when it is on top, otherwise it opens at the message, by
+the same route the player bar at the top of a screen uses, so Work Mode's
+chat-open policy applies as it does there. A deleted message, a chat of another
+account on top, or a round played from a channel's admin log leaves the long
+press as upstream's plain tap. `PurpleRoundPip` decides; the PiP's
+`onTouchEvent` has one line in its `ACTION_UP` tap branch that passes the press
+length and clears the playing message when Purple handled the tap, so upstream's
+toggle is skipped while its drag reset and edge snap still run.
 
-A round that leaves the visible chat keeps playing in the floating round.
-Upstream floats it only when your finger scrolled it away; when something else
-moved the list (a reply quote, a search result, the scroll-to-bottom button) it
-kept playing with its picture off screen, and when the voice queue advanced to
-a round within five messages it scrolled the chat to that round even if you had
-scrolled elsewhere (for example while a voice message played). Now a jump away
-floats the round, and an automatic advance scrolls only while you are still
-reading the queue (a message within those five is on screen); otherwise the
-next round plays in the floating round and the chat stays where you are. The
-next voice message never scrolled the chat upstream, and still does not.
-Ordinary videos keep upstream's behaviour. This is the one hook that widens an
-existing upstream line instead of adding one:
-`ChatActivity.updateTextureViewPosition`'s condition
+When the voice queue starts a round that is not on screen, the chat no longer
+jumps to it after you scrolled away. Upstream floats a starting round only when
+your finger scrolled the previous one away or a floating round already exists;
+otherwise, when the queue advanced to a round within five messages, it scrolled
+the chat to that round even if you had scrolled elsewhere (for example while a
+voice message played), and a round starting farther away played with its
+picture off screen. Now a starting round goes to the floating round, except that
+an automatic advance still scrolls while you are reading the queue (a message
+within those five is on screen). The next voice message never scrolled the chat
+upstream, and still does not. Ordinary videos keep upstream's behaviour. This
+decision is made only when a round starts playing; a reply-quote, search or
+scroll-to-bottom jump while a round already plays is left to upstream (which
+floats it only if the list is measured again after the jump's scroll animation)
+and is on the device checklist.
+This is the one hook that widens an existing upstream line instead of adding
+one: `ChatActivity.updateTextureViewPosition`'s condition
 `checkTextureViewPosition || PipRoundVideoView.getInstance() != null` gains
 `|| purple.roundLeavesToPip(messageObject, needScroll)`. The PiP-or-scroll
 choice is a single if/else-if, so there is no place for an early return that
-would not change the branch around it. Both cases were read from the code; a
-device check confirms them.
+would not change the branch around it.
 
 **Private-chat voice queue.** Purple Settings > Media playback > **Keep the
 voice queue to the other person** (on by default) is `[playback]

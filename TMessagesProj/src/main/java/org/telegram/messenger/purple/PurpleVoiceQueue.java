@@ -11,8 +11,10 @@ import org.telegram.messenger.UserObject;
  * person's voice or round message, "play next" plays only their messages and
  * skips yours. A manual play on your own message, in Saved Messages, in a group
  * or in a channel changes nothing. The rule itself is the core's
- * ({@link PurpleCore#voiceQueueKeeps}); this class remembers what the last
- * manual play decided and asks the core about each candidate.
+ * ({@link PurpleCore#voiceQueueKeeps}); this class asks it twice when a manual
+ * play starts (does the queue keep an outgoing candidate, and an incoming
+ * one) and keeps both answers in the anchor, so every later decision of that
+ * queue, the live append included, is a field read and no JNI call.
  *
  * Android rebuilds the queue only on a manual play: every caller of
  * {@code ChatActivity.createVoiceMessagesPlaylist} is a user action (a tap,
@@ -53,6 +55,8 @@ public final class PurpleVoiceQueue {
         final int chat;
         final boolean startOutgoing;
         final boolean confined;
+        private final boolean keepsOutgoing;
+        private final boolean keepsIncoming;
 
         Anchor(int account, long dialogId, int startId, int chat, boolean startOutgoing, Rule rule) {
             this.account = account;
@@ -60,8 +64,11 @@ public final class PurpleVoiceQueue {
             this.startId = startId;
             this.chat = chat;
             this.startOutgoing = startOutgoing;
-            // Confined exactly when the rule would drop an outgoing candidate.
-            this.confined = !rule.keeps(chat, startOutgoing, true);
+            // The rule's two answers for this queue, read once: a settings
+            // change applies from the next manual play, never mid-queue.
+            this.keepsOutgoing = rule.keeps(chat, startOutgoing, true);
+            this.keepsIncoming = rule.keeps(chat, startOutgoing, false);
+            this.confined = !keepsOutgoing || !keepsIncoming;
         }
 
         boolean startedBy(int account, long dialogId, int startId) {
@@ -69,8 +76,8 @@ public final class PurpleVoiceQueue {
         }
 
         /** Whether this queue drops a candidate in its own chat. */
-        boolean skips(boolean candidateOutgoing, Rule rule) {
-            return confined && !rule.keeps(chat, startOutgoing, candidateOutgoing);
+        boolean skips(boolean candidateOutgoing) {
+            return !(candidateOutgoing ? keepsOutgoing : keepsIncoming);
         }
     }
 
@@ -95,7 +102,7 @@ public final class PurpleVoiceQueue {
         final boolean visitingStart = candidate.getId() == start.getId() && candidate.getDialogId() == start.getDialogId();
         final Anchor current = anchorFor(start.currentAccount, start.getDialogId(), start.getId(),
                 chatKind(start.currentAccount, start.getDialogId()), start.isOut(), visitingStart, CORE);
-        return current.skips(candidate.isOut(), CORE);
+        return current.skips(candidate.isOut());
     }
 
     /**
@@ -106,7 +113,7 @@ public final class PurpleVoiceQueue {
      */
     public static boolean skipsAppended(MessageObject candidate) {
         if (candidate == null) return false;
-        return skipsAppended(candidate.currentAccount, candidate.getDialogId(), candidate.isOut(), CORE);
+        return skipsAppended(candidate.currentAccount, candidate.getDialogId(), candidate.isOut());
     }
 
     /**
@@ -127,9 +134,9 @@ public final class PurpleVoiceQueue {
         return anchor;
     }
 
-    static synchronized boolean skipsAppended(int account, long dialogId, boolean outgoing, Rule rule) {
+    static synchronized boolean skipsAppended(int account, long dialogId, boolean outgoing) {
         return anchor != null && anchor.account == account && anchor.dialogId == dialogId
-                && anchor.skips(outgoing, rule);
+                && anchor.skips(outgoing);
     }
 
     /** Forgets the anchor; for the host suite. */
