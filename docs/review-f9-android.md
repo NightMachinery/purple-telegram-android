@@ -162,3 +162,110 @@ README could say so in one line.
 3. P3s at the author's discretion; P3-2 and the `step()` test are cheap.
 
 REVIEW F9 android: CHANGES P1=0 P2=2 P3=5
+
+## Re-check 1
+
+Scope: `ac48a31..8e70f5c` on `recording` (one commit, "F9: seek from the live position,
+add the Seek step row and notification buttons"). Read-only. The purple-core gitlink is
+still `d7f378534f`. `purple/upstream-hooks.sh check` passes and
+`purple/run_host_suites.py --list` passes (37 configurations). Nothing was built.
+
+Verdict: **CHANGES**, one new P1 (the notification change drops shuffle and repeat for
+music on Android 13 and later). Both earlier P2s are fixed.
+
+### Earlier findings
+
+- **P2-1, fixed.** `PurpleSeek.step` now reads `MediaController.getProgressMs` (the live
+  player position, for both `audioPlayer` and `videoPlayer`) and seeks with
+  `seekToProgressMs`. Replaying the original trace: a round paused at 0:05, press "+10"
+  and the round seeks to 0:15. Press again and `getProgressMs` returns 15000, so it
+  seeks to 0:25. `Live.seekMs` then writes `audioProgress` and `audioProgressSec` and
+  posts `messagePlayingProgressDidChanged`, so the paused cell and the floating round
+  redraw at once, and `messagePlayingDidSeek` still moves the session.
+- **P3-1, fixed** in the same change: the duration is the audio player's, then the
+  player-reported `audioPlayerDuration`, and only then the attribute.
+- **P2-2, fixed.** `ROW_SEEK_STEP = 0x70750500` (the design's reserved block) opens a
+  5, 10, 15 or 30 s chooser. It writes `[playback] seek_step` through
+  `PurpleWriter.setTableString` and is in the same owner-refusal and session lists as
+  the voice queue switch. `applyText` calls `PurpleGate.reload` on the UI thread before
+  it returns, so the `PurpleRecordingStrip.relabelAll()` that follows reads the new step.
+  `rebuild()` refreshes the row's value. The strings `PurpleSeekStep` and
+  `PurpleSeekStepValue` were added.
+- **P3-2, fixed.** `recolor()` runs from each button's `onDraw` and from `relabel()`, and
+  only resets the colour when the theme colour changed, so there is no invalidate loop.
+- **step() test, added.** The `Player` seam and `stepSeam()` cover repeated presses on a
+  paused player (15000 then 25000 ms), the end margin, going back to 0:00, no position,
+  an unknown duration, a refused seek, and a wrongly tagged file. Counted: `seek` now
+  prints 75 checks (floor 70); pins are 18 (floor 18). `Live` itself (the
+  `MediaController` side) is still untested, which is acceptable for a host suite.
+- **P3-4, partly done.** The notification and lock-screen custom actions were added (see
+  below). The README now says keyboard shortcut commands are Desktop only.
+
+### New findings
+
+#### P1-R1. Music loses shuffle and repeat on the Android 13+ notification and lock screen
+
+`sessionActions(playbackState)` adds the two seek custom actions at the hook line, and
+that line sits before upstream's own custom actions. That is true in both state
+builders:
+
+- `createNotification`: the Purple line is at `MusicPlayerService.java:500`, shuffle at
+  `:506` and repeat at `:520`.
+- `updatePlaybackState`: the Purple line is at `:743`, shuffle at `:748` and repeat at
+  `:762`.
+
+On Android 13 and later, the system media controls take their buttons from the session.
+When the state has `ACTION_SKIP_TO_PREVIOUS` and `ACTION_SKIP_TO_NEXT`, which music
+always has, the controls show previous, play/pause and next, plus only the **first two**
+custom actions.
+
+Trace, music on Android 13+: the custom actions are, in order, `SEEK_BACK`,
+`SEEK_FORWARD`, `NOTIFY_SHUFFLE`, `NOTIFY_REPEAT`. The controls show "Back 10 s" and
+"Forward 10 s" where upstream showed shuffle and repeat, and shuffle and repeat are gone
+from the notification and lock screen. This changes upstream's music notification, which
+this re-check was asked to guard against.
+
+Voice and round are fine. They have no previous or next action and no upstream custom
+actions, so the seek actions fill the empty previous and next slots, as the README says.
+Android 12 and older build the notification from `Notification.Action`s and are
+unaffected.
+
+Fix, inside `PurpleSeek` with no new hook: add the custom actions only when the playing
+message is not music. Music keeps upstream's previous, next, shuffle and repeat, and
+headset rewind and fast-forward still work through `ACTION_REWIND` and
+`ACTION_FAST_FORWARD`. Then add one line to the README saying music has no seek buttons
+in the system controls. If the owner wants seek buttons for music too, the alternative is
+to append them after upstream's actions, which needs the hook moved below the repeat
+action in both builders. Even then they would not be visible when previous and next are
+present, so skipping them for music is the honest choice.
+
+#### P3-R1. The Seek step row sits in the focus card, not under "Media playback"
+
+The row is added after the voice queue's `asShadow` (the section's closing info
+text). So it renders as the first row of the next card, above "Follow Do Not Disturb",
+while the README says "Media playback > Seek step". Fix: add it before that shadow.
+
+#### P3-R2. A seek before the player knows its duration posts 0:00 to the session
+
+When `audioPlayer.getDuration()` is still `C.TIME_UNSET` (a stream just starting),
+`Live.durationMs` falls back to the message's duration, so a seek happens.
+`seekToProgressMs` then posts `messagePlayingDidSeek` with
+`clamp01(ms / TIME_UNSET) = 0`, and `MusicPlayerService` sets the session position to
+0:00 until the next state update. This is narrow, and it is upstream's own method doing
+it (cast sync uses the same path). It only matters if it shows up on a device.
+
+#### P3-R3. Notification button labels follow a new step only on the next state rebuild
+
+After the step changes in the row, "Back 10 s" stays on the notification until the next
+play, pause or seek rebuilds the state. A press already uses the new step, because
+`step()` reads it each time, and the first press relabels. This is cosmetic.
+
+### Hook shape
+
+`MusicPlayerService` gains one early return at the top of `onCustomAction`, which is an
+allowed hook shape. It now calls `PurpleSeek` five times and imports it once, and the
+baseline moves to `14 0 5`. `FragmentContextView` is unchanged. The new row lives in
+Purple's own `PurpleSettingsActivity`. No hook carries a comment beyond the allowed one.
+The new drawables and strings are Purple's.
+
+RECHECK F9 android: CHANGES P1=1 P2=0
