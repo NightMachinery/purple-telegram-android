@@ -212,3 +212,89 @@ close, ask which of these four preceded it.
 - Double-tap a round that is still streaming (P3-1).
 - PiP showing, then open another chat from the list and wait for the queue to advance
   round to round, and round to voice (owner F1 report).
+
+## Re-check 1
+
+Scope: `3be897da..39ad300e` (one commit, "Restart the floating round on double-tap and
+fix the media review points"). I verified each fix by trace and looked only for
+regressions it introduces, with most attention on the PiP touch path. Static checks on
+`39ad300e`: `purple/upstream-hooks.sh check` is OK (the ratchet is unchanged, and the
+PiP hook is still one fully qualified line); `run_host_suites.py --list` is consistent.
+The suite floors rose with the new checks (pip 40, queue 28, restart 37). Nothing was
+built or run.
+
+Verdict: APPROVE. P1=0, P2=0. P3-2 is left for the device check, as agreed.
+
+### Fixes
+
+- **P2-1, fixed by dropping the claim.** The README, the `roundLeavesToPip` Javadoc and
+  the test labels now say the hook decides only at playback start. They also say a
+  reply/search/scroll-to-bottom jump stays upstream's behaviour and is on the device
+  checklist. That matches the trace (the one `updateTextureViewPosition(true, …)`
+  caller is `messagePlayingDidStart`). The code is unchanged.
+- **P2-2, fixed (owner: F2 wins).** `PurpleRoundPip.action` now gives:
+  - a short second tap on a message that is still playing: RESTART, through the
+    shared `PurpleMediaRestart.restart`;
+  - a long press: SCROLL or OPEN by the player bar's route;
+  - anything else: TOGGLE.
+
+  The old "undo the first tap" step is gone. Its job now falls to the restart: tap 1
+  pauses (upstream), and on tap 2 `seekToProgress(…, 0)` succeeds, `isMessagePaused()`
+  is true, and `playMessage` resumes the same message from 0:00. If the seek fails,
+  `onTap` returns false and upstream's toggle runs, so the round ends where two plain
+  taps leave it. Nothing gets stuck.
+- **P3-1, fixed.** `onButton` counts a round only while `isVoiceTranscriptionOpen()`.
+  A loading round's 0/1 (download/cancel) goes to upstream untouched. Voice is
+  unchanged.
+- **P3-3 and P3-4, fixed.** The `Anchor` makes two core calls when it is created and
+  stores `keepsOutgoing` and `keepsIncoming`. `skips` reads those fields, so a toggle
+  mid-queue no longer reaches the live append, and a build costs at most four JNI
+  calls (an anchor may be made once on an older candidate and again on the start
+  visit) instead of one per loaded message. `confined` is `!keepsOutgoing ||
+  !keepsIncoming`, which is the same result as before. With the setting off, the
+  core unavailable, or an unknown chat kind, both fields are true and nothing is
+  skipped.
+- **P3-5, fixed.** `eventId != 0` makes a long press TOGGLE. An admin-log round still
+  restarts on double-tap, which is harmless (seek and resume of the playing message).
+- **P3-6, fixed.** `docs/media-design.md` has a note under "Android: current
+  behaviour" pointing to the README.
+- **P3-2, open** for the device check. **P3-7, open**: the submodule pin is unchanged
+  and still unverifiable here.
+
+### PiP touch path, traced against `PipRoundVideoView`
+
+`onInterceptTouchEvent` takes ACTION_DOWN and sets `startDragging`. `onTouchEvent`
+turns a move of 0.3 cm into `dragging`. The hook runs only on ACTION_UP with
+`startDragging && !dragging` and passes `event.getEventTime() - event.getDownTime()`.
+Because the parent intercepts the DOWN, that UP's down time is this gesture's.
+
+- **Tap** (shorter than `getLongPressTimeout()`, first of a pair): TOGGLE, so upstream
+  pauses or resumes. Same as before.
+- **Double tap** (second short tap on the same message within `getDoubleTapTimeout()`,
+  measured from release to release): RESTART, and upstream's toggle is skipped. A third
+  quick tap starts a new pair and toggles.
+- **Long press** (held for the long-press timeout without moving 0.3 cm, acting on
+  release): it resets the tap pair, so the next short tap is a first tap, then SCROLL
+  or OPEN. With another account on top or an admin-log round it does upstream's
+  toggle, as a long press did before this branch.
+- **Drag, edge snap and fling-to-close**: unchanged. A drag never reaches the hook,
+  and `dragging`/`startDragging` reset and `animateToBoundsMaybe()` still run after it
+  on every UP.
+- **Mixed**: tap then long press leaves the round paused by the tap and opens the
+  message. A long press on a paused round opens it and keeps it paused. Neither is
+  wrong.
+
+### New P3 notes from the fix (not blocking)
+
+- **R1.** The long press gives no feedback until release, and a still finger has no way
+  to cancel except dragging. A slow tap held past the timeout now opens the chat
+  instead of pausing. The timeout follows the system setting (400 ms by default, longer
+  under accessibility settings), so this mostly affects slow tappers. Consider a haptic
+  tick when the timeout passes (would need a delayed runnable from DOWN, so a second
+  hook line) or leave it for device feedback.
+- **R2.** The pure `action()` matrix is fully covered. The duration wiring
+  (`getEventTime() - getDownTime()`) is pinned by text only, and the long press joins
+  the device checklist: hold, then release, on the PiP in the round's own chat, in
+  another chat, and in a chat of another account.
+
+RECHECK MEDIA android: APPROVE P1=0 P2=0
