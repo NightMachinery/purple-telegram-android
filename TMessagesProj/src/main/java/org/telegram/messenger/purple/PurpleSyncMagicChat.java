@@ -36,7 +36,8 @@ import static org.telegram.messenger.purple.PurpleDiagLogStore.reason;
  * All state is touched only on the {@link Port#post} thread.
  */
 final class PurpleSyncMagicChat {
-    enum Trigger { startup, screen, manual, auto, post }
+    /** What started a lookup; {@code retry} is the timed wake-up after a wait, never a user's check. */
+    enum Trigger { startup, screen, manual, auto, post, retry }
 
     /** A Telegram reply: a value, or a failure the gate classifies. */
     static final class Reply<T> {
@@ -64,6 +65,15 @@ final class PurpleSyncMagicChat {
         }
     }
 
+    /** One messages.getAllChats page: its magic-titled megagroups, every chat id it named, and the total when it is a slice. */
+    static final class Chats {
+        final List<PurpleSyncMagicCore.Candidate> candidates;
+        final List<Long> ids;
+        /** The server's total for a messages.chatsSlice, or -1 for a complete reply. */
+        final int count;
+        Chats(List<PurpleSyncMagicCore.Candidate> candidates, List<Long> ids, int count) { this.candidates = candidates; this.ids = ids; this.count = count; }
+    }
+
     interface Port {
         boolean current();
         /** Unix seconds. */
@@ -78,8 +88,13 @@ final class PurpleSyncMagicChat {
         boolean writeBinding(String expected, String next);
         /** Reads the local lists for {@code bound} (may be null); replies on any thread. */
         void local(PurpleSyncChatCore.Peer bound, Consumer<Local> done);
-        /** messages.getAllChats with no exceptions: every channel the user is in, any title. */
-        void allChats(Consumer<Reply<List<PurpleSyncMagicCore.Candidate>>> done);
+        /**
+         * Reads a bound channel the memory lacks from the local database, as the chat list would load it later;
+         * its state is Unknown when the database has no row. Replies on any thread, null when the account changed.
+         */
+        void stored(long channelId, Consumer<Local> done);
+        /** messages.getAllChats: every chat the user is in except {@code except}, any title. */
+        void allChats(List<Long> except, Consumer<Reply<Chats>> done);
         /** channels.getFullChannel: the chat with exact member and admin counts. */
         void fullInfo(long channelId, Consumer<Reply<PurpleSyncMagicCore.Candidate>> done);
         /** channels.createChannel for a megagroup titled {@link PurpleSyncMagicCore#TITLE}; the new chat, from the reply's Updates. */
@@ -107,6 +122,12 @@ final class PurpleSyncMagicChat {
     }
 
     static final long SHORT_FLOOD = 30;
+    /** messages.getAllChats pages one lookup may read when the server slices the reply. */
+    static final int ALL_CHATS_PAGES = 5;
+    /** How long an incomplete list waits before it is read again. */
+    static final long PARTIAL_WAIT = 60 * 60;
+    /** The first wait after a refused request that is not a flood; it doubles up to a day. */
+    static final long ERROR_WAIT = 10 * 60;
     private static final int EDIT_ATTEMPTS = 3;
 
     private final Port port;
@@ -115,11 +136,11 @@ final class PurpleSyncMagicChat {
     private volatile Result last = Result.unavailable();
     /** The stored binding as last read or written, for readers off the lookup thread. */
     private volatile PurpleSyncMagicCore.Binding binding;
-    private boolean running, fresh, closed, created, resumed;
+    private boolean running, fresh, closed, created, resumed, stored, partial;
     private Trigger trigger;
     private List<PurpleSyncMagicCore.Candidate> allChats;
     private long generation;
-    private int failures;
+    private int failures, errors;
     private Runnable wake;
 
     PurpleSyncMagicChat(Port port) { this.port = port; }
@@ -176,7 +197,7 @@ final class PurpleSyncMagicChat {
             if (done != null) waiters.add(done);
             this.fresh |= fresh;
             if (running) return;
-            running = true; created = false; resumed = false; allChats = null; retried.clear(); this.trigger = trigger;
+            running = true; created = false; resumed = false; stored = false; partial = false; allChats = null; retried.clear(); this.trigger = trigger;
             long run = ++generation;
             port.diag("lookup_start", code("trigger", trigger.name()));
             step(run);
@@ -227,11 +248,15 @@ final class PurpleSyncMagicChat {
         PurpleSyncMagicCore.Binding parsed = binding != null ? PurpleSyncMagicCore.parse(binding) : null;
         if (parsed == null) { unavailable(run, "binding_unreadable"); return; }
         this.binding = parsed;
-        if (parsed.problem != PurpleSyncMagicCore.Problem.None && trigger == Trigger.manual && !resumed) {
-            // WHY: core keeps a problem until the user acts; a manual check is that act, so it decides afresh.
+        if (trigger == Trigger.manual && !resumed) {
+            // WHY: core keeps a problem and skips rejected chats until the user acts; a manual check is that act.
             resumed = true;
-            if (edit(PurpleSyncMagicCore::clear) == null) { unavailable(run, "binding_unreadable"); return; }
-            port.diag("auto_resumed", reason("user_check"));
+            boolean paused = parsed.problem != PurpleSyncMagicCore.Problem.None;
+            if (edit(current -> {
+                String readmitted = PurpleSyncMagicCore.readmit(current);
+                return paused && readmitted != null ? PurpleSyncMagicCore.clear(readmitted) : readmitted;
+            }) == null) { unavailable(run, "binding_unreadable"); return; }
+            if (paused) port.diag("auto_resumed", reason("user_check"));
             step(run);
             return;
         }
@@ -248,10 +273,17 @@ final class PurpleSyncMagicChat {
         input.fresh = fresh; input.now = port.now();
         if (local.boundState == PurpleSyncMagicCore.BoundState.Unknown && parsed.chat != null
                 && parsed.chat.kind == PurpleSyncChatCore.PeerKind.Channel) {
-            // WHY: a bound chat missing from memory is either still loading or gone;
-            // the one getAllChats reply settles which, instead of waiting forever.
+            // WHY: after a cold start the archived chat is usually only in the database; only a chat missing
+            // there too is either still loading or gone, and the one getAllChats reply settles which.
+            if (!stored) {
+                stored = true;
+                port.stored(parsed.chat.id, found -> port.post(() -> planned(run, binding, parsed, found == null ? null
+                    : new Local(local.visible, found.boundState, found.bound, local.mainLoaded, local.archiveLoaded))));
+                return;
+            }
             if (allChats == null) { proveAbsent(run, binding); return; }
             input.bound = find(allChats, parsed.chat.id);
+            if (input.bound == null && partial) { listPartial(run); return; }
             input.boundState = input.bound != null ? PurpleSyncMagicCore.BoundState.Present : PurpleSyncMagicCore.BoundState.Gone;
         }
         if (allChats != null) input.allChats = titled(allChats);
@@ -271,10 +303,32 @@ final class PurpleSyncMagicChat {
     }
 
     private void proveAbsent(long run, String binding) {
-        gated(run, binding, PurpleSyncMagicCore.ALL_CHATS, port::allChats, list -> {
-            allChats = list != null ? list : Collections.emptyList();
+        page(run, binding, new ArrayList<>(), new ArrayList<>(), 1);
+    }
+
+    /**
+     * Reads messages.getAllChats until the reply is complete. A slice is paged with except_ids; only a complete
+     * list may prove that no magic chat exists, so one still partial after {@link #ALL_CHATS_PAGES} pages is used
+     * only for the candidates it holds, or else waits.
+     */
+    private void page(long run, String binding, List<Long> seen, List<PurpleSyncMagicCore.Candidate> found, int pages) {
+        this.<Chats>gated(run, binding, PurpleSyncMagicCore.ALL_CHATS, done -> port.allChats(new ArrayList<>(seen), done), chats -> {
+            if (chats != null) {
+                found.addAll(chats.candidates);
+                for (Long id : chats.ids) if (id != null && !seen.contains(id)) seen.add(id);
+            }
+            partial = chats != null && chats.count >= 0 && seen.size() < chats.count && !chats.ids.isEmpty();
+            if (partial && pages < ALL_CHATS_PAGES) { page(run, binding, seen, found, pages + 1); return; }
+            if (partial && titled(found).isEmpty()) { listPartial(run); return; }
+            allChats = found;
             step(run);
-        }, failure -> unavailable(run, "rpc"));
+        }, failure -> backOff(run, PurpleSyncMagicCore.ALL_CHATS));
+    }
+
+    /** An incomplete list proves nothing absent: wait, and read it again later. */
+    private void listPartial(long run) {
+        port.diag("lookup_result", code("result", "absent_waiting"), reason("list_partial"));
+        hold(run, PurpleSyncMagicCore.ALL_CHATS, port.now() + PARTIAL_WAIT, null);
     }
 
     private void verify(long run, String binding, PurpleSyncMagicCore.Plan plan, PurpleSyncMagicCore.LookupInput input) {
@@ -283,13 +337,19 @@ final class PurpleSyncMagicChat {
         this.<PurpleSyncMagicCore.Candidate>gated(run, binding, PurpleSyncMagicCore.FULL_INFO, done -> port.fullInfo(id, done), chat -> {
             if (chat == null || chat.channelId != id) { unavailable(run, "rpc"); return; }
             PurpleSyncMagicCore.Problem[] problem = { PurpleSyncMagicCore.Problem.None };
+            boolean[] rejected = { false };
             String next = edit(current -> {
                 PurpleSyncMagicCore.Verified verified = PurpleSyncMagicCore.verify(current, chat, port.now());
                 if (verified == null) return null;
-                problem[0] = verified.problem;
+                problem[0] = verified.problem; rejected[0] = verified.rejected;
                 return verified.binding;
             });
             if (next == null) { unavailable(run, "binding_unreadable"); return; }
+            if (rejected[0]) {
+                port.diag("rejected", reason(problem[0].code()));
+                step(run);
+                return;
+            }
             if (problem[0] != PurpleSyncMagicCore.Problem.None) {
                 PurpleSyncMagicCore.Binding parsed = PurpleSyncMagicCore.parse(next);
                 problem(run, problem[0], parsed != null && !parsed.problemShown, parsed, input);
@@ -298,7 +358,7 @@ final class PurpleSyncMagicChat {
             if (plan.rebind && !created) port.diag("lookup_result", code("result", input.binding.isEmpty() ? "found" : "rebound"),
                 count("count", candidates(input)));
             step(run);
-        }, failure -> unavailable(run, "rpc"));
+        }, failure -> backOff(run, PurpleSyncMagicCore.FULL_INFO));
     }
 
     private void create(long run, String binding) {
@@ -325,7 +385,7 @@ final class PurpleSyncMagicChat {
             if (failure.error != null && (failure.error.contains("TOO_MUCH") || failure.error.startsWith("USER_RESTRICTED"))) {
                 PurpleSyncMagicCore.Binding parsed = PurpleSyncMagicCore.parse(port.readBinding());
                 problem(run, PurpleSyncMagicCore.Problem.CreateLimit, true, parsed, null);
-            } else unavailable(run, "rpc");
+            } else backOff(run, PurpleSyncMagicCore.CREATE);
         }, () -> uncertain(run, started), this::notCreated);
     }
 
@@ -369,7 +429,7 @@ final class PurpleSyncMagicChat {
     private void done(long run, Result.Kind kind, PurpleSyncChatCore.Peer chat, PurpleSyncMagicCore.Problem problem, boolean show, long retryAt,
                       boolean manual, String result, PurpleSyncMagicCore.LookupInput input) {
         port.diag("lookup_result", code("result", result), count("count", candidates(input)));
-        failures = 0;
+        failures = 0; errors = 0;
         finish(run, new Result(kind, chat, problem, show, retryAt, manual));
     }
 
@@ -392,7 +452,7 @@ final class PurpleSyncMagicChat {
     /** WHY: one wake-up per account, so an unattended device still finds its chat after a wait. */
     private void schedule(long retryAt) {
         if (wake != null) port.cancelDelay(wake);
-        Runnable task = () -> { wake = null; lookup(trigger != null ? trigger : Trigger.startup, false, null); };
+        Runnable task = () -> { wake = null; lookup(Trigger.retry, false, null); };
         wake = task;
         port.delay(task, Math.max(1000, (retryAt - port.now()) * 1000));
     }
@@ -443,6 +503,13 @@ final class PurpleSyncMagicChat {
                 failed.accept(reply);
             }
         }));
+    }
+
+    /** A refused request that is not a flood (PEER_FLOOD, an unexpected 400) is not sent again on every lookup. */
+    private void backOff(long run, String method) {
+        long seconds = Math.min(ERROR_WAIT << Math.min(errors++, 8), 24 * 60 * 60);
+        port.diag("lookup_result", code("result", "absent_waiting"), reason("rpc"));
+        hold(run, method, port.now() + seconds, null);
     }
 
     private void hold(long run, String method, long retryAt, Runnable instead) {

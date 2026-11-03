@@ -247,7 +247,9 @@ QJsonObject Evaluate(const QString &operation, const QJsonObject &object) {
         auto now = int64_t(0);
         if (!Binding(object.value(u"binding"_q), binding) || !Candidate(object.value(u"chat"_q), chat)
             || !Decimal(object.value(u"now"_q), now) || now <= 0) return Failure();
-        result.insert(u"problem"_q, SyncChatProblemCode(CompleteSyncChatVerify(binding, chat, now)));
+        const auto problem = CompleteSyncChatVerify(binding, chat, now);
+        result.insert(u"problem"_q, SyncChatProblemCode(problem));
+        result.insert(u"rejected"_q, problem != SyncChatProblem::None && SyncChatCandidateRejected(binding, chat.channelId));
         if (!Put(result, binding)) return Failure();
     } else if (operation == u"wait"_q) {
         auto retryAt = int64_t(0);
@@ -258,7 +260,8 @@ QJsonObject Evaluate(const QString &operation, const QJsonObject &object) {
         auto now = int64_t(0);
         if (!Binding(object.value(u"binding"_q), binding) || !Decimal(object.value(u"now"_q), now)) return Failure();
         result.insert(u"until"_q, QString::number(SyncChatWaitUntil(binding, object.value(u"method"_q).toString(), now)));
-    } else if (operation == u"raise"_q || operation == u"clear"_q || operation == u"shown"_q || operation == u"reset"_q) {
+    } else if (operation == u"raise"_q || operation == u"clear"_q || operation == u"shown"_q || operation == u"reset"_q
+            || operation == u"readmit"_q) {
         if (!Binding(object.value(u"binding"_q), binding)) return Failure();
         if (operation == u"raise"_q) {
             const auto problem = ParseSyncChatProblemCode(object.value(u"problem"_q).toString());
@@ -268,6 +271,8 @@ QJsonObject Evaluate(const QString &operation, const QJsonObject &object) {
             ClearSyncChatProblem(binding);
         } else if (operation == u"shown"_q) {
             binding.problemShown = binding.problem != SyncChatProblem::None;
+        } else if (operation == u"readmit"_q) {
+            ReadmitSyncChatCandidates(binding);
         } else {
             auto next = SyncChatBinding();
             next.waits = binding.waits;

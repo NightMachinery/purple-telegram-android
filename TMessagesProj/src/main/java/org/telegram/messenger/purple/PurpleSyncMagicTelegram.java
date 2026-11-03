@@ -8,6 +8,7 @@ package org.telegram.messenger.purple;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.MessagesController;
+import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.NotificationsController;
 import org.telegram.messenger.Utilities;
@@ -99,18 +100,43 @@ final class PurpleSyncMagicTelegram implements PurpleSyncMagicChat.Port {
         });
     }
 
-    @Override public void allChats(Consumer<PurpleSyncMagicChat.Reply<List<PurpleSyncMagicCore.Candidate>>> done) {
+    @Override public void stored(long channelId, Consumer<PurpleSyncMagicChat.Local> done) {
+        if (!current()) { done.accept(null); return; }
+        MessagesStorage storage = MessagesStorage.getInstance(slot());
+        storage.getStorageQueue().postRunnable(() -> {
+            TLRPC.Chat found = null;
+            try { if (current()) found = storage.getChat(channelId); } catch (RuntimeException ignored) { }
+            TLRPC.Chat chat = found;
+            AndroidUtilities.runOnUIThread(() -> {
+                if (!current()) { done.accept(null); return; }
+                MessagesController controller = MessagesController.getInstance(slot());
+                if (chat != null && chat.id == channelId) controller.putChat(chat, true);
+                PurpleSyncMagicCore.BoundState state = PurpleSyncMagicCore.BoundState.Unknown;
+                PurpleSyncMagicCore.Candidate candidate = chat != null && chat.id == channelId ? PurpleSyncChatFacts.magic(chat, null) : null;
+                if (chat instanceof TLRPC.TL_channelForbidden && chat.id == channelId) { state = PurpleSyncMagicCore.BoundState.Gone; candidate = null; }
+                else if (candidate != null) state = PurpleSyncMagicCore.BoundState.Present;
+                done.accept(new PurpleSyncMagicChat.Local(new ArrayList<>(), state, candidate, true, true));
+            });
+        });
+    }
+
+    @Override public void allChats(List<Long> except, Consumer<PurpleSyncMagicChat.Reply<PurpleSyncMagicChat.Chats>> done) {
         TLRPC.TL_messages_getAllChats request = new TLRPC.TL_messages_getAllChats();
+        if (except != null) request.except_ids.addAll(except);
         send(request, reply -> {
             if (!(reply.value instanceof TLRPC.messages_Chats)) { done.accept(failed(reply)); return; }
-            ArrayList<TLRPC.Chat> chats = ((TLRPC.messages_Chats) reply.value).chats;
+            TLRPC.messages_Chats value = (TLRPC.messages_Chats) reply.value;
+            ArrayList<TLRPC.Chat> chats = value.chats;
             MessagesController.getInstance(slot()).putChats(chats, false);
             List<PurpleSyncMagicCore.Candidate> result = new ArrayList<>();
+            List<Long> ids = new ArrayList<>();
             for (TLRPC.Chat chat : chats) {
+                if (chat != null) ids.add(chat.id);
                 PurpleSyncMagicCore.Candidate candidate = chat != null && chat.megagroup ? PurpleSyncChatFacts.magic(chat, null) : null;
                 if (candidate != null) result.add(candidate);
             }
-            done.accept(PurpleSyncMagicChat.Reply.ok(result));
+            int count = value instanceof TLRPC.TL_messages_chatsSlice ? value.count : -1;
+            done.accept(PurpleSyncMagicChat.Reply.ok(new PurpleSyncMagicChat.Chats(result, ids, count)));
         });
     }
 

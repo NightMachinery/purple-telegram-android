@@ -74,6 +74,7 @@ public final class PurpleDiagLogStore {
             "create_limit", "create_uncertain", "magic_ineligible", "space_mismatch", "list_partial",
             "drop_pending", "move", "inventory", "publish", "joined", "user_check", "user_resume", "chat_changed",
             "binding_unreadable", "code", "user_action", "choose", "default", "join", "listed", "value", "on", "off",
+            "rejected", "wait_recorded", "retry",
             // the settings owner plan (PurpleAccountOwner)
             "owner", "planned", "accounts", "state", "ready", "owned", "pending_owner_writes",
             "waiting_for_first_sign_in", "needs_choice", "single_file_error", "invalid_input",

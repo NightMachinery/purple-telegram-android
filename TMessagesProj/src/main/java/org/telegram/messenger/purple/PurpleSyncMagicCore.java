@@ -137,11 +137,15 @@ public final class PurpleSyncMagicCore {
         }
     }
 
-    /** A Verify read's outcome: the problem it raised, or None, and the binding to store. */
+    /**
+     * A Verify read's outcome: the problem, or None, and the binding to store. A candidate other than the bound
+     * chat is only {@link #rejected}: the binding keeps no problem and the next plan skips that chat.
+     */
     public static final class Verified {
         public final Problem problem;
         public final String binding;
-        Verified(Problem problem, String binding) { this.problem = problem; this.binding = binding; }
+        public final boolean rejected;
+        Verified(Problem problem, String binding, boolean rejected) { this.problem = problem; this.binding = binding; this.rejected = rejected; }
     }
 
     public static boolean isTitle(String title) {
@@ -165,7 +169,7 @@ public final class PurpleSyncMagicCore {
         if (chat == null) return null;
         JSONObject answer = call("verify", json("binding", text(binding), "chat", chat.json(), "now", Long.toString(now)));
         Problem problem = Problem.parse(answer.optString("problem"));
-        return answer.optBoolean("ok") && problem != null ? new Verified(problem, answer.optString("binding")) : null;
+        return answer.optBoolean("ok") && problem != null ? new Verified(problem, answer.optString("binding"), answer.optBoolean("rejected")) : null;
     }
 
     /** Records that {@code method} must not be sent before {@code retryAt}; a recorded deadline only grows. */
@@ -184,6 +188,8 @@ public final class PurpleSyncMagicCore {
     }
     public static String clear(String binding) { return edited(call("clear", json("binding", text(binding)))); }
     public static String shown(String binding) { return edited(call("shown", json("binding", text(binding)))); }
+    /** A manual check: candidates rejected by earlier verifications are considered again. */
+    public static String readmit(String binding) { return edited(call("readmit", json("binding", text(binding)))); }
     /** Forgets the chat and its problem, keeping the waits, login and migration step. */
     public static String reset(String binding) { return edited(call("reset", json("binding", text(binding)))); }
 
