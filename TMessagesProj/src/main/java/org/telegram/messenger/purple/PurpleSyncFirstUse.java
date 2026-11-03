@@ -87,8 +87,55 @@ public final class PurpleSyncFirstUse {
         new PurpleSyncFirstUse(runner, choice, done).start(check);
     }
 
+    /** Automatic first use reads the chat at most once per this many seconds, as automatic checks do (core). */
+    static final long CHECK_SECONDS = 15 * 60;
+
+    /**
+     * Whether automatic sync of a device with no state may read the chat for first use on {@code event} at
+     * {@code now}, {@code last} being when it last did (0 for never): turning automatic sync on and a real Save always
+     * may; the lifecycle triggers (session ready, foreground, unlock, retry) once per {@link #CHECK_SECONDS}, so a
+     * device that waits or asks does not scan the chat on every activation.
+     */
+    static boolean due(PurpleSyncAutoCore.Event event, long now, long last) {
+        return event == PurpleSyncAutoCore.Event.Enable || event == PurpleSyncAutoCore.Event.LocalSaved
+                || last <= 0 || now < last || now - last >= CHECK_SECONDS;
+    }
+
+    /**
+     * The user's answer, kept per account until first use acted on it, so a crash or a failed step after the old
+     * state was set aside does not ask again: the next first use of the same chat space takes it. It is kept with
+     * the space it answered for, and dropped once the device joined or published, or has a state in the chat's space.
+     */
+    interface Answers {
+        String get();
+        void put(String value);
+        void clear();
+    }
+
+    static Answers answers(int slot) {
+        PurpleAccountFiles.Identity identity = PurpleAccountFiles.capture(slot);
+        String key = identity != null ? "purple_sync_first_answer_" + identity.key : null;
+        return new Answers() {
+            public String get() { return key != null ? org.telegram.messenger.MessagesController.getMainSettings(slot).getString(key, null) : null; }
+            public void put(String value) { if (key != null) org.telegram.messenger.MessagesController.getMainSettings(slot).edit().putString(key, value).commit(); }
+            public void clear() { if (key != null) org.telegram.messenger.MessagesController.getMainSettings(slot).edit().remove(key).commit(); }
+        };
+    }
+
+    static String answer(PurpleSyncCore.FirstUseChoice choice, String space) { return choice.name() + "|" + space; }
+
+    /** The kept answer for {@code space}, or None. */
+    static PurpleSyncCore.FirstUseChoice kept(Answers answers, String space) {
+        String value = answers.get();
+        if (value == null || space == null || space.isEmpty()) return PurpleSyncCore.FirstUseChoice.None;
+        for (PurpleSyncCore.FirstUseChoice choice : PurpleSyncCore.FirstUseChoice.values())
+            if (choice != PurpleSyncCore.FirstUseChoice.None && value.equals(answer(choice, space))) return choice;
+        return PurpleSyncCore.FirstUseChoice.None;
+    }
+
     private final PurpleSyncRunner runner;
-    private final PurpleSyncCore.FirstUseChoice choice;
+    private PurpleSyncCore.FirstUseChoice choice;
+    private final Answers answers;
     private final PurpleSyncRunner.Listener<Outcome> done;
     private PurpleSyncCore.FirstUseAction action;
     private boolean archived, rechecked;
@@ -98,6 +145,7 @@ public final class PurpleSyncFirstUse {
         this.runner = runner;
         this.choice = choice != null ? choice : PurpleSyncCore.FirstUseChoice.None;
         this.done = done;
+        answers = answers(runner.account());
     }
 
     private void start(PurpleSyncRunner.Check check) {
@@ -106,6 +154,19 @@ public final class PurpleSyncFirstUse {
         if (plan == null || !plan.isValid() || !plan.available || plan.action == null) {
             finish(Result.Refused, "first_use_unavailable", null, null);
             return;
+        }
+        if (choice == PurpleSyncCore.FirstUseChoice.None && plan.action == PurpleSyncCore.FirstUseAction.Ask) {
+            PurpleSyncCore.FirstUseChoice kept = kept(answers, plan.space);
+            if (kept != PurpleSyncCore.FirstUseChoice.None) {
+                choice = kept;
+                plan = plan(check, choice);
+                if (plan == null || !plan.isValid() || !plan.available || plan.action == null) {
+                    finish(Result.Refused, "first_use_unavailable", null, null);
+                    return;
+                }
+            }
+        } else if (choice != PurpleSyncCore.FirstUseChoice.None && plan.action != PurpleSyncCore.FirstUseAction.Ask && !plan.space.isEmpty()) {
+            answers.put(answer(choice, plan.space));
         }
         action = plan.action;
         if (action == PurpleSyncCore.FirstUseAction.Wait) { finish(Result.Wait, "wait", null, null); return; }
@@ -199,6 +260,7 @@ public final class PurpleSyncFirstUse {
     }
 
     private void finish(Result result, String reason, PurpleSyncApply.ApplyResult applied, PurpleSyncPublisher.Result sent) {
+        if (result == Result.Joined || result == Result.Published || result == Result.NotFirstUse) answers.clear();
         PurpleDiagLog.event("sync", "first_use", PurpleDiagLogStore.slot(runner.account()),
                 PurpleDiagLogStore.code("action", code(action)), PurpleDiagLogStore.code("outcome", result.name().toLowerCase(java.util.Locale.ROOT)),
                 PurpleDiagLogStore.reason(reason), PurpleDiagLogStore.flag("archived", archived));

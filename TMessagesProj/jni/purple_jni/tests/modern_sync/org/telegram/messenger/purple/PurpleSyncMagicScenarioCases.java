@@ -28,6 +28,7 @@ final class PurpleSyncMagicScenarioCases {
         automatic(parent, false);
         automatic(parent, true);
         automaticFresh(parent);
+        automaticWaits(parent);
         migration(parent);
         automaticFailure(parent);
         System.out.println("MAGIC_AUTOMATIC_CASES=PASS");
@@ -99,6 +100,37 @@ final class PurpleSyncMagicScenarioCases {
                 "automatic fresh: turning automatic sync on runs first use, which publishes the first record: " + (port.firstUse != null ? port.firstUse.result : null));
         check(port.enabled && port.failures.isEmpty() && new File(device.sync(), "auto.json").exists(), "automatic fresh: automatic sync is on for the new state");
         oneSave(port, PurpleSyncMagicDevices.THEIRS, "automatic fresh");
+        port.engine.close();
+    }
+
+    /**
+     * A fresh device with the defaults and automatic sync on, in an empty chat: first use waits, and the lifecycle
+     * triggers read the chat for it at most once per 15 minutes. A device's first record arriving is then joined.
+     */
+    static void automaticWaits(File parent) throws Exception {
+        PurpleSyncMagicDevices.Device waiting = new PurpleSyncMagicDevices.Device(parent, "magic-automatic-wait", "fixture-device-wait");
+        PurpleSyncMagicDevices.Device other = new PurpleSyncMagicDevices.Device(parent, "magic-automatic-wait-other", "fixture-device-wait-other");
+        waiting.local(null); waiting.bind();
+        PurpleSyncMagicDevices.Group group = new PurpleSyncMagicDevices.Group();
+        PurpleSyncMagicDevices.Automatic port = new PurpleSyncMagicDevices.Automatic(waiting, group);
+        port.runFirstUse = true;
+        port.event(PurpleSyncAutoCore.Event.Enable);
+        check(port.firstUse != null && port.firstUse.result == PurpleSyncFirstUse.Result.Wait && port.enabled && group.posts == 0 && waiting.state() == null,
+                "automatic wait: the defaults in an empty chat wait, automatic sync stays on: " + (port.firstUse != null ? port.firstUse.result : null));
+        int scans = port.firstScans, checks = group.checks;
+        for (PurpleSyncAutoCore.Event event : new PurpleSyncAutoCore.Event[] { PurpleSyncAutoCore.Event.SessionReady, PurpleSyncAutoCore.Event.Foreground, PurpleSyncAutoCore.Event.Unlock }) {
+            port.clock += 60;
+            port.event(event);
+        }
+        check(port.firstScans == scans && group.checks == checks, "automatic wait: activations within 15 minutes read nothing: " + (group.checks - checks));
+        other.local(PurpleSyncMagicDevices.MINE); other.bind();
+        PurpleSyncFirstUse.Outcome first = PurpleSyncFirstUseCases.firstUse(other, group, PurpleSyncCore.FirstUseChoice.None, "automatic wait: another device");
+        check(first.result == PurpleSyncFirstUse.Result.Published, "automatic wait: a device with settings publishes: " + first.result);
+        port.clock += PurpleSyncFirstUse.CHECK_SECONDS;
+        port.event(PurpleSyncAutoCore.Event.Foreground);
+        check(port.firstScans == scans + 1 && port.firstUse.result == PurpleSyncFirstUse.Result.Joined && Arrays.equals(PurpleSyncMagicDevices.MINE, waiting.local()),
+                "automatic wait: 15 minutes later it reads again and joins: " + port.firstUse.result);
+        check(port.failures.isEmpty(), "automatic wait: no exception: " + port.failures);
         port.engine.close();
     }
 
