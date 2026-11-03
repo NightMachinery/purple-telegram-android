@@ -723,7 +723,7 @@
     <string name="PurpleImportCompletionUnverified">The settings file was written, but import completion could not be verified. Reopen settings and review the account file. No automatic send was queued.</string>
     <string name="PurpleSyncImpactVersion">Changes to the version from %1$s:</string>
     <string name="PurpleSyncRelink">Relink</string>
-    <string name="PurpleSyncRelinkAbout">%1$s’s link to this device’s sync state was lost, for example by signing out. Relink checks Saved Messages to prove that the state belongs to %1$s, then restores the link. Settings and History stay in place.</string>
+    <string name="PurpleSyncRelinkAbout">%1$s’s link to this device’s sync state was lost, for example by signing out. Relink checks the sync chat to prove that the state belongs to %1$s, then restores the link. Settings and History stay in place.</string>
     <string name="PurpleSyncStartAgain">Start again</string>
     <string name="PurpleSyncResumeArchive">Finish starting again</string>
     <string name="PurpleSyncStartAgainAbout">Start sync again for %1$s? This moves only this account’s old sync state and pending files into an archive. Settings, good copies, backups, History and device choices stay in place. It waits while a sync post is queued. A partial archive must finish before setup can continue.</string>
@@ -738,7 +738,7 @@
     <string name="PurpleSyncAutoRetry">Waiting to retry in %1$d seconds.</string>
     <string name="PurpleSyncAutoAttention">Automatic sync needs attention: %1$s</string>
     <string name="PurpleSyncAutoAccount">confirm this account’s file ownership</string>
-    <string name="PurpleSyncAutoBinding">use manual Check to set up this account’s sync</string>
+    <string name="PurpleSyncAutoBinding">open Sync and Check this account’s sync state</string>
     <string name="PurpleSyncAutoChat">sync chat not resolved</string>
     <string name="PurpleSyncAutoFile">save a valid existing settings file</string>
     <string name="PurpleSyncAutoReview">use manual Check to review the changes</string>
@@ -1030,4 +1030,29 @@
     <string name="PurpleSyncChatMoveRecoveryWaiting">Checking whether the move to the new sync chat finished. The next check is due at %1$s. Tap Retry after that time to check.</string>
     <string name="PurpleSyncChatMoveFinishedForFollow">Your settings were copied to the new chat, but another sync chat has newer settings. Use Follow to keep syncing with it.</string>
     <string name="PurpleSyncChatMoveFinishedSearching">Your settings were copied to the new chat, but the move could not be confirmed. Purple is looking for the chat with the newest settings.</string>
+    <!-- Purple: first use of the sync chat (PurpleSyncFirstUse) and named Check refusals (PurpleSyncCheckReason) -->
+    <string name="PurpleSyncFirstWait">On. Waiting for a device with your settings: the sync chat has no settings yet, and this device has only the defaults.</string>
+    <string name="PurpleSyncFirstWaitCheck">Waiting for a device with your settings. The sync chat has no settings yet, and this device has only the defaults, so nothing was sent.</string>
+    <string name="PurpleSyncFirstAsk">The sync chat has settings that differ from this device’s. Choose once which settings to keep on this device.</string>
+    <string name="PurpleSyncFirstAskAttention">choose on the Sync screen which settings to keep</string>
+    <string name="PurpleSyncFirstRefusedAttention">open Sync and Check</string>
+    <string name="PurpleSyncFirstUseSynced">Use the synced settings</string>
+    <string name="PurpleSyncFirstUseSyncedAbout">Replaces this device’s settings with the sync chat’s. History keeps the old file, and Undo can bring it back.</string>
+    <string name="PurpleSyncFirstUseThis">Use this device’s settings</string>
+    <string name="PurpleSyncFirstUseThisAbout">Publishes this device’s settings as the synced settings, for your other devices to use.</string>
+    <string name="PurpleSyncFirstRunning">Setting up sync on this device…</string>
+    <string name="PurpleSyncFirstJoined">This device now syncs with the sync chat. Its settings already match, so nothing changed.</string>
+    <string name="PurpleSyncFirstApplied">This device now uses the synced settings.</string>
+    <string name="PurpleSyncFirstPublished">This device’s settings are now the synced settings.</string>
+    <string name="PurpleSyncFirstRefused">Could not set up sync on this device, so nothing was changed. Check again.</string>
+    <string name="PurpleSyncRefusedSpaceMismatch">The sync chat’s settings belong to another sync setup than this device’s. Check again to choose which settings to keep. Nothing was changed.</string>
+    <string name="PurpleSyncRefusedUnreadable">Some settings records in the sync chat cannot be read by this device. Nothing was changed.</string>
+    <string name="PurpleSyncRefusedAmbiguous">The sync chat holds settings records of more than one sync setup, so this device cannot tell which to use. Nothing was changed.</string>
+    <string name="PurpleSyncRefusedNewerSchema">The sync chat has settings from a newer Purple version. Update this app to use them. Nothing was changed.</string>
+    <string name="PurpleSyncRefusedHeadsUnclear">The latest settings in the sync chat cannot be determined. Nothing was changed.</string>
+    <string name="PurpleSyncRefusedOwnRecords">This device’s own records in the sync chat do not match its sync state. Nothing was changed.</string>
+    <string name="PurpleSyncAutoFailed">an automatic sync run failed, so automatic sync is paused. Check on this screen resumes it</string>
+    <string name="PurpleSyncAutoFailedTitle">Automatic sync paused</string>
+    <string name="PurpleSyncAutoFailedAbout">An automatic sync run failed, so automatic sync is paused for this account. Nothing was sent. Check resumes it.</string>
+    <string name="PurpleSyncRefusedPendingPrefix">A settings post from this device may not have finished and stays paused.</string>
 </resources>

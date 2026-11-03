@@ -4,6 +4,7 @@ import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.Arrays;
+import java.util.Collections;
 import static org.telegram.messenger.purple.PurpleModernSyncCases.*;
 
 /**
@@ -13,6 +14,10 @@ import static org.telegram.messenger.purple.PurpleModernSyncCases.*;
  * so the first magic publish posted its record, failed its local commit with InvalidRetention and left a store that no
  * longer opened. Every step is followed by the three checks of the sync folder: the retention check, the store's open
  * (its known-files check) and the move store's known paths.
+ *
+ * The automatic path (R4b) runs the real engine and network over the magic group (PurpleSyncMagicDevices): one own
+ * record and one Save make exactly one automatic write with no exception, for a fresh device through first use, and
+ * for two devices that migrate from a shared Saved Messages space.
  */
 final class PurpleSyncMagicScenarioCases {
     static final PurpleSyncChatCore.Peer MAGIC = PurpleSyncMagicPublishCases.MAGIC;
@@ -20,6 +25,170 @@ final class PurpleSyncMagicScenarioCases {
     static void run(File parent) throws Exception {
         freshAccount(parent);
         fromD1(parent);
+        automatic(parent, false);
+        automatic(parent, true);
+        automaticFresh(parent);
+        migration(parent);
+        automaticFailure(parent);
+        System.out.println("MAGIC_AUTOMATIC_CASES=PASS");
+    }
+
+    // ---- the automatic path (R4b): the real engine and network over the magic group ----
+
+    /** A device with no state publishes the first record (first use), and the store then holds it confirmed. */
+    static void ownRecord(PurpleSyncMagicDevices.Device device, PurpleSyncMagicDevices.Group group, String step) throws Exception {
+        PurpleSyncFirstUse.Outcome first = PurpleSyncFirstUseCases.firstUse(device, group, PurpleSyncCore.FirstUseChoice.None, step);
+        check(first.result == PurpleSyncFirstUse.Result.Published && group.messages.size() == 1, step + ": one own record, confirmed: " + first.result);
+        PurpleAccountSyncCore.Result state = device.state();
+        check(state.isValid() && state.pendingSeq == 0 && MAGIC.token().equals(PurpleSyncMagicPublishCases.stateChat(device.sync())), step + ": the store holds it, nothing pending");
+    }
+
+    /** One automatic Save: exactly one automatic write of the saved bytes, no exception, nothing held. */
+    static void oneSave(PurpleSyncMagicDevices.Automatic port, byte[] bytes, String step) throws Exception {
+        PurpleSyncMagicDevices.Group group = port.group;
+        int writes = group.writes(), posts = group.posts;
+        port.saved(bytes);
+        check(port.failures.isEmpty(), step + ": the automatic pass throws nothing: " + port.failures);
+        check(group.writes() == writes + 1, step + ": exactly one automatic write: " + (group.writes() - writes) + " (posts " + (group.posts - posts) + ", edits " + group.edits + ") reason=" + port.reason);
+        java.util.List<byte[]> heads = group.heads();
+        check(heads.size() == 1 && Arrays.equals(bytes, heads.get(0)) && group.spaces().size() == 1, step + ": the group's one head is the saved file");
+        check(port.reason == PurpleSyncAutoCore.Reason.None, step + ": automatic sync holds nothing: " + port.reason);
+        PurpleAccountSyncCore.Result state = port.device.state();
+        check(state.isValid() && state.pendingSeq == 0, step + ": the store confirmed the automatic record");
+        int after = group.writes();
+        port.later();
+        check(port.failures.isEmpty() && group.writes() == after, step + ": a later pass writes nothing again");
+    }
+
+    /**
+     * The device check of R4a2: the chat is bound, the group holds one own record confirmed by this device, and
+     * automatic sync is on. One Save makes exactly one automatic write: an edit of the own record where Telegram allows
+     * it (core's EditInPlace, the default), or with {@code editRefused} exactly one new record posted. Every pass threw
+     * AutomaticNonSelfHeld before: PurpleSyncAutoCore.Inventory accepted only a Saved Messages inventory.
+     */
+    static void automatic(File parent, boolean editRefused) throws Exception {
+        PurpleSyncMagicDevices.Device device = new PurpleSyncMagicDevices.Device(parent, "magic-automatic-" + (editRefused ? "post" : "edit"), "fixture-device-auto");
+        device.local(PurpleSyncMagicDevices.MINE); device.bind();
+        PurpleSyncMagicDevices.Group group = new PurpleSyncMagicDevices.Group();
+        ownRecord(device, group, "automatic");
+        PurpleSyncMagicDevices.Automatic port = new PurpleSyncMagicDevices.Automatic(device, group);
+        port.client.editRefused = editRefused;
+        port.event(PurpleSyncAutoCore.Event.Enable);
+        check(port.enabled && port.failures.isEmpty(), "automatic: automatic sync turns on with no exception: " + port.failures + " " + port.reason);
+        int writes = group.writes();
+        port.later();
+        check(port.failures.isEmpty() && group.writes() == writes && port.reason == PurpleSyncAutoCore.Reason.None,
+                "automatic: a pass over the own head throws nothing and writes nothing: " + port.failures + " " + port.reason);
+        oneSave(port, PurpleSyncMagicDevices.THEIRS, "automatic " + (editRefused ? "post" : "edit"));
+        check(editRefused ? group.posts == 2 && group.edits == 0 : group.posts == 1 && group.edits == 1,
+                "automatic: " + (editRefused ? "exactly one new record posted" : "the own record edited in place") + ": posts " + group.posts + " edits " + group.edits);
+        check(editRefused ? group.messages.size() == 1 && group.deletes == 1 : group.messages.size() == 1,
+                "automatic: only this device's obsolete record retires after the post: " + group.messages.size() + " deletes " + group.deletes);
+        port.engine.close();
+    }
+
+    /** A fresh device with automatic sync on: first use publishes the first record, then a Save writes once. */
+    static void automaticFresh(File parent) throws Exception {
+        PurpleSyncMagicDevices.Device device = new PurpleSyncMagicDevices.Device(parent, "magic-automatic-fresh", "fixture-device-fresh");
+        device.local(PurpleSyncMagicDevices.MINE); device.bind();
+        PurpleSyncMagicDevices.Group group = new PurpleSyncMagicDevices.Group();
+        PurpleSyncMagicDevices.Automatic port = new PurpleSyncMagicDevices.Automatic(device, group);
+        port.runFirstUse = true;
+        port.event(PurpleSyncAutoCore.Event.Enable);
+        check(port.firstUses == 1 && port.firstUse != null && port.firstUse.result == PurpleSyncFirstUse.Result.Published && group.posts == 1,
+                "automatic fresh: turning automatic sync on runs first use, which publishes the first record: " + (port.firstUse != null ? port.firstUse.result : null));
+        check(port.enabled && port.failures.isEmpty() && new File(device.sync(), "auto.json").exists(), "automatic fresh: automatic sync is on for the new state");
+        oneSave(port, PurpleSyncMagicDevices.THEIRS, "automatic fresh");
+        port.engine.close();
+    }
+
+    /**
+     * Two devices that shared a Saved Messages space bind the magic chat and turn automatic sync on. Each store moves
+     * its state into the magic group on open (MoveSyncChat keeps the space); the first device's moved state publishes
+     * into the empty group, the second finds that record in its own space: no first use, no question. Then a Save on
+     * the second device writes once and the first device applies it automatically. Both folders hold a leftover of
+     * an older build (sync-chat-setup.json), which the store accepts and the account recovery scan refuses: with the
+     * scan applied in magic mode, automatic sync took the moved state for no state (AccountUnbound) and never
+     * published it, the R3/R4 failure.
+     */
+    static void migration(File parent) throws Exception {
+        PurpleSyncMagicDevices.Device one = new PurpleSyncMagicDevices.Device(parent, "magic-migrate-1", "fixture-device-m1");
+        PurpleSyncMagicDevices.Device two = new PurpleSyncMagicDevices.Device(parent, "magic-migrate-2", "fixture-device-m2");
+        Cloud saved = new Cloud(202);
+        one.local(PurpleSyncMagicDevices.MINE);
+        PurpleSyncFirstUseCases.publishSaved(one, saved, "migration: device 1 before magic");
+        two.local(PurpleSyncMagicDevices.MINE);
+        PurpleSyncFirstUseCases.joinSaved(two, saved, "migration: device 2 before magic");
+        // Device 2 then has no settings file (the inherited defaults): its state must move all the same.
+        two.local(null);
+        String space = one.space();
+        check(space != null && space.equals(two.space()), "migration: both devices share one Saved Messages space before magic");
+        // Automatic sync was on before magic: each device has its automatic record, which the move carries.
+        for (PurpleSyncMagicDevices.Device device : new PurpleSyncMagicDevices.Device[] { one, two }) {
+            PurpleSyncMagicDevices.Automatic before = new PurpleSyncMagicDevices.Automatic(device, new PurpleSyncMagicDevices.Group(), PurpleSyncChatCore.Peer.self());
+            before.event(PurpleSyncAutoCore.Event.Enable);
+            check(before.enabled && new File(device.sync(), "auto.json").exists(), "migration: automatic sync was on before magic on " + device.id + ": " + before.reason);
+            before.engine.close();
+        }
+        PurpleSyncMagicDevices.Group group = new PurpleSyncMagicDevices.Group();
+        for (PurpleSyncMagicDevices.Device device : new PurpleSyncMagicDevices.Device[] { one, two }) {
+            device.bind();
+            write(new File(device.sync(), "sync-chat-setup.json"), "{}");
+        }
+        PurpleSyncMagicDevices.Automatic first = new PurpleSyncMagicDevices.Automatic(one, group);
+        first.enabled = true;
+        first.later();
+        check(MAGIC.token().equals(PurpleSyncMagicPublishCases.stateChat(one.sync())) && space.equals(one.space()),
+                "migration: device 1's state moved into the magic group and kept its space");
+        check(group.messages.size() == 1 && group.spaces().equals(Collections.singleton(space)),
+                "migration: device 1's moved state published into the magic group in the shared space: " + group.messages.size() + " " + group.spaces() + " reason=" + first.reason);
+        check(first.firstUses == 0 && first.mismatches == 0 && first.failures.isEmpty() && first.reason != PurpleSyncAutoCore.Reason.AccountUnbound,
+                "migration: device 1 ran no first use and is not AccountUnbound: " + first.reason + " " + first.failures);
+
+        PurpleSyncMagicDevices.Automatic second = new PurpleSyncMagicDevices.Automatic(two, group);
+        second.enabled = true;
+        second.later();
+        check(MAGIC.token().equals(PurpleSyncMagicPublishCases.stateChat(two.sync())) && space.equals(two.space()),
+                "migration: device 2's state moved into the magic group and kept its space");
+        check(group.spaces().equals(Collections.singleton(space)) && group.heads().size() == 1, "migration: the magic group holds one space and one head: " + group.spaces());
+        check(second.firstUses == 0 && second.mismatches == 0 && second.failures.isEmpty() && second.reason != PurpleSyncAutoCore.Reason.AccountUnbound,
+                "migration: device 2 ran no first use, met no other space and is not AccountUnbound: " + second.reason + " " + second.failures);
+        for (PurpleSyncMagicDevices.Device device : new PurpleSyncMagicDevices.Device[] { one, two }) {
+            check(!device.archived(), "migration: nothing was set aside");
+            PurpleSyncFirstUseCases.settled(device, group, "migration: " + device.id);
+        }
+        check(Arrays.equals(PurpleSyncMagicDevices.MINE, one.local()) && two.local() == null, "migration: no settings file changed or appeared");
+        oneSave(first, PurpleSyncMagicDevices.THEIRS, "migration: a Save on device 1");
+        second.later();
+        check(second.failures.isEmpty() && second.reason == PurpleSyncAutoCore.Reason.FileAbsent && two.local() == null,
+                "migration: device 2, which has no settings file, holds for that alone: " + second.reason + " " + second.failures);
+        first.engine.close();
+        second.engine.close();
+    }
+
+    /**
+     * An automatic pass that throws is not lost: the port gets the exception with its diag reason code, and automatic
+     * sync then holds (core's SyncChatProblem) without a network call until the user resumes it.
+     */
+    static void automaticFailure(File parent) throws Exception {
+        PurpleSyncMagicDevices.Device device = new PurpleSyncMagicDevices.Device(parent, "magic-automatic-failure", "fixture-device-fail");
+        device.local(PurpleSyncMagicDevices.MINE); device.bind();
+        PurpleSyncMagicDevices.Group group = new PurpleSyncMagicDevices.Group();
+        ownRecord(device, group, "automatic failure");
+        PurpleSyncMagicDevices.Automatic port = new PurpleSyncMagicDevices.Automatic(device, group);
+        port.event(PurpleSyncAutoCore.Event.Enable);
+        port.failCheck = new IllegalStateException("fixture failure inside the pass");
+        port.later();
+        check(port.failures.equals(java.util.Collections.singletonList("illegal_state")), "automatic failure: the exception reaches the port as a reason code: " + port.failures);
+        int checks = port.checks;
+        port.later();
+        check(port.failures.size() == 1 && port.checks == checks && port.reason == PurpleSyncAutoCore.Reason.SyncChatProblem,
+                "automatic failure: automatic sync holds with the problem and reads nothing: " + port.failures + " " + port.reason);
+        port.failures.clear();
+        port.failCheck = null;
+        port.later();
+        check(port.failures.isEmpty() && port.checks == checks + 1 && port.reason == PurpleSyncAutoCore.Reason.None, "automatic failure: once resumed it runs again: " + port.reason);
+        port.engine.close();
     }
 
     /** A Frame whose files directory is reached through a link: parent/NAME-user0 -> parent/NAME-data. */

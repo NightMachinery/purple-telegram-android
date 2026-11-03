@@ -51,6 +51,12 @@ public class PurpleSyncActivity extends UniversalFragment {
     private static final int ROW_RECOVERY = 7;
     private static final int ROW_AUTO=8;
     private static final int ROW_CHAT=0x7075010f;
+    private static final int ROW_FIRST_SYNCED=0x70750110;
+    private static final int ROW_FIRST_THIS=0x70750111;
+    /** The check whose first use asked the one-time question, while its answer rows show. */
+    private PurpleSyncRunner.Check firstAsk;
+    /** The answer the next Check feeds to first use. */
+    private PurpleSyncCore.FirstUseChoice firstChoice=PurpleSyncCore.FirstUseChoice.None;
     private org.telegram.messenger.purple.PurpleSyncAuto.Control automatic;
     private CharSequence automaticStatus="";
 
@@ -107,7 +113,7 @@ public class PurpleSyncActivity extends UniversalFragment {
 
     @Override
     public void onResume() {
-        super.onResume();manualForeground=true;
+        super.onResume();manualForeground=true;failureOnce();
         if(runner==null&&!manualOpening&&!destroyed){
             manualOpening=true;long opening=++manualTicket;
             org.telegram.messenger.purple.PurpleSyncChat.manualRunner(currentAccount,()->!destroyed&&manualForeground,value->{
@@ -149,6 +155,13 @@ public class PurpleSyncActivity extends UniversalFragment {
         return getString(R.string.PurpleSyncTitle);
     }
 
+    /** A failed automatic pass not shown before gets one dialog (org.telegram.messenger.purple.PurpleSyncAuto#failureOnce). */
+    private void failureOnce() {
+        if (destroyed || getParentActivity() == null || !org.telegram.messenger.purple.PurpleSyncAuto.failureOnce(currentAccount)) return;
+        new AlertDialog.Builder(getParentActivity()).setTitle(getString(R.string.PurpleSyncAutoFailedTitle))
+                .setMessage(getString(R.string.PurpleSyncAutoFailedAbout)).setPositiveButton(getString(R.string.OK), null).show();
+    }
+
     /** A sync chat problem not shown before gets one dialog, which leads to the Sync chat screen. */
     private void problemOnce(org.telegram.messenger.purple.PurpleSyncChat.Status chat) {
         if(destroyed||chat==null||!chat.showProblem||getParentActivity()==null)return;
@@ -179,6 +192,12 @@ public class PurpleSyncActivity extends UniversalFragment {
                 items.add(UItem.asShadow(formatString(recovery==PurpleSyncRunner.RecoveryAction.Relink?R.string.PurpleSyncRelinkAbout
                         :R.string.PurpleSyncStartAgainAbout,accountLabel())));
             }
+        }
+        if(firstAsk!=null&&available()&&!runner.busy()&&firstAsk==runner.current()) {
+            UItem synced=UItem.asButton(ROW_FIRST_SYNCED,getString(R.string.PurpleSyncFirstUseSynced));synced.accent=true;items.add(synced);
+            items.add(UItem.asShadow(getString(R.string.PurpleSyncFirstUseSyncedAbout)));
+            UItem own=UItem.asButton(ROW_FIRST_THIS,getString(R.string.PurpleSyncFirstUseThis));own.accent=true;items.add(own);
+            items.add(UItem.asShadow(getString(R.string.PurpleSyncFirstUseThisAbout)));
         }
         if (actionVisible()) {
             final UItem item = UItem.asButton(ROW_ACTION, PurpleSyncText.actionText(action));
@@ -212,6 +231,13 @@ public class PurpleSyncActivity extends UniversalFragment {
                 break;
             case ROW_RECOVERY:
                 confirmRecovery();
+                break;
+            case ROW_FIRST_SYNCED:
+            case ROW_FIRST_THIS:
+                if (canCheck() && firstAsk != null) {
+                    firstChoice = item.id == ROW_FIRST_SYNCED ? PurpleSyncCore.FirstUseChoice.Synced : PurpleSyncCore.FirstUseChoice.ThisDevice;
+                    startCheck(Followup.None, "");
+                }
                 break;
             case ROW_ACTION:
                 runCurrentAction();
@@ -287,6 +313,7 @@ public class PurpleSyncActivity extends UniversalFragment {
     }
 
     private void clearReview() {
+        firstAsk = null;
         shown = null;
         action = PurpleSyncCore.Action.None;
     }
@@ -420,6 +447,7 @@ public class PurpleSyncActivity extends UniversalFragment {
             return;
         }
         checkedAt = System.currentTimeMillis();
+        org.telegram.messenger.purple.PurpleSyncAuto.resume(currentAccount);
         final PurpleSyncRunner.Check check = outcome.check;
         if (followup == Followup.Share) {
             final PurpleSyncRunner.PostTicket ticket = share;
@@ -435,6 +463,13 @@ public class PurpleSyncActivity extends UniversalFragment {
                     () -> runner.publish(check, ticket, result -> onPublished(result, prefix)));
             return;
         }
+        final PurpleSyncCore.FirstUseChoice choice = firstChoice;
+        firstChoice = PurpleSyncCore.FirstUseChoice.None;
+        if (followup == Followup.None && org.telegram.messenger.purple.PurpleSyncFirstUse.applies(check)) {
+            runFirstUse(check, choice);
+            return;
+        }
+        org.telegram.messenger.purple.PurpleSyncCheckReason.log(currentAccount, check.review);
         final String failure = adoptFailureText(check);
         final PurpleSyncCore.Action expected = followupAction(followup);
         final boolean matches = expected != PurpleSyncCore.Action.None
@@ -449,6 +484,43 @@ public class PurpleSyncActivity extends UniversalFragment {
         if (matches && inFront()) {
             confirmAction(expected);
         }
+    }
+
+    /**
+     * First use from a Check (org.telegram.messenger.purple.PurpleSyncFirstUse): it publishes, joins or waits on its
+     * own, with no confirmation, and asks the one-time question with the two answer rows.
+     */
+    private void runFirstUse(PurpleSyncRunner.Check check, PurpleSyncCore.FirstUseChoice choice) {
+        clearReview();
+        setStatus(getString(R.string.PurpleSyncFirstRunning));
+        org.telegram.messenger.purple.PurpleSyncFirstUse.run(runner, check, choice, outcome -> {
+            org.telegram.messenger.purple.PurpleSyncAuto.firstUseSettled(currentAccount, outcome);
+            if (destroyed) return;
+            switch (outcome.result) {
+                case NotFirstUse:
+                    showReview(check, "");
+                    break;
+                case Wait:
+                    setStatus(getString(R.string.PurpleSyncFirstWaitCheck));
+                    break;
+                case Ask:
+                    clearReview();
+                    firstAsk = check;
+                    setStatus(getString(R.string.PurpleSyncFirstAsk));
+                    break;
+                case Published:
+                    setStatus(getString(R.string.PurpleSyncFirstPublished));
+                    break;
+                case Joined:
+                    if (outcome.sent != null) setStatus(PurpleSyncText.joined(getString(R.string.PurpleSyncJoined), PurpleSyncText.publishText(outcome.sent)));
+                    else setStatus(getString(outcome.applied != null && outcome.applied.wroteFile ? R.string.PurpleSyncFirstApplied : R.string.PurpleSyncFirstJoined));
+                    break;
+                default:
+                    setStatus(outcome.applied != null ? PurpleSyncText.applyFailureText(outcome.applied, null)
+                            : getString("busy".equals(outcome.reason) ? R.string.PurpleSyncWait : R.string.PurpleSyncFirstRefused));
+                    break;
+            }
+        });
     }
 
     private boolean inFront() {

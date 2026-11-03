@@ -25,6 +25,22 @@ final class PurpleSyncAutoEngine {
         void send(boolean edit, int messageId, byte[] bytes, byte[] previous, BooleanSupplier current,
             Reply<PurpleSyncAutoCore.Outcome> reply);
         void retire(int messageId, byte[] exact, BooleanSupplier current, Reply<PurpleSyncAutoCore.Outcome> reply);
+        /**
+         * First use for an account with no sync state ({@link PurpleSyncFirstUse}): true when the port runs it for
+         * {@code event}, false to hold AccountUnbound as before.
+         */
+        default boolean firstUse(PurpleSyncAutoCore.Event event) { return false; }
+        /**
+         * Automatic sync holds for a reason of the client's own: first use asked the one-time question and waits
+         * for the answer, or an automatic pass failed with an exception ({@link #failed}) and the user has not
+         * resumed. Core holds it as a chat problem.
+         */
+        default boolean held() { return false; }
+        /**
+         * An automatic pass threw. The port logs a diag reason code and pauses automatic sync with the problem
+         * shown once, so no failure dies silently.
+         */
+        default void failed(Throwable error) { }
         default long transientRetryAt(){return 0;}
         default long takeTransientRetryAt(){return 0;}
         default boolean editSupported() {
@@ -57,6 +73,30 @@ final class PurpleSyncAutoEngine {
         boolean effects() {
             return local.mutation != null && local.mutation.effectCurrent();
         }
+    }
+    /**
+     * Whether automatic sync asks the account recovery scan (PurpleSyncRecoveryModel) before it trusts the stored
+     * state: only for Saved Messages, or while no chat is bound, as the Sync screen does (PurpleSyncMagicManual).
+     * In a bound magic chat the scan refused the sync folder for entries that say nothing about the binding (on the
+     * R3/R4 builds chat.json behind Android's /data/user/0 link; still today leftovers of older builds such as
+     * sync-chat-setup.json or carry files), and automatic sync then passed the moved state to core as no state:
+     * AccountUnbound, so the moved state never made its publish into the magic chat. Core's gate still checks the
+     * state's binding token against the account's.
+     */
+    static boolean recoveryScanApplies(PurpleSyncChatCore.Peer bound) {
+        return bound == null || PurpleSyncChatCore.Peer.self().equals(bound);
+    }
+
+    /** The diag reason code of an exception of an automatic pass: its message when that is a known code, else its kind. */
+    static String failureCode(Throwable error) {
+        String message = error != null ? error.getMessage() : null;
+        if ("AutomaticChatMismatch".equals(message)) return "automatic_chat_mismatch";
+        if (error instanceof LinkageError) return "native_unavailable";
+        if (error instanceof org.json.JSONException) return "json";
+        if (error instanceof java.io.IOException) return "io";
+        if (error instanceof IllegalArgumentException) return "illegal_argument";
+        if (error instanceof IllegalStateException) return "illegal_state";
+        return "unexpected";
     }
     final PurpleSyncRunner.Session account;
     final String key;
@@ -181,7 +221,7 @@ final class PurpleSyncAutoEngine {
             // WHY: the store moved the state into the bound chat when it opened; a bound chat that still
             // differs means the move was refused, so automatic sync holds instead of using the old chat.
             .put("chatResolved", boundChat == null || boundChat.equals(store.chat()))
-            .put("chatProblem", PurpleSyncChat.chatProblem(account.account))
+            .put("chatProblem", PurpleSyncChat.chatProblem(account.account) || port.held())
             .put("chatWritable", current())
             .put("localStatus", local.status.ordinal())
             .put("local", PurpleSyncAutoCore.encode(local.bytes))
@@ -309,8 +349,9 @@ final class PurpleSyncAutoEngine {
         }
         try {
             if (!account.env.hasState()) {
-                port.status(null, PurpleSyncAutoCore.Reason.AccountUnbound);
                 end();
+                if (!port.firstUse(event))
+                    port.status(null, PurpleSyncAutoCore.Reason.AccountUnbound);
                 return;
             }
             PurpleSyncSettingsFile.Contents paths = account.env.readSettings();
@@ -384,7 +425,7 @@ final class PurpleSyncAutoEngine {
                 facts.facts.json.put("sendQueued", observedQueue || account.env.sendQueued());
                 PurpleSyncAutoCore.Inventory inventory = observed != null
                     ? new PurpleSyncAutoCore.Inventory(
-                          observed.inventory, session, completed, observed.readAt, observed.reads)
+                          observed.inventory, store.chat(), session, completed, observed.readAt, observed.reads)
                     : null;
                 if (opening != null && !opening.effects()) {
                     inventory = null;
@@ -441,6 +482,7 @@ final class PurpleSyncAutoEngine {
         } catch (Exception | LinkageError e) {
             org.telegram.messenger.FileLog.e(e);
             port.status(null, PurpleSyncAutoCore.Reason.StoreMismatch);
+            port.failed(e);
             end();
         }
     }
@@ -523,6 +565,7 @@ final class PurpleSyncAutoEngine {
                             try {
                                 mutate(plan, facts, false);
                             } catch (Exception e) {
+                                port.failed(e);
                                 complete(plan, facts, PurpleSyncAutoCore.Outcome.OutcomeUnknown, null);
                             }
                         });

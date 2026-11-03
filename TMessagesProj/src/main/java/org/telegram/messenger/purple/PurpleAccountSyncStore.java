@@ -395,10 +395,17 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
         }
     }
 
-    /** Moves the state to the bound chat; a refusal leaves it in its chat, where automatic sync holds. */
+    /**
+     * Moves the state to the bound chat; a refusal leaves it in its chat, where automatic sync holds. The automatic
+     * record takes the settings file on disk as saved: its fingerprint comes from a plain read of the file, and an
+     * absent file counts as empty. It came from the editor's read (PurpleSyncSettingsFile.read(context)), which
+     * opened the Android settings editor on the store's worker for bytes it does not need, and an account without a
+     * settings file never moved at all.
+     */
     private void moveToBound() {
-        PurpleSyncSettingsFile.Contents local=context!=null?PurpleSyncSettingsFile.read(context):null;
-        String fingerprint=local!=null&&local.bytes!=null?PurpleSyncCore.settingsFingerprint(local.bytes):null;
+        PurpleSyncSettingsFile.Contents local=context!=null&&context.files!=null?PurpleSyncSettingsFile.read(context.files.settings,context.files.good):null;
+        byte[] bytes=local==null?null:local.status==PurpleSyncSettingsFile.Status.Absent?new byte[0]:local.bytes;
+        String fingerprint=bytes!=null?PurpleSyncCore.settingsFingerprint(bytes):null;
         Result moved=fingerprint!=null&&!fingerprint.isEmpty()
                 ?moveTo(target,origin.userId,origin.key,fingerprint):result(Status.InvalidState);
         PurpleDiagLog.event("sync_chat","migration",PurpleDiagLogStore.slot(account),

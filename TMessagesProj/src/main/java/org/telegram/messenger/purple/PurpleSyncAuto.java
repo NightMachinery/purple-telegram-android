@@ -86,6 +86,9 @@ public final class PurpleSyncAuto {
         final String preference;
         final ArrayList<Consumer<Status>> listeners = new ArrayList<>();
         Runnable retry;
+        /** The last first-use answer while it waits or asks (PurpleSyncFirstUse); null once a state exists. */
+        volatile PurpleSyncFirstUse.Result firstUse;
+        volatile boolean firstUseRunning;
         PurpleSyncAutoCore.Reason reason = PurpleSyncAutoCore.Reason.None;
         long retryAt;
         volatile boolean paused;
@@ -93,7 +96,11 @@ public final class PurpleSyncAuto {
         volatile long intent;
         Runtime(PurpleAccountFiles.Identity origin) {
             opening = origin;
-            env = new PurpleSyncRunner.Platform(origin.slot);
+            env = new PurpleSyncRunner.Platform(origin.slot) {
+                @Override public boolean requiresRecovery() {
+                    return PurpleSyncAutoEngine.recoveryScanApplies(PurpleSyncChat.boundChat(origin.slot));
+                }
+            };
             account = new PurpleSyncRunner.Session(origin.slot, origin.userId, env);
             preference = hintKey(origin.key);
             engine = new PurpleSyncAutoEngine(account, origin.key, this);
@@ -118,6 +125,8 @@ public final class PurpleSyncAuto {
                 return;
             }
             requested = enabled;
+            if (enabled && failure() != null)
+                MessagesController.getMainSettings(account.account).edit().remove(failureKey(opening.key)).remove(failureShownKey(opening.key)).commit();
             long generation = ++intent;
             if (!enabled) {
                 paused = true;
@@ -139,6 +148,81 @@ public final class PurpleSyncAuto {
                 PurpleSyncAutoEdits.cleanup(account.account);
             }
         }
+        @Override public boolean firstUse(PurpleSyncAutoCore.Event event) {
+            if (event == PurpleSyncAutoCore.Event.Disable) return false;
+            PurpleSyncChatCore.Peer bound = PurpleSyncChat.boundChat(opening.slot);
+            if (bound == null || PurpleSyncChatCore.Peer.self().equals(bound)) return false;
+            if (event != PurpleSyncAutoCore.Event.Enable && !enabledHint()) return false;
+            AndroidUtilities.runOnUIThread(() -> runFirstUse(event == PurpleSyncAutoCore.Event.Enable));
+            return true;
+        }
+        @Override public boolean held() { return firstUse == PurpleSyncFirstUse.Result.Ask || failure() != null; }
+        /** The diag code of the automatic pass that failed and paused automatic sync, or null. */
+        String failure() { return MessagesController.getMainSettings(account.account).getString(failureKey(opening.key), null); }
+        @Override public void failed(Throwable error) {
+            String code = PurpleSyncAutoEngine.failureCode(error);
+            PurpleDiagLog.event("sync", "auto_failed", PurpleDiagLogStore.slot(account.account), PurpleDiagLogStore.reason(code));
+            if (opening.current())
+                MessagesController.getMainSettings(account.account).edit().putString(failureKey(opening.key), code)
+                        .putBoolean(failureShownKey(opening.key), false).commit();
+            AndroidUtilities.runOnUIThread(this::render);
+        }
+        /** The user acted (a finished Check on the Sync screen, or the switch turned on): the pause ends. */
+        void resume() {
+            if (failure() == null) return;
+            MessagesController.getMainSettings(account.account).edit().remove(failureKey(opening.key)).remove(failureShownKey(opening.key)).commit();
+            render();
+            if (enabledHint()) engine.event(PurpleSyncAutoCore.Event.SessionReady);
+        }
+        /**
+         * First use from automatic sync: a Check of the bound chat, then {@link PurpleSyncFirstUse} with no answer.
+         * Wait and Ask keep automatic sync on (the hint) so the next trigger looks again; Ask also shows the
+         * attention line and holds until the Sync screen gets the answer. Once it joined or published, Enable
+         * writes the automatic record for the new state.
+         */
+        void runFirstUse(boolean enabling) {
+            if (firstUseRunning || !current()) return;
+            firstUseRunning = true;
+            java.util.function.BooleanSupplier live = () -> current() && !Boolean.FALSE.equals(requested);
+            PurpleSyncChat.manualRunner(opening.slot, live, runner -> {
+                if (runner == null) { firstUseRunning = false; return; }
+                PurpleSyncRunner.Start started = runner.check(null, checked -> {
+                    if (checked.status != PurpleSyncRunner.CheckStatus.Finished || checked.check == null) {
+                        firstUseRunning = false; runner.close(); render(); return;
+                    }
+                    PurpleSyncFirstUse.run(runner, checked.check, PurpleSyncCore.FirstUseChoice.None, outcome -> {
+                        firstUseRunning = false;
+                        runner.close();
+                        settle(outcome, enabling);
+                    });
+                });
+                if (started != PurpleSyncRunner.Start.Started) { firstUseRunning = false; runner.close(); }
+            });
+        }
+        void settle(PurpleSyncFirstUse.Outcome outcome, boolean enabling) {
+            switch (outcome.result) {
+                case Wait:
+                case Ask:
+                    firstUse = outcome.result;
+                    if (live()) enabledHint(true);
+                    break;
+                case Joined:
+                case Published:
+                    firstUse = null;
+                    requested = true;
+                    long generation = ++intent;
+                    engine.enabled(true, () -> generation == intent && opening.current());
+                    break;
+                case NotFirstUse:
+                    firstUse = null;
+                    break;
+                default:
+                    firstUse = enabling || enabledHint() ? PurpleSyncFirstUse.Result.Refused : null;
+                    break;
+            }
+            render();
+        }
+        private boolean live() { return current() && !Boolean.FALSE.equals(requested); }
         public long takeTransientRetryAt(){return PurpleRpcRequests.takeWriteRetryAt(account.account,"sync-write");}
         public long transientRetryAt(){PurpleRpcRetry.Transient wait=PurpleRpcRequests.writeWaiting(account.account,"sync-write");return wait!=null?wait.retryAt:0;}
         public boolean ownerAnswered() {
@@ -148,7 +232,16 @@ public final class PurpleSyncAuto {
             return System.currentTimeMillis() / 1000;
         }
         public void queue(Runnable task) {
-            work().postRunnable(task);
+            work().postRunnable(() -> {
+                try {
+                    task.run();
+                } catch (Exception | LinkageError e) {
+                    // Purple: no automatic pass dies silently; see PurpleSyncAutoEngine.Port#failed.
+                    org.telegram.messenger.FileLog.e(e);
+                    failed(e);
+                    engine.suspend();
+                }
+            });
         }
         public void retry(Runnable task, long delay) {
             cancelRetry();
@@ -202,6 +295,15 @@ public final class PurpleSyncAuto {
                 : shownReason == PurpleSyncAutoCore.Reason.None
                 ? LocaleController.getString(R.string.PurpleSyncAutoReady)
                 : LocaleController.formatString(R.string.PurpleSyncAutoAttention, reasonText(shownReason));
+            PurpleSyncFirstUse.Result first = firstUse;
+            if (enabledHint() && failure() != null)
+                text = LocaleController.formatString(R.string.PurpleSyncAutoAttention, LocaleController.getString(R.string.PurpleSyncAutoFailed));
+            else if (enabledHint() && first == PurpleSyncFirstUse.Result.Wait)
+                text = LocaleController.getString(R.string.PurpleSyncFirstWait);
+            else if (enabledHint() && first == PurpleSyncFirstUse.Result.Ask)
+                text = LocaleController.formatString(R.string.PurpleSyncAutoAttention, LocaleController.getString(R.string.PurpleSyncFirstAskAttention));
+            else if (enabledHint() && first == PurpleSyncFirstUse.Result.Refused)
+                text = LocaleController.formatString(R.string.PurpleSyncAutoAttention, LocaleController.getString(R.string.PurpleSyncFirstRefusedAttention));
             PurpleRpcRetry.Transient wait=PurpleRpcRequests.waiting(account.account);
             if(enabledHint()&&wait!=null)text=PurpleRpcRequests.text(wait);
             Status status = new Status(enabledHint(), text);
@@ -237,7 +339,12 @@ public final class PurpleSyncAuto {
                 PurpleSyncChatCore.Peer chat=stateChat();
                 PurpleSyncAutoNetwork scope=status.readable(chat)?network(chat):null;
                 if(scope!=null)scope.check(exactIds,current,observed->{
-                    if(observed!=null)PurpleSyncChat.checkSpace(opening.slot,chat,observed.inventory,PurpleAccountSyncStore.stateSpace(env.context));
+                    if(observed!=null&&PurpleSyncChat.spaceMismatch(chat,observed.inventory,PurpleAccountSyncStore.stateSpace(env.context))){
+                        // Purple: the state is in another space than the chat's records: first use, not a pause.
+                        reply.done(null);
+                        AndroidUtilities.runOnUIThread(()->runFirstUse(false));
+                        return;
+                    }
                     reply.done(observed);
                 });else reply.done(null);
             }));
@@ -279,6 +386,34 @@ public final class PurpleSyncAuto {
     private static String hintKey(String key) {
         return "purple_sync_auto_enabled_" + key;
     }
+    private static String failureKey(String key) {
+        return "purple_sync_auto_failure_" + key;
+    }
+    private static String failureShownKey(String key) {
+        return "purple_sync_auto_failure_shown_" + key;
+    }
+    /**
+     * Once per failure: true when automatic sync of {@code slot} is paused by a failed automatic pass that the Sync
+     * screen has not shown yet; it is then marked shown.
+     */
+    public static boolean failureOnce(int slot) {
+        PurpleAccountFiles.Identity identity = PurpleAccountFiles.capture(slot);
+        if (identity == null) return false;
+        android.content.SharedPreferences preferences = MessagesController.getMainSettings(slot);
+        if (preferences.getString(failureKey(identity.key), null) == null || preferences.getBoolean(failureShownKey(identity.key), false)) return false;
+        preferences.edit().putBoolean(failureShownKey(identity.key), true).commit();
+        return true;
+    }
+    /** A finished Check on the Sync screen of {@code slot}: a pause after a failed automatic pass ends. */
+    public static void resume(int slot) {
+        PurpleAccountFiles.Identity identity = PurpleAccountFiles.capture(slot);
+        if (identity == null) return;
+        AndroidUtilities.runOnUIThread(() -> {
+            Runtime runtime = accounts.get(identity.key);
+            if (runtime != null && runtime.current()) runtime.resume();
+            else MessagesController.getMainSettings(slot).edit().remove(failureKey(identity.key)).remove(failureShownKey(identity.key)).commit();
+        });
+    }
     private static synchronized Runtime runtime(PurpleAccountFiles.Identity identity) {
         Runtime value = accounts.get(identity.key);
         if (value != null && !value.current()) {
@@ -291,6 +426,27 @@ public final class PurpleSyncAuto {
             accounts.put(identity.key, value);
         }
         return value;
+    }
+    /**
+     * The Sync screen ran first use for {@code slot} ({@link PurpleSyncFirstUse}). After a join or publish the new
+     * state gets its automatic record when automatic sync is on, because setting an old state aside also set its
+     * record aside; a pending question is cleared.
+     */
+    public static void firstUseSettled(int slot, PurpleSyncFirstUse.Outcome outcome) {
+        PurpleAccountFiles.Identity identity = PurpleAccountFiles.capture(slot);
+        if (identity == null || outcome == null) return;
+        AndroidUtilities.runOnUIThread(() -> {
+            Runtime runtime = accounts.get(identity.key);
+            if (runtime == null || !runtime.current()) return;
+            boolean on = MessagesController.getMainSettings(slot).getBoolean(hintKey(identity.key), false);
+            if (outcome.result == PurpleSyncFirstUse.Result.Joined || outcome.result == PurpleSyncFirstUse.Result.Published) {
+                runtime.firstUse = null;
+                if (on) runtime.settle(outcome, false); else runtime.render();
+            } else if (outcome.result == PurpleSyncFirstUse.Result.Ask || outcome.result == PurpleSyncFirstUse.Result.Wait) {
+                runtime.firstUse = on ? outcome.result : null;
+                runtime.render();
+            }
+        });
     }
     static void reconcile(PurpleAccountFiles.Identity origin) {
         if (origin == null || !origin.current()) return;

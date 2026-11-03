@@ -1,10 +1,44 @@
 # Automatic settings sync on Android
 
-Open Purple Settings, then Settings sync for the account you want to use. First
-use manual Check to join its sync stream, then turn on **Automatic settings sync**.
-It defaults off for every account. The older Send after Save switch stays separate.
-Automatic mode supports the account's implicit Saved Messages stream; moved/v2
-streams and library publishing remain held.
+Open Purple Settings, then Settings sync for the account you want to use, and turn
+on **Automatic settings sync**. It defaults off for every account. The older Send
+after Save switch stays separate. Automatic mode syncs through the chat the Magic
+Purple Sync lookup bound (the magic chat, or Saved Messages when picked); library
+publishing remains held.
+
+## First use
+
+An account with no sync state in the bound magic chat's space no longer waits for
+a manual Check (purple-core `PlanSyncFirstUse`, see `docs/sync-config-flow.md` of
+purple-core, "First use"). Turning automatic sync on, or any later trigger while it
+is on, runs first use (`PurpleSyncFirstUse`): a Check of the chat, then core's plan,
+carried out through the Sync screen's own check, apply and publish:
+
+- empty chat, settings not the defaults: publish the first record, no Publish press;
+- empty chat, the shipped defaults (no file, or one that means nothing more): wait for
+  a device with real settings; the status says so and nothing is sent;
+- records, the defaults: join and apply the chat's settings, with History and Undo;
+- records meaning the same as the chat's one head: join silently; when the bytes
+  differ, this file is published as the successor so the chat's head is it;
+- records meaning something else: ask once. The status shows an attention line and
+  automatic sync holds; the Sync screen shows **Use the synced settings** (join;
+  History keeps the old file) and **Use this device's settings** (publish it as the
+  successor). No dialog pops up on its own.
+
+A state whose space differs from the chat's records (`space_mismatch`) is first
+use too, never a pause: when first use acts, the old state is set aside into an
+`orphaned-<date>` folder (settings, History and the chat binding stay) and the
+device then acts as one with no state. Once a state exists in the chat's space the
+question cannot come back. After first use joined or published, automatic sync
+writes its record for the new state.
+
+A device that synced through Saved Messages before keeps its space: its store
+moves the state into the magic chat as it opens (core `MoveSyncStateToChat`), and
+the next run publishes it there. Automatic sync consults the account recovery
+scan only for Saved Messages (`PurpleSyncAutoEngine.recoveryScanApplies`), as the
+Sync screen does; in a magic chat that scan refused the folder for entries that say
+nothing about the binding, and automatic sync then took the moved state for no
+state at all (AccountUnbound).
 
 An opted-in account checks when its session is ready, the app returns to the
 foreground or the device/app unlocks. Those checks are limited to one per 15 minutes.

@@ -148,7 +148,14 @@ extern "C" JNIEXPORT jstring JNICALL Java_org_telegram_messenger_purple_PurpleSy
             return nullptr;
         auto snapshot = Purple::SyncAutoInventory();
         snapshot.account = *account;
+        // The chat the inventory was read from, so core compares it with the state's (facts.chat).
         snapshot.chat = facts.chat;
+        if (data.contains("chat")) {
+            const auto chat = Purple::ParsePeerToken(data.value("chat").toString(), account->userId);
+            if (!chat)
+                return nullptr;
+            snapshot.chat = *chat;
+        }
         snapshot.session = data.value("session").toString();
         snapshot.ticket = PurpleAndroid::AutoCounter(data.value("ticket"), ok);
         const auto time = PurpleAndroid::AutoCounter(data.value("readAt"), ok);
