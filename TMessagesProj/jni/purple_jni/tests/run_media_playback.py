@@ -9,6 +9,8 @@ import subprocess
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--receipt', type=Path, required=True)
+parser.add_argument('--json', type=Path, required=True)
+parser.add_argument('--library', type=Path, required=True)
 parser.add_argument('--output', type=Path, required=True)
 args = parser.parse_args()
 tests = Path(__file__).resolve().parent
@@ -18,12 +20,12 @@ receipt = json.loads(args.receipt.read_text())
 assert receipt['task'] == ':TMessagesProj:compileStandaloneJavaWithJavac'
 classes = Path(receipt['destination'])
 compiler = Path(receipt['compiler'])
-assert classes.is_dir()
+assert classes.is_dir() and args.json.is_file() and args.library.is_file()
 
 # The Purple classes the cases load from the receipt, which must be the ones
 # in this tree, and the files whose hooks are pinned below.
 purple = [java / 'messenger/purple' / name for name in [
-    'PurpleDoubleTap.java', 'PurpleMediaRestart.java', 'PurpleRoundPip.java']]
+    'PurpleDoubleTap.java', 'PurpleMediaRestart.java', 'PurpleRoundPip.java', 'PurpleCore.java']]
 hooked = {name: java / name for name in [
     'ui/Cells/ChatMessageCell.java', 'ui/Components/PipRoundVideoView.java', 'ui/ChatActivity.java',
     'ui/PurpleChatHooks.java']}
@@ -44,7 +46,7 @@ PINS = [
      '                        if (messageObject.isRoundVideo() || messageObject.isVideo()) {\n',
      '                            if (checkTextureViewPosition || PipRoundVideoView.getInstance() != null || purple.roundLeavesToPip(messageObject)) {\n'),
 ]
-PROGRAMS = [('restart', 'MEDIA_RESTART_CHECKS'), ('pip', 'MEDIA_PIP_CHECKS')]
+PROGRAMS = [('restart', 'MEDIA_RESTART_CHECKS'), ('pip', 'MEDIA_PIP_CHECKS'), ('core', 'MEDIA_QUEUE_CORE_CHECKS')]
 
 assert not args.output.exists(), 'output must be an unused directory'
 args.output.mkdir(parents=True)
@@ -67,11 +69,14 @@ empty.mkdir()
 case = tests / 'media_playback/MediaPlaybackCases.java'
 (args.output / 'inputs.json').write_text(json.dumps([
     {'path': str(p), 'sha256': hashlib.sha256(p.read_bytes()).hexdigest()}
-    for p in [args.receipt, case, *purple, *hooked.values()]], indent=2) + '\n')
+    for p in [args.receipt, args.library, case, *purple, *hooked.values()]], indent=2) + '\n')
 commands = {'javac': [str(compiler), '-source', '8', '-target', '8', '-proc:none', '-sourcepath', str(empty),
                       '-cp', str(classes), '-d', str(destination), str(case)]}
+# The core program loads the host libpurplecore through the real PurpleCore,
+# which reads its load result with org.json.
 for program, _ in PROGRAMS:
-    commands[program] = [str(compiler.with_name('java')), '-Xmx256m', '-cp', str(destination) + os.pathsep + str(classes),
+    commands[program] = [str(compiler.with_name('java')), '-Xmx256m', '-Xcheck:jni', '-Djava.library.path=' + str(args.library.parent),
+                         '-cp', os.pathsep.join([str(destination), str(classes), str(args.json)]),
                          'org.telegram.messenger.purple.MediaPlaybackCases', program]
 for name, command in commands.items():
     (args.output / (name + '.argv.json')).write_text(json.dumps(command, indent=2) + '\n')

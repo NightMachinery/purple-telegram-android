@@ -79,6 +79,15 @@ public final class PurpleCore {
     public static final int KIND_CHANNEL = 2;
     public static final int KIND_BOT = 3;
 
+    /**
+     * The chat a voice queue plays in, as the core's Purple::PlaybackChat
+     * numbers it: a one-to-one chat (a user, a bot or a secret chat, but not
+     * Saved Messages or a service chat), Saved Messages, or anything else.
+     */
+    public static final int PLAYBACK_ONE_TO_ONE = 0;
+    public static final int PLAYBACK_SELF = 1;
+    public static final int PLAYBACK_OTHER = 2;
+
     private static volatile boolean loaded;
 
     /**
@@ -156,6 +165,8 @@ public final class PurpleCore {
     private static native String stopPeekNative(byte[] stateUtf8);
 
     private static native int peekDetentIndexNative(int seconds);
+
+    private static native boolean voiceQueueKeepsNative(int chat, boolean startOutgoing, boolean candidateOutgoing);
 
     /**
      * The screen locked, or the app's own passcode lock engaged. Prefer
@@ -758,6 +769,30 @@ public final class PurpleCore {
         } catch (UnsatisfiedLinkError | RuntimeException e) {
             FileLog.e(e);
             return -1;
+        }
+    }
+
+    /**
+     * Whether a voice queue started manually on a message in {@code chat}
+     * keeps a candidate message: the private-chat voice queue rule
+     * ({@code [playback] private_chat_queue_p}), which the core states once
+     * for both apps.
+     *
+     * @param chat              a {@code PLAYBACK_} value
+     * @param startOutgoing     whether the manually started message is yours
+     * @param candidateOutgoing whether the candidate is yours
+     * @return whether the queue may play the candidate; true when the core
+     *         could not be asked, which is upstream's queue
+     */
+    public static boolean voiceQueueKeeps(int chat, boolean startOutgoing, boolean candidateOutgoing) {
+        try {
+            if (!loaded) {
+                ensureLoaded();
+            }
+            return voiceQueueKeepsNative(chat, startOutgoing, candidateOutgoing);
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return true;
         }
     }
 

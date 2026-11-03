@@ -23,6 +23,10 @@ public final class MediaPlaybackCases {
             restart();
             System.out.println("MEDIA_RESTART_CHECKS=" + checks);
             break;
+        case "core":
+            core();
+            System.out.println("MEDIA_QUEUE_CORE_CHECKS=" + checks);
+            break;
         case "pip":
             pip();
             System.out.println("MEDIA_PIP_CHECKS=" + checks);
@@ -111,5 +115,36 @@ public final class MediaPlaybackCases {
         check(!chat.tap(0, 5, 9, 100, 300), "a tap in the chat");
         check(!floating.tap(0, 5, 9, 150, 300), "then one on the PiP is a first tap there");
         check(floating.tap(0, 5, 9, 250, 300), "and the next PiP tap completes the PiP pair");
+    }
+
+    /**
+     * The real voiceQueueKeeps bridge over the real core: every chat kind,
+     * direction and setting, read from a loaded settings.toml.
+     */
+    static void core() throws Exception {
+        final String[] files = {
+            "",
+            "[playback]\nprivate_chat_queue_p = true\n",
+            "[playback]\nprivate_chat_queue_p = false\n",
+            "[playback]\nprivate_chat_queue_p = \"yes\"\n",
+        };
+        final boolean[] confines = {true, true, false, true};
+        for (int f = 0; f < files.length; f++) {
+            final PurpleCore.Loaded loaded = PurpleCore.load(files[f].getBytes("UTF-8"), null, "fixture", "android", "mobile");
+            check(loaded.ok, "settings file " + f + " loads");
+            for (int chat : new int[] {PurpleCore.PLAYBACK_ONE_TO_ONE, PurpleCore.PLAYBACK_SELF, PurpleCore.PLAYBACK_OTHER}) {
+                for (int start = 0; start < 2; start++) {
+                    for (int candidate = 0; candidate < 2; candidate++) {
+                        final boolean confined = confines[f] && chat == PurpleCore.PLAYBACK_ONE_TO_ONE && start == 0;
+                        final boolean expected = !confined || candidate == 0;
+                        check(PurpleCore.voiceQueueKeeps(chat, start == 1, candidate == 1) == expected,
+                                "file " + f + " chat " + chat + " start " + start + " candidate " + candidate);
+                    }
+                }
+            }
+            for (int chat : new int[] {-1, 3, 99}) {
+                check(PurpleCore.voiceQueueKeeps(chat, false, true), "an unknown chat kind " + chat + " keeps everything");
+            }
+        }
     }
 }

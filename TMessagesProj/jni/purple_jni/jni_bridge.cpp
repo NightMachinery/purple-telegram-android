@@ -15,6 +15,7 @@ any later version.
 #include "purple/purple_engine.h"
 #include "purple/purple_local_choice.h"
 #include "purple/purple_passcode.h"
+#include "purple/purple_playback.h"
 #include "purple/purple_screentime.h"
 #include "purple/purple_settings.h"
 #include "purple/purple_splice.h"
@@ -1894,6 +1895,36 @@ Java_org_telegram_messenger_purple_PurpleCore_peekDetentIndexNative(
 		jclass,
 		jint seconds) {
 	return Purple::PeekDetentIndex(int(seconds));
+}
+
+// Whether a voice queue keeps one candidate message: the private-chat voice
+// queue rule of purple_playback.h, so Java never restates it. `chat' is a
+// Purple::PlaybackChat number; one this side does not know keeps everything,
+// which is upstream's queue. The setting comes from the loaded file, and a
+// gate that has never loaded answers with the core's default (on).
+//
+// PurpleVoiceQueue calls this once per candidate while it builds a queue on a
+// manual play, so all of one queue's answers read the same file.
+extern "C" JNIEXPORT jboolean JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_voiceQueueKeepsNative(
+		JNIEnv *,
+		jclass,
+		jint chat,
+		jboolean startOutgoing,
+		jboolean candidateOutgoing) {
+	if (chat < jint(Purple::PlaybackChat::OneToOne)
+		|| chat > jint(Purple::PlaybackChat::Other)) {
+		return JNI_TRUE;
+	}
+	auto &gate = TheGate();
+	const auto lock = std::lock_guard(gate.mutex);
+	const auto anchor = Purple::AnchorForManualPlay(
+		gate.settings.playback,
+		Purple::PlaybackChat(chat),
+		startOutgoing == JNI_TRUE);
+	return Purple::QueueKeeps(anchor, candidateOutgoing == JNI_TRUE)
+		? JNI_TRUE
+		: JNI_FALSE;
 }
 
 // Ends one. The deadline is cleared with the flag, so a peek started again
