@@ -211,9 +211,9 @@ public final class PurpleDiagLogStore {
      * ({@link #appLibrary}) and is {@code system} otherwise; the relative pc,
      * a code offset into that library, is logged only for the app's own
      * libraries, so a frame in them can be symbolised later against the
-     * build's unstripped library. The function name, when present, is cut at
-     * its parameter list and kept only as identifier characters, colons,
-     * dots, {@code ~} and {@code $}.
+     * build's unstripped library. The function name, when present, passes
+     * {@link #codeFunction}, which filters a Java method's class like a Java
+     * frame's.
      */
     public static Field nativeFrame(String library, String function, long relativePc) {
         String lib = appLibrary(library);
@@ -308,9 +308,20 @@ public final class PurpleDiagLogStore {
 
     /**
      * A native function name, or null when there is none: cut at the
-     * parameter list and at a {@code +offset}, then kept only when it is
-     * identifier characters, {@code :}, {@code .}, {@code ~} and {@code $};
-     * {@value #INVALID} otherwise. At most {@value #FUNCTION_LIMIT} characters.
+     * parameter list and at a {@code +offset}, and reduced to its last word
+     * (dropping a return type such as {@code void}). Then, by its kind:
+     * <ul>
+     * <li>a C++ name ({@code ::}, or mangled, starting with {@code _Z}) is
+     *     kept as identifier characters, {@code :}, {@code ~} and {@code $},
+     *     with a mangled name's {@code .cold} or {@code .llvm.n} suffix cut;</li>
+     * <li>a name with a dot is a Java method in ART's compiled or JIT code,
+     *     and goes through {@link #codeClass} and {@link #codeMethod} exactly
+     *     like a Java frame, so a class outside {@link #CODE_PACKAGES} is
+     *     {@code other};</li>
+     * <li>anything else is kept as identifier characters.</li>
+     * </ul>
+     * A name with any other character is {@value #INVALID}. At most
+     * {@value #FUNCTION_LIMIT} characters.
      */
     static String codeFunction(String function) {
         if (function == null) return null;
@@ -320,12 +331,25 @@ public final class PurpleDiagLogStore {
         cut = name.indexOf('+');
         if (cut >= 0) name = name.substring(0, cut);
         name = name.trim();
+        int space = name.lastIndexOf(' ');
+        if (space >= 0) name = name.substring(space + 1);
         if (name.isEmpty()) return null;
+        boolean cpp = name.contains("::") || name.startsWith("_Z");
+        if (cpp && name.startsWith("_Z") && name.indexOf('.') > 0) name = name.substring(0, name.indexOf('.'));
+        if (!cpp && name.indexOf('.') >= 0) {
+            int dot = name.lastIndexOf('.');
+            String cls = codeClass(name.substring(0, dot));
+            if (cls.equals("other") || cls.equals(INVALID)) return cls;
+            String method = codeMethod(name.substring(dot + 1));
+            if (method.equals(INVALID)) return INVALID;
+            name = cls + "." + method;
+            return name.length() > FUNCTION_LIMIT ? name.substring(0, FUNCTION_LIMIT) : name;
+        }
         if (name.length() > FUNCTION_LIMIT) name = name.substring(0, FUNCTION_LIMIT);
         for (int i = 0; i < name.length(); ++i) {
             char c = name.charAt(i);
             boolean ok = c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '$'
-                    || c == ':' || c == '.' || c == '~';
+                    || cpp && (c == ':' || c == '~');
             if (!ok) return INVALID;
         }
         return name;

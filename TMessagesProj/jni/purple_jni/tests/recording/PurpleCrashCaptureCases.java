@@ -146,6 +146,26 @@ public final class PurpleCrashCaptureCases {
         String longLine = nativeAt(apk, longFn.toString(), Long.MAX_VALUE);
         check(longLine.contains(" fn=" + longFn.substring(0, PurpleDiagLogStore.FUNCTION_LIMIT) + " "), "function bounded");
         check(longLine.length() < 300, "a native frame stays short");
+        // Java methods in ART's compiled or JIT code take the Java frame's package filter.
+        check(nativeAt("/data/app/~~x/com.foo/oat/arm64/base.odex", "com.vendor.secret.Tracker.upload+40", 0x10)
+                .equals("crash frame lib=system fn=other"), "a foreign class in an odex frame is other");
+        check(nativeAt("[anon:dalvik-jit-code-cache]", "org.chromium.SomeClass.method", 0x10)
+                .equals("crash frame lib=system fn=other"), "a foreign class in a JIT frame is other");
+        check(nativeAt("[anon:dalvik-jit-code-cache]", "void org.telegram.ui.ChatActivity.lambda$onPause$3(int, boolean)", 1)
+                .equals("crash frame lib=system fn=org.telegram.ui.ChatActivity.lambda$onPause"), "a kept Java method");
+        check(nativeAt("[anon:dalvik-jit-code-cache]", "org.telegram.ui.Chat Activity.x", 1)
+                .equals("crash frame lib=system fn=other"), "only the last word is a name: " +
+                nativeAt("[anon:dalvik-jit-code-cache]", "org.telegram.ui.Chat Activity.x", 1));
+        check(nativeAt("[anon:dalvik-jit-code-cache]", "org.telegram..x", 1)
+                .equals("crash frame lib=system fn=invalid"), "a broken Java name");
+        check(nativeAt("[anon:dalvik-jit-code-cache]", "org.telegram.ui.ChatActivity.<sneaky>", 1)
+                .equals("crash frame lib=system fn=invalid"), "a broken Java method");
+        check(nativeAt(apk, "_ZN3foo3barEv.cold", 1).equals("crash frame lib=libtmessages.49.so fn=_ZN3foo3barEv pc=0x1"),
+                "a mangled name keeps its symbol, not its suffix");
+        check(nativeAt(apk, "foo::bar.baz", 1).equals("crash frame lib=libtmessages.49.so fn=invalid pc=0x1"),
+                "a dot in a C++ name is not kept");
+        check(nativeAt(apk, "plain_c_function", 1).equals("crash frame lib=libtmessages.49.so fn=plain_c_function pc=0x1"),
+                "a C function");
 
         check(PurpleDiagLogStore.body("crash", "library", PurpleDiagLogStore.library(apk, "ABCDEF0123456789abcdef0123456789abcdef01"))
                 .equals("crash library lib=libtmessages.49.so build_id=abcdef0123456789abcdef0123456789abcdef01"),
@@ -342,6 +362,9 @@ public final class PurpleCrashCaptureCases {
         crashing.add(frame(0x1a2b3c, "Java_org_telegram_messenger_Utilities_aesIgeEncryption", TM, TM_ID));
         crashing.add(frame(0x2b3c4d, null, TM, TM_ID));
         crashing.add(frame(0x10, "purple::Config::read(std::string const&)", "/data/app/x/base.apk!libpurplecore.so", "bbbbcccc"));
+        crashing.add(frame(0x20, "com.vendor.secret.Tracker.upload+40", "/data/app/~~x/com.foo/oat/arm64/base.odex", null));
+        crashing.add(frame(0x30, "void org.chromium.SomeClass.method(int)", "[anon:dalvik-jit-code-cache]", null));
+        crashing.add(frame(0x40, "org.telegram.ui.ChatActivity.onPause", "/data/app/~~x/org.telegram.messenger.web-Ab2=/oat/arm64/base.odex", null));
         for (int i = 0; i < 12; ++i) crashing.add(frame(0x1000 + i, "art_quick_invoke_stub", "/apex/com.android.art/lib64/libart.so", "dddd"));
         Proto top = new Proto()
                 .uint(1, 1)
@@ -394,8 +417,11 @@ public final class PurpleCrashCaptureCases {
                 "crash frame n=1 lib=system fn=abort",
                 "crash frame n=2 lib=libtmessages.49.so fn=Java_org_telegram_messenger_Utilities_aesIgeEncryption pc=0x1a2b3c",
                 "crash frame n=3 lib=libtmessages.49.so pc=0x2b3c4d",
-                "crash frame n=4 lib=libpurplecore.so fn=purple::Config::read pc=0x10"));
-        for (int i = 5; i <= 12; ++i) expected.add("crash frame n=" + i + " lib=system fn=art_quick_invoke_stub");
+                "crash frame n=4 lib=libpurplecore.so fn=purple::Config::read pc=0x10",
+                "crash frame n=5 lib=system fn=other",
+                "crash frame n=6 lib=system fn=other",
+                "crash frame n=7 lib=system fn=org.telegram.ui.ChatActivity.onPause"));
+        for (int i = 8; i <= 12; ++i) expected.add("crash frame n=" + i + " lib=system fn=art_quick_invoke_stub");
         expected.add("crash end frames=12");
         check(record.equals(expected), "the native record: " + record);
 
@@ -449,6 +475,7 @@ public final class PurpleCrashCaptureCases {
                 + "  | stack=0x7ff0000000-0x7ff0002000 stackSize=8188KB\n"
                 + "  native: #00 pc 00000000000a1234  /apex/com.android.runtime/lib64/bionic/libc.so (syscall+28) (BuildId: abcabc)\n"
                 + "  native: #01 pc 00000000001b2c3d  " + TM + " (offset 0x1000) (Java_org_telegram_tgnet_ConnectionsManager_native_1x+40) (BuildId: " + TM_ID + ")\n"
+                + "  native: #02 pc 0000000000002000  [anon:dalvik-jit-code-cache] (com.vendor.Tracker.track+164)\n"
                 + "  at org.telegram.messenger.MessagesStorage.getDialogs(MessagesStorage.java:12345)\n"
                 + "  - waiting to lock <0x0a1b2c3d> (a java.lang.Object) held by thread 42\n"
                 + "  at org.telegram.messenger.MessagesStorage.lambda$loadDialogs$7(MessagesStorage.java:999)\n"
@@ -477,16 +504,16 @@ public final class PurpleCrashCaptureCases {
                 "crash library lib=libtmessages.49.so build_id=" + TM_ID,
                 "crash frame n=1 lib=system fn=syscall",
                 "crash frame n=2 lib=libtmessages.49.so fn=Java_org_telegram_tgnet_ConnectionsManager_native_1x pc=0x1b2c3d",
-                "crash frame n=3 at=org.telegram.messenger.MessagesStorage.getDialogs line=12345",
-                "crash frame n=4 at=org.telegram.messenger.MessagesStorage.lambda$loadDialogs line=999",
-                "crash frame n=5 at=org.telegram.messenger.MessagesStorage.run line=0",
-                "crash frame n=6 at=other line=5",
-                "crash frame n=7 at=android.os.Handler.handleCallback line=958",
-                "crash frame n=8 at=android.os.Looper.loop line=294",
-                "crash frame n=9 at=android.app.ActivityThread.main line=8177",
-                "crash frame n=10 at=java.lang.reflect.Method.invoke",
-                "crash frame n=11 at=other line=552",
-                "crash frame n=12 at=other line=971",
+                "crash frame n=3 lib=system fn=other",
+                "crash frame n=4 at=org.telegram.messenger.MessagesStorage.getDialogs line=12345",
+                "crash frame n=5 at=org.telegram.messenger.MessagesStorage.lambda$loadDialogs line=999",
+                "crash frame n=6 at=org.telegram.messenger.MessagesStorage.run line=0",
+                "crash frame n=7 at=other line=5",
+                "crash frame n=8 at=android.os.Handler.handleCallback line=958",
+                "crash frame n=9 at=android.os.Looper.loop line=294",
+                "crash frame n=10 at=android.app.ActivityThread.main line=8177",
+                "crash frame n=11 at=java.lang.reflect.Method.invoke",
+                "crash frame n=12 at=other line=552",
                 "crash end frames=12");
         check(record.equals(expected), "the ANR record: " + record);
         for (String line : record) check(!line.contains("Wrong") && !line.contains("AfterMain") && !line.contains("0x0a1b"),

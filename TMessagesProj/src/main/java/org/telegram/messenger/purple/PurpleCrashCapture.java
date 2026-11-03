@@ -51,6 +51,11 @@ public final class PurpleCrashCapture {
      * daemon thread that dies with the process, so it writes the record to
      * {@code files/purple-diagnostics/pending-crash.log} synchronously with an
      * fsync, and the next start moves it into the log.
+     *
+     * Ordering: this runs before {@code ApplicationLoader.onCreate} has
+     * initialised AndroidUtilities, so neither the handler nor the collector
+     * thread may touch FileLog, AndroidUtilities or ApplicationLoader; the
+     * collector writes through {@link PurpleDiagLog#appendNow}, which does not.
      */
     public static synchronized void start(Context context) {
         try {
@@ -110,7 +115,7 @@ public final class PurpleCrashCapture {
                 return;
             }
             List<String> lines = PurpleCrashRecord.plan(exits, records, System.currentTimeMillis());
-            PurpleDiagLog.appendNow(lines);
+            PurpleDiagLog.appendNow(app.getFilesDir(), lines);
             if (pending.exists()) pending.delete();
             if (newest != last) prefs.edit().putLong(LAST_EXIT, newest).commit();
         } catch (Throwable ignored) {

@@ -183,7 +183,8 @@ A record reads `crash start reason=... signal=...`, its `crash exit` line,
 line per frame (and `crash cause` lines with three frames each for a Java
 exception's causes), then `crash end frames=12`. Exception messages are dropped
 entirely; a class outside `org.telegram`, `android`, `androidx`, `java`,
-`javax`, `kotlin` and `com.google` is `other`; names that are not ASCII Java
+`javax`, `kotlin` and `com.google` is `other`, in Java frames and in the
+native frames of compiled or JIT Java code alike; names that are not ASCII Java
 identifiers are `invalid`; synthetic lambda suffixes are dropped and line
 numbers are clamped counts. At most five records are written per start, and
 the rest are counted in one `crash repeated count=n` line. The factories that
