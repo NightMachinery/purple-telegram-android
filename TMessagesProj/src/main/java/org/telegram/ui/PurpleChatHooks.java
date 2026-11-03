@@ -95,9 +95,13 @@ final class PurpleChatHooks {
     private long[] recordingTarget() {
         final MessageObject reply = chat.getReplyMessage();
         final boolean once = chat.chatActivityEnterView != null && chat.chatActivityEnterView.voiceOnce;
-        return new long[]{chat.getCurrentAccount(), chat.getDialogId(), chat.getTopicId(), reply == null ? 0 : reply.getId(),
+        // getTopicId() is the thread id in saved sublists, quick replies and
+        // suggestions too; only a forum topic's is a topic to send into.
+        final boolean quickReply = chat.getChatMode() == ChatActivity.MODE_QUICK_REPLIES;
+        return new long[]{chat.getCurrentAccount(), chat.getDialogId(), chat.isTopic ? chat.getTopicId() : 0, reply == null ? 0 : reply.getId(),
                 org.telegram.messenger.UserConfig.getInstance(chat.getCurrentAccount()).getClientUserId(),
-                once ? org.telegram.messenger.purple.PurpleRecordingSessions.FLAG_ONCE : 0};
+                (once ? org.telegram.messenger.purple.PurpleRecordingSessions.FLAG_ONCE : 0)
+                        | (quickReply ? org.telegram.messenger.purple.PurpleRecordingSessions.FLAG_QUICK_REPLY : 0)};
     }
 
     View addSelectionCopy(org.telegram.ui.ActionBar.ActionBarMenu menu) {

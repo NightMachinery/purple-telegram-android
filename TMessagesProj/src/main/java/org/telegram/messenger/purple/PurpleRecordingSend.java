@@ -53,6 +53,9 @@ public final class PurpleRecordingSend {
                 final TLRPC.Message reply = replyId == 0 ? null : storage.getMessage(dialogId, replyId);
                 final TLRPC.Message top = topicId == 0 ? null : storage.getMessage(dialogId, topicId);
                 final MessageObject replyObject = reply == null ? null : new MessageObject(account, reply, false, false);
+                // A forum topic whose root is not cached here: refuse, rather than
+                // send into the General topic (review P2-6).
+                if (topicId != 0 && top == null) throw new IOException("topic not cached");
                 final MessageObject topObject = top == null ? null : new MessageObject(account, top, false, false);
                 if (item.round()) {
                     ok = sendRound(item, source, account, dialogId, replyObject, topObject);
