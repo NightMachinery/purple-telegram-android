@@ -496,23 +496,42 @@ final class PurpleChatHooks {
 
     /**
      * Whether the playing message, now off the visible part of the list,
-     * continues in the floating round instead of the chat scrolling back to it.
+     * continues in the floating round instead of the chat scrolling to it.
      *
      * Upstream switches to the floating round only when your finger moved the
-     * list ({@code checkTextureViewPosition}) or a PiP already exists, and
-     * otherwise calls {@code scrollToMessageId} back to the round. So a reply
-     * quote, a search result or the scroll-to-bottom button tapped while a
-     * round plays yanks the chat back to it. This term in
-     * {@code updateTextureViewPosition}'s condition makes a round go to the PiP
-     * whatever moved the list, the same as a manual scroll. Ordinary videos are
+     * list ({@code checkTextureViewPosition}) or a PiP already exists. With
+     * {@code needScroll} (the queue advanced to a round within five messages)
+     * it otherwise scrolls the chat to the round, and without it leaves the
+     * round playing with its frame off screen. This term in
+     * {@code updateTextureViewPosition}'s condition sends a round to the PiP
+     * in both cases, except that an automatic advance still follows the queue
+     * while you are reading it: when a message within those five is on screen.
+     * Scrolled away (for example while a voice message played), the next round
+     * plays in the PiP and the chat stays where you are. Ordinary videos are
      * not rounds and keep upstream's choice: the floating view is round-only.
      *
      * It is the one F1 hook that widens an existing line rather than adding
      * one: the PiP-or-scroll choice is a single if/else-if with no place for an
      * early return. See README "Media playback" and docs/media-design.md, F1.
      */
-    boolean roundLeavesToPip(MessageObject message) {
-        return message.isRoundVideo();
+    boolean roundLeavesToPip(MessageObject message, boolean needScroll) {
+        return org.telegram.messenger.purple.PurpleRoundPip.leavesToPip(
+                message.isRoundVideo(), needScroll, needScroll && queueOnScreen(message));
+    }
+
+    /** Whether a message within upstream's five-message follow range of {@code message} is on screen. */
+    private boolean queueOnScreen(MessageObject message) {
+        final int index = chat.messages.indexOf(message);
+        final org.telegram.ui.Components.RecyclerListView list = chat.getChatListView();
+        if (index < 0 || list == null) return false;
+        for (int i = 0; i < list.getChildCount(); i++) {
+            final View child = list.getChildAt(i);
+            if (!(child instanceof org.telegram.ui.Cells.ChatMessageCell)) continue;
+            final MessageObject shown = ((org.telegram.ui.Cells.ChatMessageCell) child).getMessageObject();
+            final int other = shown == null ? -1 : chat.messages.indexOf(shown);
+            if (other >= 0 && Math.abs(other - index) < 5) return true;
+        }
+        return false;
     }
 
     /**

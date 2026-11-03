@@ -112,6 +112,15 @@ public final class MediaPlaybackCases {
         check(PurpleRoundPip.action(true, false, true, true) == PurpleRoundPip.TOGGLE, "not even in its own chat");
         check(PurpleRoundPip.action(true, true, false, false) == PurpleRoundPip.TOGGLE, "another account on top opens nothing");
         check(PurpleRoundPip.action(true, true, false, true) == PurpleRoundPip.TOGGLE, "nor scrolls a chat of another account");
+        // Off the visible list: a round goes to the PiP, except that an
+        // automatic advance follows the queue while it is on screen.
+        check(PurpleRoundPip.leavesToPip(true, false, false), "a jump away from a playing round floats it");
+        check(PurpleRoundPip.leavesToPip(true, false, true), "whatever is on screen");
+        check(!PurpleRoundPip.leavesToPip(true, true, true), "an advance you are following scrolls, as upstream");
+        check(PurpleRoundPip.leavesToPip(true, true, false), "an advance after you scrolled away floats, no scroll");
+        for (int i = 0; i < 4; i++) {
+            check(!PurpleRoundPip.leavesToPip(false, (i & 1) != 0, (i & 2) != 0), "an ordinary video keeps upstream's choice " + i);
+        }
         // Taps on the floating round and on the chat are timed apart: a tap in
         // the chat and then one on the PiP are not a double tap.
         final PurpleDoubleTap chat = new PurpleDoubleTap();

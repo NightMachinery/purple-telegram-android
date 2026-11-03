@@ -937,7 +937,7 @@
       "expects": {
         "core:MEDIA_QUEUE_CORE_CHECKS": 60,
         "pins:MEDIA_HOOK_PINS": 8,
-        "pip:MEDIA_PIP_CHECKS": 27,
+        "pip:MEDIA_PIP_CHECKS": 35,
         "queue:MEDIA_QUEUE_CHECKS": 26,
         "restart:MEDIA_RESTART_CHECKS": 36
       }

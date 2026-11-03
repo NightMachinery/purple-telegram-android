@@ -44,7 +44,7 @@ PINS = [
      '                        if (org.telegram.messenger.purple.PurpleRoundPip.onTap(messageObject)) messageObject = null;\n'),
     ('ui/ChatActivity.java',
      '                        if (messageObject.isRoundVideo() || messageObject.isVideo()) {\n',
-     '                            if (checkTextureViewPosition || PipRoundVideoView.getInstance() != null || purple.roundLeavesToPip(messageObject)) {\n'),
+     '                            if (checkTextureViewPosition || PipRoundVideoView.getInstance() != null || purple.roundLeavesToPip(messageObject, needScroll)) {\n'),
     ('ui/ChatActivity.java',
      '                if (messageObject.getDialogId() == mergeDialogId && startMessageObject.getDialogId() != mergeDialogId) {\n'
      '                    continue;\n'
@@ -65,8 +65,9 @@ for name, signature, hook in PINS:
     assert text.count(hook) == 1, name + ': the hook appears once'
     assert text.index(signature) + len(signature) == text.index(hook), name + ': ' + hook.strip() + ' opens ' + signature.strip()
     pinned += 1
-helper = hooked['ui/PurpleChatHooks.java'].read_text(encoding='utf-8').split('boolean roundLeavesToPip(MessageObject message) {', 1)[1].split('}', 1)[0]
-assert helper.strip() == 'return message.isRoundVideo();', 'only rounds leave to the PiP'
+helper = hooked['ui/PurpleChatHooks.java'].read_text(encoding='utf-8').split('boolean roundLeavesToPip(MessageObject message, boolean needScroll) {', 1)[1].split('}', 1)[0]
+assert ' '.join(helper.split()) == ('return org.telegram.messenger.purple.PurpleRoundPip.leavesToPip( '
+                                    'message.isRoundVideo(), needScroll, needScroll && queueOnScreen(message));'), helper
 pinned += 1
 helper = hooked['ui/PurpleChatHooks.java'].read_text(encoding='utf-8').split('boolean skipsInVoicePlaylist(MessageObject start, MessageObject candidate) {', 1)[1].split('}', 1)[0]
 assert helper.strip() == 'return org.telegram.messenger.purple.PurpleVoiceQueue.skipsInPlaylist(start, candidate);'

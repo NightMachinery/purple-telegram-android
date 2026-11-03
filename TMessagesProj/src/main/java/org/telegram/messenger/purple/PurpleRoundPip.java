@@ -79,6 +79,20 @@ public final class PurpleRoundPip {
         return chatOnTop ? SCROLL : OPEN;
     }
 
+    /**
+     * Whether a playing message that is off the visible list goes to the
+     * floating round rather than the chat scrolling to it; see
+     * {@code PurpleChatHooks.roundLeavesToPip}.
+     *
+     * @param round         whether it is a round (the floating view is round-only)
+     * @param autoAdvance   upstream's {@code needScroll}: the queue just moved to
+     *                      a round within five messages of the previous one
+     * @param queueOnScreen whether a message within those five is on screen
+     */
+    public static boolean leavesToPip(boolean round, boolean autoAdvance, boolean queueOnScreen) {
+        return round && !(autoAdvance && queueOnScreen);
+    }
+
     /** The arguments the player bar opens a chat with. */
     private static Bundle chatArgs(long dialogId, int messageId) {
         final Bundle args = new Bundle();

@@ -16022,7 +16022,7 @@ public class ChatActivity extends BaseFragment implements
                         videoPlayerContainer.setTranslationY(-AndroidUtilities.roundPlayingMessageSize(isSideMenued()) - 100);
                         fragmentView.invalidate();
                         if (messageObject.isRoundVideo() || messageObject.isVideo()) {
-                            if (checkTextureViewPosition || PipRoundVideoView.getInstance() != null || purple.roundLeavesToPip(messageObject)) {
+                            if (checkTextureViewPosition || PipRoundVideoView.getInstance() != null || purple.roundLeavesToPip(messageObject, needScroll)) {
                                 MediaController.getInstance().setCurrentVideoVisible(false);
                             } else if (needScroll) {
                                 scrollToMessageId(messageObject.getId(), 0, false, 0, true, 0);

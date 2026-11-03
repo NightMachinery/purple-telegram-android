@@ -97,19 +97,24 @@ the double tap as two plain taps. `PurpleRoundPip` decides; the PiP's
 playing message when Purple handled the tap, so upstream's toggle is skipped
 while its drag reset and edge snap still run.
 
-The chat no longer pulls you back to a playing round. Upstream switches to the
-floating round only when your finger scrolled the round away, and otherwise
-scrolls back to it, so tapping a reply quote, a search result or the
-scroll-to-bottom button while a round played jumped back to the round. Now a
-round that leaves the visible list for any reason continues in the floating
-round. Ordinary videos keep upstream's behaviour. This is the one hook that
-widens an existing upstream line instead of adding one:
+A round that leaves the visible chat keeps playing in the floating round.
+Upstream floats it only when your finger scrolled it away; when something else
+moved the list (a reply quote, a search result, the scroll-to-bottom button) it
+kept playing with its picture off screen, and when the voice queue advanced to
+a round within five messages it scrolled the chat to that round even if you had
+scrolled elsewhere (for example while a voice message played). Now a jump away
+floats the round, and an automatic advance scrolls only while you are still
+reading the queue (a message within those five is on screen); otherwise the
+next round plays in the floating round and the chat stays where you are. The
+next voice message never scrolled the chat upstream, and still does not.
+Ordinary videos keep upstream's behaviour. This is the one hook that widens an
+existing upstream line instead of adding one:
 `ChatActivity.updateTextureViewPosition`'s condition
 `checkTextureViewPosition || PipRoundVideoView.getInstance() != null` gains
-`|| purple.roundLeavesToPip(messageObject)`. The PiP-or-scroll choice is a
-single if/else-if, so there is no place for an early return that would not
-change the branch around it. The pull-back was inferred from the code; a device
-check confirms it.
+`|| purple.roundLeavesToPip(messageObject, needScroll)`. The PiP-or-scroll
+choice is a single if/else-if, so there is no place for an early return that
+would not change the branch around it. Both cases were read from the code; a
+device check confirms them.
 
 **Private-chat voice queue.** Purple Settings > Media playback > **Keep the
 voice queue to the other person** (on by default) is `[playback]
