@@ -150,6 +150,22 @@ final class PurpleSyncMagicChat {
         });
     }
 
+    /**
+     * Records a problem sync found inside the bound chat (records of another sync space only). Like a lookup
+     * problem it pauses automatic sync until the user acts, and it is shown once.
+     */
+    void raise(PurpleSyncMagicCore.Problem problem) {
+        port.post(() -> {
+            Result current = last;
+            if (closed || current.kind != Result.Kind.Use || problem == PurpleSyncMagicCore.Problem.None) return;
+            String next = edit(binding -> PurpleSyncMagicCore.raise(binding, problem));
+            PurpleSyncMagicCore.Binding raised = next != null ? PurpleSyncMagicCore.parse(next) : null;
+            if (raised == null) return;
+            port.diag("auto_paused", reason(problem.code()));
+            last = new Result(Result.Kind.Problem, current.chat, problem, !raised.problemShown, 0, current.manual);
+        });
+    }
+
     void close() {
         port.post(() -> {
             closed = true; ++generation;

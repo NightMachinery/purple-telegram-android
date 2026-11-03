@@ -133,7 +133,10 @@ public final class PurpleSync {
         saves(origin.key).admit(current::current, () -> {
             byte[] state = PurpleLegacySendState.read(files);
             if (current.current() && state != null && PurpleCore.shouldAutoSend(expected, state, expected, false)) {
-                String error = sendToSavedMessages(origin.slot, expected);
+                // Send after Save goes to the sync chat, which is no longer Saved Messages once the lookup binds
+                // the Magic Purple Sync chat.
+                long dialog = boundDialog(origin.slot);
+                String error = dialog != 0 ? send(origin.slot, expected, dialog) : "the sync chat is not bound yet";
                 if (error != null) FileLog.e("Purple: auto-send: " + error);
             }
         }, allowSend);
@@ -175,6 +178,18 @@ public final class PurpleSync {
     }
 
     public static String sendToSavedMessages(int account, byte[] bytes) {
+        return send(account, bytes, UserConfig.getInstance(account).getClientUserId());
+    }
+
+    /** The dialog of the sync chat the lookup bound: Saved Messages or a supergroup; 0 when none is bound. */
+    static long boundDialog(int account) {
+        PurpleSyncChatCore.Peer chat = PurpleSyncChat.boundChat(account);
+        if (chat == null) return 0;
+        if (chat.kind == PurpleSyncChatCore.PeerKind.Self) return UserConfig.getInstance(account).getClientUserId();
+        return chat.kind == PurpleSyncChatCore.PeerKind.Channel ? -chat.id : 0;
+    }
+
+    private static String send(int account, byte[] bytes, long dialog) {
         if (!PurpleAccountOwner.manualBackupAllowed(account, bytes)) {
             return LocaleController.getString(R.string.PurpleAccountWriteHeld);
         }
@@ -227,7 +242,7 @@ public final class PurpleSync {
                     AccountInstance.getInstance(account),
                     staged.getAbsolutePath(),
                     caption,
-                    UserConfig.getInstance(account).getClientUserId(),
+                    dialog,
                     null,
                     PurpleSendReceipt.guarded(origin::current, (serverId, preparationFailed) -> {
                         clearPending(pendingSend);
@@ -272,6 +287,7 @@ public final class PurpleSync {
                         || (unsent && messageObject.messageOwner.send_state
                                 == MessageObject.MESSAGE_SEND_STATE_SENDING))
                 || messageObject.getDialogId() != UserConfig.getInstance(account).getClientUserId()
+                        && (messageObject.getDialogId() >= 0 || messageObject.getDialogId() != boundDialog(account))
                 || !UserConfig.getInstance(account).isClientActivated()
                 || !(messageObject.messageOwner.media instanceof TLRPC.TL_messageMediaDocument)
                 || messageObject.messageOwner.media.document == null

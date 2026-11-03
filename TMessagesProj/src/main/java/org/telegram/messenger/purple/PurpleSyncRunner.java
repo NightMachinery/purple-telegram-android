@@ -925,9 +925,10 @@ public final class PurpleSyncRunner {
             return context.current() && PurpleAccountSyncStore.hasState(context.files.syncDirectory);
         }
 
+        /** The store follows its state's chat and moves the state into the chat the lookup bound. */
         @Override
         public PurpleAccountSyncStore store() {
-            return new PurpleAccountSyncStore(context);
+            return PurpleAccountSyncStore.following(context, context.origin != null ? PurpleSyncChat.boundChat(context.origin.slot) : null);
         }
 
         @Override

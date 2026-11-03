@@ -1,5 +1,8 @@
 #include <jni.h>
 #include "purple/purple_sync_chat_magic.h"
+#include "purple/purple_local_choice.h"
+#include "purple/purple_sync_auto.h"
+#include "purple/purple_sync_local_state.h"
 #include "purple/purple_types.h"
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
@@ -145,9 +148,65 @@ QString MigrationName(SyncChatMigrationStep step) {
     return QString();
 }
 
+bool Bytes(const QJsonValue &value, QByteArray &result) {
+    if (!value.isString()) return false;
+    const auto text = value.toString().toLatin1();
+    const auto decoded = QByteArray::fromBase64Encoding(text, QByteArray::AbortOnBase64DecodingErrors);
+    if (!decoded || decoded.decoded.toBase64() != text) return false;
+    result = decoded.decoded;
+    return true;
+}
+
+QString Encoded(const QByteArray &bytes) {
+    return QString::fromLatin1(bytes.toBase64());
+}
+
+// The state moved into the bound chat, or a failure without changes.
+QJsonObject MoveState(const QJsonObject &object) {
+    auto bytes = QByteArray();
+    auto self = int64_t(0);
+    if (!Bytes(object.value(u"state"_q), bytes) || !Decimal(object.value(u"self"_q), self) || self <= 0) return Failure();
+    const auto parsed = ParseSyncLocalState(bytes);
+    const auto chat = ParsePeerToken(object.value(u"chat"_q).toString(), uint64_t(self));
+    if (!parsed || !chat) return Failure();
+    const auto moved = MoveSyncStateToChat(parsed.state, *chat, uint64_t(self));
+    if (!moved.move) {
+        return QJsonObject{ { u"ok"_q, false }, { u"error"_q, moved.move.error == SyncChatMoveError::PendingStage
+            ? u"PendingStage"_q : u"Refused"_q } };
+    }
+    const auto written = SerializeSyncLocalState(moved.move.state);
+    if (!written) return Failure();
+    return QJsonObject{
+        { u"ok"_q, true },
+        { u"state"_q, Encoded(written.canonical) },
+        { u"changed"_q, moved.move.changed },
+        { u"abandoned"_q, QString::number(moved.abandonedSeq) },
+    };
+}
+
+// The automatic record carried across a move, for the account `key`.
+QJsonObject MoveAuto(const QJsonObject &object) {
+    auto bytes = QByteArray();
+    const auto account = ParseAccountKey(object.value(u"key"_q).toString());
+    if (!account || !Bytes(object.value(u"record"_q), bytes)) return Failure();
+    const auto parsed = ParseSyncAutoRecord(bytes);
+    if (parsed.status != SyncAutoCodecStatus::Valid || !parsed.record || parsed.record->account != *account) {
+        return Failure();
+    }
+    const auto moved = MoveSyncAutoRecord(*parsed.record, object.value(u"fingerprint"_q).toString());
+    const auto written = moved ? SerializeSyncAutoRecord(*moved) : std::nullopt;
+    if (!written) return Failure();
+    return QJsonObject{ { u"ok"_q, true }, { u"record"_q, Encoded(*written) } };
+}
+
 QJsonObject Evaluate(const QString &operation, const QJsonObject &object) {
     auto result = QJsonObject{ { u"ok"_q, true } };
     auto binding = SyncChatBinding();
+    if (operation == u"moveState"_q) {
+        return MoveState(object);
+    } else if (operation == u"moveAuto"_q) {
+        return MoveAuto(object);
+    }
     if (operation == u"title"_q) {
         result.insert(u"magic"_q, IsMagicSyncChatTitle(object.value(u"title"_q).toString()));
     } else if (operation == u"check"_q) {

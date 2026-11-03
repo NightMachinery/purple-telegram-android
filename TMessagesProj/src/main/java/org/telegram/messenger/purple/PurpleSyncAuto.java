@@ -33,7 +33,7 @@ public final class PurpleSyncAuto {
         AndroidUtilities.runOnUIThread(()->{
             Runtime runtime=accounts.get(origin.accountKey());
             if(runtime!=null&&runtime.opening.slot==origin.slot){
-                runtime.cancelRetry();runtime.network.cancel();
+                runtime.cancelRetry();runtime.cancelNetworks();
                 runtime.queue(()->{runtime.engine.suspend();PurpleSyncAutoEdits.cleanup(origin.slot);done.run();});
             } else {PurpleSyncAutoEdits.cleanup(origin.slot);done.run();}
         });
@@ -135,7 +135,7 @@ public final class PurpleSyncAuto {
                 reason = PurpleSyncAutoCore.Reason.StateChanged;
             if (!enabled) {
                 PurpleSyncChat.cancelOperation(account.account,engine);
-                network.cancel();
+                cancelNetworks();
                 PurpleSyncAutoEdits.cleanup(account.account);
             }
         }
@@ -207,24 +207,56 @@ public final class PurpleSyncAuto {
             Status status = new Status(enabledHint(), text);
             for (Consumer<Status> listener : new ArrayList<>(listeners)) listener.accept(status);
         }
+        private PurpleSyncChatCore.Peer scopedChat;
+        private PurpleSyncAutoNetwork scoped;
+        /** The network for {@code chat}: Saved Messages, or the bound chat; null when its local facts are missing. */
+        private synchronized PurpleSyncAutoNetwork network(PurpleSyncChatCore.Peer chat) {
+            if (PurpleSyncChatCore.Peer.self().equals(chat)) return network;
+            if (scoped != null && chat.equals(scopedChat)) return scoped;
+            PurpleSyncClient client = PurpleSyncChat.boundClient(opening.slot, chat, () -> current() && enabledHint());
+            if (client == null) return null;
+            client.transientWait(value->AndroidUtilities.runOnUIThread(this::render));
+            if (scoped != null) scoped.cancel();
+            scopedChat = chat;
+            scoped = new PurpleSyncAutoNetwork(client, engine.session, () -> current() && enabledHint());
+            return scoped;
+        }
+        synchronized void cancelNetworks() {
+            network.cancel();
+            if (scoped != null) scoped.cancel();
+        }
+        /** The chat the stored state belongs to; the store moved it into the bound chat when the engine opened it. */
+        private PurpleSyncChatCore.Peer stateChat() {
+            return PurpleAccountSyncStore.stateChat(env.context);
+        }
         public void check(
             String ticket, int[] exactIds, java.util.function.BooleanSupplier current,
             PurpleSyncAutoEngine.Reply<PurpleSyncAutoEngine.Observed> reply) {
             PurpleSyncChat.underLock(env.context,engine,env.operationKey(account.account,account.userId),false,engine.borrowedAuthority(),current,status->queue(()->{
                 if(!current.getAsBoolean())return;
-                if(status.selfReadable())network.check(exactIds,current,reply);else reply.done(null);
+                PurpleSyncChatCore.Peer chat=stateChat();
+                PurpleSyncAutoNetwork scope=status.readable(chat)?network(chat):null;
+                if(scope!=null)scope.check(exactIds,current,observed->{
+                    if(observed!=null)PurpleSyncChat.checkSpace(opening.slot,chat,observed.inventory,PurpleAccountSyncStore.stateSpace(env.context));
+                    reply.done(observed);
+                });else reply.done(null);
             }));
         }
         public void send(boolean edit, int id, byte[] bytes, byte[] previous,
             java.util.function.BooleanSupplier current, PurpleSyncAutoEngine.Reply<PurpleSyncAutoCore.Outcome> reply) {
             PurpleSyncChat.underLock(env.context,engine,env.operationKey(account.account,account.userId),true,engine.borrowedAuthority(),current,status->queue(()->{
                 if(!current.getAsBoolean())return;
-                if(status.selfPostable())network.send(edit,id,bytes,previous,current,new PurpleSyncTransport.PostAuthority(){
+                PurpleSyncChatCore.Peer chat=stateChat();
+                PurpleSyncAutoNetwork scope=status.postable(chat)?network(chat):null;
+                if(scope!=null)scope.send(edit,id,bytes,previous,current,new PurpleSyncTransport.PostAuthority(){
                     final java.util.function.BooleanSupplier lock=engine.borrowedAuthority();
                     public boolean current(){return current.getAsBoolean() && lock.getAsBoolean();}
                     public void check(Consumer<Boolean> done){
                         PurpleSyncChat.underLock(env.context,engine,env.operationKey(account.account,account.userId),true,
-                                lock,this::current,fresh->done.accept(fresh.selfPostable() && current()));
+                                lock,this::current,fresh->done.accept(fresh.postable(chat) && current()));
+                    }
+                    public boolean automatic(PurpleSyncChatOrigin origin,PurpleSyncChatCore.Peer target){
+                        return current() && chat.equals(target) && !PurpleSyncChatCore.Peer.self().equals(target);
                     }
                 },reply);else reply.done(PurpleSyncAutoCore.Outcome.OutcomeUnknown);
             }));
@@ -233,7 +265,9 @@ public final class PurpleSyncAuto {
             PurpleSyncAutoEngine.Reply<PurpleSyncAutoCore.Outcome> reply) {
             PurpleSyncChat.underLock(env.context,engine,env.operationKey(account.account,account.userId),true,engine.borrowedAuthority(),current,status->queue(()->{
                 if(!current.getAsBoolean())return;
-                if(status.selfPostable())network.retire(id,exact,current,reply);else reply.done(PurpleSyncAutoCore.Outcome.DeletionRefused);
+                PurpleSyncChatCore.Peer chat=stateChat();
+                PurpleSyncAutoNetwork scope=status.postable(chat)?network(chat):null;
+                if(scope!=null)scope.retire(id,exact,current,reply);else reply.done(PurpleSyncAutoCore.Outcome.DeletionRefused);
             }));
         }
     }
@@ -368,6 +402,7 @@ public final class PurpleSyncAuto {
                 id = R.string.PurpleSyncAutoBinding;
                 break;
             case SyncChatNotResolved:
+            case SyncChatProblem:
             case ChatNotWritable:
                 id = R.string.PurpleSyncAutoChat;
                 break;

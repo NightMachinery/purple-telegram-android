@@ -309,6 +309,29 @@ public final class PurpleSyncMagicChatCases {
         fake.drain();
         check(answers[0] == 5 && fake.sent.size() == 1, "five triggers, one lookup, one request");
 
+        // Sync found another device's sync space in the bound chat: a problem that pauses until the user acts.
+        fake = new Fake(); service = new PurpleSyncMagicChat(fake);
+        service.raise(PurpleSyncMagicCore.Problem.SpaceMismatch); fake.drain();
+        check(service.last().kind == PurpleSyncMagicChat.Result.Kind.Unavailable && fake.binding.isEmpty(), "nothing to raise before a chat is bound");
+        fake.visible = new ArrayList<>(Collections.singletonList(chat(6000, null, null)));
+        fake.reply(PurpleSyncMagicCore.FULL_INFO, ok(chat(6000, 0L, 0L)));
+        result = run(fake, service, PurpleSyncMagicChat.Trigger.auto, false);
+        check(result.kind == PurpleSyncMagicChat.Result.Kind.Use, "the chat is bound");
+        service.raise(PurpleSyncMagicCore.Problem.SpaceMismatch); fake.drain();
+        check(service.last().kind == PurpleSyncMagicChat.Result.Kind.Problem && service.last().problem == PurpleSyncMagicCore.Problem.SpaceMismatch
+            && service.last().show && channel(6000).equals(service.last().chat), "a space mismatch is a problem to show, naming the chat");
+        check(PurpleSyncMagicCore.parse(fake.binding).problem == PurpleSyncMagicCore.Problem.SpaceMismatch && fake.logged("auto_paused reason=space_mismatch"),
+            "it is recorded and logged");
+        fake.sent.clear(); fake.boundState = PurpleSyncMagicCore.BoundState.Present; fake.bound = chat(6000, null, null);
+        result = run(fake, service, PurpleSyncMagicChat.Trigger.auto, false);
+        check(result.kind == PurpleSyncMagicChat.Result.Kind.Problem && result.problem == PurpleSyncMagicCore.Problem.SpaceMismatch && fake.sent.isEmpty(),
+            "later automatic lookups keep the pause and send nothing");
+        // "reason" is the one fixed field name; its value is a vocabulary word like every other.
+        for (String line : fake.diag) for (String part : line.split(" ")) {
+            for (String word : part.split("=")) if (!word.matches("[0-9]+") && !word.equals("reason"))
+                check(PurpleDiagLogStore.VOCABULARY.contains(word), "vocabulary word: " + word);
+        }
+
         // An unreadable binding or a closed service answers Unavailable and sends nothing.
         fake = new Fake(); service = new PurpleSyncMagicChat(fake); fake.unreadable = true;
         result = run(fake, service, PurpleSyncMagicChat.Trigger.startup, false);

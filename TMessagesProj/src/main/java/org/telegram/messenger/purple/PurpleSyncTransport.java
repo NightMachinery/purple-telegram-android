@@ -62,6 +62,8 @@ public interface PurpleSyncTransport {
         boolean current();
         void check(java.util.function.Consumer<Boolean> done);
         default boolean permits(PurpleSyncChatOrigin origin,PurpleSyncChatCore.Peer chat) { return false; }
+        /** Automatic sync may post, edit and delete its own records in {@code chat}, the chat the lookup bound. */
+        default boolean automatic(PurpleSyncChatOrigin origin,PurpleSyncChatCore.Peer chat) { return false; }
         default void issued(){}
         default void waiting(PurpleRpcRetry.Transient value){}
     }

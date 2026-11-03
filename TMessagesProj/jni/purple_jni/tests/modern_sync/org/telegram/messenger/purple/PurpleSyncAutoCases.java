@@ -405,7 +405,9 @@ public final class PurpleSyncAutoCases {
             if (kind.equals("v2")) {
                 JSONObject state =
                     new JSONObject(new String(q.frame.state(1), java.nio.charset.StandardCharsets.UTF_8));
-                state.put("version", 2).put("chat", "self");
+                // A state in another chat than the store reads (Saved Messages here) holds; since the magic sync
+                // chat a v2 state is otherwise synced like any other.
+                state.put("version", 2).put("chat", "channel:777");
                 PurpleAccountSyncCore.Result parsed = PurpleAccountSyncCore.inspectState(bytes(state.toString()));
                 check(parsed.isValid(), "native-valid v2 fixture");
                 write(new File(q.frame.sync(1), "state.json"), parsed.state);

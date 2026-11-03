@@ -41,6 +41,9 @@ public final class PurpleSyncChat {
         }
         public boolean selfReadable() { return complete&&phase==Phase.Use&&Peer.self().equals(chat); }
         public boolean selfPostable() { return selfReadable()&&!postingHeld; }
+        /** Sync may read {@code expected}: the lookup bound it. */
+        public boolean readable(Peer expected) { return complete&&phase==Phase.Use&&chat!=null&&chat.equals(expected); }
+        public boolean postable(Peer expected) { return readable(expected)&&!postingHeld; }
     }
     static final class Holder {
         final Platform env;
@@ -82,6 +85,45 @@ public final class PurpleSyncChat {
     }
     /** The problem in the last status was shown to the user; it is not shown again until it changes. */
     public static void problemShown(int slot){Holder holder=accounts.get(slot);if(holder!=null)holder.magic.shown();}
+    /** The chat the last lookup bound, or null while it waits, has a problem or has not run. */
+    static Peer boundChat(int slot) {
+        Holder holder=accounts.get(slot);
+        if(holder==null||!holder.env.current())return null;
+        PurpleSyncMagicChat.Result last=holder.magic.last();
+        return last.kind==PurpleSyncMagicChat.Result.Kind.Use?last.chat:null;
+    }
+    /**
+     * A record client for the bound supergroup {@code chat}, built from the local chat without a request: the
+     * lookup verified within a day that the user created it and is its only member and admin. Null when the chat
+     * is not a joined supergroup in the local cache.
+     */
+    static PurpleSyncClient boundClient(int slot,Peer chat,BooleanSupplier current) {
+        Holder holder=accounts.get(slot);
+        if(holder==null||!holder.env.current()||chat==null||chat.kind!=PeerKind.Channel)return null;
+        PurpleSyncMagicCore.Candidate local=PurpleSyncChatFacts.magic(org.telegram.messenger.MessagesController.getInstance(slot).getChat(chat.id),null);
+        if(local==null||!local.member||!local.megagroup||local.gigagroup)return null;
+        PurpleSyncChatOrigin origin=holder.env.origin;
+        PurpleSyncChatFacts.MappedPeer peer=new PurpleSyncChatFacts.MappedPeer(origin,chat,Kind.Supergroup,Truth.True,Truth.True,
+                local.facts,java.util.Collections.singleton(origin.userId));
+        PurpleSyncChatClient.Info info=new PurpleSyncChatClient.Info(origin,chat,peer,PurpleSyncChatClient.Error.None,local.title,peer.memberIds,true);
+        return PurpleSyncTelegramClient.create(info,()->current.getAsBoolean()&&holder.env.current());
+    }
+    /**
+     * Raises space_mismatch when the bound chat holds sync records, none of them in this device's sync space:
+     * another device set up sync there first, so joining its space is the user's choice.
+     */
+    static void checkSpace(int slot,Peer chat,PurpleSyncInventory inventory,String space) {
+        Holder holder=accounts.get(slot);
+        if(holder==null||chat==null||Peer.self().equals(chat)||inventory==null||!chat.equals(inventory.chat)
+                ||!inventory.scanComplete||space==null||space.isEmpty())return;
+        java.util.Set<String> spaces=PurpleSyncMagicManual.spaces(inventory);
+        if(spaces!=null&&!spaces.isEmpty()&&!spaces.contains(space))holder.magic.raise(PurpleSyncMagicCore.Problem.SpaceMismatch);
+    }
+    /** Whether the last lookup recorded a problem that pauses automatic sync. */
+    static boolean chatProblem(int slot) {
+        Holder holder=accounts.get(slot);
+        return holder!=null&&holder.magic.last().kind==PurpleSyncMagicChat.Result.Kind.Problem;
+    }
     public static Status status(int slot) { Holder holder=accounts.get(slot);return holder!=null&&holder.env.current()?new Status(holder.magic.last()):unavailable(); }
     public static PurpleSyncChatScreen.Control screen(int slot) { return screen(slot,()->true); }
     public static PurpleSyncChatScreen.Control screen(int slot,BooleanSupplier foreground) {
@@ -100,7 +142,7 @@ public final class PurpleSyncChat {
                 boolean ready=holder.env.current();
                 holder.env.ui(()->{
                     if(!foreground.getAsBoolean()||!holder.env.context.current()){done.accept(null);return;}
-                    PurpleSyncChatManual route=ready?new PurpleSyncChatManual(holder,foreground):null;
+                    PurpleSyncMagicManual route=ready?new PurpleSyncMagicManual(holder,foreground):null;
                     done.accept(route!=null?new PurpleSyncRunner(slot,holder.env.origin.userId,route,route,
                             task->queue().postRunnable(task),AndroidUtilities::runOnUIThread):null);
                 });

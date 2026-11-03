@@ -176,10 +176,41 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
     private PurpleAccountFiles.Identity origin;
     private PurpleSyncFileContext context;
     private PurpleSyncChatCore.Peer chat=PurpleSyncChatCore.Peer.self();
+    private PurpleSyncChatCore.Peer target;
 
     PurpleAccountSyncStore(PurpleSyncFileContext context) {
         this(context,PurpleSyncChatCore.Peer.self());
     }
+
+    /**
+     * A store for the chat its state names (Saved Messages without a state). When {@code target}, the chat the
+     * lookup bound, differs, {@link #open} moves the state there; see {@link #moveTo}.
+     */
+    static PurpleAccountSyncStore following(PurpleSyncFileContext context,PurpleSyncChatCore.Peer target) {
+        PurpleAccountSyncStore store=new PurpleAccountSyncStore(context,stateChat(context));
+        store.target=target;
+        return store;
+    }
+    /** The chat named by the account's sync state, Saved Messages without one. */
+    static PurpleSyncChatCore.Peer stateChat(PurpleSyncFileContext context) {
+        try {
+            File file=new File(requireFiles(context).syncDirectory,"state.json");
+            if(!file.exists())return PurpleSyncChatCore.Peer.self();
+            PurpleSyncChatCore.Peer chat=PurpleSyncChatCore.Peer.parse(NATIVE.inspectState(read(file,STATE_LIMIT)).chat,context.origin.userId);
+            return chat!=null?chat:PurpleSyncChatCore.Peer.self();
+        } catch(Exception|LinkageError error) { return PurpleSyncChatCore.Peer.self(); }
+    }
+    /** The sync space of the account's state, or null without a readable one. */
+    static String stateSpace(PurpleSyncFileContext context) {
+        try {
+            File file=new File(requireFiles(context).syncDirectory,"state.json");
+            if(!file.exists())return null;
+            PurpleAccountSyncCore.Result inspected=PurpleAccountSyncCore.inspectState(read(file,STATE_LIMIT));
+            return inspected.isValid()?inspected.space:null;
+        } catch(Exception|LinkageError error) { return null; }
+    }
+    /** The chat this store's state belongs to. */
+    synchronized PurpleSyncChatCore.Peer chat() { return chat; }
 
     PurpleAccountSyncStore(PurpleSyncFileContext context,PurpleSyncChatCore.Peer chat) {
         this(requireFiles(context).syncDirectory, NATIVE, PurpleGlobalAccountChoice.PHYSICAL, PurpleEditorDirectories.NATIVE);
@@ -317,7 +348,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
                     if (inspected.pendingSeq != 0) {
                         return fail(Status.PendingMismatch);
                     }
-                    if (!core.reserve(account, state, bytes).valid()) {
+                    if (!abandonedStage(bytes) && !core.reserve(account, state, bytes).valid()) {
                         return fail(Status.OrphanStage);
                     }
                     removeStage = true;
@@ -341,9 +372,63 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
                 Result checkpoint = checkpointRetainedBases();
                 if (checkpoint.status != Status.Ready && checkpoint.status != Status.Unchanged) return fail(checkpoint.status);
             }
+            if (target != null && !target.equals(chat) && production && origin != null) moveToBound();
             return result(Status.Ready);
         } catch (IOException | SecurityException e) {
             return fail(Status.IoError);
+        }
+    }
+
+    /** Moves the state to the bound chat; a refusal leaves it in its chat, where automatic sync holds. */
+    private void moveToBound() {
+        PurpleSyncSettingsFile.Contents local=context!=null?PurpleSyncSettingsFile.read(context):null;
+        String fingerprint=local!=null&&local.bytes!=null?PurpleSyncCore.settingsFingerprint(local.bytes):null;
+        Result moved=fingerprint!=null&&!fingerprint.isEmpty()
+                ?moveTo(target,origin.userId,origin.key,fingerprint):result(Status.InvalidState);
+        PurpleDiagLog.event("sync_chat","migration",PurpleDiagLogStore.slot(account),
+                PurpleDiagLogStore.code("step","move"),PurpleDiagLogStore.code("outcome",moved.status==Status.Ready?"ok":"error"));
+    }
+
+    /**
+     * Moves the state into {@code next}. A config stage left in the old chat is abandoned, because that chat is
+     * never read again. The automatic record is written first: a crash before the state follows leaves a fresh
+     * record beside the old chat, and the move simply runs again. The abandoned stage file goes last, and
+     * {@link #open} removes one that an interrupted move left behind.
+     */
+    synchronized Result moveTo(PurpleSyncChatCore.Peer next,long selfUserId,String key,String localFingerprint) {
+        if (status != Status.Ready || !bound() || next == null) return result(Status.InvalidTransition);
+        if (next.equals(chat)) return result(Status.Unchanged);
+        try {
+            PurpleSyncMagicCore.MovedState moved = PurpleSyncMagicCore.moveState(state, next, selfUserId);
+            if (moved == null || !moved.changed) return result(Status.InvalidState);
+            Reply inspected = core.inspectState(moved.state);
+            if (!inspected.valid() || !Arrays.equals(moved.state, inspected.state) || !device.equals(inspected.device)
+                    || !next.token().equals(inspected.chat)) return result(Status.InvalidState);
+            byte[] automatic = autoBytes();
+            if (automatic != null) {
+                byte[] carried = PurpleSyncMagicCore.moveAuto(automatic, key, localFingerprint);
+                if (carried == null || !compareAuto(automatic, carried, admission)) return result(Status.InvalidTransition);
+            }
+            if (!Arrays.equals(state, read(stateFile, STATE_LIMIT))) return result(Status.InvalidTransition);
+            write(stateFile, moved.state);
+            state = moved.state.clone();
+            chat = next;
+            if (moved.abandoned != 0 && stageFile.exists() && !stageFile.delete()) return fail(Status.IoError);
+            return bound() ? result(Status.Ready) : fail(Status.AccountUnbound);
+        } catch (IOException | RuntimeException | LinkageError e) {
+            return fail(Status.IoError);
+        }
+    }
+
+    /** Whether {@code bytes} is the config stage the state abandoned when it moved to another chat. */
+    private boolean abandonedStage(byte[] bytes) {
+        try {
+            long abandoned = new org.json.JSONObject(new String(state, java.nio.charset.StandardCharsets.UTF_8))
+                    .getJSONObject("streams").getJSONObject("config").optLong("abandoned_seq");
+            PurpleAccountSyncCore.Result record = PurpleAccountSyncCore.inspectConfigRecord(bytes);
+            return abandoned != 0 && "Valid".equals(record.envelopeStatus) && record.seq == abandoned;
+        } catch (Exception | LinkageError e) {
+            return false;
         }
     }
 

@@ -206,6 +206,33 @@ public final class PurpleSyncMagicCore {
         return answer.optBoolean("ok") ? new Binding(answer) : null;
     }
 
+    /** {@code state} moved into the bound chat; a config stage left in the old chat is abandoned. */
+    public static final class MovedState {
+        public final byte[] state;
+        public final boolean changed;
+        public final long abandoned;
+        MovedState(JSONObject value) {
+            state = PurpleSyncAutoCore.decode(value.optString("state"));
+            changed = value.optBoolean("changed");
+            abandoned = number(value, "abandoned");
+        }
+    }
+    /** The moved state, or null when core refuses the move (a pending library stage, an invalid state or chat). */
+    public static MovedState moveState(byte[] state, PurpleSyncChatCore.Peer chat, long selfUserId) {
+        if (state == null || chat == null) return null;
+        JSONObject answer = call("moveState", json("state", PurpleSyncAutoCore.encode(state), "chat", chat.token(),
+                "self", Long.toString(selfUserId)));
+        return answer.optBoolean("ok") && !answer.optString("state").isEmpty() ? new MovedState(answer) : null;
+    }
+    /** The automatic record of account {@code key} carried across a move, or null when it is invalid. */
+    public static byte[] moveAuto(byte[] record, String key, String localFingerprint) {
+        if (record == null || key == null || localFingerprint == null) return null;
+        JSONObject answer = call("moveAuto", json("record", PurpleSyncAutoCore.encode(record), "key", key,
+                "fingerprint", localFingerprint));
+        return answer.optBoolean("ok") && !answer.optString("record").isEmpty()
+                ? PurpleSyncAutoCore.decode(answer.optString("record")) : null;
+    }
+
     private static JSONArray candidates(List<Candidate> chats) {
         JSONArray result = new JSONArray();
         for (Candidate chat : chats) if (chat != null) result.put(chat.json());

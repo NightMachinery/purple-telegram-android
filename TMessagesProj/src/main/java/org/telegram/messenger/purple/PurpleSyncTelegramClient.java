@@ -216,7 +216,7 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
     public void send(File file, String caption, String mime, Receipt receipt) {
         PurpleSyncTransport.PostAuthority authority=receipt.authority();
         if(!isActive() || authority==null || !PurpleSyncChatCore.Peer.self().equals(chat()) && !authority.permits(origin(),chat())
-                || !authority.current() || !receipt.current() || !PurpleSyncPost.CAPTION.equals(caption)
+                && !authority.automatic(origin(),chat()) || !authority.current() || !receipt.current() || !PurpleSyncPost.CAPTION.equals(caption)
                 || !PurpleSyncPost.MIME.equals(mime)){receipt.onReceipt(0,true);return;}
         runOnWorker(()->{
             byte[] bytes=PurpleSyncReader.readAtMost(file,PurpleSyncPost.MAX_STAGED_BYTES+1);
@@ -237,7 +237,8 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
 
     @Override public void edit(int id,File file,byte[] expected,java.util.function.BooleanSupplier current,
             PurpleSyncTransport.PostAuthority authority,Reply<PurpleSyncAutoCore.Outcome> reply) {
-        if(id<=0 || !isActive() || !PurpleSyncChatCore.Peer.self().equals(chat()) || authority==null || !authority.current()){
+        if(id<=0 || !isActive() || authority==null || !PurpleSyncChatCore.Peer.self().equals(chat())
+                && !authority.automatic(origin(),chat()) || !authority.current()){
             reply.onReply(PurpleSyncAutoCore.Outcome.OutcomeUnknown);return;
         }
         runOnWorker(() -> uploadModern(id, PurpleSyncReader.readAtMost(file, PurpleSyncPost.MAX_STAGED_BYTES + 1),
@@ -341,9 +342,11 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
     @Override
     public void deleteOwn(int id,java.util.function.BooleanSupplier current,Reply<PurpleSyncAutoCore.Outcome> reply){
         runOnMain(()->{
-            if(!PurpleSyncChatCore.Peer.self().equals(chat())){reply.onReply(PurpleSyncAutoCore.Outcome.DeletionRefused);return;}
+            boolean channel=chat().kind==PurpleSyncChatCore.PeerKind.Channel;
+            if(!PurpleSyncChatCore.Peer.self().equals(chat())&&!channel){reply.onReply(PurpleSyncAutoCore.Outcome.DeletionRefused);return;}
             if(id<=0||!isActive()||!current.getAsBoolean()){reply.onReply(PurpleSyncAutoCore.Outcome.OutcomeUnknown);return;}
-            TLRPC.TL_messages_deleteMessages request=new TLRPC.TL_messages_deleteMessages();request.id.add(id);request.revoke=true;
+            TLObject request=deletion(channel,id);
+            if(request==null){reply.onReply(PurpleSyncAutoCore.Outcome.OutcomeUnknown);return;}
             ConnectionsManager.getInstance(account).sendRequest(request,(response,error)->{
                 if(!isActive()||!current.getAsBoolean()){reply.onReply(PurpleSyncAutoCore.Outcome.OutcomeUnknown);return;}
                 noteWriteFailure(error);
@@ -351,6 +354,16 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
                     :error!=null&&("MESSAGE_DELETE_FORBIDDEN".equals(error.text)||"CHAT_ADMIN_REQUIRED".equals(error.text))?PurpleSyncAutoCore.Outcome.DeletionRefused:PurpleSyncAutoCore.Outcome.OutcomeUnknown);
             }, ConnectionsManager.RequestFlagFailOnServerErrors);
         });
+    }
+
+    /** Deletes an own record in Saved Messages, or in the bound supergroup this client reads. */
+    private TLObject deletion(boolean channel,int id) {
+        if(!channel){TLRPC.TL_messages_deleteMessages request=new TLRPC.TL_messages_deleteMessages();request.id.add(id);request.revoke=true;return request;}
+        TLRPC.InputPeer peer=input();
+        if(peer==null||!PurpleSyncChatRequests.matches(chat(),peer))return null;
+        TLRPC.TL_channels_deleteMessages request=new TLRPC.TL_channels_deleteMessages();
+        request.channel=PurpleSyncChatRequests.channel(peer);request.id.add(id);
+        return request.channel!=null?request:null;
     }
 
     private History history(TLObject response, TLRPC.TL_error error) {

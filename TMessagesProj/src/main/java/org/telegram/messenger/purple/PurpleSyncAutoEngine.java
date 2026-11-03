@@ -160,6 +160,7 @@ final class PurpleSyncAutoEngine {
         if (!pending.ok())
             throw new IllegalStateException("automatic pending state unavailable");
         PurpleSyncAutoCore.Facts facts = new PurpleSyncAutoCore.Facts(key, session);
+        PurpleSyncChatCore.Peer boundChat = PurpleSyncChat.boundChat(account.account);
         PurpleAccountBinding.Binding binding = PurpleAccountBinding.read(account.account);
         JSONObject json = state != null ? new JSONObject(new String(state, StandardCharsets.UTF_8)) : new JSONObject();
         boolean bound = true;
@@ -176,7 +177,11 @@ final class PurpleSyncAutoEngine {
             .put("bindingToken", binding.current() ? binding.token : "")
             .put("state", PurpleSyncAutoCore.encode(bound ? state : null))
             .put("staged", PurpleSyncAutoCore.encode(pending.staged))
-            .put("chatResolved", json.optInt("version") == 1)
+            .put("chat", store.chat().token())
+            // WHY: the store moved the state into the bound chat when it opened; a bound chat that still
+            // differs means the move was refused, so automatic sync holds instead of using the old chat.
+            .put("chatResolved", boundChat == null || boundChat.equals(store.chat()))
+            .put("chatProblem", PurpleSyncChat.chatProblem(account.account))
             .put("chatWritable", current())
             .put("localStatus", local.status.ordinal())
             .put("local", PurpleSyncAutoCore.encode(local.bytes))
