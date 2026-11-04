@@ -444,7 +444,8 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
 
     /**
      * Sets this device's own sync state aside so the next check can join the records already in the chat: the
-     * pending stage, the automatic record, the retained bases and last the state move into a new
+     * pending stage, the automatic record, the retained bases, leftovers of a finished carry and last the state
+     * move into a new
      * {@code orphaned-<date>} folder, which {@link #open} tolerates. Nothing is deleted. A crash midway leaves
      * the state in place, so it either still opens or is moved by the next attempt.
      */
@@ -456,10 +457,19 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
             File archive = new File(root, "orphaned-" + date);
             if (archive.exists() || !archive.mkdir()) return result(Status.IoError);
             android.system.Os.chmod(archive.getPath(), 0700);
-            for (String name : new String[] { "pending", "auto.json", "retained-bases", "state.json" }) {
+            java.util.ArrayList<String> names = new java.util.ArrayList<>(Arrays.asList("pending", "auto.json", "retained-bases"));
+            // WHY: leftovers of a finished pre-magic carry (carry.json, carry-cache.json, carry-objects,
+            // carry-history) are checked against state.json's binding; left beside a store without state they read
+            // as an unfinished carry and every later open refuses with CarryPending. They go with the state,
+            // before it, so a crash in between leaves the state with no carry, which opens.
+            String[] entries = root.list();
+            if (entries != null) for (String name : entries) if (name.startsWith("carry") || name.startsWith(".carry-")) names.add(name);
+            names.add("state.json");
+            for (String name : names) {
                 File file = new File(root, name);
                 if (file.exists() && !isLink(file) && !file.renameTo(new File(archive, name))) return fail(Status.IoError);
             }
+            terminalCarry = false;
             state = null;
             status = Status.Uninitialized;
             return result(Status.Uninitialized);
