@@ -171,7 +171,13 @@ public final class PurpleRecordingStore {
             return false;
         }
         final File target = binFile(e);
-        PurpleRecordingFiles.copy(bytes, target);
+        try {
+            PurpleRecordingFiles.copy(bytes, target);
+        } catch (IOException failure) {
+            // A full disk: no entry owns a partial copy, so nothing would sweep it.
+            target.delete();
+            throw failure;
+        }
         e.media = target.getAbsolutePath();
         e.discarded = true;
         e.state = PurpleRecordingEntry.UNSENT;
