@@ -41,6 +41,14 @@ final class PurpleSyncAutoEngine {
          * shown once, so no failure dies silently.
          */
         default void failed(Throwable error) { }
+        /**
+         * The client's backoff of automatic passes that end without the write they planned (an unknown outcome or a
+         * network failure), kept across restarts: how many in a row, and the unix time before which no pass runs.
+         * Core restarts its own 30/120/600 retry with each run, so a post that never goes out was retried every 30
+         * seconds, reading the chat each time.
+         */
+        default long[] backoff() { return new long[] { 0, 0 }; }
+        default void backoff(long failures, long notBefore) { }
         default long transientRetryAt(){return 0;}
         default long takeTransientRetryAt(){return 0;}
         default boolean editSupported() {
@@ -83,6 +91,23 @@ final class PurpleSyncAutoEngine {
      * AccountUnbound, so the moved state never made its publish into the magic chat. Core's gate still checks the
      * state's binding token against the account's.
      */
+    /** Seconds to wait after {@code failures} passes in a row without their write: 30, 60, 120 ... up to an hour. */
+    static long backoffSeconds(long failures) {
+        return failures <= 0 ? 0 : Math.min(3600, 30L << Math.min(7, failures - 1));
+    }
+
+    private static String word(Enum<?> value) {
+        return value == null ? "none" : value.name().replaceAll("([a-z])([A-Z])", "$1_$2").toLowerCase(java.util.Locale.ROOT);
+    }
+
+    /** One diag line per automatic pass: the action core planned, the outcome it came from and its reason code. */
+    private void pass(PurpleSyncAutoCore.Plan plan, PurpleSyncAutoCore.Outcome outcome, PurpleSyncAutoCore.Event event) {
+        PurpleDiagLog.event("sync", "auto_pass", PurpleDiagLogStore.slot(account.account),
+                PurpleDiagLogStore.code("action", word(plan.action)),
+                PurpleDiagLogStore.code("outcome", event == PurpleSyncAutoCore.Event.Completed ? word(outcome) : "none"),
+                PurpleDiagLogStore.reason(word(plan.reason)));
+    }
+
     static boolean recoveryScanApplies(PurpleSyncChatCore.Peer bound) {
         return bound == null || PurpleSyncChatCore.Peer.self().equals(bound);
     }
@@ -315,6 +340,15 @@ final class PurpleSyncAutoEngine {
             end();
             return;
         }
+        long[] backoff = port.backoff();
+        if ((event == PurpleSyncAutoCore.Event.SessionReady || event == PurpleSyncAutoCore.Event.Foreground
+                || event == PurpleSyncAutoCore.Event.Unlock || event == PurpleSyncAutoCore.Event.Retry)
+            && backoff[0] > 0 && port.now() < backoff[1]) {
+            // A pass that is not a real change waits out the backoff, across restarts too.
+            end();
+            port.retry(() -> { idle(); event(PurpleSyncAutoCore.Event.SessionReady); }, Math.max(1, (backoff[1] - port.now()) * 1000));
+            return;
+        }
         long transientAt=port.transientRetryAt();
         if(event!=PurpleSyncAutoCore.Event.Disable&&event!=PurpleSyncAutoCore.Event.Completed&&transientAt>port.now()*1000){
             if(event==PurpleSyncAutoCore.Event.LocalSaved)waitingSave=saved!=null?saved.clone():null;
@@ -456,8 +490,18 @@ final class PurpleSyncAutoEngine {
                 }
             }
             port.status(plan.record, plan.reason);
+            pass(plan, outcome, event);
+            if (event == PurpleSyncAutoCore.Event.Completed) {
+                long[] counted = port.backoff();
+                if (outcome == PurpleSyncAutoCore.Outcome.OutcomeUnknown || outcome == PurpleSyncAutoCore.Outcome.NetworkFailure)
+                    port.backoff(counted[0] + 1, port.now() + backoffSeconds(counted[0] + 1));
+                else if (outcome == PurpleSyncAutoCore.Outcome.Sent || outcome == PurpleSyncAutoCore.Outcome.Committed
+                    || outcome == PurpleSyncAutoCore.Outcome.Applied || outcome == PurpleSyncAutoCore.Outcome.Deleted)
+                    port.backoff(0, 0);
+            }
             if (plan.record.retryAt() > 0) {
-                long seconds = Math.max(0, plan.record.retryAt() - port.now());
+                long[] waiting = port.backoff();
+                long seconds = Math.max(Math.max(0, plan.record.retryAt() - port.now()), waiting[0] > 0 ? waiting[1] - port.now() : 0);
                 String expectedRetryKey = retryKey(plan.record);
                 if (seconds <= Long.MAX_VALUE / 1000)
                     port.retry(
@@ -517,7 +561,14 @@ final class PurpleSyncAutoEngine {
             long retryAt=outcome==PurpleSyncAutoCore.Outcome.OutcomeUnknown?port.takeTransientRetryAt():0;
             if(retryAt>0){
                 end();
-                port.retry(()->{idle();event(PurpleSyncAutoCore.Event.SessionReady);},Math.max(1,retryAt-port.now()*1000));
+                long[] counted = port.backoff();
+                // Telegram's own wait first; repeated ones grow by the backoff of the earlier failures.
+                long notBefore = Math.max((retryAt + 999) / 1000, port.now() + backoffSeconds(counted[0]));
+                port.backoff(counted[0] + 1, notBefore);
+                PurpleDiagLog.event("sync", "auto_pass", PurpleDiagLogStore.slot(account.account),
+                        PurpleDiagLogStore.code("action", word(plan.action)), PurpleDiagLogStore.code("outcome", "outcome_unknown"),
+                        PurpleDiagLogStore.reason("transient_write_wait"));
+                port.retry(()->{idle();event(PurpleSyncAutoCore.Event.SessionReady);},Math.max(1,(notBefore-port.now())*1000));
                 return;
             }
             transition(PurpleSyncAutoCore.Event.Completed, null, plan.ticket, outcome, observed, facts);

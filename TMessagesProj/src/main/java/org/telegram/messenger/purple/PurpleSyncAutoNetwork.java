@@ -222,6 +222,8 @@ final class PurpleSyncAutoNetwork {
         exact(pending.reads, id, live, read -> {
             if (!live.getAsBoolean() || read.optInt("presence") != 1 || !read.optBoolean("owned")
                 || !Arrays.equals(previous, PurpleSyncAutoCore.decode(read.optString("record")))) {
+                PurpleDiagLog.event("sync", "auto_send_refused", PurpleDiagLogStore.reason(!live.getAsBoolean() ? "send_not_current"
+                        : read.optInt("presence") != 1 ? "edit_head_absent" : !read.optBoolean("owned") ? "edit_head_not_owned" : "edit_head_changed"));
                 reply.done(PurpleSyncAutoCore.Outcome.OutcomeUnknown);
                 return;
             }

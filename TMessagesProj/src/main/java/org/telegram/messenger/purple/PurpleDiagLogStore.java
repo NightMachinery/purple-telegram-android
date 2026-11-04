@@ -82,6 +82,15 @@ public final class PurpleDiagLogStore {
             "synced", "this_device", "successor_unsent", "incomplete", "clone_detected", "account_unbound", "store_error", "invalid_settings",
             "using_last_good",
             // an automatic pass that threw (PurpleSyncAutoEngine.failureCode): sync auto_failed reason=<code>
+            // one line per automatic pass (PurpleSyncAutoEngine.pass): sync auto_pass action= outcome= reason=
+            "auto_send_refused", "send_not_postable", "send_no_client", "send_check_not_postable", "send_check_not_current",
+            "send_not_current", "edit_head_absent", "edit_head_not_owned", "edit_head_changed", "edit_authority",
+            "auto_pass", "no_op", "check", "auto_apply", "edit_in_place", "reconcile", "retire", "hold", "retry_at",
+            "staged", "sent", "committed", "deleted", "network_failure", "outcome_unknown", "edit_refused",
+            "deletion_refused", "transient_write_wait", "invalid_record", "ownership_unanswered", "wrong_file_account",
+            "sync_chat_not_resolved", "chat_not_writable", "file_absent", "last_good", "no_saved_bytes", "needs_review",
+            "conflict", "unsafe_impact", "work_mode_scope_changed", "store_mismatch", "ownership_changed",
+            "retry_stopped", "interrupted_apply", "state_changed", "sync_chat_problem",
             "auto_failed", "automatic_chat_mismatch", "illegal_argument", "illegal_state", "json", "io", "unexpected",
             // the durable file guard (PurpleAccountFileSnapshot.inside): a sync path outside the app's files directory
             "path_refused", "path_outside_root",

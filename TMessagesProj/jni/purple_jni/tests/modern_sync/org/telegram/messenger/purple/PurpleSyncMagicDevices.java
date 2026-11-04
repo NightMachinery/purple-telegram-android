@@ -266,7 +266,8 @@ final class PurpleSyncMagicDevices {
                 }
             } finally { draining = false; }
         }
-        public void retry(Runnable task, long delay) { }
+        public void retry(Runnable task, long delay) { retryTask = task; retryDelay = delay; }
+        long retryDelay;
         public void cancelRetry() { }
         public void status(PurpleSyncAutoCore.Record value, PurpleSyncAutoCore.Reason why) { reason = value != null ? value.held() : why; }
         /** Thrown by the next automatic check, as an unexpected failure inside a pass. */
@@ -284,12 +285,20 @@ final class PurpleSyncMagicDevices {
                 reply.done(observed);
             });
         }
+        /** The next sends end with an unknown outcome before reaching Telegram, as the device's stuck pass did. */
+        int dropSends, sends;
+        Runnable retryTask;
         public void send(boolean edit, int id, byte[] bytes, byte[] previous, BooleanSupplier current, PurpleSyncAutoEngine.Reply<PurpleSyncAutoCore.Outcome> reply) {
+            ++sends;
+            if (dropSends > 0) { --dropSends; reply.done(PurpleSyncAutoCore.Outcome.OutcomeUnknown); return; }
             network.send(edit, id, bytes, previous, current, reply);
         }
         public void retire(int id, byte[] exact, BooleanSupplier current, PurpleSyncAutoEngine.Reply<PurpleSyncAutoCore.Outcome> reply) {
             network.retire(id, exact, current, reply);
         }
+        long[] backoff = { 0, 0 };
+        @Override public long[] backoff() { return backoff.clone(); }
+        @Override public void backoff(long failures, long notBefore) { backoff = new long[] { failures, notBefore }; }
         @Override public boolean held() { return !failures.isEmpty() || firstUse != null && firstUse.result == PurpleSyncFirstUse.Result.Ask; }
         @Override public void failed(Throwable error) { failures.add(PurpleSyncAutoEngine.failureCode(error)); }
         long firstChecked;

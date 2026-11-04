@@ -239,6 +239,7 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
             PurpleSyncTransport.PostAuthority authority,Reply<PurpleSyncAutoCore.Outcome> reply) {
         if(id<=0 || !isActive() || authority==null || !PurpleSyncChatCore.Peer.self().equals(chat())
                 && !authority.automatic(origin(),chat()) || !authority.current()){
+            PurpleDiagLog.event("sync","auto_send_refused",PurpleDiagLogStore.slot(account),PurpleDiagLogStore.reason("edit_authority"));
             reply.onReply(PurpleSyncAutoCore.Outcome.OutcomeUnknown);return;
         }
         runOnWorker(() -> uploadModern(id, PurpleSyncReader.readAtMost(file, PurpleSyncPost.MAX_STAGED_BYTES + 1),

@@ -161,6 +161,18 @@ public final class PurpleSyncAuto {
             AndroidUtilities.runOnUIThread(() -> runFirstUse(event == PurpleSyncAutoCore.Event.Enable));
             return true;
         }
+        void refused(String code) {
+            PurpleDiagLog.event("sync", "auto_send_refused", PurpleDiagLogStore.slot(account.account), PurpleDiagLogStore.reason(code));
+        }
+        @Override public long[] backoff() {
+            String value = MessagesController.getMainSettings(account.account).getString("purple_sync_auto_backoff_" + opening.key, "0:0");
+            try { String[] parts = value.split(":"); return new long[] { Long.parseLong(parts[0]), Long.parseLong(parts[1]) }; }
+            catch (RuntimeException e) { return new long[] { 0, 0 }; }
+        }
+        @Override public void backoff(long failures, long notBefore) {
+            if (opening.current())
+                MessagesController.getMainSettings(account.account).edit().putString("purple_sync_auto_backoff_" + opening.key, failures + ":" + notBefore).commit();
+        }
         @Override public boolean held() { return firstUse == PurpleSyncFirstUse.Result.Ask || failure() != null; }
         /** The diag code of the automatic pass that failed and paused automatic sync, or null. */
         String failure() { return MessagesController.getMainSettings(account.account).getString(failureKey(opening.key), null); }
@@ -373,12 +385,18 @@ public final class PurpleSyncAuto {
                 if(!current.getAsBoolean())return;
                 PurpleSyncChatCore.Peer chat=stateChat();
                 PurpleSyncAutoNetwork scope=status.postable(chat)?network(chat):null;
+                // Purple: name why an automatic write never reaches Telegram (device check of f24306f).
+                if(scope==null)refused(!status.postable(chat)?"send_not_postable":"send_no_client");
                 if(scope!=null)scope.send(edit,id,bytes,previous,current,new PurpleSyncTransport.PostAuthority(){
                     final java.util.function.BooleanSupplier lock=engine.borrowedAuthority();
                     public boolean current(){return current.getAsBoolean() && lock.getAsBoolean();}
                     public void check(Consumer<Boolean> done){
                         PurpleSyncChat.underLock(env.context,engine,env.operationKey(account.account,account.userId),true,
-                                lock,this::current,fresh->done.accept(fresh.postable(chat) && current()));
+                                lock,this::current,fresh->{
+                                    boolean ok=fresh.postable(chat) && current();
+                                    if(!ok)refused(!fresh.postable(chat)?"send_check_not_postable":"send_check_not_current");
+                                    done.accept(ok);
+                                });
                     }
                     public boolean automatic(PurpleSyncChatOrigin origin,PurpleSyncChatCore.Peer target){
                         return current() && chat.equals(target) && !PurpleSyncChatCore.Peer.self().equals(target);

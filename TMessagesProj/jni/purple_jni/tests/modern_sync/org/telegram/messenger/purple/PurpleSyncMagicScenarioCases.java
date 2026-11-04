@@ -30,6 +30,7 @@ final class PurpleSyncMagicScenarioCases {
         automaticFresh(parent);
         automaticWaits(parent);
         automaticUnsent(parent);
+        automaticStuck(parent);
         migration(parent);
         automaticFailure(parent);
         System.out.println("MAGIC_AUTOMATIC_CASES=PASS");
@@ -132,6 +133,39 @@ final class PurpleSyncMagicScenarioCases {
         check(port.firstScans == scans + 1 && port.firstUse.result == PurpleSyncFirstUse.Result.Joined && Arrays.equals(PurpleSyncMagicDevices.MINE, waiting.local()),
                 "automatic wait: 15 minutes later it reads again and joins: " + port.firstUse.result);
         check(port.failures.isEmpty(), "automatic wait: no exception: " + port.failures);
+        port.engine.close();
+    }
+
+    /**
+     * The device check of f24306f: one own confirmed record, one Save, and the pass staged its post and never sent it
+     * (repeating every 30 seconds). Here the first send ends unknown before reaching Telegram, which leaves exactly
+     * that stuck state; the next passes must send it once, back off while they cannot, and then post nothing more.
+     */
+    static void automaticStuck(File parent) throws Exception {
+        PurpleSyncMagicDevices.Device device = new PurpleSyncMagicDevices.Device(parent, "magic-automatic-stuck", "fixture-device-stuck");
+        device.local(PurpleSyncMagicDevices.MINE); device.bind();
+        PurpleSyncMagicDevices.Group group = new PurpleSyncMagicDevices.Group();
+        ownRecord(device, group, "stuck");
+        PurpleSyncMagicDevices.Automatic port = new PurpleSyncMagicDevices.Automatic(device, group);
+        port.event(PurpleSyncAutoCore.Event.Enable);
+        port.dropSends = 2;
+        int writes = group.writes();
+        port.saved(PurpleSyncMagicDevices.THEIRS);
+        PurpleAccountSyncCore.Result staged = device.state();
+        System.out.println("STUCK after save: writes=" + (group.writes() - writes) + " pending=" + staged.pendingSeq + " sends=" + port.sends + " reason=" + port.reason + " retry=" + port.retryDelay);
+        check(group.writes() == writes && staged.pendingSeq != 0, "stuck: the post is staged and not sent: " + staged.pendingSeq);
+        long first = port.retryDelay;
+        port.clock += first / 1000 + 1;
+        java.util.Objects.requireNonNull(port.retryTask, "stuck: a retry is armed").run();
+        System.out.println("STUCK after retry 1: writes=" + (group.writes() - writes) + " sends=" + port.sends + " reason=" + port.reason + " retry=" + port.retryDelay);
+        check(port.retryDelay > first, "stuck: the second retry backs off: " + first + " -> " + port.retryDelay);
+        port.clock += port.retryDelay / 1000 + 1;
+        port.retryTask.run();
+        System.out.println("STUCK after retry 2: writes=" + (group.writes() - writes) + " sends=" + port.sends + " reason=" + port.reason + " pending=" + device.state().pendingSeq);
+        check(group.writes() == writes + 1 && device.state().pendingSeq == 0 && port.failures.isEmpty(), "stuck: the staged post goes out exactly once: " + (group.writes() - writes));
+        int after = group.writes();
+        port.later();
+        check(group.writes() == after, "stuck: a later pass posts nothing");
         port.engine.close();
     }
 
