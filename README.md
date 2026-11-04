@@ -252,8 +252,11 @@ instead of deleting it. Both are rows of Purple Settings > Media recording.
 - **Ending from preview.** Upstream announces nothing when a paused recording
   is sent or discarded from its preview. `PurpleRecordingSessions` ends it at
   the next recording in that chat; a missing file is not taken for a discard
-  (a V2 round sent after a trim is remuxed and its old file erased), so a
-  discard from preview is not kept in the bin. A legacy voice resume records
+  (a V2 round sent after a trim is remuxed and its old file erased). A voice
+  discard from preview is detected positively instead: upstream clears the
+  chat's voice draft (`2voicedrafts_<account>` preferences, watched with a
+  listener, no upstream line), and a cleared draft whose file is deleted is a
+  discard, kept in the bin; with the file still there it was sent. A legacy voice resume records
   into a new segment and keeps the joined file before it as its own entry, so
   a crash after a resume recovers both parts as separate items. A voice stop counts as a discard only if upstream deleted the file and
   sent nothing within 15 s. A send queued just before a crash leaves a clean

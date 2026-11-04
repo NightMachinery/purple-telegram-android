@@ -40,8 +40,8 @@ import java.util.Map;
  * </ul>
  *
  * Because a recording that ends from preview sends nothing, a paused session
- * ends at the next start in its chat, or stays until the next app start
- * settles its entry. A discard from preview is therefore not kept.
+ * ends at the next start in its chat, or when upstream clears the chat's
+ * voice draft ({@link #draftCleared}: a discard if the file is deleted).
  *
  * <p>Thread safety: every method is synchronized. The registry calls them on
  * its worker, except {@link #snapshotCancel}, which must run on the thread
@@ -267,6 +267,28 @@ public final class PurpleRecordingSessions {
         if (path != null) {
             final File file = new File(path);
             if (!file.equals(session.current.file) && file.isFile()) attach(session.current, file, null);
+        }
+    }
+
+    /**
+     * Upstream cleared a voice draft: {@code draftKey} is its key in the
+     * {@code 2voicedrafts_<account>} preferences, {@code Objects.hash(dialog,
+     * topic)} (MediaDataController.pushDraftVoiceMessage). For a paused voice
+     * session of that chat, the draft is gone because the recording ended from
+     * preview: discarded if upstream deleted its file, sent if the file is
+     * still there (re-check N6).
+     */
+    public synchronized void draftCleared(int account, int draftKey) {
+        for (Session session : new ArrayList<>(sessions.values())) {
+            final PurpleRecordingEntry entry = session.current.entry;
+            if (session.round || !session.paused || entry.account != account
+                    || java.util.Objects.hash(entry.dialogId, entry.topicId) != draftKey) continue;
+            final File file = session.current.file;
+            if (file != null && !file.exists()) {
+                discard(session);
+            } else {
+                end(session);
+            }
         }
     }
 

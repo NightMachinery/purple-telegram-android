@@ -127,6 +127,7 @@ public final class PurpleRecordingRegistry {
             }
         });
         worker.scheduleWithFixedDelay(PurpleRecordingRegistry::sweep, 3600, 3600, TimeUnit.SECONDS);
+        AndroidUtilities.runOnUIThread(PurpleRecordingRegistry::watchDrafts);
     }
 
     static File directory() {
@@ -247,6 +248,33 @@ public final class PurpleRecordingRegistry {
             worker.execute(() -> { if (sessions != null) sessions.didSent(key, draft, path, account, target); });
         } else if (event == NotificationCenter.audioRecordTooShort) {
             worker.execute(() -> { if (sessions != null) sessions.tooShort(key); });
+        }
+    }
+
+    /** Held strongly: SharedPreferences keeps its listeners weakly. */
+    private static final List<SharedPreferences.OnSharedPreferenceChangeListener> draftWatchers = new ArrayList<>();
+
+    /**
+     * Watches each account's voice drafts (MediaDataController writes them to
+     * {@code 2voicedrafts_<account>}): a removed draft tells a recording that
+     * ended from preview, which upstream announces with no notification.
+     */
+    private static void watchDrafts() {
+        for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
+            final int account = a;
+            final SharedPreferences prefs = ApplicationLoader.applicationContext.getSharedPreferences("2voicedrafts_" + account, Context.MODE_PRIVATE);
+            final SharedPreferences.OnSharedPreferenceChangeListener watcher = (p, key) -> {
+                if (key == null || p.contains(key)) return;
+                final int draftKey;
+                try {
+                    draftKey = Integer.parseInt(key);
+                } catch (NumberFormatException e) {
+                    return;
+                }
+                worker.execute(() -> { if (sessions != null) sessions.draftCleared(account, draftKey); });
+            };
+            draftWatchers.add(watcher);
+            prefs.registerOnSharedPreferenceChangeListener(watcher);
         }
     }
 

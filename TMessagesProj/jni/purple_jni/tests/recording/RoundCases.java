@@ -653,6 +653,29 @@ public final class RoundCases {
         sessions.tooShort("0:11");
         sessions.tooShort("0:12");
 
+        // N6: a voice discarded from preview: the draft is cleared and the file
+        // deleted, so it is a Discarded item; cleared with the file kept, it was sent.
+        store.clear();
+        sessions.started("0:16", 0, target(160), true, script.now);
+        final File d6 = voiceFile(audio, "audio_recording_voice_1800000562000_8.ogg", ogg, script);
+        script.advance(1000);
+        sessions.stopped("0:16", 1, target(160));
+        sessions.didSent("0:16", true, d6.getPath(), 0, target(160));
+        check(d6.delete(), "upstream deletes the preview on discard");
+        sessions.draftCleared(0, java.util.Objects.hash(160L, 0L) + 1);
+        check(sessions.count() == 1, "another chat's draft does not settle it");
+        sessions.draftCleared(0, java.util.Objects.hash(160L, 0L));
+        check(sessions.count() == 0 && store.bin().size() == 1 && store.bin().get(0).discarded
+                && PurpleRecordingCore.scanOgg(new File(store.bin().get(0).media)).clean(), "a discard from preview is a Discarded item");
+        store.clear();
+        sessions.started("0:17", 0, target(170), true, script.now);
+        final File s6 = voiceFile(audio, "audio_recording_voice_1800000564000_9.ogg", ogg, script);
+        script.advance(1000);
+        sessions.stopped("0:17", 1, target(170));
+        sessions.didSent("0:17", true, s6.getPath(), 0, target(170));
+        sessions.draftCleared(0, java.util.Objects.hash(170L, 0L));
+        check(sessions.count() == 0 && store.bin().isEmpty() && store.entries().isEmpty(), "a send from preview just ends");
+
         // N5: chat X pauses and is sent from preview (no event); chat Y restores a
         // saved draft (audioDidSent with a draft, no session); the resume is Y's.
         sessions.started("0:14", 0, target(140), true, script.now);
