@@ -800,6 +800,34 @@ public final class RoundCases {
         check(sessions.snapshotSource("0:56") == null, "a legacy round needs no snapshot");
         sessions.tooShort("0:56");
 
+        // N7: a V2 round cancelled from preview. At the stop the registry renames
+        // the file into the bin; upstream's descriptor then writes moov into the
+        // moved file, and erase empties a fresh file at the old path.
+        store.clear();
+        final File roundP = new File(rounds, "round_video_p.mp4");
+        final File crashP = record(roundP, samples, aac, true, 77, Integer.MAX_VALUE);
+        final byte[] finishedP = Files.readAllBytes(roundP.toPath());
+        Files.copy(crashP.toPath(), roundP.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        sessions.roundRegistered(roundP, new File(rounds, "round_video_p.mp4.pjr"));
+        sessions.started("0:57", 0, target(570), false, script.now);
+        sessions.stopped("0:57", 2, target(570));
+        sessions.didSent("0:57", true, new File(rounds, "preview_p.mp4").getPath());
+        final File sourceP = sessions.snapshotSource("0:57");
+        final File movedP = new File(manifest.bin, "cancel-p.snapshot");
+        check(sourceP != null && sourceP.renameTo(movedP), "the V2 file is renamed into the bin at the stop");
+        Files.write(movedP.toPath(), finishedP);
+        try (RandomAccessFile erase = new RandomAccessFile(roundP, "rw")) {
+            erase.setLength(0);
+        }
+        roundP.delete();
+        sessions.snapshotDone("0:57", movedP, -1);
+        sessions.stopped("0:57", 0, target(570));
+        check(store.bin().size() == 1 && store.bin().get(0).discarded
+                && PurpleRecordingFiles.mp4Finished(new File(store.bin().get(0).media)) == 1
+                && store.bin().get(0).durationMs > 3000, "the round discarded from preview is in the bin, whole");
+        check(!movedP.exists(), "the renamed file is not left behind");
+        store.clear();
+
         // A registration nobody claims is dropped with its journal when the next one comes.
         final File orphanJournal = new File(rounds, "round_video_f.mp4.pjr");
         Files.write(orphanJournal.toPath(), new byte[]{1});

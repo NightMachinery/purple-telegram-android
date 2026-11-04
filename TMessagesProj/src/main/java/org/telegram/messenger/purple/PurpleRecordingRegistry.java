@@ -82,13 +82,6 @@ public final class PurpleRecordingRegistry {
     /** Chat screens by class guid; touched on the UI thread only. */
     private static final Map<Integer, ChatTarget> chats = new HashMap<>();
 
-    /** Copies a cancelled V2 round before upstream empties it; never the UI thread. */
-    private static final java.util.concurrent.ExecutorService copier = Executors.newSingleThreadExecutor(r -> {
-        final Thread t = new Thread(r, "PurpleRecordingCopy");
-        t.setDaemon(true);
-        t.setPriority(Thread.MAX_PRIORITY);
-        return t;
-    });
 
     private static final ScheduledExecutorService worker = Executors.newSingleThreadScheduledExecutor(r -> {
         final Thread t = new Thread(r, "PurpleRecordings");
@@ -229,27 +222,21 @@ public final class PurpleRecordingRegistry {
         } else if (event == NotificationCenter.recordStopped) {
             final int reason = args.length > 1 && args[1] instanceof Integer ? (Integer) args[1] : 0;
             final long[] target = target(guid);
-            // A V2 round cancel: its file executor will empty the file, so the
-            // bytes are copied first, on the copier thread (not the UI thread,
-            // and without the sessions' lock), and the stop follows the copy.
+            // A V2 round cancel: its file executor will finish the movie and then
+            // empty the file at its path, so the file is renamed into the bin
+            // now, on this thread (an atomic, instant rename on the same file
+            // system). Upstream's open descriptor writes its moov into the moved
+            // file; erase then empties a fresh file at the old path. The stop is
+            // handled a second later, once that last write is done.
             final PurpleRecordingSessions now = sessions;
             final File source = now != null && (reason == 0 || reason == 6) ? now.snapshotSource(key) : null;
-            if (source != null) {
-                final long expected = source.length();
-                copier.execute(() -> {
-                    File copy = now.snapshotTarget(key);
-                    try {
-                        if (copy != null) PurpleRecordingFiles.copyUnsynced(source, copy);
-                    } catch (IOException e) {
-                        if (copy != null) copy.delete();
-                        copy = null;
-                    }
-                    final File done = copy;
-                    worker.execute(() -> {
-                        now.snapshotDone(key, done, expected);
-                        now.stopped(key, reason, target);
-                    });
-                });
+            final File bin = new File(directory(), "bin");
+            final File moved = new File(bin, "cancel-" + System.nanoTime() + ".snapshot");
+            if (source != null && (bin.isDirectory() || bin.mkdirs()) && source.renameTo(moved)) {
+                worker.schedule(() -> {
+                    now.snapshotDone(key, moved, -1);
+                    now.stopped(key, reason, target);
+                }, 1000, TimeUnit.MILLISECONDS);
             } else {
                 worker.execute(() -> { if (sessions != null) sessions.stopped(key, reason, target); });
             }

@@ -337,13 +337,13 @@ public final class PurpleRecordingSessions {
     }
 
     /**
-     * The copy of {@link #snapshotSource} finished (off the UI thread). It is
-     * used only if it holds all {@code expected} bytes, the size seen at the
-     * cancel: if upstream's erase won the race the copy is short and dropped.
+     * The cancelled V2 round's file, renamed into the bin at the stop (the
+     * registry passes {@code expected} -1), or a copy, used only if it holds
+     * all {@code expected} bytes.
      */
     public synchronized void snapshotDone(String key, File copy, long expected) {
         final Session session = sessions.get(key);
-        if (session == null || copy == null || expected <= 0 || copy.length() != expected) {
+        if (session == null || copy == null || copy.length() == 0 || expected >= 0 && copy.length() != expected) {
             if (copy != null) copy.delete();
             return;
         }
