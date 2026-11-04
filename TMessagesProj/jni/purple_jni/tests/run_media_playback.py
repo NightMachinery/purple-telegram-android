@@ -58,7 +58,7 @@ PINS = [
     # F9: the strip's per-instance helper, handed each new style before the
     # style branches run, and the media session's rewind and fast-forward.
     ('ui/Components/FragmentContextView.java', '    private final Theme.ResourcesProvider resourcesProvider;\n',
-     '    private final org.telegram.ui.PurpleRecordingStrip purple = new org.telegram.ui.PurpleRecordingStrip(this);\n'),
+     '    private final org.telegram.ui.PurpleRecordingStrip purple = new org.telegram.ui.PurpleRecordingStrip(this, () -> checkPlayer(false));\n'),
     ('ui/Components/FragmentContextView.java', '        currentStyle = style;\n',
      '        purple.updateStyle(style, titleTextView, resourcesProvider);\n'),
     ('messenger/MusicPlayerService.java', '                public void onCustomAction(String action, android.os.Bundle extras) {\n',
@@ -93,10 +93,10 @@ pinned += 1
 helper = hooked['ui/PurpleChatHooks.java'].read_text(encoding='utf-8').split('boolean skipsInVoicePlaylist(MessageObject start, MessageObject candidate) {', 1)[1].split('}', 1)[0]
 assert helper.strip() == 'return org.telegram.messenger.purple.PurpleVoiceQueue.skipsInPlaylist(start, candidate);'
 pinned += 1
-# No other Purple call in the two F9 files: the strip routes everything through
-# its one helper, and the media session calls PurpleSeek five times.
+# The strip routes style and dock show/hide through its one helper;
+# the media session calls PurpleSeek five times.
 text = hooked['ui/Components/FragmentContextView.java'].read_text(encoding='utf-8')
-assert text.count('org.telegram.ui.PurpleRecordingStrip') == 2 and text.count('purple.') == 1, 'FragmentContextView: one helper, one call'
+assert text.count('org.telegram.ui.PurpleRecordingStrip') == 2 and text.count('purple.') == 3, 'FragmentContextView: one helper, style plus dock show/hide calls'
 pinned += 1
 text = hooked['messenger/MusicPlayerService.java'].read_text(encoding='utf-8')
 assert text.count('PurpleSeek.') == 5 and text.count('import org.telegram.messenger.purple.PurpleSeek;\n') == 1, 'MusicPlayerService: five PurpleSeek calls'

@@ -336,9 +336,9 @@ public final class MediaPlaybackCases {
                 warned |= warning.contains("seek_step");
             }
             check(warned == warns[f], "file " + f + (warns[f] ? " warns" : " does not warn") + " about seek_step");
+            check(PurpleCore.voiceQueueKeeps(PurpleCore.PLAYBACK_ONE_TO_ONE, false, true) == (f == files.length - 1),
+                    "file " + f + " reads the queue filter alongside the step");
         }
-        check(PurpleCore.voiceQueueKeeps(PurpleCore.PLAYBACK_ONE_TO_ONE, false, true) == false,
-                "the last file's other playback key is read alongside the step");
     }
 
     /** A stand-in for the core's rule with the setting on or off; the core program runs the real one. */

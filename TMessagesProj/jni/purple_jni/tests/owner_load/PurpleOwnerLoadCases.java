@@ -116,6 +116,11 @@ public final class PurpleOwnerLoadCases {
      */
     static int midload(File parent) throws Exception {
         checks = 0;
+        Runnable probe = () -> { };
+        AndroidUtilities.runOnUIThread(probe);
+        check(AndroidUtilities.pendingFrom(PurpleOwnerLoadCases.class.getName()) == 1, "queued callbacks retain their requesting class");
+        AndroidUtilities.cancelRunOnUIThread(probe);
+        check(AndroidUtilities.pendingFrom(PurpleOwnerLoadCases.class.getName()) == 0, "cancelled callbacks have no pending origin");
         File root = root(parent);
         load(0, A);
         load(2, 0);
@@ -135,7 +140,7 @@ public final class PurpleOwnerLoadCases {
         check(PurpleAccountOwner.eligible().size() == 2, "both accounts are offered");
         check(!recorded(root), "the account seen first was not made the owner");
         synchronized (AndroidUtilities.class) {
-            check(AndroidUtilities.pending.isEmpty(), "the gate never ran, so nothing is reloaded");
+            check(AndroidUtilities.pendingFrom(PurpleAccountOwner.class.getName()) == 0, "the gate never ran, so no owner reload is queued");
         }
         String text = diagnostics("owner planned accounts=2 state=needs_choice ready=0 owner=0");
         check(!text.contains("accounts=1"), "no plan was made from one account: " + text);
