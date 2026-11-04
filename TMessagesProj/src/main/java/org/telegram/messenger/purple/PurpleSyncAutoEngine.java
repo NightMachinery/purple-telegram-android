@@ -536,6 +536,10 @@ final class PurpleSyncAutoEngine {
     private boolean permitted(PurpleSyncAutoCore.Plan plan, Snapshot facts) {
         if (!liveEffects(facts))
             return false;
+        // WHY: the chat lookup's gate and Telegram's callbacks ask here on the main thread, where the store refuses to
+        // open; answering false there refused every automatic send. The worker runs the full check before each send.
+        if (android.os.Looper.getMainLooper() != null && android.os.Looper.myLooper() == android.os.Looper.getMainLooper())
+            return true;
         try (PurpleAccountSyncStore store = account.env.store()) {
             if (store.open(true, account.account, account.env.device()).status != PurpleAccountSyncStore.Status.Ready
                 || !Arrays.equals(facts.state, store.stateBytes()))

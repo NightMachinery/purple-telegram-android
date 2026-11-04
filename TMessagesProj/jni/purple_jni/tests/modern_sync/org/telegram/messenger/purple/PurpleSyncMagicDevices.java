@@ -217,6 +217,22 @@ final class PurpleSyncMagicDevices {
         }
     }
 
+    /** {@code guard} asked on a thread the Looper stub calls main, where PurpleAccountFileSnapshot.worker refuses. */
+    static boolean onMain(BooleanSupplier guard) {
+        boolean[] answer = { false };
+        Thread main = new Thread(() -> answer[0] = guard.getAsBoolean());
+        android.os.Looper.mainThread = main;
+        try {
+            main.start();
+            main.join();
+        } catch (InterruptedException e) {
+            throw new AssertionError(e);
+        } finally {
+            android.os.Looper.mainThread = null;
+        }
+        return answer[0];
+    }
+
     /**
      * Automatic sync of one device on the real engine (PurpleSyncAutoEngine with the real PurpleSyncAutoNetwork) over
      * the magic group. The port does what PurpleSyncAuto.Runtime does around the engine: records of another space are
@@ -291,6 +307,12 @@ final class PurpleSyncMagicDevices {
         public void send(boolean edit, int id, byte[] bytes, byte[] previous, BooleanSupplier current, PurpleSyncAutoEngine.Reply<PurpleSyncAutoCore.Outcome> reply) {
             ++sends;
             if (dropSends > 0) { --dropSends; reply.done(PurpleSyncAutoCore.Outcome.OutcomeUnknown); return; }
+            // As PurpleSyncAuto.Runtime: the lookup's gate and Telegram's callbacks ask this guard on the main thread,
+            // where the store refuses to open. A guard that opens it there refused every automatic send on the device.
+            PurpleModernSyncCases.check(onMain(current), "the send's guard answers on the main thread");
+            enabled = false;
+            PurpleModernSyncCases.check(!onMain(current), "and still refuses there once automatic sync is off");
+            enabled = true;
             network.send(edit, id, bytes, previous, current, reply);
         }
         public void retire(int id, byte[] exact, BooleanSupplier current, PurpleSyncAutoEngine.Reply<PurpleSyncAutoCore.Outcome> reply) {

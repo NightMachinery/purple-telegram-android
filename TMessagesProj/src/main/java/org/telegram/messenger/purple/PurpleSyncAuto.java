@@ -392,11 +392,12 @@ public final class PurpleSyncAuto {
                     public boolean current(){return current.getAsBoolean() && lock.getAsBoolean();}
                     public void check(Consumer<Boolean> done){
                         PurpleSyncChat.underLock(env.context,engine,env.operationKey(account.account,account.userId),true,
-                                lock,this::current,fresh->{
+                                lock,this::current,fresh->queue(()->{
+                                    // Purple: on the worker, so the guard runs its full check of the stored plan.
                                     boolean ok=fresh.postable(chat) && current();
                                     if(!ok)refused(!fresh.postable(chat)?"send_check_not_postable":"send_check_not_current");
-                                    done.accept(ok);
-                                });
+                                    AndroidUtilities.runOnUIThread(()->done.accept(ok));
+                                }));
                     }
                     public boolean automatic(PurpleSyncChatOrigin origin,PurpleSyncChatCore.Peer target){
                         return current() && chat.equals(target) && !PurpleSyncChatCore.Peer.self().equals(target);
