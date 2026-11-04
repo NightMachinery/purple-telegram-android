@@ -23,8 +23,11 @@ Paid and scheduled sends open the app and use the native confirmation and date
 picker while retaining the dock target. A restricted or slow-mode send keeps the
 recording and explains the refusal. A paused legacy voice resumes before sending.
 Preview consumption is observed through the same draft-clear signal as F10.
-Generation tokens reject stale notification actions, and the account identity
-is checked before an action can send. Hidden targets use the neutral Recording
+Each notification action has a generation-specific Intent data URI as well as
+a checked generation extra, so Android cannot update an old action to target a
+new recording. Intent extras alone do not distinguish PendingIntents, as the
+[Android API reference](https://developer.android.com/reference/android/app/PendingIntent)
+explains. The account identity is checked before an action can send. Hidden targets use the neutral Recording
 label under Work Mode. Screens without a context strip use the notification.
 
 F6 supplies the in-chat round bubble fallback. Tap outside the camera to shrink,

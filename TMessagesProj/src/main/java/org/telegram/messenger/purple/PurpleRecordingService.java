@@ -81,6 +81,7 @@ public final class PurpleRecordingService extends Service {
 
     private PendingIntent action(String action, int code) {
         Intent intent = new Intent(this, PurpleRecordingService.class).setAction(action);
+        intent.setData(android.net.Uri.parse(PurpleRecordingDock.state.actionIdentity(action)));
         intent.putExtra("generation", PurpleRecordingDock.state.generation);
         return PendingIntent.getService(this, code, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     }

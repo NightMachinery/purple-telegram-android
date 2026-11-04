@@ -19,6 +19,10 @@ public final class PurpleRecordingDockState {
     private long pausedTime;
     private long discardUntil;
 
+    public String actionIdentity(String action) {
+        return "purple-recording://action/" + generation + "/" + action;
+    }
+
     public boolean active() { return account >= 0; }
     public boolean canDock() { return active() && !finishing && (!paused || docked); }
 

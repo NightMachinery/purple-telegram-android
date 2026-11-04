@@ -14,6 +14,7 @@ subprocess.run([str(javac.with_name('java')), '-cp', str(args.output), 'DockCase
 
 ui = root / 'TMessagesProj/src/main/java/org/telegram'
 pins = [
+    ('messenger/purple/PurpleRecordingService.java', 'intent.setData(android.net.Uri.parse(PurpleRecordingDock.state.actionIdentity(action)));'),
     ('messenger/MediaController.java', 'PurpleRecordingDock.keepsOnChatPause(chatActivity, fromChat)'),
     ('messenger/MediaController.java', 'PurpleRecordingDock.preventsDraftRestore()'),
     ('messenger/MediaController.java', 'PurpleRecordingDock.refuseStart()'),

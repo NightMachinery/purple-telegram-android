@@ -1358,8 +1358,8 @@
       ],
       "coverage": "F6-F8 voice ownership, stale action rejection, pause/resume/send serialization, original target retention and bubble bounds on narrow and keyboard-sized surfaces. Includes the F10 terminal target handoff in either observer order and pins all recording lifecycle and bubble seams.",
       "expects": {
-        "recording-dock:RECORDING_DOCK_CHECKS": 250,
-        "recording-dock:RECORDING_DOCK_PINS": 18
+        "recording-dock:RECORDING_DOCK_CHECKS": 265,
+        "recording-dock:RECORDING_DOCK_PINS": 19
       }
     }
   ]

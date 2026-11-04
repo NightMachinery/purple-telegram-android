@@ -30,6 +30,10 @@ public final class DockCases {
         check(!state.active()); check(!state.canDock()); check(!state.accepts(0)); check(!state.requestPause()); check(!state.requestSend());
         check(state.begin(1, 7, 9, 101, 22, true, true, 1000));
         long token = state.generation;
+        String oldSend = state.actionIdentity("send");
+        check(oldSend.equals(state.actionIdentity("send")));
+        check(!oldSend.equals(state.actionIdentity("pause")));
+        check(!oldSend.equals(state.actionIdentity("discard")));
         check(state.canDock());
         check(state.matches(1, 7)); check(!state.matches(0, 7)); check(!state.matches(1, 8));
         check(state.user == 9 && state.dialog == 101 && state.topic == 22 && state.once && state.scheduled);
@@ -51,6 +55,8 @@ public final class DockCases {
         state.clear(); check(!state.active()); check(!state.accepts(token));
         check(state.begin(2, 9, 10, 202, 0, false, false, 20000));
         check(!state.accepts(token)); check(!state.once && !state.scheduled && !state.docked && !state.sendPending);
+        check(!oldSend.equals(state.actionIdentity("send")));
+        check(!new PurpleRecordingDockState().actionIdentity("send").equals(state.actionIdentity("send")));
         check(!state.confirmDiscard(21000)); check(state.discardArmed(22000));
         check(!state.discardArmed(26001)); check(!state.confirmDiscard(26001));
         check(state.confirmDiscard(31001)); check(!state.discardArmed(31001));
