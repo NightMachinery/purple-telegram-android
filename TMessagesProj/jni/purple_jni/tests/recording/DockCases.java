@@ -79,9 +79,10 @@ public final class DockCases {
         check(PurpleRoundBubbleGeometry.corner(10, 770, 600, 900, 120) == 2);
         check(PurpleRoundBubbleGeometry.corner(470, 770, 600, 900, 120) == 3);
         PurpleRecordingDockState round = new PurpleRecordingDockState();
-        check(!round.retarget(22, 0));
+        check(!round.retarget(22, 0)); check(!round.canReplaceTarget(false));
         check(round.begin(1, 5, 9, 100, 7, true, false, 10));
         round.round = true; check(!round.canDock());
+        check(round.canReplaceTarget(false)); check(!round.canReplaceTarget(true));
         long roundToken = round.generation;
         round.amplitude(20); check(round.levelIndex == 1 && Math.abs(round.levels[0] - .2f) < .001f);
         round.amplitude(Double.NaN); check(round.levelIndex == 1);
@@ -94,7 +95,7 @@ public final class DockCases {
         check(!round.accepts(roundToken));
         check(!round.retarget(0, 0)); check(round.dialog == 200);
         round.transitioning = true; check(!round.retarget(300, 0)); round.transitioning = false;
-        round.finishing = true; check(!round.retarget(300, 0)); round.clear();
+        round.finishing = true; check(!round.retarget(300, 0)); check(!round.canReplaceTarget(false)); round.clear();
         check(round.begin(2, 6, 10, 300, 0, false, false, 200));
         check(!round.round && round.levelIndex == 0 && round.levels[0] == 0);
         PurpleRecordingSendIdentity identity = new PurpleRecordingSendIdentity(1, 9, -100, -200);

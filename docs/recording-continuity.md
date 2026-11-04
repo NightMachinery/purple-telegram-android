@@ -133,3 +133,7 @@ private native reply, thread or send arguments with whatever is in the newly
 opened compose field. The capture's F10 target and the currently selected send
 target remain distinct when the user replaced a recipient. Resuming in front
 promotes the microphone service again before a later background transition.
+
+If an original secret chat is gone, Send shows the unavailable notice and keeps
+the recording. It never opens a recipient picker or finalizes the capture into
+a missing encrypted chat. Preview and confirmed Discard remain available.

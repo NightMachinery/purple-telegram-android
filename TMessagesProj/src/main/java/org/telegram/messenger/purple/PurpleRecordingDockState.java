@@ -30,6 +30,10 @@ public final class PurpleRecordingDockState {
         if (active() && !paused && Double.isFinite(value)) levels[levelIndex++ % levels.length] = (float) Math.max(0, Math.min(1, value / 100.0));
     }
 
+    public boolean canReplaceTarget(boolean secret) {
+        return active() && !finishing && !transitioning && !secret;
+    }
+
     public boolean retarget(long dialog, long topic) {
         if (!active() || finishing || transitioning || dialog == 0) return false;
         this.dialog = dialog; this.topic = topic;

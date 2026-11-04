@@ -16,6 +16,7 @@ ui = root / 'TMessagesProj/src/main/java/org/telegram'
 pins = [
     ('messenger/purple/PurpleRecordingService.java', 'intent.setData(android.net.Uri.parse(PurpleRecordingDock.state.actionIdentity(action)));'),
     ('messenger/purple/PurpleRecordingService.java', 'generation = state.generation;'),
+    ('messenger/purple/PurpleRecordingDock.java', 'if (DialogObject.isEncryptedDialog(state.dialog) || (!state.round && !state.canReplaceTarget(false)))'),
     ('messenger/MediaController.java', 'PurpleRecordingDock.keepsOnChatPause(chatActivity, fromChat)'),
     ('messenger/MediaController.java', 'PurpleRecordingDock.preventsDraftRestore()'),
     ('messenger/MediaController.java', 'PurpleRecordingDock.adoptNativePreview('),

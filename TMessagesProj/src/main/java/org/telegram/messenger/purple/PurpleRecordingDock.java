@@ -427,7 +427,10 @@ public final class PurpleRecordingDock {
     public static boolean unavailable() {
         if (!state.active()) return false;
         MessagesController controller = MessagesController.getInstance(state.account);
-        if (DialogObject.isEncryptedDialog(state.dialog)) return false;
+        if (DialogObject.isEncryptedDialog(state.dialog)) {
+            TLRPC.EncryptedChat chat = controller.getEncryptedChat(DialogObject.getEncryptedChatId(state.dialog));
+            return chat == null || chat instanceof TLRPC.TL_encryptedChatDiscarded;
+        }
         if (state.dialog > 0) { TLRPC.User user = controller.getUser(state.dialog); return user == null || user.deleted; }
         TLRPC.Chat chat = controller.getChat(-state.dialog);
         if (chat == null || ChatObject.isNotInChat(chat)) return true;
@@ -439,7 +442,12 @@ public final class PurpleRecordingDock {
     }
 
     public static void chooseTarget(long generation) {
-        if (!valid(generation) || DialogObject.isEncryptedDialog(state.dialog)) return;
+        if (!valid(generation)) return;
+        if (DialogObject.isEncryptedDialog(state.dialog) || (!state.round && !state.canReplaceTarget(false))) {
+            if (DialogObject.isEncryptedDialog(state.dialog)) Toast.makeText(ApplicationLoader.applicationContext,
+                    LocaleController.getString(R.string.PurpleRecordingSendUnavailable), Toast.LENGTH_LONG).show();
+            return;
+        }
         if (state.round && (!state.paused || state.transitioning)) {
             targetPickerPending = true;
             if (!state.paused && !state.transitioning) pause(generation);

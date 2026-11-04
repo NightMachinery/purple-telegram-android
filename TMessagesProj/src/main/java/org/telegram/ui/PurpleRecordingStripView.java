@@ -118,7 +118,7 @@ public final class PurpleRecordingStripView extends LinearLayout {
         timer.setText((state.paused ? "Ⅱ " : "● ") + android.text.format.DateUtils.formatElapsedTime(state.duration(SystemClock.elapsedRealtime()) / 1000));
         timer.setContentDescription(LocaleController.getString(state.round ? R.string.PurpleRecordingBinRound : R.string.PurpleRecordingVoice) + " " + timer.getText());
         pause.setText(LocaleController.getString(state.paused ? R.string.PurpleRecordingResume : R.string.PurpleRecordingPause));
-        boolean unavailable = PurpleRecordingDock.unavailable();
+        boolean unavailable = PurpleRecordingDock.unavailable() && !DialogObject.isEncryptedDialog(state.dialog);
         send.setText(LocaleController.getString(unavailable ? R.string.PurpleRecordingSendElsewhere : R.string.Send));
         send.setContentDescription(send.getText());
         int width = AndroidUtilities.dp(unavailable ? 100 : 44);
