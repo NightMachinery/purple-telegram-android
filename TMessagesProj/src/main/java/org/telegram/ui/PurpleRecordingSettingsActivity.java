@@ -33,6 +33,9 @@ public class PurpleRecordingSettingsActivity extends UniversalFragment {
     static final int ROW_BIN_KEEP = 0x70750504;
     static final int ROW_KEEP_DISCARDED = 0x70750505;
     static final int ROW_JOURNAL = 0x70750506;
+    static final int ROW_KEEP_CHATS = 0x70750507;
+    static final int ROW_BACKGROUND = 0x70750508;
+    static final int ROW_ROUND_FLOAT = 0x70750509;
 
     @Override
     protected CharSequence getTitle() {
@@ -49,6 +52,9 @@ public class PurpleRecordingSettingsActivity extends UniversalFragment {
     protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
         // Read once per rebuild, so a refused write leaves each row where the file is.
         final PurpleRecordingSettings settings = PurpleRecordingSettings.read();
+        addCheck(items, ROW_KEEP_CHATS, R.string.PurpleRecordingKeepChats, settings.keepAcrossChats);
+        addCheck(items, ROW_BACKGROUND, R.string.PurpleRecordingBackground, settings.background);
+        addCheck(items, ROW_ROUND_FLOAT, R.string.PurpleRecordingRoundFloat, settings.roundFloat);
         items.add(UItem.asHeader(getString(R.string.PurpleRecordingBin)));
         items.add(UItem.asButton(ROW_BIN, getString(R.string.PurpleRecordingBin)));
         items.add(UItem.asButton(ROW_BIN_KEEP, getString(R.string.PurpleRecordingBinKeep), binKeepLabel(settings.binKeepSeconds)));
@@ -65,6 +71,15 @@ public class PurpleRecordingSettingsActivity extends UniversalFragment {
     @Override
     protected void onClick(UItem item, View view, int position, float x, float y) {
         switch (item.id) {
+        case ROW_KEEP_CHATS:
+        case ROW_BACKGROUND:
+        case ROW_ROUND_FLOAT: {
+            final PurpleWriter.Session session = PurpleWriterUI.captureOrExplain(this, true, this::rebuild);
+            if (session == null) return;
+            final String key = item.id == ROW_KEEP_CHATS ? "keep_across_chats_p" : item.id == ROW_BACKGROUND ? "background_p" : "round_float_p";
+            write(PurpleWriter.setTableBool(session, "recording", key, !item.checked, "recording switch"));
+            break;
+        }
         case ROW_BIN:
             presentFragment(new PurpleRecordingBinActivity());
             break;
@@ -83,6 +98,12 @@ public class PurpleRecordingSettingsActivity extends UniversalFragment {
         default:
             break;
         }
+    }
+
+    private static void addCheck(ArrayList<UItem> items, int id, int title, boolean value) {
+        UItem item = UItem.asCheck(id, getString(title));
+        item.checked = value;
+        items.add(item);
     }
 
     @Override

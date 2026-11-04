@@ -146,7 +146,10 @@ appended to it live.
 ### Media recording
 
 The design is [docs/media-recording-design.md](docs/media-recording-design.md)
-(F6-F11 and extras). Android has F9 and F10 so far.
+(F6-F11 and extras). Android carries the voice continuity dock (F7/F8), the
+in-chat round bubble fallback (F6), F9 and F10. See
+[recording continuity](docs/recording-continuity.md) for behavior, the remaining
+round-compose work and device qualification.
 
 **Seek back and forward (F9).** The audio player strip at the top of a screen
 (`FragmentContextView`, where a playing voice, round or music message shows)

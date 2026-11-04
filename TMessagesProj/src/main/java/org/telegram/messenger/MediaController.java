@@ -2438,6 +2438,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
     }
 
     public void stopRaiseToEarSensors(ChatActivity chatActivity, boolean fromChat, boolean stopRecording) {
+        if (org.telegram.messenger.purple.PurpleRecordingDock.keepsOnChatPause(chatActivity, fromChat)) stopRecording = false;
         if (ignoreOnPause) {
             ignoreOnPause = false;
             return;
@@ -4910,6 +4911,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
     }
 
     public void prepareResumedRecording(int currentAccount, MediaDataController.DraftVoice draft, long dialogId, MessageObject replyToMsg, MessageObject replyToTopMsg, TL_stories.StoryItem replyStory, int guid, SendMessageChatArguments sendMessageChatArguments, long monoForumPeerId, MessageSuggestionParams suggestionParams) {
+        if (org.telegram.messenger.purple.PurpleRecordingDock.preventsDraftRestore()) return;
         if (audioRecorderV2Active) {
             // A paused V2 recording outlives the chat pause; show it again instead of rebuilding it.
             if (showAudioRecorderV2Draft(draft, replyToMsg, replyToTopMsg, replyStory, guid, sendMessageChatArguments, monoForumPeerId, suggestionParams)
@@ -5190,6 +5192,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
     }
 
     public void startRecording(int currentAccount, long dialogId, MessageObject replyToMsg, MessageObject replyToTopMsg, TL_stories.StoryItem replyStory, int guid, boolean manual, SendMessageChatArguments sendMessageChatArguments, long monoForumPeerId, MessageSuggestionParams suggestionParams) {
+        if (org.telegram.messenger.purple.PurpleRecordingDock.refuseStart()) return;
         boolean paused = false;
         if (playingMessageObject != null && isPlayingMessage(playingMessageObject) && !isMessagePaused()) {
             paused = true;

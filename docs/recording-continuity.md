@@ -1,0 +1,90 @@
+# Recording continuity
+
+F7 keeps a voice recording running with the app in the background or the screen
+locked. A microphone foreground service starts while the recording chat is in
+front. Its low-importance notification has Pause/Resume, Send and Discard. Discard
+requires a second tap within five seconds. A partial wake lock is held while the
+recording runs and released on pause and every service teardown. Failure to
+promote the service retains upstream's pause-on-background behavior.
+
+F8 lets a voice leave its chat. Back, a background transition or a tap on the
+locked recording panel releases that panel without stopping MediaController.
+The context strip then owns the recording controls. Text composed in another
+chat uses that chat's normal Send button. The recorder retains its original
+account, topic, reply and send arguments; unrelated voice drafts cannot restore
+over a docked recording. A paused voice already shown in the native preview stays a native draft; it is
+not adopted by leaving that screen. A paused dock keeps its recorder resources
+so both legacy and V2 can resume. A second recording first offers Discard and Continue.
+The user starts it again after the old recording ends.
+
+The strip opens the target through LaunchActivity's normal chat route. Preview
+pauses and hands the voice back to the target chat's native draft and trim UI.
+Paid and scheduled sends open the app and use the native confirmation and date
+picker while retaining the dock target. A restricted or slow-mode send keeps the
+recording and explains the refusal. A paused legacy voice resumes before sending.
+Preview consumption is observed through the same draft-clear signal as F10.
+Generation tokens reject stale notification actions, and the account identity
+is checked before an action can send. Hidden targets use the neutral Recording
+label under Work Mode. Screens without a context strip use the notification.
+
+F6 supplies the in-chat round bubble fallback. Tap outside the camera to shrink,
+drag it to a corner, tap it to expand, and use its camera and pause controls.
+The camera container is transformed in place; neither SurfaceTexture nor the
+encoder is detached or restarted. The corner is device-local. Layout and the
+visible window bounds keep the bubble above the keyboard. Leaving a chat pauses
+its round, including background and lock. Both round implementations share the
+base touch-dispatch seam.
+
+The native round recording panel remains responsible for Send, preview and the
+60-second cap. This first implementation therefore leaves that panel in the
+compose area. Typing during a round and a round entry in the app-wide dock are
+still unfinished. Round recordings cannot outlive destruction of their chat;
+cross-chat rounds need the device spike from the design before they can ship.
+
+## Settings
+
+Purple Settings, Media recording exposes `keep_across_chats_p`, `background_p`
+and `round_float_p`. All default on and are parsed by purple-core. Changing the
+background setting applies to the next service start. The existing F9/F10
+settings and bin remain in the same screen.
+
+## Ownership and hooks
+
+`PurpleRecordingDockState` is the host-testable ownership state. It serializes
+pause and send transitions, retains the target, counts recorded time without
+pauses and expires the notification discard confirmation. `PurpleRecordingDock`
+connects that state to native events and `PurpleRecordingService`. The existing
+`PurpleRecordingStrip` hosts the controls above the stock player row.
+
+Upstream edits are confined to MediaController (pause decision, second-start
+refusal and draft-restore refusal), ChatActivity (back/overlay and camera binding),
+ChatActivityEnterView (event filtering, panel touch and the minimal UI-release
+extension), FragmentContextView (show/hide using its existing player layout),
+InstantCameraViewBase (touch dispatch), and one manifest service declaration.
+The camera-binding callback can only set the native dim and input overlay.
+Recorder state, target checks and service logic stay in Purple classes.
+
+## Validation
+
+The `recording-dock` host suite covers target retention, ownership, stale action
+rejection, repeated pause/send taps, paused legacy send transitions, recorded
+time, discard confirmation and bubble bounds. Run the complete canonical host
+suite list before acceptance. Application compilation and device qualification
+are separate from those pure host cases.
+
+Device checks, in risk order:
+
+1. Start in chat A, topic and reply; switch account and chat, type and send text,
+   then send the recording. Check its account, recipient, topic and reply.
+2. Preview/send/discard/resume with both voice recorders, including a restored
+   draft and two drafts in different chats. Check F10's bin after every path.
+3. Lock for ten minutes, background, change screens and reconnect Bluetooth.
+   Check captured audio continuity and the foreground-service/wake-lock lifetime.
+4. Deny notification permission, deny service startup, stop the service and
+   switch off background recording. Check stock pause fallback and no silent audio.
+5. Exercise paid and scheduled sends, slow mode, deleted topics and logout. A
+   failed check must never redirect a recording to another chat or identity.
+6. Both round recorders: shrink, scroll, drag/snap, keyboard, flip, pause/resume,
+   expand, 60-second cap and background. Check the video timestamps and F10 files.
+7. Repeat stale notification taps after send/discard/new recording and after a
+   process restart. Check that the new recording is unaffected.

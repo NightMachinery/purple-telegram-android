@@ -202,7 +202,11 @@ public final class PurpleRecordingRegistry {
     // ---- Events ----------------------------------------------------------------
 
     /** {account, dialog, topic, reply, client user id, flags} of a chat, read now; null if not registered. */
-    private static long[] target(int guid) {
+    private static long[] target(int guid) { return target(guid, false); }
+
+    private static long[] target(int guid, boolean terminal) {
+        final long[] dock = PurpleRecordingDock.targetFor(guid, terminal);
+        if (dock != null) return dock;
         final ChatTarget chat = chats.get(guid);
         return chat == null ? null : chat.target();
     }
@@ -217,12 +221,13 @@ public final class PurpleRecordingRegistry {
         final String key = account + ":" + guid;
         if (event == NotificationCenter.recordStarted) {
             final boolean voice = args.length < 2 || !(args[1] instanceof Boolean) || (Boolean) args[1];
-            final long[] target = target(guid);
+            final ChatTarget source = chats.get(guid);
+            final long[] target = source == null ? null : source.target();
             final long startedAt = System.currentTimeMillis();
             worker.execute(() -> { if (sessions != null) sessions.started(key, account, target, voice, startedAt); });
         } else if (event == NotificationCenter.recordStopped) {
             final int reason = args.length > 1 && args[1] instanceof Integer ? (Integer) args[1] : 0;
-            final long[] target = target(guid);
+            final long[] target = target(guid, true);
             // A V2 round cancel: its file executor will finish the movie and then
             // empty the file at its path, so the file is renamed into the bin
             // now, on this thread (an atomic, instant rename on the same file
@@ -271,6 +276,7 @@ public final class PurpleRecordingRegistry {
                 } catch (NumberFormatException e) {
                     return;
                 }
+                AndroidUtilities.runOnUIThread(() -> PurpleRecordingDock.draftCleared(account, draftKey));
                 worker.execute(() -> { if (sessions != null) sessions.draftCleared(account, draftKey); });
             };
             draftWatchers.add(watcher);

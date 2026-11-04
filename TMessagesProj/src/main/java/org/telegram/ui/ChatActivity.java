@@ -7857,6 +7857,7 @@ public class ChatActivity extends BaseFragment implements
 
         overlayView = new View(context);
         overlayView.setOnTouchListener((v, event) -> {
+            if (purple.roundRecordingTouch(event)) return false;
             if (event.getAction() == MotionEvent.ACTION_DOWN) {
                 checkRecordLocked(true, false);
             }
@@ -10800,7 +10801,7 @@ public class ChatActivity extends BaseFragment implements
                 true
         );
         instantCameraView.setAnimationCallback((open, fromPaused) ->
-                animatorRoundMessageCameraVisibility.setValue(open, true));
+                animatorRoundMessageCameraVisibility.setValue(purple.roundCameraVisible(open, fromPaused), true));
         instantCameraView.setTrimCallback((start, end) -> {
             if (chatActivityEnterView != null) {
                 chatActivityEnterView.setVideoTimelineTrim(start, end);
@@ -10823,6 +10824,7 @@ public class ChatActivity extends BaseFragment implements
                     }
                 }
         );
+        purple.attachRoundCamera(instantCameraView, small -> { animatorRoundMessageCameraVisibility.setValue(!small, true); overlayView.setVisibility(small ? View.GONE : View.VISIBLE); });
         instantCameraView.setClipToPadding(false);
         instantCameraView.setButtonsBackground(glassBackgroundDrawableFactory, blurredBackgroundColorProvider);
 
@@ -34923,6 +34925,7 @@ public class ChatActivity extends BaseFragment implements
     }
 
     public boolean checkRecordLocked(boolean invoked, boolean forceCloseOnDiscard) {
+        if (purple.dockRecording(invoked)) return false;
         if (chatActivityEnterView != null && chatActivityEnterView.isRecordLocked()) {
             if (invoked) {
                 final AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity(), themeDelegate);

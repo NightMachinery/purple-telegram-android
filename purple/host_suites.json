@@ -1348,6 +1348,19 @@
         "sync-chat-wire:WIRE_VIEW_CHECKS": 85,
         "sync-chat-wire:WIRE_FINISH_CHECKS": 88
       }
+    },
+    {
+      "name": "recording-dock",
+      "driver": "TMessagesProj/jni/purple_jni/tests/run_recording_dock.py",
+      "args": [
+        "--output",
+        "{output}"
+      ],
+      "coverage": "F6-F8 voice ownership, stale action rejection, pause/resume/send serialization, original target retention and bubble bounds on narrow and keyboard-sized surfaces. Includes the F10 terminal target handoff in either observer order and pins all recording lifecycle and bubble seams.",
+      "expects": {
+        "recording-dock:RECORDING_DOCK_CHECKS": 250,
+        "recording-dock:RECORDING_DOCK_PINS": 18
+      }
     }
   ]
 }

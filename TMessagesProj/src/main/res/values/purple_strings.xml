@@ -1068,4 +1068,16 @@
     <string name="PurpleRecordingJournalEvery">Save the index every %1$s</string>
     <string name="PurpleRecordingJournalSeconds">%1$d s</string>
     <string name="PurpleRecordingJournalInfo">If the app closes unexpectedly, a video message can be recovered exactly up to the last save. Without it, Purple tries to rebuild it, which can drift slightly.</string>
+    <string name="PurpleRecording">Recording</string>
+    <string name="PurpleRecordingVoice">Voice message</string>
+    <string name="PurpleRecordingPaused">Paused</string>
+    <string name="PurpleRecordingPause">Pause</string>
+    <string name="PurpleRecordingResume">Resume</string>
+    <string name="PurpleRecordingPreview">Preview</string>
+    <string name="PurpleRecordingDiscardAgain">Tap again to discard</string>
+    <string name="PurpleRecordingKeepChats">Keep recording across chats</string>
+    <string name="PurpleRecordingBackground">Record voice in background</string>
+    <string name="PurpleRecordingRoundFloat">Floating round camera</string>
+    <string name="PurpleRecordingNotificationHint">Allow notifications to control recordings from the lock screen</string>
+    <string name="PurpleRecordingSendUnavailable">Sending is unavailable in this chat right now. The recording is kept.</string>
 </resources>

@@ -19,6 +19,18 @@ public final class PurpleRecordingCore {
     private PurpleRecordingCore() {
     }
 
+    private static native boolean keepOnPauseNative(boolean keepChats, boolean enabled, boolean round, boolean background, boolean ready);
+
+    public static boolean keepOnPause(boolean round, boolean background, boolean ready) {
+        try {
+            PurpleCore.ensureLoaded();
+            PurpleRecordingSettings settings = PurpleRecordingSettings.read();
+            return keepOnPauseNative(settings.keepAcrossChats, settings.background, round, background, ready);
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            return false;
+        }
+    }
+
     private static native long[] finaliseOggNative(byte[] path);
 
     private static native long[] scanOggNative(byte[] path);

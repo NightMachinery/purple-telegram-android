@@ -73,6 +73,13 @@ final class PurpleChatHooks {
     private ChatActivityTopPanelLayout topPanel;
     private ActionBarMenuItem.Item keepMediaItem;
     private boolean resumed;
+    private final org.telegram.messenger.purple.PurpleRecordingDock.Host recordingHost = new org.telegram.messenger.purple.PurpleRecordingDock.Host() {
+        public long[] target() { return recordingTarget(); }
+        public boolean scheduled() { return chat.getChatMode() == ChatActivity.MODE_SCHEDULED; }
+        public void release() {
+            if (chat.chatActivityEnterView != null) chat.chatActivityEnterView.purpleReleaseRecordUi();
+        }
+    };
 
     /**
      * @param finishing the chat's {@code isFinishing()}, which this class
@@ -84,6 +91,7 @@ final class PurpleChatHooks {
         markdownCopy = new PurpleMarkdownCopy(chat, lookup);
         // F10: a recording this chat starts is registered with its target.
         org.telegram.messenger.purple.PurpleRecordingRegistry.watchChat(chat.getClassGuid(), this::recordingTarget);
+        org.telegram.messenger.purple.PurpleRecordingDock.watch(chat.getClassGuid(), recordingHost);
     }
 
     /**
@@ -481,6 +489,7 @@ final class PurpleChatHooks {
      * the first resume the translate-availability log line.
      */
     void onResume() {
+        org.telegram.messenger.purple.PurpleRecordingDock.foreground();
         if (archiveScope != null) archiveScope.verify();
         PurplePeekControls.chatResumed(chat);
         screenTime.onResume();
@@ -490,12 +499,30 @@ final class PurpleChatHooks {
         }
     }
 
+    boolean roundCameraVisible(boolean open, boolean fromPaused) {
+        return org.telegram.ui.Components.PurpleRoundBubble.animation(chat.instantCameraView, open, fromPaused);
+    }
+
+    boolean roundRecordingTouch(android.view.MotionEvent event) {
+        return org.telegram.ui.Components.PurpleRoundBubble.background(chat.instantCameraView, event);
+    }
+
+    void attachRoundCamera(org.telegram.ui.Components.InstantCameraViewBase view, org.telegram.ui.Components.PurpleRoundBubble.Visibility visibility) {
+        org.telegram.ui.Components.PurpleRoundBubble.attach(view, visibility);
+    }
+
+    boolean dockRecording(boolean invoked) {
+        return invoked && org.telegram.messenger.purple.PurpleRecordingDock.dock(chat.getCurrentAccount(), chat.getClassGuid());
+    }
+
     void onPause() {
+        org.telegram.ui.Components.PurpleRoundBubble.pause(chat.instantCameraView);
         markdownCopy.cancel();
         screenTime.onPause();
     }
 
     void onDestroy() {
+        org.telegram.messenger.purple.PurpleRecordingDock.unwatch(chat.getClassGuid());
         org.telegram.messenger.purple.PurpleRecordingRegistry.unwatchChat(chat.getClassGuid());
         if (archiveScope != null) { archiveScope.close(); archiveScope = null; }
         PurplePeekControls.chatDestroyed(chat);

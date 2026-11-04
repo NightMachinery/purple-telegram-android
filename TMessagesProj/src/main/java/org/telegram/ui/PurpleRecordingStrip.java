@@ -50,10 +50,37 @@ public final class PurpleRecordingStrip {
     private TextView forward;
     private View paddedTitle;
     private int titlePadding;
+    private org.telegram.ui.PurpleRecordingStripView recording;
+    private final Runnable changed;
 
-    public PurpleRecordingStrip(FragmentContextView strip) {
+    public PurpleRecordingStrip(FragmentContextView strip, Runnable relayout) {
         this.strip = strip;
+        changed = () -> {
+            if (recording != null) recording.setVisibility(docked() ? View.VISIBLE : View.GONE);
+            relayout.run();
+        };
+        org.telegram.messenger.purple.PurpleRecordingDock.listen(changed);
         STRIPS.add(this);
+    }
+
+    public boolean docked() {
+        return org.telegram.messenger.purple.PurpleRecordingDock.state.active()
+                && org.telegram.messenger.purple.PurpleRecordingDock.state.docked;
+    }
+
+    public boolean showRecording() {
+        if (!docked()) {
+            if (recording != null) recording.setVisibility(View.GONE);
+            return false;
+        }
+        if (recording == null) {
+            recording = new org.telegram.ui.PurpleRecordingStripView(strip.getContext());
+            strip.addView(recording, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 36, Gravity.TOP));
+        }
+        recording.setVisibility(View.VISIBLE);
+        recording.bringToFront();
+        recording.refresh();
+        return true;
     }
 
     /** Relabels every live strip's buttons after the step changed. Main thread. */

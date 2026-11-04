@@ -227,3 +227,14 @@ Java_org_telegram_messenger_purple_PurpleRecordingCore_journalReadNative(
 		read.config.splitMdat ? 1 : 0,
 	});
 }
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_org_telegram_messenger_purple_PurpleRecordingCore_keepOnPauseNative(
+        JNIEnv *, jclass, jboolean keepChats, jboolean enabled,
+        jboolean round, jboolean background, jboolean ready) {
+    auto settings = Purple::Recording();
+    settings.keepAcrossChats = keepChats == JNI_TRUE;
+    settings.background = enabled == JNI_TRUE;
+    return Purple::KeepRecordingOnPause(settings,
+        round == JNI_TRUE, background == JNI_TRUE, ready == JNI_TRUE) ? JNI_TRUE : JNI_FALSE;
+}
