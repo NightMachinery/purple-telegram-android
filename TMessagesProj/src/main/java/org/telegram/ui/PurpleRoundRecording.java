@@ -92,6 +92,7 @@ final class PurpleRoundRecording {
             if (retained == null) return;
             finalizing = null;
             PurpleRecordingDock.roundEnded(frozen.account, chat.getClassGuid());
+            final long dockGeneration = PurpleRecordingDock.state.generation;
             if (chat.instantCameraView != null) {
                 chat.instantCameraView.hideCamera(true);
                 chat.instantCameraView.setVisibility(View.INVISIBLE);
@@ -108,15 +109,15 @@ final class PurpleRoundRecording {
                             entry.caption, frozen.arguments, entry.effectId, paid, frozen.mono, frozen.suggestion);
                 }, () -> {
                     final PurpleRoundRecording active = owner.get();
-                    if (active != null) active.cleanCompose(generation, originalReply, originalQuote);
+                    if (active != null) active.cleanCompose(generation, dockGeneration, originalReply, originalQuote);
                 });
             }, stars);
         });
         if (!destroyed) chat.purpleRoundSent(false);
         return true;
     }
-    private void cleanCompose(long generation, MessageObject reply, ChatActivity.ReplyQuote quote) {
-        if (generation != captureGeneration || destroyed || floated || chat.getReplyMessage() != reply || chat.getReplyQuote() != quote) return;
+    private void cleanCompose(long generation, long dockGeneration, MessageObject reply, ChatActivity.ReplyQuote quote) {
+        if (generation != captureGeneration || dockGeneration != PurpleRecordingDock.state.generation || destroyed || floated || chat.getReplyMessage() != reply || chat.getReplyQuote() != quote) return;
         final CharSequence text = chat.chatActivityEnterView == null ? null : chat.chatActivityEnterView.getFieldText();
         if (text == null || text.length() == 0) chat.purpleRoundSent(true);
     }

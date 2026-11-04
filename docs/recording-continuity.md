@@ -222,3 +222,7 @@ Queue acknowledgments bind UI cleanup to the original capture generation.
 Starting another capture cannot let an older queued message clear its reply
 state or close its backdrop. The adverse callback-order fixture fails on the
 unguarded helper and checks both controls after the ownership guard.
+
+Cleanup also checks the global dock generation after the completed round
+releases its slot. A new voice capture, including one outside the old round
+helper's local lifecycle, therefore fences the old acknowledgment as well.

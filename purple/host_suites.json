@@ -1367,7 +1367,7 @@
         "recording-dock:VOICE_PREVIEW_CHECKS": 16,
         "recording-dock:RECORDING_INTEGRATION_PINS": 14,
         "recording-dock:PAYMENT_CANCEL_CHECKS": 62,
-        "recording-dock:PAYMENT_CAPTUREGEN_CHECKS": 3
+        "recording-dock:PAYMENT_CAPTUREGEN_CHECKS": 7
       }
     }
   ]
