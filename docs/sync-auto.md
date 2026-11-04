@@ -128,3 +128,5 @@ not qualify widgets, Looper, actual Android filesystem/network behavior, devices
 APK packaging or shrinking.
 
 Recording the same unresolved permanent failure keeps its already-shown flag. A different failure can show once; an explicit Check or enable keeps its existing reset behavior.
+
+K3 removes dormant mark/discovery/carry controllers. The active Magic lookup, account leases, ordinary upload, exact receipts, first-use and automatic engine remain covered by the canonical host roster. Opaque older artifacts retain their existing refusal or set-aside behavior; no user file is deleted.

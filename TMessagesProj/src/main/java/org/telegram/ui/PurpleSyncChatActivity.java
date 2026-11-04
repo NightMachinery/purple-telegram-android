@@ -43,10 +43,6 @@ public final class PurpleSyncChatActivity extends UniversalFragment {
         String value=LocaleController.getString("PurpleSyncChat"+key);
         return args.length==0?value:String.format(Locale.getDefault(),value,args);
     }
-    /** What a chat's readers can see, for the review dialogs; goes with the old setup screen in A7. */
-    static String disclosure(org.telegram.messenger.purple.PurpleSyncChatScreen.Candidate candidate) {
-        return org.telegram.messenger.purple.PurpleSyncChatScreen.disclosure(candidate,PurpleSyncChatActivity::text);
-    }
     private boolean live() { return visible&&identity!=null&&identity.current(); }
     @Override protected CharSequence getTitle() { return text("Title"); }
     @Override public View createView(Context context) { return super.createView(context); }

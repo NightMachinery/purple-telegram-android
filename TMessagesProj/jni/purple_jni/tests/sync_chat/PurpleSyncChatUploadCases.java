@@ -7,14 +7,14 @@ import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_update;
 import static org.telegram.messenger.purple.PurpleSyncChatCore.*;
 import static org.telegram.messenger.purple.PurpleSyncChatCases.*;
-import static org.telegram.messenger.purple.PurpleSyncChatRequestCases.*;
+import static org.telegram.messenger.purple.PurpleSyncChatWireFixtures.*;
 
 final class PurpleSyncChatUploadCases {
     static TL_update.TL_updateMessageID mapping(long random,int id) {
         TL_update.TL_updateMessageID value=new TL_update.TL_updateMessageID();value.random_id=random;value.id=id;return value;
     }
     static TLRPC.Update update(Peer chat,int id,boolean edit) {
-        TLRPC.Message message=mark(chat,id,50);
+        TLRPC.Message message=row(chat,id,50);
         if(chat.kind==PeerKind.Channel) {
             if(edit){TL_update.TL_updateEditChannelMessage row=new TL_update.TL_updateEditChannelMessage();row.message=message;return row;}
             TL_update.TL_updateNewChannelMessage row=new TL_update.TL_updateNewChannelMessage();row.message=message;return row;

@@ -21,7 +21,7 @@ public final class PurpleSyncChatCases {
         return result;
     }
     static TLRPC.TL_message message(Peer chat) {
-        TLRPC.TL_message result = new TLRPC.TL_message(); result.id = 7; result.date = 50; result.peer_id = peer(chat); result.message = "#purplechatsync"; return result;
+        TLRPC.TL_message result = new TLRPC.TL_message(); result.id = 7; result.date = 50; result.peer_id = peer(chat); result.message = "ordinary"; return result;
     }
     static PurpleSyncChatFacts.Input input(Peer chat) {
         PurpleSyncChatFacts.Input i = new PurpleSyncChatFacts.Input(ORIGIN, chat); i.canSendFiles = true; i.chosenSendAs = Peer.self();
@@ -40,7 +40,6 @@ public final class PurpleSyncChatCases {
     }
     static Ownership own(PurpleSyncChatFacts.Input i, TLRPC.Message m) { return ownership(PurpleSyncChatFacts.message(ORIGIN, PurpleSyncChatFacts.peer(ORIGIN, i), m), Options.restricted()); }
     static Eligibility eligible() { ChatFacts f = new ChatFacts(); f.kind = Kind.Self; f.canSendFiles = true; return eligibility(f, Options.restricted()); }
-    static Mark mark(Peer peer, int id, long date, boolean fresh, RecordPresence records) { return new Mark(new Cache(peer,id,date), MarkStatus.Supported, eligible(), records, true, fresh); }
     static boolean tokenEquals(TLRPC.Peer nativePeer, Peer typed) { return typed.equals(PurpleSyncChatFacts.token(nativePeer,11)); }
     public static void main(String[] args) throws Exception {
         PurpleCore.ensureLoaded();
@@ -77,7 +76,7 @@ public final class PurpleSyncChatCases {
         i=input(channel);m=message(channel);m.out=true;m.from_id=peer(channel);check(own(i,m)==Ownership.Own,"broadcast own-channel sender");
         i.groupFull.admins_count=2;check(own(i,m)==Ownership.Other,"broadcast other admin");i.groupFull.admins_count=1;i.groupFull.flags=0;check(own(i,m)==Ownership.Unknown,"broadcast missing admin flag");
         i=input(channel);i.group.creator=false;check(own(i,m)==Ownership.Other,"broadcast noncreator");
-        i=input(group);i.groupFull.participants=new TLRPC.TL_chatParticipantsForbidden();PurpleSyncChatFacts.MappedPeer unknownRoster=PurpleSyncChatFacts.peer(ORIGIN,i);check(unknownRoster.eligibility().readers.populationUnknown,"forbidden roster unknown");check(unknownRoster.memberIds==null,"no fabricated member list");
+        i=input(group);i.groupFull.participants=new TLRPC.TL_chatParticipantsForbidden();PurpleSyncChatFacts.MappedPeer unknownRoster=PurpleSyncChatFacts.peer(ORIGIN,i);check(unknownRoster.memberIds==null,"no fabricated member list");
         i=input(group);i.groupFull.participants.participants.add(i.groupFull.participants.participants.get(0));check(!PurpleSyncChatFacts.peer(ORIGIN,i).eligibility().known,"duplicate roster");
         i=input(channel);TLRPC.TL_username secondary=new TLRPC.TL_username();secondary.active=true;secondary.username="synthetic";i.group.usernames.add(secondary);check(PurpleSyncChatFacts.peer(ORIGIN,i).eligibility().refusal==Refusal.Public,"secondary public username");
         i=input(channel);i.groupFull.default_send_as=peer(user);check(PurpleSyncChatFacts.peer(ORIGIN,i).eligibility().refusal==Refusal.SendAsOther,"raw default send-as");
@@ -97,22 +96,6 @@ public final class PurpleSyncChatCases {
         Refusal[] refusals={Refusal.Public,Refusal.Protected,Refusal.TopicRouting,Refusal.Discussion,Refusal.AutoDelete,Refusal.Paid,Refusal.SendAsOther,Refusal.Migrated,Refusal.SlowMode};
         for(int n=0;n<flags.length;n++){ChatFacts f=new ChatFacts();f.kind=Kind.Supergroup;f.canSendFiles=true;ChatFacts.class.getField(flags[n]).setBoolean(f,true);check(eligibility(f,Options.restricted()).refusal==refusals[n],"eligibility "+flags[n]);}
         for(Kind kind:Kind.values()){ChatFacts f=new ChatFacts();f.kind=kind;f.canSendFiles=true;Eligibility e=eligibility(f,Options.restricted());check(e.known,"typed kind "+kind);}
-        for(String text:new String[]{"#purplechatsync", "Header\n#PURPLECHATSYNC v01\n", "#purplechatsync v1"})check(parseMark(text,false,Ownership.Own).status==MarkStatus.Supported,"exact mark");
-        for(String text:new String[]{"#purplechatsyncer", "#purplechatsync v0", "#purplechatsync v1 at self", "#purplechatsync v1\ntrailer"})check(parseMark(text,false,Ownership.Own).status==MarkStatus.NotMark,"tag distractor");
-        check(parseMark("#purplechatsync v2",false,Ownership.Own).status==MarkStatus.NewerVersion,"newer version");check(parseMark("#purplechatsync",true,Ownership.Own).status==MarkStatus.NotMark,"caption cannot mark");
-        for(Ownership ownership:Ownership.values())check(parseMark("#purplechatsync",false,ownership).status==(ownership==Ownership.Own?MarkStatus.Supported:MarkStatus.NotMark),"ownership parser");
-        ResolveInput in=new ResolveInput(11);check(resolve(in).action==Action.Unset,"unset");in.settingsHint=SettingsHint.Found;check(resolve(in).action==Action.Use,"hint implicit self");
-        in=new ResolveInput(11);in.cache=new Cache(self,7,50);in.cachedEligibility=eligible();check(resolve(in).postingHeld,"unknown direct read holds");check(resolve(in).readChat.equals(self),"unknown retains read cache");
-        in.cacheRead=DirectRead.Valid;check(!resolve(in).postingHeld,"valid cache postable");
-        for(int n=0;n<4;n++){in.cacheRead=DirectRead.MarkGone;in.searchRetriesCompleted=n;Resolution result=resolve(in);check(result.action==(n<3?Action.Searching:Action.Lost),"search retry "+n);check(result.retryAfterSeconds==(n==0?30:n==1?120:n==2?600:0),"retry seconds");}
-        in=new ResolveInput(11);in.marks=Collections.singletonList(mark(channel,8,60,false,RecordPresence.Present));check(resolve(in).action==Action.VerifyMark,"fresh reread mandatory");
-        in.marks=Collections.singletonList(mark(channel,8,60,true,RecordPresence.Present));check(resolve(in).action==Action.Use,"fresh winner");
-        in.cache=new Cache(self,7,50);check(resolve(in).action==Action.Follow,"follow held");check(resolve(in).cache.equals(in.cache)&&resolve(in).postingHeld,"no moved cache commit");
-        in.cache=null;in.marks=Arrays.asList(mark(self,7,50,true,RecordPresence.Present),mark(channel,8,60,true,RecordPresence.Unknown));check(resolve(in).action==Action.ReadWinnerInventory,"inventory gate");
-        in.marks=Arrays.asList(mark(channel,8,60,true,RecordPresence.Empty),mark(self,7,50,true,RecordPresence.Present));check(resolve(in).action==Action.Fill,"fill gate");check(resolve(in).cache==null&&resolve(in).postingHeld,"fill no cache commit");
-        in.marks=Arrays.asList(mark(channel,8,60,true,RecordPresence.Present),mark(channel,8,60,true,RecordPresence.Present));check(resolve(in).action==Action.Use,"dedup identical");
-        in.marks=Arrays.asList(mark(channel,8,60,true,RecordPresence.Present),mark(channel,8,61,true,RecordPresence.Present));check(resolve(in).action==Action.Invalid,"contradictory duplicate");
-        Cache a=new Cache(group,7,60),b=new Cache(channel,7,60);check(outranks(a,b)&&!outranks(b,a),"canonical lexical tie ordering");
         for(String invalid:new String[]{"{}","{\"kind\":\"Self\",\"policy\":\"OutgoingVerified\",\"selfUserId\":\"11\"}","{\"kind\":123}"})check(!new JSONObject(requestNative("ownership",invalid)).optBoolean("ok"),"invalid JNI input");
         for (Peer destination : new Peer[]{self,user,group,channel}) {
             m=message(destination);m.out=!destination.equals(self);SerializedData output=new SerializedData();m.serializeToStream(output);SerializedData wire=new SerializedData(output.toByteArray());TLRPC.Message decoded=TLRPC.Message.TLdeserialize(wire,wire.readInt32(true),true);
@@ -120,6 +103,6 @@ public final class PurpleSyncChatCases {
             check(decoded.from_id!=null&&tokenEquals(decoded.from_id,destination),"native sender fallback");
             check(own(input(destination),decoded)==(destination.equals(group)?Ownership.Unknown:Ownership.Own),"deserialized native ownership "+destination.token());
         }
-        System.out.println("SYNC_CHAT_CHECKS="+checks);
+        System.out.println("SYNC_CHAT_FACTS_CHECKS="+checks);
     }
 }

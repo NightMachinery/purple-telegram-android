@@ -16,9 +16,8 @@ add_library(purplecore SHARED
         purple_jni/config_sync_bridge.cpp
         purple_jni/sync_chat_bridge.cpp
         purple_jni/sync_magic_bridge.cpp
-        purple_jni/sync_chat_move_bridge.cpp
+        purple_jni/sync_record_bridge.cpp
         purple_jni/retained_config_bases.cpp
-        purple_jni/sync_chat_move_store_bridge.cpp
         purple_jni/archive_core_bridge.cpp
         purple/purple/purple_passcode.cpp
         purple/purple/purple_settings.cpp
@@ -38,9 +37,6 @@ add_library(purplecore SHARED
         purple/purple/purple_screentime.cpp
         purple/purple/purple_peer_token.cpp
         purple/purple/purple_sync_chat.cpp
-        purple/purple/purple_sync_chat_carry.cpp
-        purple/purple/purple_sync_chat_carry_codec.cpp
-        purple/purple/purple_sync_chat_journal.cpp
         purple/purple/purple_sync_chat_magic.cpp
         purple/purple/purple_archive_codec.cpp
         purple/purple/purple_archive_model.cpp

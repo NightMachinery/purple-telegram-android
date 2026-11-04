@@ -8,12 +8,12 @@ import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 import static org.telegram.messenger.purple.PurpleSyncChatCore.*;
 import static org.telegram.messenger.purple.PurpleSyncChatCases.*;
-import static org.telegram.messenger.purple.PurpleSyncChatRequestCases.*;
+import static org.telegram.messenger.purple.PurpleSyncChatWireFixtures.*;
 
 final class PurpleSyncChatIOCases {
     static PurpleSyncChatIO io(Peer chat) { return new PurpleSyncChatIO(ORIGIN,chat,info(chat).peer); }
     static TLRPC.TL_message doc(Peer chat,int id,long size) {
-        TLRPC.TL_message row=mark(chat,id,50);row.message=PurpleSyncPost.CAPTION;
+        TLRPC.TL_message row=row(chat,id,50);row.message=PurpleSyncPost.CAPTION;
         row.media=new TLRPC.TL_messageMediaDocument();row.media.document=new TLRPC.TL_document();
         row.flags|=1<<9;row.media.flags|=1;
         row.media.document.id=100+id;row.media.document.size=size;row.media.document.file_reference=new byte[0];row.media.document.mime_type="application/json";
@@ -84,15 +84,14 @@ final class PurpleSyncChatIOCases {
             check(inventory.matchesState(null)==chat.equals(SELF),"unbound nonself still A3 held");
             check(inventory.matchesState("{\"version\":1}".getBytes(java.nio.charset.StandardCharsets.UTF_8))==chat.equals(SELF),"v1 implicit self");
         }
-        PurpleAccountSyncCore.Result record=PurpleAccountSyncCore.buildConfigRecord(PurpleSyncChatServiceCases.bytes("version=2\n"),new byte[0][],PurpleAccountSyncCore.formatSpaceId(new byte[16]).id,PurpleAccountSyncCore.formatInstallId(new byte[16]).id,"synthetic","Android","synthetic",1,1700000000);
+        PurpleAccountSyncCore.Result record=PurpleAccountSyncCore.buildConfigRecord("version=2\n".getBytes(java.nio.charset.StandardCharsets.UTF_8),new byte[0][],PurpleAccountSyncCore.formatSpaceId(new byte[16]).id,PurpleAccountSyncCore.formatInstallId(new byte[16]).id,"synthetic","Android","synthetic",1,1700000000);
         check(record.isValid(),"typed readback canonical core record");File payload=new File(root,"typed-record.json");Files.write(payload.toPath(),record.record);
         for(Peer chat:new Peer[]{SELF,USER,GROUP,CHANNEL}) {
             Client client=new Client(chat,payload);TLRPC.TL_message row=doc(chat,7,payload.length());
             client.pages.add(page(chat,1,row));client.pages.add(page(chat,1));client.exact.add(messages(row));client.exact.add(messages(row));
             PurpleSyncInventory result=client.inventory();
             check(result.chat.equals(chat)&&result.origin.equals(ORIGIN)&&client.reads==2,"typed inventory origin and metadata/download/metadata");
-            check(PurpleSyncChat.recordPresence(result,11,chat)==RecordPresence.Present,"typed complete candidate Present");
-            check(PurpleSyncChat.recordPresence(result,11,Peer.of(PeerKind.User,99))==RecordPresence.Unknown,"cross-chat inventory never Empty/Present");
+            check(result.receipt(0)!=null && Arrays.equals(result.receipt(0).bytes(),record.record),"typed read keeps a sealed exact-byte receipt");
             for(String change:new String[]{"edited","vanished","wrongpeer","unknown","other"}) {
                 client=new Client(chat,payload);row=doc(chat,7,payload.length());client.pages.add(page(chat,1,row));client.pages.add(page(chat,1));client.exact.add(messages(row));
                 TLRPC.TL_message changed=doc(change.equals("wrongpeer")?Peer.of(PeerKind.User,99):chat,7,payload.length());
@@ -100,7 +99,7 @@ final class PurpleSyncChatIOCases {
                 if(change.equals("unknown"))changed.media=new TLRPC.TL_messageMediaDocument_layer187();
                 if(change.equals("other"))changed.fwd_from=new TLRPC.TL_messageFwdHeader();
                 client.exact.add(change.equals("vanished")?messages():messages(changed));
-                check(PurpleSyncChat.recordPresence(client.inventory(),11,chat)==RecordPresence.Unknown,"post-download metadata changed held "+chat.token()+" "+change);
+                check(client.inventory().transport[0]!=PurpleSyncInventory.FETCHED,"post-download metadata changed held "+chat.token()+" "+change);
             }
         }
         System.out.println("TYPED_IO_CHECKS="+(checks-before));

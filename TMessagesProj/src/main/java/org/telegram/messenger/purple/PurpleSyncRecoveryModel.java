@@ -138,7 +138,6 @@ final class PurpleSyncRecoveryModel {
         return false;
     }
     private JSONObject store(File directory,String key) throws Exception {
-        if (PurpleSyncChatMoveStore.artifacts(directory)) throw new IllegalStateException("CarryPending");
         boolean candidate=key!=null?key.equals(account):account.equals(owner);
         boolean inert=!candidate&&!signedIn(key!=null?key:owner);
         if(inert) {
@@ -185,7 +184,7 @@ final class PurpleSyncRecoveryModel {
                 if(shown.plan.status!=PurpleSyncRecoveryCore.Status.AutoRelink&&shown.plan.status!=PurpleSyncRecoveryCore.Status.RootRelink)return false;
                 PurpleSyncRecoveryFiles.Snapshot folder=tree.capture(sync,true);
                 try(PurpleSyncRecoveryFiles.Lock lock=new PurpleSyncRecoveryFiles.Lock(sync,folder.mark.identity)) {
-                    if(PurpleSyncChatMoveStore.artifacts(sync)||!live()||!tree.currentExcept(sync)||!ownUnchangedWithLock())return false;
+                    if(!live()||!tree.currentExcept(sync)||!ownUnchangedWithLock())return false;
                     PurpleSyncRecoveryCore.Plan fresh=PurpleSyncRecoveryCore.plan(shown.request,shown.inventory,shown.local);
                     if(fresh==null||fresh.status!=shown.plan.status||!fresh.token.equals(shown.plan.token)||!PurpleAccountBinding.isToken(fresh.token))return false;
                     boolean stored=preferences.persist.write(fresh.token);
@@ -219,12 +218,12 @@ final class PurpleSyncRecoveryModel {
     boolean startAgain(Offer shown,boolean sendQueued,Current idle) {
         archiveIdle=idle;
         try {
-            if(PurpleSyncChatMoveStore.artifacts(sync)||shown==null||shown.model!=this||!live()||sendQueued||!tree.current()
+            if(shown==null||shown.model!=this||!live()||sendQueued||!tree.current()
                     ||shown.resuming()&&shown.plan.start!=PurpleSyncRecoveryCore.Start.Ready||!shown.resuming()&&!shown.plan.offerStartAgain)return false;
             PurpleSyncRecoveryFiles.Snapshot folder=tree.capture(sync,true);
             if(folder.mark.missing())return false;
             try(PurpleSyncRecoveryFiles.Lock lock=new PurpleSyncRecoveryFiles.Lock(sync,folder.mark.identity)) {
-                if(PurpleSyncChatMoveStore.artifacts(sync)||!live()||!tree.currentExcept(sync))return false;
+                if(!live()||!tree.currentExcept(sync))return false;
                 JSONObject journal=shown.journal;
                 if(journal==null) {
                     if(!ownUnchangedWithLock()||!shown.plan.offerStartAgain)return false;
@@ -251,7 +250,6 @@ final class PurpleSyncRecoveryModel {
         } catch(Exception|LinkageError e) { return false; }
     }
     private boolean finishJournal(JSONObject journal,PurpleSyncSettingsFile.Contents local) throws Exception {
-        if (PurpleSyncChatMoveStore.artifacts(sync)) return false;
         JSONObject request=new JSONObject().put("journalPlan",journal.getJSONObject("plan"));
         JSONObject plan=journal.getJSONObject("plan"), expected=plan.getJSONObject("expected"), ids=journal.getJSONObject("identities");
         if(!account.equals(plan.getString("account"))||!owner.equals(plan.getString("owner"))||!preferences.token.equals(plan.getString("preferenceToken")))return false;
@@ -263,7 +261,7 @@ final class PurpleSyncRecoveryModel {
                 ||(tree.physical.mark(archive,true).mode&0777)!=0700)return false;
         PurpleSyncRecoveryFiles.Snapshot journalExpected=new PurpleSyncRecoveryFiles.Snapshot(journalFile,false,PurpleSyncRecoveryFiles.JOURNAL_LIMIT,tree.physical);
         for(int i=0;i<nativePlan.moves.length();++i) {
-            if(PurpleSyncChatMoveStore.artifacts(sync)||!live()||!tree.currentExcept(sync)||!journalExpected.current(tree.physical)||!journalDirectoriesSafe(journal,archive,expected))return false;
+            if(!live()||!tree.currentExcept(sync)||!journalExpected.current(tree.physical)||!journalDirectoriesSafe(journal,archive,expected))return false;
             JSONObject move=nativePlan.moves.getJSONObject(i);File source=new File(root,move.getString("source")),destination=new File(root,move.getString("destination"));
             boolean pending=move.getInt("kind")==0;
             if(!source.getParentFile().equals(sync)||!destination.getParentFile().equals(archive))return false;

@@ -477,7 +477,7 @@ final class PurpleSyncMagicScenarioCases {
         return frame;
     }
 
-    /** The account's sync folder passes all three checks, and the bound chat's store opens on it. */
+    /** The bound chat's store and retained records accept the account's sync folder. */
     static PurpleAccountSyncCore.Result accepted(PurpleSyncFileContext context, String step) throws Exception {
         File sync = context.files.syncDirectory;
         PurpleAccountSyncStore.Result opened;
@@ -489,11 +489,6 @@ final class PurpleSyncMagicScenarioCases {
             check(MAGIC.equals(store.chat()), step + ": on the magic chat");
         }
         check(PurpleSyncRetainedFiles.valid(sync), step + ": the retention check accepts the folder");
-        PurpleSyncChatMoveStore move = new PurpleSyncChatMoveStore(sync, new PurpleAccountSyncStore(sync, PurpleAccountSyncStore.NATIVE), 1, context.origin.key,
-                PurpleAccountBinding.read(1).token, hex64(), device(1), new File(PurpleAccountFiles.root(), "sync-chat/" + context.origin.key + ".json"), () -> true);
-        try { move.open(); } catch (Exception e) { throw new AssertionError(step + ": the move store's known paths refuse the folder: " + e.getMessage(), e); }
-        finally { move.close(); }
-        check(true, step + ": the move store's known paths accept the folder");
         File state = new File(sync, "state.json");
         return state.exists() ? PurpleAccountSyncCore.inspectState(Files.readAllBytes(state.toPath())) : null;
     }

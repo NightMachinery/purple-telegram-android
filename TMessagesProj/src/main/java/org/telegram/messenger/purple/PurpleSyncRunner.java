@@ -48,7 +48,6 @@ public final class PurpleSyncRunner {
         default void waiting(java.util.function.Consumer<PurpleRpcRetry.Transient> observer){}
         default boolean workerEffects(){return false;}
         default void checkEffects(java.util.function.BooleanSupplier effects,java.util.function.Consumer<Boolean> done){done.accept(effects.getAsBoolean());}
-        default PurpleSyncChatScreen.Candidate recipient() { return null; }
         default boolean consent(PurpleSyncInventory inventory) { return true; }
         default boolean requiresRecovery() { return false; }
         default PurpleSyncRecoveryModel.Offer recovery(PurpleSyncInventory inventory,PurpleSyncSettingsFile.Contents local) { return null; }
@@ -277,7 +276,6 @@ public final class PurpleSyncRunner {
         this.ui = ui;env.waiting(this::waiting);
     }
 
-    public PurpleSyncChatScreen.Candidate recipient() { return session.env.recipient(); }
 
     public String accountLabel() {
         return session.origin != null ? PurpleConfigImpactText.label(session.origin.key) : Long.toString(session.userId);
@@ -922,7 +920,6 @@ public final class PurpleSyncRunner {
         public void resolveChat(boolean beforePost,Object owner,String key,java.util.function.BooleanSupplier current,java.util.function.Consumer<Boolean> done) {
             PurpleSyncChat.underLock(context,owner,key,beforePost,current,status->done.accept(beforePost?status.selfPostable():status.selfReadable()));
         }
-        public void cancelChat(Object owner) { if(context.origin!=null)PurpleSyncChat.cancelOperation(context.origin.slot,owner); }
 
         @Override
         public boolean current(int account, long userId) {

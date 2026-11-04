@@ -203,8 +203,8 @@ public final class PurpleTransferCases {
             } catch (java.io.IOException e) { throw new AssertionError(e); }
         }, () -> watermark[0] = 101);
         check(attempts[0] == 1 && watermark[0] == 101, "delayed B1 confirmation records ID despite B2 fingerprint refusal");
-        check(PurpleSyncOfferRules.judge(1, 1, false, 101, 300, watermark[0], f.own.lastModified() / 1000)
-                == PurpleSyncOfferRules.Verdict.ALREADY_OFFERED, "next launch refuses this install's obsolete B1 even with newer server date");
+        check(PurpleSettingsImportRules.judge(1, 1, false, 101, 300, watermark[0], f.own.lastModified() / 1000)
+                == PurpleSettingsImportRules.Verdict.ALREADY_OFFERED, "next launch refuses this install's obsolete B1 even with newer server date");
         check(Arrays.equals(markerBefore, Files.readAllBytes(marker.toPath())), "B1 confirmation does not mark B2 as sent");
         check(Files.readString(f.own.toPath()).equals(b2), "B2 exact unsent bytes survive delayed confirmation");
         PurpleConfirmedSend.note(() -> live[0], () -> false, () -> watermark[0] = 102);

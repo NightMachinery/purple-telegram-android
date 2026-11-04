@@ -11,7 +11,7 @@ parser.add_argument('--receipt', type=Path, required=True)
 parser.add_argument('--json', type=Path, required=True)
 parser.add_argument('--library', type=Path, required=True)
 parser.add_argument('--output', type=Path, required=True)
-parser.add_argument('--suite', choices=['facts','discovery','integration'], default='facts')
+parser.add_argument('--suite', choices=['facts','io','integration'], default='facts')
 parser.add_argument('--overlay', type=Path)
 parser.add_argument('--phase', choices=['compile', 'run'], required=True)
 args = parser.parse_args()
@@ -25,14 +25,14 @@ empty = args.output / 'empty-sourcepath'
 classpath = os.pathsep.join([str(base), str(args.json)] + [item['path'] for key in ['classpath', 'bootstrapClasspath'] for item in receipt[key]])
 sources = [repo / 'TMessagesProj/src/main/java/org/telegram/messenger/purple' / (name + '.java') for name in ['PurpleSyncChatCore', 'PurpleSyncChatOrigin', 'PurpleSyncChatFacts', 'PurpleSyncMagicCore']]
 sources += [tests / 'sync_chat/PurpleSyncChatCases.java'] + list((tests / 'sync_chat/ports').rglob('*.java'))
-if args.suite == 'discovery':
+if args.suite == 'io':
     production = repo / 'TMessagesProj/src/main/java'
     owned = production / 'org/telegram/messenger/purple'
     sources = list(owned.glob('PurpleSyncChat*.java')) + list(owned.glob('PurpleSyncMagic*.java')) + list(owned.glob('PurpleRpc*.java'))
-    sources += [owned / (name + '.java') for name in ['PurpleSyncClient','PurpleSyncOperations','PurpleSyncTelegramClient','PurpleSyncRunner','PurpleSyncTransport','PurpleSyncAuto','PurpleAccountFiles','PurpleSyncAutoClient','PurpleSyncAutoNetwork','PurpleSyncManagedReads','PurpleSyncReadScope','PurpleSyncReader','PurpleSyncInventory','PurpleSyncCheck','PurpleSyncCore','PurpleSyncPost','PurpleAccountSyncStore','PurpleSyncAutoCore','PurpleSyncTelegramTransport','PurpleSyncPublisher','PurpleSyncAutoUpload','PurpleSyncAutoEngine','PurpleAccountSyncCore','PurpleSyncApply','PurpleSyncAutoEdits','PurpleSyncHistory','PurpleSyncMutation','PurpleAccountEditorModel']]
-    sources += [production / 'org/telegram/ui' / (name + '.java') for name in ['PurpleDialogsHooks','PurpleSyncActivity','PurpleSyncChatActivity','PurpleSyncChatSetupUI','PurpleSyncReviewDialog']]
+    sources += [owned / (name + '.java') for name in ['PurpleSyncClient','PurpleSyncOperations','PurpleSyncTelegramClient','PurpleSyncRunner','PurpleSyncTransport','PurpleSyncAuto','PurpleAccountFiles','PurpleSyncAutoClient','PurpleSyncAutoNetwork','PurpleSyncManagedReads','PurpleSyncReadScope','PurpleSyncReader','PurpleSyncInventory','PurpleSyncCheck','PurpleSyncCore','PurpleSyncPost','PurpleAccountSyncStore','PurpleSyncAutoCore','PurpleSyncTelegramTransport','PurpleSyncPublisher','PurpleSyncAutoUpload','PurpleSyncRecordCore','PurpleSyncRecordSnapshot','PurpleSyncRetainedFiles','PurpleSyncRetainedBases','PurpleSyncAutoEngine','PurpleAccountSyncCore','PurpleSyncApply','PurpleSyncAutoEdits','PurpleSyncHistory','PurpleSyncMutation','PurpleAccountEditorModel']]
+    sources += [production / 'org/telegram/ui' / (name + '.java') for name in ['PurpleDialogsHooks','PurpleSyncActivity','PurpleSyncChatActivity','PurpleSyncReviewDialog']]
     sources += list((tests / 'modern_sync/android/system').glob('*.java'))
-    sources += [tests / 'modern_sync/android/util/Base64.java', tests / 'sync_chat_move_io/ports/org/telegram/messenger/FileLoader.java', tests / 'sync_chat_move_io/ports/android/text/TextUtils.java']
+    sources += [tests / 'modern_sync/android/util/Base64.java']
     sources += [tests / 'modern_sync/android/os/Looper.java']
     sources += [p for p in (tests / 'sync_chat').glob('*.java') if not p.name.endswith('IntegrationCases.java')] + list((tests / 'sync_chat/ports').rglob('*.java'))
 if args.suite == 'integration':
@@ -53,7 +53,7 @@ if args.phase == 'compile':
     inputs = sources + [args.library, args.receipt, args.json, base / 'org/telegram/tgnet/TLRPC.class', base / 'org/telegram/tgnet/TLRPC$TL_message.class', base / 'org/telegram/messenger/purple/PurpleCore.class']
     (args.output / 'inputs.json').write_text(json.dumps([{'path': str(p), 'sha256': hashlib.sha256(p.read_bytes()).hexdigest()} for p in inputs], indent=2) + '\n')
 else:
-    command = [str(compiler.with_name('java')), '-Xcheck:jni', '-Xmx512m', '-XX:ActiveProcessorCount=2', '-Djava.library.path=' + str(args.library.parent), '-cp', str(classes) + os.pathsep + classpath, 'org.telegram.messenger.purple.' + ('PurpleSyncChatCases' if args.suite == 'facts' else 'PurpleSyncChatIntegrationCases' if args.suite == 'integration' else 'PurpleSyncChatDiscoveryCases'), str(classes), str(base), str(args.output)]
+    command = [str(compiler.with_name('java')), '-Xcheck:jni', '-Xmx512m', '-XX:ActiveProcessorCount=2', '-Djava.library.path=' + str(args.library.parent), '-cp', str(classes) + os.pathsep + classpath, 'org.telegram.messenger.purple.' + ('PurpleSyncChatCases' if args.suite == 'facts' else 'PurpleSyncChatIntegrationCases' if args.suite == 'integration' else 'PurpleSyncChatIOCasesMain'), str(classes), str(base), str(args.output)]
     if args.suite == 'integration':
         command = command[:-3] + [str(args.overlay),str(args.output)]
         # --add-opens: the modern cases it reruns open the move store, whose lock check reads an inode through sun.nio.fs.

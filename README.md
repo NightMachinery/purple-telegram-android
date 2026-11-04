@@ -300,7 +300,7 @@ filtering, whole archive lists and caller-owned unfiltered folder tabs. The
 account-bearing facade still uses current shared app-wide policy. Drag, Reorder,
 archive preference, unread tabs and the user's own mute reads keep their existing
 semantics. First-list loading and the sync-offer call stay at fragment creation;
-`PurpleGate`, `PurpleListMenu` and `PurpleSyncOffer` are not changed.
+`PurpleGate` and `PurpleListMenu` are not changed.
 
 A preset in `settings.toml` decides which chats are in the chat list and which
 may interrupt you. Pick one from the chat list's overflow menu, which is
@@ -1978,19 +1978,4 @@ recovery. Logout deletes that account’s archive and dedicated keys.
 See [capture and history](docs/archive-capture.md) and
 [archive storage](docs/archive-storage.md) for limits and recovery.
 
-The per-account Sync chat screen has resumable mark-only setup and explicit settings/reader review before manual sync. Automatic sync remains Saved Messages only. Move, Follow/Fill, Lost recovery and exact cleanup now connect their controllers to production ports, with every activation switch still OFF pending native qualification. When enabled, startup resumes the existing account/login-scoped move journal before ordinary sync. The screen shows progress, Retry and explicit cleanup Skip; closing a screen releases only its own foreground flow. See [sync-chat.md](docs/sync-chat.md) for user choices and [production wiring](docs/sync-chat-move.md#held-off-production-wiring) for ownership, storage and qualification limits.
-
-Legacy confirmed-stage startup pins the exact base before cleanup. See
-[carry storage](docs/sync-chat-move.md).
-
-Carry transport host checks also cover overlapping reconciliation and delayed
-request/upload renewal across execution revisions. See [the carry I/O contract](docs/sync-chat-move.md). Seeded three-install crash and race cases, including durable restarts, are described in [the host harness](docs/sync-chat-move-races.md).
-
-Older supported Purple marks appear separately on the Sync chat screen. **Remove
-mark** targets one captured message and requires a fresh complete winner and exact
-ownership readback. Removal remains off pending qualification. It grants no record
-or chat cleanup. See [stale-mark authority](docs/sync-chat-marks.md).
-
-Exact old-settings cleanup remains qualification-held. Its separate choices, partial outcomes and host checks are described in [the cleanup guide](docs/sync-chat-cleanup.md).
-
-Lost recovery and same-chat mark repair are qualified through injected host ports, with production OFF. See [Lost recovery](docs/sync-chat-recovery.md).
+The per-account settings sync screen uses Magic Purple Sync: a private group found from the account's chat lists, with automatic sync, manual Check and one-time first-use choices. Dormant search, mark, setup and carry controllers have been removed. See [Magic Purple Sync](docs/sync-chat.md) and [automatic sync](docs/sync-auto.md) for scope and host qualification.

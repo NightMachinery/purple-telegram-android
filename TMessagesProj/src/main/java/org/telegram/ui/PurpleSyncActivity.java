@@ -609,10 +609,9 @@ public class PurpleSyncActivity extends UniversalFragment {
             showDialog(builder.create());
             return;
         }
-        String recipient=runner.recipient()!=null?PurpleSyncChatActivity.disclosure(runner.recipient()):"";
-        builder.setMessage(PurpleSyncText.joined(recipient,at.setupOnlyJoin&&confirmed==PurpleSyncCore.Action.Join
+        builder.setMessage(at.setupOnlyJoin&&confirmed==PurpleSyncCore.Action.Join
                 ?getString(R.string.PurpleSyncEmptyJoinAbout)
-                :PurpleSyncText.joined(PurpleSyncText.confirmText(confirmed, at.review), impact)));
+                :PurpleSyncText.joined(PurpleSyncText.confirmText(confirmed, at.review), impact));
         builder.setPositiveButton(PurpleSyncText.actionText(confirmed), (dialog, which) -> {
             if (!available()) {
                 stopForLostAccount();

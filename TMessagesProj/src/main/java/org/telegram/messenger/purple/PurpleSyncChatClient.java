@@ -1,9 +1,6 @@
 package org.telegram.messenger.purple;
 
-import org.telegram.tgnet.TLRPC;
-import java.util.List;
 import java.util.Set;
-import java.util.function.Consumer;
 import static org.telegram.messenger.purple.PurpleSyncChatCore.*;
 
 interface PurpleSyncChatClient {
@@ -28,22 +25,4 @@ interface PurpleSyncChatClient {
         boolean readable() { return error == Error.None && peer != null && peer.facts != null; }
         Eligibility eligibility() { return peer != null ? peer.eligibility() : unknownEligibility(); }
     }
-    final class Exact {
-        final DirectRead state;
-        final TLRPC.Message message;
-        final Info info;
-        final Cache absentLocation;
-        Exact(DirectRead state, TLRPC.Message message, Info info) { this(state,message,info,null); }
-        Exact(DirectRead state,TLRPC.Message message,Info info,Cache absentLocation){this.state=state;this.message=message;this.info=info;this.absentLocation=absentLocation;}
-    }
-    PurpleSyncChatOrigin origin();
-    boolean current();
-    void dispatch(Runnable task);
-    void search(PurpleSyncChatRequests.Search kind, PurpleSyncChatRequests.Cursor cursor, Peer target, Consumer<PurpleSyncChatRequests.Page> done);
-    void info(Peer target, Consumer<Info> done);
-    void exact(Cache location, Consumer<Exact> done);
-    void hint(Consumer<SettingsHint> done);
-    List<Peer> fallback();
-    default void transientWait(Consumer<PurpleRpcRetry.Transient> observer){}
-    void cancel();
 }

@@ -269,9 +269,7 @@ public final class PurpleSyncMagicCases {
             && PurpleSyncMagicCore.verifyProblem("{", 900, PurpleSyncMagicCore.Problem.RequestRefused, NOW) == null, "verifyProblem refuses no problem or a broken binding");
 
         // No sync path may send a Telegram search.
-        check(PurpleSyncChatTelegram.searches(new org.telegram.tgnet.TLRPC.TL_messages_search())
-            && PurpleSyncChatTelegram.searches(new org.telegram.tgnet.TLRPC.TL_messages_searchGlobal()), "both searches are refused");
-        check(!PurpleSyncChatTelegram.searches(new org.telegram.tgnet.TLRPC.TL_channels_getFullChannel()), "a full-info read is not a search");
+
 
         System.out.println("SYNC_MAGIC_CHECKS=" + checks);
     }

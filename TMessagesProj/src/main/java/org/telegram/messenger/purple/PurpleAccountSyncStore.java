@@ -31,7 +31,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
         InvalidState, NewerState, InvalidRecord, AccountUnbound,
         DeviceMismatch, CloneDetected, PendingMissing, PendingMismatch,
         OrphanStage, AmbiguousFiles, LockBusy, IoError, Unconfirmed,
-        Unchanged, CarryPending, MissingLocalVersion, InvalidRetention, NewerRetention, RetentionFull
+        Unchanged, MissingLocalVersion, InvalidRetention, NewerRetention, RetentionFull
     }
 
     public static final class Result {
@@ -170,8 +170,6 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
     private byte[] state;
     private Status status = Status.Disabled;
     private boolean opened;
-    private boolean carryOnly, terminalCarry;
-    private boolean carryBlocks(){return PurpleSyncChatMoveStore.artifacts(root)&&!terminalCarry;}
     private boolean production;
     private PurpleAccountFiles.Identity origin;
     private PurpleSyncFileContext context;
@@ -242,20 +240,6 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
         this.core = core;
     }
 
-    synchronized Result openForCarry(int currentAccount, String currentDevice) {
-        if (opened) return result(Status.InvalidTransition);
-        carryOnly = true;
-        return open(true, currentAccount, currentDevice);
-    }
-    synchronized boolean carryLockCurrent() {
-        if (!carryOnly || lock == null || !lock.isValid() || !routeCurrent()) return false;
-        try {
-            android.system.StructStat opened = android.system.Os.fstat(lockStream.getFD());
-            android.system.StructStat named = android.system.Os.lstat(new File(root, "lock").getPath());
-            return opened.st_dev == named.st_dev && opened.st_ino == named.st_ino;
-        } catch (Exception e) { return false; }
-    }
-
     public synchronized Result open(boolean optedIn, int currentAccount,
             String currentDevice) {
         if (opened) {
@@ -305,8 +289,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
             if (lock == null) {
                 return fail(Status.LockBusy);
             }
-            if (carryOnly) return result(Status.Ready);
-            if (PurpleSyncChatMoveStore.artifacts(root)) {terminalCarry=PurpleSyncChatMoveStore.completed(root,production&&origin!=null?origin.key:null);if(!terminalCarry)return fail(Status.CarryPending);}
+
             if (!PurpleSyncRetainedFiles.valid(root)) return fail(Status.InvalidRetention);
             if (!prepareDirectory(pending)) {
                 return fail(Status.IoError);
@@ -458,10 +441,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
             if (archive.exists() || !archive.mkdir()) return result(Status.IoError);
             android.system.Os.chmod(archive.getPath(), 0700);
             java.util.ArrayList<String> names = new java.util.ArrayList<>(Arrays.asList("pending", "auto.json", "retained-bases"));
-            // WHY: leftovers of a finished pre-magic carry (carry.json, carry-cache.json, carry-objects,
-            // carry-history) are checked against state.json's binding; left beside a store without state they read
-            // as an unfinished carry and every later open refuses with CarryPending. They go with the state,
-            // before it, so a crash in between leaves the state with no carry, which opens.
+            // Keep obsolete artifacts beside the state they came from.
             String[] entries = root.list();
             if (entries != null) for (String name : entries) if (name.startsWith("carry") || name.startsWith(".carry-")) names.add(name);
             names.add("state.json");
@@ -469,7 +449,6 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
                 File file = new File(root, name);
                 if (file.exists() && !isLink(file) && !file.renameTo(new File(archive, name))) return fail(Status.IoError);
             }
-            terminalCarry = false;
             state = null;
             status = Status.Uninitialized;
             return result(Status.Uninitialized);
@@ -491,7 +470,6 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
     }
 
     public synchronized Result initialize(byte[] boundState) {
-        if (carryOnly || carryBlocks()) return result(Status.CarryPending);
         if (!routeCurrent()) return fail(Status.AccountUnbound);
         if (status != Status.Uninitialized || stateFile.exists()
                 || stageFile.exists() || boundState == null
@@ -889,7 +867,6 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
         state = null;
         status = Status.Disabled;
         opened = false;
-        carryOnly = false;terminalCarry=false;
     }
 
     private static PurpleAccountFiles requireFiles(PurpleSyncFileContext context) {
@@ -898,7 +875,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
     }
 
     private boolean bound() {
-        return !carryOnly && !carryBlocks() && state != null && bindingMatches(state);
+        return state != null && bindingMatches(state);
     }
 
     private java.util.function.BooleanSupplier admission=()->true;
@@ -977,7 +954,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
 
     private void dropUnreservedStage() {
         try {
-            if (!carryOnly && !carryBlocks() && Arrays.equals(read(stateFile, STATE_LIMIT), state)) {
+            if (Arrays.equals(read(stateFile, STATE_LIMIT), state)) {
                 stageFile.delete();
             }
         } catch (IOException | SecurityException ignored) {
@@ -987,7 +964,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
     static boolean recoverInterrupted(File appRoot,File directory,String accountKey,PurpleGlobalChoiceFiles.Physical physical,
             PurpleSyncRecoveryModel.Current current) {
         try {
-            if(PurpleSyncChatMoveStore.artifacts(directory) || !current.current())return false;
+            if(!current.current())return false;
             PurpleSyncRecoveryFiles.Tree inputs=new PurpleSyncRecoveryFiles.Tree(appRoot,physical);
             PurpleSyncRecoveryFiles.Snapshot folder=inputs.capture(directory,true);
             if(folder.mark.missing())return true;
@@ -1020,7 +997,7 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
                     if(!input.directory&&!input.file.getName().equals("lock")&&!input.current(physical))return false;
                 java.util.TreeSet<String> expected=new java.util.TreeSet<>(java.util.Arrays.asList(folder.entries));expected.add("lock");
                 if(!expected.equals(new java.util.TreeSet<>(java.util.Arrays.asList(PurpleSyncRecoveryFiles.names(directory)))))return false;
-                return !PurpleSyncChatMoveStore.artifacts(directory)&&current.current()&&recover(state)&&current.current()&&recover(stage)&&current.current()&&recoverAuto(auto,accountKey)&&current.current();
+                return current.current()&&recover(state)&&current.current()&&recover(stage)&&current.current()&&recoverAuto(auto,accountKey)&&current.current();
             }
         } catch(Exception|LinkageError e){return false;}
     }
@@ -1069,10 +1046,10 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
         FileOutputStream stream = null;
         boolean committed = false;
         try {
-            if(carryOnly || carryBlocks() || !admission.getAsBoolean())throw new IOException("Sync operation retired");
+            if(!admission.getAsBoolean())throw new IOException("Sync operation retired");
             stream = atomic.startWrite();
             stream.write(bytes);
-            if(carryOnly || carryBlocks() || !admission.getAsBoolean())throw new IOException("Sync operation retired");
+            if(!admission.getAsBoolean())throw new IOException("Sync operation retired");
             atomic.finishWrite(stream);
             committed = true;
             if (!Arrays.equals(bytes, read(file, bytes.length))) {

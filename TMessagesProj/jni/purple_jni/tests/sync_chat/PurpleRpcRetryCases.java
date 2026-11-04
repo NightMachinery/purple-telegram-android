@@ -4,7 +4,7 @@ import java.util.*;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 import static org.telegram.messenger.purple.PurpleSyncChatCases.*;
-import static org.telegram.messenger.purple.PurpleSyncChatRequestCases.*;
+import static org.telegram.messenger.purple.PurpleSyncChatWireFixtures.*;
 import static org.telegram.messenger.purple.PurpleSyncChatCore.*;
 
 final class PurpleRpcRetryCases {
@@ -81,62 +81,5 @@ final class PurpleRpcRetryCases {
         check(stream.pendingRetries()==1&&delivered[0]==0,"observer failure does not erase retry");p.through(10000);p.replies.get(2).accept(new TLObject(),null);check(delivered[0]==1,"retry survives throwing observer");
     }
     static TLRPC.TL_users_userFull full(){PurpleSyncChatFacts.Input input=input(SELF);TLRPC.TL_users_userFull full=new TLRPC.TL_users_userFull();full.full_user=input.userFull;full.users.add(input.user);return full;}
-    static void client(){
-        for(int seconds:new int[]{8,90}){
-            Native port=new Native();PurpleSyncChatTelegram client=new PurpleSyncChatTelegram(ORIGIN,port);List<PurpleSyncChatClient.Info> replies=new ArrayList<>();List<PurpleRpcRetry.Transient> waits=new ArrayList<>();client.transientWait(waits::add);client.info(SELF,replies::add);
-            check(port.requests.get(0) instanceof TLRPC.TL_users_getFullUser,"fresh Self uses full-info");TLRPC.TL_error flood=new TLRPC.TL_error();flood.code=420;flood.text="FLOOD_WAIT_"+seconds;port.replies.get(1).accept(null,flood);
-            check(replies.isEmpty()&&waits.size()==1&&waits.get(0).retryAt==port.clock+(seconds+(seconds<=30?1:0))*1000L,"real TL Self flood never final Unknown "+seconds);
-            Runnable retry=port.timers.keySet().iterator().next();port.timers.remove(retry);port.clock=waits.get(0).retryAt;retry.run();port.reply(2,full());check(replies.size()==1&&replies.get(0).readable(),"fresh Self recovered after flood");client.cancel();
-        }
-        PurpleSyncChatModelCases.World world=new PurpleSyncChatModelCases.World();world.peers.put(SELF,new PurpleSyncChatClient.Info(ORIGIN,SELF,null,PurpleSyncChatClient.Error.Unknown,"",null,false));
-        PurpleSyncChatDiscovery model=new PurpleSyncChatDiscovery(ORIGIN,null,true,SELF,Collections.emptyList(),"config");model.start(1000);
-        world.drain(model,1000);
-        check(model.status().phase==PurpleSyncChatDiscovery.Phase.Paused&&model.status().reason.equals("UnknownFacts"),"baseline flood-to-null mapping reproduces Paused/UnknownFacts");
-        System.out.println("FLOOD_BASELINE=Paused/UnknownFacts; FIXED=transient/retryAt then readable");
-    }
-    static void service(){
-        for(int seconds:new int[]{8,90})for(boolean splitClock:new boolean[]{false,true}){
-            PurpleSyncChatServiceCases.Env env=new PurpleSyncChatServiceCases.Env();env.file.seed(PurpleSyncChatModelCases.cache(SELF,7,50));
-            byte[] cache=env.file.bytes.clone();Native nativePort=new Native();if(splitClock){nativePort.clock=1800000000000L;env.rpcClock=nativePort.clock;}PurpleSyncChatTelegram client=new PurpleSyncChatTelegram(ORIGIN,nativePort);env.injectedFactory=()->new PurpleSyncChatTelegram(ORIGIN,nativePort);
-            PurpleSyncChatService service=new PurpleSyncChatService(env);List<PurpleSyncChatDiscovery.Status> results=new ArrayList<>();service.ensureResolved(true,"config",null,results::add);
-            int reply=1;
-            while(reply<=nativePort.sent&&!(nativePort.requests.get(reply-1) instanceof TLRPC.TL_users_getFullUser)){
-                check(reply<30,"service reaches fresh Self full info");nativePort.reply(reply++,messages(mark(SELF,7,50)));
-            }
-            check(reply<=nativePort.sent,"fresh Self request pending");TLRPC.TL_error flood=new TLRPC.TL_error();flood.code=420;flood.text="FLOOD_WAIT_"+seconds;nativePort.replies.get(reply).accept(null,flood);
-            check(results.isEmpty()&&service.status().phase==PurpleSyncChatDiscovery.Phase.Searching&&service.status().reason.equals("TelegramWait")&&service.status().postingHeld,"production service flood stays Searching/TelegramWait "+seconds);
-            check(Arrays.equals(cache,env.file.bytes)&&env.file.writes==0,"flood preserves exact cache bytes");
-            List<PurpleSyncChatDiscovery.Status> forced=new ArrayList<>();int sent=nativePort.sent;service.ensureResolved(true,"config",null,forced::add);
-            check(forced.isEmpty()&&nativePort.sent==sent,"forced resolution queues without a final transient completion or cooldown bypass");
-            check(service.status().retryAt==env.clock+(seconds+(seconds<=30?1:0))*1000L,"RPC wall deadline rebased to service elapsed clock");
-            Runnable retry=nativePort.timers.keySet().iterator().next();nativePort.timers.remove(retry);long wait=service.status().retryAt-env.clock;nativePort.clock+=wait;env.clock+=wait;if(splitClock)env.rpcClock=nativePort.clock;retry.run();reply=nativePort.sent;
-            while((results.isEmpty()||forced.isEmpty())&&reply<=nativePort.sent){
-                check(reply<60,"service recovery bounded");TLObject request=nativePort.requests.get(reply-1);nativePort.reply(reply++,request instanceof TLRPC.TL_users_getFullUser?full():messages(mark(SELF,7,50)));
-            }
-            check(results.size()==1&&results.get(0).phase==PurpleSyncChatDiscovery.Phase.Use&&forced.size()==1&&forced.get(0).phase==PurpleSyncChatDiscovery.Phase.Use,"production service and queued caller recover to Use after flood "+seconds+" split="+splitClock);service.close(false);
-            check(nativePort.timers.isEmpty()&&!PurpleSyncOperations.busy(env.key),"service close releases timers and account lease");
-        }
-    }
-    static void stalledSplitClock(){
-        PurpleSyncChatServiceCases.Env env=new PurpleSyncChatServiceCases.Env();env.file.seed(PurpleSyncChatModelCases.cache(SELF,7,50));
-        Native port=new Native();port.clock=1800000000000L;env.rpcClock=port.clock;env.injectedFactory=()->new PurpleSyncChatTelegram(ORIGIN,port);
-        PurpleSyncChatService service=new PurpleSyncChatService(env);List<PurpleSyncChatDiscovery.Status> results=new ArrayList<>();service.ensureResolved(true,"config",null,results::add);
-        int reply=1;while(!(port.requests.get(reply-1) instanceof TLRPC.TL_users_getFullUser)){check(reply<30,"stalled split-clock reaches full info");port.reply(reply++,messages(mark(SELF,7,50)));}
-        TLRPC.TL_error flood=new TLRPC.TL_error();flood.code=420;flood.text="FLOOD_WAIT_90";port.replies.get(reply).accept(null,flood);
-        check(service.status().retryAt==91000&&env.timers.values().contains(211000L),"wall deadline converted to elapsed cooldown and watchdog");
-        List<PurpleSyncChatDiscovery.Status> forced=new ArrayList<>();service.ensureResolved(true,"config",null,forced::add);check(forced.isEmpty(),"split-clock force comparison retains caller");
-        Runnable retry=port.timers.keySet().iterator().next();port.timers.remove(retry);port.clock+=90000;env.clock=91000;env.rpcClock=port.clock;env.heldWorker=true;retry.run();reply=port.sent;
-        while(env.tasks.isEmpty()&&reply<=port.sent){check(reply<60,"split-clock read recovery bounded");TLObject request=port.requests.get(reply-1);port.reply(reply++,request instanceof TLRPC.TL_users_getFullUser?full():messages(mark(SELF,7,50)));}
-        check(!env.tasks.isEmpty()&&port.timers.isEmpty()&&results.isEmpty(),"RPC timer ends before stalled local cache continuation");
-        port.clock=1800000209999L;env.rpcClock=port.clock;env.through(210999);check(results.isEmpty()&&service.status().retryAt==91000,"non-RPC phase bounded at expected elapsed time");
-        port.clock=1800000210000L;env.rpcClock=port.clock;env.through(211000);check(results.isEmpty()&&service.status().retryAt==216000&&env.timers.values().contains(216000L),"stalled non-RPC watchdog restarts at elapsed deadline");
-        check(env.presentation!=null&&env.presentation.retryAt==1800000215000L,"UI retry deadline retains wall clock independently");
-        check(PurpleSyncOperations.owned(env.key,service),"stalled local restart retains original account capability");
-        env.tasks.remove().run();check(results.isEmpty(),"stale disk continuation cannot complete restarted run");
-        env.heldWorker=false;port.clock=1800000215000L;env.rpcClock=port.clock;env.through(216000);reply=port.sent;
-        while((results.isEmpty()||forced.isEmpty())&&reply<=port.sent){check(reply<100,"split-clock eventual recovery bounded");TLObject request=port.requests.get(reply-1);port.reply(reply++,request instanceof TLRPC.TL_users_getFullUser?full():messages(mark(SELF,7,50)));}
-        check(results.size()==1&&forced.size()==1&&results.get(0).phase==PurpleSyncChatDiscovery.Phase.Use&&forced.get(0).phase==PurpleSyncChatDiscovery.Phase.Use,"split-clock stalled local phase preserves both eventual completions");service.close(false);
-        check(env.timers.isEmpty()&&!PurpleSyncOperations.busy(env.key),"split-clock close releases own timer/lease");
-    }
-    static void run(){int before=checks;policy();lifecycle();observer();client();service();stalledSplitClock();System.out.println("RPC_RETRY_CHECKS="+(checks-before));}
+    static void run(){int before=checks;policy();lifecycle();observer();System.out.println("RPC_RETRY_CHECKS="+(checks-before));}
 }

@@ -344,7 +344,7 @@ public final class PurpleSync {
                 PurpleConfirmedSend.note(origin::current, () -> {
                     PurpleAccountFiles files = PurpleAccountFiles.resolve(origin.key, PurpleAccountOwner.owner());
                     return files != null && PurpleLegacySendState.note(origin, files.settings, sentBytes, false);
-                }, () -> PurpleSyncOffer.noteSentMessage(origin.slot, serverId));
+                }, null);
             }
         }
     }

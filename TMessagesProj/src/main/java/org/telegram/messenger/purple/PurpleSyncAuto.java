@@ -29,15 +29,6 @@ public final class PurpleSyncAuto {
         }
     };
     private static final PurpleSaveDebounces saves = new PurpleSaveDebounces(scheduler);
-    static void quiesceCarry(PurpleSyncChatOrigin origin,Runnable done) {
-        AndroidUtilities.runOnUIThread(()->{
-            Runtime runtime=accounts.get(origin.accountKey());
-            if(runtime!=null&&runtime.opening.slot==origin.slot){
-                runtime.cancelRetry();runtime.cancelNetworks();
-                runtime.queue(()->{runtime.engine.suspend();PurpleSyncAutoEdits.cleanup(origin.slot);done.run();});
-            } else {PurpleSyncAutoEdits.cleanup(origin.slot);done.run();}
-        });
-    }
     public static final class Status {
         public final boolean enabled;
         public final String text;
@@ -130,7 +121,6 @@ public final class PurpleSyncAuto {
             long generation = ++intent;
             if (!enabled) {
                 paused = true;
-                PurpleSyncChat.cancelOperation(account.account,engine);
                 engine.suspend();
             }
             engine.enabled(enabled, () -> generation == intent && opening.current());
@@ -143,7 +133,6 @@ public final class PurpleSyncAuto {
                 && !MessagesController.getMainSettings(account.account).edit().putBoolean(preference, enabled).commit())
                 reason = PurpleSyncAutoCore.Reason.StateChanged;
             if (!enabled) {
-                PurpleSyncChat.cancelOperation(account.account,engine);
                 cancelNetworks();
                 PurpleSyncAutoEdits.cleanup(account.account);
             }

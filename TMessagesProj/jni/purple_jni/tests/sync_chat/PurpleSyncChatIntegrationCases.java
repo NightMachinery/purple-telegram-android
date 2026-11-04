@@ -31,7 +31,7 @@ public final class PurpleSyncChatIntegrationCases {
         check(!new File(frame.sync(1),"pending/config.json").exists(),"held before-post never stages a new record");
         gate.defer=true;checked[0]=null;check(runner.check(null,result->checked[0]=result)==PurpleSyncRunner.Start.Started,"deferred chat gate");check(runner.cancel(),"cancel during gate");gate.deferred.accept(true);
         check(checked[0]==null&&frame.clouds[1].checking==null&&!PurpleSyncOperations.busy(gate.operationKey(1,202)),"late gate callback after cancel cannot read or retain lock");
-        check(gate.cancels>0,"runner ends cancel its owned discovery operation");frame.unchangedA();runner.close();return checks-before;
+        check(gate.cancels>0,"runner ends cancel its owned chat lookup");frame.unchangedA();runner.close();return checks-before;
     }
     static void ledger(File root)throws Exception {
         Frame frame=new Frame(root,"typed-ledger",true);byte[] original=frame.initialize(1);
@@ -84,20 +84,13 @@ public final class PurpleSyncChatIntegrationCases {
     }
     public static void main(String[] args)throws Exception {
         PurpleCore.ensureLoaded();File overlay=new File(args[0]).getCanonicalFile();
-        for(String name:new String[]{"PurpleSyncChatActivation","PurpleSyncChatManual","PurpleSyncChatPostEffect","PurpleSyncApply","PurpleSyncHistory","PurpleSyncMutation","PurpleAccountEditorModel","PurpleSyncAutoEdits","PurpleAccountSyncCore","PurpleSyncRunner","PurpleSyncOperations","PurpleSyncAuto","PurpleAccountFiles","PurpleSyncTelegramClient","PurpleSyncChat","PurpleSyncChatIO","PurpleSyncChatUpload","PurpleSyncPost","PurpleSyncReader","PurpleSyncCheck","PurpleSyncInventory","PurpleSyncCore","PurpleAccountSyncStore","PurpleSyncPublisher","PurpleSyncAutoUpload","PurpleSyncAutoEngine","PurpleSyncAutoNetwork","PurpleSyncAutoClient","PurpleSyncTelegramTransport"})if(!new File(Class.forName("org.telegram.messenger.purple."+name).getProtectionDomain().getCodeSource().getLocation().toURI()).getCanonicalFile().equals(overlay))throw new AssertionError("production source overlay "+name);
+        for(String name:new String[]{"PurpleSyncChatPostEffect","PurpleSyncApply","PurpleSyncHistory","PurpleSyncMutation","PurpleAccountEditorModel","PurpleSyncAutoEdits","PurpleAccountSyncCore","PurpleSyncRunner","PurpleSyncOperations","PurpleSyncAuto","PurpleAccountFiles","PurpleSyncTelegramClient","PurpleSyncChat","PurpleSyncChatIO","PurpleSyncChatUpload","PurpleSyncPost","PurpleSyncReader","PurpleSyncCheck","PurpleSyncInventory","PurpleSyncCore","PurpleAccountSyncStore","PurpleSyncPublisher","PurpleSyncAutoUpload","PurpleSyncAutoEngine","PurpleSyncAutoNetwork","PurpleSyncAutoClient","PurpleSyncTelegramTransport"})if(!new File(Class.forName("org.telegram.messenger.purple."+name).getProtectionDomain().getCodeSource().getLocation().toURI()).getCanonicalFile().equals(overlay))throw new AssertionError("production source overlay "+name);
         File root=Files.createTempDirectory(new File(args[1]).toPath(),"integration-").toFile();
         int ledgerBefore=checks;ledger(root);System.out.println("TYPED_LEDGER_CHECKS="+(checks-ledgerBefore));
         System.out.println("MODERN_AFFECTED_CHECKS="+PurpleModernSyncCases.run(root));System.out.println("RUNNER_GATE_CHECKS="+run(root));
         System.out.println("TYPED_UPLOAD_LIFECYCLE_CHECKS="+PurpleSyncChatUploadIntegrationCases.run(root));
         PurpleAccountSyncStoreTest.main(new String[0]);
         PurpleSyncCoreTest.main(new String[0]);
-        PurpleSyncChatManualIntegrationCases.run(root);
-        PurpleSyncChatQueuedMutationIntegrationCases.run(root);
-        PurpleSyncChatAdmissionLockIntegrationCases.run(root);
         PurpleSyncChatOperationsRaceIntegrationCases.run(root);
-        PurpleSyncChatCleanupIntegrationCases.run(root);
-        PurpleSyncChatLogoutIntegrationCases.run();
-        int consentBefore=PurpleSyncChatCases.checks;PurpleSyncChatSetupCacheConsentIntegrationCases.run(root);
-        System.out.println("SETUP_CACHE_RESTART_CHECKS="+(PurpleSyncChatCases.checks-consentBefore));
     }
 }

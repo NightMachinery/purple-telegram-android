@@ -142,15 +142,15 @@ final class PurpleSyncChatUploadIntegrationCases {
     static void exact(File root)throws Exception {
         PurpleSyncAutoCases.Port setup=PurpleSyncAutoCases.bound(root,"a2-exact-network");PurpleSyncAutoCases.initialPublish(setup);
         byte[] canonical=setup.client.messages.values().iterator().next();File payload=new File(root,"exact-network.json");Files.write(payload.toPath(),canonical);
-        for(PurpleSyncChatCore.Peer chat:new PurpleSyncChatCore.Peer[]{PurpleSyncChatRequestCases.SELF,PurpleSyncChatRequestCases.USER,PurpleSyncChatRequestCases.GROUP,PurpleSyncChatRequestCases.CHANNEL}) {
+        for(PurpleSyncChatCore.Peer chat:new PurpleSyncChatCore.Peer[]{PurpleSyncChatWireFixtures.SELF,PurpleSyncChatWireFixtures.USER,PurpleSyncChatWireFixtures.GROUP,PurpleSyncChatWireFixtures.CHANNEL}) {
             for(String change:new String[]{"control","edited","vanished","wrongpeer","excluded"}) {
                 PurpleSyncChatIOCases.Client client=new PurpleSyncChatIOCases.Client(chat,payload);
                 TLRPC.TL_message row=PurpleSyncChatIOCases.doc(chat,7,payload.length());
                 TLRPC.TL_message fresh=PurpleSyncChatIOCases.doc(change.equals("wrongpeer")?PurpleSyncChatCore.Peer.of(PurpleSyncChatCore.PeerKind.User,99):chat,7,payload.length());
                 if(change.equals("edited"))fresh.edit_date=101;
                 if(change.equals("excluded"))fresh.from_scheduled=true;
-                client.exact.add(PurpleSyncChatRequestCases.messages(row));
-                client.exact.add(change.equals("vanished")?PurpleSyncChatRequestCases.messages():PurpleSyncChatRequestCases.messages(fresh));
+                client.exact.add(PurpleSyncChatWireFixtures.messages(row));
+                client.exact.add(change.equals("vanished")?PurpleSyncChatWireFixtures.messages():PurpleSyncChatWireFixtures.messages(fresh));
                 PurpleSyncClient owned=new PurpleSyncChatRecordClient(client,message->client.io.ownership((TLRPC.Message)message.remote));
                 PurpleSyncAutoNetwork network=new PurpleSyncAutoNetwork(owned,"synthetic",()->true);
                 org.json.JSONObject[] found={null};network.exact(7,()->true,value->found[0]=value);client.drain();
@@ -166,24 +166,24 @@ final class PurpleSyncChatUploadIntegrationCases {
         PurpleSyncAutoCases.Port setup=PurpleSyncAutoCases.bound(root,"a2-bot-supergroup");PurpleSyncAutoCases.initialPublish(setup);
         File payload=new File(root,"variant-record.json");Files.write(payload.toPath(),setup.client.messages.values().iterator().next());
         for(boolean group:new boolean[]{false,true})for(boolean changed:new boolean[]{false,true}) {
-            PurpleSyncChatCore.Peer chat=group?PurpleSyncChatRequestCases.CHANNEL:PurpleSyncChatRequestCases.USER;
+            PurpleSyncChatCore.Peer chat=group?PurpleSyncChatWireFixtures.CHANNEL:PurpleSyncChatWireFixtures.USER;
             PurpleSyncChatFacts.Input facts=PurpleSyncChatCases.input(chat);
             if(group){facts.group.broadcast=false;facts.group.megagroup=true;}else facts.user.bot=true;
-            PurpleSyncChatClient.Info info=PurpleSyncChatRequestCases.info(chat,facts);
+            PurpleSyncChatClient.Info info=PurpleSyncChatWireFixtures.info(chat,facts);
             check(info.peer.kind==(group?PurpleSyncChatCore.Kind.Supergroup:PurpleSyncChatCore.Kind.Bot)&&info.eligibility().allowed(),"typed variant affirmative full info control");
             PurpleSyncChatIO io=new PurpleSyncChatIO(PurpleSyncChatCases.ORIGIN,chat,info.peer);
             PurpleSyncChatIOCases.Client client=new PurpleSyncChatIOCases.Client(chat,payload);
             TLRPC.TL_message row=PurpleSyncChatIOCases.doc(chat,7,payload.length()),fresh=PurpleSyncChatIOCases.doc(chat,7,payload.length());
-            if(group){row.from_id=PurpleSyncChatCases.peer(PurpleSyncChatRequestCases.SELF);row.flags|=1<<8;fresh.from_id=PurpleSyncChatCases.peer(PurpleSyncChatRequestCases.SELF);fresh.flags|=1<<8;}
+            if(group){row.from_id=PurpleSyncChatCases.peer(PurpleSyncChatWireFixtures.SELF);row.flags|=1<<8;fresh.from_id=PurpleSyncChatCases.peer(PurpleSyncChatWireFixtures.SELF);fresh.flags|=1<<8;}
             client.pages.add(PurpleSyncChatIOCases.page(chat,1,row));client.pages.add(PurpleSyncChatIOCases.page(chat,1));
-            client.exact.add(PurpleSyncChatRequestCases.messages(row));
+            client.exact.add(PurpleSyncChatWireFixtures.messages(row));
             if(changed){if(group)fresh.flags&=~(1<<8);else fresh.out=false;}
-            client.exact.add(PurpleSyncChatRequestCases.messages(fresh));
+            client.exact.add(PurpleSyncChatWireFixtures.messages(fresh));
             PurpleSyncClient owned=new PurpleSyncChatRecordClient(client,message->io.ownership((TLRPC.Message)message.remote));
             PurpleSyncTransport.CheckResult[] result={null};new PurpleSyncTelegramTransport(owned).check(null,value->result[0]=value);client.drain();
-            check(result[0]!=null&&PurpleSyncChat.recordPresence(result[0].inventory,11,chat)==(changed?PurpleSyncChatCore.RecordPresence.Unknown:PurpleSyncChatCore.RecordPresence.Present),"full typed variant scanner/reader/C0 second read "+info.peer.kind);
+            check(result[0]!=null&&((result[0].status==PurpleSyncTransport.CheckStatus.Finished&&result[0].inventory!=null&&result[0].inventory.count()==1&&result[0].inventory.transport[0]==PurpleSyncInventory.FETCHED)==!changed),"full typed variant scanner/reader/C0 second read "+info.peer.kind);
             TLRPC.Update update=PurpleSyncChatUploadCases.update(chat,7,false);
-            if(group){TLRPC.Message sent=PurpleSyncChatUploadCases.message(update);sent.from_id=PurpleSyncChatCases.peer(PurpleSyncChatRequestCases.SELF);sent.flags|=1<<8;}
+            if(group){TLRPC.Message sent=PurpleSyncChatUploadCases.message(update);sent.from_id=PurpleSyncChatCases.peer(PurpleSyncChatWireFixtures.SELF);sent.flags|=1<<8;}
             check(PurpleSyncChatUpload.receipt(io,PurpleSyncChatUploadCases.updates(false,PurpleSyncChatUploadCases.mapping(991,7),update),991,0)==7,"typed variant channel/ordinary receipt control");
         }
         setup.engine.close();setup.frame.unchangedA();

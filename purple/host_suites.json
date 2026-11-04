@@ -51,8 +51,8 @@
         "run"
       ],
       "expects": {
-        "run:SYNC_CHAT_CHECKS": 119,
-        "sync-chat-facts:SYNC_CHAT_CHECKS": 119
+        "run:SYNC_CHAT_FACTS_CHECKS": 80,
+        "sync-chat-facts:SYNC_CHAT_FACTS_CHECKS": 80
       }
     },
     {
@@ -82,7 +82,7 @@
       }
     },
     {
-      "name": "sync-chat-discovery",
+      "name": "sync-chat-io",
       "driver": "TMessagesProj/jni/purple_jni/tests/run_sync_chat.py",
       "args": [
         "--receipt",
@@ -94,43 +94,27 @@
         "--output",
         "{output}",
         "--suite",
-        "discovery"
+        "io"
       ],
       "phases": [
         "compile",
         "run"
       ],
       "expects": {
-        "run:CACHE_SERVICE_CHECKS": 1081,
-        "run:MANUAL_ACTIVATION_CHECKS": 44,
-        "run:MANUAL_POST_EFFECT_CHECKS": 47,
-        "run:MODEL_CHECKS": 1135,
-        "run:Q2A_REVIEW_REGRESSION_CHECKS": 360,
-        "run:REQUEST_CLIENT_CHECKS": 648,
-        "run:RPC_RETRY_CHECKS": 308,
-        "run:SETUP_TRANSPORT_CHECKS": 2175,
-        "run:SYNC_CHAT_ALIGNMENT_CHECKS": 1854,
-        "run:SYNC_CHAT_CHECKS": 119,
-        "run:SYNC_CHAT_SCREEN_CHECKS": 153,
-        "run:SYNC_CHAT_SETUP_CHECKS": 3835,
-        "run:SYNC_CHAT_TOTAL_CHECKS": 12648,
-        "run:TYPED_IO_CHECKS": 310,
+        "run:SYNC_CHAT_FACTS_CHECKS": 80,
+        "run:RPC_RETRY_CHECKS": 100,
+        "run:TYPED_IO_CHECKS": 300,
         "run:TYPED_UPLOAD_WIRE_CHECKS": 237,
-        "sync-chat-discovery:CACHE_SERVICE_CHECKS": 1081,
-        "sync-chat-discovery:MANUAL_ACTIVATION_CHECKS": 44,
-        "sync-chat-discovery:MANUAL_POST_EFFECT_CHECKS": 47,
-        "sync-chat-discovery:MODEL_CHECKS": 1135,
-        "sync-chat-discovery:Q2A_REVIEW_REGRESSION_CHECKS": 360,
-        "sync-chat-discovery:REQUEST_CLIENT_CHECKS": 648,
-        "sync-chat-discovery:RPC_RETRY_CHECKS": 308,
-        "sync-chat-discovery:SETUP_TRANSPORT_CHECKS": 2175,
-        "sync-chat-discovery:SYNC_CHAT_ALIGNMENT_CHECKS": 1854,
-        "sync-chat-discovery:SYNC_CHAT_CHECKS": 119,
-        "sync-chat-discovery:SYNC_CHAT_SCREEN_CHECKS": 153,
-        "sync-chat-discovery:SYNC_CHAT_SETUP_CHECKS": 3835,
-        "sync-chat-discovery:SYNC_CHAT_TOTAL_CHECKS": 12648,
-        "sync-chat-discovery:TYPED_IO_CHECKS": 310,
-        "sync-chat-discovery:TYPED_UPLOAD_WIRE_CHECKS": 237
+        "run:MANUAL_POST_EFFECT_CHECKS": 47,
+        "run:SYNC_RECORD_CHECKS": 30,
+        "run:SYNC_CHAT_IO_CHECKS": 700,
+        "sync-chat-io:SYNC_CHAT_FACTS_CHECKS": 80,
+        "sync-chat-io:RPC_RETRY_CHECKS": 100,
+        "sync-chat-io:TYPED_IO_CHECKS": 300,
+        "sync-chat-io:TYPED_UPLOAD_WIRE_CHECKS": 237,
+        "sync-chat-io:MANUAL_POST_EFFECT_CHECKS": 47,
+        "sync-chat-io:SYNC_RECORD_CHECKS": 30,
+        "sync-chat-io:SYNC_CHAT_IO_CHECKS": 700
       }
     },
     {
@@ -148,73 +132,37 @@
         "--suite",
         "integration",
         "--overlay",
-        "{out:sync-chat-discovery}/classes"
+        "{out:sync-chat-io}/classes"
       ],
       "phases": [
         "compile",
         "run"
       ],
       "expects": {
-        "run:ADMISSION_LOCK_REGRESSION_CHECKS": 34,
-        "run:CLEANUP_ACQUIRE_REGRESSION_CHECKS": 63,
         "run:FIRST_USE_CASES": "PASS",
         "run:FIRST_USE_R1R2": "PASS",
-        "run:LOGOUT_CLEANUP_REGRESSION_CHECKS": 335,
         "run:MAGIC_AUTOMATIC_CASES": "PASS",
         "run:MANAGED_READ_WATCHDOG_CHECKS": 105,
-        "run:MANUAL_EXISTING_JOIN_CHECKS": 210,
-        "run:MANUAL_TYPED_FIRST_POST_CHECKS": 583,
         "run:MODERN_AFFECTED_CHECKS": 5150,
         "run:OPERATIONS_ACQUISITION_RACE_CHECKS": 746,
         "run:PurpleAccountSyncStore": "PASS",
-        "run:QUEUED_MUTATION_REGRESSION_CHECKS": 561,
         "run:READ_SCOPE_LIFETIME_CHECKS": 65,
         "run:RUNNER_GATE_CHECKS": 37,
-        "run:SETUP_CACHE_RESTART_CHECKS": 18,
         "run:TYPED_LEDGER_CHECKS": 59,
         "run:TYPED_UPLOAD_LIFECYCLE_CHECKS": 347,
         "run:checks": 1494,
-        "sync-chat-integration:ADMISSION_LOCK_REGRESSION_CHECKS": 34,
-        "sync-chat-integration:CLEANUP_ACQUIRE_REGRESSION_CHECKS": 63,
         "sync-chat-integration:FIRST_USE_CASES": "PASS",
         "sync-chat-integration:FIRST_USE_R1R2": "PASS",
-        "sync-chat-integration:LOGOUT_CLEANUP_REGRESSION_CHECKS": 335,
         "sync-chat-integration:MAGIC_AUTOMATIC_CASES": "PASS",
         "sync-chat-integration:MANAGED_READ_WATCHDOG_CHECKS": 105,
-        "sync-chat-integration:MANUAL_EXISTING_JOIN_CHECKS": 210,
-        "sync-chat-integration:MANUAL_TYPED_FIRST_POST_CHECKS": 583,
         "sync-chat-integration:MODERN_AFFECTED_CHECKS": 5150,
         "sync-chat-integration:OPERATIONS_ACQUISITION_RACE_CHECKS": 746,
         "sync-chat-integration:PurpleAccountSyncStore": "PASS",
-        "sync-chat-integration:QUEUED_MUTATION_REGRESSION_CHECKS": 561,
         "sync-chat-integration:READ_SCOPE_LIFETIME_CHECKS": 65,
         "sync-chat-integration:RUNNER_GATE_CHECKS": 37,
-        "sync-chat-integration:SETUP_CACHE_RESTART_CHECKS": 18,
         "sync-chat-integration:TYPED_LEDGER_CHECKS": 59,
         "sync-chat-integration:TYPED_UPLOAD_LIFECYCLE_CHECKS": 347,
         "sync-chat-integration:checks": 1494
-      }
-    },
-    {
-      "name": "sync-chat-move",
-      "driver": "TMessagesProj/jni/purple_jni/tests/run_sync_chat_move.py",
-      "args": [
-        "--receipt",
-        "{receipt}",
-        "--json",
-        "{json}",
-        "--library",
-        "{library}",
-        "--output",
-        "{output}"
-      ],
-      "expects": {
-        "core:checks": 9305,
-        "jni:SYNC_CHAT_MOVE_ACTIONS": 16,
-        "jni:SYNC_CHAT_MOVE_CHECKS": 3121,
-        "sync-chat-move:SYNC_CHAT_MOVE_ACTIONS": 16,
-        "sync-chat-move:SYNC_CHAT_MOVE_CHECKS": 3121,
-        "sync-chat-move:checks": 9305
       }
     },
     {
@@ -337,11 +285,11 @@
       }
     },
     {
-      "name": "sync-offer",
-      "driver": "TMessagesProj/jni/purple_jni/tests/run_sync_offer.sh",
+      "name": "settings-import",
+      "driver": "TMessagesProj/jni/purple_jni/tests/run_settings_import.sh",
       "compiles": true,
       "expects": {
-        "sync-offer:checks": 28
+        "settings-import:SETTINGS_IMPORT_CHECKS": 13
       }
     },
     {
@@ -943,374 +891,6 @@
       ],
       "expects": {
         "host:SEARCH_REFRESH_CHECKS": 45
-      }
-    },
-    {
-      "name": "sync-chat-move-store",
-      "driver": "TMessagesProj/jni/purple_jni/tests/run_sync_chat_move_store.py",
-      "args": [
-        "--receipt",
-        "{receipt}",
-        "--json",
-        "{json}",
-        "--library",
-        "{library}",
-        "--output",
-        "{output}",
-        "--modern",
-        "{out:modern-sync}",
-        "--carry",
-        "{out:sync-chat-move}"
-      ],
-      "coverage": "Actual AGP durable carry store and native private-file faults, immutable bases, login scope and ordinary restart fences.",
-      "expects": {
-        "store:SYNC_CHAT_MOVE_STORE_CHECKS": 245,
-        "sync-chat-move-store:SYNC_CHAT_MOVE_STORE_CHECKS": 245
-      }
-    },
-    {
-      "name": "sync-chat-move-io",
-      "driver": "TMessagesProj/jni/purple_jni/tests/run_sync_chat_move_io.py",
-      "args": [
-        "--receipt",
-        "{receipt}",
-        "--json",
-        "{json}",
-        "--library",
-        "{library}",
-        "--output",
-        "{output}",
-        "--modern",
-        "{out:modern-sync}",
-        "--carry",
-        "{out:sync-chat-move}",
-        "--store",
-        "{out:sync-chat-move-store}"
-      ],
-      "coverage": "Actual AGP typed carry receipts, generated TL bytes, worker-owned private stores, durable transport identities and controlled upload/retry callbacks. Production-mode upstream message serialization normalizes local attachment tails into strict wire snapshots; exact receipts, the real reader, following vectors, corruption controls and old snapshot refusal.",
-      "expects": {
-        "carry-io:CARRY_IO_CHECKS": 779,
-        "sync-chat-move-io:CARRY_IO_CHECKS": 779,
-        "carry-io:SNAPSHOT_CODEC_CHECKS": 196,
-        "sync-chat-move-io:SNAPSHOT_CODEC_CHECKS": 196
-      }
-    },
-    {
-      "name": "sync-chat-move-executor",
-      "driver": "TMessagesProj/jni/purple_jni/tests/run_sync_chat_move_executor.py",
-      "args": [
-        "--receipt",
-        "{receipt}",
-        "--json",
-        "{json}",
-        "--library",
-        "{library}",
-        "--output",
-        "{output}",
-        "--modern",
-        "{out:modern-sync}",
-        "--carry",
-        "{out:sync-chat-move}",
-        "--store",
-        "{out:sync-chat-move-store}",
-        "--io",
-        "{out:sync-chat-move-io}"
-      ],
-      "coverage": "Actual AGP core NextAction executor, worker-owned real files, controlled effects, restart and lifecycle fences.",
-      "expects": {
-        "carry-executor:CARRY_EXECUTOR_CHECKS": 5594,
-        "sync-chat-move-executor:CARRY_EXECUTOR_CHECKS": 5594,
-        "carry-executor:PENDING_CHRONOLOGY_CHECKS": 28,
-        "sync-chat-move-executor:PENDING_CHRONOLOGY_CHECKS": 28
-      }
-    },
-    {
-      "name": "sync-chat-carry",
-      "driver": "TMessagesProj/jni/purple_jni/tests/run_sync_chat_carry.py",
-      "args": [
-        "--receipt",
-        "{receipt}",
-        "--json",
-        "{json}",
-        "--library",
-        "{library}",
-        "--output",
-        "{output}",
-        "--modern",
-        "{out:modern-sync}",
-        "--carry",
-        "{out:sync-chat-move}",
-        "--store",
-        "{out:sync-chat-move-store}",
-        "--io",
-        "{out:sync-chat-move-io}",
-        "--executor",
-        "{out:sync-chat-move-executor}"
-      ],
-      "coverage": "Production carry dispatcher under a real move controller: discovery, scans, exact reads, forwards, own uploads, marks, cleanup deletes, flood retry, Unknown replies and close/cancel fences, with injected Telegram replies.",
-      "expects": {
-        "carry-dispatch:CARRY_DISPATCH_CHECKS": 24254,
-        "sync-chat-carry:CARRY_DISPATCH_CHECKS": 24254
-      }
-    },
-    {
-      "name": "sync-chat-change",
-      "driver": "TMessagesProj/jni/purple_jni/tests/run_sync_chat_change.py",
-      "args": [
-        "--receipt",
-        "{receipt}",
-        "--json",
-        "{json}",
-        "--library",
-        "{library}",
-        "--output",
-        "{output}",
-        "--modern",
-        "{out:modern-sync}",
-        "--carry",
-        "{out:sync-chat-move}",
-        "--store",
-        "{out:sync-chat-move-store}",
-        "--io",
-        "{out:sync-chat-move-io}",
-        "--executor",
-        "{out:sync-chat-move-executor}"
-      ],
-      "coverage": "Captured Change consent, qualification-held production entry, durable provision-only creation and verified Carry commit before new-channel decoration. Consecutive screen Changes on one durable install after ordinary reopen, with exact old-wrapper retention and new request scope.",
-      "expects": {
-        "change:SYNC_CHAT_CHANGE_CHECKS": 1000,
-        "sync-chat-change:SYNC_CHAT_CHANGE_CHECKS": 1000,
-        "change:SYNC_CHAT_CONSECUTIVE_CHANGE_CHECKS": 50,
-        "sync-chat-change:SYNC_CHAT_CONSECUTIVE_CHANGE_CHECKS": 50
-      }
-    },
-    {
-      "name": "sync-chat-move-consent",
-      "driver": "TMessagesProj/jni/purple_jni/tests/run_sync_chat_move_consent.py",
-      "args": [
-        "--receipt",
-        "{receipt}",
-        "--json",
-        "{json}",
-        "--library",
-        "{library}",
-        "--output",
-        "{output}",
-        "--modern",
-        "{out:modern-sync}",
-        "--carry",
-        "{out:sync-chat-move}",
-        "--store",
-        "{out:sync-chat-move-store}",
-        "--io",
-        "{out:sync-chat-move-io}",
-        "--executor",
-        "{out:sync-chat-move-executor}",
-        "--discovery",
-        "{out:sync-chat-discovery}"
-      ],
-      "coverage": "Captured foreground Follow/Fill consent, original reader baseline before delivery, C6 across restart, account-scoped Carry/store/cache completion and local Pause; production constant OFF.",
-      "expects": {
-        "consent:MOVE_CONSENT_CHECKS": 2200,
-        "sync-chat-move-consent:MOVE_CONSENT_CHECKS": 2200,
-        "consent:MOVE_CONSENT_REVIEW_CHECKS": 35,
-        "sync-chat-move-consent:MOVE_CONSENT_REVIEW_CHECKS": 35
-      }
-    },
-    {
-      "name": "sync-chat-marks",
-      "driver": "TMessagesProj/jni/purple_jni/tests/run_sync_chat_marks.py",
-      "args": [
-        "--receipt",
-        "{receipt}",
-        "--json",
-        "{json}",
-        "--library",
-        "{library}",
-        "--output",
-        "{output}",
-        "--modern",
-        "{out:modern-sync}",
-        "--discovery",
-        "{out:sync-chat-discovery}",
-        "--carry",
-        "{out:sync-chat-move}",
-        "--store",
-        "{out:sync-chat-move-store}",
-        "--io",
-        "{out:sync-chat-move-io}",
-        "--executor",
-        "{out:sync-chat-move-executor}",
-        "--consent",
-        "{out:sync-chat-move-consent}"
-      ],
-      "coverage": "Standalone shared-core stale-mark authority, exact immutable identity, account serialization, scoped absence and lifecycle fences. Production constant OFF.",
-      "expects": {
-        "marks:STALE_MARK_CHECKS": 375,
-        "sync-chat-marks:STALE_MARK_CHECKS": 375,
-        "marks:MARK_ACTIVATION_REVIEW_CHECKS": 15,
-        "sync-chat-marks:MARK_ACTIVATION_REVIEW_CHECKS": 15
-      }
-    },
-    {
-      "name": "sync-chat-move-cleanup",
-      "driver": "TMessagesProj/jni/purple_jni/tests/run_sync_chat_move_cleanup.py",
-      "args": [
-        "--receipt",
-        "{receipt}",
-        "--json",
-        "{json}",
-        "--library",
-        "{library}",
-        "--output",
-        "{output}",
-        "--modern",
-        "{out:modern-sync}",
-        "--carry",
-        "{out:sync-chat-move}",
-        "--store",
-        "{out:sync-chat-move-store}",
-        "--io",
-        "{out:sync-chat-move-io}",
-        "--executor",
-        "{out:sync-chat-move-executor}",
-        "--change",
-        "{out:sync-chat-change}"
-      ],
-      "coverage": "Frozen exact settings cleanup, separate old mark authority, durable per-item intents/results, scope and fresh admission, restart/absence, explicit Retry/Skip and ChatGone. Production OFF.",
-      "expects": {
-        "cleanup:CARRY_CLEANUP_CHECKS": 90,
-        "sync-chat-move-cleanup:CARRY_CLEANUP_CHECKS": 90,
-        "cleanup:CLEANUP_REVIEW_CHECKS": 58,
-        "sync-chat-move-cleanup:CLEANUP_REVIEW_CHECKS": 58,
-        "cleanup:CLEANUP_RESUME_CHECKS": 60,
-        "sync-chat-move-cleanup:CLEANUP_RESUME_CHECKS": 60
-      }
-    },
-    {
-      "name": "sync-chat-move-recovery",
-      "driver": "TMessagesProj/jni/purple_jni/tests/run_sync_chat_move_recovery.py",
-      "args": [
-        "--receipt",
-        "{receipt}",
-        "--json",
-        "{json}",
-        "--library",
-        "{library}",
-        "--output",
-        "{output}",
-        "--modern",
-        "{out:modern-sync}",
-        "--carry",
-        "{out:sync-chat-move}",
-        "--store",
-        "{out:sync-chat-move-store}",
-        "--io",
-        "{out:sync-chat-move-io}",
-        "--executor",
-        "{out:sync-chat-move-executor}",
-        "--change",
-        "{out:sync-chat-change}",
-        "--discovery",
-        "{out:sync-chat-discovery}"
-      ],
-      "coverage": "Lost recovery through Create/Choose and core RepairMark; actual service R3 projection, exact retained base, pending stage, readers, login/winner/lifetime, retry and OFF controls. Production OFF.",
-      "expects": {
-        "recovery:MOVE_RECOVERY_CHECKS": 54,
-        "sync-chat-move-recovery:MOVE_RECOVERY_CHECKS": 54
-      }
-    },
-    {
-      "name": "sync-chat-move-races",
-      "driver": "TMessagesProj/jni/purple_jni/tests/run_sync_chat_move_races.py",
-      "args": [
-        "--receipt",
-        "{receipt}",
-        "--json",
-        "{json}",
-        "--library",
-        "{library}",
-        "--output",
-        "{output}",
-        "--modern",
-        "{out:modern-sync}",
-        "--carry",
-        "{out:sync-chat-move}",
-        "--store",
-        "{out:sync-chat-move-store}",
-        "--io",
-        "{out:sync-chat-move-io}",
-        "--executor",
-        "{out:sync-chat-move-executor}"
-      ],
-      "coverage": "Seeded three-install cloud; six phase crash windows, real-file executor restarts, settings conservation through cleanup, distinct request ids, same-chat same-second losing marks with a seed-varied winner, duplicate/reordered callbacks, chained moves with a carried late edit and its lagging-readback hold, and Plan/Cleanup ChatGone controls.",
-      "expects": {
-        "race-271828:CARRY_RACE_WINDOWS": 18,
-        "race-271828:CARRY_RACE_SCENARIOS": 11,
-        "race-271828:CARRY_RACE_SAME_CHAT_LOSERS": 1,
-        "race-271828:CARRY_RACE_CONSERVATION": 31,
-        "race-271828:CARRY_RACE_CHECKS": 2829,
-        "race-314159:CARRY_RACE_WINDOWS": 18,
-        "race-314159:CARRY_RACE_SCENARIOS": 11,
-        "race-314159:CARRY_RACE_SAME_CHAT_LOSERS": 1,
-        "race-314159:CARRY_RACE_CONSERVATION": 31,
-        "race-314159:CARRY_RACE_CHECKS": 2829,
-        "race-424242:CARRY_RACE_WINDOWS": 18,
-        "race-424242:CARRY_RACE_SCENARIOS": 11,
-        "race-424242:CARRY_RACE_SAME_CHAT_LOSERS": 1,
-        "race-424242:CARRY_RACE_CONSERVATION": 31,
-        "race-424242:CARRY_RACE_CHECKS": 2820,
-        "sync-chat-move-races:CARRY_RACE_WINDOWS": 18,
-        "sync-chat-move-races:CARRY_RACE_SCENARIOS": 11,
-        "sync-chat-move-races:CARRY_RACE_SAME_CHAT_LOSERS": 1,
-        "sync-chat-move-races:CARRY_RACE_CONSERVATION": 31,
-        "sync-chat-move-races:CARRY_RACE_CHECKS": 2820,
-        "sync-chat-move-races:CARRY_RACE_DRIVER_SEEDS": 3
-      }
-    },
-    {
-      "name": "sync-chat-wire",
-      "driver": "TMessagesProj/jni/purple_jni/tests/run_sync_chat_wire.py",
-      "args": [
-        "--receipt",
-        "{receipt}",
-        "--json",
-        "{json}",
-        "--library",
-        "{library}",
-        "--output",
-        "{output}",
-        "--modern",
-        "{out:modern-sync}",
-        "--carry",
-        "{out:sync-chat-move}",
-        "--store",
-        "{out:sync-chat-move-store}",
-        "--io",
-        "{out:sync-chat-move-io}",
-        "--executor",
-        "{out:sync-chat-move-executor}",
-        "--change",
-        "{out:sync-chat-change}",
-        "--discovery",
-        "{out:sync-chat-discovery}",
-        "--consent",
-        "{out:sync-chat-move-consent}",
-        "--recovery",
-        "{out:sync-chat-move-recovery}",
-        "--dispatcher",
-        "{out:sync-chat-carry}"
-      ],
-      "coverage": "Real activated facade owner, Change/Follow/Fill/Recovery controllers, startup resume before ordinary sync, cleanup OFF and cancellation through fake carry dispatch. Real initial renewal through the owning Move for accepted Follow/Fill, recovery replacement marks, ordinary forward/own sends and cleanup, with no direct command replies. FinishThenFollow on the screen through the real Change/Move/carry/core with switches injected ON: losing-mark and uncertain-attempt FinishedForFollow state, line and actions, the 30/120/600 checks on Retry, restart and overdue startup resume, and the separately consented Follow.",
-      "expects": {
-        "wire:SYNC_CHAT_WIRE_CHECKS": 50,
-        "sync-chat-wire:SYNC_CHAT_WIRE_CHECKS": 50,
-        "wire:WIRE_RENEWAL_CHECKS": 40,
-        "sync-chat-wire:WIRE_RENEWAL_CHECKS": 40,
-        "wire:WIRE_VIEW_CHECKS": 85,
-        "wire:WIRE_FINISH_CHECKS": 88,
-        "sync-chat-wire:WIRE_VIEW_CHECKS": 85,
-        "sync-chat-wire:WIRE_FINISH_CHECKS": 88
       }
     }
   ]

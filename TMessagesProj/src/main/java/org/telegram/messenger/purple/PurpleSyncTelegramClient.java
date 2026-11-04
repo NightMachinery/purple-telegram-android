@@ -69,7 +69,7 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
     }
 
     private TLRPC.InputPeer input() {
-        return io!=null ? PurpleSyncChatTelegram.platform(io.origin,this::isActive).input(io.chat) : null;
+        return io!=null ? PurpleSyncChatRequests.input(io.origin,io.chat,this::isActive) : null;
     }
 
     @Override public PurpleSyncChatCore.Peer chat() { return io!=null?io.chat:PurpleSyncChatCore.Peer.self(); }

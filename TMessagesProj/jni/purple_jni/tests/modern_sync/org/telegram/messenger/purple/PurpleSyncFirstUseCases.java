@@ -192,13 +192,7 @@ final class PurpleSyncFirstUseCases {
         System.out.println("FIRST_USE_R1R2=PASS");
     }
 
-    /**
-     * P1-1: a state of another space beside leftovers of a finished pre-magic carry. The store opened Ready because
-     * the carry is terminal (PurpleSyncChatMoveStore.completed checks it against state.json's binding). Building a real
-     * finished carry needs the carry suites, so the case plants the leftovers and marks them terminal as that open
-     * does. Setting the state aside must take the leftovers too: left beside a store without a state they read as an
-     * unfinished carry, and every later open, Check and automatic pass refused with CarryPending.
-     */
+    /** First use keeps obsolete carry artifacts beside the state it sets aside. */
     static void carryLeftovers(File parent) throws Exception {
         for (PurpleSyncCore.FirstUseChoice answer : new PurpleSyncCore.FirstUseChoice[] { PurpleSyncCore.FirstUseChoice.Synced, PurpleSyncCore.FirstUseChoice.ThisDevice }) {
             Device old = new Device(parent, "first-use-carry-" + answer, "fixture-device-carry");
@@ -218,13 +212,11 @@ final class PurpleSyncFirstUseCases {
                     File file = new File(old.sync(), name);
                     if (name.endsWith(".json")) write(file, "{}"); else directory(file);
                 }
-                java.lang.reflect.Field terminal = PurpleAccountSyncStore.class.getDeclaredField("terminalCarry");
-                terminal.setAccessible(true); terminal.set(store, true);
                 check(store.setAside().status == PurpleAccountSyncStore.Status.Uninitialized, "carry: the state is set aside with its carry leftovers");
             }
             for (String name : leftovers) check(!new File(old.sync(), name).exists(), "carry: " + name + " left the sync folder");
             check(old.archived() && new File(old.sync(), "chat.json").isFile(), "carry: the old state is archived, the binding stays");
-            check(!PurpleSyncChatMoveStore.artifacts(old.sync()) && !PurpleAccountSyncStore.hasState(old.sync()), "carry: the folder holds no carry and no state");
+            check(!PurpleAccountSyncStore.hasState(old.sync()), "carry: the folder holds no carry and no state");
             try (PurpleAccountSyncStore store = old.env(MAGIC).store()) {
                 check(store.open(true, 1, old.id).status == PurpleAccountSyncStore.Status.Uninitialized, "carry: the store opens without a state, not CarryPending");
             }

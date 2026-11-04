@@ -75,7 +75,7 @@ public final class PurpleSettings {
     }
 
     public static void importFrom(Context context, File source, int messageDate) {
-        importFrom(context, source, messageDate, PurpleSyncOfferRules.NO_ACCOUNT);
+        importFrom(context, source, messageDate, PurpleSettingsImportRules.NO_ACCOUNT);
     }
 
     public static void importFrom(Context context, File source, MessageObject message) {
@@ -94,7 +94,7 @@ public final class PurpleSettings {
     }
     static void importFrom(Context context, File source, int messageDate, int account, boolean activeOnly) {
         importFrom(context, source, messageDate, PurpleAccountFiles.capture(
-                account == PurpleSyncOfferRules.NO_ACCOUNT ? UserConfig.selectedAccount : account), activeOnly);
+                account == PurpleSettingsImportRules.NO_ACCOUNT ? UserConfig.selectedAccount : account), activeOnly);
     }
     public static void importFrom(Context context, File source, int messageDate, PurpleAccountFiles.Identity origin) {
         importFrom(context, source, messageDate, origin, false);
@@ -128,7 +128,7 @@ public final class PurpleSettings {
     }
 
     public static void importFrom(Context context, byte[] bytes, int messageDate) {
-        importFrom(context, bytes, messageDate, PurpleSyncOfferRules.NO_ACCOUNT);
+        importFrom(context, bytes, messageDate, PurpleSettingsImportRules.NO_ACCOUNT);
     }
 
     public static void importFrom(Context context, byte[] bytes, int messageDate, int account) {
@@ -136,7 +136,7 @@ public final class PurpleSettings {
     }
     private static void importFrom(Context context, byte[] bytes, int messageDate, int account, boolean activeOnly) {
         importFrom(context, bytes, messageDate, PurpleAccountFiles.capture(
-                account == PurpleSyncOfferRules.NO_ACCOUNT ? UserConfig.selectedAccount : account), activeOnly);
+                account == PurpleSettingsImportRules.NO_ACCOUNT ? UserConfig.selectedAccount : account), activeOnly);
     }
     public static void importFrom(Context context, byte[] bytes, int messageDate, PurpleAccountFiles.Identity origin) {
         importFrom(context, bytes, messageDate, origin, false);
@@ -190,7 +190,7 @@ public final class PurpleSettings {
         if (user == null) {
             return null;
         }
-        return PurpleSyncOfferRules.accountLabel(
+        return PurpleSettingsImportRules.accountLabel(
                 ContactsController.formatName(user.first_name, user.last_name),
                 UserObject.getPublicUsername(user),
                 LocaleController.getString(R.string.PurpleSyncAccountWithUsername));

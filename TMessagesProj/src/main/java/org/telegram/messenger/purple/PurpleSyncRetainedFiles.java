@@ -41,7 +41,7 @@ final class PurpleSyncRetainedFiles {
         }
     }
     static String hash(byte[] bytes) {
-        return PurpleSyncChatMoveCore.request("hash", PurpleSyncChatCore.json("bytes", PurpleSyncRetainedBases.encode(bytes)).toString().getBytes(StandardCharsets.UTF_8)).fields.optString("hash");
+        return PurpleSyncRecordCore.request("hash", PurpleSyncChatCore.json("bytes", PurpleSyncRetainedBases.encode(bytes)).toString().getBytes(StandardCharsets.UTF_8)).fields.optString("hash");
     }
     static byte[][] combine(byte[][] first, byte[][] second) {
         byte[][] result = Arrays.copyOf(first, first.length + second.length);

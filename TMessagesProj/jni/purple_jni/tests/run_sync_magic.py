@@ -24,7 +24,7 @@ empty = args.output / 'empty-sourcepath'
 classpath = os.pathsep.join([str(base), str(args.json)] + [item['path'] for key in ['classpath', 'bootstrapClasspath'] for item in receipt[key]])
 production = repo / 'TMessagesProj/src/main/java/org/telegram/messenger/purple'
 sources = [production / (name + '.java') for name in ['PurpleSyncMagicCore', 'PurpleSyncChatCore', 'PurpleSyncMagicChat', 'PurpleDiagLogStore', 'PurpleRpcRetry',
-    'PurpleSyncChatFacts', 'PurpleSyncChatTelegram', 'PurpleRpcRequest']]
+    'PurpleSyncChatFacts', 'PurpleRpcRequest']]
 sources += [tests / 'sync_magic' / (name + '.java') for name in CASES]
 args.output.mkdir(parents=True, exist_ok=True)
 if args.phase == 'compile':

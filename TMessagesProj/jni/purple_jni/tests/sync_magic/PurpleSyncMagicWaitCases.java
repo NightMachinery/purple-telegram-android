@@ -106,13 +106,19 @@ public final class PurpleSyncMagicWaitCases {
         restarted.now = fake.now + 7200;
         check(again.waitUntil("messages.getHistory") == 0, "it ends on time");
         // The settings screen no longer searches Saved Messages for a newer file: Purple sends no search requests.
-        for (String path : new String[] { "TMessagesProj/src/main/java/org/telegram/messenger/purple/PurpleSyncOffer.java",
+        for (String path : new String[] { "TMessagesProj/src/main/java/org/telegram/messenger/purple/PurpleSyncChatRequests.java",
                 "TMessagesProj/src/main/java/org/telegram/ui/PurpleSettingsActivity.java" }) {
             String text;
             try { text = new String(java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(path)), java.nio.charset.StandardCharsets.UTF_8); }
             catch (java.io.IOException error) { throw new AssertionError("readable: " + path); }
             check(!text.contains("messages_search") && !text.contains("PurpleCheckSaved"), "no Saved Messages search: " + path);
         }
+        try (java.util.stream.Stream<java.nio.file.Path> files=java.nio.file.Files.list(java.nio.file.Paths.get("TMessagesProj/src/main/java/org/telegram/messenger/purple"))) {
+            for(java.nio.file.Path file:(Iterable<java.nio.file.Path>)files.filter(path->path.getFileName().toString().startsWith("PurpleSync")&&path.toString().endsWith(".java"))::iterator) {
+                String source=new String(java.nio.file.Files.readAllBytes(file),java.nio.charset.StandardCharsets.UTF_8);
+                check(!source.contains("TL_messages_search")&&!source.contains("TL_messages_searchGlobal"),"sync source has no search factory: "+file.getFileName());
+            }
+        } catch(java.io.IOException error) { throw new AssertionError(error); }
         System.out.println("SYNC_MAGIC_WAIT_CHECKS=" + checks);
     }
 }
