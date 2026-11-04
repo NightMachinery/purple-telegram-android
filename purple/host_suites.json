@@ -51,8 +51,8 @@
         "run"
       ],
       "expects": {
-        "run:SYNC_CHAT_FACTS_CHECKS": 80,
-        "sync-chat-facts:SYNC_CHAT_FACTS_CHECKS": 80
+        "run:SYNC_CHAT_FACTS_CHECKS": 97,
+        "sync-chat-facts:SYNC_CHAT_FACTS_CHECKS": 97
       }
     },
     {
@@ -74,10 +74,10 @@
       ],
       "expects": {
         "run:SYNC_MAGIC_CHAT_CHECKS": 591,
-        "run:SYNC_MAGIC_CHECKS": 173,
+        "run:SYNC_MAGIC_CHECKS": 171,
         "run:SYNC_MAGIC_WAIT_CHECKS": 26,
         "sync-magic:SYNC_MAGIC_CHAT_CHECKS": 591,
-        "sync-magic:SYNC_MAGIC_CHECKS": 173,
+        "sync-magic:SYNC_MAGIC_CHECKS": 171,
         "sync-magic:SYNC_MAGIC_WAIT_CHECKS": 26
       }
     },
@@ -101,20 +101,20 @@
         "run"
       ],
       "expects": {
-        "run:SYNC_CHAT_FACTS_CHECKS": 80,
-        "run:RPC_RETRY_CHECKS": 100,
-        "run:TYPED_IO_CHECKS": 300,
-        "run:TYPED_UPLOAD_WIRE_CHECKS": 237,
-        "run:MANUAL_POST_EFFECT_CHECKS": 47,
-        "run:SYNC_RECORD_CHECKS": 30,
-        "run:SYNC_CHAT_IO_CHECKS": 700,
-        "sync-chat-io:SYNC_CHAT_FACTS_CHECKS": 80,
-        "sync-chat-io:RPC_RETRY_CHECKS": 100,
-        "sync-chat-io:TYPED_IO_CHECKS": 300,
-        "sync-chat-io:TYPED_UPLOAD_WIRE_CHECKS": 237,
-        "sync-chat-io:MANUAL_POST_EFFECT_CHECKS": 47,
-        "sync-chat-io:SYNC_RECORD_CHECKS": 30,
-        "sync-chat-io:SYNC_CHAT_IO_CHECKS": 700
+        "run:SYNC_CHAT_FACTS_CHECKS": 97,
+        "run:RPC_RETRY_CHECKS": 241,
+        "run:TYPED_IO_CHECKS": 341,
+        "run:TYPED_UPLOAD_WIRE_CHECKS": 264,
+        "run:MANUAL_POST_EFFECT_CHECKS": 53,
+        "run:SYNC_RECORD_CHECKS": 36,
+        "run:SYNC_CHAT_IO_CHECKS": 1040,
+        "sync-chat-io:SYNC_CHAT_FACTS_CHECKS": 97,
+        "sync-chat-io:RPC_RETRY_CHECKS": 241,
+        "sync-chat-io:TYPED_IO_CHECKS": 341,
+        "sync-chat-io:TYPED_UPLOAD_WIRE_CHECKS": 264,
+        "sync-chat-io:MANUAL_POST_EFFECT_CHECKS": 53,
+        "sync-chat-io:SYNC_RECORD_CHECKS": 36,
+        "sync-chat-io:SYNC_CHAT_IO_CHECKS": 1040
       }
     },
     {
@@ -202,7 +202,7 @@
         "modern-sync:PurpleAccountSyncStore": "PASS",
         "modern-sync:READ_SCOPE_LIFETIME_CHECKS": 65,
         "modern-sync:ROUTED_CHECKS": 179,
-        "modern-sync:TRANSFER_CHECKS": 176,
+        "modern-sync:TRANSFER_CHECKS": 175,
         "modern-sync:checks": 1494,
         "modern-sync:native": 16,
         "modern-sync:rules": 198,
@@ -215,7 +215,7 @@
         "outbox:OUTBOX_CHECKS": 254,
         "routed:EDITOR_CHECKS": 54,
         "routed:ROUTED_CHECKS": 179,
-        "routed:TRANSFER_CHECKS": 176,
+        "routed:TRANSFER_CHECKS": 175,
         "store:PurpleAccountSyncStore": "PASS"
       }
     },

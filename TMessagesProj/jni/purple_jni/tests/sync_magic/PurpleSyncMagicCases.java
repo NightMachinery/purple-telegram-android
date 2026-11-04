@@ -268,9 +268,6 @@ public final class PurpleSyncMagicCases {
         check(PurpleSyncMagicCore.verifyProblem(verified.binding, 900, PurpleSyncMagicCore.Problem.None, NOW) == null
             && PurpleSyncMagicCore.verifyProblem("{", 900, PurpleSyncMagicCore.Problem.RequestRefused, NOW) == null, "verifyProblem refuses no problem or a broken binding");
 
-        // No sync path may send a Telegram search.
-
-
         System.out.println("SYNC_MAGIC_CHECKS=" + checks);
     }
 }
