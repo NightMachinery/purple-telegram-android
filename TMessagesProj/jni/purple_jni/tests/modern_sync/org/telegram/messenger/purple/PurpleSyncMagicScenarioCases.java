@@ -423,6 +423,15 @@ final class PurpleSyncMagicScenarioCases {
      * cannot heal does that; any other retries with backoff.
      */
     static void automaticFailure(File parent) throws Exception {
+        android.content.SharedPreferences preferences = org.telegram.messenger.MessagesController.getMainSettings(1);
+        String key = "fixture-permanent-failure", shown = "purple_sync_auto_failure_shown_" + key;
+        PurpleSyncAuto.recordFailure(preferences, key, "native_unavailable");
+        check(!preferences.getBoolean(shown, true), "failure: the first problem is not shown yet");
+        preferences.edit().putBoolean(shown, true).commit();
+        PurpleSyncAuto.recordFailure(preferences, key, "native_unavailable");
+        check(preferences.getBoolean(shown, false), "failure: the same unresolved problem stays shown");
+        PurpleSyncAuto.recordFailure(preferences, key, "automatic_chat_mismatch");
+        check(!preferences.getBoolean(shown, true), "failure: a different problem may be shown");
         PurpleSyncMagicDevices.Device device = new PurpleSyncMagicDevices.Device(parent, "magic-automatic-failure", "fixture-device-fail");
         device.local(PurpleSyncMagicDevices.MINE); device.bind();
         PurpleSyncMagicDevices.Group group = new PurpleSyncMagicDevices.Group();

@@ -179,9 +179,7 @@ public final class PurpleSyncAuto {
         @Override public void failed(Throwable error) {
             String code = PurpleSyncAutoEngine.failureCode(error);
             PurpleDiagLog.event("sync", "auto_failed", PurpleDiagLogStore.slot(account.account), PurpleDiagLogStore.reason(code));
-            if (opening.current())
-                MessagesController.getMainSettings(account.account).edit().putString(failureKey(opening.key), code)
-                        .putBoolean(failureShownKey(opening.key), false).commit();
+            if (opening.current()) recordFailure(MessagesController.getMainSettings(account.account), opening.key, code);
             AndroidUtilities.runOnUIThread(this::render);
         }
         @Override public void retrying(String code, long notBefore) {
@@ -445,6 +443,11 @@ public final class PurpleSyncAuto {
     }
     private static String failureKey(String key) {
         return "purple_sync_auto_failure_" + key;
+    }
+    static void recordFailure(android.content.SharedPreferences preferences, String key, String code) {
+        boolean shown = code.equals(preferences.getString(failureKey(key), null))
+                && preferences.getBoolean(failureShownKey(key), false);
+        preferences.edit().putString(failureKey(key), code).putBoolean(failureShownKey(key), shown).commit();
     }
     private static String failureShownKey(String key) {
         return "purple_sync_auto_failure_shown_" + key;

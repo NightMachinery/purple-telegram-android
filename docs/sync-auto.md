@@ -126,3 +126,5 @@ source roster is checked against purple.cmake and all core translation units.
 Real JavaCompile, host/arm64 JNI and exports are separate checks. Host ports do
 not qualify widgets, Looper, actual Android filesystem/network behavior, devices,
 APK packaging or shrinking.
+
+Recording the same unresolved permanent failure keeps its already-shown flag. A different failure can show once; an explicit Check or enable keeps its existing reset behavior.
