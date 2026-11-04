@@ -267,7 +267,7 @@ public final class PurpleSyncFirstUse {
             PurpleSyncRunner.Listener<PurpleSyncPublisher.Result> sent = published -> finish(
                     published != null && published.status == PurpleSyncCore.PublishStatus.Confirmed ? Result.Published : Result.Joined,
                     code(action), result, published);
-            if (successor) {
+            if (successor && ticket == null) {
                 // This device's file as the successor of the chat's head, against a fresh check.
                 if (result.fingerprint == null || result.fingerprint.isEmpty()) { finish(Result.Joined, code(action), result, null); return; }
                 PurpleSyncCore.PostRequest request = PurpleSyncCore.PostRequest.newContent(result.fingerprint, plan.expectedParents);

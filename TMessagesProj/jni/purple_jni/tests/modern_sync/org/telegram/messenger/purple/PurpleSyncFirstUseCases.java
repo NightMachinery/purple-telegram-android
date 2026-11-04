@@ -271,6 +271,18 @@ final class PurpleSyncFirstUseCases {
         check(pb.post != null && rb.publish(pb.post, v -> sb[0] = v) == PurpleSyncRunner.Start.Started && sb[0] != null, "split: B publishes R3 against R1");
         rb.close();
         check(chat.heads().size() == 2 && chat.spaces().size() == 1, "split: two disagreeing current heads: " + chat.heads().size() + " (B " + sb[0].status + ")");
+        Device exact = new Device(parent, "first-use-split-exact", "fixture-device-split-exact");
+        exact.local(THEIRS); exact.bind();
+        Group exactChat = new Group();
+        for (byte[] record : chat.messages.values()) exactChat.add(record);
+        check(firstUse(exact, exactChat, PurpleSyncCore.FirstUseChoice.None, "split exact ask").result == PurpleSyncFirstUse.Result.Ask,
+                "split exact: matching one conflicting head still asks");
+        PurpleSyncFirstUse.Outcome exactSent = firstUse(exact, exactChat, PurpleSyncCore.FirstUseChoice.ThisDevice, "split exact this device");
+        check(exactSent.result == PurpleSyncFirstUse.Result.Published && exactSent.applied != null && exactSent.applied.publishNeeded
+                && !exactSent.applied.wroteFile && Arrays.equals(THEIRS, exact.local()),
+                "split exact: local choice adopts and publishes without replacing the file: " + exactSent.result + " " + exactSent.reason);
+        check(exactChat.heads().size() == 1 && Arrays.equals(THEIRS, exactChat.heads().get(0)), "split exact: one successor supersedes both heads");
+        settled(exact, exactChat, "split exact settled");
         // M is asked under the split and its answer is kept for those heads (as after a failed step).
         PurpleSyncFirstUse.Outcome mAsked = firstUse(m, chat, PurpleSyncCore.FirstUseChoice.None, "split M ask");
         check(mAsked.result == PurpleSyncFirstUse.Result.Ask, "split: M is asked: " + mAsked.result);
