@@ -26,7 +26,8 @@ public class PaymentStoreCases {
   void tick(){List<Runnable> run=new ArrayList<>(later);later.clear();for(Runnable r:run)r.run();}
  }
  public static void main(String[] args)throws Exception{
-  File source=new File(args[0]),root=new File(args[1]);root.mkdirs();byte[] bytes=Files.readAllBytes(source.toPath());
+  int offset=args.length==3&&args[0].equals("payment-store")?1:0;
+  File source=new File(args[offset]),root=new File(args[offset+1]);root.mkdirs();byte[] bytes=Files.readAllBytes(source.toPath());
   check(PurpleRecordingFiles.mp4Finished(source)==1,"fixture finished");
   PurpleRecordingManifest manifest=new PurpleRecordingManifest(new File(root,"legacy"));
   PurpleRecordingStore store=new PurpleRecordingStore(manifest,CORE,400);
