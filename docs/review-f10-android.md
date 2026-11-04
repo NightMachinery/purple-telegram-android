@@ -329,3 +329,76 @@ thread by having the cancel path wait for the worker, or snapshot only V2 cancel
 monitor.
 
 RECHECK F10 android: CHANGES P1=2 P2=4
+
+## Re-check 2
+
+Head `c9e99faa15484d289de05ab3ba99fd2bc94d41b2`. Only the items left open by Re-check 1 were checked, plus defects
+these fixes introduce. Nothing was built or run.
+
+Verdict: **CHANGES**. Open: P1 = 1, P2 = 2.
+
+### The open items
+
+- **P2-1, fixed. The host sequences now match upstream.** Legacy voice pauses through `toggleRecordingPause`. That
+  path posts no `recordStopped`: it calls `joinRecord`, then posts `recordPaused` and `audioDidSent` with the draft.
+  It resumes with a `recordResumed` that names no chat (`MediaController.java:5185`). `recordStarted` comes only from
+  `startRecording` (`:5326`) and V2's `onRecordingStarted` (`:4584`). The host case now scripts exactly
+  `didSent(draft, joined)` followed by `resumed(0)`, and the Javadoc says the same. On a legacy resume, the joined
+  file becomes a `segment` entry and the new segment gets its own entry. A crash keeps the segment entry even though
+  its file is a finished stream. The next pause's `didSent` finishes the earlier parts, because the join absorbed
+  them, and the send settles everything.
+- **P1-2, fixed for the reported path.** `resumed()` continues only the account's last paused session
+  (`lastPaused`), and every `recordStarted` clears that marker. `discover` never takes a file that another session
+  holds. N5 below is a remaining gap.
+- **N1, fixed.** A session of the other kind in the same chat is always superseded. Voice never resumes through
+  `recordStarted`.
+- **N2, fixed by giving up the inference.** `checkPaused` is gone, and `supersede` simply ends the session, so sent
+  recordings no longer come back as "Discarded". The cost is N6 below.
+- **N3, fixed.** The identity check runs only for "Send to the original chat" (`original` is true there and false
+  for "Send to another chat").
+- **N4, fixed as reported, but the fix creates N7.** The cancel copy now runs on a copier thread, unsynced, without
+  the sessions' lock. A copy is used only if its length equals the file's length at the cancel, and an emptied file
+  is no longer kept as an empty item.
+
+### New and remaining defects
+
+**N7 (P1). A cancelled V2 round, especially one discarded from preview, is likely lost again: the copier races
+upstream's erase and usually loses.**
+1. `InstantCameraView2.cancel` posts `recordStopped(0)`, and the observer only queues the copy. Then
+   `session.cancel()` runs.
+2. In `PREVIEWING` there is no camera to stop, so `finishCancellation` and then `deleteMediaFiles` run at once on
+   the idle file executor. It calls `closeForReplacement`, whose `finishMovie` appends `moov`, so the length changes.
+   Then it calls `RoundVideoRemuxer.erase`: `setLength(0)`, then delete. Writing a few KB and truncating takes
+   milliseconds.
+3. The copier meanwhile has to transfer several MB. Its copy either comes out short or does not match `expected`,
+   so `snapshotDone` drops it.
+4. `discard` then falls back to the held descriptor, which now reads 0 bytes, and the "not kept as an empty item"
+   rule silently drops the recording.
+
+Even during recording, the encoder's final drain or the appended `moov` can change the length before the copy ends.
+So P1-4 is back whenever the erase wins, and the common case, review in preview and then discard, is the one it
+most likely loses. Fix:
+- At the stop, on the UI thread, *rename* the V2 file into `bin/`. It is the same internal file system, so the
+  rename is atomic and instant.
+- Upstream's open descriptor keeps writing the moved inode, so its `moov` lands in the bin copy. `erase(file)` then
+  creates and truncates a fresh empty file at the old path and deletes it.
+- Only a V2 round cancel (reason 0 or 6) does this, so no send path is affected.
+
+**N5 (P2). A draft resumed in another chat still goes to a stale session.** Trace:
+1. Chat X: pause, then send from preview. No event follows, so `lastPaused[account]` stays X.
+2. Open chat Y, which has a saved voice draft. Upstream restores it with `audioDidSent(draftY)` (legacy
+   `prepareResumedRecording`, V2 `showAudioRecorderV2Draft`), but no session has Y's key, so `didSent` ignores it.
+3. Resume. `recordResumed` reaches X's session, which begins a new part with X's target, and `discover` attaches
+   Y's new file to it.
+4. After a crash, Y's recording is recovered under chat X.
+
+Fix: on `audioDidSent` with a draft for a key that has no session, clear `lastPaused[account]`. Better, start a
+session for that key, because the draft is a live recording.
+
+**N6 (P2). A voice discard from preview no longer reaches the bin.** The class Javadoc and README now say so. The
+owner's answer 1 says discarded recordings go to the bin with `keep_discarded_p` on by default, and discarding a
+locked recording from preview is a common path. Either get the owner to accept this limit explicitly, or detect
+that discard positively instead of inferring it from a missing file. One way is to observe the draft being cleared
+(`pushDraftVoiceMessage(..., null)`) together with the file being deleted.
+
+RECHECK2 F10 android: CHANGES P1=1 P2=2
