@@ -370,6 +370,14 @@ public final class RecordingCases {
         int aside = 0;
         for (String name : dir.list()) if (name.startsWith("recordings.json.unread-")) aside++;
         check(aside >= 2, "set-aside manifests are kept");
+        for (int i = 0; i < 32; i++) {
+            Files.write(new File(dir, "recordings.json").toPath(), ("{broken-" + i).getBytes(StandardCharsets.UTF_8));
+            check(manifest.load(NOW).isEmpty(), "rapid corrupt manifest is rejected");
+        }
+        int rapidAside = 0;
+        for (String name : dir.list()) if (name.startsWith("recordings.json.unread-")) rapidAside++;
+        check(rapidAside == aside + 32, "rapid failures never overwrite an earlier set-aside manifest");
+
 
         // The expiry rule is the core's.
         check(PurpleRecordingCore.binItemExpired(NOW, NOW + 48 * hour, 48 * hour), "48 h after binning, 48 h expires");

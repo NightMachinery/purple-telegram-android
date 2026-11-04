@@ -43,6 +43,7 @@ public final class PurpleRecordingManifest {
     public final File dir;
     public final File bin;
     final File file;
+    private boolean unreadable;
 
     public PurpleRecordingManifest(File dir) {
         this.dir = dir;
@@ -58,7 +59,7 @@ public final class PurpleRecordingManifest {
      */
     public List<PurpleRecordingEntry> load(long nowSeconds) {
         final List<PurpleRecordingEntry> entries = new ArrayList<>();
-        if (!file.isFile()) return entries;
+        if (!file.isFile()) { unreadable = false; return entries; }
         try {
             final JSONObject root = new JSONObject(new String(read(file), StandardCharsets.UTF_8));
             if (root.optInt("format", 0) != FORMAT) {
@@ -79,6 +80,7 @@ public final class PurpleRecordingManifest {
 
     /** Replaces the manifest with {@code entries}, atomically. */
     public void save(List<PurpleRecordingEntry> entries) throws IOException {
+        if (unreadable) throw new IOException("unreadable manifest has not been set aside");
         if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException("no recordings directory");
         final JSONArray list = new JSONArray();
         try {
@@ -99,8 +101,14 @@ public final class PurpleRecordingManifest {
     }
 
     private void setAside() {
-        final File aside = new File(dir, NAME + ".unread-" + System.currentTimeMillis());
-        if (!file.renameTo(aside)) file.delete();
+        unreadable = true;
+        try {
+            final File aside = File.createTempFile(NAME + ".unread-", "", dir);
+            if (file.renameTo(aside)) unreadable = false;
+            else aside.delete();
+        } catch (IOException e) {
+            unreadable = true;
+        }
     }
 
     /** Writes {@code bytes} to {@code target} through a synced temporary file and a rename. */

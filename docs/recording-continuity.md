@@ -91,3 +91,7 @@ Device checks, in risk order:
    expand, 60-second cap and background. Check the video timestamps and F10 files.
 7. Repeat stale notification taps after send/discard/new recording and after a
    process restart. Check that the new recording is unaffected.
+
+Unreadable F10 manifests use exclusively created set-aside names. Rapid failures
+cannot overwrite an earlier damaged manifest, and a failed set-aside prevents
+later saves from replacing that evidence.
