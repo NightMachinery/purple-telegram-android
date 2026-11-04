@@ -34,7 +34,7 @@ public class PaymentCancelCases {
   check(PurpleRecordingRegistry.bin.size()==bins+1);check(c.cleanup==0);
   final SendMessageChatArguments old=SendMessagesHelper.last.sendMessageChatArguments;
   SendMessageChatArguments retry=new SendMessageChatArguments();String id="item"+PurpleRecordingRegistry.retained;
-  PurpleRecordingDelivery.send(id,1,100,retry,()->{
+  PurpleRecordingDelivery.send(id,1,9,100,retry,()->{
    SendMessagesHelper.SendMessageParams params=new SendMessagesHelper.SendMessageParams();params.peer=100;params.sendMessageChatArguments=retry;
    org.telegram.tgnet.TLRPC.Message msg=new org.telegram.tgnet.TLRPC.Message();msg.id=-33;
    PurpleRecordingDelivery.queued(1,params,msg);

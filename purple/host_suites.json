@@ -966,7 +966,8 @@
         "recovery:ROUND_RECOVERY_CHECKS": 380,
         "settings:RECORDING_SETTINGS_CHECKS": 140,
         "events:RECORDING_EVENT_CHECKS": 40,
-        "payment-store:PAYMENT_STORE_CHECKS": 22
+        "payment-store:PAYMENT_STORE_CHECKS": 22,
+        "boundary-store:BOUNDARY_STORE_CHECKS": 25
       }
     },
     {
@@ -1365,9 +1366,11 @@
         "recording-dock:ROUND_DESTROY_CHECKS": 6,
         "recording-dock:ROUND_PAID_CHECKS": 10,
         "recording-dock:VOICE_PREVIEW_CHECKS": 16,
-        "recording-dock:RECORDING_INTEGRATION_PINS": 14,
+        "recording-dock:RECORDING_INTEGRATION_PINS": 17,
         "recording-dock:PAYMENT_CANCEL_CHECKS": 62,
-        "recording-dock:PAYMENT_CAPTUREGEN_CHECKS": 7
+        "recording-dock:PAYMENT_CAPTUREGEN_CHECKS": 7,
+        "recording-dock:COMPLETION_BOUNDARY_CHECKS": 96,
+        "recording-dock:RETRY_IDENTITY_CHECKS": 46
       }
     }
   ]

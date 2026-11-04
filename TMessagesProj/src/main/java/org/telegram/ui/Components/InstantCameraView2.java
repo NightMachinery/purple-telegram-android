@@ -776,7 +776,7 @@ public final class InstantCameraView2 extends InstantCameraViewBase {
             upload = null;
             MediaController.getInstance().requestRecordAudioFocus(false);
             if (startedNotificationSent) {
-                postRecordStopped(6);
+                postRecordStopped(org.telegram.messenger.purple.PurpleRecordingDock.roundErrorReason(currentAccount, recordingGuid));
             } else {
                 NotificationCenter.getInstance(currentAccount).postNotificationName(
                     NotificationCenter.recordStartError,

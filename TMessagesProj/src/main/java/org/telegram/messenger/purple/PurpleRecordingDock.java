@@ -300,6 +300,10 @@ public final class PurpleRecordingDock {
         return true;
     }
 
+    public static int roundErrorReason(int account, int guid) {
+        return roundFinalizing(account, guid) ? 7 : 6;
+    }
+
     public static boolean roundFinalizing(int account, int guid) {
         return state.round && state.matches(account, guid) && roundFinalization;
     }

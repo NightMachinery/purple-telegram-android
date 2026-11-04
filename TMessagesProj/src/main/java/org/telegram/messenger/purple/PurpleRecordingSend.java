@@ -39,12 +39,15 @@ public final class PurpleRecordingSend {
      */
     public static void send(PurpleRecordingEntry item, int account, long dialogId, long topicId, int replyId,
             boolean original, Done done) {
+        final long user = original ? item.userId : UserConfig.getInstance(account).getClientUserId();
+        if (!PurpleRecordingSendAs.sameUser(account, user)) { done.done(false); return; }
         PurpleRecordingRegistry.onWorker(() -> {
             boolean ok = false;
             try {
                 final UserConfig config = UserConfig.getInstance(account);
                 // From the bin's own chat, only the account that recorded it sends (review P2-4).
-                if (original && !item.sameAccount(config.isClientActivated(), config.getClientUserId())) {
+                if (!PurpleRecordingSendAs.sameUser(account, user)
+                        || original && !item.sameAccount(config.isClientActivated(), user)) {
                     throw new IOException("another account");
                 }
                 final File source = new File(item.media);
@@ -58,7 +61,7 @@ public final class PurpleRecordingSend {
                 if (topicId != 0 && top == null) throw new IOException("topic not cached");
                 final MessageObject topObject = top == null ? null : new MessageObject(account, top, false, false);
                 if (item.round() && item.awaitingQueue) {
-                    sendPendingRound(item, source, account, dialogId, replyObject, topObject, done);
+                    sendPendingRound(item, source, account, user, dialogId, replyObject, topObject, done);
                     return;
                 }
                 if (item.round()) {
@@ -108,8 +111,9 @@ public final class PurpleRecordingSend {
         return true;
     }
 
-    private static void sendPendingRound(PurpleRecordingEntry item, File source, int account, long dialogId,
+    private static void sendPendingRound(PurpleRecordingEntry item, File source, int account, long user, long dialogId,
             MessageObject reply, MessageObject top, Done done) throws IOException {
+        if (!PurpleRecordingSendAs.sameUser(account, user)) throw new IOException("another account");
         final File target = new File(FileLoader.getDirectory(FileLoader.MEDIA_DIR_DOCUMENT),
                 System.currentTimeMillis() + "_" + SharedConfig.getLastLocalId() + ".mp4");
         SharedConfig.saveConfig();
@@ -120,11 +124,14 @@ public final class PurpleRecordingSend {
         info.framerate = 25; info.resultWidth = info.originalWidth = 360;
         info.resultHeight = info.originalHeight = 360; info.originalPath = target.getAbsolutePath();
         AndroidUtilities.runOnUIThread(() -> {
-            final org.telegram.messenger.SendMessageChatArguments arguments = PurpleRecordingSendAs.freeze(account, dialogId, null);
+            if (!PurpleRecordingSendAs.sameUser(account, user)) { done.done(false); return; }
+            final org.telegram.messenger.SendMessageChatArguments arguments = PurpleRecordingSendAs.freeze(account, user, dialogId, null);
+            if (arguments == null) { done.done(false); return; }
             final java.util.concurrent.atomic.AtomicBoolean approved = new java.util.concurrent.atomic.AtomicBoolean();
             org.telegram.ui.Components.AlertsCreator.ensurePaidMessageConfirmation(account, dialogId, 1, paid -> {
                 if (!approved.compareAndSet(false, true)) return;
-                PurpleRecordingDelivery.send(item.id, account, dialogId, arguments,
+                if (!PurpleRecordingSendAs.sameUser(account, user)) { done.done(false); return; }
+                PurpleRecordingDelivery.send(item.id, account, user, dialogId, arguments,
                         () -> SendMessagesHelper.prepareSendingVideo(AccountInstance.getInstance(account), target.getAbsolutePath(), info,
                                 null, null, dialogId, reply, top, null, null, null, item.once ? 0x7fffffff : 0,
                                 null, true, 0, 0, false, false, null, arguments, 0, paid),

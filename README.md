@@ -152,6 +152,12 @@ in-chat round bubble fallback (F6), F9 and F10. See
 strip controls, recipient replacement and device qualification. Cross-chat round
 capture remains unshipped.
 
+Round Send waits for the encoder's ready boundary before completed-bin handoff.
+A timed-out or failed finalization preserves a recovered or raw Recording bin
+item. Bin retries keep the account identity selected at action start through
+all delayed send steps; replacing that account slot leaves the recovery item
+owned.
+
 **Seek back and forward (F9).** The audio player strip at the top of a screen
 (`FragmentContextView`, where a playing voice, round or music message shows)
 gains two buttons left of the speed button, "−10" and "+10", that jump the

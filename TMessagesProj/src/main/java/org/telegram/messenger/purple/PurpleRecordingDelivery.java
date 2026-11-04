@@ -22,14 +22,14 @@ public final class PurpleRecordingDelivery {
     }
     private PurpleRecordingDelivery() { }
 
-    public static synchronized void send(String id, int account, long dialog, SendMessageChatArguments arguments,
+    public static synchronized void send(String id, int account, long user, long dialog, SendMessageChatArguments arguments,
             Runnable prepare, Runnable queued) {
-        if (id == null || arguments == null) return;
+        if (id == null || arguments == null || !PurpleRecordingSendAs.sameUser(account, user)) return;
         final Ticket previous = current.get(id);
         if (previous != null && previous.bound) return;
         final Ticket ticket = new Ticket();
         ticket.id = id; ticket.account = account; ticket.dialog = dialog;
-        ticket.user = UserConfig.getInstance(account).getClientUserId();
+        ticket.user = user;
         final Request request = new Request(); request.ticket = ticket; request.queued = queued;
         current.put(id, ticket); requests.put(arguments, request);
         PurpleRecordingRegistry.pendingRound(id, present -> {
@@ -42,7 +42,7 @@ public final class PurpleRecordingDelivery {
         if (request == null) return true;
         final Ticket ticket = request.ticket;
         return current.get(ticket.id) == ticket && !ticket.bound && !ticket.acknowledged
-                && ticket.user == UserConfig.getInstance(ticket.account).getClientUserId();
+                && PurpleRecordingSendAs.sameUser(ticket.account, ticket.user);
     }
 
     public static synchronized void revoke(String id) { current.remove(id); }
@@ -60,9 +60,11 @@ public final class PurpleRecordingDelivery {
         storage.getStorageQueue().postRunnable(() -> {
             boolean stored = false;
             try {
-                final SQLiteCursor cursor = storage.getDatabase().queryFinalized(
-                        "SELECT mid FROM " + table + " WHERE mid = ? AND uid = ?", localId, ticket.dialog);
-                try { stored = cursor.next(); } finally { cursor.dispose(); }
+                if (PurpleRecordingSendAs.sameUser(account, ticket.user)) {
+                    final SQLiteCursor cursor = storage.getDatabase().queryFinalized(
+                            "SELECT mid FROM " + table + " WHERE mid = ? AND uid = ?", localId, ticket.dialog);
+                    try { stored = cursor.next(); } finally { cursor.dispose(); }
+                }
             } catch (Exception failure) {
                 PurpleDiagLog.event("recordings", "queue_ack", PurpleDiagLog.reason("io_failed"));
             }
@@ -71,7 +73,7 @@ public final class PurpleRecordingDelivery {
                 synchronized (PurpleRecordingDelivery.class) {
                     if (current.get(ticket.id) != ticket || ticket.acknowledged) return;
                     ticket.bound = false;
-                    if (!present || ticket.user != UserConfig.getInstance(account).getClientUserId()) return;
+                    if (!present || !PurpleRecordingSendAs.sameUser(account, ticket.user)) return;
                     ticket.acknowledged = true;
                     current.remove(ticket.id);
                 }

@@ -148,7 +148,7 @@ arguments. Neither route copies the current compose reply into the recording.
 
 Every accepted round send transfers its immutable target before encoder finish.
 Both camera implementations reserve finalization through the dock and defer
-cancel or destroy until the completion has been queued to upstream. Chat
+cancel or destroy until the completion has durable recovery ownership. Chat
 fragment destruction releases its UI ownership but retains that send target in
 the camera delegate. Duplicate completions are consumed once. Genuine recording
 errors still clear the reservation through native error notifications.
@@ -156,7 +156,7 @@ errors still clear the reservation through native error notifications.
 The native ChatActivity bridge closes the round backdrop for every consumed
 send. Stock captures keep native after-send compose cleanup; a capture that
 released compose while small preserves later text and reply changes. The camera
-is released after queueing even when its fragment has been destroyed.
+is released after durable bin retention even when its fragment has been destroyed.
 
 Alternate-target requests from a paused notification foreground the activity
 and defer the picker to its resumed lifecycle callback, checking generation
@@ -171,7 +171,7 @@ These fixtures do not qualify encoder timing, UI animation or microphone
 continuity on a device. Cross-chat round capture remains unshipped.
 
 Paid confirmation closes the completed round backdrop immediately but defers
-stock compose cleanup until approval actually queues the media. Canceling that
+stock compose cleanup until the approved media has an outgoing storage acknowledgment. Canceling that
 confirmation keeps the compose reply unchanged. Approval after fragment
 destruction still queues the frozen target and releases its camera resources.
 The deferred-approval host case covers both live and destroyed fragments.
@@ -226,3 +226,52 @@ unguarded helper and checks both controls after the ownership guard.
 Cleanup also checks the global dock generation after the completed round
 releases its slot. A new voice capture, including one outside the old round
 helper's local lifecycle, therefore fences the old acknowledgment as well.
+
+## Encoder readiness and retry authorization
+
+The legacy recorder can call `sendMedia` with `notReadyYet` before draining its
+encoders or writing `moov`. It later clears the same info object's flag on the
+UI thread after the muxer and final-path replacement finish, without promising
+a second delegate callback. Purple keeps one pending completion and its frozen
+target across that interval. It does not latch the completed path, touch the
+bin or prepare a send while the native flag is pending. Duplicate callbacks
+can update the pending info without starting another handoff. V2's completed
+result enters the same path with its native output already finished.
+
+Readiness and transient unfinished-file retention get at most 120 delayed
+checks, 250 ms apart. Exhaustion takes an error path: copy a snapshot and its
+journal into the bin and attempt recovery there, keeping an unrecoverable raw
+item when repair fails. It never sends an unfinished file. This bounds checks,
+not storage-call wall time. A successful completed handoff still copies every
+final byte before payment. Snapshot retention does not erase the original;
+only after it succeeds can the native camera be released. If persistence itself
+fails, the original awaiting-queue manifest remains owned for restart recovery.
+That disk-failure path cannot promise an actionable copy or immediate release.
+
+An accepted V2 encoder error uses an internal stop reason to distinguish it
+from user Discard. It follows F10's synchronous rename-before-erase protection,
+then preserves a recovered or raw bin item even when keep-discarded is off.
+Ordinary cancel retains its previous setting-controlled behavior. The native
+edit is the single error-reason call in `InstantCameraView2.onError`; readiness
+continues to use legacy's existing flag and finished V2 result. Fragment
+destruction preserves the pending completion; an explicit native error
+abandons its UI callback only after the registry has reserved recovery work.
+
+A bin retry binds the expected account user at the start of the user action.
+Original-chat retry uses the entry's recorded user; an explicit alternate
+retry uses the identity selected when that action begins. This exact value
+crosses worker dispatch, file copy, UI handoff, sender snapshot, payment,
+preparation and delivery ticket. Each deferred authorization validates that the
+slot is active and still holds that user. Native preparation and storage
+acknowledgment validate the same value, never a newly sampled replacement.
+A rejected attempt leaves the bin file and manifest intact. A failed storage
+acknowledgment releases its ticket binding so an authorized retry is possible.
+
+The focused cases cover both callback orders, incomplete-to-finished handoff,
+duplicates, fragment destruction, bounded error fallback, accepted V2 error
+with keep-discarded off, raw-journal restart retention and identity replacement
+at each deferred boundary. The retry fixture compiles the exact public retry
+entry and pending-route methods plus the real sender snapshot and delivery
+classes against inert dispatch/storage boundaries. It also tests explicit
+alternate selection and inactive-account rejection. This is host evidence;
+real encoder timing, payment sheets and process/surface teardown need devices.

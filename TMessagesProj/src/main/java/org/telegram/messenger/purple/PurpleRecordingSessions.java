@@ -203,6 +203,10 @@ public final class PurpleRecordingSessions {
                 env.flushJournal(session.current.entry.journal);
                     } else if (reason == 4) {
                 end(session);
+            } else if (reason == 7) {
+                try { failedForQueue(key, session.current.file, target != null ? target : session.target); } catch (IOException failure) {
+                    env.discarded(session.current.entry.kind, false, true);
+                }
             } else if (reason == 5) {
                 sending(session);
             } else {
@@ -404,20 +408,43 @@ public final class PurpleRecordingSessions {
     }
 
     public synchronized String completedForQueue(String key, File media, long[] target) throws IOException {
-        final Session session = sessions.get(key);
-        final PurpleRecordingEntry entry = session != null && session.round
-                ? session.current.entry : begin((int) target[0], target, false, env.now());
-        if (entry == null) throw new IOException("no recording entry");
+        return retainForQueue(key, media, target, false);
+    }
+
+    public synchronized String failedForQueue(String key, File media, long[] target) throws IOException {
+        return retainForQueue(key, media, target, true);
+    }
+
+    private String retainForQueue(String key, File media, long[] target, boolean failed) throws IOException {
+        Session session = sessions.get(key);
+        if (session == null) {
+            final PurpleRecordingEntry created = begin((int) target[0], target, false, env.now());
+            if (created == null) throw new IOException("no recording entry");
+            session = new Session(key, true, target); session.current = new Part(created);
+            sessions.put(key, session);
+        }
+        if (!session.round) throw new IOException("not a round");
+        final PurpleRecordingEntry entry = session.current.entry;
         entry.awaitingQueue = true;
         entry.account = (int) target[0]; entry.dialogId = target[1]; entry.topicId = target[2];
         entry.replyId = (int) target[3]; entry.userId = target[4]; entry.once = (target[5] & FLAG_ONCE) != 0;
-        store.attach(entry, media, entry.journal == null ? null : new File(entry.journal));
-        store.keepCompleted(entry, media, env.now() / 1000);
-        if (session != null) {
-            sessions.remove(key); v2Files.remove(key);
-            for (Part part : session.parts()) part.close();
-            env.closeJournal(entry.journal);
-        }
+        if (media != null && media.isFile()) attach(session.current, media, entry.journal == null ? null : new File(entry.journal));
+        final String originalJournal = entry.journal;
+        env.flushJournal(originalJournal);
+        if (failed) {
+            FileChannel bytes = session.current.held;
+            if (session.snapshot != null) {
+                try (RandomAccessFile snapshot = new RandomAccessFile(session.snapshot, "r")) {
+                    store.keepFailed(entry, snapshot.getChannel(), env.now() / 1000);
+                }
+            } else if (bytes != null) {
+                store.keepFailed(entry, bytes, env.now() / 1000);
+            } else throw new IOException("no round bytes");
+        } else store.keepCompleted(entry, media, env.now() / 1000);
+        sessions.remove(key); v2Files.remove(key);
+        for (Part part : session.parts()) part.close();
+        env.closeJournal(originalJournal);
+        deleteSnapshot(session);
         env.changed();
         return entry.id;
     }

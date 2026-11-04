@@ -1,1 +1,1 @@
-package org.telegram.messenger; public class VideoEditedInfo {public boolean roundVideo=true;}
+package org.telegram.messenger; public class VideoEditedInfo {public boolean roundVideo=true,notReadyYet;}

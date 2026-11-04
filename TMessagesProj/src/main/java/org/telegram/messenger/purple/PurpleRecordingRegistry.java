@@ -235,7 +235,7 @@ public final class PurpleRecordingRegistry {
             // file; erase then empties a fresh file at the old path. The stop is
             // handled a second later, once that last write is done.
             final PurpleRecordingSessions now = sessions;
-            final File source = now != null && (reason == 0 || reason == 6) ? now.snapshotSource(key) : null;
+            final File source = now != null && (reason == 0 || reason == 6 || reason == 7) ? now.snapshotSource(key) : null;
             final File bin = new File(directory(), "bin");
             final File moved = new File(bin, "cancel-" + System.nanoTime() + ".snapshot");
             if (source != null && (bin.isDirectory() || bin.mkdirs()) && source.renameTo(moved)) {
@@ -398,11 +398,21 @@ public final class PurpleRecordingRegistry {
     }
 
     public static void retainRound(int account, int guid, String path, long[] target, java.util.function.Consumer<String> done) {
+        retainRound(account, guid, path, target, false, done);
+    }
+
+    public static void retainFailedRound(int account, int guid, String path, long[] target, java.util.function.Consumer<String> done) {
+        retainRound(account, guid, path, target, true, done);
+    }
+
+    private static void retainRound(int account, int guid, String path, long[] target, boolean failed, java.util.function.Consumer<String> done) {
         start();
         worker.execute(() -> {
             String id = null;
             try {
-                if (sessions != null) id = sessions.completedForQueue(account + ":" + guid, new File(path), target);
+                if (sessions != null) id = failed
+                        ? sessions.failedForQueue(account + ":" + guid, new File(path), target)
+                        : sessions.completedForQueue(account + ":" + guid, new File(path), target);
             } catch (IOException failure) {
                 PurpleDiagLog.event("recordings", "completed_round", PurpleDiagLog.reason("io_failed"));
             }

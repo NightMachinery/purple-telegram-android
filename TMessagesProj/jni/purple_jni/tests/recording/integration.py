@@ -101,7 +101,7 @@ public class VoicePreviewCases {
 }""")
     sources = sorted(dest.rglob('*.java'))
     subprocess.run([str(compiler), '-d', str(dest / 'classes'), *map(str, sources)], check=True)
-    for klass, args in [('org.telegram.ui.RoundReviewCases', ['backdrop']), ('org.telegram.ui.RoundReviewCases', ['destroy']), ('org.telegram.ui.RoundReviewCases', ['paid']), ('org.telegram.ui.VoicePreviewCases', []), ('org.telegram.ui.PaymentCancelCases', []), ('org.telegram.ui.PaymentNextCaptureCases', [])]:
+    for klass, args in [('org.telegram.ui.RoundReviewCases', ['backdrop']), ('org.telegram.ui.RoundReviewCases', ['destroy']), ('org.telegram.ui.RoundReviewCases', ['paid']), ('org.telegram.ui.VoicePreviewCases', []), ('org.telegram.ui.PaymentCancelCases', []), ('org.telegram.ui.PaymentNextCaptureCases', []), ('org.telegram.ui.CompletionBoundaryCases', [])]:
         subprocess.run([str(compiler.with_name('java')), '-cp', str(dest / 'classes'), klass, *args], check=True)
     mc = (java_root / 'messenger/MediaController.java').read_text()
     assert 'PurpleRecordingVoicePreview.remember(recordingCurrentAccount, recordingAudio,' in mc
@@ -121,4 +121,11 @@ public class VoicePreviewCases {
     sending = (java_root / 'messenger/SendMessagesHelper.java').read_text()
     assert sending.index('PurpleRecordingDelivery.queued(currentAccount, sendMessageParams, newMsg);') > sending.index('MessagesStorage.getInstance(currentAccount).putMessages(arr, false, true, false, 0, mode, threadMessageId);')
     assert 'PurpleRecordingDelivery.allowed(arguments)' in (java_root / 'messenger/purple/PurpleRecordingSendAs.java').read_text()
-    print('RECORDING_INTEGRATION_PINS=14')
+    legacy = (java_root / 'ui/Components/InstantCameraView.java').read_text()
+    early = legacy.split('private void handleStopRecording(', 1)[1]
+    assert early.index('videoEditedInfo.notReadyYet = true;') < early.index('mediaMuxer.finishMovie();') < early.index('videoEditedInfo.notReadyYet = false;')
+    assert 'roundErrorReason(currentAccount, recordingGuid)' in (java_root / 'ui/Components/InstantCameraView2.java').read_text()
+    assert '(reason == 0 || reason == 6 || reason == 7)' in (java_root / 'messenger/purple/PurpleRecordingRegistry.java').read_text()
+    print('RECORDING_INTEGRATION_PINS=17')
+    import runpy
+    runpy.run_path(str(tests / 'retry_identity.py'))['run'](root, output / 'retry-identity')

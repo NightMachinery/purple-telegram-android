@@ -161,6 +161,26 @@ public final class PurpleRecordingStore {
         }
     }
 
+    public void keepFailed(PurpleRecordingEntry e, FileChannel bytes, long nowSeconds) throws IOException {
+        final File target = binFile(e);
+        PurpleRecordingFiles.copy(bytes, target);
+        final String previous = e.media, journal = e.journal, state = e.state;
+        final long binned = e.binnedAt;
+        if (journal != null && new File(journal).isFile()) {
+            final File copy = new File(target.getPath() + ".pjr");
+            PurpleRecordingFiles.copy(new File(journal), copy);
+            e.journal = copy.getAbsolutePath();
+        }
+        e.media = target.getAbsolutePath(); e.binnedAt = nowSeconds;
+        try {
+            settle(e, nowSeconds, new Outcome());
+            save();
+        } catch (IOException failure) {
+            e.media = previous; e.journal = journal; e.state = state; e.binnedAt = binned;
+            throw failure;
+        }
+    }
+
     /** A file in the bin directory for a copy no entry owns yet (a cancelled round's snapshot). */
     public File scratch(String name) throws IOException {
         return new File(manifest.binDir(), name);
