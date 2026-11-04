@@ -921,10 +921,15 @@ public final class PurpleSyncCore {
         public final FirstUseAction action;
         public final boolean groupEmpty, head, sameBytes, defaults;
         public final String space;
+        /**
+         * Core's key of the chat's current head ({@code SyncFirstUseInput.headKey}), "" when its current heads
+         * disagree: the chosen key of a join, and the one expected parent of a successor publish.
+         */
+        public final String headKey;
 
         FirstUse(String error) {
             super(error);
-            available = false; action = null; groupEmpty = false; head = false; sameBytes = false; defaults = false; space = "";
+            available = false; action = null; groupEmpty = false; head = false; sameBytes = false; defaults = false; space = ""; headKey = "";
         }
 
         FirstUse(JSONObject json) throws JSONException {
@@ -936,6 +941,7 @@ public final class PurpleSyncCore {
             sameBytes = available && bool(json, "sameBytes");
             defaults = bool(json, "defaults");
             space = available ? string(json, "space") : "";
+            headKey = available ? json.optString("headKey", "") : "";
         }
     }
 

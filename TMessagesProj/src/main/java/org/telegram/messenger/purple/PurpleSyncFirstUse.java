@@ -207,18 +207,21 @@ public final class PurpleSyncFirstUse {
         if (started != PurpleSyncRunner.Start.Started) finish(Result.Refused, refusal(started), null, null);
     }
 
+    /**
+     * Acts through the runner. Core names the chat's current head ({@link PurpleSyncCore.FirstUse#headKey}); the client
+     * never derives it. It is the chosen key of a join (Join and "Use the synced settings"; JoinSilently with the
+     * head's exact bytes joins with the local choice, which is that head) and the one expected parent of a successor (JoinSilently with other bytes, and "Use
+     * this device's settings"), which keeps the local file and publishes it on a fresh check. The first record of
+     * an empty chat has no parent.
+     */
     private void act(PurpleSyncRunner.Check check, PurpleSyncCore.FirstUse plan) {
-        String key = null;
-        if (action == PurpleSyncCore.FirstUseAction.Join) {
-            // The chat's head: the one remote version core offers (core lists a head per install, and a strict
-            // successor leaves one offered). Several offered versions are no single head to join.
-            for (PurpleSyncCore.Choice offered : check.review.choices) {
-                if (offered.key == null) continue;
-                if (key != null) { finish(Result.Refused, "heads_unclear", null, null); return; }
-                key = offered.key;
-            }
-            if (key == null) { finish(Result.Refused, "heads_unclear", null, null); return; }
-        }
+        boolean successor = !plan.groupEmpty && (action == PurpleSyncCore.FirstUseAction.Publish
+                || action == PurpleSyncCore.FirstUseAction.JoinSilently && !plan.sameBytes);
+        boolean join = action == PurpleSyncCore.FirstUseAction.Join || action == PurpleSyncCore.FirstUseAction.JoinSilently && !successor;
+        if ((join || successor) && plan.headKey.isEmpty()) { finish(Result.Refused, "heads_unclear", null, null); return; }
+        // A file of the head's exact bytes is the head: core's review lists that head as the same, not as a choice,
+        // and PlanSyncConfigApply refuses its key (InvalidChoice), so that join keeps the local choice.
+        String key = join && !(action == PurpleSyncCore.FirstUseAction.JoinSilently && plan.sameBytes) ? plan.headKey : null;
         PurpleSyncRunner.Start started = runner.apply(check, key, outcome -> {
             PurpleSyncApply.ApplyResult result = outcome.result;
             if (result.status != PurpleSyncCore.ApplyStatus.Applied) {
@@ -226,20 +229,27 @@ public final class PurpleSyncFirstUse {
                 return;
             }
             PurpleSyncRunner.PostTicket ticket = outcome.post;
-            if (ticket == null) { finish(Result.Joined, code(action), result, null); return; }
             PurpleSyncRunner.Listener<PurpleSyncPublisher.Result> sent = published -> finish(
                     published != null && published.status == PurpleSyncCore.PublishStatus.Confirmed ? Result.Published : Result.Joined,
                     code(action), result, published);
-            if (!ticket.freshCheckFirst) {
-                PurpleSyncRunner.Start posting = runner.publish(ticket, sent);
-                if (posting != PurpleSyncRunner.Start.Started) finish(Result.Joined, refusal(posting), result, null);
+            if (successor) {
+                // This device's file as the successor of the chat's head, against a fresh check.
+                if (result.fingerprint == null || result.fingerprint.isEmpty()) { finish(Result.Joined, code(action), result, null); return; }
+                PurpleSyncCore.PostRequest request = PurpleSyncCore.PostRequest.newContent(result.fingerprint,
+                        java.util.Collections.singletonList(plan.headKey));
+                recheck(fresh -> {
+                    PurpleSyncRunner.Start posting = runner.publish(fresh, request, sent);
+                    if (posting != PurpleSyncRunner.Start.Started) finish(Result.Joined, refusal(posting), result, null);
+                });
                 return;
             }
-            // A successor of the chat's head: the post goes out against a fresh check, as the Sync screen's choice does.
-            recheck(fresh -> {
-                PurpleSyncRunner.Start posting = runner.publish(fresh, ticket, sent);
-                if (posting != PurpleSyncRunner.Start.Started) finish(Result.Joined, refusal(posting), result, null);
+            if (ticket == null) { finish(Result.Joined, code(action), result, null); return; }
+            PurpleSyncRunner.Start posting = ticket.freshCheckFirst ? null : runner.publish(ticket, sent);
+            if (posting == null) recheck(fresh -> {
+                PurpleSyncRunner.Start again = runner.publish(fresh, ticket, sent);
+                if (again != PurpleSyncRunner.Start.Started) finish(Result.Joined, refusal(again), result, null);
             });
+            else if (posting != PurpleSyncRunner.Start.Started) finish(Result.Joined, refusal(posting), result, null);
         });
         if (started != PurpleSyncRunner.Start.Started) finish(Result.Refused, refusal(started), null, null);
     }

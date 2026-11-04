@@ -106,8 +106,9 @@ final class PurpleSyncFirstUseCases {
 
     /**
      * R1 by install D, then R2 by install A with R1 as parent: core lists a head per install, and R2 is the chat's
-     * current settings. A new login with the defaults joins R2, one whose file means what R2 means joins silently, and
-     * one with other settings asks once and "Use the synced settings" takes R2.
+     * current head (core's headKey). A new login with the defaults joins R2, one with other settings asks once and
+     * "Use the synced settings" takes R2, and one whose file means what R2 means joins silently, publishing its file
+     * as R2's successor when its bytes differ.
      */
     static void twoInstalls(File parent) throws Exception {
         Device d = new Device(parent, "first-use-r1-install-d", "fixture-device-d");
@@ -140,20 +141,27 @@ final class PurpleSyncFirstUseCases {
         check(took.result == PurpleSyncFirstUse.Result.Joined && Arrays.equals(THEIRS, synced.local()) && chat.messages.size() == 2,
                 "R1/R2 use the synced settings: R2 replaces the file, nothing posted: " + took.result + " " + took.reason);
         settled(synced, chat, "R1/R2 use the synced settings");
-        // Silent join: the same meaning as R2. purple-core 724315c gives SyncFirstUseInputOf a head only when there is
-        // one install, so it asks here; the core fix (maximal heads) is pending. Until then this records, not asserts.
+        // Silent join: a file meaning what R2 means joins with no question (core 493d0db counts only the current
+        // heads, so R1, which R2 succeeds, does not make the chat look split). The same bytes join and keep the file.
         Device silent = new Device(parent, "first-use-r1r2-silent", "fixture-device-r1r2-silent");
         silent.local(THEIRS); silent.bind();
         PurpleSyncFirstUse.Outcome quiet = firstUse(silent, chat, PurpleSyncCore.FirstUseChoice.None, "R1/R2 silent join");
-        if (quiet.action == PurpleSyncCore.FirstUseAction.JoinSilently) {
-            check(quiet.result == PurpleSyncFirstUse.Result.Joined && Arrays.equals(THEIRS, silent.local()) && chat.messages.size() == 2,
-                    "R1/R2 silent join: the same meaning as R2 joins silently: " + quiet.result);
-            System.out.println("FIRST_USE_R1R2_SILENT=PASS");
-        } else {
-            check(quiet.result == PurpleSyncFirstUse.Result.Ask && Arrays.equals(THEIRS, silent.local()) && silent.state() == null,
-                    "R1/R2 silent join with core 724315c: asked, nothing changed: " + quiet.result);
-            System.out.println("FIRST_USE_R1R2_SILENT=PENDING_CORE (core 724315c asks: SyncFirstUseInputOf has no head with two installs)");
-        }
+        check(quiet.action == PurpleSyncCore.FirstUseAction.JoinSilently && quiet.result == PurpleSyncFirstUse.Result.Joined
+                && Arrays.equals(THEIRS, silent.local()) && chat.messages.size() == 2 && chat.posts == 2,
+                "R1/R2 silent join: the same settings as R2 join silently, nothing posted: " + quiet.action + " " + quiet.result + " " + quiet.reason + (quiet.applied != null ? " " + quiet.applied.status + " " + quiet.applied.setupStatus + " " + quiet.applied.storeStatus : ""));
+        settled(silent, chat, "R1/R2 silent join");
+        // Other bytes of R2's meaning: the file stays and is published as R2's successor, R2 its one parent.
+        byte[] commented = bytes(new String(THEIRS, java.nio.charset.StandardCharsets.UTF_8) + "# this device's note\n");
+        Device noted = new Device(parent, "first-use-r1r2-silent-noted", "fixture-device-r1r2-noted");
+        noted.local(commented); noted.bind();
+        PurpleSyncFirstUse.Outcome successor = firstUse(noted, chat, PurpleSyncCore.FirstUseChoice.None, "R1/R2 silent join, other bytes");
+        check(successor.action == PurpleSyncCore.FirstUseAction.JoinSilently && successor.result == PurpleSyncFirstUse.Result.Published
+                && Arrays.equals(commented, noted.local()) && chat.messages.size() == 3,
+                "R1/R2 silent join, other bytes: the file stays and is published as the successor: " + successor.action + " " + successor.result + " " + successor.reason);
+        check(chat.heads().size() == 1 && Arrays.equals(commented, chat.heads().get(0)) && chat.spaces().size() == 1,
+                "R1/R2 silent join, other bytes: that file is the chat's one current head, in the one space");
+        settled(noted, chat, "R1/R2 silent join, other bytes");
+        System.out.println("FIRST_USE_R1R2=PASS");
     }
 
     /** Each first-use action from a device with no state, and the one-time answers. */

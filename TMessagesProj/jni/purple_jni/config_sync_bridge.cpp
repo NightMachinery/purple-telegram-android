@@ -987,6 +987,8 @@ Java_org_telegram_messenger_purple_PurpleSyncCore_firstUseNative(
 		}());
 		metadata.insert(u"groupEmpty"_q, input->groupEmpty);
 		metadata.insert(u"head"_q, bool(input->head));
+		// The version key of the chat's current head: the chosen key of a join and the parent of a successor.
+		metadata.insert(u"headKey"_q, input->headKey ? *input->headKey : QString());
 		metadata.insert(u"sameBytes"_q, input->head
 			&& local->status == Purple::SyncSettingsFileStatus::Present
 			&& input->head->text == local->text);
