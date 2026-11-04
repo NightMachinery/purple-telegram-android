@@ -44,7 +44,7 @@ import java.util.Map;
  * voice draft ({@link #draftCleared}: a discard if the file is deleted).
  *
  * <p>Thread safety: every method is synchronized. The registry calls them on
- * its worker, except {@link #snapshotCancel}, which must run on the thread
+ * its worker, except the lock-free snapshot claim, which runs on the thread
  * that posts the cancel, before upstream's file executor empties the file.
  */
 public final class PurpleRecordingSessions {
@@ -138,8 +138,7 @@ public final class PurpleRecordingSessions {
         boolean paused;
         boolean sending;
         int tries;
-        /** A cancelled round's bytes, copied before upstream emptied the file. */
-        File snapshot;
+        Capture capture;
 
         Session(String key, boolean round, long[] target) {
             this.key = key;
@@ -161,7 +160,10 @@ public final class PurpleRecordingSessions {
      * client user id, flags}, or null when the chat was not registered.
      */
     public synchronized void started(String key, int account, long[] target, boolean voice, long startedAt) {
-        final Session existing = sessions.get(key);
+        Session existing = sessions.get(key);
+        if (existing != null && existing.capture != null && existing.capture.reserved()) {
+            detach(existing); existing = null;
+        }
         if (existing != null) {
             if (!existing.paused && !existing.stopped && existing.round == !voice) return;
             // Voice never resumes with recordStarted (both recorders send
@@ -210,7 +212,7 @@ public final class PurpleRecordingSessions {
             } else if (reason == 5) {
                 sending(session);
             } else {
-                // A cancel is final: settle it now, from the snapshot when there is one.
+                // The V2 snapshot route settles its captured owner separately.
                 session.paused = false;
                 discard(session);
             }
@@ -368,43 +370,73 @@ public final class PurpleRecordingSessions {
         pendingAt = env.now();
     }
 
-    /** V2 rounds' current files by session key, read without the monitor (re-check N4). */
-    private final java.util.concurrent.ConcurrentHashMap<String, File> v2Files = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.concurrent.ConcurrentHashMap<String, Capture> captures = new java.util.concurrent.ConcurrentHashMap<>();
 
-    /**
-     * A round was cancelled: the file to copy before upstream's file executor
-     * runs, or null. Only V2 needs it: its {@code RoundVideoRemuxer.erase}
-     * empties the file (setLength(0), then delete), so the held descriptor
-     * would read nothing; legacy only deletes. Lock-free, so the thread that
-     * posts the cancel never waits for the worker.
-     */
+    static final class Capture {
+        final Session session;
+        final Part part;
+        final File media, base;
+        final String entryId, journal;
+        final java.util.concurrent.atomic.AtomicInteger phase = new java.util.concurrent.atomic.AtomicInteger();
+        Capture(Session session, Part part, File media, File base) {
+            this.session = session; this.part = part; this.media = media; this.base = base;
+            entryId = part.entry.id; journal = part.entry.journal;
+        }
+        boolean reserved() { return phase.get() == 1 || phase.get() == 2; }
+    }
+
+    static final class SnapshotStop {
+        final Capture capture;
+        final int reason;
+        final boolean keep;
+        final long[] target;
+        final File destination;
+        SnapshotStop(Capture capture, int reason, boolean keep, long[] target) {
+            this.capture = capture; this.reason = reason; this.keep = keep;
+            this.target = target == null ? null : target.clone();
+            destination = new File(capture.base.getPath() + (reason == 7 ? ".error" : keep ? ".discard" : ".drop"));
+        }
+    }
+
+    Capture snapshotCapture(String key) { return captures.get(key); }
+
+    SnapshotStop reserveStop(Capture capture, int reason, long[] target) {
+        return capture.phase.compareAndSet(0, 1) ? new SnapshotStop(capture, reason, reason == 7 || env.keepDiscarded(), target) : null;
+    }
+
     public File snapshotSource(String key) {
-        return v2Files.get(key);
+        final Capture capture = captures.get(key);
+        return capture == null ? null : capture.media;
     }
 
-    /**
-     * The cancelled V2 round's file, renamed into the bin at the stop (the
-     * registry passes {@code expected} -1), or a copy, used only if it holds
-     * all {@code expected} bytes.
-     */
-    public synchronized void snapshotDone(String key, File copy, long expected) {
-        final Session session = sessions.get(key);
-        if (session == null || copy == null || copy.length() == 0 || expected >= 0 && copy.length() != expected) {
-            if (copy != null) copy.delete();
-            return;
-        }
-        deleteSnapshot(session);
-        session.snapshot = copy;
-    }
-
-    /** Where a snapshot of {@code key}'s recording goes, in the bin directory. */
-    public synchronized File snapshotTarget(String key) {
-        final Session session = sessions.get(key);
+    synchronized void finishSnapshot(SnapshotStop stop, boolean renamed) {
+        final Capture capture = stop.capture;
+        if (!capture.phase.compareAndSet(1, 2)) return;
+        final Session original = capture.session;
+        final PurpleRecordingEntry entry = capture.part.entry;
+        boolean committed = false;
         try {
-            return session == null ? null : store.scratch(session.current.entry.id + ".snapshot");
-        } catch (IOException e) {
-            return null;
-        }
+            once(original, stop.target);
+            env.flushJournal(capture.journal);
+            if (entry.inBin()) committed = true;
+            else if (!stop.keep || stop.reason != 7 && (renamed ? stop.destination.length() : capture.media.length()) == 0) { entry.snapshotCommitted = true; store.cleanupSnapshot(entry); store.finish(entry); committed = true; }
+            else if (renamed) { store.snapshotKept(entry, stop.destination, stop.reason != 7, env.now() / 1000); committed = true; }
+            else if (capture.part.held != null) {
+                entry.discarded = stop.reason != 7;
+                store.keepFailed(entry, capture.part.held, env.now() / 1000); committed = true;
+            }
+        } catch (IOException failure) { env.discarded(entry.kind, false, true); }
+        detach(original);
+        for (Part part : original.parts()) part.close();
+        env.closeJournal(capture.journal);
+        if (committed) store.cleanupSnapshot(entry);
+        capture.phase.set(3);
+        env.changed();
+    }
+
+    private void detach(Session session) {
+        sessions.remove(session.key, session);
+        if (session.capture != null) captures.remove(session.key, session.capture);
     }
 
     public synchronized String completedForQueue(String key, File media, long[] target) throws IOException {
@@ -433,18 +465,14 @@ public final class PurpleRecordingSessions {
         env.flushJournal(originalJournal);
         if (failed) {
             FileChannel bytes = session.current.held;
-            if (session.snapshot != null) {
-                try (RandomAccessFile snapshot = new RandomAccessFile(session.snapshot, "r")) {
-                    store.keepFailed(entry, snapshot.getChannel(), env.now() / 1000);
-                }
-            } else if (bytes != null) {
+            if (bytes != null) {
                 store.keepFailed(entry, bytes, env.now() / 1000);
             } else throw new IOException("no round bytes");
         } else store.keepCompleted(entry, media, env.now() / 1000);
-        sessions.remove(key); v2Files.remove(key);
+        if (session.capture != null) session.capture.phase.set(3);
+        detach(session);
         for (Part part : session.parts()) part.close();
         env.closeJournal(originalJournal);
-        deleteSnapshot(session);
         env.changed();
         return entry.id;
     }
@@ -525,12 +553,21 @@ public final class PurpleRecordingSessions {
     }
 
     private void attach(Part part, File media, File journal) {
-        part.hold(media);
-        for (Session s : sessions.values()) {
-            if (s.round && s.current == part && media.getName().startsWith("round_video_")) v2Files.put(s.key, media);
+        Session owner = null;
+        for (Session session : sessions.values()) if (session.current == part) { owner = session; break; }
+        if (owner != null && owner.capture != null) {
+            if (media.equals(owner.capture.media)) return;
+            if (!owner.capture.phase.compareAndSet(0, 3)) return;
+            captures.remove(owner.key, owner.capture);
         }
+        part.hold(media);
         try {
             store.attach(part.entry, media, journal);
+            if (owner != null && owner.round && media.getName().startsWith("round_video_")) {
+                final File base = store.reserveSnapshot(part.entry, media, journal);
+                owner.capture = new Capture(owner, part, media, base);
+                captures.put(owner.key, owner.capture);
+            }
         } catch (IOException ignored) {
         }
     }
@@ -591,8 +628,8 @@ public final class PurpleRecordingSessions {
 
     /** Sent, or too short: the entries go, and so do the descriptors and the journal. */
     private void end(Session session) {
-        sessions.remove(session.key);
-        v2Files.remove(session.key);
+        if (session.capture != null && !session.capture.phase.compareAndSet(0, 3)) { detach(session); return; }
+        detach(session);
         for (Part part : session.parts()) {
             part.close();
             env.closeJournal(part.entry.journal);
@@ -601,47 +638,24 @@ public final class PurpleRecordingSessions {
             } catch (IOException ignored) {
             }
         }
-        deleteSnapshot(session);
     }
 
     private void discard(Session session) {
-        sessions.remove(session.key);
-        v2Files.remove(session.key);
+        detach(session);
         final boolean keep = env.keepDiscarded();
         boolean kept = false;
         boolean failed = false;
         for (Part part : session.parts()) {
             env.closeJournal(part.entry.journal);
-            FileChannel bytes = part.held;
-            FileChannel snapshot = null;
+            final FileChannel bytes = part.held;
             try {
-                if (part == session.current && session.snapshot != null) {
-                    snapshot = new RandomAccessFile(session.snapshot, "r").getChannel();
-                    bytes = snapshot;
-                }
-                // An emptied file (an erase that won the race) is not kept as an empty item.
                 kept |= store.discard(part.entry, bytes, keep && bytes != null && bytes.size() > 0, env.now() / 1000);
             } catch (IOException e) {
                 failed = true;
-            } finally {
-                part.close();
-                if (snapshot != null) {
-                    try {
-                        snapshot.close();
-                    } catch (IOException ignored) {
-                    }
-                }
-            }
+            } finally { part.close(); }
         }
-        deleteSnapshot(session);
         env.discarded(session.current.entry.kind, kept, failed);
         if (kept) env.changed();
     }
 
-    private static void deleteSnapshot(Session session) {
-        if (session.snapshot != null) {
-            session.snapshot.delete();
-            session.snapshot = null;
-        }
-    }
 }

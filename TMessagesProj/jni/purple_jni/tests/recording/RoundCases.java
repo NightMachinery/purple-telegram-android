@@ -491,14 +491,11 @@ public final class RoundCases {
         }
     }
 
-    /** What the registry does at a V2 cancel: copy off the UI thread, then hand the copy back. */
+    /** The registry's snapshot stop primitive, with immediate dispatch in these older sequence cases. */
     static void snapshot(PurpleRecordingSessions sessions, String key) throws Exception {
         final File source = sessions.snapshotSource(key);
         check(source != null, "the cancelled V2 round is offered for the snapshot");
-        final long expected = source.length();
-        final File copy = sessions.snapshotTarget(key);
-        PurpleRecordingFiles.copyUnsynced(source, copy);
-        sessions.snapshotDone(key, copy, expected);
+        PurpleRecordingSnapshotHandoff.stop(sessions, key, 0, null, (task, delay) -> task.run());
     }
 
     static long[] target(long dialog) {
@@ -837,9 +834,8 @@ public final class RoundCases {
         try (RandomAccessFile erase = new RandomAccessFile(roundH, "rw")) {
             erase.setLength(0);
         }
-        final File copyH = sessions.snapshotTarget("0:55");
-        PurpleRecordingFiles.copyUnsynced(roundH, copyH);
-        sessions.snapshotDone("0:55", copyH, expectedH);
+        final File copyH = new File(sessions.snapshotCapture("0:55").base.getPath() + ".discard");
+        PurpleRecordingSnapshotHandoff.stop(sessions, "0:55", 6, target(550), (task, delay) -> task.run());
         check(!copyH.exists(), "a short snapshot is dropped");
         roundH.delete();
         sessions.stopped("0:55", 6, target(550));
@@ -865,15 +861,16 @@ public final class RoundCases {
         sessions.stopped("0:57", 2, target(570));
         sessions.didSent("0:57", true, new File(rounds, "preview_p.mp4").getPath());
         final File sourceP = sessions.snapshotSource("0:57");
-        final File movedP = new File(manifest.bin, "cancel-p.snapshot");
-        check(sourceP != null && sourceP.renameTo(movedP), "the V2 file is renamed into the bin at the stop");
+        final File movedP = new File(sessions.snapshotCapture("0:57").base.getPath() + ".discard");
+        final java.util.List<Runnable> stopP = new java.util.ArrayList<>();
+        final boolean handoffP = PurpleRecordingSnapshotHandoff.stop(sessions, "0:57", 0, target(570), (task, delay) -> stopP.add(task));
+        check(sourceP != null && handoffP && movedP.isFile() && !sourceP.exists(), "the V2 file is renamed into the bin at the stop");
         Files.write(movedP.toPath(), finishedP);
         try (RandomAccessFile erase = new RandomAccessFile(roundP, "rw")) {
             erase.setLength(0);
         }
         roundP.delete();
-        sessions.snapshotDone("0:57", movedP, -1);
-        sessions.stopped("0:57", 0, target(570));
+        stopP.get(0).run();
         check(store.bin().size() == 1 && store.bin().get(0).discarded
                 && PurpleRecordingFiles.mp4Finished(new File(store.bin().get(0).media)) == 1
                 && store.bin().get(0).durationMs > 3000, "the round discarded from preview is in the bin, whole");

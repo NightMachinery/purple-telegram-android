@@ -156,7 +156,9 @@ Round Send waits for the encoder's ready boundary before completed-bin handoff.
 A timed-out or failed finalization preserves a recovered or raw Recording bin
 item. Bin retries keep the account identity selected at action start through
 all delayed send steps; replacing that account slot leaves the recovery item
-owned.
+owned. V2 error/discard snapshots now reserve their recovery paths before
+renaming and bind delayed work to the original capture, so restart and a newer
+recording preserve separate owners.
 
 **Seek back and forward (F9).** The audio player strip at the top of a screen
 (`FragmentContextView`, where a playing voice, round or music message shows)

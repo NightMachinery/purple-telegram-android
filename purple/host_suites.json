@@ -967,7 +967,8 @@
         "settings:RECORDING_SETTINGS_CHECKS": 140,
         "events:RECORDING_EVENT_CHECKS": 40,
         "payment-store:PAYMENT_STORE_CHECKS": 22,
-        "boundary-store:BOUNDARY_STORE_CHECKS": 25
+        "boundary-store:BOUNDARY_STORE_CHECKS": 25,
+        "snapshot-registry:SNAPSHOT_REGISTRY_CHECKS": 175
       }
     },
     {

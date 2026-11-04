@@ -125,7 +125,7 @@ public class VoicePreviewCases {
     early = legacy.split('private void handleStopRecording(', 1)[1]
     assert early.index('videoEditedInfo.notReadyYet = true;') < early.index('mediaMuxer.finishMovie();') < early.index('videoEditedInfo.notReadyYet = false;')
     assert 'roundErrorReason(currentAccount, recordingGuid)' in (java_root / 'ui/Components/InstantCameraView2.java').read_text()
-    assert '(reason == 0 || reason == 6 || reason == 7)' in (java_root / 'messenger/purple/PurpleRecordingRegistry.java').read_text()
+    assert 'PurpleRecordingSnapshotHandoff.stop(now, key, reason, target,' in (java_root / 'messenger/purple/PurpleRecordingRegistry.java').read_text()
     print('RECORDING_INTEGRATION_PINS=17')
     import runpy
     runpy.run_path(str(tests / 'retry_identity.py'))['run'](root, output / 'retry-identity')

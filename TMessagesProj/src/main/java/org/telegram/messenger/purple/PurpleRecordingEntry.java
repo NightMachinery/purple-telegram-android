@@ -55,6 +55,8 @@ public final class PurpleRecordingEntry {
     /** A legacy voice segment from before a resume: kept at a crash even though its file is a finished stream. */
     public boolean segment;
     public boolean awaitingQueue;
+    public String snapshotBase, snapshotSource, snapshotJournal;
+    public boolean snapshotCommitted;
     /** Recorded in the quick-reply editor: never sent to a chat as a message. */
     public boolean quickReply;
     /** The media file: the recorder's while recording, the bin's afterwards. */
@@ -119,6 +121,10 @@ public final class PurpleRecordingEntry {
         o.put("quick_reply", quickReply);
         o.put("segment", segment);
         o.put("awaiting_queue", awaitingQueue);
+        if (snapshotBase != null) o.put("snapshot_base", snapshotBase);
+        if (snapshotSource != null) o.put("snapshot_source", snapshotSource);
+        if (snapshotJournal != null) o.put("snapshot_journal", snapshotJournal);
+        o.put("snapshot_committed", snapshotCommitted);
         if (media != null) o.put("media", media);
         if (journal != null) o.put("journal", journal);
         o.put("state", state);
@@ -160,6 +166,10 @@ public final class PurpleRecordingEntry {
         e.quickReply = o.optBoolean("quick_reply", false);
         e.segment = o.optBoolean("segment", false);
         e.awaitingQueue = o.optBoolean("awaiting_queue", false);
+        e.snapshotBase = o.optString("snapshot_base", null);
+        e.snapshotSource = o.optString("snapshot_source", null);
+        e.snapshotJournal = o.optString("snapshot_journal", null);
+        e.snapshotCommitted = o.optBoolean("snapshot_committed", false);
         e.state = o.optString("state", RECORDING);
         e.binnedAt = o.optLong("binned", 0);
         e.partial = o.optBoolean("partial", false);

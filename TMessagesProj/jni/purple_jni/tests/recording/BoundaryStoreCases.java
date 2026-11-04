@@ -23,7 +23,8 @@ public class BoundaryStoreCases {
    boolean rejected=false;try{sessions.completedForQueue("1:7",raw,target);}catch(IOException expected){rejected=true;}
    check(rejected,"unfinished cannot queue");check(sessions.count()==1&&store.bin().isEmpty(),"failed retain is pending");check(store.entries().get(0).awaitingQueue,"durable ownership retained");
    if(error){
-    File snapshot=new File(root,"cancel-error.snapshot");check(raw.renameTo(snapshot),"snapshot before V2 erase");sessions.snapshotDone("1:7",snapshot,-1);sessions.stopped("1:7",7,target);
+    java.util.List<Runnable> tasks=new java.util.ArrayList<>();boolean moved=PurpleRecordingSnapshotHandoff.stop(sessions,"1:7",7,target,(task,delay)->tasks.add(task));
+    check(moved&&!raw.exists(),"snapshot before V2 erase");tasks.get(0).run();
     check(sessions.count()==0,"accepted encode error settled");check(store.bin().size()==1,"error retained even keepDiscarded false");
     PurpleRecordingEntry e=store.bin().get(0);check(e.state.equals(PurpleRecordingEntry.UNRECOVERABLE),"failed recovery retained raw");check(!e.discarded,"error not user discard");check(e.awaitingQueue&&e.userId==9&&e.replyId==4&&e.once,"frozen error metadata");
     check(new File(e.media).length()>0,"raw snapshot bytes retained");check(e.journal!=null&&new File(e.journal).length()==3,"independent journal retained");

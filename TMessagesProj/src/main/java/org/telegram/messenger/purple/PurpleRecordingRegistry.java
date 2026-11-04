@@ -228,22 +228,9 @@ public final class PurpleRecordingRegistry {
         } else if (event == NotificationCenter.recordStopped) {
             final int reason = args.length > 1 && args[1] instanceof Integer ? (Integer) args[1] : 0;
             final long[] target = target(guid, true);
-            // A V2 round cancel: its file executor will finish the movie and then
-            // empty the file at its path, so the file is renamed into the bin
-            // now, on this thread (an atomic, instant rename on the same file
-            // system). Upstream's open descriptor writes its moov into the moved
-            // file; erase then empties a fresh file at the old path. The stop is
-            // handled a second later, once that last write is done.
             final PurpleRecordingSessions now = sessions;
-            final File source = now != null && (reason == 0 || reason == 6 || reason == 7) ? now.snapshotSource(key) : null;
-            final File bin = new File(directory(), "bin");
-            final File moved = new File(bin, "cancel-" + System.nanoTime() + ".snapshot");
-            if (source != null && (bin.isDirectory() || bin.mkdirs()) && source.renameTo(moved)) {
-                worker.schedule(() -> {
-                    now.snapshotDone(key, moved, -1);
-                    now.stopped(key, reason, target);
-                }, 1000, TimeUnit.MILLISECONDS);
-            } else {
+            if (now == null || !PurpleRecordingSnapshotHandoff.stop(now, key, reason, target,
+                    (task, delay) -> worker.schedule(task, delay, TimeUnit.MILLISECONDS))) {
                 worker.execute(() -> { if (sessions != null) sessions.stopped(key, reason, target); });
             }
         } else if (event == NotificationCenter.audioDidSent) {

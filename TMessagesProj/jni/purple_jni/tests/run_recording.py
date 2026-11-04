@@ -33,7 +33,7 @@ assert classes.is_dir() and args.json.is_file() and args.library.is_file()
 purple = [java / 'messenger/purple' / name for name in [
     'PurpleCore.java', 'PurpleRecordingSettings.java', 'PurpleRecordingCore.java', 'PurpleRecordingEntry.java',
     'PurpleRecordingManifest.java', 'PurpleRecordingFiles.java', 'PurpleRecordingStore.java',
-    'PurpleRoundJournal.java', 'PurpleRoundRecovery.java', 'PurpleRecordingSessions.java']]
+    'PurpleRoundJournal.java', 'PurpleRoundRecovery.java', 'PurpleRecordingSessions.java', 'PurpleRecordingSnapshotHandoff.java']]
 upstream = [java / 'messenger/video' / name for name in ['Mp4Movie.java', 'MP4Builder.java', 'Track.java']]
 hooked = {name: java / name for name in [
     'messenger/video/Mp4Movie.java', 'ui/Components/InstantCameraView.java',
@@ -168,3 +168,13 @@ for name, command in commands.items():
         raise SystemExit(result.returncode)
 for program, key in [(p, k) for p, _, k, _ in PROGRAMS] + [('aac', 'AAC_MEASURE_CHECKS')]:
     assert key + '=' in (args.output / (program + '.log')).read_text(), program + ' printed no ' + key
+
+import runpy
+snapshot_command = runpy.run_path(str(tests / 'recording/snapshot_registry.py'))['run'](
+    repo, args.output / 'snapshot-registry', compiler, classes, args.json)
+with (args.output / 'snapshot-registry.log').open('w') as log:
+    snapshot_result = subprocess.run(snapshot_command + [str(args.output / 'finished.mp4'), str(work / 'snapshot-registry')],
+                                     stdout=log, stderr=subprocess.STDOUT)
+print('snapshot-registry', snapshot_result.returncode, (args.output / 'snapshot-registry.log').read_text()[-2000:], flush=True)
+if snapshot_result.returncode:
+    raise SystemExit(snapshot_result.returncode)

@@ -275,3 +275,42 @@ entry and pending-route methods plus the real sender snapshot and delivery
 classes against inert dispatch/storage boundaries. It also tests explicit
 alternate selection and inactive-account rejection. This is host evidence;
 real encoder timing, payment sheets and process/surface teardown need devices.
+
+## Snapshot ownership across delayed error and discard
+
+V2 files reserve their snapshot base, original source and journal in the normal
+manifest before the worker publishes a lock-free capture token. If that save
+fails, the token is not published and the protected rename cannot run. A stop
+claims the token, then atomically renames into its reserved error, kept-discard
+or keep-off-discard destination. The pathname records the captured policy.
+Before the rename recovery finds the original source; afterward it finds the
+reserved destination before applying missing-file cleanup. The original journal
+stays owned throughout. Optional fields default empty for older manifests.
+
+The shared `PurpleRecordingSnapshotHandoff` is used for both ordinary discard
+and accepted encoder error. Its delayed callback captures the original session,
+part, entry id, source, destination, policy and target, rather than resolving
+account/chat guid again. Claim and retirement share an atomic state. A newer
+round or voice creates another entry while the claimed older entry and journal
+remain owned. Removal compares session identity, and the unified callback
+settles at most once. There is no separate snapshotDone/stopped ordering gap.
+
+Settlement copies the reserved bytes and journal into final bin files, repairs
+only the copy and commits the replacement manifest before deleting original
+paths. A persisted committed-copy flag permits retrying cleanup after restart
+and prevents cleanup from deleting the source of an ordinary completed send.
+Startup recovery uses the same copy-before-commit ordering, including when an
+initial reservation or an earlier recovery was interrupted. Keep-discarded off
+still deletes an ordinary discard; accepted errors remain recoverable or raw.
+No per-stop manifest fsync is added to the UI thread.
+
+The registry scheduling fixture compiles its actual recordStopped branch and
+full production ownership classes with a controlled worker. A host-only source
+overlay adds crash probes immediately before/after the real file rename and
+atomic manifest replacement. It aborts the operation and constructs a new real
+store on the same files, checking reserved intent, A/B payloads and journals,
+entry identity, newer round/voice ownership, duplicate/reverse callback order,
+keep policy and interruption during recovery itself. Native notifications,
+encoder writes and OS power-loss behavior remain device qualification; the host
+core stand-in deliberately keeps these incomplete MP4s raw and models voice
+finalization, while the existing recording suite covers real codec recovery.

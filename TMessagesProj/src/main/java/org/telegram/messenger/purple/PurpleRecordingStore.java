@@ -131,6 +131,39 @@ public final class PurpleRecordingStore {
         save();
     }
 
+    public File reserveSnapshot(PurpleRecordingEntry e, File media, File journal) throws IOException {
+        final String previousBase = e.snapshotBase, previousSource = e.snapshotSource, previousJournal = e.snapshotJournal;
+        final boolean committed = e.snapshotCommitted;
+        e.snapshotBase = new File(manifest.binDir(), java.util.UUID.randomUUID() + ".snapshot").getAbsolutePath();
+        e.snapshotSource = media.getAbsolutePath(); e.snapshotJournal = journal == null ? null : journal.getAbsolutePath();
+        e.snapshotCommitted = false;
+        try { save(); } catch (IOException failure) {
+            e.snapshotBase = previousBase; e.snapshotSource = previousSource; e.snapshotJournal = previousJournal;
+            e.snapshotCommitted = committed;
+            throw failure;
+        }
+        return new File(e.snapshotBase);
+    }
+
+    public void snapshotKept(PurpleRecordingEntry e, File media, boolean discarded, long nowSeconds) throws IOException {
+        e.discarded = discarded;
+        e.snapshotCommitted = true;
+        if (e.snapshotJournal != null) e.journal = e.snapshotJournal;
+        try (java.io.RandomAccessFile input = new java.io.RandomAccessFile(media, "r")) {
+            keepFailed(e, input.getChannel(), nowSeconds);
+        }
+    }
+
+    public void cleanupSnapshot(PurpleRecordingEntry e) {
+        if (!e.snapshotCommitted) return;
+        for (String path : new String[]{e.snapshotSource, e.snapshotJournal,
+                e.snapshotBase == null ? null : e.snapshotBase + ".error",
+                e.snapshotBase == null ? null : e.snapshotBase + ".discard",
+                e.snapshotBase == null ? null : e.snapshotBase + ".drop"}) {
+            if (path != null && !path.equals(e.media) && !path.equals(e.journal)) new File(path).delete();
+        }
+    }
+
     /** Writes an entry whose fields the caller changed (view-once, the account's user id). */
     public void update(PurpleRecordingEntry e) throws IOException {
         save();
@@ -243,7 +276,34 @@ public final class PurpleRecordingStore {
     public Outcome recoverAtStart(long nowSeconds) throws IOException {
         final Outcome outcome = new Outcome();
         for (PurpleRecordingEntry e : new ArrayList<>(entries)) {
-            if (!e.unfinished()) continue;
+            if (!e.unfinished()) { cleanupSnapshot(e); continue; }
+            File reserved = null;
+            boolean drop = false, discarded = false;
+            if (e.snapshotBase != null) {
+                for (String policy : new String[]{".error", ".discard", ".drop"}) {
+                    final File candidate = new File(e.snapshotBase + policy);
+                    if (candidate.isFile()) { reserved = candidate; drop = policy.equals(".drop"); discarded = policy.equals(".discard"); break; }
+                }
+                if (reserved == null && e.media != null && new File(e.media).isFile()) {
+                    final File original = new File(e.media);
+                    if (!finished(e, original) || e.awaitingQueue || e.segment) reserved = original;
+                }
+            }
+            if (reserved != null) {
+                try {
+                    if (drop) {
+                        e.snapshotCommitted = true;
+                        cleanupSnapshot(e);
+                        finish(e);
+                    } else snapshotKept(e, reserved, discarded, nowSeconds);
+                    cleanupSnapshot(e);
+                    if (!drop) {
+                        if (PurpleRecordingEntry.UNRECOVERABLE.equals(e.state)) outcome.unrecoverable++;
+                        else count(e, outcome);
+                    }
+                } catch (IOException failure) { outcome.failures++; }
+                continue;
+            }
             final File media = e.media == null ? null : new File(e.media);
             if (media == null || !media.isFile() || media.length() == 0) {
                 outcome.missing++;
@@ -258,17 +318,11 @@ public final class PurpleRecordingStore {
                 continue;
             }
             try {
-                final File target = binFile(e);
-                PurpleRecordingFiles.move(media, target);
-                e.media = target.getAbsolutePath();
-                if (e.journal != null && new File(e.journal).isFile()) {
-                    final File journal = new File(target.getPath() + ".pjr");
-                    PurpleRecordingFiles.move(new File(e.journal), journal);
-                    e.journal = journal.getAbsolutePath();
-                }
-                e.state = PurpleRecordingEntry.RECOVERED;
-                e.binnedAt = nowSeconds;
-                settle(e, nowSeconds, outcome);
+                reserveSnapshot(e, media, e.journal == null ? null : new File(e.journal));
+                snapshotKept(e, media, e.discarded, nowSeconds);
+                cleanupSnapshot(e);
+                if (PurpleRecordingEntry.UNRECOVERABLE.equals(e.state)) outcome.unrecoverable++;
+                else count(e, outcome);
             } catch (IOException failure) {
                 outcome.failures++;
             }
@@ -282,6 +336,7 @@ public final class PurpleRecordingStore {
         final Outcome outcome = new Outcome();
         for (PurpleRecordingEntry e : new ArrayList<>(entries)) {
             if (!e.inBin() || !core.binItemExpired(e.binnedAt, nowSeconds, keepSeconds)) continue;
+            cleanupSnapshot(e);
             deleteFiles(e);
             entries.remove(e);
             outcome.expired++;
@@ -303,6 +358,7 @@ public final class PurpleRecordingStore {
         final Set<String> known = new HashSet<>();
         for (PurpleRecordingEntry e : entries) {
             if (e.media != null) known.add(e.media);
+            if (e.snapshotSource != null) known.add(e.snapshotSource);
         }
         for (File dir : audioDirs) {
             final File[] files = dir == null ? null : dir.listFiles();
@@ -353,6 +409,7 @@ public final class PurpleRecordingStore {
 
     /** Deletes one bin item and its files. */
     public void delete(PurpleRecordingEntry e) throws IOException {
+        cleanupSnapshot(e);
         deleteFiles(e);
         entries.remove(e);
         save();
@@ -363,6 +420,7 @@ public final class PurpleRecordingStore {
         int n = 0;
         for (PurpleRecordingEntry e : new ArrayList<>(entries)) {
             if (!e.inBin()) continue;
+            cleanupSnapshot(e);
             deleteFiles(e);
             entries.remove(e);
             n++;
