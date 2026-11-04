@@ -403,6 +403,25 @@ public final class PurpleRecordingSessions {
         }
     }
 
+    public synchronized String completedForQueue(String key, File media, long[] target) throws IOException {
+        final Session session = sessions.get(key);
+        final PurpleRecordingEntry entry = session != null && session.round
+                ? session.current.entry : begin((int) target[0], target, false, env.now());
+        if (entry == null) throw new IOException("no recording entry");
+        entry.awaitingQueue = true;
+        entry.account = (int) target[0]; entry.dialogId = target[1]; entry.topicId = target[2];
+        entry.replyId = (int) target[3]; entry.userId = target[4]; entry.once = (target[5] & FLAG_ONCE) != 0;
+        store.attach(entry, media, entry.journal == null ? null : new File(entry.journal));
+        store.keepCompleted(entry, media, env.now() / 1000);
+        if (session != null) {
+            sessions.remove(key); v2Files.remove(key);
+            for (Part part : session.parts()) part.close();
+            env.closeJournal(entry.journal);
+        }
+        env.changed();
+        return entry.id;
+    }
+
     /** The sessions in progress, for the host suite. */
     synchronized int count() {
         return sessions.size();
@@ -412,15 +431,16 @@ public final class PurpleRecordingSessions {
 
     private PurpleRecordingEntry begin(int account, long[] target, boolean voice, long startedAt) {
         try {
+            final boolean awaitingQueue = !voice && target != null && (target.length <= 5 || (target[5] & FLAG_QUICK_REPLY) == 0);
             final PurpleRecordingEntry entry = store.begin(account,
                     target == null ? 0 : target[1], target == null ? 0 : target[2], target == null ? 0 : (int) target[3],
-                    voice ? PurpleRecordingEntry.VOICE : PurpleRecordingEntry.ROUND, startedAt);
+                    voice ? PurpleRecordingEntry.VOICE : PurpleRecordingEntry.ROUND, startedAt, awaitingQueue);
             if (target != null && target.length > 5) {
                 entry.userId = target[4];
                 entry.once = (target[5] & FLAG_ONCE) != 0;
                 entry.quickReply = (target[5] & FLAG_QUICK_REPLY) != 0;
-                store.update(entry);
             }
+            store.update(entry);
             return entry;
         } catch (IOException e) {
             return null;
@@ -529,12 +549,11 @@ public final class PurpleRecordingSessions {
     }
 
     /**
-     * A round handed to upstream's send: settled once its file is finished
-     * (moov written, so sendMedia has the whole file) or gone. Until then a
-     * crash finds it in {@code sending} and recovers it.
+     * Unmanaged legacy rounds settle when finished. Managed rounds retain
+     * their manifest until the explicit completed-bin and queue handoff.
      */
     private synchronized void checkSent(Session session) {
-        if (sessions.get(session.key) != session) return;
+        if (sessions.get(session.key) != session || session.current.entry.awaitingQueue) return;
         final File file = session.current.file;
         if (file == null || !file.exists() || PurpleRecordingFiles.mp4Finished(file) == 1) {
             end(session);

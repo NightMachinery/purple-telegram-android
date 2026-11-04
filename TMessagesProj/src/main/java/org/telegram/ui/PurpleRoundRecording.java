@@ -13,6 +13,7 @@ final class PurpleRoundRecording {
     private Object[] preview;
     private boolean managed, floated, destroyed, completionReceived;
     private Target finalizing;
+    private String completedPath;
     private static final class Target {
         final int account;
         final long user, dialog, mono;
@@ -72,28 +73,49 @@ final class PurpleRoundRecording {
     }
     boolean sendMedia(MediaController.PhotoEntry entry, VideoEditedInfo info, boolean notify, int date, int repeat, long stars) {
         if (entry == null || info == null || !info.roundVideo) return false;
-        if (completionReceived) return managed;
+        if (completionReceived || entry.path.equals(completedPath)) return managed;
         final Target frozen = finalizing != null ? finalizing : target;
         if (frozen == null) return managed;
         completionReceived = true;
+        completedPath = entry.path;
         target = null; preview = null;
         if (UserConfig.getInstance(frozen.account).getClientUserId() != frozen.user) return true;
-        AlertsCreator.ensurePaidMessageConfirmation(frozen.account, frozen.dialog, 1, paid -> {
-            if (UserConfig.getInstance(frozen.account).getClientUserId() != frozen.user) return;
-            SendMessagesHelper.prepareSendingVideo(AccountInstance.getInstance(frozen.account), entry.path, info,
-                    entry.coverPath, entry.coverPhoto, frozen.dialog, frozen.reply, frozen.top, null,
-                    frozen.quote, entry.entities, entry.ttl, null, notify, date, repeat, false, entry.hasSpoiler,
-                    entry.caption, frozen.arguments, entry.effectId, paid, frozen.mono, frozen.suggestion);
-            if (!destroyed && !floated) chat.purpleRoundSent(true);
+        final java.lang.ref.WeakReference<PurpleRoundRecording> owner = new java.lang.ref.WeakReference<>(this);
+        final MessageObject originalReply = frozen.reply;
+        final ChatActivity.ReplyQuote originalQuote = frozen.quote;
+        final long[] context = {frozen.account, frozen.dialog, frozen.top == null ? 0 : frozen.top.getId(),
+                frozen.reply == null ? 0 : frozen.reply.getId(), frozen.user, entry.ttl == 0x7fffffff ? PurpleRecordingSessions.FLAG_ONCE : 0};
+        PurpleRecordingRegistry.retainRound(frozen.account, chat.getClassGuid(), entry.path, context, retained -> {
+            if (retained == null) return;
             finalizing = null;
             PurpleRecordingDock.roundEnded(frozen.account, chat.getClassGuid());
             if (chat.instantCameraView != null) {
                 chat.instantCameraView.hideCamera(true);
                 chat.instantCameraView.setVisibility(View.INVISIBLE);
             }
-        }, stars);
+            if (UserConfig.getInstance(frozen.account).getClientUserId() != frozen.user) return;
+            final java.util.concurrent.atomic.AtomicBoolean approved = new java.util.concurrent.atomic.AtomicBoolean();
+            AlertsCreator.ensurePaidMessageConfirmation(frozen.account, frozen.dialog, 1, paid -> {
+                if (!approved.compareAndSet(false, true)) return;
+                if (UserConfig.getInstance(frozen.account).getClientUserId() != frozen.user) return;
+                PurpleRecordingDelivery.send(retained, frozen.account, frozen.dialog, frozen.arguments, () -> {
+                    SendMessagesHelper.prepareSendingVideo(AccountInstance.getInstance(frozen.account), entry.path, info,
+                            entry.coverPath, entry.coverPhoto, frozen.dialog, frozen.reply, frozen.top, null,
+                            frozen.quote, entry.entities, entry.ttl, null, notify, date, repeat, false, entry.hasSpoiler,
+                            entry.caption, frozen.arguments, entry.effectId, paid, frozen.mono, frozen.suggestion);
+                }, () -> {
+                    final PurpleRoundRecording active = owner.get();
+                    if (active != null) active.cleanCompose(originalReply, originalQuote);
+                });
+            }, stars);
+        });
         if (!destroyed) chat.purpleRoundSent(false);
         return true;
+    }
+    private void cleanCompose(MessageObject reply, ChatActivity.ReplyQuote quote) {
+        if (destroyed || floated || chat.getReplyMessage() != reply || chat.getReplyQuote() != quote) return;
+        final CharSequence text = chat.chatActivityEnterView == null ? null : chat.chatActivityEnterView.getFieldText();
+        if (text == null || text.length() == 0) chat.purpleRoundSent(true);
     }
     void beforeLeave() { PurpleRoundBubble.expand(chat.instantCameraView); }
     void destroy() {

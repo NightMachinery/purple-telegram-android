@@ -1,7 +1,7 @@
 """Compile exact recording adapters against inert UI and transport boundaries."""
 import os, pathlib, shutil, subprocess
 
-def run(root, output):
+def run(root, output, baseline_helper=None):
     tests = pathlib.Path(__file__).parent
     java_root = root / 'TMessagesProj/src/main/java/org/telegram'
     compiler = pathlib.Path(os.environ['JAVA_HOME']) / 'bin/javac'
@@ -11,21 +11,28 @@ def run(root, output):
         target = dest / source.relative_to(tests / 'round-host')
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, target)
-    shutil.copyfile(java_root / 'ui/PurpleRoundRecording.java', dest / 'org/telegram/ui/PurpleRoundRecording.java')
+    shutil.copyfile(baseline_helper or java_root / 'ui/PurpleRoundRecording.java', dest / 'org/telegram/ui/PurpleRoundRecording.java')
+    for name in ['PurpleRecordingDelivery.java', 'PurpleRecordingDockState.java']:
+        shutil.copyfile(java_root / 'messenger/purple' / name, dest / 'org/telegram/messenger/purple' / name)
     def put(name, text):
         target = dest / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text)
-    put('org/telegram/tgnet/TLRPC.java', 'package org.telegram.tgnet; public class TLRPC { public static class TL_document {} }')
+    put('org/telegram/tgnet/TLRPC.java', 'package org.telegram.tgnet; public class TLRPC { public static class TL_document {} public static class Message {public int id,local_id;} }')
     put('org/telegram/tgnet/tl/TL_stories.java', 'package org.telegram.tgnet.tl; public class TL_stories { public static class StoryItem {} }')
     put('org/telegram/messenger/SendMessagesHelper.java', """package org.telegram.messenger;
 import org.telegram.tgnet.*; import org.telegram.tgnet.tl.*;
 public class SendMessagesHelper {
  public static int sends;
- public static void prepareSendingVideo(Object... args) { sends++; }
+ public static SendMessageParams last;
+ public static void prepareSendingVideo(Object... args) {
+  sends++; last=new SendMessageParams(); last.peer=(Long)args[5];last.sendMessageChatArguments=(SendMessageChatArguments)args[19];last.scheduleDate=(Integer)args[14];
+  TLRPC.Message msg=new TLRPC.Message();msg.id=msg.local_id=-sends;
+  org.telegram.messenger.purple.PurpleRecordingDelivery.queued(1,last,msg);
+ }
  public static class SendMessageParams {
   public TLRPC.TL_document document; public long peer, monoForumPeer, effect_id, payStars;
-  public String path; public MessageObject replyToMsg, replyToTopMsg;
+  public int scheduleDate; public String path; public MessageObject replyToMsg, replyToTopMsg;
   public SendMessageChatArguments sendMessageChatArguments;
   public MessageSuggestionParams suggestionParams; public TL_stories.StoryItem replyToStoryItem;
   public static SendMessageParams of(TLRPC.TL_document doc,Object v,String path,long peer,MessageObject reply,MessageObject top,Object a,Object b,Object c,Object d,boolean n,int date,int repeat,int ttl,Object e,Object f,boolean g) {
@@ -94,7 +101,7 @@ public class VoicePreviewCases {
 }""")
     sources = sorted(dest.rglob('*.java'))
     subprocess.run([str(compiler), '-d', str(dest / 'classes'), *map(str, sources)], check=True)
-    for klass, args in [('org.telegram.ui.RoundReviewCases', ['backdrop']), ('org.telegram.ui.RoundReviewCases', ['destroy']), ('org.telegram.ui.RoundReviewCases', ['paid']), ('org.telegram.ui.VoicePreviewCases', [])]:
+    for klass, args in [('org.telegram.ui.RoundReviewCases', ['backdrop']), ('org.telegram.ui.RoundReviewCases', ['destroy']), ('org.telegram.ui.RoundReviewCases', ['paid']), ('org.telegram.ui.VoicePreviewCases', []), ('org.telegram.ui.PaymentCancelCases', [])]:
         subprocess.run([str(compiler.with_name('java')), '-cp', str(dest / 'classes'), klass, *args], check=True)
     mc = (java_root / 'messenger/MediaController.java').read_text()
     assert 'PurpleRecordingVoicePreview.remember(recordingCurrentAccount, recordingAudio,' in mc
@@ -111,4 +118,7 @@ public class VoicePreviewCases {
     assert foreground.index('ApplicationLoader.mainInterfacePaused') < foreground.index('chooseTarget(generation)')
     assert 'if (valid(generation)) chooseTarget(generation);' in foreground
     assert 'foregroundTarget = -1;' in dock.split('private static void clear() {',1)[1]
-    print('RECORDING_INTEGRATION_PINS=12')
+    sending = (java_root / 'messenger/SendMessagesHelper.java').read_text()
+    assert sending.index('PurpleRecordingDelivery.queued(currentAccount, sendMessageParams, newMsg);') > sending.index('MessagesStorage.getInstance(currentAccount).putMessages(arr, false, true, false, 0, mode, threadMessageId);')
+    assert 'PurpleRecordingDelivery.allowed(arguments)' in (java_root / 'messenger/purple/PurpleRecordingSendAs.java').read_text()
+    print('RECORDING_INTEGRATION_PINS=14')

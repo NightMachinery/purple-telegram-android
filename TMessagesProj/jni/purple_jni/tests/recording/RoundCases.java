@@ -793,7 +793,7 @@ public final class RoundCases {
         check(left != null && left.length == 0, "the snapshot is deleted");
         store.clear();
 
-        // P2-5: a round send keeps its entry in sending until the file is finished.
+        // A completed round stays owned until actual upstream queue acknowledgment.
         final File roundD = new File(rounds, "round_video_d.mp4");
         final File crashD = record(roundD, samples, aac, true, 77, Integer.MAX_VALUE);
         final byte[] finishedD = Files.readAllBytes(roundD.toPath());
@@ -806,7 +806,11 @@ public final class RoundCases {
         check(store.entries().size() == 1, "still there while the movie is not finished");
         Files.write(roundD.toPath(), finishedD);
         script.advance(2000);
-        check(store.entries().isEmpty() && sessions.count() == 0, "dropped once the file has moov");
+        check(store.entries().size() == 1 && sessions.count() == 1, "moov is not upstream queue acknowledgment");
+        final String pendingD = sessions.completedForQueue("0:40", roundD, target(400));
+        check(store.find(pendingD).inBin(), "completed round is recoverable before payment approval");
+        store.sent(store.find(pendingD));
+        check(store.entries().isEmpty() && sessions.count() == 0, "dropped after actual queue acknowledgment");
 
         // P1-1: a round discarded after a pause into preview is settled (cancel clears the pause).
         final File roundE = new File(rounds, "round_video_e.mp4");

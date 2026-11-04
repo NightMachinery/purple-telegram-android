@@ -965,7 +965,8 @@
         "pins:RECORDING_HOOK_PINS": 6,
         "recovery:ROUND_RECOVERY_CHECKS": 380,
         "settings:RECORDING_SETTINGS_CHECKS": 140,
-        "events:RECORDING_EVENT_CHECKS": 40
+        "events:RECORDING_EVENT_CHECKS": 40,
+        "payment-store:PAYMENT_STORE_CHECKS": 22
       }
     },
     {
@@ -1364,7 +1365,8 @@
         "recording-dock:ROUND_DESTROY_CHECKS": 6,
         "recording-dock:ROUND_PAID_CHECKS": 10,
         "recording-dock:VOICE_PREVIEW_CHECKS": 16,
-        "recording-dock:RECORDING_INTEGRATION_PINS": 12
+        "recording-dock:RECORDING_INTEGRATION_PINS": 14,
+        "recording-dock:PAYMENT_CANCEL_CHECKS": 62
       }
     }
   ]

@@ -63,6 +63,7 @@ PROGRAMS = [('settings', 'RecordingCases', 'RECORDING_SETTINGS_CHECKS', []),
              [str(args.output / 'voice.ogg'), str(args.output / 'finished.mp4'), str(work / 'bin')]),
             ('journal', 'RoundCases', 'ROUND_JOURNAL_CHECKS', [str(work / 'journal')]),
             ('recovery', 'RoundCases', 'ROUND_RECOVERY_CHECKS', [str(host_library), str(adts), str(work / 'recovery')]),
+            ('payment-store', 'PaymentStoreCases', 'PAYMENT_STORE_CHECKS', [str(args.output / 'finished.mp4'), str(work / 'payment-store')]),
             ('events', 'RoundCases', 'RECORDING_EVENT_CHECKS',
              [str(host_library), str(adts), str(args.output / 'voice.ogg'), str(work / 'events')])]
 
@@ -128,7 +129,7 @@ stubs = args.output / 'host-stubs'
 stubs.mkdir()
 empty = args.output / 'empty-sourcepath'
 empty.mkdir()
-cases = [tests / 'recording/RecordingCases.java', tests / 'recording/RoundCases.java']
+cases = [tests / 'recording/RecordingCases.java', tests / 'recording/RoundCases.java', tests / 'recording/PaymentStoreCases.java']
 stub_sources = sorted((tests / 'recording/host_stubs').rglob('*.java'))
 (args.output / 'inputs.json').write_text(json.dumps([
     {'path': str(p), 'sha256': hashlib.sha256(p.read_bytes()).hexdigest()}

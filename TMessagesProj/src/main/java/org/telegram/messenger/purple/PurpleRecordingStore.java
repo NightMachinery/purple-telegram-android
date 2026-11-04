@@ -104,6 +104,11 @@ public final class PurpleRecordingStore {
     /** A recording started: its entry is written before anything else happens. */
     public PurpleRecordingEntry begin(int account, long dialogId, long topicId, int replyId, String kind,
             long startedAtMs) throws IOException {
+        return begin(account, dialogId, topicId, replyId, kind, startedAtMs, false);
+    }
+
+    public PurpleRecordingEntry begin(int account, long dialogId, long topicId, int replyId, String kind,
+            long startedAtMs, boolean awaitingQueue) throws IOException {
         final PurpleRecordingEntry e = new PurpleRecordingEntry();
         e.id = Long.toString(startedAtMs, 36) + "-" + Integer.toString(nextId++, 36);
         e.account = account;
@@ -113,6 +118,7 @@ public final class PurpleRecordingStore {
         e.kind = kind;
         e.startedAt = startedAtMs;
         e.state = PurpleRecordingEntry.RECORDING;
+        e.awaitingQueue = awaitingQueue;
         entries.add(e);
         save();
         return e;
@@ -134,6 +140,25 @@ public final class PurpleRecordingStore {
     public void sending(PurpleRecordingEntry e) throws IOException {
         e.state = PurpleRecordingEntry.SENDING;
         save();
+    }
+
+    public void keepCompleted(PurpleRecordingEntry e, File media, long nowSeconds) throws IOException {
+        if (PurpleRecordingFiles.mp4Finished(media) != 1) throw new IOException("unfinished round");
+        final File target = binFile(e);
+        PurpleRecordingFiles.copy(media, target);
+        final String previous = e.media;
+        final String state = e.state;
+        final long binned = e.binnedAt;
+        e.media = target.getAbsolutePath();
+        e.state = PurpleRecordingEntry.UNSENT;
+        e.binnedAt = nowSeconds;
+        e.durationMs = PurpleRecordingFiles.mp4DurationMs(target);
+        try {
+            save();
+        } catch (IOException failure) {
+            e.media = previous; e.state = state; e.binnedAt = binned;
+            throw failure;
+        }
     }
 
     /** A file in the bin directory for a copy no entry owns yet (a cancelled round's snapshot). */
@@ -192,7 +217,7 @@ public final class PurpleRecordingStore {
     /**
      * Every entry still recording or sending belongs to a crash. One whose file
      * is gone is dropped (upstream deleted or sent it); one whose file is a
-     * finished recording ended cleanly between our writes and is upstream's;
+     * finished recording without pending queue ownership ended cleanly;
      * every other one moves into the bin and is recovered there.
      */
     public Outcome recoverAtStart(long nowSeconds) throws IOException {
@@ -206,7 +231,7 @@ public final class PurpleRecordingStore {
                 deleteJournal(e);
                 continue;
             }
-            if (finished(e, media) && !e.segment) {
+            if (finished(e, media) && !e.segment && !e.awaitingQueue) {
                 outcome.finishedCleanly++;
                 entries.remove(e);
                 deleteJournal(e);

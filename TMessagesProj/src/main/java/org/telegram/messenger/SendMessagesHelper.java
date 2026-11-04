@@ -5357,6 +5357,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                     mode = 0;
                 }
                 MessagesStorage.getInstance(currentAccount).putMessages(arr, false, true, false, 0, mode, threadMessageId);
+                org.telegram.messenger.purple.PurpleRecordingDelivery.queued(currentAccount, sendMessageParams, newMsg);
                 MessagesController.getInstance(currentAccount).updateInterfaceWithMessages(peer, objArr, mode);
                 if (scheduleDate == 0) {
                     NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.dialogsNeedReload);

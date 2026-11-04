@@ -373,6 +373,7 @@ public final class PurpleRecordingRegistry {
     }
 
     public static void delete(String id) {
+        PurpleRecordingDelivery.revoke(id);
         worker.execute(() -> {
             final PurpleRecordingEntry e = store == null ? null : store.find(id);
             if (e == null) return;
@@ -385,6 +386,7 @@ public final class PurpleRecordingRegistry {
     }
 
     public static void clear() {
+        PurpleRecordingDelivery.revokeAll();
         worker.execute(() -> {
             if (store == null) return;
             try {
@@ -392,6 +394,41 @@ public final class PurpleRecordingRegistry {
             } catch (IOException ignored) {
             }
             changed();
+        });
+    }
+
+    public static void retainRound(int account, int guid, String path, long[] target, java.util.function.Consumer<String> done) {
+        start();
+        worker.execute(() -> {
+            String id = null;
+            try {
+                if (sessions != null) id = sessions.completedForQueue(account + ":" + guid, new File(path), target);
+            } catch (IOException failure) {
+                PurpleDiagLog.event("recordings", "completed_round", PurpleDiagLog.reason("io_failed"));
+            }
+            final String retained = id;
+            AndroidUtilities.runOnUIThread(() -> done.accept(retained));
+        });
+    }
+
+    public static void pendingRound(String id, java.util.function.Consumer<Boolean> done) {
+        worker.execute(() -> {
+            final PurpleRecordingEntry entry = store == null ? null : store.find(id);
+            final boolean present = entry != null && entry.awaitingQueue && entry.inBin();
+            AndroidUtilities.runOnUIThread(() -> done.accept(present));
+        });
+    }
+
+    public static void queuedRound(String id, Runnable done) {
+        worker.execute(() -> {
+            final PurpleRecordingEntry entry = store == null ? null : store.find(id);
+            if (entry != null && entry.awaitingQueue) {
+                try { store.sent(entry); } catch (IOException failure) {
+                    PurpleDiagLog.event("recordings", "queued_round", PurpleDiagLog.reason("io_failed"));
+                }
+                changed();
+            }
+            AndroidUtilities.runOnUIThread(done);
         });
     }
 

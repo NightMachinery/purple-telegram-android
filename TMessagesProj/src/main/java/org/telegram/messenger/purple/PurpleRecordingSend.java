@@ -57,6 +57,10 @@ public final class PurpleRecordingSend {
                 // send into the General topic (review P2-6).
                 if (topicId != 0 && top == null) throw new IOException("topic not cached");
                 final MessageObject topObject = top == null ? null : new MessageObject(account, top, false, false);
+                if (item.round() && item.awaitingQueue) {
+                    sendPendingRound(item, source, account, dialogId, replyObject, topObject, done);
+                    return;
+                }
                 if (item.round()) {
                     ok = sendRound(item, source, account, dialogId, replyObject, topObject);
                 } else {
@@ -102,6 +106,31 @@ public final class PurpleRecordingSend {
                 target.getAbsolutePath(), dialogId, reply, top, null, null, null, null, true, 0, 0, item.once ? 0x7FFFFFFF : 0, null, null, false);
         AndroidUtilities.runOnUIThread(() -> SendMessagesHelper.getInstance(account).sendMessage(params));
         return true;
+    }
+
+    private static void sendPendingRound(PurpleRecordingEntry item, File source, int account, long dialogId,
+            MessageObject reply, MessageObject top, Done done) throws IOException {
+        final File target = new File(FileLoader.getDirectory(FileLoader.MEDIA_DIR_DOCUMENT),
+                System.currentTimeMillis() + "_" + SharedConfig.getLastLocalId() + ".mp4");
+        SharedConfig.saveConfig();
+        PurpleRecordingFiles.copy(source, target);
+        final VideoEditedInfo info = new VideoEditedInfo();
+        info.startTime = -1; info.endTime = -1; info.roundVideo = true;
+        info.estimatedSize = target.length(); info.estimatedDuration = item.durationMs;
+        info.framerate = 25; info.resultWidth = info.originalWidth = 360;
+        info.resultHeight = info.originalHeight = 360; info.originalPath = target.getAbsolutePath();
+        AndroidUtilities.runOnUIThread(() -> {
+            final org.telegram.messenger.SendMessageChatArguments arguments = PurpleRecordingSendAs.freeze(account, dialogId, null);
+            final java.util.concurrent.atomic.AtomicBoolean approved = new java.util.concurrent.atomic.AtomicBoolean();
+            org.telegram.ui.Components.AlertsCreator.ensurePaidMessageConfirmation(account, dialogId, 1, paid -> {
+                if (!approved.compareAndSet(false, true)) return;
+                PurpleRecordingDelivery.send(item.id, account, dialogId, arguments,
+                        () -> SendMessagesHelper.prepareSendingVideo(AccountInstance.getInstance(account), target.getAbsolutePath(), info,
+                                null, null, dialogId, reply, top, null, null, null, item.once ? 0x7fffffff : 0,
+                                null, true, 0, 0, false, false, null, arguments, 0, paid),
+                        () -> done.done(true));
+            });
+        });
     }
 
     /**

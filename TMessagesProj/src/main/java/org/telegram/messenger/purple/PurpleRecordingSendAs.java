@@ -33,7 +33,8 @@ public final class PurpleRecordingSendAs {
     }
     public static boolean reject(int account, long dialog, SendMessageChatArguments arguments) {
         PurpleRecordingSendIdentity identity = identities.get(arguments);
-        return identity != null && !identity.matches(account, UserConfig.getInstance(account).getClientUserId(), dialog);
+        return !PurpleRecordingDelivery.allowed(arguments)
+                || identity != null && !identity.matches(account, UserConfig.getInstance(account).getClientUserId(), dialog);
     }
     public static TLRPC.Peer apply(int account, long dialog, SendMessageChatArguments arguments, TLRPC.Peer fallback) {
         PurpleRecordingSendIdentity identity = identities.get(arguments);

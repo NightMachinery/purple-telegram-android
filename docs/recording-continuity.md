@@ -175,3 +175,45 @@ stock compose cleanup until approval actually queues the media. Canceling that
 confirmation keeps the compose reply unchanged. Approval after fragment
 destruction still queues the frozen target and releases its camera resources.
 The deferred-approval host case covers both live and destroyed fragments.
+
+## Completed rounds awaiting queue storage
+
+Managed rounds persist `awaiting_queue` in their first manifest write. A clean
+MP4 ends encoding, and remains recovery-owned until an outgoing message is
+stored. The F10 sending timer and startup recovery no longer infer queueing
+from a finished container for these entries. Old entries without this optional
+field retain their existing interpretation.
+
+Completed media is copied and synced into the Recording bin before any second
+price confirmation or Stars-needed UI is opened. The bin owns the file and
+frozen recovery destination, topic, reply and view-once metadata. The original
+native camera is then released and the dock can accept a new recording.
+Cancel, Back, dismissal and fragment destruction leave this completed item in
+the bin. A later send can use the bin's existing actions. This trades native
+resume of a completed encoder for a durable, explicit retry path.
+
+Successful automatic sends keep the original immutable native context,
+including sender, quote and suggestion fields. A thin SendMessagesHelper hook
+runs after it submits the outgoing local message. Purple checks for that exact
+message in the normal or scheduled outgoing table on the same serial storage
+queue before removing recovery ownership. Preparation returning alone does
+not acknowledge queueing. Account identity, one active delivery ticket and
+one payment approval fence stale or duplicate callbacks. Native compose
+cleanup waits for queue acknowledgment and preserves text/reply edits made
+after completion. A weak UI owner avoids retaining a destroyed fragment.
+
+Bin retry copies its retained payload into upstream's media directory and uses
+the same acknowledgment. It cannot erase a file still being prepared by
+upstream. Restart preserves an unqueued completed item, including the window
+between encoder completion and the bin copy. A crash after the outgoing SQLite
+commit but before the separate recovery-manifest removal can conservatively
+leave a bin copy; startup does not automatically resend it. This favors
+retention over deleting a possibly unqueued recording.
+
+The recording-dock fixture includes payment Cancel, dismissal, price change,
+Stars-sheet dismissal, failed/actual queue storage, duplicate completion and
+approval, fragment destruction, subsequent compose edits and a late callback
+after a new capture. A separate real manifest/store phase verifies restart
+retention and independent outgoing bytes. The earlier four successful-path
+review fixes and their assertions remain covered. These are host fixtures;
+Android surface, payment-sheet and process timing still need device testing.

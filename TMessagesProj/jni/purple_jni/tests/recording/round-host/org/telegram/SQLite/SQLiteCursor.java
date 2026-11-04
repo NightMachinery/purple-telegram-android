@@ -1,0 +1,1 @@
+package org.telegram.SQLite; public class SQLiteCursor {public boolean next(){return org.telegram.messenger.MessagesStorage.stored;} public void dispose(){}}

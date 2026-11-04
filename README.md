@@ -213,6 +213,9 @@ delete it; Clear bin empties it. Items are deleted automatically after
 `"12h"`, `"24h"`, `"48h"`, `"7d"`, `"off"`), at start and once an hour.
 `keep_discarded_p` (default on) is what sends a discarded recording to the bin
 instead of deleting it. Both are rows of Purple Settings > Media recording.
+Completed rounds waiting for payment or queueing stay in the Recording bin.
+If you dismiss payment confirmation or the Stars sheet, use the bin to retry
+or save the recording. The camera is released once the bin owns a synced copy.
 
 - **The registry.** `PurpleRecordingRegistry` keeps
   `files/purple-recordings/recordings.json`, one entry per recording (account
