@@ -41,6 +41,8 @@ final class PurpleSyncAutoEngine {
          * shown once, so no failure dies silently.
          */
         default void failed(Throwable error) { }
+        /** A pass failed in a way that can heal (diag code {@code code}): it runs again at {@code notBefore}, no pause. */
+        default void retrying(String code, long notBefore) { }
         /**
          * The client's backoff of automatic passes that end without the write they planned (an unknown outcome or a
          * network failure), kept across restarts: how many in a row, and the unix time before which no pass runs.
@@ -122,6 +124,27 @@ final class PurpleSyncAutoEngine {
         if (error instanceof IllegalArgumentException) return "illegal_argument";
         if (error instanceof IllegalStateException) return "illegal_state";
         return "unexpected";
+    }
+    /** Only these cannot heal by trying again; every other failure of a pass retries with backoff. */
+    static boolean pausing(String code) {
+        return "automatic_chat_mismatch".equals(code) || "native_unavailable".equals(code);
+    }
+    /**
+     * An exception of a pass, the engine stopped. WHY: one file race or transient state must not stop fully automatic
+     * sync until someone opens the Sync screen; it gets its reason in the log and a retry, also across a restart.
+     */
+    void failure(Throwable error) {
+        String code = failureCode(error);
+        if (pausing(code)) {
+            port.status(null, PurpleSyncAutoCore.Reason.StoreMismatch);
+            port.failed(error);
+            return;
+        }
+        long[] counted = port.backoff();
+        long notBefore = port.now() + backoffSeconds(counted[0] + 1);
+        port.backoff(counted[0] + 1, notBefore);
+        port.retrying(code, notBefore);
+        port.retry(() -> { idle(); event(PurpleSyncAutoCore.Event.SessionReady); }, Math.max(1, (notBefore - port.now()) * 1000));
     }
     final PurpleSyncRunner.Session account;
     final String key;
@@ -525,9 +548,8 @@ final class PurpleSyncAutoEngine {
             execute(plan, facts);
         } catch (Exception | LinkageError e) {
             org.telegram.messenger.FileLog.e(e);
-            port.status(null, PurpleSyncAutoCore.Reason.StoreMismatch);
-            port.failed(e);
             end();
+            failure(e);
         }
     }
     private boolean liveEffects(Snapshot facts) {
@@ -620,7 +642,7 @@ final class PurpleSyncAutoEngine {
                             try {
                                 mutate(plan, facts, false);
                             } catch (Exception e) {
-                                port.failed(e);
+                                failure(e);
                                 complete(plan, facts, PurpleSyncAutoCore.Outcome.OutcomeUnknown, null);
                             }
                         });

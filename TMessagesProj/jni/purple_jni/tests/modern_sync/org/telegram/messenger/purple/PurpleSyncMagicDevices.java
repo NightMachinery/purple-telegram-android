@@ -278,7 +278,7 @@ final class PurpleSyncMagicDevices {
             try {
                 while (!tasks.isEmpty()) {
                     Runnable next = tasks.remove();
-                    try { next.run(); } catch (Exception | LinkageError e) { failed(e); engine.suspend(); }
+                    try { next.run(); } catch (Exception | LinkageError e) { engine.suspend(); engine.failure(e); }
                 }
             } finally { draining = false; }
         }
@@ -323,6 +323,8 @@ final class PurpleSyncMagicDevices {
         @Override public void backoff(long failures, long notBefore) { backoff = new long[] { failures, notBefore }; }
         @Override public boolean held() { return !failures.isEmpty() || firstUse != null && firstUse.result == PurpleSyncFirstUse.Result.Ask; }
         @Override public void failed(Throwable error) { failures.add(PurpleSyncAutoEngine.failureCode(error)); }
+        final List<String> retrying = new ArrayList<>();
+        @Override public void retrying(String code, long notBefore) { retrying.add(code); }
         long firstChecked;
         int firstScans;
         @Override public boolean firstUse(PurpleSyncAutoCore.Event event) {

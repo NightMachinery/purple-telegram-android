@@ -184,6 +184,11 @@ public final class PurpleSyncAuto {
                         .putBoolean(failureShownKey(opening.key), false).commit();
             AndroidUtilities.runOnUIThread(this::render);
         }
+        @Override public void retrying(String code, long notBefore) {
+            PurpleDiagLog.event("sync", "auto_failed", PurpleDiagLogStore.slot(account.account), PurpleDiagLogStore.reason(code));
+            retryAt = notBefore;
+            AndroidUtilities.runOnUIThread(this::render);
+        }
         /** The user acted (a finished Check on the Sync screen, or the switch turned on): the pause ends. */
         void resume() {
             if (failure() == null) return;
@@ -266,10 +271,10 @@ public final class PurpleSyncAuto {
                 try {
                     task.run();
                 } catch (Exception | LinkageError e) {
-                    // Purple: no automatic pass dies silently; see PurpleSyncAutoEngine.Port#failed.
+                    // Purple: no automatic pass dies silently; see PurpleSyncAutoEngine#failure.
                     org.telegram.messenger.FileLog.e(e);
-                    failed(e);
                     engine.suspend();
+                    engine.failure(e);
                 }
             });
         }

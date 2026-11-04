@@ -264,9 +264,21 @@ final class PurpleSyncMagicScenarioCases {
         ownRecord(device, group, "automatic failure");
         PurpleSyncMagicDevices.Automatic port = new PurpleSyncMagicDevices.Automatic(device, group);
         port.event(PurpleSyncAutoCore.Event.Enable);
+        // A failure that can heal: its reason is logged and it retries with backoff, with no pause.
         port.failCheck = new IllegalStateException("fixture failure inside the pass");
         port.later();
-        check(port.failures.equals(java.util.Collections.singletonList("illegal_state")), "automatic failure: the exception reaches the port as a reason code: " + port.failures);
+        check(port.retrying.equals(java.util.Collections.singletonList("illegal_state")) && port.failures.isEmpty() && port.backoff[0] == 1 && port.retryTask != null,
+                "automatic failure: a transient exception gets its reason and a retry, and does not pause: " + port.retrying + " " + port.failures);
+        port.failCheck = null;
+        int healed = port.checks;
+        port.clock = port.backoff[1];
+        port.retryTask.run();
+        check(port.checks == healed + 1 && port.reason == PurpleSyncAutoCore.Reason.None && port.failures.isEmpty(),
+                "automatic failure: the retry runs the pass by itself: " + port.reason);
+        // A failure that cannot heal pauses until the user resumes.
+        port.failCheck = new IllegalStateException("AutomaticChatMismatch");
+        port.later();
+        check(port.failures.equals(java.util.Collections.singletonList("automatic_chat_mismatch")), "automatic failure: a permanent exception reaches the port as a reason code: " + port.failures);
         int checks = port.checks;
         port.later();
         check(port.failures.size() == 1 && port.checks == checks && port.reason == PurpleSyncAutoCore.Reason.SyncChatProblem,
