@@ -243,7 +243,8 @@ public final class PurpleRecordingRegistry {
         } else if (event == NotificationCenter.audioDidSent) {
             final boolean draft = args.length > 1 && args[1] != null;
             final String path = args.length > 2 && args[2] instanceof String ? (String) args[2] : null;
-            worker.execute(() -> { if (sessions != null) sessions.didSent(key, draft, path); });
+            final long[] target = draft ? target(guid) : null;
+            worker.execute(() -> { if (sessions != null) sessions.didSent(key, draft, path, account, target); });
         } else if (event == NotificationCenter.audioRecordTooShort) {
             worker.execute(() -> { if (sessions != null) sessions.tooShort(key); });
         }

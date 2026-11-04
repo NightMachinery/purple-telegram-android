@@ -222,7 +222,27 @@ public final class PurpleRecordingSessions {
 
     /** {@code audioDidSent}: without a draft upstream sent it; with one it paused into preview. */
     public synchronized void didSent(String key, boolean draft, String path) {
-        final Session session = sessions.get(key);
+        didSent(key, draft, path, -1, null);
+    }
+
+    /**
+     * {@code audioDidSent} with the account and the chat's target. A draft for
+     * a chat with no session is a saved voice draft that upstream restored
+     * (legacy prepareResumedRecording, V2 showAudioRecorderV2Draft): it is the
+     * account's live recording now, so it starts a paused session, and a
+     * recordResumed continues it rather than an older one (re-check N5).
+     */
+    public synchronized void didSent(String key, boolean draft, String path, int account, long[] target) {
+        Session session = sessions.get(key);
+        if (session == null && draft && account >= 0) {
+            lastPaused.remove(account);
+            if (path != null && path.endsWith(".mp4")) return;
+            final PurpleRecordingEntry entry = begin(account, target, true, env.now());
+            if (entry == null) return;
+            session = new Session(key, false, target);
+            session.current = new Part(entry);
+            sessions.put(key, session);
+        }
         if (session == null) return;
         if (!draft) {
             end(session);

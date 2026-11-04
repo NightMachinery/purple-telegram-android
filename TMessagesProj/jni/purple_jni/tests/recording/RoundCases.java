@@ -653,6 +653,31 @@ public final class RoundCases {
         sessions.tooShort("0:11");
         sessions.tooShort("0:12");
 
+        // N5: chat X pauses and is sent from preview (no event); chat Y restores a
+        // saved draft (audioDidSent with a draft, no session); the resume is Y's.
+        sessions.started("0:14", 0, target(140), true, script.now);
+        final File xf = voiceFile(audio, "audio_recording_voice_1800000556000_5.ogg", ogg, script);
+        script.advance(1000);
+        sessions.stopped("0:14", 1, target(140));
+        sessions.didSent("0:14", true, xf.getPath(), 0, target(140));
+        script.advance(1000);
+        final File draftY = voiceFile(audio, "audio_recording_voice_1800000558000_6.ogg", ogg, script);
+        sessions.didSent("0:15", true, draftY.getPath(), 0, target(150));
+        script.advance(1000);
+        sessions.resumed(0);
+        final File yNew = voiceFile(audio, "audio_recording_voice_1800000560000_7.ogg", torn, script);
+        script.advance(3000);
+        PurpleRecordingEntry ex5 = null;
+        PurpleRecordingEntry ey5 = null;
+        for (PurpleRecordingEntry e : store.entries()) {
+            if (e.dialogId == 140) ex5 = e;
+            if (e.dialogId == 150) ey5 = e;
+        }
+        check(ex5 != null && xf.getPath().equals(ex5.media), "X's stale session keeps its own file");
+        check(ey5 != null && yNew.getPath().equals(ey5.media), "the restored draft's resume is filed under Y");
+        sessions.tooShort("0:14");
+        sessions.tooShort("0:15");
+
         // N1: a paused round, then a voice message in the same chat: another recording.
         final File roundN = new File(work, "round_video_n.mp4");
         Files.write(roundN.toPath(), new byte[]{0, 0, 0, 8, 'f', 'r', 'e', 'e'});
