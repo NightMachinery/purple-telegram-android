@@ -1,0 +1,1 @@
+package org.telegram.messenger; public class UserConfig {public static long identity=9;public static boolean active=true;public static UserConfig getInstance(int a){return new UserConfig();}public long getClientUserId(){return identity;}public boolean isClientActivated(){return active;}}

@@ -1,0 +1,1 @@
+package org.telegram.messenger; public class MessageObject { public int getId(){return 8;} }

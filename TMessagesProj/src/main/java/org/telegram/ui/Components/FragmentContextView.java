@@ -212,6 +212,7 @@ public class FragmentContextView extends FrameLayout implements NotificationCent
 
     private FragmentContextViewDelegate delegate;
     private final Theme.ResourcesProvider resourcesProvider;
+    private final org.telegram.ui.PurpleRecordingStrip purple = new org.telegram.ui.PurpleRecordingStrip(this, () -> checkPlayer(false));
     private final boolean isSideMenued;
 
     private boolean firstLocationsLoaded;
@@ -1172,6 +1173,7 @@ public class FragmentContextView extends FrameLayout implements NotificationCent
             }
         }
         currentStyle = style;
+        purple.updateStyle(style, titleTextView, resourcesProvider);
         frameLayout.setWillNotDraw(currentStyle != STYLE_INACTIVE_GROUP_CALL);
         if (style != STYLE_INACTIVE_GROUP_CALL) {
             notifyButtonEnabled = false;
@@ -1830,7 +1832,7 @@ public class FragmentContextView extends FrameLayout implements NotificationCent
             }
         }
         boolean wasVisible = visible;
-        if (messageObject == null || messageObject.getId() == 0 || messageObject.isVideo()) {
+        if ((messageObject == null || messageObject.getId() == 0 || messageObject.isVideo()) && !purple.docked()) {
             lastMessageObject = null;
             boolean callAvailable = supportsCalls && VoIPService.getSharedInstance() != null && !VoIPService.getSharedInstance().isHangingUp() && VoIPService.getSharedInstance().getCallState() != VoIPService.STATE_WAITING_INCOMING && !GroupCallPip.isShowing();
             if (!isPlayingVoice() && !callAvailable && chatActivity != null && !GroupCallPip.isShowing()) {
@@ -1952,6 +1954,7 @@ public class FragmentContextView extends FrameLayout implements NotificationCent
                 visible = true;
                 setVisibility(VISIBLE);
             }
+            if (purple.showRecording()) return;
             if (MediaController.getInstance().isMessagePaused()) {
                 playPauseDrawable.setPause(false, !create);
                 playButton.setContentDescription(getString(R.string.AccActionPlay));

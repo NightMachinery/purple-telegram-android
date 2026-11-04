@@ -15,6 +15,7 @@ any later version.
 #include "purple/purple_engine.h"
 #include "purple/purple_local_choice.h"
 #include "purple/purple_passcode.h"
+#include "purple/purple_playback.h"
 #include "purple/purple_screentime.h"
 #include "purple/purple_settings.h"
 #include "purple/purple_splice.h"
@@ -1894,6 +1895,89 @@ Java_org_telegram_messenger_purple_PurpleCore_peekDetentIndexNative(
 		jclass,
 		jint seconds) {
 	return Purple::PeekDetentIndex(int(seconds));
+}
+
+// Whether a voice queue keeps one candidate message: the private-chat voice
+// queue rule of purple_playback.h, so Java never restates it. `chat' is a
+// Purple::PlaybackChat number; one this side does not know keeps everything,
+// which is upstream's queue. The setting comes from the loaded file, and a
+// gate that has never loaded answers with the core's default (on).
+//
+// PurpleVoiceQueue calls this once per candidate while it builds a queue on a
+// manual play, so all of one queue's answers read the same file.
+extern "C" JNIEXPORT jboolean JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_voiceQueueKeepsNative(
+		JNIEnv *,
+		jclass,
+		jint chat,
+		jboolean startOutgoing,
+		jboolean candidateOutgoing) {
+	if (chat < jint(Purple::PlaybackChat::OneToOne)
+		|| chat > jint(Purple::PlaybackChat::Other)) {
+		return JNI_TRUE;
+	}
+	auto &gate = TheGate();
+	const auto lock = std::lock_guard(gate.mutex);
+	const auto anchor = Purple::AnchorForManualPlay(
+		gate.settings.playback,
+		Purple::PlaybackChat(chat),
+		startOutgoing == JNI_TRUE);
+	return Purple::QueueKeeps(anchor, candidateOutgoing == JNI_TRUE)
+		? JNI_TRUE
+		: JNI_FALSE;
+}
+
+// The seek step of the media seek buttons and the headset rewind and
+// fast-forward keys (F9, `[playback] seek_step'), in seconds: one of 5, 10, 15
+// or 30, which the core's parser already enforces. A gate that has never
+// loaded answers with the core's default (10).
+extern "C" JNIEXPORT jint JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_seekStepSecondsNative(
+		JNIEnv *,
+		jclass) {
+	auto &gate = TheGate();
+	const auto lock = std::lock_guard(gate.mutex);
+	return jint(gate.settings.playback.seekStepSeconds);
+}
+
+// The `[recording]' table, packed for PurpleRecordingSettings in this order:
+// keep_across_chats_p, background_p, round_float_p, round_journal (seconds,
+// 0 for off), bin_keep (seconds, 0 for never), keep_discarded_p,
+// send_elsewhere_p, call_pause_p, headset_p, headset_hold_start_p,
+// long_nudge (seconds, 0 for off), preview_trim_p. Booleans are 0 or 1. The
+// core's parser already holds every value to its allowed choices, and a gate
+// that has never loaded answers with the core's defaults.
+extern "C" JNIEXPORT jintArray JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_recordingSettingsNative(
+		JNIEnv *env,
+		jclass) {
+	jint packed[12];
+	{
+		auto &gate = TheGate();
+		const auto lock = std::lock_guard(gate.mutex);
+		const auto &r = gate.settings.recording;
+		const jint values[12] = {
+			r.keepAcrossChats ? 1 : 0,
+			r.background ? 1 : 0,
+			r.roundFloat ? 1 : 0,
+			jint(r.roundJournalSeconds),
+			jint(r.binKeepSeconds),
+			r.keepDiscarded ? 1 : 0,
+			r.sendElsewhere ? 1 : 0,
+			r.callPause ? 1 : 0,
+			r.headset ? 1 : 0,
+			r.headsetHoldStart ? 1 : 0,
+			jint(r.longNudgeSeconds),
+			r.previewTrim ? 1 : 0,
+		};
+		std::copy(std::begin(values), std::end(values), packed);
+	}
+	const auto result = env->NewIntArray(12);
+	if (!result) {
+		return nullptr;
+	}
+	env->SetIntArrayRegion(result, 0, 12, packed);
+	return result;
 }
 
 // Ends one. The deadline is cleared with the flag, so a peek started again

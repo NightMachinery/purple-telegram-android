@@ -69,6 +69,290 @@ Selection uses Telegram's music classification: non-voice audio document
 attributes and its MIME fallbacks for FLAC, OGG, and Opus. Generic audio
 documents without those attributes can be excluded even when named MP3 or M4A.
 
+### Media playback
+
+The design is [docs/media-design.md](docs/media-design.md) (F1-F3 on Android).
+
+**Double-tap restarts.** Double-tap a playing or paused voice message's play
+button, or a round video message's circle, to play it again from 0:00. The
+first tap still does what it always did (pause, resume or play), so a playing
+message pauses for a moment and then restarts; waiting on every single tap for a
+possible second one would slow down the common case. A message that is not the
+one playing, one still downloading and a view-once message are left to
+Telegram's own handling. Double-tap to react still works outside the circle and
+the button. `PurpleMediaRestart` decides; `ChatMessageCell` has one early return
+at the top of `didClickedImage` (the round's circle) and one at the top of
+`didPressButton` (the voice play button), each declining unless it handles that
+kind of tap, so a tap that the first hands on to the second is counted once.
+
+**The floating round.** A round video message that leaves the chat keeps
+playing in Telegram's floating round (`PipRoundVideoView`), over the chat list,
+other chats and Settings. A single tap on it still pauses or resumes, and
+dragging it still moves or dismisses it. A double tap restarts it from 0:00,
+like a double tap on the round in the chat and a double click on the Desktop
+floating player (restart wins the double gesture on both clients). A long press
+(held without moving far enough to drag, acting on release) opens the message:
+the chat scrolls to it when it is on top, otherwise it opens at the message, by
+the same route the player bar at the top of a screen uses, so Work Mode's
+chat-open policy applies as it does there. A deleted message, a chat of another
+account on top, or a round played from a channel's admin log leaves the long
+press as upstream's plain tap. `PurpleRoundPip` decides; the PiP's
+`onTouchEvent` has one line in its `ACTION_UP` tap branch that passes the press
+length and clears the playing message when Purple handled the tap, so upstream's
+toggle is skipped while its drag reset and edge snap still run.
+
+When the voice queue starts a round that is not on screen, the chat no longer
+jumps to it after you scrolled away. Upstream floats a starting round only when
+your finger scrolled the previous one away or a floating round already exists;
+otherwise, when the queue advanced to a round within five messages, it scrolled
+the chat to that round even if you had scrolled elsewhere (for example while a
+voice message played), and a round starting farther away played with its
+picture off screen. Now a starting round goes to the floating round, except that
+an automatic advance still scrolls while you are reading the queue (a message
+within those five is on screen). The next voice message never scrolled the chat
+upstream, and still does not. Ordinary videos keep upstream's behaviour. This
+decision is made only when a round starts playing; a reply-quote, search or
+scroll-to-bottom jump while a round already plays is left to upstream (which
+floats it only if the list is measured again after the jump's scroll animation)
+and is on the device checklist.
+This is the one hook that widens an existing upstream line instead of adding
+one: `ChatActivity.updateTextureViewPosition`'s condition
+`checkTextureViewPosition || PipRoundVideoView.getInstance() != null` gains
+`|| purple.roundLeavesToPip(messageObject, needScroll)`. The PiP-or-scroll
+choice is a single if/else-if, so there is no place for an early return that
+would not change the branch around it.
+
+**Private-chat voice queue.** Purple Settings > Media playback > **Keep the
+voice queue to the other person** (on by default) is `[playback]
+private_chat_queue_p` in settings.toml, app-wide, so it syncs with the file. In
+a one-to-one chat (a user, a bot or a secret chat; not Saved Messages or a
+service chat), when you start playing the other person's voice or round
+message, the automatic "play next" plays only their messages and skips yours,
+including a voice message you record while listening. Starting on your own
+message, in Saved Messages, in a group or in a channel plays everything as
+before. "Theirs" is Telegram's direction: a message they forwarded to you is
+theirs. The setting is read when you start playing, so changing it applies
+from the next manual play. The rule is purple-core's (`purple_playback.h`),
+reached through `PurpleCore.voiceQueueKeeps`; `PurpleVoiceQueue` keeps what the
+last manual play decided. Hooks: one guarded `continue` in
+`ChatActivity.createVoiceMessagesPlaylist`'s loop (through `PurpleChatHooks`),
+which every manual play goes through, and one in the `didReceiveNewMessages`
+append loop of `MediaController.didReceivedNotification`, the first Purple line
+in `MediaController`. Known limit: a voice playlist started from a profile's
+shared-media Voice tab is built elsewhere, so while an earlier confined queue
+of the same chat is still the remembered one, your own new messages are not
+appended to it live.
+
+### Media recording
+
+The design is [docs/media-recording-design.md](docs/media-recording-design.md)
+(F6-F11 and extras). Android carries the voice continuity dock (F7/F8), the
+in-chat round bubble fallback (F6), F9 and F10. See
+[recording continuity](docs/recording-continuity.md) for round-compose typing,
+strip controls, recipient replacement and device qualification. Cross-chat round
+capture remains unshipped.
+
+Round Send waits for the encoder's ready boundary before completed-bin handoff.
+A timed-out or failed finalization preserves a recovered or raw Recording bin
+item. Bin retries keep the account identity selected at action start through
+all delayed send steps; replacing that account slot leaves the recovery item
+owned. V2 error/discard snapshots now reserve their recovery paths before
+renaming and bind delayed work to the original capture, so restart and a newer
+recording preserve separate owners.
+
+**Seek back and forward (F9).** The audio player strip at the top of a screen
+(`FragmentContextView`, where a playing voice, round or music message shows)
+gains two buttons left of the speed button, "−10" and "+10", that jump the
+playing message back or forward. The step is chosen in Purple Settings > Media
+playback > **Seek step** (5, 10, 15 or 30 s), which is `[playback] seek_step`
+in settings.toml: `"5s"`, `"10s"` (the default), `"15s"` or `"30s"`; anything
+else warns and keeps 10 s. It is app-wide and syncs with the file. Choosing a
+step in the row relabels every open strip at once, and a press always uses the
+current step. A seek starts from the player's live position and uses the
+player's own duration, so a paused round moves on every press and a music file
+with a wrong duration tag still steps by the full step. A seek before the start goes to 0:00; a
+seek forward stops one second before the end, so the queue does not advance by
+surprise, and inside that last second it stays put. Headsets, car systems and
+watches get the same step: the media session now advertises rewind and fast
+forward, and the session's default media-button handling maps the headset's
+rewind and fast-forward keys to them. The session also carries two custom
+actions, "Back N s" and "Forward N s" at the current step, which the system
+media controls (the notification and lock screen on Android 13 and later) draw
+as seek buttons; for a voice or round message they take the empty previous and
+next slots. Music has no seek buttons in the system controls: its previous,
+next, shuffle and repeat stay as upstream shows them, and the strip buttons and
+headset keys still seek. Older Android versions build the notification's buttons from
+upstream's own action list, so they show no seek buttons. The expanded player
+keeps upstream's long-press rewinding. Keyboard shortcut commands for seeking
+are Desktop only; on Android, hardware media keys (a keyboard's or headset's
+rewind and fast-forward) do the same through the media session. `PurpleSeek`
+computes the target and seeks through `MediaController.seekToProgressMs`;
+`PurpleCore.seekStepSeconds` reads the step from purple-core.
+`PurpleRecordingStrip` is the strip's per-instance helper (the recording dock
+will share it); its buttons take their colour from the theme on each draw, so
+they follow a day and night switch.
+
+Upstream files it touches, and why:
+
+- `FragmentContextView`: a field holding the per-instance helper, and one call
+  in `updateStyle`, right after the new style is set and before the style
+  branches, that shows or hides the buttons and keeps the title clear of them by
+  its right padding. It runs before the branches so the group call styles, which
+  set the title's padding outright, do so after Purple has taken its share back.
+- `MusicPlayerService`: one `actions |= PurpleSeek.sessionActions(playbackState)`
+  line at each of the two places that build the session's state (the
+  notification and `updatePlaybackState`), which adds the rewind and
+  fast-forward actions and the two seek custom actions; `onRewind` and
+  `onFastForward` in the session callback, each a one-line call to
+  `PurpleSeek.step`; and one early return at the top of `onCustomAction` for
+  the seek custom actions. The file calls `PurpleSeek` five times, so it imports
+  it once.
+
+The media-playback host suite pins these hooks and runs the seek targets and
+the real `seekStepSeconds` bridge over the host core library.
+
+**Crash-safe recordings and the Recording bin (F10).** A voice or video
+message that was being recorded when the app crashed, or was killed, is found
+at the next start and put in the **Recording bin** (Purple Settings > Media
+recording), together with recordings you discarded. From the bin you can play
+an item, send it to its original chat or another one, save it to Downloads, or
+delete it; Clear bin empties it. Items are deleted automatically after
+`[recording] bin_keep` (12 h, 24 h, 48 h by default, 7 days, or never:
+`"12h"`, `"24h"`, `"48h"`, `"7d"`, `"off"`), at start and once an hour.
+`keep_discarded_p` (default on) is what sends a discarded recording to the bin
+instead of deleting it. Both are rows of Purple Settings > Media recording.
+Completed rounds waiting for payment or queueing stay in the Recording bin.
+If you dismiss payment confirmation or the Stars sheet, use the bin to retry
+or save the recording. The camera is released once the bin owns a synced copy.
+
+- **The registry.** `PurpleRecordingRegistry` keeps
+  `files/purple-recordings/recordings.json`, one entry per recording (account
+  slot, chat, topic and reply ids, kind, start, the file, and a state:
+  recording, unsent, recovered or unrecoverable). Every change is written
+  atomically (a synced temporary file, then a rename). The chat comes from the
+  chat screen's `PurpleChatHooks`, which registers its class guid; the entry is
+  written on upstream's `recordStarted`. The ids stay in Purple's directory and
+  never reach the diag log, which gets counts and states only.
+- **Voice needs no upstream hook.** Upstream's recorders already write voice to
+  disk as they record; what a crash loses is the file's link to a chat, and V2
+  deletes its temporary file on a clean release. One second after
+  `recordStarted` the registry takes the newest recorder-named file in
+  `MEDIA_DIR_AUDIO` (V2's `audio_recording_voice_*.ogg`, legacy's
+  `<time>_*.ogg`) and holds it open. `audioDidSent` without a draft means it was
+  sent, and the entry goes; with a draft it paused into upstream's voice draft.
+  A stop followed by upstream deleting the file is a discard: the bytes are
+  still readable through the held descriptor and are copied into the bin.
+- **Recovery.** At start, an entry still recording belongs to a crash. A file
+  that is already a finished recording (an Ogg stream that ended) ended cleanly
+  and is left to upstream; a missing one is dropped; any other moves into
+  `files/purple-recordings/bin/` (out of Telegram's cache, which "Clear cache"
+  empties) and is finalised by purple-core's Ogg finaliser (`FinaliseOggFile`:
+  cut after the last good page, end-of-stream flag, duration from the granule).
+  What cannot be made playable is kept raw as "Could not be recovered" until
+  auto-clear, so it can still be saved.
+- **The orphan scan** runs once per install, for recordings that crashed
+  before Purple kept a registry: V2's temporary voice files and unfinished
+  `.ogg` recordings in `MEDIA_DIR_AUDIO`, and recorder-named `.mp4` files with
+  `ftyp` and `mdat` but no `moov` in `MEDIA_DIR_DOCUMENT`, `files/cache` and
+  the files directory, become "Unknown chat" items. Finished files are never
+  touched. The marker is device-local.
+- **Sending from the bin** uses upstream's routes: a voice document with the
+  waveform and duration through `SendMessagesHelper`, as
+  `MediaController.stopRecordingInternal` builds it. The file first moves out
+  of the bin into the directory upstream sends from. A reply whose message no
+  longer exists is dropped. A chat the running Work Mode preset hides is shown
+  as "Hidden chat" and opened through the stock route instead of sent to;
+  secret-chat items are never offered "Send to another chat" or "Save to
+  Downloads".
+- **Ending from preview.** Upstream announces nothing when a paused recording
+  is sent or discarded from its preview. `PurpleRecordingSessions` ends it at
+  the next recording in that chat; a missing file is not taken for a discard
+  (a V2 round sent after a trim is remuxed and its old file erased). A voice
+  discard from preview is detected positively instead: upstream clears the
+  chat's voice draft (`2voicedrafts_<account>` preferences, watched with a
+  listener, no upstream line), and a cleared draft whose file is deleted is a
+  discard, kept in the bin; with the file still there it was sent. A legacy voice resume records
+  into a new segment and keeps the joined file before it as its own entry, so
+  a crash after a resume recovers both parts as separate items. A voice stop counts as a discard only if upstream deleted the file and
+  sent nothing within 15 s. A send queued just before a crash leaves a clean
+  Ogg file, which the next start leaves to upstream.
+- **Ids.** Besides the settings rows (0x70750501-0x70750506), the bin uses
+  0x70750510 for its Clear bin item and 0x70750600-0x707506ff for its rows.
+
+`PurpleRecordingStore` holds the rules and is plain Java over purple-core
+(`PurpleRecordingCore`: the Ogg finaliser and page walker, and `BinItemExpired`
+for auto-clear), so the recording host suite runs it on real Opus files that
+ffmpeg encodes at test time. F10 voice touches no upstream file.
+
+**Round videos (F10 round).** The sent file keeps upstream's `MP4Builder`
+layout; crash safety is a sidecar journal, `<file>.pjr`, written by
+`PurpleRoundJournal`. Its config header (track formats and the codec
+configuration) is written once at the start; then the samples are appended as
+one batch every `[recording] round_journal` interval (Purple Settings > Media
+recording > **Video message crash safety**: Off, 1 s by default, 2 s or 5 s),
+from the muxer's own thread. Off still writes the config header, so repair
+works. Every record is encoded by purple-core, and the journal is synced every
+5 s only where the recorder's `MP4Builder` syncs too. A write that fails (a
+full disk) stops the journal quietly, with one `journal_stopped` diag line; the
+recording continues.
+
+Recovery (`PurpleRoundRecovery`) asks purple-core's `RecoverRound`: the
+journal's exact samples, then a scan of the media data for the rest, timed on
+the audio clock. Raw AAC frames carry no length, so the scan measures them with
+the AAC measure shim (FFmpeg's decoder, `purple_jni/aac_measure.cpp`), which is
+compiled with the recovery bridge into upstream's native library because that
+library links avcodec. The result is rebuilt through upstream's own
+`MP4Builder` (`createMovie`, `addTrack`, `writeSampleData(..., false)`,
+`finishMovie`), so it has the layout upstream sends; the H.264 profile and
+level for the avcC box are read from the recorded SPS. A partial result is
+marked "Partly recovered"; a round with no config header (no journal) is kept
+raw. Rounds are sent from the bin as `InstantCameraView` sends them: a
+`VideoEditedInfo` with `roundVideo` and no trim, through
+`SendMessagesHelper.prepareSendingVideo`.
+
+The registry handles rounds like voice, except that the file comes from the
+journal's registration instead of a directory listing: legacy registers just
+before `recordStarted`, V2 once per output generation, and the newest
+generation is the recording's file (an older generation's journal is
+dropped, because upstream finishes that file). Both recorders register before
+their `recordStarted`, so a registration waits until the `recordStarted` that
+names its session and never goes to a paused or finished one. A cancel copies
+the file at once, on the thread that posts it, because V2's `erase` empties
+the file before deleting it; a send keeps the entry in `sending` until the
+file has its index. The round recorders' stop
+reasons are 0 or 6 cancel, 2 pause into preview (the journal is flushed), 4
+too short and 5 send.
+
+Checked against the source: `MP4Builder` writes a split `mdat`'s 16-byte
+header in place before that box's first sample (`writeSampleData`,
+`writeNewMdat`) as a placeholder (size 16, `mdat`, eight zero bytes) that
+`flushCurrentMdat` patches later, so a crash never leaves a reserved header the scanner cannot read. Still
+to confirm on a device: whether a resumed V2 generation contains the retained
+prefix (the design's spike), and the planned corpus check of real rounds
+truncated at random offsets.
+
+Upstream files it touches, and why:
+
+- `Mp4Movie`: one call at the top of `addTrack` and one at the top of
+  `addSample` into `PurpleRoundJournal`, which returns at once for any movie
+  that was not registered (video conversions, the camera screen, stories).
+  `MP4Builder` keeps the sample table only in memory, and these two methods
+  are where every sample's offset and time pass.
+- `InstantCameraView` (`VideoRecorder`, after `movie.setCacheFile`) and
+  `RoundVideoMp4Writer` (`initializeIfReady`, after `movie.setCacheFile`):
+  one registration line each, with the split flag and whether that recorder's
+  `MP4Builder` syncs.
+
+The recording host suite pins these hooks, runs the journal from real
+`Mp4Movie` calls and reads it back with purple-core, and recovers rounds
+recorded through the real `MP4Builder` (synthetic H.264-shaped video and real
+AAC frames ffmpeg encodes at test time, at a camera rate that drops from 30 to
+15 fps), comparing the rebuilt sample tables byte for byte with what
+`finishMovie` wrote. It needs ffmpeg (with libopus) and libavcodec's
+pkg-config files on the host; `android.media.MediaFormat` and
+`MediaCodec.BufferInfo` come from small host stand-ins in
+`tests/recording/host_stubs`.
+
 ### Keep Media per chat
 
 The chat menu shows how long this chat's cached media is kept, for example

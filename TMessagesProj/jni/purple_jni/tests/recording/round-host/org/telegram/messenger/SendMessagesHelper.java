@@ -1,0 +1,1 @@
+package org.telegram.messenger; public class SendMessagesHelper {public static int sends; public static void prepareSendingVideo(Object... args){sends++;}}

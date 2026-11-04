@@ -1100,6 +1100,32 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
     private long recordStartTime;
     public long recordTimeCount;
     public int writtenFrame;
+    public boolean purpleNativePreviewAvailable(String path) {
+        return recordingAudio != null && recordingAudioFile != null && recordingAudioFile.getAbsolutePath().equals(path)
+                && (audioRecorderPaused || audioRecorderV2Active && audioRecorderV2Controller != null && audioRecorderV2Controller.isPreviewing());
+    }
+
+    public void purpleAdoptNativePreview(int guid, MediaDataController.DraftVoice draft) {
+        org.telegram.messenger.purple.PurpleRecordingVoicePreview.remember(recordingCurrentAccount, recordingAudio,
+                recordDialogId, recordReplyingMsg, recordReplyingTopMsg, recordReplyingStory,
+                recordSendMessageChatArguments, recordMonoForumPeerId, recordMonoForumSuggestionParams);
+        recordingGuid = guid;
+        NotificationCenter.getInstance(recordingCurrentAccount).postNotificationName(NotificationCenter.recordPaused);
+        NotificationCenter.getInstance(recordingCurrentAccount).postNotificationName(NotificationCenter.audioDidSent,
+                guid, recordingAudio, recordingAudioFile.getAbsolutePath(), true, draft.left, draft.right);
+    }
+
+    public void purpleRetargetRecording(long dialog, MessageObject top) {
+        recordDialogId = dialog;
+        recordTopicId = top == null ? 0 : top.getId();
+        recordReplyingMsg = null;
+        recordReplyingTopMsg = top;
+        recordReplyingStory = null;
+        recordSendMessageChatArguments = org.telegram.messenger.purple.PurpleRecordingSendAs.freeze(recordingCurrentAccount, dialog, null);
+        recordMonoForumPeerId = 0;
+        recordMonoForumSuggestionParams = null;
+    }
+
     private long recordDialogId;
     private long recordTopicId;
     private long recordMonoForumPeerId;
@@ -1973,6 +1999,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                     ArrayList<MessageObject> arr = (ArrayList<MessageObject>) args[1];
                     for (int a = 0; a < arr.size(); a++) {
                         messageObject = arr.get(a);
+                        if (org.telegram.messenger.purple.PurpleVoiceQueue.skipsAppended(messageObject)) continue;
                         if ((messageObject.isVoice() || messageObject.isRoundVideo()) && !messageObject.isVoiceOnce() && !messageObject.isRoundOnce() && (!voiceMessagesPlaylistUnread || messageObject.isContentUnread() && !messageObject.isOut())) {
                             voiceMessagesPlaylist.add(messageObject);
                             voiceMessagesPlaylistMap.put(messageObject.getId(), messageObject);
@@ -2437,6 +2464,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
     }
 
     public void stopRaiseToEarSensors(ChatActivity chatActivity, boolean fromChat, boolean stopRecording) {
+        if (org.telegram.messenger.purple.PurpleRecordingDock.keepsOnChatPause(chatActivity, fromChat)) stopRecording = false;
         if (ignoreOnPause) {
             ignoreOnPause = false;
             return;
@@ -4517,7 +4545,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
         recordReplyingMsg = replyToMsg;
         recordReplyingTopMsg = replyToTopMsg;
         recordReplyingStory = replyStory;
-        recordSendMessageChatArguments = sendMessageChatArguments;
+        recordSendMessageChatArguments = org.telegram.messenger.purple.PurpleRecordingSendAs.freeze(recordingCurrentAccount, recordDialogId, sendMessageChatArguments);
         recordingPrevAudioFile = null;
         recordingAudioFile = null;
         recordTimeCount = 0L;
@@ -4900,7 +4928,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
         recordReplyingMsg = replyToMsg;
         recordReplyingTopMsg = replyToTopMsg;
         recordReplyingStory = replyStory;
-        recordSendMessageChatArguments = sendMessageChatArguments;
+        recordSendMessageChatArguments = org.telegram.messenger.purple.PurpleRecordingSendAs.freeze(recordingCurrentAccount, recordDialogId, sendMessageChatArguments);
         recordMonoForumPeerId = monoForumPeerId;
         recordMonoForumSuggestionParams = suggestionParams;
         NotificationCenter.getInstance(recordingCurrentAccount).postNotificationName(NotificationCenter.recordPaused);
@@ -4909,6 +4937,8 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
     }
 
     public void prepareResumedRecording(int currentAccount, MediaDataController.DraftVoice draft, long dialogId, MessageObject replyToMsg, MessageObject replyToTopMsg, TL_stories.StoryItem replyStory, int guid, SendMessageChatArguments sendMessageChatArguments, long monoForumPeerId, MessageSuggestionParams suggestionParams) {
+        if (org.telegram.messenger.purple.PurpleRecordingDock.preventsDraftRestore()) return;
+        if (org.telegram.messenger.purple.PurpleRecordingDock.adoptNativePreview(this, currentAccount, dialogId, replyToTopMsg, guid, draft)) return;
         if (audioRecorderV2Active) {
             // A paused V2 recording outlives the chat pause; show it again instead of rebuilding it.
             if (showAudioRecorderV2Draft(draft, replyToMsg, replyToTopMsg, replyStory, guid, sendMessageChatArguments, monoForumPeerId, suggestionParams)
@@ -4956,7 +4986,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                 recordReplyingMsg = replyToMsg;
                 recordReplyingTopMsg = replyToTopMsg;
                 recordReplyingStory = replyStory;
-                recordSendMessageChatArguments = recordSendMessageChatArguments;
+                recordSendMessageChatArguments = org.telegram.messenger.purple.PurpleRecordingSendAs.freeze(recordingCurrentAccount, recordDialogId, sendMessageChatArguments);
             } catch (Exception e) {
                 FileLog.e(e);
                 recordingAudio = null;
@@ -5189,6 +5219,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
     }
 
     public void startRecording(int currentAccount, long dialogId, MessageObject replyToMsg, MessageObject replyToTopMsg, TL_stories.StoryItem replyStory, int guid, boolean manual, SendMessageChatArguments sendMessageChatArguments, long monoForumPeerId, MessageSuggestionParams suggestionParams) {
+        if (org.telegram.messenger.purple.PurpleRecordingDock.refuseStart()) return;
         boolean paused = false;
         if (playingMessageObject != null && isPlayingMessage(playingMessageObject) && !isMessagePaused()) {
             paused = true;
@@ -5289,7 +5320,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                 recordReplyingMsg = replyToMsg;
                 recordReplyingTopMsg = replyToTopMsg;
                 recordReplyingStory = replyStory;
-                recordSendMessageChatArguments = sendMessageChatArguments;
+                recordSendMessageChatArguments = org.telegram.messenger.purple.PurpleRecordingSendAs.freeze(recordingCurrentAccount, recordDialogId, sendMessageChatArguments);
                 fileBuffer.rewind();
 
                 audioRecorder.startRecording();

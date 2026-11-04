@@ -6009,6 +6009,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     }
 
     private void didClickedImage() {
+        if (org.telegram.messenger.purple.PurpleMediaRestart.onImageTap(currentMessageObject, buttonState)) return;
         if (currentMessageObject.hasMediaSpoilers() && !currentMessageObject.needDrawBluredPreview() && !currentMessageObject.isMediaSpoilersRevealed) {
             if (delegate != null && currentMessageObject.isSensitive()) {
                 delegate.didPressRevealSensitiveContent(this);
@@ -17893,6 +17894,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     }
 
     private void didPressButton(boolean animated, boolean video) {
+        if (org.telegram.messenger.purple.PurpleMediaRestart.onButton(currentMessageObject, buttonState)) return;
         if (delegate != null && currentMessageObject.isSensitive() && currentMessageObject.hasMediaSpoilers() && !currentMessageObject.needDrawBluredPreview() && !currentMessageObject.isMediaSpoilersRevealed) {
             delegate.didPressRevealSensitiveContent(this);
             return;

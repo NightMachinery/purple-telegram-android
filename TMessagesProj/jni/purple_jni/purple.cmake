@@ -20,7 +20,13 @@ add_library(purplecore SHARED
         purple_jni/sync_files_bridge.cpp
         purple_jni/retained_config_bases.cpp
         purple_jni/archive_core_bridge.cpp
+        purple_jni/recording_bridge.cpp
         purple/purple/purple_passcode.cpp
+        purple/purple/purple_playback.cpp
+        purple/purple/purple_recording.cpp
+        purple/purple/purple_recording_file.cpp
+        purple/purple/purple_ogg_repair.cpp
+        purple/purple/purple_round_journal.cpp
         purple/purple/purple_settings.cpp
         purple/purple/purple_splice.cpp
         purple/purple/purple_state.cpp
@@ -78,3 +84,15 @@ add_custom_command(TARGET purplecore POST_BUILD
                 $<TARGET_FILE_DIR:purplecore>/libQt6Core_${ANDROID_ABI}.so)
 
 target_sources(${NATIVE_LIB} PRIVATE purple_jni/archive_sqlite_bridge.cpp purple_jni/archive_files_bridge.cpp)
+
+# F10 round video repair: the AAC measure shim needs avcodec, which upstream's
+# library links and libpurplecore does not (docs/media-recording-design.md,
+# "Round video: repair").
+target_sources(${NATIVE_LIB} PRIVATE
+        purple_jni/aac_measure.cpp
+        purple_jni/round_recovery_bridge.cpp
+        purple/purple/purple_mp4_repair.cpp
+        purple/purple/purple_round_journal.cpp
+        purple/purple/purple_recording_file.cpp)
+# The repair sources include "purple/...", relative to the submodule.
+target_include_directories(${NATIVE_LIB} PRIVATE purple)

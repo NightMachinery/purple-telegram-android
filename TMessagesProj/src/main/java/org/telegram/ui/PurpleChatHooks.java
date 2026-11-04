@@ -68,11 +68,29 @@ final class PurpleChatHooks {
     private final ChatActivity chat;
     private final PurpleScreenTimeCover.Host screenTime;
     private final PurpleMarkdownCopy markdownCopy;
+    private final PurpleRoundRecording roundRecording;
 
     private PurplePinnedMusicBar pinnedMusicBar;
     private ChatActivityTopPanelLayout topPanel;
     private ActionBarMenuItem.Item keepMediaItem;
     private boolean resumed;
+    private final org.telegram.messenger.purple.PurpleRecordingDock.Host recordingHost = new org.telegram.messenger.purple.PurpleRecordingDock.Host() {
+        public long[] target() { return recordingTarget(); }
+        public boolean scheduled() { return chat.getChatMode() == ChatActivity.MODE_SCHEDULED; }
+        public void roundStarted() { roundRecording.started(); }
+        public void roundFinishing() { roundRecording.beginFinalization(); }
+        public boolean roundVisible() { return !chat.isPaused(); }
+        public void roundPause() { roundRecording.pause(); }
+        public void roundPreview() { roundRecording.preview(); }
+        public void roundPreviewReady(Object[] args) { roundRecording.ready(args); }
+        public void roundSend(boolean notify, int date, long stars) { roundRecording.send(notify, date, stars); }
+        public void roundDiscard() { roundRecording.discard(); }
+        public void roundAbandon() { roundRecording.abandon(); }
+        public void roundRetarget(long dialog, MessageObject top) { roundRecording.retarget(dialog, top); }
+        public void release() {
+            if (chat.chatActivityEnterView != null) chat.chatActivityEnterView.purpleReleaseRecordUi();
+        }
+    };
 
     /**
      * @param finishing the chat's {@code isFinishing()}, which this class
@@ -80,8 +98,30 @@ final class PurpleChatHooks {
      */
     PurpleChatHooks(ChatActivity chat, Utilities.Callback0Return<Boolean> finishing, PurpleMarkdownCopy.Lookup lookup) {
         this.chat = chat;
+        roundRecording = new PurpleRoundRecording(chat);
         this.screenTime = new PurpleScreenTimeCover.Host(chat, finishing);
         markdownCopy = new PurpleMarkdownCopy(chat, lookup);
+        // F10: a recording this chat starts is registered with its target.
+        org.telegram.messenger.purple.PurpleRecordingRegistry.watchChat(chat.getClassGuid(), this::recordingTarget);
+        org.telegram.messenger.purple.PurpleRecordingDock.watch(chat.getClassGuid(), recordingHost);
+    }
+
+    /**
+     * {account, dialog, topic, reply, client user id, flags} of a recording
+     * this chat starts, read when it starts and again when it stops, for the
+     * Recording bin's "Send to the original chat". The flags carry the enter
+     * view's view-once toggle.
+     */
+    private long[] recordingTarget() {
+        final MessageObject reply = chat.getReplyMessage();
+        final boolean once = chat.chatActivityEnterView != null && chat.chatActivityEnterView.voiceOnce;
+        // getTopicId() is the thread id in saved sublists, quick replies and
+        // suggestions too; only a forum topic's is a topic to send into.
+        final boolean quickReply = chat.getChatMode() == ChatActivity.MODE_QUICK_REPLIES;
+        return new long[]{chat.getCurrentAccount(), chat.getDialogId(), chat.isTopic ? chat.getTopicId() : 0, reply == null ? 0 : reply.getId(),
+                org.telegram.messenger.UserConfig.getInstance(chat.getCurrentAccount()).getClientUserId(),
+                (once ? org.telegram.messenger.purple.PurpleRecordingSessions.FLAG_ONCE : 0)
+                        | (quickReply ? org.telegram.messenger.purple.PurpleRecordingSessions.FLAG_QUICK_REPLY : 0)};
     }
 
     View addSelectionCopy(org.telegram.ui.ActionBar.ActionBarMenu menu) {
@@ -461,6 +501,7 @@ final class PurpleChatHooks {
      * the first resume the translate-availability log line.
      */
     void onResume() {
+        org.telegram.messenger.purple.PurpleRecordingDock.foreground();
         if (archiveScope != null) archiveScope.verify();
         PurplePeekControls.chatResumed(chat);
         screenTime.onResume();
@@ -470,12 +511,38 @@ final class PurpleChatHooks {
         }
     }
 
+    boolean roundCameraVisible(boolean open, boolean fromPaused) {
+        return org.telegram.ui.Components.PurpleRoundBubble.animation(chat.instantCameraView, open, fromPaused);
+    }
+
+    boolean roundRecordingTouch(android.view.MotionEvent event) {
+        return org.telegram.ui.Components.PurpleRoundBubble.background(chat.instantCameraView, event);
+    }
+
+    void attachRoundCamera(org.telegram.ui.Components.InstantCameraViewBase view, org.telegram.ui.Components.PurpleRoundBubble.Visibility visibility) {
+        org.telegram.ui.Components.PurpleRoundBubble.attach(view, small -> { visibility.small(small); roundRecording.resized(small); });
+    }
+
+    boolean dockRecording(boolean invoked) {
+        roundRecording.beforeLeave();
+        return invoked && org.telegram.messenger.purple.PurpleRecordingDock.dock(chat.getCurrentAccount(), chat.getClassGuid());
+    }
+
     void onPause() {
+        roundRecording.beforeLeave();
+        org.telegram.ui.Components.PurpleRoundBubble.pause(chat.instantCameraView);
         markdownCopy.cancel();
         screenTime.onPause();
     }
 
+    boolean sendRoundMedia(org.telegram.messenger.MediaController.PhotoEntry entry, org.telegram.messenger.VideoEditedInfo info, boolean notify, int date, int repeat, long stars) {
+        return roundRecording.sendMedia(entry, info, notify, date, repeat, stars);
+    }
+
     void onDestroy() {
+        roundRecording.destroy();
+        org.telegram.messenger.purple.PurpleRecordingDock.unwatch(chat.getClassGuid());
+        org.telegram.messenger.purple.PurpleRecordingRegistry.unwatchChat(chat.getClassGuid());
         if (archiveScope != null) { archiveScope.close(); archiveScope = null; }
         PurplePeekControls.chatDestroyed(chat);
         markdownCopy.onDestroy();
@@ -492,6 +559,62 @@ final class PurpleChatHooks {
      */
     void input() {
         PurpleScreenTime.input();
+    }
+
+    /**
+     * Whether a round that just started playing off the visible part of the
+     * list goes to the floating round instead of the chat scrolling to it.
+     *
+     * It is asked only at playback start: the block it sits in runs only for
+     * {@code updateTextureViewPosition(true, needScroll)}, which only
+     * {@code messagePlayingDidStart} calls. A reply-quote, search or
+     * scroll-to-bottom jump while a round plays never reaches it; that stays
+     * upstream's (it floats the round only if the visible part is measured
+     * again after the jump's scroll animation), and is on the device checklist.
+     *
+     * Upstream floats a starting round only when your finger moved the list
+     * ({@code checkTextureViewPosition}) or a PiP already exists. With
+     * {@code needScroll} (the queue advanced to a round within five messages)
+     * it otherwise scrolls the chat to the round, and without it leaves the
+     * round playing with its frame off screen. This term floats it in both
+     * cases, except that an automatic advance still follows the queue while
+     * you are reading it: when a message within those five is on screen.
+     * Scrolled away (for example while a voice message played), the next round
+     * plays in the PiP and the chat stays where you are. Ordinary videos are
+     * not rounds and keep upstream's choice: the floating view is round-only.
+     *
+     * It is the one F1 hook that widens an existing line rather than adding
+     * one: the PiP-or-scroll choice is a single if/else-if with no place for an
+     * early return. See README "Media playback" and docs/media-design.md, F1.
+     */
+    boolean roundLeavesToPip(MessageObject message, boolean needScroll) {
+        return org.telegram.messenger.purple.PurpleRoundPip.leavesToPip(
+                message.isRoundVideo(), needScroll, needScroll && queueOnScreen(message));
+    }
+
+    /** Whether a message within upstream's five-message follow range of {@code message} is on screen. */
+    private boolean queueOnScreen(MessageObject message) {
+        final int index = chat.messages.indexOf(message);
+        final org.telegram.ui.Components.RecyclerListView list = chat.getChatListView();
+        if (index < 0 || list == null) return false;
+        for (int i = 0; i < list.getChildCount(); i++) {
+            final View child = list.getChildAt(i);
+            if (!(child instanceof org.telegram.ui.Cells.ChatMessageCell)) continue;
+            final MessageObject shown = ((org.telegram.ui.Cells.ChatMessageCell) child).getMessageObject();
+            final int other = shown == null ? -1 : chat.messages.indexOf(shown);
+            if (other >= 0 && Math.abs(other - index) < 5) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Whether {@code createVoiceMessagesPlaylist} leaves a message out of the
+     * queue a manual play on {@code start} builds: your own messages, when the
+     * play started on the other person's message in a one-to-one chat. See
+     * {@link org.telegram.messenger.purple.PurpleVoiceQueue}.
+     */
+    boolean skipsInVoicePlaylist(MessageObject start, MessageObject candidate) {
+        return org.telegram.messenger.purple.PurpleVoiceQueue.skipsInPlaylist(start, candidate);
     }
 
 

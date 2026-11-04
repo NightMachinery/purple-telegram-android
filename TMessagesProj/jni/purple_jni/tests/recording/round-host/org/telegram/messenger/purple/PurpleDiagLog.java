@@ -1,0 +1,1 @@
+package org.telegram.messenger.purple; public class PurpleDiagLog {public static void event(Object... v){} public static String reason(String s){return s;}}

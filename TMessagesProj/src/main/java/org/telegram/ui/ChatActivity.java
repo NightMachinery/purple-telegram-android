@@ -7857,6 +7857,7 @@ public class ChatActivity extends BaseFragment implements
 
         overlayView = new View(context);
         overlayView.setOnTouchListener((v, event) -> {
+            if (purple.roundRecordingTouch(event)) return false;
             if (event.getAction() == MotionEvent.ACTION_DOWN) {
                 checkRecordLocked(true, false);
             }
@@ -10800,7 +10801,7 @@ public class ChatActivity extends BaseFragment implements
                 true
         );
         instantCameraView.setAnimationCallback((open, fromPaused) ->
-                animatorRoundMessageCameraVisibility.setValue(open, true));
+                animatorRoundMessageCameraVisibility.setValue(purple.roundCameraVisible(open, fromPaused), true));
         instantCameraView.setTrimCallback((start, end) -> {
             if (chatActivityEnterView != null) {
                 chatActivityEnterView.setVideoTimelineTrim(start, end);
@@ -10823,6 +10824,7 @@ public class ChatActivity extends BaseFragment implements
                     }
                 }
         );
+        purple.attachRoundCamera(instantCameraView, small -> { animatorRoundMessageCameraVisibility.setValue(!small, true); overlayView.setVisibility(small ? View.GONE : View.VISIBLE); });
         instantCameraView.setClipToPadding(false);
         instantCameraView.setButtonsBackground(glassBackgroundDrawableFactory, blurredBackgroundColorProvider);
 
@@ -16022,7 +16024,7 @@ public class ChatActivity extends BaseFragment implements
                         videoPlayerContainer.setTranslationY(-AndroidUtilities.roundPlayingMessageSize(isSideMenued()) - 100);
                         fragmentView.invalidate();
                         if (messageObject.isRoundVideo() || messageObject.isVideo()) {
-                            if (checkTextureViewPosition || PipRoundVideoView.getInstance() != null) {
+                            if (checkTextureViewPosition || PipRoundVideoView.getInstance() != null || purple.roundLeavesToPip(messageObject, needScroll)) {
                                 MediaController.getInstance().setCurrentVideoVisible(false);
                             } else if (needScroll) {
                                 scrollToMessageId(messageObject.getId(), 0, false, 0, true, 0);
@@ -34923,6 +34925,7 @@ public class ChatActivity extends BaseFragment implements
     }
 
     public boolean checkRecordLocked(boolean invoked, boolean forceCloseOnDiscard) {
+        if (purple.dockRecording(invoked)) return false;
         if (chatActivityEnterView != null && chatActivityEnterView.isRecordLocked()) {
             if (invoked) {
                 final AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity(), themeDelegate);
@@ -35337,6 +35340,7 @@ public class ChatActivity extends BaseFragment implements
                 if (messageObject.getDialogId() == mergeDialogId && startMessageObject.getDialogId() != mergeDialogId) {
                     continue;
                 }
+                if (purple.skipsInVoicePlaylist(startMessageObject, messageObject)) continue;
                 if ((currentEncryptedChat == null && messageObject.getId() > messageId || currentEncryptedChat != null && messageObject.getId() < messageId) && (messageObject.isVoice() || messageObject.isRoundVideo()) && !messageObject.isVoiceOnce() && !messageObject.isRoundOnce() && (!playingUnreadMedia || messageObject.isContentUnread() && !messageObject.isOut())) {
                     messageObjects.add(messageObject);
                 }
@@ -35909,7 +35913,13 @@ public class ChatActivity extends BaseFragment implements
         }
     }
 
+    public void purpleRoundSent(boolean cleanCompose) {
+        animatorRoundMessageCameraVisibility.setValue(false, true);
+        if (cleanCompose) afterMessageSend();
+    }
+
     public void sendMedia(MediaController.PhotoEntry photoEntry, VideoEditedInfo videoEditedInfo, boolean notify, int scheduleDate, int scheduleRepeatPeriod, boolean forceDocument, long stars) {
+        if (purple.sendRoundMedia(photoEntry, videoEditedInfo, notify, scheduleDate, scheduleRepeatPeriod, stars)) return;
         if (photoEntry == null) {
             return;
         }

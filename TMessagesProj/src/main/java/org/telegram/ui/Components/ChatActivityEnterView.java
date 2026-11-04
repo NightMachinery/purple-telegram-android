@@ -882,6 +882,7 @@ public class ChatActivityEnterView extends FrameLayout implements
     private Runnable onFinishInitCameraRunnable = new Runnable() {
         @Override
         public void run() {
+            if (org.telegram.ui.Components.PurpleRecordingPanel.refuseCamera(ChatActivityEnterView.this)) return;
             if (delegate != null) {
                 delegate.needStartRecordVideo(0, true, 0, 0, 0, 0, 0);
             }
@@ -896,6 +897,7 @@ public class ChatActivityEnterView extends FrameLayout implements
             if (delegate == null || parentActivity == null) {
                 return;
             }
+            if (org.telegram.messenger.purple.PurpleRecordingDock.refuseStart()) return;
             delegate.onPreAudioVideoRecord();
             // Purple: see PurpleScreenTime#action
             org.telegram.messenger.purple.PurpleScreenTime.action(org.telegram.messenger.purple.PurpleScreenTime.ACTION_VOICE);
@@ -6197,6 +6199,21 @@ public class ChatActivityEnterView extends FrameLayout implements
         return recordingAudioVideo && recordCircle.isSendButtonVisible();
     }
 
+    public void purpleRestoreRoundUi(Object[] preview) {
+        final boolean once = voiceOnce;
+        if (preview != null) didReceivedNotification(NotificationCenter.audioDidSent, currentAccount, preview);
+        else { recordingAudioVideo = true; updateRecordInterface(RECORD_STATE_ENTER, true); }
+        voiceOnce = once;
+        if (controlsView != null) controlsView.periodDrawable.setValue(1, once, false);
+    }
+
+    public void purpleReleaseRecordUi() {
+        recordingAudioVideo = false;
+        audioToSend = null;
+        videoToSendMessageObject = null;
+        updateRecordInterface(RECORD_STATE_CANCEL, true);
+    }
+
     public void cancelRecordingAudioVideo() {
         if (hasRecordVideo && isInVideoMode()) {
             CameraController.getInstance().cancelOnInitRunnable(onFinishInitCameraRunnable);
@@ -7367,6 +7384,7 @@ public class ChatActivityEnterView extends FrameLayout implements
                     params.sendAnimationData = sendAnimationData;
                 }
                 applyStoryToSendMessageParams(params);
+                if (!org.telegram.messenger.purple.PurpleRecordingVoicePreview.apply(currentAccount, params)) return;
                 SendMessagesHelper.getInstance(currentAccount).sendMessage(params);
                 if (delegate != null) {
                     delegate.onMessageSend(null, notify, scheduleDate, scheduleRepeatPeriod, payStars);
@@ -9763,6 +9781,7 @@ public class ChatActivityEnterView extends FrameLayout implements
         recordPanel.setVisibility(GONE);
         messageEditTextContainer.addView(recordPanel, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, DEFAULT_HEIGHT));
         recordPanel.setOnTouchListener((v, event) -> true);
+        org.telegram.ui.Components.PurpleRecordingPanel.install(recordPanel, this, () -> org.telegram.messenger.purple.PurpleRecordingDock.dock(currentAccount, recordingGuid));
         recordPanel.addView(slideText = new SlideTextView(getContext()), LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.NO_GRAVITY, 45, 0, 0, 0));
 
         recordTimeContainer = new LinearLayout(getContext());
@@ -13349,6 +13368,7 @@ public class ChatActivityEnterView extends FrameLayout implements
     @SuppressWarnings("unchecked")
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
+        if (org.telegram.messenger.purple.PurpleRecordingDock.ignoreEvent(id, account, recordingGuid)) return;
         if (id == NotificationCenter.emojiLoaded) {
             if (emojiView != null) {
                 emojiView.invalidateViews();

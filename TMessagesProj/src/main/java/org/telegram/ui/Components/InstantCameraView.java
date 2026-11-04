@@ -599,6 +599,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
     }
 
     public void destroy(boolean async) {
+        if (org.telegram.messenger.purple.PurpleRecordingDock.roundFinalizing(currentAccount, recordingGuid)) return;
         if (useCamera2) {
             for (int a = 0; a < camera2Sessions.length; ++a) {
                 if (camera2Sessions[a] != null) {
@@ -982,6 +983,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
             videoPlayer = null;
         }
         if (state == 4) {
+            if (!org.telegram.messenger.purple.PurpleRecordingDock.beginRoundFinish(currentAccount, recordingGuid)) return;
             if (videoEncoder != null && recordedTime > 800) {
                 videoEncoder.stopRecording(VideoRecorder.ENCODER_SEND_SEND, new SendOptions(notify, scheduleDate, scheduleRepeatPeriod, ttl, effectId, stars));
                 return;
@@ -1039,6 +1041,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
                 reason = state == 3 ? 2 : 5;
             }
             if (cameraThread != null) {
+                if (!cancelled && state != 3 && !org.telegram.messenger.purple.PurpleRecordingDock.beginRoundFinish(currentAccount, recordingGuid)) return;
                 NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.recordStopped, recordingGuid, reason);
                 int send;
                 if (cancelled) {
@@ -1079,6 +1082,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
     }
 
     public void cancel(boolean byGesture) {
+        if (org.telegram.messenger.purple.PurpleRecordingDock.roundFinalizing(currentAccount, recordingGuid)) return;
         stopProgressTimer();
         if (videoPlayer != null) {
             videoPlayer.releasePlayer(true);
@@ -3300,6 +3304,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
                     }
                     Mp4Movie movie = new Mp4Movie();
                     movie.setCacheFile(fileToWrite);
+                    org.telegram.messenger.purple.PurpleRoundJournal.register(movie, isSecretChat, SharedConfig.deviceIsHigh());
                     movie.setRotation(0);
                     movie.setSize(videoWidth, videoHeight);
                     mediaMuxer = new MP4Builder().createMovie(movie, isSecretChat, false);

@@ -1,0 +1,1 @@
+package org.telegram.ui.Components; public class PurpleRoundBubble {public static boolean small; public static void expand(Object v){} public static boolean small(Object v){return small;}}

@@ -1,5 +1,5 @@
 {
-  "about": "Canonical list of the Purple Android host suites that purple/run_host_suites.py runs. A patch that adds, renames or removes a driver, or a --suite value of one, updates this list in the same commit; a driver no configuration runs yet is recorded under undriven with the reason, and a shell driver that only execs one --suite of a listed driver is recorded under aliases. agp-compile and agp-compile-standalone are the real AGP javac of the library module for the debug and standalone variants, each providing its receipt; a suite names the receipt it tests by placeholder, {receipt} or {standalone-receipt}, and links host-library ({library}), the app's purplecore sources built for the host.",
+  "about": "Canonical list of the Purple Android host suites that purple/run_host_suites.py runs. A patch that adds, renames or removes a driver, or a --suite value of one, updates this list in the same commit; a driver no configuration runs yet is recorded under undriven with the reason, and a shell driver that only execs one --suite of a listed driver is recorded under aliases. agp-compile and agp-compile-standalone are the real AGP javac of the library module for the debug and standalone variants, each providing its receipt; a suite names the receipt it tests by placeholder, {receipt} or {standalone-receipt}, and links host-library ({library}), the app's purplecore sources built for the host. Media integration retains the K3 roster and adds every active media and recording configuration from the frozen reviewed feature tip.",
   "aliases": {
     "TMessagesProj/jni/purple_jni/tests/run_account_sync_store.sh": "modern-sync",
     "TMessagesProj/jni/purple_jni/tests/run_config_sync_bridge.sh": "modern-sync",
@@ -891,6 +891,79 @@
       ],
       "expects": {
         "host:SEARCH_REFRESH_CHECKS": 45
+      }
+    },
+    {
+      "name": "media-playback",
+      "driver": "TMessagesProj/jni/purple_jni/tests/run_media_playback.py",
+      "args": [
+        "--receipt",
+        "{standalone-receipt}",
+        "--json",
+        "{json}",
+        "--library",
+        "{library}",
+        "--output",
+        "{output}"
+      ],
+      "coverage": "Double-tap restart, round PiP (double-tap restart, long-press open) and private-chat voice queue decisions and F9 seek targets on the real AGP classes; the real voiceQueueKeeps and seekStepSeconds bridges over the host core library; pins the ChatMessageCell, PipRoundVideoView, ChatActivity, MediaController, FragmentContextView and MusicPlayerService hooks.",
+      "expects": {
+        "core:MEDIA_QUEUE_CORE_CHECKS": 60,
+        "pins:MEDIA_HOOK_PINS": 18,
+        "pip:MEDIA_PIP_CHECKS": 40,
+        "queue:MEDIA_QUEUE_CHECKS": 28,
+        "restart:MEDIA_RESTART_CHECKS": 37,
+        "seek:MEDIA_SEEK_CHECKS": 70,
+        "seekcore:MEDIA_SEEK_CORE_CHECKS": 38
+      }
+    },
+    {
+      "name": "recording",
+      "driver": "TMessagesProj/jni/purple_jni/tests/run_recording.py",
+      "args": [
+        "--receipt",
+        "{standalone-receipt}",
+        "--json",
+        "{json}",
+        "--library",
+        "{library}",
+        "--output",
+        "{output}"
+      ],
+      "coverage": "F10 crash-safe recordings: the real recordingSettings bridge over the host core library; the registry's store, manifest and bin (atomic writes, crash states becoming recovered through the real Ogg finaliser, discard from a held descriptor, bin_keep expiry at the boundary, the orphan scan patterns) on Opus files ffmpeg encodes at test time; the round journal written from the Mp4Movie hooks and read back by the core (interval, Off writing the config header only, CRC failure, torn append); round recovery through the host build of the recovery bridge and the real MP4Builder, Mp4Movie and Track, compared with finishMovie's tables (fresh journal, truncation inside the last samples, Off, stale journal plus repaired tail, no journal); the registry's event handling (PurpleRecordingSessions) on upstream's event sequences: send and discard from preview, a new recording after a preview, legacy voice segments, round registration pairing across chats, a round's preview, a V2 cancel that empties the file, a round send in flight, view-once; the AAC measure shim against AAC streams encoded at test time; pins the Mp4Movie, InstantCameraView and RoundVideoMp4Writer hooks.",
+      "expects": {
+        "aac:AAC_MEASURE_CHECKS": 540,
+        "bin:RECORDING_BIN_CHECKS": 108,
+        "journal:ROUND_JOURNAL_CHECKS": 22,
+        "pins:RECORDING_HOOK_PINS": 6,
+        "recovery:ROUND_RECOVERY_CHECKS": 380,
+        "settings:RECORDING_SETTINGS_CHECKS": 140,
+        "events:RECORDING_EVENT_CHECKS": 40,
+        "payment-store:PAYMENT_STORE_CHECKS": 22,
+        "boundary-store:BOUNDARY_STORE_CHECKS": 25,
+        "snapshot-registry:SNAPSHOT_REGISTRY_CHECKS": 175
+      }
+    },
+    {
+      "name": "recording-dock",
+      "driver": "TMessagesProj/jni/purple_jni/tests/run_recording_dock.py",
+      "args": [
+        "--output",
+        "{output}"
+      ],
+      "coverage": "F6-F8 voice ownership, stale action rejection, pause/resume/send serialization, original target retention and bubble bounds on narrow and keyboard-sized surfaces. Includes the F10 terminal target handoff in either observer order and pins all recording lifecycle and bubble seams.",
+      "expects": {
+        "recording-dock:RECORDING_DOCK_CHECKS": 304,
+        "recording-dock:RECORDING_DOCK_PINS": 27,
+        "recording-dock:ROUND_BACKDROP_CHECKS": 7,
+        "recording-dock:ROUND_DESTROY_CHECKS": 6,
+        "recording-dock:ROUND_PAID_CHECKS": 10,
+        "recording-dock:VOICE_PREVIEW_CHECKS": 16,
+        "recording-dock:RECORDING_INTEGRATION_PINS": 17,
+        "recording-dock:PAYMENT_CANCEL_CHECKS": 62,
+        "recording-dock:PAYMENT_CAPTUREGEN_CHECKS": 7,
+        "recording-dock:COMPLETION_BOUNDARY_CHECKS": 96,
+        "recording-dock:RETRY_IDENTITY_CHECKS": 46
       }
     }
   ]

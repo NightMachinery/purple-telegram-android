@@ -157,6 +157,7 @@ public class PipRoundVideoView implements NotificationCenter.NotificationCenterD
                 } else if (event.getAction() == MotionEvent.ACTION_UP) {
                     if (startDragging && !dragging) {
                         MessageObject messageObject = MediaController.getInstance().getPlayingMessageObject();
+                        if (org.telegram.messenger.purple.PurpleRoundPip.onTap(messageObject, event.getEventTime() - event.getDownTime())) messageObject = null;
                         if (messageObject != null) {
                             if (MediaController.getInstance().isMessagePaused()) {
                                 MediaController.getInstance().playMessage(messageObject);

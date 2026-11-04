@@ -1,0 +1,316 @@
+# Recording continuity
+
+F7 keeps a voice recording running with the app in the background or the screen
+locked. A microphone foreground service starts while the recording chat is in
+front. Its low-importance notification has Pause/Resume, Send and Discard. Discard
+requires a second tap within five seconds. A partial wake lock is held while the
+recording runs and released on pause and every service teardown. Failure to
+promote the service retains upstream's pause-on-background behavior.
+
+F8 lets a voice leave its chat. Back, a background transition or a tap on the
+locked recording panel releases that panel without stopping MediaController.
+The context strip then owns the recording controls. Text composed in another
+chat uses that chat's normal Send button. The recorder retains its original
+account, topic, reply and send arguments; unrelated voice drafts cannot restore
+over a docked recording. A paused voice already shown in the native preview stays a native draft; it is
+not adopted by leaving that screen. A paused dock keeps its recorder resources
+so both legacy and V2 can resume. A second recording first offers Discard and Continue.
+The user starts it again after the old recording ends.
+
+The strip opens the target through LaunchActivity's normal chat route. Preview
+pauses and hands the voice back to the target chat's native draft and trim UI.
+Paid and scheduled sends open the app and use the native confirmation and date
+picker while retaining the dock target. A restricted or slow-mode send keeps the
+recording and explains the refusal. A paused legacy voice resumes before sending.
+Preview consumption is observed through the same draft-clear signal as F10.
+Each notification action has a generation-specific Intent data URI as well as
+a checked generation extra, so Android cannot update an old action to target a
+new recording. Intent extras alone do not distinguish PendingIntents, as the
+[Android API reference](https://developer.android.com/reference/android/app/PendingIntent)
+explains. The account identity is checked before an action can send. Hidden targets use the neutral Recording
+label under Work Mode. Screens without a context strip use the notification.
+
+F6 supplies the in-chat round bubble fallback. Tap outside the camera to shrink,
+drag it to a corner, tap it to expand, and use its camera and pause controls.
+The camera container is transformed in place; neither SurfaceTexture nor the
+encoder is detached or restarted. The corner is device-local. Layout and the
+visible window bounds keep the bubble above the keyboard. Leaving a chat pauses
+its round, including background and lock. Both round implementations share the
+base touch-dispatch seam.
+
+Shrinking releases the round's native recording panel for typing and shows a
+video row in the recording strip with avatar, title, timer, waveform and native
+Pause/Resume, Preview, Send and confirmed Discard. The round send context is frozen
+at start, including account, reply, topic, quote and send-as arguments. Text sent
+while it floats cannot change that context. Preview expands back into the native
+round preview; its existing duration cap and trimming remain in charge.
+
+Rounds are kept within their owning chat. Before navigating away or backgrounding,
+the native panel is restored and the camera pauses. Round strip controls cannot
+resume a camera outside the owning visible chat. Cross-chat round capture remains
+unshipped until the separately authorized device spike passes.
+
+A deleted user, left chat or unavailable topic changes Send to Send to another
+chat. Selection uses a same-account topic-aware sheet, leaving the old target
+and recording intact on cancel. Selecting a replacement explicitly drops the old
+reply and send-as context, invalidates old notification/payment actions and uses
+the new target's payment/schedule checks.
+Secret-chat recordings never offer that route. The F10 recovery target remains
+the original capture target.
+
+## Settings
+
+Purple Settings, Media recording exposes `keep_across_chats_p`, `background_p`
+and `round_float_p`. All default on and are parsed by purple-core. Changing the
+background setting applies to the next service start. The existing F9/F10
+settings and bin remain in the same screen.
+
+## Ownership and hooks
+
+`PurpleRecordingDockState` is the host-testable ownership state. It serializes
+pause and send transitions, retains the target, counts recorded time without
+pauses and expires the notification discard confirmation. `PurpleRecordingDock`
+connects that state to native events and `PurpleRecordingService`. The existing
+`PurpleRecordingStrip` hosts the controls above the stock player row.
+
+Upstream edits are confined to MediaController (pause decision, second-start
+refusal and draft-restore refusal), ChatActivity (back/overlay and camera binding),
+ChatActivityEnterView (event filtering, panel touch and the minimal UI-release
+extension), FragmentContextView (show/hide using its existing player layout),
+InstantCameraViewBase (touch dispatch), and one manifest service declaration.
+The camera-binding callback can only set the native dim and input overlay.
+Recorder state, target checks and service logic stay in Purple classes.
+
+## Validation
+
+The `recording-dock` host suite covers target retention, ownership, stale action
+rejection, repeated pause/send taps, paused legacy send transitions, recorded
+time, discard confirmation and bubble bounds. Run the complete canonical host
+suite list before acceptance. Application compilation and device qualification
+are separate from those pure host cases.
+
+Device checks, in risk order:
+
+1. Start in chat A, topic and reply; switch account and chat, type and send text,
+   then send the recording. Check its account, recipient, topic and reply.
+2. Preview/send/discard/resume with both voice recorders, including a restored
+   draft and two drafts in different chats. Check F10's bin after every path.
+3. Lock for ten minutes, background, change screens and reconnect Bluetooth.
+   Check captured audio continuity and the foreground-service/wake-lock lifetime.
+4. Deny notification permission, deny service startup, stop the service and
+   switch off background recording. Check stock pause fallback and no silent audio.
+5. Exercise paid and scheduled sends, slow mode, deleted topics and logout. A
+   failed check must never redirect a recording to another chat or identity.
+6. Both round recorders: shrink, scroll, drag/snap, keyboard, flip, pause/resume,
+   expand, 60-second cap and background. Check the video timestamps and F10 files.
+7. Repeat stale notification taps after send/discard/new recording and after a
+   process restart. Check that the new recording is unaffected.
+
+Unreadable F10 manifests use exclusively created set-aside names. Rapid failures
+cannot overwrite an earlier damaged manifest, and a failed set-aside prevents
+later saves from replacing that evidence.
+
+The native extension in MediaController changes only its private send target
+fields, before the dock requests Send. ChatActivityEnterView exposes native round
+panel restoration as well as release; it retains view-once while restoring the
+existing UI. PurpleRoundRecording snapshots the original round's native send
+arguments and handles its completed media through one ChatActivity sendMedia
+hook. Those seams require private native members; the ownership decisions and
+picker remain in Purple helpers. Native quick-reply capture contexts retain their
+stock controls and are not adopted into the dock.
+
+Send-as selection is frozen in a recording's immutable native argument object.
+A weak-key Purple map carries its account, user, dialog and chosen sender through
+video preparation and voice finalization. Two SendMessagesHelper hooks validate
+that identity and apply the frozen sender. Normal sends have no such entry and
+use the native choice. Recipient replacement creates a fresh snapshot for the
+new dialog. This also prevents a recycled account slot from sending an old
+recording after asynchronous video preparation.
+
+Voice Preview hands the still-paused recorder to the native draft panel with a
+single-use, account-checked handoff. It changes the UI guid without replacing the
+private native reply, thread or send arguments with whatever is in the newly
+opened compose field. The capture's F10 target and the currently selected send
+target remain distinct when the user replaced a recipient. Resuming in front
+promotes the microphone service again before a later background transition.
+
+If an original secret chat is gone, Send shows the unavailable notice and keeps
+the recording. It never opens a recipient picker or finalizes the capture into
+a missing encrypted chat. Preview and confirmed Discard remain available.
+
+## Recording integration review fixes
+
+Native voice Preview remembers the frozen reply, topic, story, sender and
+monoforum arguments by document identity when the dock hands the recorder back.
+The direct Preview Send hook applies that snapshot after native trimming and
+story preparation. Resumed sends continue through the recorder's original
+arguments. Neither route copies the current compose reply into the recording.
+
+Every accepted round send transfers its immutable target before encoder finish.
+Both camera implementations reserve finalization through the dock and defer
+cancel or destroy until the completion has durable recovery ownership. Chat
+fragment destruction releases its UI ownership but retains that send target in
+the camera delegate. Duplicate completions are consumed once. Genuine recording
+errors still clear the reservation through native error notifications.
+
+The native ChatActivity bridge closes the round backdrop for every consumed
+send. Stock captures keep native after-send compose cleanup; a capture that
+released compose while small preserves later text and reply changes. The camera
+is released after durable bin retention even when its fragment has been destroyed.
+
+Alternate-target requests from a paused notification foreground the activity
+and defer the picker to its resumed lifecycle callback, checking generation
+again. Stale requests are cleared with the recording.
+
+The recording-dock host suite compiles the exact round helper against inert UI
+and transport boundaries and extracts the actual native voice send parameter
+initialization for direct and resumed sends. It covers stock backdrop cleanup,
+post-destruction completion, duplicate delivery and frozen voice context after
+trim. It also pins native cancel/destroy guards and foreground picker ordering.
+These fixtures do not qualify encoder timing, UI animation or microphone
+continuity on a device. Cross-chat round capture remains unshipped.
+
+Paid confirmation closes the completed round backdrop immediately but defers
+stock compose cleanup until the approved media has an outgoing storage acknowledgment. Canceling that
+confirmation keeps the compose reply unchanged. Approval after fragment
+destruction still queues the frozen target and releases its camera resources.
+The deferred-approval host case covers both live and destroyed fragments.
+
+## Completed rounds awaiting queue storage
+
+Managed rounds persist `awaiting_queue` in their first manifest write. A clean
+MP4 ends encoding, and remains recovery-owned until an outgoing message is
+stored. The F10 sending timer and startup recovery no longer infer queueing
+from a finished container for these entries. Old entries without this optional
+field retain their existing interpretation.
+
+Completed media is copied and synced into the Recording bin before any second
+price confirmation or Stars-needed UI is opened. The bin owns the file and
+frozen recovery destination, topic, reply and view-once metadata. The original
+native camera is then released and the dock can accept a new recording.
+Cancel, Back, dismissal and fragment destruction leave this completed item in
+the bin. A later send can use the bin's existing actions. This trades native
+resume of a completed encoder for a durable, explicit retry path.
+
+Successful automatic sends keep the original immutable native context,
+including sender, quote and suggestion fields. A thin SendMessagesHelper hook
+runs after it submits the outgoing local message. Purple checks for that exact
+message in the normal or scheduled outgoing table on the same serial storage
+queue before removing recovery ownership. Preparation returning alone does
+not acknowledge queueing. Account identity, one active delivery ticket and
+one payment approval fence stale or duplicate callbacks. Native compose
+cleanup waits for queue acknowledgment and preserves text/reply edits made
+after completion. A weak UI owner avoids retaining a destroyed fragment.
+
+Bin retry copies its retained payload into upstream's media directory and uses
+the same acknowledgment. It cannot erase a file still being prepared by
+upstream. Restart preserves an unqueued completed item, including the window
+between encoder completion and the bin copy. A crash after the outgoing SQLite
+commit but before the separate recovery-manifest removal can conservatively
+leave a bin copy; startup does not automatically resend it. This favors
+retention over deleting a possibly unqueued recording.
+
+The recording-dock fixture includes payment Cancel, dismissal, price change,
+Stars-sheet dismissal, failed/actual queue storage, duplicate completion and
+approval, fragment destruction, subsequent compose edits and a late callback
+after a new capture. A separate real manifest/store phase verifies restart
+retention and independent outgoing bytes. The earlier four successful-path
+review fixes and their assertions remain covered. These are host fixtures;
+Android surface, payment-sheet and process timing still need device testing.
+
+Queue acknowledgments bind UI cleanup to the original capture generation.
+Starting another capture cannot let an older queued message clear its reply
+state or close its backdrop. The adverse callback-order fixture fails on the
+unguarded helper and checks both controls after the ownership guard.
+
+Cleanup also checks the global dock generation after the completed round
+releases its slot. A new voice capture, including one outside the old round
+helper's local lifecycle, therefore fences the old acknowledgment as well.
+
+## Encoder readiness and retry authorization
+
+The legacy recorder can call `sendMedia` with `notReadyYet` before draining its
+encoders or writing `moov`. It later clears the same info object's flag on the
+UI thread after the muxer and final-path replacement finish, without promising
+a second delegate callback. Purple keeps one pending completion and its frozen
+target across that interval. It does not latch the completed path, touch the
+bin or prepare a send while the native flag is pending. Duplicate callbacks
+can update the pending info without starting another handoff. V2's completed
+result enters the same path with its native output already finished.
+
+Readiness and transient unfinished-file retention get at most 120 delayed
+checks, 250 ms apart. Exhaustion takes an error path: copy a snapshot and its
+journal into the bin and attempt recovery there, keeping an unrecoverable raw
+item when repair fails. It never sends an unfinished file. This bounds checks,
+not storage-call wall time. A successful completed handoff still copies every
+final byte before payment. Snapshot retention does not erase the original;
+only after it succeeds can the native camera be released. If persistence itself
+fails, the original awaiting-queue manifest remains owned for restart recovery.
+That disk-failure path cannot promise an actionable copy or immediate release.
+
+An accepted V2 encoder error uses an internal stop reason to distinguish it
+from user Discard. It follows F10's synchronous rename-before-erase protection,
+then preserves a recovered or raw bin item even when keep-discarded is off.
+Ordinary cancel retains its previous setting-controlled behavior. The native
+edit is the single error-reason call in `InstantCameraView2.onError`; readiness
+continues to use legacy's existing flag and finished V2 result. Fragment
+destruction preserves the pending completion; an explicit native error
+abandons its UI callback only after the registry has reserved recovery work.
+
+A bin retry binds the expected account user at the start of the user action.
+Original-chat retry uses the entry's recorded user; an explicit alternate
+retry uses the identity selected when that action begins. This exact value
+crosses worker dispatch, file copy, UI handoff, sender snapshot, payment,
+preparation and delivery ticket. Each deferred authorization validates that the
+slot is active and still holds that user. Native preparation and storage
+acknowledgment validate the same value, never a newly sampled replacement.
+A rejected attempt leaves the bin file and manifest intact. A failed storage
+acknowledgment releases its ticket binding so an authorized retry is possible.
+
+The focused cases cover both callback orders, incomplete-to-finished handoff,
+duplicates, fragment destruction, bounded error fallback, accepted V2 error
+with keep-discarded off, raw-journal restart retention and identity replacement
+at each deferred boundary. The retry fixture compiles the exact public retry
+entry and pending-route methods plus the real sender snapshot and delivery
+classes against inert dispatch/storage boundaries. It also tests explicit
+alternate selection and inactive-account rejection. This is host evidence;
+real encoder timing, payment sheets and process/surface teardown need devices.
+
+## Snapshot ownership across delayed error and discard
+
+V2 files reserve their snapshot base, original source and journal in the normal
+manifest before the worker publishes a lock-free capture token. If that save
+fails, the token is not published and the protected rename cannot run. A stop
+claims the token, then atomically renames into its reserved error, kept-discard
+or keep-off-discard destination. The pathname records the captured policy.
+Before the rename recovery finds the original source; afterward it finds the
+reserved destination before applying missing-file cleanup. The original journal
+stays owned throughout. Optional fields default empty for older manifests.
+
+The shared `PurpleRecordingSnapshotHandoff` is used for both ordinary discard
+and accepted encoder error. Its delayed callback captures the original session,
+part, entry id, source, destination, policy and target, rather than resolving
+account/chat guid again. Claim and retirement share an atomic state. A newer
+round or voice creates another entry while the claimed older entry and journal
+remain owned. Removal compares session identity, and the unified callback
+settles at most once. There is no separate snapshotDone/stopped ordering gap.
+
+Settlement copies the reserved bytes and journal into final bin files, repairs
+only the copy and commits the replacement manifest before deleting original
+paths. A persisted committed-copy flag permits retrying cleanup after restart
+and prevents cleanup from deleting the source of an ordinary completed send.
+Startup recovery uses the same copy-before-commit ordering, including when an
+initial reservation or an earlier recovery was interrupted. Keep-discarded off
+still deletes an ordinary discard; accepted errors remain recoverable or raw.
+No per-stop manifest fsync is added to the UI thread.
+
+The registry scheduling fixture compiles its actual recordStopped branch and
+full production ownership classes with a controlled worker. A host-only source
+overlay adds crash probes immediately before/after the real file rename and
+atomic manifest replacement. It aborts the operation and constructs a new real
+store on the same files, checking reserved intent, A/B payloads and journals,
+entry identity, newer round/voice ownership, duplicate/reverse callback order,
+keep policy and interruption during recovery itself. Native notifications,
+encoder writes and OS power-loss behavior remain device qualification; the host
+core stand-in deliberately keeps these incomplete MP4s raw and models voice
+finalization, while the existing recording suite covers real codec recovery.

@@ -4452,6 +4452,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         TLRPC.TL_messageMediaToDo todo = sendMessageParams.todo;
         TLRPC.TL_messageMediaInvoice invoice = sendMessageParams.invoice;
         long peer = sendMessageParams.peer;
+        if (org.telegram.messenger.purple.PurpleRecordingSendAs.reject(currentAccount, peer, sendMessageParams.sendMessageChatArguments)) return;
         String path = sendMessageParams.path;
         MessageObject replyToMsg = sendMessageParams.replyToMsg;
         MessageObject replyToTopMsg = sendMessageParams.replyToTopMsg;
@@ -4576,6 +4577,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 linkedToGroup = chatFull.linked_chat_id;
             }
             fromPeer = getMessagesController().getPeer(ChatObject.getSendAsPeerId(chat, chatFull, true));
+            fromPeer = org.telegram.messenger.purple.PurpleRecordingSendAs.apply(currentAccount, peer, sendMessageParams.sendMessageChatArguments, fromPeer);
         }
 
         if (BuildConfig.DEBUG_VERSION) {
@@ -5355,6 +5357,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                     mode = 0;
                 }
                 MessagesStorage.getInstance(currentAccount).putMessages(arr, false, true, false, 0, mode, threadMessageId);
+                org.telegram.messenger.purple.PurpleRecordingDelivery.queued(currentAccount, sendMessageParams, newMsg);
                 MessagesController.getInstance(currentAccount).updateInterfaceWithMessages(peer, objArr, mode);
                 if (scheduleDate == 0) {
                     NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.dialogsNeedReload);
