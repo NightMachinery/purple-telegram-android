@@ -55,6 +55,7 @@ public class PurpleSyncActivity extends UniversalFragment {
     private static final int ROW_FIRST_THIS=0x70750111;
     /** The check whose first use asked the one-time question, while its answer rows show. */
     private PurpleSyncRunner.Check firstAsk;
+    private boolean firstAskOpened;
     /** The answer the next Check feeds to first use. */
     private PurpleSyncCore.FirstUseChoice firstChoice=PurpleSyncCore.FirstUseChoice.None;
     private org.telegram.messenger.purple.PurpleSyncAuto.Control automatic;
@@ -113,14 +114,14 @@ public class PurpleSyncActivity extends UniversalFragment {
 
     @Override
     public void onResume() {
-        super.onResume();manualForeground=true;failureOnce();
+        super.onResume();manualForeground=true;failureOnce();firstAskOpened=false;checkOnOpenAsk();
         if(runner==null&&!manualOpening&&!destroyed){
             manualOpening=true;long opening=++manualTicket;
             org.telegram.messenger.purple.PurpleSyncChat.manualRunner(currentAccount,()->!destroyed&&manualForeground,value->{
                 if(opening!=manualTicket){if(value!=null)value.close();return;}
                 manualOpening=false;
                 if(destroyed||!inFront()){if(value!=null)value.close();return;}
-                runner=value;if(value!=null)value.transientWait(wait->setStatus(org.telegram.messenger.purple.PurpleRpcRequests.text(wait)));refresh();
+                runner=value;if(value!=null)value.transientWait(wait->setStatus(org.telegram.messenger.purple.PurpleRpcRequests.text(wait)));refresh();checkOnOpenAsk();
             });
         }
         if (runner != null && !lost && !runner.accountAvailable()) {
@@ -236,6 +237,7 @@ public class PurpleSyncActivity extends UniversalFragment {
             case ROW_FIRST_THIS:
                 if (canCheck() && firstAsk != null) {
                     firstChoice = item.id == ROW_FIRST_SYNCED ? PurpleSyncCore.FirstUseChoice.Synced : PurpleSyncCore.FirstUseChoice.ThisDevice;
+                    org.telegram.messenger.purple.PurpleSyncFirstUse.remember(currentAccount, firstAsk, firstChoice);
                     startCheck(Followup.None, "");
                 }
                 break;
@@ -282,6 +284,14 @@ public class PurpleSyncActivity extends UniversalFragment {
 
     private boolean available() {
         return runner != null && !runner.closed() && runner.accountAvailable();
+    }
+
+    /** Automatic sync asked the one-time question and sends the user here: a Check brings the two answer rows up. */
+    private void checkOnOpenAsk() {
+        if (firstAskOpened || runner == null || firstAsk != null || !canCheck()
+                || !org.telegram.messenger.purple.PurpleSyncAuto.firstUseAsks(currentAccount)) return;
+        firstAskOpened = true;
+        startCheck(Followup.None, "");
     }
 
     private boolean canCheck() {

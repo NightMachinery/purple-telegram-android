@@ -43,6 +43,7 @@ final class PurpleSyncFirstUseCases {
         carryLeftovers(parent);
         twoInstalls(parent);
         disagreeingHeads(parent);
+        tappedAnswer(parent);
         actions(parent);
         race(parent);
         d1(parent, PurpleSyncCore.FirstUseChoice.Synced);
@@ -105,6 +106,31 @@ final class PurpleSyncFirstUseCases {
     }
 
     // ---- cases ----
+
+    /**
+     * The user tapped an answer and the Check that tap starts never finished: the answer is already kept, so the next
+     * automatic first use acts on it instead of asking again. What the status keeps across a restart is Ask or Wait.
+     */
+    static void tappedAnswer(File parent) throws Exception {
+        Device d = new Device(parent, "first-use-tap-d", "fixture-device-tap-d");
+        Device m = new Device(parent, "first-use-tap-m", "fixture-device-tap-m");
+        Group chat = new Group();
+        d.local(PurpleSyncMagicDevices.MINE); d.bind();
+        check(firstUse(d, chat, PurpleSyncCore.FirstUseChoice.None, "tap D").result == PurpleSyncFirstUse.Result.Published, "tap: D starts the chat");
+        m.use();
+        m.local(PurpleSyncMagicDevices.THEIRS); m.bind();
+        PurpleSyncRunner runner = m.runner(chat, MAGIC);
+        PurpleSyncRunner.Check shown;
+        try { shown = checked(runner, "tap M"); } finally { runner.close(); }
+        check(PurpleSyncFirstUse.plan(shown, PurpleSyncCore.FirstUseChoice.None).action == PurpleSyncCore.FirstUseAction.Ask, "tap: M is asked");
+        PurpleSyncFirstUse.answers(1).clear();
+        PurpleSyncFirstUse.remember(1, shown, PurpleSyncCore.FirstUseChoice.ThisDevice);
+        PurpleSyncFirstUse.Outcome acted = firstUse(m, chat, PurpleSyncCore.FirstUseChoice.None, "tap M after a failed Check");
+        check(acted.result == PurpleSyncFirstUse.Result.Published && Arrays.equals(PurpleSyncMagicDevices.THEIRS, chat.heads().get(0)),
+                "tap: the kept answer acts with no second question: " + acted.result + " " + acted.reason);
+        check(PurpleSyncFirstUse.shown("Ask") == PurpleSyncFirstUse.Result.Ask && PurpleSyncFirstUse.shown("Wait") == PurpleSyncFirstUse.Result.Wait
+                && PurpleSyncFirstUse.shown("Joined") == null && PurpleSyncFirstUse.shown(null) == null, "tap: only Ask and Wait are kept for the status");
+    }
 
     /**
      * R1 by install D, then R2 by install A with R1 as parent: core lists a head per install, and R2 is the chat's

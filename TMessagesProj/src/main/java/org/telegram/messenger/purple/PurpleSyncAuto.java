@@ -189,6 +189,19 @@ public final class PurpleSyncAuto {
             retryAt = notBefore;
             AndroidUtilities.runOnUIThread(this::render);
         }
+        /** The first-use result shown in the status: the live one, or the Ask or Wait kept from before a restart. */
+        PurpleSyncFirstUse.Result shownFirstUse() {
+            PurpleSyncFirstUse.Result live = firstUse;
+            return live != null ? live : PurpleSyncFirstUse.shown(MessagesController.getMainSettings(account.account).getString(PurpleSyncFirstUse.shownKey(opening.key), null));
+        }
+        /** Sets the live result and keeps Ask and Wait across a restart, for the status only: {@link #held} reads the live one. */
+        void firstUseResult(PurpleSyncFirstUse.Result result) {
+            firstUse = result;
+            String kept = result == PurpleSyncFirstUse.Result.Ask || result == PurpleSyncFirstUse.Result.Wait ? result.name() : null;
+            android.content.SharedPreferences.Editor editor = MessagesController.getMainSettings(account.account).edit();
+            if (kept != null) editor.putString(PurpleSyncFirstUse.shownKey(opening.key), kept); else editor.remove(PurpleSyncFirstUse.shownKey(opening.key));
+            editor.commit();
+        }
         /** The user acted (a finished Check on the Sync screen, or the switch turned on): the pause ends. */
         void resume() {
             if (failure() == null) return;
@@ -231,12 +244,12 @@ public final class PurpleSyncAuto {
             switch (outcome.result) {
                 case Wait:
                 case Ask:
-                    firstUse = outcome.result;
+                    firstUseResult(outcome.result);
                     if (live()) enabledHint(true);
                     break;
                 case Joined:
                 case Published:
-                    firstUse = null;
+                    firstUseResult(null);
                     requested = true;
                     long generation = ++intent;
                     engine.enabled(true, () -> generation == intent && opening.current());
@@ -249,10 +262,10 @@ public final class PurpleSyncAuto {
                     });
                     break;
                 case NotFirstUse:
-                    firstUse = null;
+                    firstUseResult(null);
                     break;
                 default:
-                    firstUse = enabling || enabledHint() ? PurpleSyncFirstUse.Result.Refused : null;
+                    firstUseResult(enabling || enabledHint() ? PurpleSyncFirstUse.Result.Refused : null);
                     break;
             }
             render();
@@ -330,7 +343,7 @@ public final class PurpleSyncAuto {
                 : shownReason == PurpleSyncAutoCore.Reason.None
                 ? LocaleController.getString(R.string.PurpleSyncAutoReady)
                 : LocaleController.formatString(R.string.PurpleSyncAutoAttention, reasonText(shownReason));
-            PurpleSyncFirstUse.Result first = firstUse;
+            PurpleSyncFirstUse.Result first = shownFirstUse();
             if (enabledHint() && failure() != null)
                 text = LocaleController.formatString(R.string.PurpleSyncAutoAttention, LocaleController.getString(R.string.PurpleSyncAutoFailed));
             else if (enabledHint() && first == PurpleSyncFirstUse.Result.Wait)
@@ -380,6 +393,8 @@ public final class PurpleSyncAuto {
                         AndroidUtilities.runOnUIThread(()->runFirstUse(false));
                         return;
                     }
+                    // Purple: a state in the chat's space settles a question kept from before a restart.
+                    if(observed!=null&&shownFirstUse()!=null)firstUseResult(null);
                     reply.done(observed);
                 });else reply.done(null);
             }));
@@ -446,6 +461,11 @@ public final class PurpleSyncAuto {
         preferences.edit().putBoolean(failureShownKey(identity.key), true).commit();
         return true;
     }
+    /** Whether automatic sync of {@code slot} has asked the one-time question and it is still unanswered. */
+    public static boolean firstUseAsks(int slot) {
+        PurpleAccountFiles.Identity identity = PurpleAccountFiles.capture(slot);
+        return identity != null && PurpleSyncFirstUse.shown(MessagesController.getMainSettings(slot).getString(PurpleSyncFirstUse.shownKey(identity.key), null)) == PurpleSyncFirstUse.Result.Ask;
+    }
     /** A finished Check on the Sync screen of {@code slot}: a pause after a failed automatic pass ends. */
     public static void resume(int slot) {
         PurpleAccountFiles.Identity identity = PurpleAccountFiles.capture(slot);
@@ -482,10 +502,13 @@ public final class PurpleSyncAuto {
             if (runtime == null || !runtime.current()) return;
             boolean on = MessagesController.getMainSettings(slot).getBoolean(hintKey(identity.key), false);
             if (outcome.result == PurpleSyncFirstUse.Result.Joined || outcome.result == PurpleSyncFirstUse.Result.Published) {
-                runtime.firstUse = null;
+                runtime.firstUseResult(null);
                 if (on) runtime.settle(outcome, false); else runtime.render();
             } else if (outcome.result == PurpleSyncFirstUse.Result.Ask || outcome.result == PurpleSyncFirstUse.Result.Wait) {
-                runtime.firstUse = on ? outcome.result : null;
+                runtime.firstUseResult(on ? outcome.result : null);
+                runtime.render();
+            } else if (outcome.result == PurpleSyncFirstUse.Result.NotFirstUse) {
+                runtime.firstUseResult(null);
                 runtime.render();
             }
         });

@@ -138,6 +138,22 @@ public final class PurpleSyncFirstUse {
     static String answer(PurpleSyncCore.FirstUseChoice choice, PurpleSyncCore.FirstUse plan) { return choice.name() + "|" + seen(plan); }
 
     /**
+     * The user tapped an answer to what {@code check} asked. It is kept now, before the Check the tap starts, so a
+     * failed Check, leaving the screen or a process death does not ask again.
+     */
+    public static void remember(int slot, PurpleSyncRunner.Check check, PurpleSyncCore.FirstUseChoice choice) {
+        PurpleSyncCore.FirstUse seen = plan(check, PurpleSyncCore.FirstUseChoice.None);
+        if (seen != null && seen.isValid() && seen.available && !seen.space.isEmpty()) answers(slot).put(answer(choice, seen));
+    }
+
+    static String shownKey(String account) { return "purple_sync_first_result_" + account; }
+
+    /** The result kept across a restart for the status: Ask or Wait, anything else is nothing kept. */
+    static Result shown(String kept) {
+        return Result.Ask.name().equals(kept) ? Result.Ask : Result.Wait.name().equals(kept) ? Result.Wait : null;
+    }
+
+    /**
      * The kept answer for what {@code plan} sees, or None. An answer kept for other heads (they changed since, for
      * example a split resolved) is dropped: it never saw these settings, so first use plans again and may ask again.
      */
