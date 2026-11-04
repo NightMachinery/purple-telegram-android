@@ -217,3 +217,8 @@ after a new capture. A separate real manifest/store phase verifies restart
 retention and independent outgoing bytes. The earlier four successful-path
 review fixes and their assertions remain covered. These are host fixtures;
 Android surface, payment-sheet and process timing still need device testing.
+
+Queue acknowledgments bind UI cleanup to the original capture generation.
+Starting another capture cannot let an older queued message clear its reply
+state or close its backdrop. The adverse callback-order fixture fails on the
+unguarded helper and checks both controls after the ownership guard.

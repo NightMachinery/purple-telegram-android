@@ -14,6 +14,7 @@ final class PurpleRoundRecording {
     private boolean managed, floated, destroyed, completionReceived;
     private Target finalizing;
     private String completedPath;
+    private long captureGeneration;
     private static final class Target {
         final int account;
         final long user, dialog, mono;
@@ -35,6 +36,7 @@ final class PurpleRoundRecording {
     }
     PurpleRoundRecording(ChatActivity chat) { this.chat = chat; }
     void started() {
+        captureGeneration++;
         managed = true; floated = false; destroyed = false; completionReceived = false; finalizing = null;
         target = new Target(chat);
         preview = null;
@@ -80,6 +82,7 @@ final class PurpleRoundRecording {
         completedPath = entry.path;
         target = null; preview = null;
         if (UserConfig.getInstance(frozen.account).getClientUserId() != frozen.user) return true;
+        final long generation = captureGeneration;
         final java.lang.ref.WeakReference<PurpleRoundRecording> owner = new java.lang.ref.WeakReference<>(this);
         final MessageObject originalReply = frozen.reply;
         final ChatActivity.ReplyQuote originalQuote = frozen.quote;
@@ -105,15 +108,15 @@ final class PurpleRoundRecording {
                             entry.caption, frozen.arguments, entry.effectId, paid, frozen.mono, frozen.suggestion);
                 }, () -> {
                     final PurpleRoundRecording active = owner.get();
-                    if (active != null) active.cleanCompose(originalReply, originalQuote);
+                    if (active != null) active.cleanCompose(generation, originalReply, originalQuote);
                 });
             }, stars);
         });
         if (!destroyed) chat.purpleRoundSent(false);
         return true;
     }
-    private void cleanCompose(MessageObject reply, ChatActivity.ReplyQuote quote) {
-        if (destroyed || floated || chat.getReplyMessage() != reply || chat.getReplyQuote() != quote) return;
+    private void cleanCompose(long generation, MessageObject reply, ChatActivity.ReplyQuote quote) {
+        if (generation != captureGeneration || destroyed || floated || chat.getReplyMessage() != reply || chat.getReplyQuote() != quote) return;
         final CharSequence text = chat.chatActivityEnterView == null ? null : chat.chatActivityEnterView.getFieldText();
         if (text == null || text.length() == 0) chat.purpleRoundSent(true);
     }
