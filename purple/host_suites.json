@@ -965,6 +965,31 @@
         "recording-dock:COMPLETION_BOUNDARY_CHECKS": 96,
         "recording-dock:RETRY_IDENTITY_CHECKS": 46
       }
+    },
+    {
+      "name": "crash-capture",
+      "driver": "TMessagesProj/jni/purple_jni/tests/run_crash_capture.py",
+      "args": [
+        "--receipt",
+        "{standalone-receipt}",
+        "--output",
+        "{output}"
+      ],
+      "coverage": "F11 crash capture on the real AGP classes: frame, native frame (including Java names in compiled code), build id and signal factories, the Java crash record, tombstone protobuf and ANR trace parsing with their read caps, the pending file, taking it before collection, retry after a failed write, its merge with exit reasons and the repeat limit; pins the ApplicationLoader.onCreate hook.",
+      "expects": {
+        "crash:CRASH_ANR_CHECKS": 38,
+        "crash:CRASH_CAPTURE_CHECKS": 21000,
+        "crash:CRASH_COLLECT_CHECKS": 33,
+        "crash:CRASH_FRAME_CHECKS": 44,
+        "crash:CRASH_JAVA_CHECKS": 32,
+        "crash:CRASH_MERGE_CHECKS": 200,
+        "crash:CRASH_NATIVE_FRAME_CHECKS": 27,
+        "crash:CRASH_PENDING_CHECKS": 10,
+        "crash:CRASH_SIGNAL_CHECKS": 6000,
+        "crash:CRASH_TOMBSTONE_CHECKS": 15000,
+        "crash:CRASH_TRACE_CHECKS": 15,
+        "pins:RECORDING_HOOK_PINS": 1
+      }
     }
   ]
 }

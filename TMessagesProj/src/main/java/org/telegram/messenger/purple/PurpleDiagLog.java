@@ -140,6 +140,36 @@ public final class PurpleDiagLog {
         });
     }
 
+    /**
+     * Appends finished lines in order on the calling thread, outside the
+     * repeat limit, for a crash record that {@link PurpleCrashRecord} has
+     * already bounded, and returns whether every line was appended. Crash
+     * capture calls it from its own background thread so the record is on
+     * disk before its pending file is deleted.
+     *
+     * It never touches FileLog or ApplicationLoader: crash capture runs
+     * before {@code ApplicationLoader.onCreate} has initialised
+     * AndroidUtilities, which FileLog needs (upstream's "AndroidUtilities must
+     * be initialized before FileLog"), and FileLog's init is not safe to
+     * enter from two threads. So the lines are not mirrored to FileLog, and
+     * the store is opened on {@code directory} (the app's files folder) when
+     * nothing opened it yet.
+     */
+    static boolean appendNow(File directory, java.util.List<String> lines) {
+        try {
+            PurpleDiagLogStore target;
+            synchronized (PurpleDiagLog.class) {
+                if (store == null) store = new PurpleDiagLogStore(new File(directory, DIRECTORY), PurpleDiagLogStore.LIMIT);
+                target = store;
+            }
+            boolean all = true;
+            for (String line : lines) all &= target.append(line);
+            return all;
+        } catch (Throwable e) {
+            return false;
+        }
+    }
+
     private static synchronized PurpleDiagLogStore store() {
         if (store == null) {
             try {
@@ -290,6 +320,8 @@ public final class PurpleDiagLog {
                 + "privacy: lines hold fixed vocabulary words, slot indexes, modes, versions,\n"
                 + "  counts and flags, and exception types with scrubbed messages (no ids,\n"
                 + "  phone numbers, emails, @handles, hex tokens, paths or quoted text).\n"
+                + "  Crash lines add code names, and the relative pc and build id of frames in\n"
+                + "  the app's own native libraries, in hex.\n"
                 + "----\n";
     }
 }
