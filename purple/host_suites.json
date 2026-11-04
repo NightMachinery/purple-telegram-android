@@ -1362,6 +1362,7 @@
         "recording-dock:RECORDING_DOCK_PINS": 27,
         "recording-dock:ROUND_BACKDROP_CHECKS": 7,
         "recording-dock:ROUND_DESTROY_CHECKS": 6,
+        "recording-dock:ROUND_PAID_CHECKS": 10,
         "recording-dock:VOICE_PREVIEW_CHECKS": 16,
         "recording-dock:RECORDING_INTEGRATION_PINS": 12
       }

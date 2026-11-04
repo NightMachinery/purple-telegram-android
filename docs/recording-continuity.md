@@ -169,3 +169,9 @@ post-destruction completion, duplicate delivery and frozen voice context after
 trim. It also pins native cancel/destroy guards and foreground picker ordering.
 These fixtures do not qualify encoder timing, UI animation or microphone
 continuity on a device. Cross-chat round capture remains unshipped.
+
+Paid confirmation closes the completed round backdrop immediately but defers
+stock compose cleanup until approval actually queues the media. Canceling that
+confirmation keeps the compose reply unchanged. Approval after fragment
+destruction still queues the frozen target and releases its camera resources.
+The deferred-approval host case covers both live and destroyed fragments.

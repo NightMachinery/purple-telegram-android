@@ -84,6 +84,7 @@ final class PurpleRoundRecording {
                     entry.coverPath, entry.coverPhoto, frozen.dialog, frozen.reply, frozen.top, null,
                     frozen.quote, entry.entities, entry.ttl, null, notify, date, repeat, false, entry.hasSpoiler,
                     entry.caption, frozen.arguments, entry.effectId, paid, frozen.mono, frozen.suggestion);
+            if (!destroyed && !floated) chat.purpleRoundSent(true);
             finalizing = null;
             PurpleRecordingDock.roundEnded(frozen.account, chat.getClassGuid());
             if (chat.instantCameraView != null) {
@@ -91,7 +92,7 @@ final class PurpleRoundRecording {
                 chat.instantCameraView.setVisibility(View.INVISIBLE);
             }
         }, stars);
-        if (!destroyed) chat.purpleRoundSent(!floated);
+        if (!destroyed) chat.purpleRoundSent(false);
         return true;
     }
     void beforeLeave() { PurpleRoundBubble.expand(chat.instantCameraView); }
