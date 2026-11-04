@@ -223,6 +223,13 @@ public final class PurpleSyncAuto {
                     requested = true;
                     long generation = ++intent;
                     engine.enabled(true, () -> generation == intent && opening.current());
+                    if (outcome.unsent) queue(() -> {
+                        // The post behind the answer did not go out: the file on disk is this device's real Save.
+                        PurpleSyncSettingsFile.Contents local = env.context.current()
+                                ? PurpleSyncSettingsFile.read(env.context.files.settings, env.context.files.good) : null;
+                        if (local != null && local.status == PurpleSyncSettingsFile.Status.Present)
+                            engine.event(PurpleSyncAutoCore.Event.LocalSaved, local.bytes);
+                    });
                     break;
                 case NotFirstUse:
                     firstUse = null;

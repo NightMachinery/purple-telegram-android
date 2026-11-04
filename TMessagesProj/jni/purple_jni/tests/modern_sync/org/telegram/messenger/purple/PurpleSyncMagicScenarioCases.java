@@ -29,6 +29,7 @@ final class PurpleSyncMagicScenarioCases {
         automatic(parent, true);
         automaticFresh(parent);
         automaticWaits(parent);
+        automaticUnsent(parent);
         migration(parent);
         automaticFailure(parent);
         System.out.println("MAGIC_AUTOMATIC_CASES=PASS");
@@ -131,6 +132,26 @@ final class PurpleSyncMagicScenarioCases {
         check(port.firstScans == scans + 1 && port.firstUse.result == PurpleSyncFirstUse.Result.Joined && Arrays.equals(PurpleSyncMagicDevices.MINE, waiting.local()),
                 "automatic wait: 15 minutes later it reads again and joins: " + port.firstUse.result);
         check(port.failures.isEmpty(), "automatic wait: no exception: " + port.failures);
+        port.engine.close();
+    }
+
+    /**
+     * P2-4: a fresh customised device with automatic sync on, in an empty chat: first use joins a new space to
+     * publish the first record, and Telegram refuses that post. First use reports it joined with the post unsent, and
+     * automatic sync takes the file as a Save, so exactly one record goes out after all.
+     */
+    static void automaticUnsent(File parent) throws Exception {
+        PurpleSyncMagicDevices.Device device = new PurpleSyncMagicDevices.Device(parent, "magic-automatic-unsent", "fixture-device-unsent");
+        device.local(PurpleSyncMagicDevices.MINE); device.bind();
+        PurpleSyncMagicDevices.Group group = new PurpleSyncMagicDevices.Group();
+        group.refuseNextPost = true;
+        PurpleSyncMagicDevices.Automatic port = new PurpleSyncMagicDevices.Automatic(device, group);
+        port.runFirstUse = true;
+        port.event(PurpleSyncAutoCore.Event.Enable);
+        check(port.firstUse != null && port.firstUse.result == PurpleSyncFirstUse.Result.Joined && port.firstUse.unsent && "successor_unsent".equals(port.firstUse.reason),
+                "automatic unsent: first use joined and reports its post unsent: " + (port.firstUse != null ? port.firstUse.result + " " + port.firstUse.reason : null));
+        check(port.failures.isEmpty() && group.messages.size() == 1 && java.util.Arrays.equals(PurpleSyncMagicDevices.MINE, group.heads().get(0)),
+                "automatic unsent: automatic sync published the file after all, once: " + group.messages.size() + " " + port.reason + " " + port.failures);
         port.engine.close();
     }
 

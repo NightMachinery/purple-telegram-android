@@ -46,6 +46,11 @@ public final class PurpleSyncFirstUse {
         public final PurpleSyncApply.ApplyResult applied;
         public final PurpleSyncPublisher.Result sent;
         public final boolean archived;
+        /**
+         * First use joined to publish this device's file (the first record or a successor) and the post did not go
+         * out: the new state is the chat's, the file is not yet. Automatic sync then takes the file as a Save.
+         */
+        public final boolean unsent;
 
         Outcome(Result result, PurpleSyncCore.FirstUseAction action, String reason, PurpleSyncApply.ApplyResult applied,
                 PurpleSyncPublisher.Result sent, boolean archived) {
@@ -55,6 +60,7 @@ public final class PurpleSyncFirstUse {
             this.applied = applied;
             this.sent = sent;
             this.archived = archived;
+            this.unsent = result == Result.Joined && "successor_unsent".equals(reason);
         }
     }
 
@@ -138,7 +144,7 @@ public final class PurpleSyncFirstUse {
     private final Answers answers;
     private final PurpleSyncRunner.Listener<Outcome> done;
     private PurpleSyncCore.FirstUseAction action;
-    private boolean archived, rechecked;
+    private boolean archived, rechecked, posting;
 
     private PurpleSyncFirstUse(PurpleSyncRunner runner, PurpleSyncCore.FirstUseChoice choice,
             PurpleSyncRunner.Listener<Outcome> done) {
@@ -229,6 +235,7 @@ public final class PurpleSyncFirstUse {
                 return;
             }
             PurpleSyncRunner.PostTicket ticket = outcome.post;
+            posting = successor || ticket != null;
             PurpleSyncRunner.Listener<PurpleSyncPublisher.Result> sent = published -> finish(
                     published != null && published.status == PurpleSyncCore.PublishStatus.Confirmed ? Result.Published : Result.Joined,
                     code(action), result, published);
@@ -270,6 +277,7 @@ public final class PurpleSyncFirstUse {
     }
 
     private void finish(Result result, String reason, PurpleSyncApply.ApplyResult applied, PurpleSyncPublisher.Result sent) {
+        if (posting && result == Result.Joined) reason = "successor_unsent";
         if (result == Result.Joined || result == Result.Published || result == Result.NotFirstUse) answers.clear();
         PurpleDiagLog.event("sync", "first_use", PurpleDiagLogStore.slot(runner.account()),
                 PurpleDiagLogStore.code("action", code(action)), PurpleDiagLogStore.code("outcome", result.name().toLowerCase(java.util.Locale.ROOT)),

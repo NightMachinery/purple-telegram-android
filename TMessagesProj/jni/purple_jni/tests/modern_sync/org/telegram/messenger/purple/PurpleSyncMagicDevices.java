@@ -47,7 +47,10 @@ final class PurpleSyncMagicDevices {
             for (Map.Entry<Integer, byte[]> entry : messages.entrySet()) builder.fetched(entry.getKey(), document(entry.getKey()), date(entry.getKey()), entry.getValue());
             return builder.build(true);
         }
+        /** The next post is refused, as Telegram can refuse one. */
+        boolean refuseNextPost;
         @Override public void post(byte[] staged, PostDone done) {
+            if (refuseNextPost) { refuseNextPost = false; done.onPostDone(new PostResult(PostStatus.NeedsReview, 0, null)); return; }
             ++posts;
             int id = add(staged);
             done.onPostDone(new PostResult(PostStatus.Confirmed, id, staged.clone(), MAGIC, PurpleSyncMagicPublishCases.ORIGIN));
@@ -301,6 +304,9 @@ final class PurpleSyncMagicDevices {
             firstUse = PurpleSyncFirstUseCases.firstUse(device, group, PurpleSyncCore.FirstUseChoice.None, "automatic first use of " + device.id);
             if (firstUse.result == PurpleSyncFirstUse.Result.Joined || firstUse.result == PurpleSyncFirstUse.Result.Published) {
                 engine.enabled(true, () -> true);
+                // As PurpleSyncAuto.Runtime.settle: an unsent post behind first use is the file's Save.
+                if (firstUse.unsent) try { byte[] local = device.local(); if (local != null) engine.event(PurpleSyncAutoCore.Event.LocalSaved, local); }
+                catch (Exception e) { throw new AssertionError(e); }
             } else if (firstUse.result == PurpleSyncFirstUse.Result.Wait || firstUse.result == PurpleSyncFirstUse.Result.Ask) {
                 enabled = true;
             }

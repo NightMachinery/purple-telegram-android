@@ -79,7 +79,7 @@ public final class PurpleDiagLogStore {
             "sync", "first_use", "check_refused", "ask", "join_silently", "published", "archived", "refused",
             "not_first_use", "first_use_unavailable", "archive_refused", "check_changed", "check_failed", "apply_refused",
             "busy", "account_unavailable", "unreadable", "ambiguous", "newer_schema", "heads_unclear", "own_records",
-            "synced", "this_device", "incomplete", "clone_detected", "account_unbound", "store_error", "invalid_settings",
+            "synced", "this_device", "successor_unsent", "incomplete", "clone_detected", "account_unbound", "store_error", "invalid_settings",
             "using_last_good",
             // an automatic pass that threw (PurpleSyncAutoEngine.failureCode): sync auto_failed reason=<code>
             "auto_failed", "automatic_chat_mismatch", "illegal_argument", "illegal_state", "json", "io", "unexpected",
