@@ -32,6 +32,11 @@ final class PurpleSyncMagicScenarioCases {
         automaticUnsent(parent);
         automaticStuck(parent);
         migration(parent);
+        migrationBothPublished(parent, true, false, "magic-both-d");
+        migrationBothPublished(parent, false, false, "magic-both-a");
+        migrationBothPublished(parent, false, true, "magic-behind-a");
+        migrationBothPublished(parent, true, true, "magic-behind-d");
+        migrationSameSave(parent);
         automaticFailure(parent);
         System.out.println("MAGIC_AUTOMATIC_CASES=PASS");
     }
@@ -254,8 +259,122 @@ final class PurpleSyncMagicScenarioCases {
     }
 
     /**
+     * Two installs that both published before magic: R1 by D, then R2 by A with R1 as parent, in one Saved Messages
+     * space. Both move into the magic group, in either order: one space, no first use, no prompt, and the chat's one
+     * head is R2's settings. With {@code behind}, D never read R2 before it moved. If A moves first, D applies R2. If D
+     * moves first, its older settings reach the group first as a new version, which A's R2 does not descend from: A
+     * holds on Conflict with its file and one space intact, and a Check offers the choice. That one prompt is core's
+     * rule (a moved state publishes a new version); see docs/sync-chat.md.
+     */
+    static void migrationBothPublished(File parent, boolean dFirst, boolean behind, String name) throws Exception {
+        PurpleSyncMagicDevices.Device d = new PurpleSyncMagicDevices.Device(parent, name + "-d", "fixture-device-" + name + "-d");
+        PurpleSyncMagicDevices.Device a = new PurpleSyncMagicDevices.Device(parent, name + "-a", "fixture-device-" + name + "-a");
+        Cloud saved = new Cloud(202);
+        d.local(PurpleSyncMagicDevices.MINE);
+        PurpleSyncFirstUseCases.publishSaved(d, saved, name + ": R1 by D");
+        a.local(PurpleSyncMagicDevices.MINE);
+        PurpleSyncFirstUseCases.joinSaved(a, saved, name + ": A joins");
+        a.local(PurpleSyncMagicDevices.THEIRS);
+        PurpleSyncFirstUseCases.publishSaved(a, saved, name + ": R2 by A");
+        if (!behind) {
+            PurpleSyncRunner runner = d.runner(saved, PurpleSyncChatCore.Peer.self());
+            PurpleSyncRunner.Check shown = PurpleSyncFirstUseCases.checked(runner, name + ": D reads R2");
+            check(PurpleModernSyncCases.apply(runner, shown, PurpleModernSyncCases.remote(shown).key).result.status == PurpleSyncCore.ApplyStatus.Applied, name + ": D applies R2");
+            runner.close();
+        }
+        String space = d.space();
+        check(space != null && space.equals(a.space()), name + ": one Saved Messages space before magic");
+        PurpleSyncMagicDevices.Device[] both = { d, a };
+        for (PurpleSyncMagicDevices.Device device : both) {
+            PurpleSyncMagicDevices.Automatic before = new PurpleSyncMagicDevices.Automatic(device, new PurpleSyncMagicDevices.Group(), PurpleSyncChatCore.Peer.self());
+            before.event(PurpleSyncAutoCore.Event.Enable);
+            before.engine.close();
+            device.bind();
+            write(new File(device.sync(), "sync-chat-setup.json"), "{}");
+        }
+        PurpleSyncMagicDevices.Group group = new PurpleSyncMagicDevices.Group();
+        PurpleSyncMagicDevices.Automatic first = new PurpleSyncMagicDevices.Automatic(dFirst ? d : a, group);
+        PurpleSyncMagicDevices.Automatic second = new PurpleSyncMagicDevices.Automatic(dFirst ? a : d, group);
+        first.enabled = second.enabled = true;
+        first.later();
+        second.later();
+        first.later();
+        second.later();
+        check(group.spaces().equals(Collections.singleton(space)), name + ": the group holds the one shared space: " + group.spaces());
+        if (behind && dFirst) {
+            check(second.reason == PurpleSyncAutoCore.Reason.Conflict && second.firstUses == 0 && second.failures.isEmpty() && !a.archived() && space.equals(a.space())
+                    && Arrays.equals(PurpleSyncMagicDevices.THEIRS, a.local()) && Arrays.equals(PurpleSyncMagicDevices.MINE, d.local()) && group.writes() == 1,
+                    name + ": A holds its file in the one space: " + second.reason + " " + group.writes());
+            PurpleSyncRunner runner = a.runner(group, MAGIC);
+            try {
+                PurpleSyncRunner.Check shown = PurpleSyncFirstUseCases.checked(runner, name + ": A's Check");
+                check(shown.review.status == PurpleSyncCore.ReviewStatus.Ready && !PurpleSyncFirstUse.applies(shown)
+                        && (shown.review.verdict == PurpleSyncCore.Verdict.Conflict || shown.review.verdict == PurpleSyncCore.Verdict.Choose),
+                        name + ": a Check offers the choice: " + shown.review.status + " " + shown.review.verdict);
+            } finally { runner.close(); }
+            first.engine.close();
+            second.engine.close();
+            return;
+        }
+        for (PurpleSyncMagicDevices.Automatic port : new PurpleSyncMagicDevices.Automatic[] { first, second }) {
+            check(port.firstUses == 0 && port.mismatches == 0 && port.failures.isEmpty() && port.retrying.isEmpty(),
+                    name + ": no first use and no failure on " + port.device.id + ": " + port.firstUses + " " + port.mismatches + " " + port.failures + " " + port.retrying);
+            check(port.reason == PurpleSyncAutoCore.Reason.None, name + ": nothing held, no prompt on " + port.device.id + ": " + port.reason);
+            check(!port.device.archived() && space.equals(port.device.space()), name + ": kept its state on " + port.device.id);
+        }
+        check(group.heads().size() == 1 && Arrays.equals(PurpleSyncMagicDevices.THEIRS, group.heads().get(0)), name + ": one head, R2's settings: " + group.heads().size());
+        check(Arrays.equals(PurpleSyncMagicDevices.THEIRS, d.local()) && Arrays.equals(PurpleSyncMagicDevices.THEIRS, a.local()), name + ": both devices hold R2's settings");
+        int writes = group.writes();
+        first.later();
+        second.later();
+        check(group.writes() == writes, name + ": later passes write nothing");
+        for (PurpleSyncMagicDevices.Device device : both) PurpleSyncFirstUseCases.settled(device, group, name + ": " + device.id);
+        first.engine.close();
+        second.engine.close();
+    }
+
+    /**
+     * Two moved devices of one space Save the same bytes without having seen each other. The second finds its file
+     * already the chat's head: core plans that as Adopt, and automatic sync must settle it with no prompt.
+     */
+    static void migrationSameSave(File parent) throws Exception {
+        PurpleSyncMagicDevices.Device one = new PurpleSyncMagicDevices.Device(parent, "magic-same-1", "fixture-device-same-1");
+        PurpleSyncMagicDevices.Device two = new PurpleSyncMagicDevices.Device(parent, "magic-same-2", "fixture-device-same-2");
+        Cloud saved = new Cloud(202);
+        one.local(PurpleSyncMagicDevices.MINE);
+        PurpleSyncFirstUseCases.publishSaved(one, saved, "same: first");
+        two.local(PurpleSyncMagicDevices.MINE);
+        PurpleSyncFirstUseCases.joinSaved(two, saved, "same: join");
+        for (PurpleSyncMagicDevices.Device device : new PurpleSyncMagicDevices.Device[] { one, two }) {
+            PurpleSyncMagicDevices.Automatic before = new PurpleSyncMagicDevices.Automatic(device, new PurpleSyncMagicDevices.Group(), PurpleSyncChatCore.Peer.self());
+            before.event(PurpleSyncAutoCore.Event.Enable);
+            before.engine.close();
+            device.bind();
+        }
+        PurpleSyncMagicDevices.Group group = new PurpleSyncMagicDevices.Group();
+        PurpleSyncMagicDevices.Automatic first = new PurpleSyncMagicDevices.Automatic(one, group);
+        PurpleSyncMagicDevices.Automatic second = new PurpleSyncMagicDevices.Automatic(two, group);
+        first.enabled = second.enabled = true;
+        first.later();
+        second.later();
+        check(group.heads().size() == 1 && first.reason == PurpleSyncAutoCore.Reason.None && second.reason == PurpleSyncAutoCore.Reason.None,
+                "same: both settled in the group: " + first.reason + " " + second.reason);
+        oneSave(first, PurpleSyncMagicDevices.THEIRS, "same: the first Save");
+        int writes = group.writes();
+        second.saved(PurpleSyncMagicDevices.THEIRS);
+        second.later();
+        check(second.failures.isEmpty() && second.firstUses == 0 && second.reason == PurpleSyncAutoCore.Reason.None,
+                "same: the second device settles with no prompt: " + second.reason + " " + second.failures);
+        check(group.heads().size() == 1 && Arrays.equals(PurpleSyncMagicDevices.THEIRS, group.heads().get(0)), "same: one head: " + group.heads().size() + " writes " + (group.writes() - writes));
+        PurpleSyncFirstUseCases.settled(two, group, "same: second device");
+        first.engine.close();
+        second.engine.close();
+    }
+
+    /**
      * An automatic pass that throws is not lost: the port gets the exception with its diag reason code, and automatic
-     * sync then holds (core's SyncChatProblem) without a network call until the user resumes it.
+     * sync then holds (core's SyncChatProblem) without a network call until the user resumes it. Only a failure that
+     * cannot heal does that; any other retries with backoff.
      */
     static void automaticFailure(File parent) throws Exception {
         PurpleSyncMagicDevices.Device device = new PurpleSyncMagicDevices.Device(parent, "magic-automatic-failure", "fixture-device-fail");

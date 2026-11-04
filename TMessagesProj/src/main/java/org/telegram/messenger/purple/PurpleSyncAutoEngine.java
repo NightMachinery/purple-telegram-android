@@ -160,6 +160,7 @@ final class PurpleSyncAutoEngine {
     private byte[] waitingSave;
     private String waitingRetry;
     private String savedFingerprint = "";
+    private Observed adoptTried;
     PurpleSyncAutoEngine(PurpleSyncRunner.Session account, String key, Port port) {
         this.account = account;
         this.key = key;
@@ -419,6 +420,7 @@ final class PurpleSyncAutoEngine {
             }
             PurpleSyncAutoCore.Plan plan;
             Snapshot facts;
+            boolean adopting;
             try (PurpleAccountSyncStore store = account.env.store()) {
                 if (!paths.current()) {
                     port.status(null, PurpleSyncAutoCore.Reason.StateChanged);
@@ -489,20 +491,30 @@ final class PurpleSyncAutoEngine {
                     outcome = PurpleSyncAutoCore.Outcome.OutcomeUnknown;
                 }
                 plan = PurpleSyncAutoCore.plan(record, facts.facts, event, port.now(), completed, outcome, inventory);
-                byte[] nextRecord = plan.record.bytes;
-                if (!pendingAuthority && (!plan.record.value.optString("record").isEmpty()
-                        || !plan.record.value.optString("expectedState").isEmpty())) {
-                    JSONObject scoped = new JSONObject(plan.record.value.toString()).put("androidAuthority", facts.authority);
-                    PurpleSyncAutoCore.Record encoded = PurpleSyncAutoCore.decodeRecord(
-                        scoped.toString().getBytes(StandardCharsets.UTF_8), key);
-                    if (encoded == null) throw new IllegalStateException("automatic authority checkpoint refused");
-                    nextRecord = encoded.bytes;
+                adopting = inventory != null && observed != adoptTried && plan.action == PurpleSyncAutoCore.Action.Hold
+                    && plan.reason == PurpleSyncAutoCore.Reason.NeedsReview && !plan.record.value.optBoolean("retiring");
+                if (!adopting) {
+                    byte[] nextRecord = plan.record.bytes;
+                    if (!pendingAuthority && (!plan.record.value.optString("record").isEmpty()
+                            || !plan.record.value.optString("expectedState").isEmpty())) {
+                        JSONObject scoped = new JSONObject(plan.record.value.toString()).put("androidAuthority", facts.authority);
+                        PurpleSyncAutoCore.Record encoded = PurpleSyncAutoCore.decodeRecord(
+                            scoped.toString().getBytes(StandardCharsets.UTF_8), key);
+                        if (encoded == null) throw new IllegalStateException("automatic authority checkpoint refused");
+                        nextRecord = encoded.bytes;
+                    }
+                    if (!store.compareAuto(expected, nextRecord, this::current)) {
+                        port.status(null, PurpleSyncAutoCore.Reason.StateChanged);
+                        end();
+                        return;
+                    }
                 }
-                if (!store.compareAuto(expected, nextRecord, this::current)) {
-                    port.status(null, PurpleSyncAutoCore.Reason.StateChanged);
-                    end();
-                    return;
-                }
+            }
+            if (adopting) {
+                adoptTried = observed;
+                adoptSameHead(observed.inventory, facts);
+                transition(event, saved, completed, outcome, observed, opening, expectedRetry);
+                return;
             }
             if (event == PurpleSyncAutoCore.Event.Enable) {
                 port.enabledHint(plan.record.enabled());
@@ -551,6 +563,15 @@ final class PurpleSyncAutoEngine {
             end();
             failure(e);
         }
+    }
+    // WHY: this file already means what the chat's newest head means, so joining that head asks nothing and writes no
+    // settings. Core holds this verdict as NeedsReview, which left a moved device stopped with nothing to review.
+    private void adoptSameHead(PurpleSyncInventory inventory, Snapshot facts) {
+        if (!liveEffects(facts))
+            return;
+        PurpleSyncCore.Review review = PurpleSyncApply.review(account, inventory).review;
+        if (review.status == PurpleSyncCore.ReviewStatus.Ready && review.bound && review.verdict == PurpleSyncCore.Verdict.Adopt)
+            PurpleSyncApply.apply(account, inventory, review, null);
     }
     private boolean liveEffects(Snapshot facts) {
         return current() && port.enabledHint() && facts.effects();
