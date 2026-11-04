@@ -324,6 +324,7 @@ final class PurpleSyncMagicScenarioCases {
         }
         check(group.heads().size() == 1 && Arrays.equals(PurpleSyncMagicDevices.THEIRS, group.heads().get(0)), name + ": one head, R2's settings: " + group.heads().size());
         check(Arrays.equals(PurpleSyncMagicDevices.THEIRS, d.local()) && Arrays.equals(PurpleSyncMagicDevices.THEIRS, a.local()), name + ": both devices hold R2's settings");
+        if (behind) check(group.writes() == 1, name + ": the device that was behind applies and posts no copy: " + group.writes());
         int writes = group.writes();
         first.later();
         second.later();
