@@ -37,6 +37,8 @@ final class PurpleSyncMagicScenarioCases {
         migrationBothPublished(parent, false, true, "magic-behind-a");
         migrationBothPublished(parent, true, true, "magic-behind-d");
         migrationSameSave(parent);
+        emptyChatRace(parent, true);
+        emptyChatRace(parent, false);
         automaticFailure(parent);
         System.out.println("MAGIC_AUTOMATIC_CASES=PASS");
     }
@@ -332,6 +334,49 @@ final class PurpleSyncMagicScenarioCases {
         for (PurpleSyncMagicDevices.Device device : both) PurpleSyncFirstUseCases.settled(device, group, name + ": " + device.id);
         first.engine.close();
         second.engine.close();
+    }
+
+    /**
+     * Two fresh devices race on an empty chat and each publishes its own space. The device outside the space core selects
+     * goes to first use at its next check, and lands in the selected space: silently with the same settings, with the one
+     * question with different ones. The selected device sees no mismatch.
+     */
+    static void emptyChatRace(File parent, boolean same) throws Exception {
+        String name = "magic-race-" + same;
+        PurpleSyncMagicDevices.Device one = new PurpleSyncMagicDevices.Device(parent, name + "-1", "fixture-device-" + name + "-1");
+        PurpleSyncMagicDevices.Device two = new PurpleSyncMagicDevices.Device(parent, name + "-2", "fixture-device-" + name + "-2");
+        PurpleSyncMagicDevices.Group both = new PurpleSyncMagicDevices.Group();
+        PurpleSyncMagicDevices.Device[] devices = { one, two };
+        for (PurpleSyncMagicDevices.Device device : devices) {
+            device.local(device == one || same ? PurpleSyncMagicDevices.MINE : PurpleSyncMagicDevices.THEIRS);
+            device.bind();
+            PurpleSyncMagicDevices.Group alone = new PurpleSyncMagicDevices.Group();
+            PurpleSyncMagicDevices.Automatic port = new PurpleSyncMagicDevices.Automatic(device, alone);
+            port.runFirstUse = true;
+            port.event(PurpleSyncAutoCore.Event.Enable);
+            check(port.firstUse != null && port.firstUse.result == PurpleSyncFirstUse.Result.Published && alone.messages.size() == 1, name + ": each publishes alone");
+            port.engine.close();
+            for (byte[] record : alone.messages.values()) both.add(record);
+        }
+        check(both.spaces().size() == 2, name + ": the chat holds two spaces");
+        PurpleSyncMagicDevices.Automatic first = new PurpleSyncMagicDevices.Automatic(one, both), second = new PurpleSyncMagicDevices.Automatic(two, both);
+        first.enabled = second.enabled = true;
+        first.later();
+        second.later();
+        check(first.mismatches + second.mismatches == 1 && first.failures.isEmpty() && second.failures.isEmpty(),
+                name + ": exactly the device outside the selected space goes to first use: " + first.mismatches + " " + second.mismatches + " " + first.failures + " " + second.failures);
+        PurpleSyncMagicDevices.Device loser = first.mismatches == 1 ? one : two, winner = loser == one ? two : one;
+        byte[] kept = loser.local();
+        first.engine.close();
+        second.engine.close();
+        PurpleSyncFirstUse.Outcome moved = PurpleSyncFirstUseCases.firstUse(loser, both, PurpleSyncCore.FirstUseChoice.None, name + ": the loser's first use");
+        if (same) {
+            check(moved.result == PurpleSyncFirstUse.Result.Joined && winner.space().equals(loser.space()), name + ": same settings join silently, one space: " + moved.result);
+            PurpleSyncFirstUseCases.settled(loser, both, name + ": settled");
+        } else {
+            check(moved.result == PurpleSyncFirstUse.Result.Ask, name + ": different settings ask once: " + moved.result);
+        }
+        check(Arrays.equals(kept, loser.local()) && both.messages.size() == 2, name + ": the file and the chat are untouched: " + both.messages.size());
     }
 
     /**

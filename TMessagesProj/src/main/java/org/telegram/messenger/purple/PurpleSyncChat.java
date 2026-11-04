@@ -130,7 +130,12 @@ public final class PurpleSyncChat {
         if(chat==null||Peer.self().equals(chat)||inventory==null||!chat.equals(inventory.chat)
                 ||!inventory.scanComplete||space==null||space.isEmpty())return false;
         java.util.Set<String> spaces=PurpleSyncMagicManual.spaces(inventory);
-        return spaces!=null&&!spaces.isEmpty()&&!spaces.contains(space);
+        if(spaces==null||spaces.isEmpty())return false;
+        if(spaces.size()==1||!spaces.contains(space))return !spaces.contains(space);
+        // WHY: two fresh devices can each publish into an empty chat. Core selects one space for everyone, and the other
+        // device moves to it at its next check, or the two stay apart for good. The selected space ignores the local file.
+        PurpleSyncCore.FirstUse selected=PurpleSyncCore.firstUse(inventory,new PurpleSyncSettingsFile.Contents(PurpleSyncSettingsFile.Status.Absent,null),PurpleSyncCore.FirstUseChoice.None);
+        return selected.isValid()&&selected.available&&!selected.space.isEmpty()&&!space.equals(selected.space);
     }
     /** Whether the last lookup recorded a problem that pauses automatic sync. */
     static boolean chatProblem(int slot) {
