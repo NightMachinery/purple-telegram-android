@@ -49,3 +49,6 @@ assert 'stopRecording' not in release
 manifest = (root / 'TMessagesProj/src/main/AndroidManifest.xml').read_text()
 assert 'android:name="org.telegram.messenger.purple.PurpleRecordingService" android:exported="false" android:foregroundServiceType="microphone"' in manifest
 print('RECORDING_DOCK_PINS=' + str(len(pins) + 2))
+
+import runpy
+runpy.run_path(str(pathlib.Path(__file__).parent / 'recording/integration.py'))['run'](root, args.output)

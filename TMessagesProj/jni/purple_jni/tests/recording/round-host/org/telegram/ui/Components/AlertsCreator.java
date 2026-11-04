@@ -1,0 +1,1 @@
+package org.telegram.ui.Components; import java.util.function.LongConsumer; public class AlertsCreator {public static void ensurePaidMessageConfirmation(int a,long d,int n,LongConsumer c,long stars){c.accept(stars);}}

@@ -1,0 +1,1 @@
+package org.telegram.messenger.purple; public class PurpleRecordingDock {public static class State {public boolean once;} public static State state=new State(); public static int ended; public static void floatRound(int a,int g,boolean s){} public static void roundEnded(int a,int g){ended++;}}

@@ -26,6 +26,7 @@ public final class PurpleRecordingDock {
         boolean scheduled();
         void release();
         default void roundStarted() { }
+        default void roundFinishing() { }
         default boolean roundVisible() { return false; }
         default void roundPause() { }
         default void roundPreview() { }
@@ -46,6 +47,8 @@ public final class PurpleRecordingDock {
     private static boolean nativePreviewScheduled;
     private static boolean serviceReady;
     private static long foregroundSend = -1;
+    private static long foregroundTarget = -1;
+    private static boolean roundFinalization;
     private static boolean pendingNotify;
     private static int pendingDate;
     private static long pendingStars;
@@ -286,6 +289,21 @@ public final class PurpleRecordingDock {
         ApplicationLoader.applicationContext.startActivity(intent);
     }
 
+    public static boolean beginRoundFinish(int account, int guid) {
+        if (!state.round || !state.matches(account, guid)) return true;
+        if (roundFinalization) return false;
+        Host host = host(guid);
+        if (host != null) host.roundFinishing();
+        state.finishing = true;
+        roundFinalization = true;
+        changed();
+        return true;
+    }
+
+    public static boolean roundFinalizing(int account, int guid) {
+        return state.round && state.matches(account, guid) && roundFinalization;
+    }
+
     public static void send(long generation) {
         if (!valid(generation) || state.transitioning) return;
         syncOnce();
@@ -318,7 +336,13 @@ public final class PurpleRecordingDock {
     }
 
     public static void foreground() {
-        if (foregroundSend < 0 || ApplicationLoader.mainInterfacePaused) return;
+        if (ApplicationLoader.mainInterfacePaused) return;
+        if (foregroundTarget >= 0) {
+            long generation = foregroundTarget;
+            foregroundTarget = -1;
+            if (valid(generation)) chooseTarget(generation);
+        }
+        if (foregroundSend < 0) return;
         long generation = foregroundSend;
         foregroundSend = -1;
         if (valid(generation)) send(generation);
@@ -334,7 +358,7 @@ public final class PurpleRecordingDock {
         if (!valid(generation) || state.transitioning) return;
         if (state.round) {
             Host host = host(state.guid);
-            if (host != null) { state.finishing = true; host.roundSend(notify, date, stars); changed(); }
+            if (host != null) { host.roundSend(notify, date, stars); changed(); }
             return;
         }
         boolean wasPaused = state.paused;
@@ -443,6 +467,11 @@ public final class PurpleRecordingDock {
 
     public static void chooseTarget(long generation) {
         if (!valid(generation)) return;
+        if (ApplicationLoader.mainInterfacePaused || LaunchActivity.instance == null) {
+            foregroundTarget = generation;
+            ApplicationLoader.applicationContext.startActivity(openIntent());
+            return;
+        }
         if (DialogObject.isEncryptedDialog(state.dialog) || (!state.round && !state.canReplaceTarget(false))) {
             if (DialogObject.isEncryptedDialog(state.dialog)) Toast.makeText(ApplicationLoader.applicationContext,
                     LocaleController.getString(R.string.PurpleRecordingSendUnavailable), Toast.LENGTH_LONG).show();
@@ -493,6 +522,8 @@ public final class PurpleRecordingDock {
         previewPending = false;
         targetPickerPending = false;
         foregroundSend = -1;
+        foregroundTarget = -1;
+        roundFinalization = false;
         serviceReady = false;
         PurpleRecordingService.stop();
         changed();

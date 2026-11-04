@@ -1,0 +1,1 @@
+package org.telegram.messenger; public class UserConfig {public static UserConfig getInstance(int a){return new UserConfig();} public long getClientUserId(){return 9;}}

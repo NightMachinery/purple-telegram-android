@@ -326,6 +326,7 @@ public final class InstantCameraView2 extends InstantCameraViewBase {
 
     @Override
     public void destroy(boolean async) {
+        if (org.telegram.messenger.purple.PurpleRecordingDock.roundFinalizing(currentAccount, recordingGuid)) return;
         setRecordingUiFrameClockActive(false);
         cancelCameraFlipAnimation();
         if (zoomResetAnimator != null) zoomResetAnimator.cancel();
@@ -509,6 +510,7 @@ public final class InstantCameraView2 extends InstantCameraViewBase {
             cancel(false);
             return;
         }
+        if (!org.telegram.messenger.purple.PurpleRecordingDock.beginRoundFinish(currentAccount, recordingGuid)) return;
         if (stateInfo.getState() == RoundVideoSession.State.RECORDING) {
             postRecordStopped(5);
         } else {
@@ -527,6 +529,7 @@ public final class InstantCameraView2 extends InstantCameraViewBase {
 
     @Override
     public void cancel(boolean byGesture) {
+        if (org.telegram.messenger.purple.PurpleRecordingDock.roundFinalizing(currentAccount, recordingGuid)) return;
         if (session == null) return;
         postRecordStopped(byGesture ? 0 : 6);
         session.cancel();

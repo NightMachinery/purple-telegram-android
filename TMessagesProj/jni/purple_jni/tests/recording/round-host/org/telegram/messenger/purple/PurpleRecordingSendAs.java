@@ -1,0 +1,1 @@
+package org.telegram.messenger.purple; import org.telegram.messenger.*; public class PurpleRecordingSendAs {public static SendMessageChatArguments freeze(int a,long d,SendMessageChatArguments v){return new SendMessageChatArguments();}}

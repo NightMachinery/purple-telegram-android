@@ -137,3 +137,35 @@ promotes the microphone service again before a later background transition.
 If an original secret chat is gone, Send shows the unavailable notice and keeps
 the recording. It never opens a recipient picker or finalizes the capture into
 a missing encrypted chat. Preview and confirmed Discard remain available.
+
+## Recording integration review fixes
+
+Native voice Preview remembers the frozen reply, topic, story, sender and
+monoforum arguments by document identity when the dock hands the recorder back.
+The direct Preview Send hook applies that snapshot after native trimming and
+story preparation. Resumed sends continue through the recorder's original
+arguments. Neither route copies the current compose reply into the recording.
+
+Every accepted round send transfers its immutable target before encoder finish.
+Both camera implementations reserve finalization through the dock and defer
+cancel or destroy until the completion has been queued to upstream. Chat
+fragment destruction releases its UI ownership but retains that send target in
+the camera delegate. Duplicate completions are consumed once. Genuine recording
+errors still clear the reservation through native error notifications.
+
+The native ChatActivity bridge closes the round backdrop for every consumed
+send. Stock captures keep native after-send compose cleanup; a capture that
+released compose while small preserves later text and reply changes. The camera
+is released after queueing even when its fragment has been destroyed.
+
+Alternate-target requests from a paused notification foreground the activity
+and defer the picker to its resumed lifecycle callback, checking generation
+again. Stale requests are cleared with the recording.
+
+The recording-dock host suite compiles the exact round helper against inert UI
+and transport boundaries and extracts the actual native voice send parameter
+initialization for direct and resumed sends. It covers stock backdrop cleanup,
+post-destruction completion, duplicate delivery and frozen voice context after
+trim. It also pins native cancel/destroy guards and foreground picker ordering.
+These fixtures do not qualify encoder timing, UI animation or microphone
+continuity on a device. Cross-chat round capture remains unshipped.

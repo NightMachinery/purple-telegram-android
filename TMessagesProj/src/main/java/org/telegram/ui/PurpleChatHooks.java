@@ -78,6 +78,7 @@ final class PurpleChatHooks {
         public long[] target() { return recordingTarget(); }
         public boolean scheduled() { return chat.getChatMode() == ChatActivity.MODE_SCHEDULED; }
         public void roundStarted() { roundRecording.started(); }
+        public void roundFinishing() { roundRecording.beginFinalization(); }
         public boolean roundVisible() { return !chat.isPaused(); }
         public void roundPause() { roundRecording.pause(); }
         public void roundPreview() { roundRecording.preview(); }

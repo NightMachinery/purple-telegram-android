@@ -7384,6 +7384,7 @@ public class ChatActivityEnterView extends FrameLayout implements
                     params.sendAnimationData = sendAnimationData;
                 }
                 applyStoryToSendMessageParams(params);
+                if (!org.telegram.messenger.purple.PurpleRecordingVoicePreview.apply(currentAccount, params)) return;
                 SendMessagesHelper.getInstance(currentAccount).sendMessage(params);
                 if (delegate != null) {
                     delegate.onMessageSend(null, notify, scheduleDate, scheduleRepeatPeriod, payStars);

@@ -1106,6 +1106,9 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
     }
 
     public void purpleAdoptNativePreview(int guid, MediaDataController.DraftVoice draft) {
+        org.telegram.messenger.purple.PurpleRecordingVoicePreview.remember(recordingCurrentAccount, recordingAudio,
+                recordDialogId, recordReplyingMsg, recordReplyingTopMsg, recordReplyingStory,
+                recordSendMessageChatArguments, recordMonoForumPeerId, recordMonoForumSuggestionParams);
         recordingGuid = guid;
         NotificationCenter.getInstance(recordingCurrentAccount).postNotificationName(NotificationCenter.recordPaused);
         NotificationCenter.getInstance(recordingCurrentAccount).postNotificationName(NotificationCenter.audioDidSent,
