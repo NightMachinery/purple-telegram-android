@@ -4452,6 +4452,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         TLRPC.TL_messageMediaToDo todo = sendMessageParams.todo;
         TLRPC.TL_messageMediaInvoice invoice = sendMessageParams.invoice;
         long peer = sendMessageParams.peer;
+        if (org.telegram.messenger.purple.PurpleRecordingSendAs.reject(currentAccount, peer, sendMessageParams.sendMessageChatArguments)) return;
         String path = sendMessageParams.path;
         MessageObject replyToMsg = sendMessageParams.replyToMsg;
         MessageObject replyToTopMsg = sendMessageParams.replyToTopMsg;
@@ -4576,6 +4577,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 linkedToGroup = chatFull.linked_chat_id;
             }
             fromPeer = getMessagesController().getPeer(ChatObject.getSendAsPeerId(chat, chatFull, true));
+            fromPeer = org.telegram.messenger.purple.PurpleRecordingSendAs.apply(currentAccount, peer, sendMessageParams.sendMessageChatArguments, fromPeer);
         }
 
         if (BuildConfig.DEBUG_VERSION) {

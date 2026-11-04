@@ -8,22 +8,29 @@ root = pathlib.Path(__file__).resolve().parents[4]
 java = root / 'TMessagesProj/src/main/java/org/telegram/messenger/purple'
 args.output.mkdir(parents=True, exist_ok=False)
 javac = pathlib.Path(os.environ['JAVA_HOME']) / 'bin/javac' if os.environ.get('JAVA_HOME') else pathlib.Path(shutil.which('javac'))
-sources = [java / 'PurpleRecordingDockState.java', java / 'PurpleRoundBubbleGeometry.java', java / 'PurpleRecordingTarget.java', pathlib.Path(__file__).parent / 'recording/DockCases.java']
+sources = [java / 'PurpleRecordingDockState.java', java / 'PurpleRoundBubbleGeometry.java', java / 'PurpleRecordingTarget.java', java / 'PurpleRecordingSendIdentity.java', java / 'PurpleRecordingPreviewHandoff.java', pathlib.Path(__file__).parent / 'recording/DockCases.java']
 subprocess.run([str(javac), '-d', str(args.output), *map(str, sources)], check=True)
 subprocess.run([str(javac.with_name('java')), '-cp', str(args.output), 'DockCases'], check=True)
 
 ui = root / 'TMessagesProj/src/main/java/org/telegram'
 pins = [
     ('messenger/purple/PurpleRecordingService.java', 'intent.setData(android.net.Uri.parse(PurpleRecordingDock.state.actionIdentity(action)));'),
+    ('messenger/purple/PurpleRecordingService.java', 'generation = state.generation;'),
     ('messenger/MediaController.java', 'PurpleRecordingDock.keepsOnChatPause(chatActivity, fromChat)'),
     ('messenger/MediaController.java', 'PurpleRecordingDock.preventsDraftRestore()'),
+    ('messenger/MediaController.java', 'PurpleRecordingDock.adoptNativePreview('),
     ('messenger/MediaController.java', 'PurpleRecordingDock.refuseStart()'),
+    ('messenger/SendMessagesHelper.java', 'PurpleRecordingSendAs.reject('),
+    ('messenger/SendMessagesHelper.java', 'PurpleRecordingSendAs.apply('),
     ('ui/Components/ChatActivityEnterView.java', 'PurpleRecordingDock.refuseStart()'),
     ('ui/Components/ChatActivityEnterView.java', 'PurpleRecordingDock.ignoreEvent(id, account, recordingGuid)'),
     ('ui/Components/ChatActivityEnterView.java', 'PurpleRecordingPanel.install('),
     ('ui/Components/ChatActivityEnterView.java', 'PurpleRecordingPanel.refuseCamera('),
     ('ui/ChatActivity.java', 'purple.dockRecording(invoked)'),
     ('ui/ChatActivity.java', 'purple.attachRoundCamera('),
+    ('ui/ChatActivity.java', 'purple.sendRoundMedia('),
+    ('messenger/MediaController.java', 'public void purpleRetargetRecording('),
+    ('ui/Components/ChatActivityEnterView.java', 'public void purpleRestoreRoundUi('),
     ('ui/ChatActivity.java', 'purple.roundRecordingTouch(event)'),
     ('ui/Components/FragmentContextView.java', '&& !purple.docked()'),
     ('ui/Components/FragmentContextView.java', 'if (purple.showRecording()) return;'),

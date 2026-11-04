@@ -1,6 +1,8 @@
 import org.telegram.messenger.purple.PurpleRecordingDockState;
 import org.telegram.messenger.purple.PurpleRoundBubbleGeometry;
 import org.telegram.messenger.purple.PurpleRecordingTarget;
+import org.telegram.messenger.purple.PurpleRecordingSendIdentity;
+import org.telegram.messenger.purple.PurpleRecordingPreviewHandoff;
 
 public final class DockCases {
     private static int checks;
@@ -76,6 +78,48 @@ public final class DockCases {
         check(PurpleRoundBubbleGeometry.corner(470, 10, 600, 900, 120) == 1);
         check(PurpleRoundBubbleGeometry.corner(10, 770, 600, 900, 120) == 2);
         check(PurpleRoundBubbleGeometry.corner(470, 770, 600, 900, 120) == 3);
+        PurpleRecordingDockState round = new PurpleRecordingDockState();
+        check(!round.retarget(22, 0));
+        check(round.begin(1, 5, 9, 100, 7, true, false, 10));
+        round.round = true; check(!round.canDock());
+        long roundToken = round.generation;
+        round.amplitude(20); check(round.levelIndex == 1 && Math.abs(round.levels[0] - .2f) < .001f);
+        round.amplitude(Double.NaN); check(round.levelIndex == 1);
+        round.amplitude(Double.POSITIVE_INFINITY); check(round.levelIndex == 1);
+        round.amplitude(-1); check(round.levels[1] == 0);
+        round.amplitude(1000); check(round.levels[2] == 1);
+        round.pause(true, 100); round.amplitude(50); check(round.levelIndex == 3);
+        check(round.retarget(200, 8)); check(round.account == 1 && round.user == 9 && round.once && round.generation != roundToken);
+        check(round.dialog == 200 && round.topic == 8);
+        check(!round.accepts(roundToken));
+        check(!round.retarget(0, 0)); check(round.dialog == 200);
+        round.transitioning = true; check(!round.retarget(300, 0)); round.transitioning = false;
+        round.finishing = true; check(!round.retarget(300, 0)); round.clear();
+        check(round.begin(2, 6, 10, 300, 0, false, false, 200));
+        check(!round.round && round.levelIndex == 0 && round.levels[0] == 0);
+        PurpleRecordingSendIdentity identity = new PurpleRecordingSendIdentity(1, 9, -100, -200);
+        check(identity.matches(1, 9, -100));
+        check(!identity.matches(0, 9, -100));
+        check(!identity.matches(1, 10, -100));
+        check(!identity.matches(1, 9, -101));
+        check(identity.peer == -200);
+        PurpleRecordingSendIdentity replacementIdentity = new PurpleRecordingSendIdentity(1, 9, -101, 9);
+        check(replacementIdentity.matches(1, 9, -101));
+        check(!replacementIdentity.matches(1, 9, -100));
+        check(identity.peer == -200 && replacementIdentity.peer == 9);
+        PurpleRecordingPreviewHandoff handoff = new PurpleRecordingPreviewHandoff();
+        long[] sendTarget = {1, 202, 8, 0, 9, 1};
+        long[] captureTarget = {1, 101, 7, 31, 9, 1};
+        handoff.arm(sendTarget, captureTarget); sendTarget[1] = 999; captureTarget[3] = 0;
+        check(handoff.take(0, 9, 202, 8) == null);
+        check(handoff.take(1, 10, 202, 8) == null);
+        check(handoff.take(1, 9, 101, 8) == null);
+        check(handoff.take(1, 9, 202, 7) == null);
+        long[][] adopted = handoff.take(1, 9, 202, 8);
+        check(adopted != null && adopted[0][1] == 202 && adopted[0][5] == 1);
+        check(adopted[1][1] == 101 && adopted[1][3] == 31);
+        check(handoff.take(1, 9, 202, 8) == null);
+        handoff.arm(sendTarget, captureTarget); handoff.clear(); check(!handoff.matches(1, 9, 999, 8));
         System.out.println("RECORDING_DOCK_CHECKS=" + checks);
     }
 }

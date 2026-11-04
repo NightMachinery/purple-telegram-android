@@ -25,12 +25,25 @@ public final class PurpleRecordingDock {
         long[] target();
         boolean scheduled();
         void release();
+        default void roundStarted() { }
+        default boolean roundVisible() { return false; }
+        default void roundPause() { }
+        default void roundPreview() { }
+        default void roundSend(boolean notify, int date, long stars) { }
+        default void roundDiscard() { }
+        default void roundAbandon() { }
+        default void roundPreviewReady(Object[] args) { }
+        default void roundRetarget(long dialog, MessageObject top) { }
+
     }
     public static final PurpleRecordingDockState state = new PurpleRecordingDockState();
     private static final Map<Integer, WeakReference<Host>> hosts = new HashMap<>();
     private static final ArrayList<WeakReference<Runnable>> listeners = new ArrayList<>();
     private static boolean started;
     private static boolean previewPending;
+    private static boolean targetPickerPending;
+    private static final PurpleRecordingPreviewHandoff nativePreview = new PurpleRecordingPreviewHandoff();
+    private static boolean nativePreviewScheduled;
     private static boolean serviceReady;
     private static long foregroundSend = -1;
     private static boolean pendingNotify;
@@ -39,7 +52,7 @@ public final class PurpleRecordingDock {
     private static final PurpleRecordingTarget targetSnapshot = new PurpleRecordingTarget();
     private static final int[] EVENTS = {NotificationCenter.recordStarted, NotificationCenter.recordStopped,
             NotificationCenter.recordPaused, NotificationCenter.recordResumed, NotificationCenter.audioDidSent,
-            NotificationCenter.audioRecordTooShort, NotificationCenter.recordStartError};
+            NotificationCenter.audioRecordTooShort, NotificationCenter.recordStartError, NotificationCenter.recordProgressChanged};
 
     private PurpleRecordingDock() { }
 
@@ -73,18 +86,18 @@ public final class PurpleRecordingDock {
         if (event == NotificationCenter.recordStarted) {
             if (args.length < 2) return;
             int guid = (Integer) args[0];
-            if (!(Boolean) args[1]) {
-                targetSnapshot.clear(guid);
-                return;
-            }
+            boolean round = !(Boolean) args[1];
+            nativePreview.clear();
             Host host = host(guid);
             long[] target = host == null ? null : host.target();
             if (target == null || target.length < 6 || target[0] != account) return;
             if ((target[5] & PurpleRecordingSessions.FLAG_QUICK_REPLY) != 0) return;
             if (state.begin(account, guid, target[4], target[1], target[2],
                     (target[5] & PurpleRecordingSessions.FLAG_ONCE) != 0, host.scheduled(), SystemClock.elapsedRealtime())) {
+                state.round = round;
                 targetSnapshot.capture(guid, target);
-                if (PurpleRecordingSettings.read().background) PurpleRecordingService.start();
+                if (round) host.roundStarted();
+                else if (PurpleRecordingSettings.read().background) PurpleRecordingService.start();
                 changed();
             }
             return;
@@ -108,8 +121,13 @@ public final class PurpleRecordingDock {
             }
         }
         if (!state.active() || account != state.account) return;
+        if (event == NotificationCenter.recordProgressChanged) {
+            if (args.length > 1 && args[0] instanceof Integer && state.matches(account, (Integer) args[0]) && args[1] instanceof Number) state.amplitude(((Number) args[1]).doubleValue());
+            return;
+        }
         if (event == NotificationCenter.recordPaused || event == NotificationCenter.recordResumed) {
             state.pause(event == NotificationCenter.recordPaused, SystemClock.elapsedRealtime());
+            if (event == NotificationCenter.recordResumed && !state.round && !ApplicationLoader.mainInterfacePaused && PurpleRecordingSettings.read().background) PurpleRecordingService.start();
             if (event == NotificationCenter.recordResumed && state.sendPending) {
                 state.sendPending = false;
                 sendApproved(state.generation, pendingNotify, pendingDate, pendingStars);
@@ -125,20 +143,27 @@ public final class PurpleRecordingDock {
         if (event == NotificationCenter.audioDidSent) {
             if (args.length > 1 && args[1] != null) {
                 state.pause(true, SystemClock.elapsedRealtime());
-                if (previewPending) finishPreview();
+                if (state.round) { Host host = host(state.guid); if (host != null) host.roundPreviewReady(args); changed(); if (targetPickerPending) { targetPickerPending = false; chooseTarget(state.generation); } }
+                else if (previewPending) finishPreview();
                 else changed();
             } else clear();
         } else if (event == NotificationCenter.audioRecordTooShort || event == NotificationCenter.recordStartError) {
+            if (state.round) { Host host = host(state.guid); if (host != null) host.roundAbandon(); }
             clear();
         } else if (event == NotificationCenter.recordStopped) {
             syncOnce();
             int reason = args.length > 1 ? (Integer) args[1] : 0;
-            if (reason != 1) clear();
+            if (state.round && reason == 2) { state.pause(true, SystemClock.elapsedRealtime()); state.transitioning = true; changed(); }
+            else if (state.round && reason == 5) { state.finishing = true; changed(); }
+            else if (reason != 1) {
+                if (state.round) { Host host = host(state.guid); if (host != null) host.roundAbandon(); }
+                clear();
+            }
         }
     }
 
     public static boolean dock(int account, int guid) {
-        if (!state.matches(account, guid) || !PurpleRecordingSettings.read().keepAcrossChats || !state.canDock()) return false;
+        if (state.round || !state.matches(account, guid) || !PurpleRecordingSettings.read().keepAcrossChats || !state.canDock()) return false;
         syncOnce();
         Host host = host(guid);
         if (host != null) host.release();
@@ -149,7 +174,7 @@ public final class PurpleRecordingDock {
     }
 
     public static boolean keepsOnChatPause(ChatActivity chat, boolean fromChat) {
-        if (!fromChat || !state.active()) return false;
+        if (!fromChat || !state.active() || state.round) return false;
         if (state.paused) {
             if (state.docked) return true;
             if (state.matches(chat.getCurrentAccount(), chat.getClassGuid())) clear();
@@ -192,6 +217,20 @@ public final class PurpleRecordingDock {
                 && java.util.Objects.hash(state.dialog, state.topic) == draftKey) clear();
     }
 
+    public static boolean adoptNativePreview(MediaController controller, int account, long dialog, MessageObject top,
+            int guid, MediaDataController.DraftVoice draft) {
+        long user = UserConfig.getInstance(account).getClientUserId();
+        long topic = top == null ? 0 : MessageObject.getTopicId(account, top.messageOwner, false);
+        if (state.active() || draft == null || !nativePreview.matches(account, user, dialog, topic)
+                || !controller.purpleNativePreviewAvailable(draft.path)) return false;
+        long[][] handoff = nativePreview.take(account, user, dialog, topic);
+        if (!state.begin(account, guid, user, dialog, topic, (handoff[0][5] & 1) != 0, nativePreviewScheduled, SystemClock.elapsedRealtime() - draft.recordTimeCount)) return false;
+        state.pause(true, SystemClock.elapsedRealtime());
+        targetSnapshot.capture(guid, handoff[1]); targetSnapshot.dock();
+        controller.purpleAdoptNativePreview(guid, draft);
+        changed(); return true;
+    }
+
     public static boolean preventsDraftRestore() { return state.active() && state.docked; }
 
     public static boolean ignoreEvent(int event, int account, int guid) {
@@ -217,11 +256,16 @@ public final class PurpleRecordingDock {
     public static void pause(long generation) {
         if (!valid(generation)) return;
         syncOnce();
-        if (state.requestPause()) MediaController.getInstance().toggleRecordingPause(state.once);
+        if (state.round && (host(state.guid) == null || !host(state.guid).roundVisible())) return;
+        if (state.requestPause()) {
+            if (state.round) { Host host = host(state.guid); if (host != null) host.roundPause(); }
+            else MediaController.getInstance().toggleRecordingPause(state.once);
+        }
     }
 
     public static void preview(long generation) {
         if (!valid(generation)) return;
+        if (state.round) { Host host = host(state.guid); if (host != null) host.roundPreview(); return; }
         if (state.paused) finishPreview();
         else {
             if (state.requestPause()) {
@@ -232,6 +276,11 @@ public final class PurpleRecordingDock {
     }
 
     private static void finishPreview() {
+        long[] capture = targetSnapshot.forEvent(state.guid, true, true);
+        if (capture != null) {
+            nativePreview.arm(new long[]{state.account, state.dialog, state.topic, 0, state.user, state.once ? 1 : 0}, capture);
+            nativePreviewScheduled = state.scheduled;
+        }
         Intent intent = openIntent();
         clear();
         ApplicationLoader.applicationContext.startActivity(intent);
@@ -240,11 +289,13 @@ public final class PurpleRecordingDock {
     public static void send(long generation) {
         if (!valid(generation) || state.transitioning) return;
         syncOnce();
+        if (state.round && (host(state.guid) == null || !host(state.guid).roundVisible())) return;
+        if (unavailable()) { chooseTarget(generation); return; }
         MessagesController controller = MessagesController.getInstance(state.account);
         TLRPC.Chat chat = state.dialog < 0 ? controller.getChat(-state.dialog) : null;
         TLRPC.ChatFull full = state.dialog < 0 ? controller.getChatFull(-state.dialog) : null;
         TLRPC.UserFull user = state.dialog > 0 ? controller.getUserFull(state.dialog) : null;
-        boolean restricted = chat != null && (!ChatObject.canSendVoice(chat) || ChatObject.isNotInChat(chat));
+        boolean restricted = chat != null && (!(state.round ? ChatObject.canSendRoundVideo(chat) : ChatObject.canSendVoice(chat)) || ChatObject.isNotInChat(chat));
         restricted |= user != null && user.voice_messages_forbidden;
         boolean slow = full != null && full.slowmode_next_send_date > ConnectionsManager.getInstance(state.account).getCurrentTime();
         if (restricted || slow) {
@@ -281,6 +332,11 @@ public final class PurpleRecordingDock {
 
     private static void sendApproved(long generation, boolean notify, int date, long stars) {
         if (!valid(generation) || state.transitioning) return;
+        if (state.round) {
+            Host host = host(state.guid);
+            if (host != null) { state.finishing = true; host.roundSend(notify, date, stars); changed(); }
+            return;
+        }
         boolean wasPaused = state.paused;
         pendingNotify = notify;
         pendingDate = date;
@@ -296,6 +352,10 @@ public final class PurpleRecordingDock {
     public static void discard(long generation) {
         if (!valid(generation)) return;
         state.finishing = true;
+        if (state.round) {
+            Host host = host(state.guid); if (host != null) host.roundDiscard();
+            clear(); return;
+        }
         if (state.paused) {
             MediaController.getInstance().cleanRecording(true);
             MediaDataController.getInstance(state.account).pushDraftVoiceMessage(state.dialog, state.topic, null);
@@ -310,7 +370,8 @@ public final class PurpleRecordingDock {
     public static boolean valid(long generation) {
         if (!state.accepts(generation)) return false;
         if (UserConfig.getInstance(state.account).getClientUserId() != state.user) {
-            MediaController.getInstance().stopRecording(0, false, 0, false, 0);
+            if (state.round) { Host host = host(state.guid); if (host != null) host.roundDiscard(); }
+            else MediaController.getInstance().stopRecording(0, false, 0, false, 0);
             clear();
             return false;
         }
@@ -341,6 +402,79 @@ public final class PurpleRecordingDock {
         return chat == null ? LocaleController.getString(R.string.PurpleRecording) : chat.title;
     }
 
+    public static void floatRound(int account, int guid, boolean small) {
+        if (!state.round || !state.matches(account, guid)) return;
+        syncOnce();
+        state.docked = small;
+        if (small) { targetSnapshot.dock(); Host host = host(guid); if (host != null) host.release(); }
+        changed();
+    }
+
+    public static void roundEnded(int account, int guid) {
+        if (state.round && state.matches(account, guid)) clear();
+    }
+
+    public static void open() {
+        if (!state.active()) return;
+        if (state.round) { Host host = host(state.guid); if (host != null) host.roundPreview(); }
+        else ApplicationLoader.applicationContext.startActivity(openIntent());
+    }
+
+    public static boolean shown() {
+        return state.active() && state.docked && (!state.round || host(state.guid) != null && host(state.guid).roundVisible());
+    }
+
+    public static boolean unavailable() {
+        if (!state.active()) return false;
+        MessagesController controller = MessagesController.getInstance(state.account);
+        if (DialogObject.isEncryptedDialog(state.dialog)) return false;
+        if (state.dialog > 0) { TLRPC.User user = controller.getUser(state.dialog); return user == null || user.deleted; }
+        TLRPC.Chat chat = controller.getChat(-state.dialog);
+        if (chat == null || ChatObject.isNotInChat(chat)) return true;
+        if (state.topic != 0) {
+            TLRPC.TL_forumTopic topic = controller.getTopicsController().findTopic(-state.dialog, state.topic);
+            return topic == null || topic instanceof TLRPC.TL_forumTopicDeleted || topic.closed || topic.hidden;
+        }
+        return false;
+    }
+
+    public static void chooseTarget(long generation) {
+        if (!valid(generation) || DialogObject.isEncryptedDialog(state.dialog)) return;
+        if (state.round && (!state.paused || state.transitioning)) {
+            targetPickerPending = true;
+            if (!state.paused && !state.transitioning) pause(generation);
+            return;
+        }
+        org.telegram.ui.ActionBar.BaseFragment parent = LaunchActivity.getLastFragment();
+        if (parent == null) return;
+        Toast.makeText(parent.getContext(), LocaleController.getString(R.string.PurpleRecordingSendUnavailable), Toast.LENGTH_LONG).show();
+        android.os.Bundle args = new android.os.Bundle();
+        args.putBoolean("onlySelect", true); args.putInt("dialogsType", org.telegram.ui.DialogsActivity.DIALOGS_TYPE_FORWARD);
+        args.putBoolean("canSelectTopics", true);
+        org.telegram.ui.DialogsActivity picker = new org.telegram.ui.DialogsActivity(args);
+        picker.setCurrentAccount(state.account);
+        picker.setDelegate((fragment, dids, message, param, notify, date, repeat, topics) -> {
+            if (!valid(generation) || state.transitioning || dids.size() != 1) return false;
+            MessagesStorage.TopicKey key = dids.get(0);
+            MessageObject top = null;
+            if (key.topicId != 0) {
+                TLRPC.TL_forumTopic topic = MessagesController.getInstance(state.account).getTopicsController().findTopic(-key.dialogId, key.topicId);
+                if (topic == null || topic.topicStartMessage == null || topic.closed || topic.hidden) return false;
+                top = new MessageObject(state.account, topic.topicStartMessage, false, false);
+            }
+            long oldDialog = state.dialog, oldTopic = state.topic;
+            if (!state.retarget(key.dialogId, key.topicId)) return false;
+            if (state.round) { Host host = host(state.guid); if (host != null) host.roundRetarget(key.dialogId, top); }
+            else {
+                MediaController.getInstance().purpleRetargetRecording(key.dialogId, top);
+                MediaDataController.getInstance(state.account).pushDraftVoiceMessage(oldDialog, oldTopic, null);
+            }
+            fragment.finishFragment(); changed(); send(state.generation);
+            return true;
+        });
+        parent.showAsSheet(picker);
+    }
+
     public static void serviceReady(boolean ready) { serviceReady = ready; }
     public static void serviceLost() {
         serviceReady = false;
@@ -349,6 +483,7 @@ public final class PurpleRecordingDock {
     private static void clear() {
         state.clear();
         previewPending = false;
+        targetPickerPending = false;
         foregroundSend = -1;
         serviceReady = false;
         PurpleRecordingService.stop();

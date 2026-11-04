@@ -6199,6 +6199,14 @@ public class ChatActivityEnterView extends FrameLayout implements
         return recordingAudioVideo && recordCircle.isSendButtonVisible();
     }
 
+    public void purpleRestoreRoundUi(Object[] preview) {
+        final boolean once = voiceOnce;
+        if (preview != null) didReceivedNotification(NotificationCenter.audioDidSent, currentAccount, preview);
+        else { recordingAudioVideo = true; updateRecordInterface(RECORD_STATE_ENTER, true); }
+        voiceOnce = once;
+        if (controlsView != null) controlsView.periodDrawable.setValue(1, once, false);
+    }
+
     public void purpleReleaseRecordUi() {
         recordingAudioVideo = false;
         audioToSend = null;

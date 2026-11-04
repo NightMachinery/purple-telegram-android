@@ -8,6 +8,9 @@ public final class PurpleRecordingDockState {
     public long dialog;
     public long topic;
     public boolean once;
+    public boolean round;
+    public final float[] levels = new float[64];
+    public int levelIndex;
     public boolean scheduled;
     public boolean docked;
     public boolean paused;
@@ -23,8 +26,20 @@ public final class PurpleRecordingDockState {
         return "purple-recording://action/" + generation + "/" + action;
     }
 
+    public void amplitude(double value) {
+        if (active() && !paused && Double.isFinite(value)) levels[levelIndex++ % levels.length] = (float) Math.max(0, Math.min(1, value / 100.0));
+    }
+
+    public boolean retarget(long dialog, long topic) {
+        if (!active() || finishing || transitioning || dialog == 0) return false;
+        this.dialog = dialog; this.topic = topic;
+        generation++;
+        discardUntil = 0;
+        return true;
+    }
+
     public boolean active() { return account >= 0; }
-    public boolean canDock() { return active() && !finishing && (!paused || docked); }
+    public boolean canDock() { return active() && !round && !finishing && (!paused || docked); }
 
     public boolean begin(int account, int guid, long user, long dialog, long topic,
             boolean once, boolean scheduled, long now) {
@@ -40,7 +55,9 @@ public final class PurpleRecordingDockState {
         pausedTime = 0;
         pausedAt = 0;
         discardUntil = 0;
-        docked = paused = finishing = transitioning = sendPending = false;
+        docked = paused = finishing = transitioning = sendPending = round = false;
+        java.util.Arrays.fill(levels, 0);
+        levelIndex = 0;
         generation++;
         return true;
     }
@@ -95,7 +112,9 @@ public final class PurpleRecordingDockState {
 
     public void clear() {
         account = -1;
-        docked = paused = finishing = transitioning = sendPending = false;
+        docked = paused = finishing = transitioning = sendPending = round = false;
+        java.util.Arrays.fill(levels, 0);
+        levelIndex = 0;
         discardUntil = 0;
         generation++;
     }

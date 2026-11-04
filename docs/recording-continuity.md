@@ -38,11 +38,25 @@ visible window bounds keep the bubble above the keyboard. Leaving a chat pauses
 its round, including background and lock. Both round implementations share the
 base touch-dispatch seam.
 
-The native round recording panel remains responsible for Send, preview and the
-60-second cap. This first implementation therefore leaves that panel in the
-compose area. Typing during a round and a round entry in the app-wide dock are
-still unfinished. Round recordings cannot outlive destruction of their chat;
-cross-chat rounds need the device spike from the design before they can ship.
+Shrinking releases the round's native recording panel for typing and shows a
+video row in the recording strip with avatar, title, timer, waveform and native
+Pause/Resume, Preview, Send and confirmed Discard. The round send context is frozen
+at start, including account, reply, topic, quote and send-as arguments. Text sent
+while it floats cannot change that context. Preview expands back into the native
+round preview; its existing duration cap and trimming remain in charge.
+
+Rounds are kept within their owning chat. Before navigating away or backgrounding,
+the native panel is restored and the camera pauses. Round strip controls cannot
+resume a camera outside the owning visible chat. Cross-chat round capture remains
+unshipped until the separately authorized device spike passes.
+
+A deleted user, left chat or unavailable topic changes Send to Send to another
+chat. Selection uses a same-account topic-aware sheet, leaving the old target
+and recording intact on cancel. Selecting a replacement explicitly drops the old
+reply and send-as context, invalidates old notification/payment actions and uses
+the new target's payment/schedule checks.
+Secret-chat recordings never offer that route. The F10 recovery target remains
+the original capture target.
 
 ## Settings
 
@@ -95,3 +109,27 @@ Device checks, in risk order:
 Unreadable F10 manifests use exclusively created set-aside names. Rapid failures
 cannot overwrite an earlier damaged manifest, and a failed set-aside prevents
 later saves from replacing that evidence.
+
+The native extension in MediaController changes only its private send target
+fields, before the dock requests Send. ChatActivityEnterView exposes native round
+panel restoration as well as release; it retains view-once while restoring the
+existing UI. PurpleRoundRecording snapshots the original round's native send
+arguments and handles its completed media through one ChatActivity sendMedia
+hook. Those seams require private native members; the ownership decisions and
+picker remain in Purple helpers. Native quick-reply capture contexts retain their
+stock controls and are not adopted into the dock.
+
+Send-as selection is frozen in a recording's immutable native argument object.
+A weak-key Purple map carries its account, user, dialog and chosen sender through
+video preparation and voice finalization. Two SendMessagesHelper hooks validate
+that identity and apply the frozen sender. Normal sends have no such entry and
+use the native choice. Recipient replacement creates a fresh snapshot for the
+new dialog. This also prevents a recycled account slot from sending an old
+recording after asynchronous video preparation.
+
+Voice Preview hands the still-paused recorder to the native draft panel with a
+single-use, account-checked handoff. It changes the UI guid without replacing the
+private native reply, thread or send arguments with whatever is in the newly
+opened compose field. The capture's F10 target and the currently selected send
+target remain distinct when the user replaced a recipient. Resuming in front
+promotes the microphone service again before a later background transition.

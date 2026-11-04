@@ -35914,6 +35914,7 @@ public class ChatActivity extends BaseFragment implements
     }
 
     public void sendMedia(MediaController.PhotoEntry photoEntry, VideoEditedInfo videoEditedInfo, boolean notify, int scheduleDate, int scheduleRepeatPeriod, boolean forceDocument, long stars) {
+        if (purple.sendRoundMedia(photoEntry, videoEditedInfo, notify, scheduleDate, scheduleRepeatPeriod, stars)) return;
         if (photoEntry == null) {
             return;
         }

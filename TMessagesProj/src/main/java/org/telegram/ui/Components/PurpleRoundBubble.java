@@ -12,7 +12,7 @@ public final class PurpleRoundBubble {
     public interface Dispatch { boolean run(); }
     public interface Visibility { void small(boolean small); }
     private static final int STATE_TAG = 0x70750521;
-    private static State state(InstantCameraViewBase view) { return (State) view.getTag(STATE_TAG); }
+    private static State state(InstantCameraViewBase view) { return view == null ? null : (State) view.getTag(STATE_TAG); }
     private static final class State {
         boolean small, tracking, dragging;
         float downX, downY, startX, startY;
@@ -33,6 +33,10 @@ public final class PurpleRoundBubble {
         State state = state(view);
         if (state != null && open && !fromPaused && state.small) resize(view, state, false);
         return open && (state == null || !state.small);
+    }
+    public static void expand(InstantCameraViewBase view) {
+        State state = state(view);
+        if (state != null && state.small) resize(view, state, false);
     }
     public static boolean small(InstantCameraViewBase view) {
         State state = state(view);
@@ -95,6 +99,7 @@ public final class PurpleRoundBubble {
         return Math.min(view.getHeight() - view.getPaddingBottom(), Math.max(0, visible.bottom - location[1])) - AndroidUtilities.dp(76);
     }
     private static void resize(InstantCameraViewBase view, State state, boolean small) {
+        if (small && (!org.telegram.messenger.purple.PurpleRecordingDock.state.active() || !org.telegram.messenger.purple.PurpleRecordingDock.state.round)) return;
         state.small = small;
         view.getButtonsLayout().setVisibility(small ? View.INVISIBLE : View.VISIBLE);
         if (small) {

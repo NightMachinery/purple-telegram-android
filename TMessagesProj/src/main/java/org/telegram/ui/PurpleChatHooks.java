@@ -68,6 +68,7 @@ final class PurpleChatHooks {
     private final ChatActivity chat;
     private final PurpleScreenTimeCover.Host screenTime;
     private final PurpleMarkdownCopy markdownCopy;
+    private final PurpleRoundRecording roundRecording;
 
     private PurplePinnedMusicBar pinnedMusicBar;
     private ChatActivityTopPanelLayout topPanel;
@@ -76,6 +77,15 @@ final class PurpleChatHooks {
     private final org.telegram.messenger.purple.PurpleRecordingDock.Host recordingHost = new org.telegram.messenger.purple.PurpleRecordingDock.Host() {
         public long[] target() { return recordingTarget(); }
         public boolean scheduled() { return chat.getChatMode() == ChatActivity.MODE_SCHEDULED; }
+        public void roundStarted() { roundRecording.started(); }
+        public boolean roundVisible() { return !chat.isPaused(); }
+        public void roundPause() { roundRecording.pause(); }
+        public void roundPreview() { roundRecording.preview(); }
+        public void roundPreviewReady(Object[] args) { roundRecording.ready(args); }
+        public void roundSend(boolean notify, int date, long stars) { roundRecording.send(notify, date, stars); }
+        public void roundDiscard() { roundRecording.discard(); }
+        public void roundAbandon() { roundRecording.abandon(); }
+        public void roundRetarget(long dialog, MessageObject top) { roundRecording.retarget(dialog, top); }
         public void release() {
             if (chat.chatActivityEnterView != null) chat.chatActivityEnterView.purpleReleaseRecordUi();
         }
@@ -87,6 +97,7 @@ final class PurpleChatHooks {
      */
     PurpleChatHooks(ChatActivity chat, Utilities.Callback0Return<Boolean> finishing, PurpleMarkdownCopy.Lookup lookup) {
         this.chat = chat;
+        roundRecording = new PurpleRoundRecording(chat);
         this.screenTime = new PurpleScreenTimeCover.Host(chat, finishing);
         markdownCopy = new PurpleMarkdownCopy(chat, lookup);
         // F10: a recording this chat starts is registered with its target.
@@ -508,20 +519,27 @@ final class PurpleChatHooks {
     }
 
     void attachRoundCamera(org.telegram.ui.Components.InstantCameraViewBase view, org.telegram.ui.Components.PurpleRoundBubble.Visibility visibility) {
-        org.telegram.ui.Components.PurpleRoundBubble.attach(view, visibility);
+        org.telegram.ui.Components.PurpleRoundBubble.attach(view, small -> { visibility.small(small); roundRecording.resized(small); });
     }
 
     boolean dockRecording(boolean invoked) {
+        roundRecording.beforeLeave();
         return invoked && org.telegram.messenger.purple.PurpleRecordingDock.dock(chat.getCurrentAccount(), chat.getClassGuid());
     }
 
     void onPause() {
+        roundRecording.beforeLeave();
         org.telegram.ui.Components.PurpleRoundBubble.pause(chat.instantCameraView);
         markdownCopy.cancel();
         screenTime.onPause();
     }
 
+    boolean sendRoundMedia(org.telegram.messenger.MediaController.PhotoEntry entry, org.telegram.messenger.VideoEditedInfo info, boolean notify, int date, int repeat, long stars) {
+        return roundRecording.sendMedia(entry, info, notify, date, repeat, stars);
+    }
+
     void onDestroy() {
+        roundRecording.destroy();
         org.telegram.messenger.purple.PurpleRecordingDock.unwatch(chat.getClassGuid());
         org.telegram.messenger.purple.PurpleRecordingRegistry.unwatchChat(chat.getClassGuid());
         if (archiveScope != null) { archiveScope.close(); archiveScope = null; }

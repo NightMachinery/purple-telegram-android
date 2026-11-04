@@ -19,9 +19,8 @@ import org.telegram.ui.Components.LayoutHelper;
 
 /**
  * Purple's part of one top context strip ({@link FragmentContextView}), one
- * instance per strip. For now it holds F9's seek buttons
- * (docs/media-recording-design.md, "F9. Seek back and forward"); the
- * recording dock's strip will join it.
+ * instance per strip. It hosts F9's seek buttons and the recording dock's
+ * voice or in-chat round controls (docs/recording-continuity.md).
  *
  * The two buttons sit left of the speed button and show only in the audio
  * player style. Their labels follow {@code [playback] seek_step}: they are
@@ -64,8 +63,7 @@ public final class PurpleRecordingStrip {
     }
 
     public boolean docked() {
-        return org.telegram.messenger.purple.PurpleRecordingDock.state.active()
-                && org.telegram.messenger.purple.PurpleRecordingDock.state.docked;
+        return org.telegram.messenger.purple.PurpleRecordingDock.shown();
     }
 
     public boolean showRecording() {

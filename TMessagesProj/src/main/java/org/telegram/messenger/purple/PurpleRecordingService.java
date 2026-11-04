@@ -104,6 +104,7 @@ public final class PurpleRecordingService extends Service {
     private void update() {
         PurpleRecordingDockState state = PurpleRecordingDock.state;
         if (!state.active()) { stopSelf(); return; }
+        generation = state.generation;
         if (!state.paused && !state.finishing) {
             if (!wakeLock.isHeld()) wakeLock.acquire();
         } else if (wakeLock.isHeld()) wakeLock.release();
