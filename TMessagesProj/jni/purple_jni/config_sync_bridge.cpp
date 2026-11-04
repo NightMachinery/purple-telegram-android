@@ -989,6 +989,10 @@ Java_org_telegram_messenger_purple_PurpleSyncCore_firstUseNative(
 		metadata.insert(u"head"_q, bool(input->head));
 		// The version key of the chat's current head: the chosen key of a join and the parent of a successor.
 		metadata.insert(u"headKey"_q, input->headKey ? *input->headKey : QString());
+		// The expected parents of the publish behind "Use this device's settings" or Publish into a non-empty chat.
+		auto parents = QJsonArray();
+		for (const auto &parent : input->expectedParents) parents.push_back(parent);
+		metadata.insert(u"expectedParents"_q, parents);
 		metadata.insert(u"sameBytes"_q, input->head
 			&& local->status == Purple::SyncSettingsFileStatus::Present
 			&& input->head->text == local->text);

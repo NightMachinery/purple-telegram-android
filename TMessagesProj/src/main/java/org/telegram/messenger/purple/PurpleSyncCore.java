@@ -926,10 +926,12 @@ public final class PurpleSyncCore {
          * disagree: the chosen key of a join, and the one expected parent of a successor publish.
          */
         public final String headKey;
+        /** Core's expected parents of a publish of this device's file into a non-empty chat; empty when it would not publish. */
+        public final List<String> expectedParents;
 
         FirstUse(String error) {
             super(error);
-            available = false; action = null; groupEmpty = false; head = false; sameBytes = false; defaults = false; space = ""; headKey = "";
+            available = false; action = null; groupEmpty = false; head = false; sameBytes = false; defaults = false; space = ""; headKey = ""; expectedParents = Collections.emptyList();
         }
 
         FirstUse(JSONObject json) throws JSONException {
@@ -942,6 +944,7 @@ public final class PurpleSyncCore {
             defaults = bool(json, "defaults");
             space = available ? string(json, "space") : "";
             headKey = available ? json.optString("headKey", "") : "";
+            expectedParents = available && json.has("expectedParents") ? strings(json, "expectedParents") : Collections.<String>emptyList();
         }
     }
 

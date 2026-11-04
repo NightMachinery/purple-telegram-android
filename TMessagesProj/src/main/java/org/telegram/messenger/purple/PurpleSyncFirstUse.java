@@ -128,14 +128,25 @@ public final class PurpleSyncFirstUse {
         };
     }
 
-    static String answer(PurpleSyncCore.FirstUseChoice choice, String space) { return choice.name() + "|" + space; }
+    /** What an answer answered: the chat's space and its current heads as core names them. */
+    static String seen(PurpleSyncCore.FirstUse plan) {
+        java.util.ArrayList<String> parents = new java.util.ArrayList<>(plan.expectedParents);
+        java.util.Collections.sort(parents);
+        return plan.space + "|" + plan.headKey + "|" + String.join(",", parents);
+    }
 
-    /** The kept answer for {@code space}, or None. */
-    static PurpleSyncCore.FirstUseChoice kept(Answers answers, String space) {
+    static String answer(PurpleSyncCore.FirstUseChoice choice, PurpleSyncCore.FirstUse plan) { return choice.name() + "|" + seen(plan); }
+
+    /**
+     * The kept answer for what {@code plan} sees, or None. An answer kept for other heads (they changed since, for
+     * example a split resolved) is dropped: it never saw these settings, so first use plans again and may ask again.
+     */
+    static PurpleSyncCore.FirstUseChoice kept(Answers answers, PurpleSyncCore.FirstUse plan) {
         String value = answers.get();
-        if (value == null || space == null || space.isEmpty()) return PurpleSyncCore.FirstUseChoice.None;
+        if (value == null || plan.space.isEmpty()) return PurpleSyncCore.FirstUseChoice.None;
         for (PurpleSyncCore.FirstUseChoice choice : PurpleSyncCore.FirstUseChoice.values())
-            if (choice != PurpleSyncCore.FirstUseChoice.None && value.equals(answer(choice, space))) return choice;
+            if (choice != PurpleSyncCore.FirstUseChoice.None && value.equals(answer(choice, plan))) return choice;
+        answers.clear();
         return PurpleSyncCore.FirstUseChoice.None;
     }
 
@@ -162,7 +173,7 @@ public final class PurpleSyncFirstUse {
             return;
         }
         if (choice == PurpleSyncCore.FirstUseChoice.None && plan.action == PurpleSyncCore.FirstUseAction.Ask) {
-            PurpleSyncCore.FirstUseChoice kept = kept(answers, plan.space);
+            PurpleSyncCore.FirstUseChoice kept = kept(answers, plan);
             if (kept != PurpleSyncCore.FirstUseChoice.None) {
                 choice = kept;
                 plan = plan(check, choice);
@@ -172,7 +183,8 @@ public final class PurpleSyncFirstUse {
                 }
             }
         } else if (choice != PurpleSyncCore.FirstUseChoice.None && plan.action != PurpleSyncCore.FirstUseAction.Ask && !plan.space.isEmpty()) {
-            answers.put(answer(choice, plan.space));
+            PurpleSyncCore.FirstUse seen = plan(check, PurpleSyncCore.FirstUseChoice.None);
+            if (seen != null && seen.isValid() && seen.available) answers.put(answer(choice, seen));
         }
         action = plan.action;
         if (action == PurpleSyncCore.FirstUseAction.Wait) { finish(Result.Wait, "wait", null, null); return; }
@@ -224,7 +236,7 @@ public final class PurpleSyncFirstUse {
         boolean successor = !plan.groupEmpty && (action == PurpleSyncCore.FirstUseAction.Publish
                 || action == PurpleSyncCore.FirstUseAction.JoinSilently && !plan.sameBytes);
         boolean join = action == PurpleSyncCore.FirstUseAction.Join || action == PurpleSyncCore.FirstUseAction.JoinSilently && !successor;
-        if ((join || successor) && plan.headKey.isEmpty()) { finish(Result.Refused, "heads_unclear", null, null); return; }
+        if (join && plan.headKey.isEmpty() || successor && plan.expectedParents.isEmpty()) { finish(Result.Refused, "heads_unclear", null, null); return; }
         // A file of the head's exact bytes is the head: core's review lists that head as the same, not as a choice,
         // and PlanSyncConfigApply refuses its key (InvalidChoice), so that join keeps the local choice.
         String key = join && !(action == PurpleSyncCore.FirstUseAction.JoinSilently && plan.sameBytes) ? plan.headKey : null;
@@ -242,8 +254,7 @@ public final class PurpleSyncFirstUse {
             if (successor) {
                 // This device's file as the successor of the chat's head, against a fresh check.
                 if (result.fingerprint == null || result.fingerprint.isEmpty()) { finish(Result.Joined, code(action), result, null); return; }
-                PurpleSyncCore.PostRequest request = PurpleSyncCore.PostRequest.newContent(result.fingerprint,
-                        java.util.Collections.singletonList(plan.headKey));
+                PurpleSyncCore.PostRequest request = PurpleSyncCore.PostRequest.newContent(result.fingerprint, plan.expectedParents);
                 recheck(fresh -> {
                     PurpleSyncRunner.Start posting = runner.publish(fresh, request, sent);
                     if (posting != PurpleSyncRunner.Start.Started) finish(Result.Joined, refusal(posting), result, null);

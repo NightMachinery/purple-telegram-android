@@ -42,6 +42,7 @@ final class PurpleSyncFirstUseCases {
     static void run(File parent) throws Exception {
         carryLeftovers(parent);
         twoInstalls(parent);
+        disagreeingHeads(parent);
         actions(parent);
         race(parent);
         d1(parent, PurpleSyncCore.FirstUseChoice.Synced);
@@ -207,6 +208,67 @@ final class PurpleSyncFirstUseCases {
             settled(old, chat, "carry " + answer);
         }
         System.out.println("FIRST_USE_CARRY=PASS");
+    }
+
+    /**
+     * Two disagreeing heads: R1 (install D), then R2 (install A) and R3 (install B) both with parent R1. A new device
+     * with other settings is asked; "Use this device's settings" publishes with core's expectedParents, both heads,
+     * so its record supersedes both. An answer kept for the split is dropped once the heads changed: the next device
+     * that kept it plans again and is asked, instead of publishing over settings its answer never saw.
+     */
+    static void disagreeingHeads(File parent) throws Exception {
+        Device d = new Device(parent, "first-use-split-d", "fixture-device-split-d");
+        Device a = new Device(parent, "first-use-split-a", "fixture-device-split-a");
+        Device b = new Device(parent, "first-use-split-b", "fixture-device-split-b");
+        Device n = new Device(parent, "first-use-split-n", "fixture-device-split-n");
+        Device m = new Device(parent, "first-use-split-m", "fixture-device-split-m");
+        byte[] third = bytes("# B exact\nversion=2\n[last_seen]\nreasons_p=false\ntrade_p=false\n");
+        byte[] fourth = bytes("# N exact\nversion=2\n[screen_time]\nretention_days=30\n");
+        d.local(MINE); d.bind(); a.local(null); a.bind(); b.local(null); b.bind(); n.local(fourth); n.bind(); m.local(fourth); m.bind();
+        Group chat = new Group();
+        check(firstUse(d, chat, PurpleSyncCore.FirstUseChoice.None, "split R1").result == PurpleSyncFirstUse.Result.Published, "split: R1");
+        for (Device joiner : new Device[] { a, b })
+            check(firstUse(joiner, chat, PurpleSyncCore.FirstUseChoice.None, "split join").result == PurpleSyncFirstUse.Result.Joined, "split: " + joiner.id + " joins R1");
+        // A and B each publish a change against R1: B's Check is taken before A's record lands.
+        b.local(third);
+        PurpleSyncRunner rb = b.runner(chat, MAGIC);
+        PurpleSyncRunner.Check staleB = checked(rb, "split B");
+        a.local(THEIRS);
+        PurpleSyncRunner ra = a.runner(chat, MAGIC);
+        PurpleSyncRunner.ApplyOutcome pa = apply(ra, checked(ra, "split A"), null);
+        PurpleSyncPublisher.Result[] sa = { null };
+        check(pa.post != null && ra.publish(pa.post, v -> sa[0] = v) == PurpleSyncRunner.Start.Started && sa[0].status == PurpleSyncCore.PublishStatus.Confirmed, "split: A publishes R2");
+        ra.close();
+        b.use();
+        PurpleSyncRunner.ApplyOutcome pb = apply(rb, staleB, null);
+        PurpleSyncPublisher.Result[] sb = { null };
+        check(pb.post != null && rb.publish(pb.post, v -> sb[0] = v) == PurpleSyncRunner.Start.Started && sb[0] != null, "split: B publishes R3 against R1");
+        rb.close();
+        check(chat.heads().size() == 2 && chat.spaces().size() == 1, "split: two disagreeing current heads: " + chat.heads().size() + " (B " + sb[0].status + ")");
+        // M is asked under the split and its answer is kept for those heads (as after a failed step).
+        PurpleSyncFirstUse.Outcome mAsked = firstUse(m, chat, PurpleSyncCore.FirstUseChoice.None, "split M ask");
+        check(mAsked.result == PurpleSyncFirstUse.Result.Ask, "split: M is asked: " + mAsked.result);
+        m.use();
+        PurpleSyncRunner rm = m.runner(chat, MAGIC);
+        PurpleSyncCore.FirstUse seen = PurpleSyncFirstUse.plan(checked(rm, "split M seen"), PurpleSyncCore.FirstUseChoice.None);
+        rm.close();
+        check(seen.headKey.isEmpty() && seen.expectedParents.size() == 2, "split: core names both heads as expected parents, no head key: " + seen.expectedParents);
+        // M's answer as kept for the split (the devices of these cases share one preferences store, so it is planted
+        // only after N acted).
+        String kept = PurpleSyncFirstUse.answer(PurpleSyncCore.FirstUseChoice.ThisDevice, seen);
+        // N answers "Use this device's settings": its record supersedes both heads.
+        check(firstUse(n, chat, PurpleSyncCore.FirstUseChoice.None, "split N ask").result == PurpleSyncFirstUse.Result.Ask, "split: N is asked");
+        PurpleSyncFirstUse.Outcome nPublished = firstUse(n, chat, PurpleSyncCore.FirstUseChoice.ThisDevice, "split N this device");
+        check(nPublished.result == PurpleSyncFirstUse.Result.Published && chat.heads().size() == 1 && Arrays.equals(fourth, chat.heads().get(0)),
+                "split: \"Use this device's settings\" supersedes both heads: " + nPublished.result + " " + nPublished.reason + " heads=" + chat.heads().size());
+        settled(n, chat, "split N");
+        // M's kept answer was for the split; the heads changed, so it is dropped and M plans again.
+        PurpleSyncFirstUse.answers(1).put(kept);
+        int posts = chat.posts;
+        PurpleSyncFirstUse.Outcome mAgain = firstUse(m, chat, PurpleSyncCore.FirstUseChoice.None, "split M after the heads changed");
+        check(mAgain.result != PurpleSyncFirstUse.Result.Published && chat.posts == posts && PurpleSyncFirstUse.answers(1).get() == null,
+                "split: a stale kept answer is dropped, nothing published over settings it never saw: " + mAgain.result + " " + mAgain.action);
+        System.out.println("FIRST_USE_SPLIT=PASS");
     }
 
     /** Each first-use action from a device with no state, and the one-time answers. */
