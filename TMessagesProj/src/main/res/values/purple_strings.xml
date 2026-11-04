@@ -391,9 +391,9 @@
     <string name="PurpleScreenTimeCoverDetail">Today\'s allowance of %1$s is spent.</string>
     <string name="PurpleScreenTimeCoverSnooze">%1$d more minutes</string>
     <string name="PurpleScreenTimeCoverNote">Messages and notifications are untouched, and the time you spend here still counts.</string>
-    <!-- Purple: Sync across devices, the manual settings sync screen, its review dialog and History -->
+    <!-- Purple: Sync across devices, its review dialog and History -->
     <string name="PurpleSyncTitle">Sync across devices</string>
-    <string name="PurpleSyncIntro">Sync is manual in this version. Check sync chat reads this account\'s the sync chat and shows what to do next. Nothing changes on this device without your review, and nothing is sent without a fresh check and your confirmation. Settings that sync replaces are kept in History. The settings file may contain chat IDs and names. the sync chat is a Telegram cloud chat, not end-to-end encrypted, and every signed-in session can read it. state.toml stays local.</string>
+    <string name="PurpleSyncIntro">When automatic sync is On, this account shares saved settings and receives synced changes automatically. Check sync chat reads the latest records and shows any choices that need your review. Settings replaced by sync are kept in History. The settings file may contain chat IDs and names. The sync chat is a Telegram cloud chat, not end-to-end encrypted, and every signed-in session can read it. state.toml stays local.</string>
     <string name="PurpleSyncAccountWithUsername">%1$s (@%2$s)</string>
     <string name="PurpleSyncSignIn">Sign in to an account to check the sync chat.</string>
     <string name="PurpleSyncReady">Ready to check the sync chat.</string>

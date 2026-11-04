@@ -289,3 +289,5 @@ Explicit stale-mark rows and their qualification boundary are described in
 The injected Carry executor supports exact frozen-record cleanup after durable N commit, with independent old-mark authorization and explicit Retry/Skip progress. Production remains OFF. See [old settings cleanup](sync-chat-cleanup.md) for scope, conservative absence and the install-moved note.
 
 Lost recovery offers no actionable controls while its production gate is OFF. Its injected Create/Choose routes use Carry; Mark again is core RepairMark and preserves the settings state. See [Lost actions and retention limits](sync-chat-recovery.md).
+
+The sync screen introduction describes automatic publishing and receiving when automatic sync is On. Check reads current records and shows any remaining choice; replacing settings keeps the existing History behavior.
