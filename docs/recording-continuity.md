@@ -30,13 +30,17 @@ new recording. Intent extras alone do not distinguish PendingIntents, as the
 explains. The account identity is checked before an action can send. Hidden targets use the neutral Recording
 label under Work Mode. Screens without a context strip use the notification.
 
-F6 supplies the in-chat round bubble fallback. Tap outside the camera to shrink,
-drag it to a corner, tap it to expand, and use its camera and pause controls.
+F6 supplies the in-chat round bubble fallback. During active capture, tap outside
+the camera to shrink, drag it to a corner, tap it to expand, and use its camera and pause controls.
 The camera container is transformed in place; neither SurfaceTexture nor the
 encoder is detached or restarted. The corner is device-local. Layout and the
 visible window bounds keep the bubble above the keyboard. Leaving a chat pauses
 its round, including background and lock. Both round implementations share the
-base touch-dispatch seam.
+base touch-dispatch seam. Native composer taps in the bottom inset pass through
+before the bubble can claim a gesture. Paused full-size previews and captures
+that the dock cannot shrink keep native routing. A native gesture stays native
+through move, up and cancel, including the small bubble's camera/pause controls.
+Small paused bubbles can still expand or drag to a saved corner.
 
 Shrinking releases the round's native recording panel for typing and shows a
 video row in the recording strip with avatar, title, timer, waveform and native
@@ -86,8 +90,16 @@ Recorder state, target checks and service logic stay in Purple classes.
 The `recording-dock` host suite covers target retention, ownership, stale action
 rejection, repeated pause/send taps, paused legacy send transitions, recorded
 time, discard confirmation and bubble bounds. Run the complete canonical host
-suite list before acceptance. Application compilation and device qualification
-are separate from those pure host cases.
+suite list before acceptance. The same suite compiles the complete production
+`PurpleRoundBubble`, `InstantCameraViewBase`, settings and geometry with inert
+Android ports. It
+exercises both factory-selected camera adapters, native Send/Delete inset
+routing while active and paused, ineligible dock fallback, full native gesture
+ownership, intentional active shrinking, small controls, drag/corner persistence
+and cancellation. Native adapters retain their source bottom-inset rejection;
+legacy's remaining touch behavior, camera state and Android child dispatch/layout
+are modeled. This does not qualify real encoder, animation or platform event
+delivery. Application compilation and device qualification are separate.
 
 Device checks, in risk order:
 

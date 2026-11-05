@@ -14,7 +14,7 @@ public final class PurpleRoundBubble {
     private static final int STATE_TAG = 0x70750521;
     private static State state(InstantCameraViewBase view) { return view == null ? null : (State) view.getTag(STATE_TAG); }
     private static final class State {
-        boolean small, tracking, dragging;
+        boolean small, tracking, dragging, nativeGesture;
         float downX, downY, startX, startY;
         int corner;
         Visibility visibility;
@@ -49,30 +49,37 @@ public final class PurpleRoundBubble {
         if (view == null || view.getVisibility() != View.VISIBLE || !PurpleRecordingSettings.read().roundFloat) return false;
         State state = state(view);
         if (state == null) return false;
-        if (!state.small && event.getActionMasked() == MotionEvent.ACTION_DOWN) resize(view, state, true);
+        if (!state.small && event.getActionMasked() == MotionEvent.ACTION_DOWN && canShrink(view) && !inComposer(view, event)) resize(view, state, true);
         return state.small;
     }
     public static boolean dispatch(InstantCameraViewBase view, MotionEvent event, Dispatch normal) {
         State state = state(view);
-        if (state == null || view.getVisibility() != View.VISIBLE || (!state.small && !PurpleRecordingSettings.read().roundFloat)) return normal.run();
+        if (state == null) return normal.run();
+        if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+            state.tracking = false;
+            state.nativeGesture = false;
+        }
+        if (state.nativeGesture) return nativeDispatch(state, event, normal);
+        if (!state.tracking && (view.getVisibility() != View.VISIBLE || (!state.small
+                && (!PurpleRecordingSettings.read().roundFloat || !canShrink(view) || inComposer(view, event))))) return nativeDispatch(state, event, normal);
         View camera = view.getCameraContainer();
         float left = camera.getX() + camera.getPivotX() * (1 - camera.getScaleX());
         float top = camera.getY() + camera.getPivotY() * (1 - camera.getScaleY());
         float side = camera.getWidth() * camera.getScaleX();
         boolean inside = event.getX() >= left && event.getX() <= left + side && event.getY() >= top && event.getY() <= top + side;
-        if (state.small && state.controls != null && event.getY() >= state.controls.getY()
+        if (!state.tracking && state.small && state.controls != null && event.getY() >= state.controls.getY()
                 && event.getY() <= state.controls.getY() + state.controls.getHeight()
-                && event.getX() >= state.controls.getX() && event.getX() <= state.controls.getX() + state.controls.getWidth()) return normal.run();
+                && event.getX() >= state.controls.getX() && event.getX() <= state.controls.getX() + state.controls.getWidth()) return nativeDispatch(state, event, normal);
         if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
             if (state.small && !inside) return false;
-            if (!state.small && inside) return normal.run();
+            if (!state.small && inside) return nativeDispatch(state, event, normal);
             state.tracking = true;
             state.dragging = false;
             state.downX = event.getX(); state.downY = event.getY();
             state.startX = camera.getTranslationX(); state.startY = camera.getTranslationY();
             return true;
         }
-        if (!state.tracking) return state.small ? false : normal.run();
+        if (!state.tracking) return state.small ? false : nativeDispatch(state, event, normal);
         if (event.getActionMasked() == MotionEvent.ACTION_MOVE && state.small) {
             float dx = event.getX() - state.downX, dy = event.getY() - state.downY;
             state.dragging |= Math.hypot(dx, dy) > ViewConfiguration.get(view.getContext()).getScaledTouchSlop();
@@ -92,6 +99,17 @@ public final class PurpleRoundBubble {
         }
         return true;
     }
+    private static boolean nativeDispatch(State state, MotionEvent event, Dispatch normal) {
+        state.nativeGesture = event.getActionMasked() != MotionEvent.ACTION_UP && event.getActionMasked() != MotionEvent.ACTION_CANCEL;
+        return normal.run();
+    }
+    private static boolean inComposer(InstantCameraViewBase view, MotionEvent event) {
+        return event.getY() > view.getMeasuredHeight() - view.getPaddingBottom();
+    }
+    private static boolean canShrink(InstantCameraViewBase view) {
+        org.telegram.messenger.purple.PurpleRecordingDockState dock = org.telegram.messenger.purple.PurpleRecordingDock.state;
+        return dock.active() && dock.round && !dock.paused && !dock.finishing && !dock.transitioning && !view.isPaused();
+    }
     private static int availableHeight(InstantCameraViewBase view) {
         android.graphics.Rect visible = new android.graphics.Rect();
         view.getWindowVisibleDisplayFrame(visible);
@@ -99,7 +117,7 @@ public final class PurpleRoundBubble {
         return Math.min(view.getHeight() - view.getPaddingBottom(), Math.max(0, visible.bottom - location[1])) - AndroidUtilities.dp(76);
     }
     private static void resize(InstantCameraViewBase view, State state, boolean small) {
-        if (small && (!org.telegram.messenger.purple.PurpleRecordingDock.state.active() || !org.telegram.messenger.purple.PurpleRecordingDock.state.round)) return;
+        if (small && !canShrink(view)) return;
         state.small = small;
         view.getButtonsLayout().setVisibility(small ? View.INVISIBLE : View.VISIBLE);
         if (small) {
