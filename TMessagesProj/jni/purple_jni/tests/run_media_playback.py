@@ -58,7 +58,7 @@ PINS = [
     # F9: the strip's per-instance helper, handed each new style before the
     # style branches run, and the media session's rewind and fast-forward.
     ('ui/Components/FragmentContextView.java', '    private final Theme.ResourcesProvider resourcesProvider;\n',
-     '    private final org.telegram.ui.PurpleRecordingStrip purple = new org.telegram.ui.PurpleRecordingStrip(this, () -> checkPlayer(false));\n'),
+     '    private final org.telegram.ui.PurpleRecordingStrip purple = new org.telegram.ui.PurpleRecordingStrip(this, () -> !isLocation, () -> checkPlayer(false));\n'),
     ('ui/Components/FragmentContextView.java', '        currentStyle = style;\n',
      '        purple.updateStyle(style, titleTextView, resourcesProvider);\n'),
     ('messenger/MusicPlayerService.java', '                public void onCustomAction(String action, android.os.Bundle extras) {\n',
