@@ -964,7 +964,8 @@
         "recording-dock:PAYMENT_CAPTUREGEN_CHECKS": 7,
         "recording-dock:COMPLETION_BOUNDARY_CHECKS": 96,
         "recording-dock:RETRY_IDENTITY_CHECKS": 46,
-        "recording-dock:ROUND_ROUTING_CHECKS": 94
+        "recording-dock:ROUND_ROUTING_CHECKS": 94,
+        "recording-dock:RECORDING_LIFETIME_CHECKS": 9
       }
     },
     {

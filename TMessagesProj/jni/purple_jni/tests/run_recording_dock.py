@@ -54,3 +54,5 @@ import runpy
 runpy.run_path(str(pathlib.Path(__file__).parent / 'recording/integration.py'))['run'](root, args.output)
 
 runpy.run_path(str(pathlib.Path(__file__).parent / 'recording/bubble_routing.py'))['run'](root, args.output / 'bubble-routing')
+
+runpy.run_path(str(pathlib.Path(__file__).parent / 'recording/lifetime.py'))['run'](root, args.output / 'lifetime')

@@ -50,6 +50,7 @@ public final class PurpleRecordingStrip {
     private View paddedTitle;
     private int titlePadding;
     private org.telegram.ui.PurpleRecordingStripView recording;
+    @androidx.annotation.Keep
     private final Runnable changed;
 
     public PurpleRecordingStrip(FragmentContextView strip, Runnable relayout) {

@@ -101,6 +101,16 @@ legacy's remaining touch behavior, camera state and Android child dispatch/layou
 are modeled. This does not qualify real encoder, animation or platform event
 delivery. Application compilation and device qualification are separate.
 
+The chat's recording host and the strip's change callback own their weak dock
+registrations through strong fields. Both fields use `@Keep`: release R8 can
+otherwise remove an unread field and leave a visible chat or strip registered
+only weakly. Collection then prevents voice/round adoption or leaves discarded
+rows visible. `recording-dock` also runs the exact host field, strip constructor
+and dock adoption/clear seams through the offline AGP's release R8, then collects
+and checks a second take, service request, pause/discard updates and unwatch.
+The UI, recorder and service boundaries in that host case are inert; the APK
+and device still need their separate checks.
+
 Device checks, in risk order:
 
 1. Start in chat A, topic and reply; switch account and chat, type and send text,

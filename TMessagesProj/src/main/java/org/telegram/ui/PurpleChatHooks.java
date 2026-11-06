@@ -74,6 +74,7 @@ final class PurpleChatHooks {
     private ChatActivityTopPanelLayout topPanel;
     private ActionBarMenuItem.Item keepMediaItem;
     private boolean resumed;
+    @androidx.annotation.Keep
     private final org.telegram.messenger.purple.PurpleRecordingDock.Host recordingHost = new org.telegram.messenger.purple.PurpleRecordingDock.Host() {
         public long[] target() { return recordingTarget(); }
         public boolean scheduled() { return chat.getChatMode() == ChatActivity.MODE_SCHEDULED; }
