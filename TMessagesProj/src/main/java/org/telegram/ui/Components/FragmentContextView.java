@@ -212,7 +212,7 @@ public class FragmentContextView extends FrameLayout implements NotificationCent
 
     private FragmentContextViewDelegate delegate;
     private final Theme.ResourcesProvider resourcesProvider;
-    private final org.telegram.ui.PurpleRecordingStrip purple = new org.telegram.ui.PurpleRecordingStrip(this, () -> checkPlayer(false));
+    private final org.telegram.ui.PurpleRecordingStrip purple = new org.telegram.ui.PurpleRecordingStrip(this, () -> !isLocation, () -> checkPlayer(false));
     private final boolean isSideMenued;
 
     private boolean firstLocationsLoaded;

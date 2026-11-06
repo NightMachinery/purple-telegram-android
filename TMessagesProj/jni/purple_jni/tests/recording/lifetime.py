@@ -12,12 +12,16 @@ def block(text, signature):
     return text[start:end]
 
 
-def run(root, output, owners=None):
+def run(root, output, owners=None, context_source=None):
     output.mkdir(parents=True, exist_ok=False)
     java = root / 'TMessagesProj/src/main/java/org/telegram'
     dock = (java / 'messenger/purple/PurpleRecordingDock.java').read_text()
     chat = (owners or {}).get('PurpleChatHooks.java') or (java / 'ui/PurpleChatHooks.java').read_text()
     strip = (owners or {}).get('PurpleRecordingStrip.java') or (java / 'ui/PurpleRecordingStrip.java').read_text()
+    context_source = context_source or (java / 'ui/Components/FragmentContextView.java').read_text()
+    initializer = re.search(r'    private final org.telegram.ui.PurpleRecordingStrip purple = [^\n]+', context_source)[0]
+    player_field = ' private final java.util.function.BooleanSupplier player;\n' if 'BooleanSupplier player' in strip else ''
+    player_arg = '()->true,' if player_field else ''
     home = pathlib.Path(os.environ.get('GRADLE_USER_HOME', pathlib.Path.home() / '.gradle'))
     agp = re.search(r"com.android.tools.build:gradle:([^']+)", (root / 'build.gradle').read_text())[1]
     builders = list((home / 'caches/modules-2/files-2.1/com.android.tools.build/builder' / agp).glob('*/*.jar'))
@@ -36,7 +40,7 @@ def run(root, output, owners=None):
     host_field = chat[host_field_start:chat.index('\n    };', host_field_start) + 7]
     put('androidx/annotation/Keep.java', 'package androidx.annotation;import java.lang.annotation.*;@Retention(RetentionPolicy.CLASS)@Target({ElementType.FIELD,ElementType.TYPE})public @interface Keep {}')
     put('android/view/View.java', 'package android.view;public class View {public static final int VISIBLE=0,GONE=8;private int visibility;public int getVisibility(){return visibility;}public void setVisibility(int v){visibility=v;}public void bringToFront(){}}')
-    put('org/telegram/ui/Components/FragmentContextView.java', 'package org.telegram.ui.Components;public class FragmentContextView {public Object getContext(){return null;}public void addView(Object v,Object p){}}')
+    put('org/telegram/ui/Components/FragmentContextView.java', 'package org.telegram.ui.Components;public class FragmentContextView {private boolean isLocation;public int relayouts;'+initializer+'public FragmentContextView(){this(false);}public FragmentContextView(boolean location){isLocation=location;}public org.telegram.ui.PurpleRecordingStrip recordingStrip(){return purple;}private void checkPlayer(boolean create){relayouts++;purple.showRecording();}public Object getContext(){return null;}public void addView(Object v,Object p){}}')
     put('org/telegram/ui/Components/LayoutHelper.java', 'package org.telegram.ui.Components;public class LayoutHelper {public static final int MATCH_PARENT=-1;public static Object createFrame(int w,int h,int g){return null;}}')
     put('android/view/Gravity.java', 'package android.view;public class Gravity {public static final int TOP=1;}')
     put('org/telegram/ui/PurpleRecordingStripView.java', 'package org.telegram.ui;public class PurpleRecordingStripView extends android.view.View {public int refreshes;public PurpleRecordingStripView(Object c){}public void refresh(){refreshes++;}}')
@@ -46,7 +50,7 @@ public final class PurpleRecordingStrip {
  private final FragmentContextView strip;
  private PurpleRecordingStripView recording;
  private static final java.util.Set<PurpleRecordingStrip> STRIPS=java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
-''' + field(strip, 'changed') + '\n' + '\n'.join(block(strip, signature) for signature in ['public PurpleRecordingStrip(', 'public boolean docked()', 'public boolean showRecording()']) + '\n}')
+''' + player_field + field(strip, 'changed') + '\n' + '\n'.join(block(strip, signature) for signature in ['public PurpleRecordingStrip(', 'public boolean docked()', 'public boolean showRecording()']) + '\n}')
     put('org/telegram/ui/PurpleChatHooks.java', '''package org.telegram.ui;
 import org.telegram.messenger.*;
 final class PurpleChatHooks {
@@ -89,6 +93,9 @@ public class PurpleRecordingDock {
  public static void start(int guid,boolean voice){event(NotificationCenter.recordStarted,0,guid,voice);}
  public static boolean shown(){return state.active()&&state.docked;}
 ''' + event + '\n' + '\n'.join(block(dock, s) for s in ['public static void unwatch(', 'public static void listen(', 'private static Host host(', 'public static boolean valid(', 'public static void discard(', 'private static void clear()', 'public static void changed()']) + '\n}')
+    bubble = (java / 'ui/Components/PurpleRoundBubble.java').read_text()
+    put('org/telegram/ui/Components/InstantCameraViewBase.java', 'package org.telegram.ui.Components;public class InstantCameraViewBase {public boolean isPaused(){return false;}}')
+    put('org/telegram/ui/Components/RoundEligibility.java', 'package org.telegram.ui.Components;public class RoundEligibility {public static boolean eligible(){return canShrink(new InstantCameraViewBase());}' + block(bubble, 'private static boolean canShrink(') + '}')
     put('org/telegram/ui/LifetimeCases.java', '''package org.telegram.ui;
 import java.lang.ref.*;import org.telegram.messenger.purple.*;import org.telegram.ui.Components.*;
 public class LifetimeCases {
@@ -101,21 +108,50 @@ public class LifetimeCases {
   check(PurpleRecordingDock.state.active(),"voice adopted after collection");
   check(PurpleRecordingService.starts==1,"adopted voice requests service");
   PurpleRecordingDock.state.docked=true;
-  PurpleRecordingStrip strip=new PurpleRecordingStrip(new FragmentContextView(),()->updates++);view=strip;
+  PurpleRecordingStrip strip=new PurpleRecordingStrip(new FragmentContextView(),''' + player_arg + '''()->updates++);view=strip;
   check(strip.showRecording(),"initial row shown");collect();
   int before=updates;PurpleRecordingDock.state.pause(true,2000);PurpleRecordingDock.changed();
   check(updates==before+1,"pause reaches live strip listener after collection");
-  PurpleRecordingDock.discard(PurpleRecordingDock.state.generation);
+  long previous=PurpleRecordingDock.state.generation;
+  PurpleRecordingDock.discard(previous);
   check(!PurpleRecordingDock.state.active(),"discard releases slot");
   check(updates==before+2,"discard reaches strip listener");
   check(!strip.showRecording(),"discard hides row");
   PurpleRecordingDock.start(7,false);
   check(PurpleRecordingDock.state.active()&&PurpleRecordingDock.state.round,"next round adopted after collection");
+  check(RoundEligibility.eligible(),"adopted live round can shrink after collection");
+  PurpleRecordingDock.discard(previous);
+  check(PurpleRecordingDock.state.active(),"stale discard cannot clear next take");
+  PurpleRecordingDock.state.transitioning=true;
+  check(!RoundEligibility.eligible(),"transitioning round still cannot shrink");
+  PurpleRecordingDock.state.transitioning=false;PurpleRecordingDock.state.paused=true;
+  check(!RoundEligibility.eligible(),"paused round still cannot shrink");
   PurpleRecordingDock.unwatch(7);
   PurpleRecordingDock.state.clear();PurpleRecordingDock.start(7,true);
   check(!PurpleRecordingDock.state.active(),"destroyed chat cannot adopt");
   System.out.println("RECORDING_LIFETIME_CHECKS="+checks);System.out.println(checks+" checks, "+failures+" failures");
   if(failures!=0)throw new AssertionError("recording lifetime");
+ }
+}''')
+    put('org/telegram/ui/StripScopeCases.java', '''package org.telegram.ui;
+import org.telegram.messenger.purple.*;import org.telegram.ui.Components.*;
+public class StripScopeCases {
+ static Object playerRoot,locationRoot;static int checks,failures;
+ static void check(boolean v,String name){checks++;if(!v){failures++;System.out.println("FAIL "+name);}}
+ public static void main(String[] args){
+  PurpleRecordingDock.state.begin(0,7,1,9,0,false,false,0);PurpleRecordingDock.state.docked=true;
+  FragmentContextView player=new FragmentContextView(false),location=new FragmentContextView(true);
+  playerRoot=player;locationRoot=location;
+  PurpleRecordingDock.changed();
+  check(player.relayouts==1,"player responds to dock change");
+  check(location.relayouts==0,"location does not run player layout");
+  check(player.recordingStrip().showRecording(),"player row shown");
+  check(!location.recordingStrip().showRecording(),"location cannot duplicate recorder row");
+  PurpleRecordingDock.state.clear();PurpleRecordingDock.changed();
+  check(player.relayouts==2&&!player.recordingStrip().showRecording(),"discard clears player row");
+  check(location.relayouts==0,"discard leaves location layout alone");
+  System.out.println("RECORDING_STRIP_SCOPE_CHECKS="+checks);System.out.println(checks+" checks, "+failures+" failures");
+  if(failures!=0)throw new AssertionError("strip scope");
  }
 }''')
     classes = output / 'classes'
@@ -128,10 +164,12 @@ public class LifetimeCases {
     keep = (root/'TMessagesProj/proguard-rules.pro').read_text()
     rules.write_text('\n'.join(line for line in keep.splitlines() if 'androidx.annotation.Keep' in line) + '''
 -keep class org.telegram.ui.LifetimeCases { *; }
+-keep class org.telegram.ui.StripScopeCases { *; }
 -keep,allowoptimization class org.telegram.ui.PurpleChatHooks { <init>(org.telegram.ui.ChatActivity); }
 -keep,allowoptimization class org.telegram.ui.PurpleRecordingStrip { <init>(...); public boolean showRecording(); }
 -dontobfuscate
 ''')
     optimized = output / 'optimized.jar'
     subprocess.run([str(jdk/'bin/java'), '-cp', str(builders[0]), 'com.android.tools.r8.R8', '--release', '--classfile', '--lib', str(jdk), '--pg-conf', str(rules), '--output', str(optimized), str(jar)], check=True)
-    subprocess.run([str(jdk/'bin/java'), '-cp', str(optimized), 'org.telegram.ui.LifetimeCases'], check=True)
+    for main in ['org.telegram.ui.LifetimeCases', 'org.telegram.ui.StripScopeCases']:
+        subprocess.run([str(jdk/'bin/java'), '-cp', str(optimized), main], check=True)

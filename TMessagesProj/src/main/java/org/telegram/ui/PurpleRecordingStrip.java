@@ -43,6 +43,7 @@ public final class PurpleRecordingStrip {
             java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
 
     private final FragmentContextView strip;
+    private final java.util.function.BooleanSupplier player;
     private Theme.ResourcesProvider resourcesProvider;
     private int color;
     private TextView back;
@@ -53,9 +54,11 @@ public final class PurpleRecordingStrip {
     @androidx.annotation.Keep
     private final Runnable changed;
 
-    public PurpleRecordingStrip(FragmentContextView strip, Runnable relayout) {
+    public PurpleRecordingStrip(FragmentContextView strip, java.util.function.BooleanSupplier player, Runnable relayout) {
         this.strip = strip;
+        this.player = player;
         changed = () -> {
+            if (!player.getAsBoolean()) return;
             if (recording != null) recording.setVisibility(docked() ? View.VISIBLE : View.GONE);
             relayout.run();
         };
@@ -64,7 +67,7 @@ public final class PurpleRecordingStrip {
     }
 
     public boolean docked() {
-        return org.telegram.messenger.purple.PurpleRecordingDock.shown();
+        return player.getAsBoolean() && org.telegram.messenger.purple.PurpleRecordingDock.shown();
     }
 
     public boolean showRecording() {

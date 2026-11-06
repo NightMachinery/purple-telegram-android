@@ -101,6 +101,12 @@ legacy's remaining touch behavior, camera state and Android child dispatch/layou
 are modeled. This does not qualify real encoder, animation or platform event
 delivery. Application compilation and device qualification are separate.
 
+Only the player context strip displays a docked recorder. The separate live-location
+strip shares the upstream widget class but its Purple helper cannot publish a
+recording row or enter player layout from a dock change. The eligibility supplier
+reads `isLocation` after the upstream constructor assigns it. The upstream change
+is confined to the existing `FragmentContextView` helper-construction hook.
+
 The chat's recording host and the strip's change callback own their weak dock
 registrations through strong fields. Both fields use `@Keep`: release R8 can
 otherwise remove an unread field and leave a visible chat or strip registered
