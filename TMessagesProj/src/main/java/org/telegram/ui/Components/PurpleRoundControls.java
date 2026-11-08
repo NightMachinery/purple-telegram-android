@@ -2,8 +2,8 @@ package org.telegram.ui.Components;
 
 import android.content.Context;
 import android.graphics.Color;
-import android.graphics.PorterDuff;
-import android.graphics.PorterDuffColorFilter;
+import android.graphics.ColorFilter;
+import java.util.function.Supplier;
 import android.view.Gravity;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -16,11 +16,13 @@ import org.telegram.ui.Components.blur3.drawable.BlurredBackgroundDrawable;
 import org.telegram.ui.Components.blur3.drawable.color.BlurredBackgroundColorProvider;
 
 public final class PurpleRoundControls extends LinearLayout {
-    private final ImageView pause;
+    private final ImageView camera, pause;
+    private final Supplier<ColorFilter> nativeIconFilter;
     private final PlayPauseDrawable playPause = new PlayPauseDrawable(16);
 
-    public PurpleRoundControls(Context context, Runnable flip, Runnable toggle, Object[] background) {
+    public PurpleRoundControls(Context context, Runnable flip, Runnable toggle, Object[] background, Supplier<ColorFilter> nativeIconFilter) {
         super(context);
+        this.nativeIconFilter = nativeIconFilter;
         setLayoutParams(LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.LEFT));
         setOrientation(HORIZONTAL);
         setPadding(AndroidUtilities.dp(6), AndroidUtilities.dp(6), AndroidUtilities.dp(6), AndroidUtilities.dp(6));
@@ -31,14 +33,14 @@ public final class PurpleRoundControls extends LinearLayout {
             drawable.setRadius(AndroidUtilities.dp(21));
             setBackground(drawable);
         }
-        ImageView camera = button(context, LocaleController.getString(R.string.AccDescrSwitchCamera), flip);
+        camera = button(context, LocaleController.getString(R.string.AccDescrSwitchCamera), flip);
         RLottieDrawable flipIcon = new RLottieDrawable(R.raw.roundcamera_flip, AndroidUtilities.dp(24), AndroidUtilities.dp(24));
         flipIcon.setCurrentFrame(flipIcon.getFramesCount() - 1);
         camera.setImageDrawable(flipIcon);
-        camera.setColorFilter(new PorterDuffColorFilter(Color.WHITE, PorterDuff.Mode.MULTIPLY));
         pause = button(context, "", toggle);
         playPause.setColor(Color.WHITE);
         pause.setImageDrawable(playPause);
+        update(false);
     }
 
     private ImageView button(Context context, String description, Runnable action) {
@@ -52,6 +54,9 @@ public final class PurpleRoundControls extends LinearLayout {
     }
 
     public void update(boolean paused) {
+        ColorFilter filter = nativeIconFilter.get();
+        camera.setColorFilter(filter);
+        pause.setColorFilter(filter);
         playPause.setPause(!paused, false);
         pause.setContentDescription(LocaleController.getString(paused ? R.string.PurpleRecordingResume : R.string.PurpleRecordingPause));
     }

@@ -94,7 +94,7 @@ public class VideoPlayer {
     layout.prepare(root, output, put, method)
     compiler = pathlib.Path(os.environ['JAVA_HOME']) / 'bin/javac'
     subprocess.run([str(compiler), '-d', str(output/'classes'), *map(str, output.rglob('*.java'))], check=True)
-    for name in ['BinPort', 'ModePort', 'UiConstructorCases', 'BinRtlCases', 'RecordingStripRtlCases', 'StripVisibilityCases', 'RoundControlsCases', 'SettingsAlignmentCases']:
+    for name in ['BinPort', 'ModePort', 'UiConstructorCases', 'BinRtlCases', 'RecordingStripRtlCases', 'StripVisibilityCases', 'RoundControlsCases', 'RoundContrastCases', 'SettingsAlignmentCases']:
         subprocess.run([str(compiler.with_name('java')), '-cp', str(output/'classes'), name], check=True)
     send = (java / 'messenger/purple/PurpleRecordingSend.java').read_text()
     assert 'PurpleRecordingFiles.move' not in send and 'PurpleRecordingRegistry.sent' not in send

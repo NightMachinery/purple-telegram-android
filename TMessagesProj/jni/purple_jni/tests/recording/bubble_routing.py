@@ -100,6 +100,8 @@ public class LinearLayout extends ViewGroup {
  public LinearLayout(Context c){super(c);}public static class LayoutParams{int w,h;public LayoutParams(int w,int h){this.w=w;this.h=h;}}
  public void addView(View v,LayoutParams p){v.left=width;v.width=p.w;v.height=p.h;width+=p.w;height=Math.max(height,p.h);super.addView(v);}
 }""")
+    put('android/graphics/ColorFilter.java', 'package android.graphics;public class ColorFilter{}')
+    put('android/widget/ImageView.java', 'package android.widget;import android.content.Context;import android.graphics.ColorFilter;import android.view.View;public class ImageView extends View{private ColorFilter filter;public ImageView(Context c){super(c);}public void setColorFilter(ColorFilter f){filter=f;}public ColorFilter getColorFilter(){return filter;}}')
     put('android/widget/TextView.java', 'package android.widget;import android.content.Context;import android.view.View;public class TextView extends View {public TextView(Context c){super(c);}public void setText(String s){}public void setGravity(int g){}public void setTextColor(int c){}}')
     put('android/view/ViewConfiguration.java', 'package android.view;import android.content.Context;public class ViewConfiguration {public static ViewConfiguration get(Context c){return new ViewConfiguration();}public int getScaledTouchSlop(){return 8;}}')
     put('android/view/Gravity.java', 'package android.view;public class Gravity {public static final int CENTER=1;}')
@@ -120,7 +122,8 @@ public class LinearLayout extends ViewGroup {
     put('org/telegram/ui/Components/PurpleRoundControls.java', """package org.telegram.ui.Components;
 import android.content.Context;import android.view.*;import android.widget.*;
 public class PurpleRoundControls extends LinearLayout {
- public PurpleRoundControls(Context c,Runnable flip,Runnable pause,Object[] bg){super(c);width=12;height=60;View a=new View(c),b=new View(c);a.setOnClickListener(v->flip.run());b.setOnClickListener(v->pause.run());addView(a,new LayoutParams(48,48));addView(b,new LayoutParams(48,48));}
+ public final java.util.function.Supplier<android.graphics.ColorFilter> tint;
+ public PurpleRoundControls(Context c,Runnable flip,Runnable pause,Object[] bg,java.util.function.Supplier<android.graphics.ColorFilter> tint){super(c);this.tint=tint;width=12;height=60;View a=new View(c),b=new View(c);a.setOnClickListener(v->flip.run());b.setOnClickListener(v->pause.run());addView(a,new LayoutParams(48,48));addView(b,new LayoutParams(48,48));}
  public void update(boolean paused){}
 }""")
     put('org/telegram/messenger/purple/PurpleCore.java', 'package org.telegram.messenger.purple;public class PurpleCore {public static int[] settings;public static int[] recordingSettings(){return settings;}}')
@@ -133,7 +136,7 @@ public class HostCamera extends InstantCameraViewBase {
  public HostCamera(Context c){super(c);width=1080;height=2400;paddingBottom=280;
   camera=new InstantViewCameraContainer(c){public void setImageReceiver(ImageReceiver r){}};camera.left=400;camera.top=700;camera.width=camera.height=280;addView(camera);
   buttons=new FrameLayout(c);buttons.left=200;buttons.top=100;buttons.width=120;buttons.height=40;
-  View flip=new View(c);flip.width=flip.height=40;flip.setOnClickListener(v->flips++);buttons.addView(flip);addView(buttons);
+  ImageView flip=new ImageView(c);flip.width=flip.height=40;flip.setOnClickListener(v->flips++);buttons.addView(flip);addView(buttons);
  }
  public void setButtonsBackground(BlurredBackgroundDrawableViewFactory f,BlurredBackgroundColorProvider c){}
  public void setInternalPadding(int p){paddingBottom=p;}public void destroy(boolean a){}

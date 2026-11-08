@@ -363,7 +363,13 @@ content. The timer retains left-to-right digits and text direction.
 
 Minimized rounds reuse the native camera's BlurredBackgroundDrawableViewFactory,
 6dp padding and 21dp radius for their controls, with 48dp button targets and the
-stock roundcamera_flip drawable. The production controls declare WRAP_CONTENT
+stock roundcamera_flip drawable. Both PIP icons copy the live native switch-camera
+ImageView's color filter, including FlashViews.ImageViewInvertable's 0.6 light
+inversion in the new design and its white dark-theme state. Each adapter's own
+resource provider remains authoritative; no global-theme approximation or new
+palette is introduced. PlayPauseDrawable keeps its white source glyph and gets
+the same native ImageView filter as the camera glyph on each state update.
+The production controls declare WRAP_CONTENT
 FrameLayout bounds on both axes: two 48dp targets and 6dp padding produce a
 108 by 60dp capsule rather than a camera-host-sized glass surface. Placement
 clamps that capsule within the host width when a short preview is narrower than
@@ -427,3 +433,11 @@ physical child order, insets, avatar gap, retained dimensions, long Latin/Arabic
 mixed titles, and repeated locale changes while active and inactive. They do not
 render Android views; the final combined tree still needs canonical checks, an
 APK and stock-versus-recording-strip screenshots in both locales.
+
+Focused contrast ports execute both adapters' actual new-design/provider branches
+and FlashViews.ImageViewInvertable.setInvert with the complete production PIP
+controls. They cover local light/dark against the opposite global theme, V2's
+null-provider fallback, old-design defaults, pause/resume, live inversion and the
+production bubble's selected-native-button wiring. These establish tint policy
+and filter identity, not final pixels; combined-source APK/device comparison
+against native controls in light and dark is still required.
