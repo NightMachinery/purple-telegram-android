@@ -3582,3 +3582,20 @@ Java_org_telegram_messenger_purple_PurpleWorkModeModel_createNative(
     return ToJava(env, QString::fromUtf8(QJsonDocument(QJsonObject{
         {"mode", int(mode)}, {"handle", QString::number(handle)}}).toJson(QJsonDocument::Compact)));
 }
+
+extern "C" JNIEXPORT jint JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_voiceContinuationSettingsNative(
+		JNIEnv *, jclass) {
+	auto &gate = TheGate();
+	const auto lock = std::lock_guard(gate.mutex);
+	return jint(gate.settings.playback.afterVoice)
+		| (gate.settings.playback.resumeMusicAfterVoice ? 4 : 0);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_voiceContinuationDecisionNative(
+		JNIEnv *, jclass, jint mode, jboolean outgoing, jboolean unheard, jboolean kept) {
+	if (mode < 0 || mode > 2) return jint(Purple::VoiceQueueDecision::Stop);
+	return jint(Purple::ContinuationDecision(Purple::VoiceContinuation(mode),
+		outgoing == JNI_TRUE, unheard == JNI_TRUE, kept == JNI_TRUE));
+}

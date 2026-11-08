@@ -35,6 +35,10 @@ public final class MediaPlaybackCases {
             seekCore();
             System.out.println("MEDIA_SEEK_CORE_CHECKS=" + checks);
             break;
+        case "continuationcore":
+            continuationCore();
+            System.out.println("MEDIA_CONTINUATION_CORE_CHECKS=" + checks);
+            break;
         case "queue":
             queue();
             System.out.println("MEDIA_QUEUE_CHECKS=" + checks);
@@ -338,6 +342,32 @@ public final class MediaPlaybackCases {
             check(warned == warns[f], "file " + f + (warns[f] ? " warns" : " does not warn") + " about seek_step");
             check(PurpleCore.voiceQueueKeeps(PurpleCore.PLAYBACK_ONE_TO_ONE, false, true) == (f == files.length - 1),
                     "file " + f + " reads the queue filter alongside the step");
+        }
+    }
+
+    static void continuationCore() throws Exception {
+        final String[] values = {"resume_music", "unheard", "all_following"};
+        for (int mode = 0; mode < values.length; mode++) {
+            for (boolean resume : new boolean[]{false, true}) {
+                final String settings = "[playback]\nafter_voice = \"" + values[mode] + "\"\nresume_music_after_voice_p = " + resume + "\n";
+                check(PurpleCore.load(settings.getBytes("UTF-8"), null, "fixture", "android", "mobile").ok, "continuation settings load");
+                check(PurpleCore.voiceContinuationSettings() == (mode | (resume ? 4 : 0)), "mode and switch read together");
+                for (boolean out : new boolean[]{false, true}) {
+                    for (boolean unread : new boolean[]{false, true}) {
+                        for (boolean kept : new boolean[]{false, true}) {
+                            final int expected = mode == 0 ? 2 : mode == 1 ? (out ? 0 : unread ? 1 : 2) : kept ? 1 : 0;
+                            check(PurpleCore.voiceContinuationDecision(mode, out, unread, kept) == expected, "real core decision matrix");
+                        }
+                    }
+                }
+            }
+        }
+        check(PurpleCore.load(new byte[0], null, "fixture", "android", "mobile").ok, "default loads");
+        check(PurpleCore.voiceContinuationSettings() == 5, "default unheard and resume on");
+        for (String bad : new String[]{"42", "\"bogus\""}) {
+            final PurpleCore.Loaded loaded = PurpleCore.load(("[playback]\nafter_voice = " + bad + "\nresume_music_after_voice_p = \"bad\"\n").getBytes("UTF-8"), null, "fixture", "android", "mobile");
+            check(loaded.ok && loaded.warnings.size() >= 2, "invalid values warn");
+            check(PurpleCore.voiceContinuationSettings() == 5, "invalid values keep defaults");
         }
     }
 

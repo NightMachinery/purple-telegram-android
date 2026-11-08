@@ -35329,6 +35329,8 @@ public class ChatActivity extends BaseFragment implements
     }
 
     private ArrayList<MessageObject> createVoiceMessagesPlaylist(MessageObject startMessageObject, boolean playingUnreadMedia) {
+        final ArrayList<MessageObject> purplePlaylist = purple.voicePlaylist(startMessageObject, playingUnreadMedia, mergeDialogId);
+        if (purplePlaylist != null) return purplePlaylist;
         ArrayList<MessageObject> messageObjects = new ArrayList<>();
         messageObjects.add(startMessageObject);
         int messageId = startMessageObject.getId();

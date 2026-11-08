@@ -915,7 +915,10 @@
         "restart:MEDIA_RESTART_CHECKS": 37,
         "seek:MEDIA_SEEK_CHECKS": 70,
         "seekcore:MEDIA_SEEK_CORE_CHECKS": 38,
-        "layout:MEDIA_STRIP_LAYOUT_CHECKS": 3000
+        "layout:MEDIA_STRIP_LAYOUT_CHECKS": 3000,
+        "continuationcore:MEDIA_CONTINUATION_CORE_CHECKS": 60,
+        "media-playback:MEDIA_MIXED_QUEUE_CHECKS": 1900,
+        "media-playback:MEDIA_BUTTON_CHECKS": 6
       }
     },
     {

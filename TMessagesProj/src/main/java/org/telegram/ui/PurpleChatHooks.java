@@ -211,7 +211,7 @@ final class PurpleChatHooks {
             }
         } else if (id == DOWNLOAD_PINNED_MUSIC) {
             PurplePinnedMusic.show(chat, chat.getCurrentAccount(), chat.getDialogId(),
-                    chat.getTopicId(), chat.getMergeDialogId());
+                    chat.getTopicId(), chat.mergeDialogId);
         } else if (id == KEEP_MEDIA) {
             showKeepMedia();
         } else if (id == CHAT_STORAGE) {
@@ -330,7 +330,7 @@ final class PurpleChatHooks {
     private void openPinnedMusicList() {
         final long topicId = chat.getTopicId();
         chat.presentFragment(new PurplePinnedMusicList(chat, chat.getDialogId(), topicId,
-                topicId == 0 ? chat.getMergeDialogId() : 0));
+                topicId == 0 ? chat.mergeDialogId : 0));
     }
 
     // ---- keep media and chat storage -----------------------------------------
@@ -392,7 +392,7 @@ final class PurpleChatHooks {
         }
         final Bundle args = new Bundle();
         args.putLong("dialog_id", chat.getDialogId());
-        args.putLong("merge_dialog_id", chat.getMergeDialogId());
+        args.putLong("merge_dialog_id", chat.mergeDialogId);
         chat.presentFragment(new CacheControlActivity(args));
     }
 
@@ -614,6 +614,11 @@ final class PurpleChatHooks {
      * play started on the other person's message in a one-to-one chat. See
      * {@link org.telegram.messenger.purple.PurpleVoiceQueue}.
      */
+    java.util.ArrayList<MessageObject> voicePlaylist(MessageObject start, boolean unread, long mergeDialog) {
+        return org.telegram.messenger.purple.PurpleVoicePlayback.playlist(start, chat.messages,
+                org.telegram.messenger.DialogObject.isEncryptedDialog(start.getDialogId()), unread, mergeDialog);
+    }
+
     boolean skipsInVoicePlaylist(MessageObject start, MessageObject candidate) {
         return org.telegram.messenger.purple.PurpleVoiceQueue.skipsInPlaylist(start, candidate);
     }

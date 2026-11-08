@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import importlib.util
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--receipt', type=Path, required=True)
@@ -26,7 +27,7 @@ assert classes.is_dir() and args.json.is_file() and args.library.is_file()
 # in this tree, and the files whose hooks are pinned below.
 purple = [java / 'messenger/purple' / name for name in [
     'PurpleDoubleTap.java', 'PurpleMediaRestart.java', 'PurpleRoundPip.java', 'PurpleCore.java', 'PurpleVoiceQueue.java',
-    'PurpleSeek.java']]
+    'PurpleSeek.java', 'PurpleVoicePlayback.java']]
 hooked = {name: java / name for name in [
     'ui/Cells/ChatMessageCell.java', 'ui/Components/PipRoundVideoView.java', 'ui/ChatActivity.java',
     'ui/PurpleChatHooks.java', 'messenger/MediaController.java', 'ui/Components/FragmentContextView.java',
@@ -54,7 +55,7 @@ PINS = [
      '                if (purple.skipsInVoicePlaylist(startMessageObject, messageObject)) continue;\n'),
     ('messenger/MediaController.java',
      '                        messageObject = arr.get(a);\n',
-     '                        if (org.telegram.messenger.purple.PurpleVoiceQueue.skipsAppended(messageObject)) continue;\n'),
+     '                        if (org.telegram.messenger.purple.PurpleVoicePlayback.skipsAppended(messageObject)) continue;\n'),
     # F9: the strip's per-instance helper, handed each new style before the
     # style branches run, and the media session's rewind and fast-forward.
     ('ui/Components/FragmentContextView.java', '    private final Theme.ResourcesProvider resourcesProvider;\n',
@@ -75,7 +76,7 @@ PINS = [
      '            actions |= PurpleSeek.sessionActions(playbackState);\n'),
 ]
 PROGRAMS = [('restart', 'MEDIA_RESTART_CHECKS'), ('pip', 'MEDIA_PIP_CHECKS'), ('core', 'MEDIA_QUEUE_CORE_CHECKS'), ('queue', 'MEDIA_QUEUE_CHECKS'),
-            ('seek', 'MEDIA_SEEK_CHECKS'), ('seekcore', 'MEDIA_SEEK_CORE_CHECKS')]
+            ('seek', 'MEDIA_SEEK_CHECKS'), ('seekcore', 'MEDIA_SEEK_CORE_CHECKS'), ('continuationcore', 'MEDIA_CONTINUATION_CORE_CHECKS')]
 
 assert not args.output.exists(), 'output must be an unused directory'
 args.output.mkdir(parents=True)
@@ -115,7 +116,7 @@ case = tests / 'media_playback/MediaPlaybackCases.java'
 layout_case = tests / 'media_playback/PlayerStripLayoutCases.java'
 (args.output / 'inputs.json').write_text(json.dumps([
     {'path': str(p), 'sha256': hashlib.sha256(p.read_bytes()).hexdigest()}
-    for p in [args.receipt, args.library, case, *purple, *hooked.values()]], indent=2) + '\n')
+    for p in [args.receipt, args.library, case, layout_case, *purple, *hooked.values()]], indent=2) + '\n')
 commands = {'javac': [str(compiler), '-source', '8', '-target', '8', '-proc:none', '-sourcepath', str(empty),
                       '-cp', str(classes), '-d', str(destination), str(case), str(layout_case)]}
 # The core and seekcore programs load the host libpurplecore through the real PurpleCore,
@@ -137,3 +138,15 @@ for program, key in PROGRAMS:
     assert key + '=' in (args.output / (program + '.log')).read_text(), program + ' printed no ' + key
 
 assert 'MEDIA_STRIP_LAYOUT_CHECKS=' in (args.output / 'layout.log').read_text()
+
+ports_file = tests / 'media_playback/strip_queue_cases.py'
+spec = importlib.util.spec_from_file_location('media_ports', ports_file)
+ports = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(ports)
+ports.run(repo, args.output, compiler)
+
+controller = hooked['messenger/MediaController.java'].read_text()
+assert controller.count('PurpleVoicePlayback.advance(') == 2
+assert 'if (org.telegram.messenger.purple.PurpleVoicePlayback.restorePaused()) pauseMessage(messageObject, false);' in controller
+assert 'PurpleVoicePlayback.keepsMusic(savedMusicPlaylistState != null, messageObject)' in controller
+assert 'if (purplePlaylist != null) return purplePlaylist;' in hooked['ui/ChatActivity.java'].read_text()

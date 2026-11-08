@@ -1108,4 +1108,9 @@
     <string name="PurpleRecordingRoundFloat">Floating round camera</string>
     <string name="PurpleRecordingNotificationHint">Allow notifications to control recordings from the lock screen</string>
     <string name="PurpleRecordingSendUnavailable">Sending is unavailable in this chat right now. The recording is kept.</string>
+    <string name="PurpleAfterVoice">After a voice message</string>
+    <string name="PurpleAfterVoiceResume">Resume music</string>
+    <string name="PurpleAfterVoiceUnheard">Play unheard, then resume music</string>
+    <string name="PurpleAfterVoiceAll">Play all following, then resume music</string>
+    <string name="PurpleResumeMusicAfterVoice">Resume music after voice messages</string>
 </resources>

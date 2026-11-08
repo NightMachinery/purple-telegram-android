@@ -143,6 +143,9 @@ shared-media Voice tab is built elsewhere, so while an earlier confined queue
 of the same chat is still the remembered one, your own new messages are not
 appended to it live.
 
+The after-voice queue and music-return choices are described in
+[voice and round continuation](docs/voice-continuation.md).
+
 ### Media recording
 
 The design is [docs/media-recording-design.md](docs/media-recording-design.md)

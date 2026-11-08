@@ -1999,7 +1999,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                     ArrayList<MessageObject> arr = (ArrayList<MessageObject>) args[1];
                     for (int a = 0; a < arr.size(); a++) {
                         messageObject = arr.get(a);
-                        if (org.telegram.messenger.purple.PurpleVoiceQueue.skipsAppended(messageObject)) continue;
+                        if (org.telegram.messenger.purple.PurpleVoicePlayback.skipsAppended(messageObject)) continue;
                         if ((messageObject.isVoice() || messageObject.isRoundVideo()) && !messageObject.isVoiceOnce() && !messageObject.isRoundOnce() && (!voiceMessagesPlaylistUnread || messageObject.isContentUnread() && !messageObject.isOut())) {
                             voiceMessagesPlaylist.add(messageObject);
                             voiceMessagesPlaylistMap.put(messageObject.getId(), messageObject);
@@ -3405,6 +3405,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                     playCount[0]++;
                 }
             } else {
+                if (org.telegram.messenger.purple.PurpleVoicePlayback.advance(this)) return;
                 final boolean restored = restoreMusicPlaylistState();
                 if (!restored) {
                     cleanupPlayer(true, hasNoNextVoiceOrRoundVideoMessage(), true, false);
@@ -3688,7 +3689,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
         if (!messageObject.isOut() && (messageObject.isContentUnread())) {
             MessagesController.getInstance(messageObject.currentAccount).markMessageContentAsRead(messageObject);
         }
-        boolean saved = false;
+        boolean saved = org.telegram.messenger.purple.PurpleVoicePlayback.keepsMusic(savedMusicPlaylistState != null, messageObject);
         boolean notify = !playMusicAgain;
         MessageObject oldMessageObject = playingMessageObject;
         if (playingMessageObject != null) {
@@ -3926,6 +3927,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                         if (playbackState == ExoPlayer.STATE_ENDED || (playbackState == ExoPlayer.STATE_IDLE || playbackState == ExoPlayer.STATE_BUFFERING) && playWhenReady && messageObject.audioProgress >= 0.999f) {
                             messageObject.audioProgress = 1f;
                             NotificationCenter.getInstance(messageObject.currentAccount).postNotificationName(NotificationCenter.messagePlayingProgressDidChanged, messageObject.getId(), 0);
+                            if (org.telegram.messenger.purple.PurpleVoicePlayback.advance(MediaController.this)) return;
                             final boolean restored = restoreMusicPlaylistState();
                             if (!restored) {
                                 if (!playlist.isEmpty() && (playlist.size() > 1 || !messageObject.isVoice())) {
@@ -7463,7 +7465,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
         messageObject.audioProgressMs = state.progressMs;
         messageObject.audioProgressSec = state.progressSec;
         playMessage(messageObject);
-        pauseMessage(messageObject, false);
+        if (org.telegram.messenger.purple.PurpleVoicePlayback.restorePaused()) pauseMessage(messageObject, false);
 
         return true;
     }

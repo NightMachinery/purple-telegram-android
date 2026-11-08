@@ -91,6 +91,8 @@ public class PurpleSettingsActivity extends UniversalFragment
     private static final int ROW_VOICE_QUEUE = 0x70750027;
     /** F9's step chooser, first of the media recording block 0x70750500-0x7075050f. */
     private static final int ROW_SEEK_STEP = 0x70750500;
+    private static final int ROW_AFTER_VOICE = 0x70750501;
+    private static final int ROW_RESUME_MUSIC = 0x70750502;
     /** F10: the Media recording screen and the Recording bin. */
     private static final int ROW_MEDIA_RECORDING = 0x70750501;
     private static final int ROW_RECORDING_BIN = 0x70750502;
@@ -277,6 +279,11 @@ public class PurpleSettingsActivity extends UniversalFragment
         // [playback] seek_step (F9): read through the core like the switch above.
         items.add(UItem.asButton(ROW_SEEK_STEP, getString(R.string.PurpleSeekStep),
                 formatString(R.string.PurpleSeekStepValue, org.telegram.messenger.purple.PurpleSeek.stepSeconds())));
+        items.add(UItem.asButton(ROW_AFTER_VOICE, getString(R.string.PurpleAfterVoice),
+                afterVoiceLabel(org.telegram.messenger.purple.PurpleVoicePlayback.mode())));
+        final UItem resumeMusic = UItem.asCheck(ROW_RESUME_MUSIC, getString(R.string.PurpleResumeMusicAfterVoice));
+        resumeMusic.checked = org.telegram.messenger.purple.PurpleVoicePlayback.resumeMusic();
+        items.add(resumeMusic);
         items.add(UItem.asShadow(getString(R.string.PurpleVoiceQueuePrivateInfo)));
 
         // [recording] (F10): its own screen, and the bin with its count.
@@ -511,7 +518,7 @@ public class PurpleSettingsActivity extends UniversalFragment
                 && item.id != ROW_LAST_SEEN_SKIP_CONFIRMATION
                 && item.id != ROW_PEEK_DURATION && item.id != ROW_PEEK_DELAY && item.id != ROW_PEEK_EXIT && item.id != ROW_PEEK_READY_TIMEOUT
                 && item.id != ROW_SCHEDULE && item.id != ROW_PREMIUM && item.id != ROW_SUGGESTIONS && item.id != ROW_VOICE_QUEUE
-                && item.id != ROW_SEEK_STEP
+                && item.id != ROW_SEEK_STEP && item.id != ROW_AFTER_VOICE && item.id != ROW_RESUME_MUSIC
                 && item.id != ROW_FOCUS && item.id != ROW_PEEK_FOCUS) {
             String held = PurpleWriter.ownerRefusal();
             if (held != null) PurpleWriterUI.explain(this, held, this::rebuild);
@@ -523,7 +530,7 @@ public class PurpleSettingsActivity extends UniversalFragment
         // says why rather than passing no session to the writer.
         final boolean writes = item.id == ROW_PREMIUM
                 || item.id == ROW_SUGGESTIONS || item.id == ROW_FOCUS || item.id == ROW_VOICE_QUEUE
-                || item.id == ROW_SEEK_STEP;
+                || item.id == ROW_SEEK_STEP || item.id == ROW_AFTER_VOICE || item.id == ROW_RESUME_MUSIC;
         final PurpleWriter.Session session = writes && writer == null
                 ? PurpleWriterUI.captureOrExplain(this, true, this::rebuild) : writer;
         if (writes && session == null) return;
@@ -564,6 +571,12 @@ public class PurpleSettingsActivity extends UniversalFragment
         case ROW_VOICE_QUEUE:
             write(PurpleWriter.setTableBool(session,
                     "playback", "private_chat_queue_p", !item.checked, "voice queue switch"));
+            break;
+        case ROW_AFTER_VOICE:
+            chooseAfterVoice(session);
+            break;
+        case ROW_RESUME_MUSIC:
+            write(PurpleWriter.setTableBool(session, "playback", "resume_music_after_voice_p", !item.checked, "resume music switch"));
             break;
         case ROW_SEEK_STEP:
             chooseSeekStep(session);
@@ -649,6 +662,20 @@ public class PurpleSettingsActivity extends UniversalFragment
      * [playback] seek_step}; the row shows the current step. After the write
      * every live strip relabels its seek buttons at once.
      */
+    private CharSequence afterVoiceLabel(int mode) {
+        return getString(mode == 0 ? R.string.PurpleAfterVoiceResume
+                : mode == 2 ? R.string.PurpleAfterVoiceAll : R.string.PurpleAfterVoiceUnheard);
+    }
+
+    private void chooseAfterVoice(PurpleWriter.Session session) {
+        if (getParentActivity() == null) return;
+        final CharSequence[] labels = {afterVoiceLabel(0), afterVoiceLabel(1), afterVoiceLabel(2)};
+        showDialog(new AlertDialog.Builder(getParentActivity()).setTitle(getString(R.string.PurpleAfterVoice))
+                .setItems(labels, (d, which) -> write(PurpleWriter.setTableString(session,
+                        "playback", "after_voice", org.telegram.messenger.purple.PurpleVoicePlayback.value(which), "after voice chooser")))
+                .setNegativeButton(getString(R.string.Cancel), null).create());
+    }
+
     private void chooseSeekStep(PurpleWriter.Session session) {
         if (getParentActivity() == null) return;
         final int[] steps = org.telegram.messenger.purple.PurpleSeek.choices();

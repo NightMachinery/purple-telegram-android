@@ -169,6 +169,29 @@ public final class PurpleCore {
     private static native boolean voiceQueueKeepsNative(int chat, boolean startOutgoing, boolean candidateOutgoing);
 
     private static native int seekStepSecondsNative();
+    private static native int voiceContinuationSettingsNative();
+    private static native int voiceContinuationDecisionNative(int mode, boolean outgoing, boolean unheard, boolean kept);
+
+    public static int voiceContinuationSettings() {
+        try {
+            ensureLoaded();
+            return voiceContinuationSettingsNative();
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return 5;
+        }
+    }
+
+    public static int voiceContinuationDecision(int mode, boolean outgoing, boolean unheard, boolean kept) {
+        try {
+            ensureLoaded();
+            return voiceContinuationDecisionNative(mode, outgoing, unheard, kept);
+        } catch (UnsatisfiedLinkError | RuntimeException e) {
+            FileLog.e(e);
+            return 2;
+        }
+    }
+
 
     private static native int[] recordingSettingsNative();
 
