@@ -62,6 +62,7 @@ public final class MarkdownCopyRouteTest {
             PurpleArchiveMarkdown.source = null; PurpleArchiveMarkdown.queued = false; PurpleArchiveMarkdown.completion = null;
             AndroidUtilities.clipboard.clear();
             AndroidUtilities.queued.clear();
+            AndroidUtilities.delayed.clear();
             connection.requests.clear();
             chat.messages.put("42:8", message);
             action = new PurpleMarkdownCopy(chat, (origin, dialog, id) -> origin.messages.get(dialog + ":" + id));
@@ -69,6 +70,7 @@ public final class MarkdownCopyRouteTest {
 
         void start() {
             action.copy(message, null);
+            AndroidUtilities.flush();
             check(connection.requests.size() == 1 && AndroidUtilities.clipboard.isEmpty(), "partial copy waits for full body");
         }
 
@@ -121,11 +123,11 @@ public final class MarkdownCopyRouteTest {
         f.deliver(migrated); check(AndroidUtilities.clipboard.size() == 1, "opening migrated-history route remains valid");
         f = new Fixture(); MessageObject.GroupedMessages group = new MessageObject.GroupedMessages(); group.groupId = 5;
         f.message.messageOwner.grouped_id = 5; group.messages.add(f.message); MessageObject member = message(9, 42, false); member.messageOwner.grouped_id = 5;
-        group.messages.add(member); f.chat.messages.put("42:9", member); f.chat.groups.put(5L, group); f.action.copy(f.message, group);
+        group.messages.add(member); f.chat.messages.put("42:9", member); f.chat.groups.put(5L, group); f.action.copy(f.message, group); AndroidUtilities.flush();
         group.messages.remove(member); TLRPC.TL_messages_messages album = f.response(); album.messages.get(0).grouped_id = 5;
         f.deliver(album); f.refused("album member removed during request");
         f = new Fixture(); group = new MessageObject.GroupedMessages(); group.groupId = 5;
-        f.message.messageOwner.grouped_id = 5; group.messages.add(f.message); f.chat.groups.put(5L, group); f.action.copy(f.message, group);
+        f.message.messageOwner.grouped_id = 5; group.messages.add(f.message); f.chat.groups.put(5L, group); f.action.copy(f.message, group); AndroidUtilities.flush();
         group.groupId = 6; f.chat.groups.put(6L, group); album = f.response(); album.messages.get(0).grouped_id = 5;
         f.deliver(album); f.refused("album identity cannot change while retaining the same group object");
         f = new Fixture(); f.start(); f.action.onDestroy(); f.deliver(f.response()); f.refused("destroyed chat never publishes a late response");

@@ -4,6 +4,8 @@ import org.telegram.messenger.Utilities;
 public final class ConnectionsManager {
  private static final ConnectionsManager[] accounts={new ConnectionsManager(),new ConnectionsManager(),new ConnectionsManager(),new ConnectionsManager()};
  public static ConnectionsManager getInstance(int slot){return accounts[slot];}
+ public static final int RequestFlagFailOnServerErrors=2;
+ public int sendRequest(TLObject request,RequestDelegate done,int flags){requests.add(new Pending(Runnable::run,(value,error)->done.run((TLObject)value,(TLRPC.TL_error)error)));return requests.size();}
  public boolean isTestBackend(){return false;}
  public final java.util.ArrayList<Pending> requests=new java.util.ArrayList<>();
  public static final class Pending {final Executor executor;final Utilities.Callback2 callback;public boolean cancelled;Pending(Executor executor,Utilities.Callback2 callback){this.executor=executor;this.callback=callback;}}
