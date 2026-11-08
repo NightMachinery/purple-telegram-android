@@ -43,3 +43,12 @@ playlist cleanup and restoration with inert Android and player ports, with
 all mode/switch/music/ownership combinations and both media kinds. Core cases
 exercise parsing, warnings, defaults, app-wide scope and the real JNI rule.
 They do not qualify Android audio focus, downloads, Bluetooth, or rendering.
+
+With resume off, music restoration follows stock Telegram 13.1.1: its saved
+progress fields are restored before playMessage, then pauseMessage stops the
+progress timer. The saved-state class, interruption reset/notification and pause
+method are unchanged. A message row can retain its interruption reset display
+while the player holds the restored seek position; this is not introduced by
+Purple's pause guard. The host matrix verifies the restored model position.
+Device acceptance should compare the row and player after the paused seek is
+ready, and after resuming, rather than treating the row's 0:00 as a lost seek.

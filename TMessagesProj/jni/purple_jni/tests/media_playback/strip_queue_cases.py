@@ -78,6 +78,8 @@ public class MediaController {
  public void cleanupPlayer(boolean notify,boolean stopService,boolean byVoiceEnd,boolean transfer){MessageObject lastFile=playingMessageObject;playingMessageObject=null;boolean playingNext=false;'''+cleanup+'''}
 '''+ 'public void completeRound(){'+round_end+'}'+restore+no_next+setter+'}')
     put('org/telegram/messenger/MusicPlayerReceiver.java', receiver)
+    palette = block((java / 'ui/PurpleRecordingStrip.java').read_text(), '    private void recolor()').replace('private void', 'public void', 1)
+    put('org/telegram/ui/StripPalettePort.java', PALETTE.replace('RECOLOR_BODY', palette))
     put('org/telegram/messenger/PortCases.java', CASES)
     classes=output/'port-classes'
     sources=sorted(src.rglob('*.java'))
@@ -128,8 +130,39 @@ public class PortCases {
   }
  }
  public static void main(String[] args){
+  System.out.println("MEDIA_STRIP_THEME_CHECKS="+StripPalettePort.run());
   geometry();System.out.println("MEDIA_STRIP_LAYOUT_CHECKS="+checks);checks=0;
   for(long dialog:new long[]{42,-42,-43,1})for(boolean on:new boolean[]{false,true})for(int mode:new int[]{0,1,2})for(boolean resume:new boolean[]{false,true})for(boolean music:new boolean[]{false,true})for(boolean own:new boolean[]{false,true})for(boolean round:new boolean[]{false,true})queue(dialog,on,mode,resume,music,own,round);
   System.out.println("MEDIA_MIXED_QUEUE_CHECKS="+checks);checks=0;buttons();System.out.println("MEDIA_BUTTON_CHECKS="+checks);
+ }
+}'''
+
+
+PALETTE = r'''package org.telegram.ui;
+public class StripPalettePort {
+ static class Theme {
+  static final int key_inappPlayerTitle=1,key_inappPlayerPerformer=2;
+  static class ResourcesProvider {int primary,secondary;ResourcesProvider(int p,int s){primary=p;secondary=s;}}
+  static int getColor(int key,ResourcesProvider p){return key==key_inappPlayerPerformer?p.primary:p.secondary;}
+  static Object createSelectorDrawable(int color,int kind,int radius){return Integer.valueOf(color);}
+ }
+ static class TextView {
+  int tint,writes;Object background;
+  Object getBackground(){return background;}void setTextColor(int c){tint=c;writes++;}void setBackground(Object b){background=b;}
+ }
+ Theme.ResourcesProvider resourcesProvider;int color;TextView back=new TextView(),forward=new TextView();
+ static int dp(int value){return value;}
+ RECOLOR_BODY
+ static int checks;static void check(boolean value,String label){checks++;if(!value)throw new AssertionError(label);}
+ public static int run(){
+  StripPalettePort p=new StripPalettePort();
+  for(int[] colors:new int[][]{{0xfff5f5f5,0xff70818d},{0xff1a1d21,0xff1a1d21},{0xffffd370,0xff807059}}){
+   p.resourcesProvider=new Theme.ResourcesProvider(colors[0],colors[1]);p.recolor();
+   check(p.back.tint==colors[0],"back uses full primary player text");check(p.forward.tint==colors[0],"forward uses full primary player text");
+   check((p.back.tint>>>24)==255,"primary text remains opaque");check(p.back.background.equals(colors[0]&0x19ffffff),"only selector has reduced alpha");
+   int writes=p.back.writes;p.recolor();check(p.back.writes==writes,"stable theme does not recreate tint");
+   p.back.background=null;p.recolor();check(p.back.writes==writes+1,"missing selector is restored");
+  }
+  return checks;
  }
 }'''

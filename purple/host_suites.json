@@ -919,7 +919,8 @@
         "continuationcore:MEDIA_CONTINUATION_CORE_CHECKS": 60,
         "media-playback:MEDIA_MIXED_QUEUE_CHECKS": 4000,
         "media-playback:MEDIA_BUTTON_CHECKS": 12,
-        "settings:MEDIA_PLAYBACK_SETTINGS_CHECKS": 30
+        "settings:MEDIA_PLAYBACK_SETTINGS_CHECKS": 30,
+        "media-playback:MEDIA_STRIP_THEME_CHECKS": 18
       }
     },
     {

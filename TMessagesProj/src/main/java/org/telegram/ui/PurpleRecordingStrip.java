@@ -207,7 +207,7 @@ public final class PurpleRecordingStrip {
         if (back == null) {
             return;
         }
-        final int now = Theme.getColor(Theme.key_inappPlayerTitle, resourcesProvider);
+        final int now = Theme.getColor(Theme.key_inappPlayerPerformer, resourcesProvider);
         if (now == color && back.getBackground() != null) {
             return;
         }

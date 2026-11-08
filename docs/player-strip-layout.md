@@ -9,8 +9,10 @@ padding. PurplePlayerStripLayout mirrors physical bounds for RTL and reserves
 only visible play, close and speed controls. A side-menu inset is bounded when
 space is short; the title can shrink to zero but cannot overlap controls.
 
-Seek labels use inappPlayerTitle, with the same selector mechanism as stock
-controls. Theme changes are read on draw. This follows the player surface's
+Seek labels use inappPlayerPerformer, the full primary text color used by
+stock for the author/title prefix, with the stock selector mechanism.
+inappPlayerTitle can be a dim secondary color in dark and custom themes.
+Theme changes are read on draw. This follows the player surface's
 text color in light, dark and custom colored themes. A docked recording hides
 seek controls and uses its own weighted LinearLayout title, whose width already
 excludes its timer and actions; it shares no title padding with playback.
@@ -22,3 +24,10 @@ suite checks title/control separation and mirroring across narrow and wide
 strips, optional controls and side-menu insets. Device acceptance must still
 judge real text, theme contrast, hit delivery, recording transitions and audio
 style transitions to live location and group calls.
+
+The speed control's creation, updateColors, updatePlaybackButton and
+SpeedIconDrawable match Telegram 13.1.1. Purple changes only its measured bounds;
+it assigns no speed alpha or tint. The light-theme speed contrast report has no
+Purple tint regression in this path. A same-theme stock device render remains
+the visual comparison; the seek palette tests exercise the real recoloring
+method across dark, light and colored primary/secondary theme values.

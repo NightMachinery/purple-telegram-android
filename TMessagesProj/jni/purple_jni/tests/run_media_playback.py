@@ -106,6 +106,7 @@ assert 'purple.Purple' not in text.replace('import org.telegram.messenger.purple
 pinned += 1
 helper = hooked['ui/PurpleRecordingStrip.java'].read_text(encoding='utf-8')
 assert helper.count('PurpleSeek.step(direction);') == 1, 'the strip buttons seek through PurpleSeek'
+assert 'setAlpha(' not in helper, 'seek labels keep the full primary color without view alpha'
 pinned += 1
 (args.output / 'pins.log').write_text('MEDIA_HOOK_PINS=%d\n' % pinned)
 
