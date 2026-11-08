@@ -280,7 +280,7 @@ public class PurpleSettingsActivity extends UniversalFragment
         items.add(UItem.asButton(ROW_SEEK_STEP, getString(R.string.PurpleSeekStep),
                 formatString(R.string.PurpleSeekStepValue, org.telegram.messenger.purple.PurpleSeek.stepSeconds())));
         items.add(UItem.asButton(ROW_AFTER_VOICE, getString(R.string.PurpleAfterVoice),
-                afterVoiceLabel(org.telegram.messenger.purple.PurpleVoicePlayback.mode())));
+                afterVoiceSummary(org.telegram.messenger.purple.PurpleVoicePlayback.mode())));
         final UItem resumeMusic = UItem.asCheck(ROW_RESUME_MUSIC, getString(R.string.PurpleResumeMusicAfterVoice));
         resumeMusic.checked = org.telegram.messenger.purple.PurpleVoicePlayback.resumeMusic();
         items.add(resumeMusic);
@@ -655,6 +655,11 @@ public class PurpleSettingsActivity extends UniversalFragment
                     .show();
         }
         rebuild();
+    }
+
+    private CharSequence afterVoiceSummary(int mode) {
+        return getString(mode == 0 ? R.string.PurpleAfterVoiceResume
+                : mode == 2 ? R.string.PurpleAfterVoiceAllShort : R.string.PurpleAfterVoiceUnheardShort);
     }
 
     private CharSequence afterVoiceLabel(int mode) {

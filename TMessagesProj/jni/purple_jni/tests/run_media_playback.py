@@ -165,3 +165,6 @@ for route in ['case ROW_AFTER_VOICE:', 'case ROW_RESUME_MUSIC:',
     settings_checks += 1
 (args.output / 'settings.log').write_text('MEDIA_PLAYBACK_SETTINGS_CHECKS=%d\n' % settings_checks)
 print('MEDIA_PLAYBACK_SETTINGS_CHECKS=%d' % settings_checks)
+
+assert 'afterVoiceSummary(org.telegram.messenger.purple.PurpleVoicePlayback.mode())' in settings
+assert 'final CharSequence[] labels = {afterVoiceLabel(0), afterVoiceLabel(1), afterVoiceLabel(2)};' in settings

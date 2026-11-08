@@ -920,7 +920,8 @@
         "media-playback:MEDIA_MIXED_QUEUE_CHECKS": 4000,
         "media-playback:MEDIA_BUTTON_CHECKS": 12,
         "settings:MEDIA_PLAYBACK_SETTINGS_CHECKS": 30,
-        "media-playback:MEDIA_STRIP_THEME_CHECKS": 18
+        "media-playback:MEDIA_STRIP_THEME_CHECKS": 18,
+        "media-playback:MEDIA_VOICE_LABEL_CHECKS": 11
       }
     },
     {

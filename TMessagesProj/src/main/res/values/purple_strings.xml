@@ -1112,5 +1112,7 @@
     <string name="PurpleAfterVoiceResume">Resume music</string>
     <string name="PurpleAfterVoiceUnheard">Play unheard, then resume music</string>
     <string name="PurpleAfterVoiceAll">Play all following, then resume music</string>
+    <string name="PurpleAfterVoiceUnheardShort">Unheard, then music</string>
+    <string name="PurpleAfterVoiceAllShort">All, then music</string>
     <string name="PurpleResumeMusicAfterVoice">Resume music after voice messages</string>
 </resources>

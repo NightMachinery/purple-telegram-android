@@ -6,7 +6,9 @@ Purple Settings > Media playback has two app-wide rows next to Seek step:
   Play unheard, then resume music (default) skips outgoing messages and plays
   incoming voice and round messages until the first already-heard one;
   Play all following, then resume music keeps upstream's eligible mixed queue,
-  applying the existing private-chat ownership switch.
+  applying the existing private-chat ownership switch. The row uses compact
+  values: Resume music, Unheard, then music, and All, then music. The chooser
+  keeps the full descriptions.
 - **Resume music after voice messages** (default on): interrupted music returns
   playing. Off restores the same track and position paused, as upstream does.
 

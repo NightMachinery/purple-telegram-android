@@ -1,6 +1,8 @@
 """Host ports for real strip geometry, playlist building, completion routing and media-button receiver."""
 from pathlib import Path
 import subprocess
+import json
+import xml.etree.ElementTree as ET
 
 
 def block(text, signature):
@@ -80,6 +82,15 @@ public class MediaController {
     put('org/telegram/messenger/MusicPlayerReceiver.java', receiver)
     palette = block((java / 'ui/PurpleRecordingStrip.java').read_text(), '    private void recolor()').replace('private void', 'public void', 1)
     put('org/telegram/ui/StripPalettePort.java', PALETTE.replace('RECOLOR_BODY', palette))
+    settings = (java / 'ui/PurpleSettingsActivity.java').read_text()
+    labels = [block(settings, '    private CharSequence ' + name + '(int mode)').replace('private ', 'public ', 1)
+              for name in ['afterVoiceSummary', 'afterVoiceLabel']]
+    resources = {e.attrib['name']: e.text for e in ET.parse(root / 'TMessagesProj/src/main/res/values/purple_strings.xml').getroot()}
+    names = ['PurpleAfterVoiceResume', 'PurpleAfterVoiceUnheard', 'PurpleAfterVoiceAll',
+             'PurpleAfterVoiceUnheardShort', 'PurpleAfterVoiceAllShort']
+    constants = ';'.join('static final int %s=%d' % (name, i) for i, name in enumerate(names)) + ';'
+    values = ','.join(json.dumps(resources[name]) for name in names)
+    put('org/telegram/ui/VoiceLabelPort.java', LABELS.replace('METHODS', ''.join(labels)).replace('CONSTANTS', constants).replace('VALUES', values))
     put('org/telegram/messenger/PortCases.java', CASES)
     classes=output/'port-classes'
     sources=sorted(src.rglob('*.java'))
@@ -131,6 +142,7 @@ public class PortCases {
  }
  public static void main(String[] args){
   System.out.println("MEDIA_STRIP_THEME_CHECKS="+StripPalettePort.run());
+  System.out.println("MEDIA_VOICE_LABEL_CHECKS="+VoiceLabelPort.run());
   geometry();System.out.println("MEDIA_STRIP_LAYOUT_CHECKS="+checks);checks=0;
   for(long dialog:new long[]{42,-42,-43,1})for(boolean on:new boolean[]{false,true})for(int mode:new int[]{0,1,2})for(boolean resume:new boolean[]{false,true})for(boolean music:new boolean[]{false,true})for(boolean own:new boolean[]{false,true})for(boolean round:new boolean[]{false,true})queue(dialog,on,mode,resume,music,own,round);
   System.out.println("MEDIA_MIXED_QUEUE_CHECKS="+checks);checks=0;buttons();System.out.println("MEDIA_BUTTON_CHECKS="+checks);
@@ -162,6 +174,29 @@ public class StripPalettePort {
    check((p.back.tint>>>24)==255,"primary text remains opaque");check(p.back.background.equals(colors[0]&0x19ffffff),"only selector has reduced alpha");
    int writes=p.back.writes;p.recolor();check(p.back.writes==writes,"stable theme does not recreate tint");
    p.back.background=null;p.recolor();check(p.back.writes==writes+1,"missing selector is restored");
+  }
+  return checks;
+ }
+}'''
+
+
+LABELS = r'''package org.telegram.ui;
+public class VoiceLabelPort {
+ static class R {static class string {CONSTANTS}}
+ static final String[] values={VALUES};
+ static String getString(int id){return values[id];}
+ METHODS
+ static int checks;static void check(boolean value,String label){checks++;if(!value)throw new AssertionError(label);}
+ public static int run(){
+  VoiceLabelPort p=new VoiceLabelPort();
+  String[] shortExpected={"Resume music","Unheard, then music","All, then music"};
+  String[] fullExpected={"Resume music","Play unheard, then resume music","Play all following, then resume music"};
+  for(int mode=0;mode<3;mode++){
+   String summary=p.afterVoiceSummary(mode).toString(),full=p.afterVoiceLabel(mode).toString();
+   check(summary.equals(shortExpected[mode]),"compact row label "+mode);
+   check(full.equals(fullExpected[mode]),"full dialog label "+mode);
+   check(summary.length()<=20,"row value stays concise "+mode);
+   if(mode!=0)check(full.length()>summary.length(),"dialog retains explanation "+mode);
   }
   return checks;
  }
