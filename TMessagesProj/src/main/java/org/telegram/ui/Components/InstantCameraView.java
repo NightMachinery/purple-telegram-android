@@ -131,7 +131,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
 
     public boolean WRITE_TO_FILE_IN_BACKGROUND;
 
-    private int currentAccount = UserConfig.selectedAccount;
+    private final int currentAccount;
     private InstantViewCameraContainer cameraContainer;
     private Delegate delegate;
     private Paint paint;
@@ -183,7 +183,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
     private Size aspectRatio = SharedConfig.roundCamera16to9 ? new Size(16, 9) : new Size(4, 3);
     private TextureView textureView;
     private BackupImageView textureOverlayView;
-    private final boolean useCamera2 = SharedConfig.isUsingCamera2(currentAccount);
+    private final boolean useCamera2;
     private CameraSession cameraSession;
     private boolean bothCameras;
     private Camera2Session[] camera2Sessions = new Camera2Session[2];
@@ -270,6 +270,8 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
     @SuppressLint("ClickableViewAccessibility")
     public InstantCameraView(Context context, Delegate delegate, Theme.ResourcesProvider resourcesProvider, boolean isNewDesign) {
         super(context);
+        currentAccount = delegate.getCurrentAccount();
+        useCamera2 = SharedConfig.isUsingCamera2(currentAccount);
         buttonsSizePx = dp(isNewDesign ? 24 : 28);
 
         WRITE_TO_FILE_IN_BACKGROUND = false;//SharedConfig.deviceIsAboveAverage();
@@ -818,6 +820,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
         textureView.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
             @Override
             public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
+                org.telegram.ui.PurpleRoundCapture.traceSurface(textureView, surface, false);
                 if (BuildVars.LOGS_ENABLED) {
                     FileLog.d("InstantCamera camera surface available");
                 }
@@ -843,6 +846,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
 
             @Override
             public boolean onSurfaceTextureDestroyed(SurfaceTexture surface) {
+                org.telegram.ui.PurpleRoundCapture.traceSurface(textureView, surface, true);
                 if (cameraThread != null) {
                     cameraThread.shutdown(0, true, 0, 0, 0, 0);
                     cameraThread = null;
@@ -3923,6 +3927,8 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
     }
 
     public interface Delegate {
+
+        default int getCurrentAccount() { return UserConfig.selectedAccount; }
 
         View getFragmentView();
         void sendMedia(MediaController.PhotoEntry entry, VideoEditedInfo videoEditedInfo, boolean notify, int scheduleDate, int scheduleRepeatPeriod, boolean b1, long stars);

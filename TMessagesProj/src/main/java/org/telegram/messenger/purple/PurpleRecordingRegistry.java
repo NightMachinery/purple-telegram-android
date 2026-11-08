@@ -81,6 +81,7 @@ public final class PurpleRecordingRegistry {
 
     /** Chat screens by class guid; touched on the UI thread only. */
     private static final Map<Integer, ChatTarget> chats = new HashMap<>();
+    private static final java.util.Map<Integer, ChatTarget> captureTargets = new java.util.HashMap<>();
 
 
     private static final ScheduledExecutorService worker = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -189,6 +190,9 @@ public final class PurpleRecordingRegistry {
 
     // ---- Chats -----------------------------------------------------------------
 
+    public static void watchSession(int guid, ChatTarget target) { captureTargets.put(guid, target); start(); }
+    public static void unwatchSession(int guid) { captureTargets.remove(guid); }
+
     /** A chat screen exists; its recordings start with this target. UI thread. */
     public static void watchChat(int guid, ChatTarget target) {
         chats.put(guid, target);
@@ -207,7 +211,7 @@ public final class PurpleRecordingRegistry {
     private static long[] target(int guid, boolean terminal) {
         final long[] dock = PurpleRecordingDock.targetFor(guid, terminal);
         if (dock != null) return dock;
-        final ChatTarget chat = chats.get(guid);
+        final ChatTarget chat = captureTargets.containsKey(guid) ? captureTargets.get(guid) : chats.get(guid);
         return chat == null ? null : chat.target();
     }
 
@@ -221,7 +225,7 @@ public final class PurpleRecordingRegistry {
         final String key = account + ":" + guid;
         if (event == NotificationCenter.recordStarted) {
             final boolean voice = args.length < 2 || !(args[1] instanceof Boolean) || (Boolean) args[1];
-            final ChatTarget source = chats.get(guid);
+            final ChatTarget source = captureTargets.containsKey(guid) ? captureTargets.get(guid) : chats.get(guid);
             final long[] target = source == null ? null : source.target();
             final long startedAt = System.currentTimeMillis();
             worker.execute(() -> { if (sessions != null) sessions.started(key, account, target, voice, startedAt); });

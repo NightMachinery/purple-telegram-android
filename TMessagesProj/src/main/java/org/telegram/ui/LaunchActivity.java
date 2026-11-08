@@ -1200,6 +1200,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             return;
         }
         switchingAccount = true;
+        PurpleRoundCapture.suspend();
 
         ConnectionsManager.getInstance(currentAccount).setAppPaused(true, false);
         UserConfig.selectedAccount = account;
@@ -1434,6 +1435,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             selectAnimatedEmojiDialog = null;
         }
         SharedConfig.appLocked = true;
+        PurpleRoundCapture.suspend();
         // Purple: see PurpleGate#locked
         PurpleGate.locked();
         if (SecretMediaViewer.hasInstance() && SecretMediaViewer.getInstance().isVisible()) {
@@ -6855,6 +6857,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         pipActivityHandler.onPause();
         NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.stopAllHeavyOperations, 4096);
         ApplicationLoader.mainInterfacePaused = true;
+        PurpleRoundCapture.activityPaused(this);
         // Purple: see PurpleScreenTime#foreground
         org.telegram.messenger.purple.PurpleScreenTime.foreground(false);
         int account = currentAccount;
@@ -6979,6 +6982,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
     @Override
     protected void onDestroy() {
+        PurpleRoundCapture.activityDestroyed(this);
         GramWalletStorageAuth.onActivityDestroyed(this);
         isActive = false;
         activeInstanceCount--;

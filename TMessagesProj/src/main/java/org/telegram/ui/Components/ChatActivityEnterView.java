@@ -6200,6 +6200,8 @@ public class ChatActivityEnterView extends FrameLayout implements
         return recordingAudioVideo && recordCircle.isSendButtonVisible();
     }
 
+    public void purpleRoundRecordingGuid(int guid) { recordingGuid = guid; }
+
     public void purpleRestoreRoundUi(Object[] preview) {
         final boolean once = voiceOnce;
         if (preview != null) didReceivedNotification(NotificationCenter.audioDidSent, currentAccount, preview);

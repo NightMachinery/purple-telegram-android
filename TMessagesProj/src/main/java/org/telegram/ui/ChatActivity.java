@@ -2443,6 +2443,7 @@ public class ChatActivity extends BaseFragment implements
 
         @Override
         public void toggleVideoRecordingPause() {
+            if (purple.roundPause()) return;
             if (instantCameraView != null) {
                 instantCameraView.togglePause();
             }
@@ -2450,11 +2451,13 @@ public class ChatActivity extends BaseFragment implements
 
         @Override
         public boolean isVideoRecordingPaused() {
+            if (purple.managesRound()) return purple.roundPaused();
             return instantCameraView != null && instantCameraView.isPaused();
         }
 
         @Override
         public void needStartRecordVideo(int state, boolean notify, int scheduleDate, int scheduleRepeatPeriod, int ttl, long effectId, long stars) {
+            if (purple.roundCommand(state, notify, scheduleDate, scheduleRepeatPeriod, ttl, effectId, stars)) return;
             checkInstantCameraView();
             if (instantCameraView != null) {
                 if (state == 0) {
@@ -2471,6 +2474,7 @@ public class ChatActivity extends BaseFragment implements
 
         @Override
         public void needChangeVideoPreviewState(int state, float seekProgress) {
+            if (purple.roundPreviewState(state, seekProgress)) return;
             if (instantCameraView != null) {
                 instantCameraView.changeVideoPreviewState(state, seekProgress);
             }

@@ -935,6 +935,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
 
     AudioManager.OnAudioFocusChangeListener audioRecordFocusChangedListener = focusChange -> {
         if (focusChange != AudioManager.AUDIOFOCUS_GAIN) {
+            AndroidUtilities.runOnUIThread(org.telegram.ui.PurpleRoundCapture::suspend);
             hasRecordAudioFocus = false;
         }
     };
@@ -1505,6 +1506,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                     @Override
                     public void onCallStateChanged(final int state, String incomingNumber) {
                         AndroidUtilities.runOnUIThread(() -> {
+                            if (state != TelephonyManager.CALL_STATE_IDLE) org.telegram.ui.PurpleRoundCapture.suspend();
                             if (state == TelephonyManager.CALL_STATE_RINGING) {
                                 if (isPlayingMessage(playingMessageObject) && !isMessagePaused()) {
                                     pauseMessage(playingMessageObject);

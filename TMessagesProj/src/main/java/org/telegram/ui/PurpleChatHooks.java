@@ -511,6 +511,7 @@ final class PurpleChatHooks {
      * the first resume the translate-availability log line.
      */
     void onResume() {
+        PurpleRoundCapture.attach(chat);
         org.telegram.messenger.purple.PurpleRecordingDock.foreground();
         if (archiveScope != null) archiveScope.verify();
         PurplePeekControls.chatResumed(chat);
@@ -533,14 +534,25 @@ final class PurpleChatHooks {
         org.telegram.ui.Components.PurpleRoundBubble.attach(view, small -> { visibility.small(small); roundRecording.resized(small); });
     }
 
+    boolean roundCommand(int state, boolean notify, int date, int repeat, int ttl, long effect, long stars) {
+        return PurpleRoundCapture.command(chat, state, notify, date, repeat, ttl, effect, stars);
+    }
+    boolean roundPause() { return PurpleRoundCapture.togglePause(chat); }
+    boolean managesRound() { return PurpleRoundCapture.manages(chat); }
+    boolean roundPaused() { return PurpleRoundCapture.paused(chat); }
+    boolean roundPreviewState(int state, float progress) { return PurpleRoundCapture.previewState(chat, state, progress); }
+
     boolean dockRecording(boolean invoked) {
+        if (PurpleRoundCapture.leave(chat, invoked)) return false;
         roundRecording.beforeLeave();
         return invoked && org.telegram.messenger.purple.PurpleRecordingDock.dock(chat.getCurrentAccount(), chat.getClassGuid());
     }
 
     void onPause() {
-        roundRecording.beforeLeave();
-        org.telegram.ui.Components.PurpleRoundBubble.pause(chat.instantCameraView);
+        if (!PurpleRoundCapture.detach(chat)) {
+            roundRecording.beforeLeave();
+            org.telegram.ui.Components.PurpleRoundBubble.pause(chat.instantCameraView);
+        }
         markdownCopy.cancel();
         screenTime.onPause();
     }
@@ -550,6 +562,7 @@ final class PurpleChatHooks {
     }
 
     void onDestroy() {
+        PurpleRoundCapture.detach(chat);
         roundRecording.destroy();
         org.telegram.messenger.purple.PurpleRecordingDock.unwatch(chat.getClassGuid());
         org.telegram.messenger.purple.PurpleRecordingRegistry.unwatchChat(chat.getClassGuid());

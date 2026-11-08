@@ -1,5 +1,11 @@
 # Recording continuity
 
+This experimental branch uses the [root-owned capture spike](cross-chat-round-spike.md)
+for ordinary non-secret rounds. It keeps recording across chats but saves local
+bin drafts instead of sending. The device continuity gate and the subsequent
+durable-send implementation are still pending. The in-chat fallback described
+below remains the baseline for the other camera entry points.
+
 F7 keeps a voice recording running with the app in the background or the screen
 locked. A microphone foreground service starts while the recording chat is in
 front. Its low-importance notification has Pause/Resume, Send and Discard. Discard

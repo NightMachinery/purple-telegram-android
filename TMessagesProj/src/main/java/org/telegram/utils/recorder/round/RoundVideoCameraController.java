@@ -412,6 +412,7 @@ final class RoundVideoCameraController {
                         int width,
                         int height
                 ) {
+                    org.telegram.ui.PurpleRoundCapture.traceSurface(previewView, surfaceTexture, false);
                     diagnostics.log("preview surface available: view=" + width + "x" + height);
                     maybeOpenCamera();
                 }
@@ -428,6 +429,7 @@ final class RoundVideoCameraController {
 
                 @Override
                 public boolean onSurfaceTextureDestroyed(@NonNull SurfaceTexture surfaceTexture) {
+                    org.telegram.ui.PurpleRoundCapture.traceSurface(previewView, surfaceTexture, true);
                     diagnostics.log("preview surface destroyed: active=" + active);
                     if (active) {
                         reportError(new IllegalStateException("Preview SurfaceTexture was destroyed"));

@@ -244,6 +244,7 @@ public final class PurpleRecordingDock {
     }
 
     public static boolean refuseStart() {
+        if (org.telegram.ui.PurpleRoundCapture.refuseStart()) return true;
         if (!state.active()) return false;
         LaunchActivity activity = LaunchActivity.instance;
         if (activity != null) {
@@ -310,6 +311,7 @@ public final class PurpleRecordingDock {
 
     public static void send(long generation) {
         if (!valid(generation) || state.transitioning) return;
+        if (org.telegram.ui.PurpleRoundCapture.save(state.account, state.guid)) return;
         syncOnce();
         if (state.round && (host(state.guid) == null || !host(state.guid).roundVisible())) return;
         if (unavailable()) { chooseTarget(generation); return; }
