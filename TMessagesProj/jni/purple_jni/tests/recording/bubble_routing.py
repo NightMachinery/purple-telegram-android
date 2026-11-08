@@ -149,7 +149,7 @@ public class HostCamera extends InstantCameraViewBase {
     legacy = method((java/'ui/Components/InstantCameraView.java').read_text(), 'public boolean onTouchEvent(')
     inset = legacy[legacy.index('if ('):legacy.index('if (ev.getAction() == MotionEvent.ACTION_DOWN && delegate')]
     for name, touch in [('InstantCameraView', 'public boolean onTouchEvent(MotionEvent ev) {'+inset+'return true;}'), ('InstantCameraView2', v2)]:
-        put('org/telegram/ui/Components/'+name+'.java', 'package org.telegram.ui.Components;import android.content.Context;import android.view.MotionEvent;import org.telegram.ui.ActionBar.Theme;public class '+name+' extends HostCamera {public interface Delegate {}public '+name+'(Context c,InstantCameraView.Delegate d,Theme.ResourcesProvider r,boolean n){super(c);}'+touch+'}')
+        put('org/telegram/ui/Components/'+name+'.java', 'package org.telegram.ui.Components;import android.content.Context;import android.view.MotionEvent;import org.telegram.ui.ActionBar.Theme;public class '+name+' extends HostCamera {public interface Delegate {default int getCurrentAccount(){return 0;}}public '+name+'(Context c,InstantCameraView.Delegate d,Theme.ResourcesProvider r,boolean n){super(c);}'+touch+'}')
     shutil.copyfile(pathlib.Path(__file__).with_name('BubbleRoutingCases.java'), output/'BubbleRoutingCases.java')
     compiler = pathlib.Path(os.environ['JAVA_HOME'])/'bin/javac'
     subprocess.run([str(compiler),'-d',str(output/'classes'),*map(str,sorted(output.rglob('*.java')))],check=True)

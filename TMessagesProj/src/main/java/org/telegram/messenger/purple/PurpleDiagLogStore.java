@@ -56,6 +56,11 @@ public final class PurpleDiagLogStore {
      * each is a lowercase token.
      */
     static final Set<String> VOCABULARY = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+            "round_capture", "capture", "window_attaches", "window_detaches", "surface_creates",
+            "surface_destroys", "texture_changes", "surface_changes", "duration_ms", "attached",
+            "detached", "small", "expanded", "bind", "unbind",
+            "save_request", "recording", "finalizing", "paused", "released",
+            "surface_destroyed", "surface_available", "retained", "retain_failed",
             // diagnostics itself
             "diag", "export", "exported", "export_failed", "cleared", "clear_failed", "lines",
             // the repeat limit (PurpleDiagRepeats): diag repeated area=<word> event=<word> count=<dropped>

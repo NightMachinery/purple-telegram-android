@@ -603,6 +603,10 @@ Then build the standalone flavor:
 The output APK is **unsigned** and arm64-v8a only — sign it yourself with
 `apksigner` before installing.
 
+The experimental [cross-chat round capture spike](docs/cross-chat-round-spike.md)
+keeps the camera in the activity root from take creation. Its finish actions
+save local Recording bin drafts while device continuity is being qualified.
+
 ### Purple version
 
 Purple has a version of its own, separate from Telegram's. The bottom of

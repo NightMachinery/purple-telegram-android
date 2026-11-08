@@ -58,3 +58,5 @@ runpy.run_path(str(pathlib.Path(__file__).parent / 'recording/bubble_routing.py'
 runpy.run_path(str(pathlib.Path(__file__).parent / 'recording/lifetime.py'))['run'](root, args.output / 'lifetime')
 
 runpy.run_path(str(pathlib.Path(__file__).parent / "recording/polish.py"))["run"](root, args.output / "polish")
+
+runpy.run_path(str(pathlib.Path(__file__).parent / "recording/cross_chat.py"))["run"](root, args.output / "cross-chat")

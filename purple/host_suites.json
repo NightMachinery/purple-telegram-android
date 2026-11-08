@@ -958,7 +958,7 @@
         "--output",
         "{output}"
       ],
-      "coverage": "F6-F8 voice ownership, stale action rejection, pause/resume/send serialization, original target retention and bubble bounds on narrow and keyboard-sized surfaces. Includes the F10 terminal target handoff in either observer order, production bubble/base touch dispatch over inert Android ports for both camera adapters, and all recording lifecycle and bubble seams.",
+      "coverage": "F6-F8 voice ownership, stale action rejection, pause/resume/send serialization, original target retention and bubble bounds on narrow and keyboard-sized surfaces. Includes the F10 terminal target handoff in either observer order, production bubble/base touch dispatch over inert Android ports for both camera adapters, and all recording lifecycle and bubble seams. Includes the complete production root capture owner over inert camera/window/storage ports, navigation and stale binding tokens, local-only finalization and interruption preservation.",
       "expects": {
         "recording-dock:RECORDING_DOCK_CHECKS": 304,
         "recording-dock:RECORDING_DOCK_PINS": 27,
@@ -976,7 +976,8 @@
         "recording-dock:RECORDING_STRIP_SCOPE_CHECKS": 6,
         "recording-dock:BIN_PLAYER_CHECKS": 24,
         "recording-dock:RECORDING_MODE_CHECKS": 18,
-        "recording-dock:BIN_SOURCE_PINS": 5
+        "recording-dock:BIN_SOURCE_PINS": 5,
+        "recording-dock:CROSS_CHAT_CAPTURE_CHECKS": 60
       }
     },
     {

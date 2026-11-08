@@ -1117,4 +1117,6 @@
     <string name="PurpleAfterVoiceAllShort">All, then music</string>
     <string name="PurpleResumeMusicAfterVoice">Resume music after voice messages</string>
     <string name="PurpleRecordingBinSendSaved">Send to Saved Messages</string>
+    <string name="PurpleRoundCaptureSave">Save to Recording bin</string>
+    <string name="PurpleRoundCaptureSaved">Round video saved to Recording bin</string>
 </resources>

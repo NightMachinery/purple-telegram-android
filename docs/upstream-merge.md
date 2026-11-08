@@ -781,3 +781,20 @@ PurpleComposeSource. Verify formatting, split sends, cancelled/failed sends,
 acknowledgements and account/purge changes after upstream merges. Rich-editor
 blocks are not an original Markdown boundary. File capture extends the owned
 PurpleArchiveAcquiredSource path and adds no upstream download hook.
+
+### Root-owned round capture spike
+
+ChatActivity routes round commands through PurpleChatHooks before constructing
+its legacy chat-owned camera, with small pause/state/preview hooks.
+ChatActivityEnterView exposes only a recording-guid setter for disposable
+composer bindings. InstantCameraView.Delegate supplies the captured account;
+both camera constructors and the shared factory use it before account-dependent
+initialization. The two existing preview surface listeners delegate observation
+to PurpleRoundCapture, including RoundVideoCameraController for the newer
+adapter. Encoder and surface implementations remain in their original files.
+LaunchActivity delegates background, teardown, account switch and passcode
+preservation; MediaController delegates record-audio focus and phone-call loss.
+No stock native recorder body is copied or moved. Read
+[cross-chat-round-spike.md](cross-chat-round-spike.md) for scope and the device
+gate. Check ordinary in-chat captures, both adapters, fragment destruction,
+local-only finish, and foreground/background transitions after upstream merges.

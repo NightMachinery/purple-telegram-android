@@ -67,7 +67,7 @@ public final class InstantCameraView2 extends InstantCameraViewBase {
 
     private final InstantCameraView.Delegate delegate;
     private final Theme.ResourcesProvider resourcesProvider;
-    private final int currentAccount = UserConfig.selectedAccount;
+    private final int currentAccount;
     private final int recordingGuid;
     private final boolean secretChat;
     private final View parentView;
@@ -151,6 +151,7 @@ public final class InstantCameraView2 extends InstantCameraViewBase {
     ) {
         super(context);
         this.delegate = delegate;
+        currentAccount = delegate.getCurrentAccount();
         this.resourcesProvider = resourcesProvider;
         recordingGuid = delegate.getClassGuid();
         secretChat = delegate.isSecretChat();

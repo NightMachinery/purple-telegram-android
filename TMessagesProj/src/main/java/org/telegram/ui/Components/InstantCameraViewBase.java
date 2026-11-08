@@ -52,7 +52,7 @@ public abstract class InstantCameraViewBase extends FrameLayout {
     ) {
         final boolean useCamera2Impl = SharedSettings.roundVideoCamera2Enabled.isSet() ?
             SharedSettings.roundVideoCamera2Enabled.get() :
-            AppGlobalConfig.getInstance(UserConfig.selectedAccount).roundVideoRecorder2Allowed.get();
+            AppGlobalConfig.getInstance(delegate.getCurrentAccount()).roundVideoRecorder2Allowed.get();
 
         return useCamera2Impl
                 ? new InstantCameraView2(context, delegate, resourcesProvider, isNewDesign)

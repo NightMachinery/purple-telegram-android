@@ -44,6 +44,10 @@ public final class PurpleRoundBubble {
         if (state != null && open && !fromPaused && state.small) resize(view, state, false);
         return open && (state == null || !state.small);
     }
+    public static void shrink(InstantCameraViewBase view) {
+        State state = state(view);
+        if (state != null && !state.small) resize(view, state, true, true);
+    }
     public static void expand(InstantCameraViewBase view) {
         State state = state(view);
         if (state != null && state.small) resize(view, state, false);
@@ -127,7 +131,10 @@ public final class PurpleRoundBubble {
         return Math.min(view.getHeight() - view.getPaddingBottom(), Math.max(0, visible.bottom - location[1])) - AndroidUtilities.dp(76);
     }
     private static void resize(InstantCameraViewBase view, State state, boolean small) {
-        if (small && !canShrink(view)) return;
+        resize(view, state, small, false);
+    }
+    private static void resize(InstantCameraViewBase view, State state, boolean small, boolean force) {
+        if (small && !force && !canShrink(view)) return;
         state.small = small;
         view.getButtonsLayout().setVisibility(small ? View.INVISIBLE : View.VISIBLE);
         if (small) {
