@@ -23,6 +23,12 @@ public final class PurpleSyncAutoCases {
         public long transientRetryAt(){return transientAt;}
         Runnable retry, checking;
         int checks, posts, edits, deletes;
+        boolean testingBackoff;
+        long[] exceptionBackoff = {0, 0};
+        public long[] backoff() { return testingBackoff ? exceptionBackoff.clone() : new long[]{0, 0}; }
+        public void backoff(long failures, long notBefore) {
+            if (testingBackoff) exceptionBackoff = new long[]{failures, notBefore};
+        }
         PurpleSyncAutoCore.Record record;
         PurpleSyncAutoCore.Reason reason;
         final Client client;
@@ -953,6 +959,22 @@ public final class PurpleSyncAutoCases {
         check(PurpleSyncAutoCore.pickupNative(state, "self", "self", new int[]{id + 1000}, 202), "other device eligible even when outgoing");
         check(!PurpleSyncAutoCore.pickupNative(state, "self", "channel:99", new int[]{id + 1000}, 202), "other typed chat refused");
         check(!PurpleSyncAutoCore.pickupNative(state, "self", "self", new int[]{0, -1}, 202), "local unsent ids refused");
+        p.testingBackoff = true;
+        p.exceptionBackoff = new long[]{1, p.clock + 60};
+        before = p.checks;
+        p.engine.event(PurpleSyncAutoCore.Event.ChatUpdated);
+        check(p.checks == before && p.delay == 60000, "pickup respects client exception backoff");
+        p.clock += 60;
+        p.fireRetry();
+        check(p.checks > before, "pickup retained across backoff bypasses lifecycle interval after wait");
+        p.exceptionBackoff = new long[]{0, 0};
+        p.transientAt = p.clock * 1000 + 90000;
+        before = p.checks;
+        p.engine.event(PurpleSyncAutoCore.Event.ChatUpdated);
+        check(p.checks == before && p.delay == 90000, "pickup respects transient flood wait");
+        p.clock += 90;
+        p.fireRetry();
+        check(p.checks > before, "pickup retained until transient wait expires");
         p.engine.enabled(false);
         before = p.checks;
         p.engine.event(PurpleSyncAutoCore.Event.ChatUpdated);
