@@ -384,12 +384,14 @@ final class PurpleSyncAutoEngine {
                 || event == PurpleSyncAutoCore.Event.ChatUpdated)
             && backoff[0] > 0 && port.now() < backoff[1]) {
             // A pass that is not a real change waits out the backoff, across restarts too.
+            if (event == PurpleSyncAutoCore.Event.ChatUpdated) waitingTrigger = event;
             end();
             port.retry(() -> { idle(); event(PurpleSyncAutoCore.Event.SessionReady); }, Math.max(1, (backoff[1] - port.now()) * 1000));
             return;
         }
         long transientAt=port.transientRetryAt();
         if(event!=PurpleSyncAutoCore.Event.Disable&&event!=PurpleSyncAutoCore.Event.Completed&&transientAt>port.now()*1000){
+            if(event==PurpleSyncAutoCore.Event.ChatUpdated)waitingTrigger=event;
             if(event==PurpleSyncAutoCore.Event.LocalSaved)waitingSave=saved!=null?saved.clone():null;
             if(event==PurpleSyncAutoCore.Event.Enable){waitingToggle=event;waitingToggleAdmission=toggleAdmission;}
             end();
@@ -470,7 +472,7 @@ final class PurpleSyncAutoEngine {
                 facts = snapshot(store);
                 if (event == PurpleSyncAutoCore.Event.ChatUpdated && pickupIds != null) {
                     PurpleSyncChatCore.Peer bound = PurpleSyncChat.boundChat(account.account);
-                    boolean needed = bound != null && pickupChat != null
+                    boolean needed = bound != null && bound.equals(pickupChat)
                         && (pickupOverflow || PurpleSyncAutoCore.pickupNative(facts.state, bound.token(), pickupChat.token(), pickupIds, account.userId));
                     pickupIds = null;
                     pickupOverflow = false;
