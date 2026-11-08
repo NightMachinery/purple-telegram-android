@@ -10,7 +10,9 @@ public final class PurpleSettingsRow {
     public static final int ROW_ID = 0x70750005;
 
     public static org.telegram.ui.Components.UItem entry(int account) {
-        return SettingsActivity.SettingCell.Factory.of(ROW_ID, 0, 0, R.drawable.purple_settings,
+        return SettingsActivity.SettingCell.Factory.of(ROW_ID,
+                org.telegram.ui.Components.IconBackgroundColors.PURPLE.top,
+                org.telegram.ui.Components.IconBackgroundColors.PURPLE.bottom, R.drawable.purple_settings,
                 LocaleController.getString(R.string.PurpleSettingsTitle), subtitle(account));
     }
 
@@ -20,7 +22,7 @@ public final class PurpleSettingsRow {
     /**
      * Labels the Settings entry with the running preset or the feature text.
      * Settings can ask first, so the gate is loaded before reading its state.
-     * The gray row between Folders and Devices opens all Purple settings,
+     * The row between Folders and Devices opens all Purple settings,
      * while the chat-list menu remains the one-tap preset picker.
      */
     public static CharSequence subtitle(int account) {
