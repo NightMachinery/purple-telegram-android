@@ -172,7 +172,8 @@ public final class PurpleRoundBubble {
         view.getButtonsLayout().setVisibility(View.INVISIBLE);
         if (state.controls != null) {
             state.controls.update(view.isPaused());
-            state.controls.setX(x); state.controls.setY(y + side); state.controls.bringToFront();
+            state.controls.setX(PurpleRoundBubbleGeometry.clamp(x, view.getWidth() - state.controls.getWidth()));
+            state.controls.setY(y + side); state.controls.bringToFront();
         }
     }
 }

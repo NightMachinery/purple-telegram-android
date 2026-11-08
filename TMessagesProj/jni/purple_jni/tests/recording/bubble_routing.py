@@ -120,7 +120,7 @@ public class LinearLayout extends ViewGroup {
     put('org/telegram/ui/Components/PurpleRoundControls.java', """package org.telegram.ui.Components;
 import android.content.Context;import android.view.*;import android.widget.*;
 public class PurpleRoundControls extends LinearLayout {
- public PurpleRoundControls(Context c,Runnable flip,Runnable pause,Object[] bg){super(c);View a=new View(c),b=new View(c);a.setOnClickListener(v->flip.run());b.setOnClickListener(v->pause.run());addView(a,new LayoutParams(48,48));addView(b,new LayoutParams(48,48));}
+ public PurpleRoundControls(Context c,Runnable flip,Runnable pause,Object[] bg){super(c);width=12;height=60;View a=new View(c),b=new View(c);a.setOnClickListener(v->flip.run());b.setOnClickListener(v->pause.run());addView(a,new LayoutParams(48,48));addView(b,new LayoutParams(48,48));}
  public void update(boolean paused){}
 }""")
     put('org/telegram/messenger/purple/PurpleCore.java', 'package org.telegram.messenger.purple;public class PurpleCore {public static int[] settings;public static int[] recordingSettings(){return settings;}}')

@@ -4,6 +4,7 @@ import android.content.Context;
 import android.graphics.Color;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
+import android.view.Gravity;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import org.telegram.messenger.AndroidUtilities;
@@ -20,6 +21,7 @@ public final class PurpleRoundControls extends LinearLayout {
 
     public PurpleRoundControls(Context context, Runnable flip, Runnable toggle, Object[] background) {
         super(context);
+        setLayoutParams(LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.LEFT));
         setOrientation(HORIZONTAL);
         setPadding(AndroidUtilities.dp(6), AndroidUtilities.dp(6), AndroidUtilities.dp(6), AndroidUtilities.dp(6));
         if (background != null) {

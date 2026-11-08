@@ -356,7 +356,12 @@ the timer and actions retain their widths, with mirrored placement for RTL.
 
 Minimized rounds reuse the native camera's BlurredBackgroundDrawableViewFactory,
 6dp padding and 21dp radius for their controls, with 48dp button targets and the
-stock roundcamera_flip drawable. The legacy camera's placeholder is a sibling
+stock roundcamera_flip drawable. The production controls declare WRAP_CONTENT
+FrameLayout bounds on both axes: two 48dp targets and 6dp padding produce a
+108 by 60dp capsule rather than a camera-host-sized glass surface. Placement
+clamps that capsule within the host width when a short preview is narrower than
+the controls; the existing bottom reserve keeps it above the composer/keyboard.
+The legacy camera's placeholder is a sibling
 of its live preview, so both must share the bubble transform. Its progress arc
 also retains the bubble scale during a camera flip. Native camera adapters expose
 only the placeholder registration, background factory and scale predicate hooks.
@@ -391,3 +396,9 @@ states, and exercises stock-strip visibility restoration. Alongside those are
 minimized-placeholder transforms and the
 existing delayed identity/queue-acknowledgment tests. Those ports do not establish
 visual quality, codec playback or camera behavior on a device.
+
+The focused PIP checks instantiate the production PurpleRoundControls with the
+real LayoutHelper methods and verify its FrameLayout bounds, stock capsule
+parameters and child targets. Separate production-placement ports cover all
+four corners with narrow and keyboard-sized surfaces. These checks establish
+layout contracts, not rendered glass/shadow pixels or camera drag behavior.

@@ -163,9 +163,30 @@ public final class BubbleRoutingCases {
         check(s.camera.normalDispatches == 2 && s.resized == 0, "floating disabled native dispatch");
         check(!PurpleRoundBubble.background(s.camera, event(MotionEvent.ACTION_DOWN, 100, 1500)), "floating disabled background");
     }
+    private static void bounds(boolean v2) {
+        implementation = v2 ? "v2 bounds" : "legacy bounds";
+        for (int width : new int[]{240, 320, 1080}) for (int height : new int[]{400, 800, 2400})
+                for (int bottom : new int[]{0, 280}) for (int corner = 0; corner < 4; corner++) {
+            Surface s = new Surface(v2, false);
+            s.camera.width = width; s.camera.height = height; s.camera.paddingBottom = bottom;
+            s.camera.getContext().prefs.corner = corner;
+            PurpleRoundBubble.attach(s.camera, small -> {});
+            PurpleRoundBubble.background(s.camera, event(MotionEvent.ACTION_DOWN, 0, 1));
+            s.camera.redraw();
+            View controls = s.camera.getChildAt(s.camera.getChildCount() - 1);
+            check(controls.getWidth() == 108 && controls.getHeight() == 60, "compact measured capsule contract");
+            check(controls.getX() >= 0 && controls.getX() + controls.getWidth() <= width, "capsule inside horizontal bounds");
+            check(controls.getY() >= 0 && controls.getY() + controls.getHeight() <= height - bottom, "capsule above composer or keyboard");
+            check(PurpleRoundBubble.small(s.camera), "corner placement retains minimized state");
+        }
+    }
+
     public static void main(String[] args) {
         run(false); run(true);
         System.out.println("ROUND_ROUTING_CHECKS=" + checks);
+        int before = checks;
+        bounds(false); bounds(true);
+        System.out.println("ROUND_CONTROLS_PLACEMENT_CHECKS=" + (checks - before));
         System.out.println(checks + " checks, " + failures + " failures");
         if (failures != 0) throw new AssertionError("round routing failures=" + failures);
     }
