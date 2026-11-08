@@ -72,7 +72,7 @@ public final class PurpleRoundCapture implements InstantCameraView.Delegate, Pur
             return true;
         }
         PurpleRoundCapture session = forChat(chat);
-        if (session == null) return false;
+        if (session == null) return chat.getParentActivity() instanceof LaunchActivity;
         if (state == 2 || state == 5) session.confirmDiscard();
         else if (state == 3) session.pauseForPreview();
         else if (state == 1 || state == 4) session.finish();
@@ -386,6 +386,7 @@ public final class PurpleRoundCapture implements InstantCameraView.Delegate, Pur
         if (root != null && root.getParent() instanceof ViewGroup) ((ViewGroup) root.getParent()).removeView(root);
         MediaController.getInstance().requestRecordAudioFocus(false);
         camera = null; root = null; activity = null;
+        lastTexture = null; lastSurface = null; preview = null; output = null; outputInfo = null;
         if (active == this) active = null;
     }
 }
