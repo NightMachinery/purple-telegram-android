@@ -345,8 +345,11 @@ finalization, while the existing recording suite covers real codec recovery.
 
 ## Recording controls and bin playback
 
-The recording row uses stock FragmentContextView's 36dp height, player colors,
-PlayPauseDrawable, close icon and send-plane icon. Its transparent surface keeps
+The recording row shares FragmentContextView's existing 48dp player height
+(including the seek targets), player colors, PlayPauseDrawable, close icon and
+send-plane icon. While it is shown, the stock title, play, speed and close views
+are invisible; leaving recording restores their native visibility. Its
+transparent surface keeps
 ChatActivityTopPanelLayout's existing glass background, rounded clipping and
 shadow. The avatar has a 7dp start inset and gap. The title can ellipsize while
 the timer and actions retain their widths, with mirrored placement for RTL.
@@ -363,9 +366,15 @@ A refused recording hold clears the pending long-press state before showing the
 existing Discard/Continue dialog. Releasing that gesture cannot run the short-tap
 voice/video mode toggle. The normal short tap and accepted hold keep stock behavior.
 
-Each bin row shows the chat, kind and duration, date, and status in wrapping text.
-The visible play/pause button and SeekBarView use stock chat-audio colors and
-PlayPauseDrawable. VideoPlayer supplies pause, rewind, elapsed and total duration;
+Each bin row uses UniversalAdapter's full-width custom row with wrapping height.
+Its title, seek bar and elapsed time use explicit floating-point weights in
+LayoutHelper, so they cannot select the integer gravity overload. The title stays
+on one line; kind and duration, date, and status wrap below it.
+
+The 48dp play target uses SharedAudioCell's RadialProgress2, MediaActionDrawable
+and incoming loader/media-icon color keys, including pressed colors. SeekBarView
+and elapsed/total time use AudioPlayerAlert's progress and time colors; dragging
+reports position changes as in that player. VideoPlayer supplies pause and rewind;
 rounds reveal a circular preview. Starting or resuming a row pauses the other
 rows. Leaving the bin or detaching a row releases playback.
 
@@ -376,6 +385,9 @@ media and retains the original bin file and entry, including acknowledged round
 retries. Explicit deletion and configured expiry still remove bin items.
 
 The recording-dock suite executes the production playback and recording-button
-methods over inert ports, alongside minimized-placeholder transforms and the
+methods over inert ports. It also constructs the complete production bin row
+with the real LayoutHelper overloads, checks weighted bounds and radial icon
+states, and exercises stock-strip visibility restoration. Alongside those are
+minimized-placeholder transforms and the
 existing delayed identity/queue-acknowledgment tests. Those ports do not establish
 visual quality, codec playback or camera behavior on a device.

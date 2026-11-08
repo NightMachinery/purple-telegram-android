@@ -17,15 +17,13 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.purple.PurpleRecordingEntry;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.LayoutHelper;
-import org.telegram.ui.Components.PlayPauseDrawable;
 import org.telegram.ui.Components.SeekBarView;
 import org.telegram.ui.Components.VideoPlayer;
 import java.io.File;
 
 public final class PurpleRecordingBinRow extends LinearLayout {
     private final PurpleRecordingEntry entry;
-    private final ImageView toggle;
-    private final PlayPauseDrawable icon = new PlayPauseDrawable(20);
+    private final PurpleRecordingPlayButton toggle;
     private final SeekBarView seek;
     private final TextView elapsed, total;
     private final FrameLayout preview;
@@ -47,8 +45,11 @@ public final class PurpleRecordingBinRow extends LinearLayout {
         setOnLongClickListener(v -> { menu.run(); return true; });
         LinearLayout heading = new LinearLayout(context);
         heading.setGravity(Gravity.CENTER_VERTICAL);
+        heading.setLayoutDirection(LAYOUT_DIRECTION_LTR);
         TextView name = text(context, resources, 16, false);
         name.setText(title);
+        name.setSingleLine(true);
+        name.setEllipsize(android.text.TextUtils.TruncateAt.END);
         name.setTypeface(AndroidUtilities.bold());
         name.setOnClickListener(v -> menu.run());
         ImageView more = new ImageView(context);
@@ -60,9 +61,9 @@ public final class PurpleRecordingBinRow extends LinearLayout {
         more.setOnClickListener(v -> menu.run());
         if (LocaleController.isRTL) {
             heading.addView(more, LayoutHelper.createLinear(48, 48));
-            heading.addView(name, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1));
+            heading.addView(name, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
         } else {
-            heading.addView(name, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1));
+            heading.addView(name, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
             heading.addView(more, LayoutHelper.createLinear(48, 48));
         }
         addView(heading, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
@@ -82,15 +83,12 @@ public final class PurpleRecordingBinRow extends LinearLayout {
         preview.setVisibility(GONE);
         LinearLayout controls = new LinearLayout(context);
         controls.setGravity(Gravity.CENTER_VERTICAL);
-        toggle = new ImageView(context);
-        toggle.setScaleType(ImageView.ScaleType.CENTER);
-        toggle.setImageDrawable(icon);
-        icon.setColor(Theme.getColor(Theme.key_chat_inMediaIcon, resources));
-        toggle.setBackground(Theme.createSimpleSelectorCircleDrawable(AndroidUtilities.dp(44),
-                Theme.getColor(Theme.key_chat_inAudioProgress, resources), Theme.getColor(Theme.key_chat_inAudioSelectedProgress, resources)));
+        controls.setLayoutDirection(LocaleController.isRTL ? LAYOUT_DIRECTION_RTL : LAYOUT_DIRECTION_LTR);
+        toggle = new PurpleRecordingPlayButton(context, resources);
         toggle.setOnClickListener(v -> toggle());
         seek = new SeekBarView(context, resources);
-        seek.setColors(Theme.getColor(Theme.key_chat_inAudioSeekbar, resources), Theme.getColor(Theme.key_chat_inAudioSeekbarFill, resources));
+        seek.setColors(Theme.getColor(Theme.key_player_progressBackground, resources), Theme.getColor(Theme.key_player_progress, resources));
+        seek.setReportChanges(true);
         seek.setDelegate(new SeekBarView.SeekBarViewDelegate() {
             @Override public void onSeekBarDrag(boolean stop, float fraction) {
                 if (player != null) player.seekTo((long) (fraction * duration()));
@@ -100,13 +98,16 @@ public final class PurpleRecordingBinRow extends LinearLayout {
             @Override public CharSequence getContentDescription() { return LocaleController.getString(R.string.PurpleRecordingBinPlay); }
         });
         controls.addView(toggle, LayoutHelper.createLinear(48, 48));
-        controls.addView(seek, LayoutHelper.createLinear(0, 48, 1));
+        controls.addView(seek, LayoutHelper.createLinear(0, 48, 1f));
         addView(controls, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48, 0, 6, 0, 0));
         LinearLayout times = new LinearLayout(context);
         elapsed = text(context, resources, 12, true);
         total = text(context, resources, 12, true);
+        elapsed.setTextColor(Theme.getColor(Theme.key_player_time, resources));
+        total.setTextColor(Theme.getColor(Theme.key_player_time, resources));
+        elapsed.setTextDirection(TEXT_DIRECTION_LTR); total.setTextDirection(TEXT_DIRECTION_LTR);
         elapsed.setText(time(0)); total.setText(time(entry.durationMs)); total.setGravity(Gravity.END);
-        times.addView(elapsed, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1));
+        times.addView(elapsed, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
         times.addView(total, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT));
         addView(times, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 48, 0, 0, 0));
         boolean playable = !PurpleRecordingEntry.UNRECOVERABLE.equals(entry.state) && entry.media != null;
@@ -155,7 +156,7 @@ public final class PurpleRecordingBinRow extends LinearLayout {
     }
     private static String time(long ms) { return AndroidUtilities.formatShortDuration((int) (Math.max(0, ms) / 1000)); }
     private void label(boolean playing) {
-        icon.setPause(playing, false);
+        toggle.setPlaying(playing);
         toggle.setContentDescription(LocaleController.getString(playing ? R.string.AccActionPause : R.string.AccActionPlay));
     }
     private void progress() {

@@ -24,7 +24,7 @@ import org.telegram.messenger.*;
 public class BinPort {
  static final int VISIBLE=0,GONE=8;
  static class Entry {long durationMs=10000;String media="inert.ogg";boolean round;boolean round(){return round;}}
- static class Node {String value;float progress;int visibility;void setText(String s){value=s;}void setProgress(float f){progress=f;}void setVisibility(int v){visibility=v;}void setContentDescription(String s){}void setPause(boolean p,boolean a){}}
+ static class Node {String value;float progress;int visibility;void setText(String s){value=s;}void setProgress(float f){progress=f;}void setVisibility(int v){visibility=v;}void setContentDescription(String s){}void setPause(boolean p,boolean a){}void setPlaying(boolean p){}}
  final Entry entry=new Entry();final Node toggle=new Node(),icon=new Node(),seek=new Node(),elapsed=new Node(),total=new Node(),preview=new Node();
  final Object texture=new Object();int activations,errors,posts;final Runnable activate=()->activations++,failure=()->errors++;
  VideoPlayer player;boolean dragging;final Runnable tick=this::progress;
@@ -62,7 +62,7 @@ public class VideoPlayer {
  public boolean play,released;public long position;public Object texture;public VideoPlayerDelegate delegate;
  public void setDelegate(VideoPlayerDelegate d){delegate=d;}public void setTextureView(Object t){texture=t;}
  public void preparePlayer(android.net.Uri u,String type){}public long getDuration(){return 10000;}public long getCurrentPosition(){return position;}
- public boolean getPlayWhenReady(){return play;}public void setPlayWhenReady(boolean p){play=p;}public void seekTo(long p){position=p;}public void releasePlayer(boolean a){released=true;}
+ public boolean getPlayWhenReady(){return play;}public void setPlayWhenReady(boolean p){if(play==p)return;play=p;if(delegate!=null)delegate.onStateChanged(play,3);}public void seekTo(long p){position=p;}public void releasePlayer(boolean a){released=true;}
 }''')
     enter = (java / 'ui/Components/ChatActivityEnterView.java').read_text()
     prefix = enter.split('private Runnable recordAudioVideoRunnable = new Runnable() {', 1)[1].split('public void run() {', 1)[1].split('            if (slideText != null)', 1)[0]
@@ -88,9 +88,13 @@ public class VideoPlayer {
 }''')
     put('org/telegram/messenger/purple/PurpleRecordingDock.java','package org.telegram.messenger.purple;public class PurpleRecordingDock{public static boolean refuse;public static boolean refuseStart(){return refuse;}}')
     put('org/telegram/messenger/purple/PurpleScreenTime.java','package org.telegram.messenger.purple;public class PurpleScreenTime{public static final int ACTION_VOICE=1;public static void action(int n){}}')
+    spec = importlib.util.spec_from_file_location("ui_layout", pathlib.Path(__file__).with_name("ui_layout.py"))
+    layout = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(layout)
+    layout.prepare(root, output, put, method)
     compiler = pathlib.Path(os.environ['JAVA_HOME']) / 'bin/javac'
     subprocess.run([str(compiler), '-d', str(output/'classes'), *map(str, output.rglob('*.java'))], check=True)
-    for name in ['BinPort', 'ModePort']:
+    for name in ['BinPort', 'ModePort', 'UiConstructorCases', 'StripVisibilityCases']:
         subprocess.run([str(compiler.with_name('java')), '-cp', str(output/'classes'), name], check=True)
     send = (java / 'messenger/purple/PurpleRecordingSend.java').read_text()
     assert 'PurpleRecordingFiles.move' not in send and 'PurpleRecordingRegistry.sent' not in send

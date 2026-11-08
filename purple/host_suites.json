@@ -976,7 +976,9 @@
         "recording-dock:RECORDING_STRIP_SCOPE_CHECKS": 6,
         "recording-dock:BIN_PLAYER_CHECKS": 24,
         "recording-dock:RECORDING_MODE_CHECKS": 18,
-        "recording-dock:BIN_SOURCE_PINS": 5
+        "recording-dock:BIN_SOURCE_PINS": 5,
+        "recording-dock:RECORDING_UI_CONSTRUCTOR_CHECKS": 66,
+        "recording-dock:RECORDING_STRIP_VISIBILITY_CHECKS": 10
       }
     },
     {

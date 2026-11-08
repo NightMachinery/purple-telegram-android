@@ -118,7 +118,7 @@ public class PurpleRecordingBinActivity extends UniversalFragment {
                         () -> showActions(e), () -> pauseOthers(e.id), () -> error(R.string.PurpleRecordingBinPlayFailed));
                 rows.put(e.id, row);
             }
-            list.add(UItem.asFullyCustom(row));
+            list.add(UItem.asCustom(row, org.telegram.ui.Components.LayoutHelper.WRAP_CONTENT));
         }
         list.add(UItem.asShadow(getString(R.string.PurpleRecordingBinInfo)));
     }

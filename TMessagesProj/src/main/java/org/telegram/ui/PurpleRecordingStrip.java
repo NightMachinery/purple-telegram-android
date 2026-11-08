@@ -46,6 +46,7 @@ public final class PurpleRecordingStrip {
     private TextView back;
     private TextView forward;
     private boolean audio;
+    private final java.util.Map<View, Integer> stockVisibility = new java.util.HashMap<>();
     private final java.util.Map<View, android.widget.FrameLayout.LayoutParams> stockBounds = new java.util.HashMap<>();
     private org.telegram.ui.PurpleRecordingStripView recording;
     @androidx.annotation.Keep
@@ -74,7 +75,7 @@ public final class PurpleRecordingStrip {
         }
         if (recording == null) {
             recording = new org.telegram.ui.PurpleRecordingStripView(strip.getContext(), resourcesProvider);
-            strip.addView(recording, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 36, Gravity.TOP));
+            strip.addView(recording, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, BUTTON_DP, Gravity.TOP));
         }
         recording.setVisibility(View.VISIBLE);
         recording.bringToFront();
@@ -91,6 +92,7 @@ public final class PurpleRecordingStrip {
 
     /** Visibility follows the style; measurement owns the title and control bounds. */
     public void updateStyle(int style, View title, Theme.ResourcesProvider resourcesProvider) {
+        recordingVisibility(false);
         for (java.util.Map.Entry<View, android.widget.FrameLayout.LayoutParams> entry : stockBounds.entrySet()) {
             entry.getKey().setLayoutParams(entry.getValue());
         }
@@ -112,7 +114,7 @@ public final class PurpleRecordingStrip {
     }
 
     public int height(int style, int stockHeight) {
-        return style == FragmentContextView.STYLE_AUDIO_PLAYER && !docked() ? BUTTON_DP : stockHeight;
+        return style == FragmentContextView.STYLE_AUDIO_PLAYER ? BUTTON_DP : stockHeight;
     }
 
     /** Runs after checkPlayer's title padding and speed visibility decisions, before measuring children. */
@@ -121,6 +123,7 @@ public final class PurpleRecordingStrip {
         final boolean recording = docked();
         back.setVisibility(recording ? View.GONE : View.VISIBLE);
         forward.setVisibility(back.getVisibility());
+        recordingVisibility(recording, title, play, close, speed);
         if (recording) return;
         for (View view : new View[]{title, play, close, speed}) {
             if (view != null && !stockBounds.containsKey(view)) {
@@ -145,6 +148,21 @@ public final class PurpleRecordingStrip {
             for (TextView text : new TextView[]{switcher.getTextView(), switcher.getNextTextView()}) {
                 if (text != null) text.setEllipsize(android.text.TextUtils.TruncateAt.END);
             }
+        }
+    }
+
+    private void recordingVisibility(boolean recording, View... views) {
+        if (recording) {
+            for (View view : views) {
+                if (view == null) continue;
+                if (!stockVisibility.containsKey(view)) stockVisibility.put(view, view.getVisibility());
+                view.setVisibility(View.INVISIBLE);
+            }
+        } else {
+            for (java.util.Map.Entry<View, Integer> entry : stockVisibility.entrySet()) {
+                if (entry.getKey().getVisibility() == View.INVISIBLE) entry.getKey().setVisibility(entry.getValue());
+            }
+            stockVisibility.clear();
         }
     }
 

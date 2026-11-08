@@ -1,0 +1,112 @@
+"""Construct the real bin row with the real LayoutHelper overloads over inert UI ports."""
+import pathlib, re
+
+
+def prepare(root, output, put, method):
+    java = root / 'TMessagesProj/src/main/java/org/telegram'
+    for name in ['PurpleRecordingBinRow', 'PurpleRecordingPlayButton']:
+        put('org/telegram/ui/' + name + '.java', (java / 'ui' / (name + '.java')).read_text())
+    helper = (java / 'ui/Components/LayoutHelper.java').read_text()
+    signatures = re.findall(r'    public static LinearLayout.LayoutParams createLinear\([^\n]+', helper)
+    frames = [
+        '    public static FrameLayout.LayoutParams createFrame(int width, float height)',
+        '    public static FrameLayout.LayoutParams createFrame(int width, int height, int gravity)']
+    methods = [method(helper, signature) for signature in signatures + frames]
+    methods.append(method(helper, '    private static int getSize('))
+    put('org/telegram/ui/Components/LayoutHelper.java', 'package org.telegram.ui.Components;import android.widget.*;import org.telegram.messenger.AndroidUtilities;public class LayoutHelper {public static final int MATCH_PARENT=-1,WRAP_CONTENT=-2;' + ''.join(methods) + '}')
+    put('android/content/Context.java', 'package android.content;public class Context{}')
+    put('android/graphics/Canvas.java', 'package android.graphics;public class Canvas{}')
+    put('android/graphics/Outline.java', 'package android.graphics;public class Outline{public void setOval(int l,int t,int r,int b){}}')
+    put('android/text/TextUtils.java', 'package android.text;public class TextUtils{public enum TruncateAt{END}}')
+    put('android/view/Gravity.java', 'package android.view;public class Gravity{public static final int CENTER_VERTICAL=16,CENTER_HORIZONTAL=1,CENTER=17,START=3,END=5;}')
+    put('android/view/ViewOutlineProvider.java','package android.view;public abstract class ViewOutlineProvider{public abstract void getOutline(View v,android.graphics.Outline o);}')
+    put('android/view/View.java', '''package android.view;
+import android.content.Context;import android.graphics.Canvas;
+public class View{
+ public static final int VISIBLE=0,INVISIBLE=4,GONE=8,LAYOUT_DIRECTION_LTR=0,LAYOUT_DIRECTION_RTL=1,TEXT_DIRECTION_LTR=3;
+ private ViewGroup.LayoutParams params;public int visibility,width=48,height=48,direction;public boolean enabled=true,pressed;private OnClickListener click;
+ public View(Context c){}public void setLayoutParams(ViewGroup.LayoutParams p){params=p;}public ViewGroup.LayoutParams getLayoutParams(){return params;}
+ public void setVisibility(int v){visibility=v;}public int getVisibility(){return visibility;}public int getWidth(){return width;}public int getHeight(){return height;}
+ public void setPadding(int l,int t,int r,int b){}public void setLayoutDirection(int n){direction=n;}public void setTextDirection(int n){}public void setBackgroundColor(int n){}public void setBackground(Object d){}
+ public void setOutlineProvider(ViewOutlineProvider p){}public void setClipToOutline(boolean b){}public void setEnabled(boolean b){enabled=b;}public void setFocusable(boolean b){}
+ public void setContentDescription(String s){}public void invalidate(){}public void removeCallbacks(Runnable r){}public void postDelayed(Runnable r,int ms){}
+ public interface OnClickListener{void run(View v);}public interface OnLongClickListener{boolean run(View v);}
+ public void setOnClickListener(OnClickListener l){click=l;}public boolean performClick(){if(!enabled||click==null)return false;click.run(this);return true;}
+ public void setOnLongClickListener(OnLongClickListener l){}public void setPressed(boolean p){pressed=p;}public boolean isPressed(){return pressed;}
+ protected void onDraw(Canvas c){}public void draw(Canvas c){onDraw(c);}protected void onAttachedToWindow(){}protected void onDetachedFromWindow(){}
+}''')
+    put('android/view/ViewGroup.java','''package android.view;import android.content.Context;import java.util.*;
+public class ViewGroup extends View{
+ public static class LayoutParams{public int width,height;public LayoutParams(int w,int h){width=w;height=h;}}
+ public static class MarginLayoutParams extends LayoutParams{public int leftMargin,topMargin,rightMargin,bottomMargin;public MarginLayoutParams(int w,int h){super(w,h);}public void setMargins(int l,int t,int r,int b){leftMargin=l;topMargin=t;rightMargin=r;bottomMargin=b;}}
+ public final List<View> children=new ArrayList<>();public ViewGroup(Context c){super(c);}public void addView(View v,LayoutParams p){v.setLayoutParams(p);children.add(v);}public View getChildAt(int n){return children.get(n);}public int getChildCount(){return children.size();}
+}''')
+    put('android/widget/LinearLayout.java','''package android.widget;import android.content.Context;import android.view.*;
+public class LinearLayout extends ViewGroup{public static final int HORIZONTAL=0,VERTICAL=1;public int orientation;
+ public LinearLayout(Context c){super(c);}public void setOrientation(int o){orientation=o;}public void setGravity(int g){}
+ public static class LayoutParams extends ViewGroup.MarginLayoutParams{public float weight;public int gravity;public LayoutParams(int w,int h){super(w,h);}public LayoutParams(int w,int h,float t){super(w,h);weight=t;}}
+}''')
+    put('android/widget/FrameLayout.java','''package android.widget;import android.content.Context;import android.view.*;
+public class FrameLayout extends ViewGroup{public FrameLayout(Context c){super(c);}public static class LayoutParams extends ViewGroup.MarginLayoutParams{public int gravity;public LayoutParams(int w,int h){super(w,h);}public LayoutParams(int w,int h,int g){super(w,h);gravity=g;}}}''')
+    put('android/widget/TextView.java','''package android.widget;import android.view.View;import android.content.Context;
+public class TextView extends View{public String text;public boolean single;public TextView(Context c){super(c);}public void setText(String s){text=s;}public void setTextSize(int n){}public void setTextColor(int n){}public void setGravity(int n){}public void setTypeface(Object o){}public void setSingleLine(boolean b){single=b;}public void setEllipsize(android.text.TextUtils.TruncateAt e){}}''')
+    put('android/widget/ImageView.java','package android.widget;import android.content.Context;import android.view.View;public class ImageView extends View{public enum ScaleType{CENTER}public ImageView(Context c){super(c);}public void setImageResource(int n){}public void setScaleType(ScaleType t){}public void setColorFilter(int n){}}')
+    put('android/view/TextureView.java','package android.view;import android.content.Context;public class TextureView extends View{public TextureView(Context c){super(c);}}')
+    put('org/telegram/messenger/AndroidUtilities.java','package org.telegram.messenger;public class AndroidUtilities{public static int dp(float n){return (int)n;}public static Object bold(){return null;}public static String formatShortDuration(int n){return ""+n;}}')
+    put('org/telegram/messenger/LocaleController.java','package org.telegram.messenger;public class LocaleController{public static boolean isRTL;public static String getString(int n){return ""+n;}}')
+    put('org/telegram/messenger/R.java','package org.telegram.messenger;public class R{public static class string{public static final int AccActionPause=1,AccActionPlay=2,AccDescrMoreOptions=3,PurpleRecordingBinPlay=4;}public static class drawable{public static final int msg_actions=1;}}')
+    put('org/telegram/messenger/purple/PurpleRecordingEntry.java','package org.telegram.messenger.purple;public class PurpleRecordingEntry{public static final String UNRECOVERABLE="bad";public String state="recovered",media="inert.ogg";public long durationMs=10000;public boolean round;public boolean round(){return round;}}')
+    put('org/telegram/ui/ActionBar/Theme.java','''package org.telegram.ui.ActionBar;public class Theme{
+ public static class ResourcesProvider{}public static final int key_windowBackgroundWhite=1,key_windowBackgroundWhiteGrayIcon=2,key_listSelector=3,key_windowBackgroundWhiteGrayText=4,key_windowBackgroundWhiteBlackText=5,key_player_progressBackground=6,key_player_progress=7,key_player_time=8,key_chat_inLoader=9,key_chat_inLoaderSelected=10,key_chat_inMediaIcon=11,key_chat_inMediaIconSelected=12,key_chat_inAudioSelectedProgress=13,key_chat_inAudioProgress=14;
+ public static int getColor(int key,ResourcesProvider r){return key;}public static Object createSelectorDrawable(int c,int type){return null;}
+}''')
+    put('org/telegram/ui/Components/SeekBarView.java','''package org.telegram.ui.Components;import android.view.View;import android.content.Context;import org.telegram.ui.ActionBar.Theme;
+public class SeekBarView extends View{public float progress;public boolean report;public SeekBarViewDelegate delegate;public int inner,outer;
+ public interface SeekBarViewDelegate{void onSeekBarDrag(boolean stop,float progress);default void onSeekBarPressed(boolean p){}default CharSequence getContentDescription(){return null;}}
+ public SeekBarView(Context c,Theme.ResourcesProvider r){super(c);}public void setColors(int i,int o){inner=i;outer=o;}public void setReportChanges(boolean b){report=b;}public void setDelegate(SeekBarViewDelegate d){delegate=d;}public void setProgress(float f){progress=f;}
+}''')
+    put('org/telegram/ui/Components/MediaActionDrawable.java','package org.telegram.ui.Components;public class MediaActionDrawable{public static final int ICON_PLAY=0,ICON_PAUSE=1;}')
+    put('org/telegram/ui/Components/RadialProgress2.java','''package org.telegram.ui.Components;import android.view.View;import android.graphics.Canvas;import org.telegram.ui.ActionBar.Theme;
+public class RadialProgress2{public static RadialProgress2 last;public int icon;public int[] colors;public boolean attached;public RadialProgress2(View v,Theme.ResourcesProvider r){last=this;}public void setColorKeys(int a,int b,int c,int d){colors=new int[]{a,b,c,d};}public void setIcon(int n,boolean same,boolean animate){icon=n;}public void setProgressRect(int a,int b,int c,int d){}public void setProgressColor(int c){}public void draw(Canvas c){}public void setPressed(boolean p,boolean m){}public void onAttachedToWindow(){attached=true;}public void onDetachedFromWindow(){attached=false;}}
+''')
+    put('UiConstructorCases.java','''import android.content.Context;import android.view.*;import android.widget.*;import org.telegram.ui.*;import org.telegram.ui.Components.*;import org.telegram.ui.ActionBar.Theme;import org.telegram.messenger.*;import org.telegram.messenger.purple.*;
+public class UiConstructorCases{
+ static int checks;static void check(boolean b,String n){checks++;if(!b)throw new AssertionError(n);}static LinearLayout.LayoutParams params(View v){return (LinearLayout.LayoutParams)v.getLayoutParams();}
+ public static void main(String[] args){
+ for(boolean rtl:new boolean[]{false,true})for(boolean round:new boolean[]{false,true}){
+ LocaleController.isRTL=rtl;PurpleRecordingEntry entry=new PurpleRecordingEntry();entry.round=round;
+ PurpleRecordingBinRow row=new PurpleRecordingBinRow(new Context(),null,entry,"Long recording title","kind\\nduration\\ndate\\nstatus",()->{},()->{},()->{});
+ LinearLayout heading=(LinearLayout)row.getChildAt(0);TextView name=(TextView)heading.getChildAt(rtl?1:0);check(params(name).weight==1f&&params(name).width==0,"title uses weighted overload");check(name.single,"title cannot inflate row height");
+ check(params(heading).width==-1&&params(heading).height==-2,"heading fills width and wraps height");
+ View metadata=row.getChildAt(1);check(params(metadata).width==-1&&params(metadata).height==-2,"metadata fills width and wraps");
+ View preview=row.getChildAt(2);check(preview.getVisibility()==View.GONE,"preview reserves no space initially");
+ LinearLayout controls=(LinearLayout)row.getChildAt(3);PurpleRecordingPlayButton toggle=(PurpleRecordingPlayButton)controls.getChildAt(0);SeekBarView seek=(SeekBarView)controls.getChildAt(1);
+ check(params(controls).width==-1&&params(controls).height==48,"playbar fills width with48dp height");check(params(toggle).width==48&&params(toggle).height==48,"play48dp touch target");check(params(seek).weight==1f&&params(seek).width==0,"seek uses weighted overload");check(seek.report,"seek reports drags like stock player");
+ check(seek.inner==Theme.key_player_progressBackground&&seek.outer==Theme.key_player_progress,"stock player seek palette");
+ LinearLayout times=(LinearLayout)row.getChildAt(4);check(params(times.getChildAt(0)).weight==1f,"elapsed uses weighted overload");
+ RadialProgress2 radial=RadialProgress2.last;check(java.util.Arrays.equals(radial.colors,new int[]{Theme.key_chat_inLoader,Theme.key_chat_inLoaderSelected,Theme.key_chat_inMediaIcon,Theme.key_chat_inMediaIconSelected}),"SharedAudioCell radial palette");check(radial.icon==MediaActionDrawable.ICON_PLAY,"initial visible play icon");
+ toggle.performClick();check(radial.icon==MediaActionDrawable.ICON_PAUSE,"production click changes native icon");seek.delegate.onSeekBarDrag(true,.25f);check(((TextView)times.getChildAt(0)).text.equals("2"),"production seek updates elapsed");toggle.performClick();check(radial.icon==MediaActionDrawable.ICON_PLAY,"second click pauses native icon");row.stop();
+ }
+ check(LayoutHelper.createLinear(0,-2,1).weight==0,"integer overload reproduced original regression");check(LayoutHelper.createLinear(0,-2,1f).weight==1f,"float overload preserves weight");
+ System.out.println("RECORDING_UI_CONSTRUCTOR_CHECKS="+checks);
+ }
+}''')
+    strip = (java / 'ui/PurpleRecordingStrip.java').read_text()
+    visibility = method(strip, '    private void recordingVisibility(')
+    height = method(strip, '    public int height(')
+    put('StripVisibilityCases.java','''import android.view.View;import android.content.Context;import java.util.*;
+public class StripVisibilityCases{
+ static final int BUTTON_DP=48;static class FragmentContextView{static final int STYLE_AUDIO_PLAYER=0;}final Map<View,Integer> stockVisibility=new HashMap<>();
+''' + visibility + height + '''
+ static int checks;static void check(boolean b,String n){checks++;if(!b)throw new AssertionError(n);}
+ public static void main(String[] args){StripVisibilityCases p=new StripVisibilityCases();View title=new View(new Context()),play=new View(new Context()),close=new View(new Context()),speed=new View(new Context());speed.setVisibility(View.GONE);
+ for(int i=0;i<2;i++)p.recordingVisibility(true,title,play,close,speed);
+ for(View v:new View[]{title,play,close,speed})check(v.getVisibility()==View.INVISIBLE,"stock glyphs suppressed under transparent strip");
+ close.setVisibility(View.GONE);p.recordingVisibility(false);check(title.getVisibility()==View.VISIBLE&&play.getVisibility()==View.VISIBLE,"player controls restore");check(speed.getVisibility()==View.GONE,"hidden speed restores hidden");check(close.getVisibility()==View.GONE,"new native visibility preserved");check(p.stockVisibility.isEmpty(),"restoration is one-shot");
+ check(p.height(0,36)==48,"recording shares existing player height");check(p.height(2,36)==36,"other strip styles unchanged");
+ System.out.println("RECORDING_STRIP_VISIBILITY_CHECKS="+checks);}
+}''')
+    activity = (java / 'ui/PurpleRecordingBinActivity.java').read_text()
+    assert 'UItem.asCustom(row, org.telegram.ui.Components.LayoutHelper.WRAP_CONTENT)' in activity
+    assert 'recordingVisibility(recording, title, play, close, speed);' in strip
+    assert 'LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, BUTTON_DP, Gravity.TOP)' in strip

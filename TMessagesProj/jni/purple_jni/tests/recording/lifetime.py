@@ -50,6 +50,7 @@ public final class PurpleRecordingStrip {
  private final FragmentContextView strip;
  private PurpleRecordingStripView recording;
  private Object resourcesProvider;
+ private static final int BUTTON_DP=48;
  private static final java.util.Set<PurpleRecordingStrip> STRIPS=java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
 ''' + player_field + field(strip, 'changed') + '\n' + '\n'.join(block(strip, signature) for signature in ['public PurpleRecordingStrip(', 'public boolean docked()', 'public boolean showRecording()']) + '\n}')
     put('org/telegram/ui/PurpleChatHooks.java', '''package org.telegram.ui;
