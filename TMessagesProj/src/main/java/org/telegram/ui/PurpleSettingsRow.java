@@ -9,6 +9,11 @@ public final class PurpleSettingsRow {
 
     public static final int ROW_ID = 0x70750005;
 
+    public static org.telegram.ui.Components.UItem entry(int account) {
+        return SettingsActivity.SettingCell.Factory.of(ROW_ID, 0, 0, R.drawable.purple_settings,
+                LocaleController.getString(R.string.PurpleSettingsTitle), subtitle(account));
+    }
+
     private PurpleSettingsRow() {
     }
 
