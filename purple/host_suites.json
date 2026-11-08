@@ -982,6 +982,8 @@
         "recording-dock:RECORDING_STRIP_RTL_CHECKS": 666,
         "recording-dock:RECORDING_STRIP_VISIBILITY_CHECKS": 10,
         "recording-dock:ROUND_CONTROLS_LAYOUT_CHECKS": 11,
+        "recording-dock:ROUND_CONTROLS_CONTRAST_CHECKS": 170,
+        "recording-dock:ROUND_CONTROLS_NATIVE_FILTER_CHECKS": 6,
         "recording-dock:ROUND_CONTROLS_PLACEMENT_CHECKS": 576,
         "recording-dock:SETTINGS_RTL_ALIGNMENT_CHECKS": 48
       }

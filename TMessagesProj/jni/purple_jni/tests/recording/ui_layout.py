@@ -52,14 +52,14 @@ public class LinearLayout extends ViewGroup{public static final int HORIZONTAL=0
 public class FrameLayout extends ViewGroup{public FrameLayout(Context c){super(c);}public static class LayoutParams extends ViewGroup.MarginLayoutParams{public int gravity;public LayoutParams(int w,int h){super(w,h);}public LayoutParams(int w,int h,int g){super(w,h);gravity=g;}}}''')
     put('android/widget/TextView.java','''package android.widget;import android.view.View;import android.content.Context;
 public class TextView extends View{public String text;public boolean single;public int gravity;public TextView(Context c){super(c);}public void setText(String s){text=s;}public String getText(){return text;}public void setTextSize(int n){}public void setTextColor(int n){}public void setGravity(int n){gravity=n;}public int getGravity(){return gravity;}public void setTypeface(Object o){}public void setSingleLine(boolean b){single=b;}public void setEllipsize(android.text.TextUtils.TruncateAt e){}}''')
-    put('android/widget/ImageView.java','package android.widget;import android.content.Context;import android.view.View;public class ImageView extends View{public enum ScaleType{CENTER}public Object drawable;public ImageView(Context c){super(c);}public void setImageResource(int n){}public void setScaleType(ScaleType t){}public void setColorFilter(int n){}public void setColorFilter(Object n){}public void setImageDrawable(Object d){drawable=d;}}')
+    put('android/widget/ImageView.java','package android.widget;import android.content.Context;import android.view.View;public class ImageView extends View{public enum ScaleType{CENTER}public Object drawable;private android.graphics.ColorFilter filter;public ImageView(Context c){super(c);}public void setImageResource(int n){}public void setScaleType(ScaleType t){}public void setColorFilter(int n){}public void setColorFilter(android.graphics.ColorFilter n){filter=n;}public android.graphics.ColorFilter getColorFilter(){return filter;}public void setImageDrawable(Object d){drawable=d;}}')
     put('android/view/TextureView.java','package android.view;import android.content.Context;public class TextureView extends View{public TextureView(Context c){super(c);}}')
     put('org/telegram/messenger/AndroidUtilities.java','package org.telegram.messenger;public class AndroidUtilities{public static int dp(float n){return (int)n;}public static Object bold(){return null;}public static String formatShortDuration(int n){return ""+n;}}')
     put('org/telegram/messenger/LocaleController.java','package org.telegram.messenger;public class LocaleController{public static boolean isRTL;public static String getString(int n){return ""+n;}}')
     put('org/telegram/messenger/R.java','package org.telegram.messenger;public class R{public static class string{public static final int AccActionPause=1,AccActionPlay=2,AccDescrMoreOptions=3,PurpleRecordingBinPlay=4,AccDescrSwitchCamera=5,PurpleRecordingResume=6,PurpleRecordingPause=7,DiscardVoiceMessageTitle=8,DiscardVoiceMessageDescription=9,DiscardVoiceMessageAction=10,Cancel=11,PurpleRecordingBinRound=12,PurpleRecordingVoice=13,PurpleRecordingSendElsewhere=14,Send=15,PurpleRecordingNotificationHint=16;}public static class drawable{public static final int msg_actions=1,purple_settings=2,send_plane_24=3,miniplayer_close=4;}public static class raw{public static final int roundcamera_flip=1;}}')
     put('org/telegram/messenger/purple/PurpleRecordingEntry.java','package org.telegram.messenger.purple;public class PurpleRecordingEntry{public static final String UNRECOVERABLE="bad";public String state="recovered",media="inert.ogg";public long durationMs=10000;public boolean round;public boolean round(){return round;}}')
     put('org/telegram/ui/ActionBar/Theme.java','''package org.telegram.ui.ActionBar;public class Theme{
- public static class ResourcesProvider{}public static final int key_windowBackgroundWhite=1,key_windowBackgroundWhiteGrayIcon=2,key_listSelector=3,key_windowBackgroundWhiteGrayText=4,key_windowBackgroundWhiteBlackText=5,key_player_progressBackground=6,key_player_progress=7,key_player_time=8,key_chat_inLoader=9,key_chat_inLoaderSelected=10,key_chat_inMediaIcon=11,key_chat_inMediaIconSelected=12,key_chat_inAudioSelectedProgress=13,key_chat_inAudioProgress=14,key_inappPlayerTitle=15,key_inappPlayerPerformer=16,key_inappPlayerClose=17,key_inappPlayerPlayPause=18;
+ public static class ResourcesProvider{public boolean dark;public boolean isDark(){return dark;}}public static boolean globalDark;public static final int key_windowBackgroundWhite=1,key_windowBackgroundWhiteGrayIcon=2,key_listSelector=3,key_windowBackgroundWhiteGrayText=4,key_windowBackgroundWhiteBlackText=5,key_player_progressBackground=6,key_player_progress=7,key_player_time=8,key_chat_inLoader=9,key_chat_inLoaderSelected=10,key_chat_inMediaIcon=11,key_chat_inMediaIconSelected=12,key_chat_inAudioSelectedProgress=13,key_chat_inAudioProgress=14,key_inappPlayerTitle=15,key_inappPlayerPerformer=16,key_inappPlayerClose=17,key_inappPlayerPlayPause=18;
  public static int getColor(int key,ResourcesProvider r){return key;}public static Object createSelectorDrawable(int c,int type){return null;}public static Object createSelectorDrawable(int c,int type,int radius){return null;}
 }''')
     put('org/telegram/ui/Components/SeekBarView.java','''package org.telegram.ui.Components;import android.view.View;import android.content.Context;import org.telegram.ui.ActionBar.Theme;
@@ -137,9 +137,10 @@ public class StripVisibilityCases{
     assert 'recordingVisibility(recording, title, play, close, speed);' in strip
     assert 'LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, BUTTON_DP, Gravity.TOP)' in strip
     put('org/telegram/ui/Components/PurpleRoundControls.java', (java/'ui/Components/PurpleRoundControls.java').read_text())
-    put('android/graphics/Color.java','package android.graphics;public class Color{public static final int WHITE=-1;}')
+    put('android/graphics/Color.java','package android.graphics;public class Color{public static final int WHITE=-1,BLACK=0xff000000;}')
     put('android/graphics/PorterDuff.java','package android.graphics;public class PorterDuff{public enum Mode{MULTIPLY}}')
-    put('android/graphics/PorterDuffColorFilter.java','package android.graphics;public class PorterDuffColorFilter{public PorterDuffColorFilter(int c,PorterDuff.Mode m){}}')
+    put('android/graphics/ColorFilter.java','package android.graphics;public class ColorFilter{}')
+    put('android/graphics/PorterDuffColorFilter.java','package android.graphics;public class PorterDuffColorFilter extends ColorFilter{public final int color;public PorterDuffColorFilter(int c,PorterDuff.Mode m){color=c;}}')
     put('org/telegram/ui/Components/PlayPauseDrawable.java','package org.telegram.ui.Components;public class PlayPauseDrawable{public boolean pause;public PlayPauseDrawable(int size){}public void setColor(int c){}public void setPause(boolean b,boolean animated){pause=b;}}')
     put('org/telegram/ui/Components/RLottieDrawable.java','package org.telegram.ui.Components;public class RLottieDrawable{public RLottieDrawable(int id,int w,int h){}public int getFramesCount(){return 10;}public void setCurrentFrame(int n){}}')
     put('org/telegram/ui/Components/blur3/drawable/color/BlurredBackgroundColorProvider.java','package org.telegram.ui.Components.blur3.drawable.color;public interface BlurredBackgroundColorProvider{}')
@@ -151,7 +152,7 @@ public class BlurredBackgroundDrawableViewFactory{public View parent;public Blur
 public class RoundControlsCases{
  static int checks;static void check(boolean b,String n){checks++;if(!b)throw new AssertionError(n);}
  public static void main(String[] args){int[] clicks={0,0};BlurredBackgroundDrawableViewFactory factory=new BlurredBackgroundDrawableViewFactory();
- PurpleRoundControls controls=new PurpleRoundControls(new Context(),()->clicks[0]++,()->clicks[1]++,new Object[]{factory,null});
+ PurpleRoundControls controls=new PurpleRoundControls(new Context(),()->clicks[0]++,()->clicks[1]++,new Object[]{factory,null},()->null);
  check(controls.getLayoutParams() instanceof FrameLayout.LayoutParams,"explicit camera-host layout params");FrameLayout.LayoutParams p=(FrameLayout.LayoutParams)controls.getLayoutParams();
  check(p.width==-2&&p.height==-2,"production glass wrapper wraps both axes");check(p.gravity==(Gravity.TOP|Gravity.LEFT),"absolute origin matches setX/setY placement");
  check(controls.orientation==LinearLayout.HORIZONTAL&&controls.getChildCount()==2,"stock horizontal camera controls");
@@ -194,3 +195,8 @@ public class SettingsAlignmentCases{
     strip_layout = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(strip_layout)
     strip_layout.prepare(root, put)
+
+    spec = importlib.util.spec_from_file_location("controls_contrast", pathlib.Path(__file__).with_name("controls_contrast.py"))
+    controls_contrast = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(controls_contrast)
+    controls_contrast.prepare(root, put, method)

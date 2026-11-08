@@ -181,12 +181,31 @@ public final class BubbleRoutingCases {
         }
     }
 
+    private static void nativeFilter(boolean v2) {
+        Surface s = new Surface(v2, false);
+        ImageView nativeButton = (ImageView) ((ViewGroup) s.camera.getButtonsLayout()).getChildAt(0);
+        android.graphics.ColorFilter filter = new android.graphics.ColorFilter();
+        nativeButton.setColorFilter(filter);
+        s.shrink();
+        PurpleRoundControls controls = (PurpleRoundControls) s.camera.getChildAt(s.camera.getChildCount() - 1);
+        check(controls.tint.get() == filter, "actual bubble constructor wires selected native camera tint");
+        nativeButton.setColorFilter(null);
+        check(controls.tint.get() == null, "native untinted white state stays untinted");
+        nativeButton.setColorFilter(filter);
+        s.camera.paused = true;
+        s.camera.redraw();
+        check(controls.tint.get() == filter, "native tint remains live after pause");
+    }
+
     public static void main(String[] args) {
         run(false); run(true);
         System.out.println("ROUND_ROUTING_CHECKS=" + checks);
         int before = checks;
         bounds(false); bounds(true);
         System.out.println("ROUND_CONTROLS_PLACEMENT_CHECKS=" + (checks - before));
+        before = checks;
+        nativeFilter(false); nativeFilter(true);
+        System.out.println("ROUND_CONTROLS_NATIVE_FILTER_CHECKS=" + (checks - before));
         System.out.println(checks + " checks, " + failures + " failures");
         if (failures != 0) throw new AssertionError("round routing failures=" + failures);
     }

@@ -135,7 +135,8 @@ public final class PurpleRoundBubble {
                 state.controls = new PurpleRoundControls(view.getContext(), () -> {
                     View buttons = view.getButtonsLayout();
                     if (buttons instanceof ViewGroup && ((ViewGroup) buttons).getChildCount() > 0) ((ViewGroup) buttons).getChildAt(0).performClick();
-                }, view::togglePause, (Object[]) view.getTag(BACKGROUND_TAG));
+                }, view::togglePause, (Object[]) view.getTag(BACKGROUND_TAG),
+                        () -> ((ImageView) ((ViewGroup) view.getButtonsLayout()).getChildAt(0)).getColorFilter());
                 view.addView(state.controls);
             }
             state.controls.setVisibility(View.VISIBLE);
