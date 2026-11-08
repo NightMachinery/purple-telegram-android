@@ -178,11 +178,14 @@ final class PurpleSyncAutoEngine {
     }
     private PurpleSyncChatCore.Peer pickupChat;
     private int[] pickupIds;
-    void chatUpdated(PurpleSyncChatCore.Peer chat, int[] ids) {
+    private boolean pickupOverflow;
+    void chatUpdated(PurpleSyncChatCore.Peer chat, int[] ids, boolean overflow) {
         int[] copy = ids.clone();
         port.queue(() -> {
+            if (!chat.equals(PurpleSyncChat.boundChat(account.account))) return;
             pickupChat = chat;
             pickupIds = copy;
+            pickupOverflow = overflow;
             transition(PurpleSyncAutoCore.Event.ChatUpdated, null, null,
                 PurpleSyncAutoCore.Outcome.Inventory, null, null);
         });
@@ -468,8 +471,9 @@ final class PurpleSyncAutoEngine {
                 if (event == PurpleSyncAutoCore.Event.ChatUpdated && pickupIds != null) {
                     PurpleSyncChatCore.Peer bound = PurpleSyncChat.boundChat(account.account);
                     boolean needed = bound != null && pickupChat != null
-                        && PurpleSyncAutoCore.pickupNative(facts.state, bound.token(), pickupChat.token(), pickupIds, account.userId);
+                        && (pickupOverflow || PurpleSyncAutoCore.pickupNative(facts.state, bound.token(), pickupChat.token(), pickupIds, account.userId));
                     pickupIds = null;
+                    pickupOverflow = false;
                     if (!needed) {
                         if (running.isEmpty()) end();
                         return;

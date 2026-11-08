@@ -79,6 +79,7 @@ public final class PurpleSyncAuto {
         final ArrayList<Consumer<Status>> listeners = new ArrayList<>();
         Runnable retry;
         Runnable pickup;
+        boolean pickupOverflow;
         PurpleSyncChatCore.Peer pickupChat;
         final java.util.LinkedHashSet<Integer> pickupIds = new java.util.LinkedHashSet<>();
         /** The last first-use answer while it waits or asks (PurpleSyncFirstUse); null once a state exists. */
@@ -106,20 +107,24 @@ public final class PurpleSyncAuto {
         void updated(PurpleSyncChatCore.Peer chat, java.util.List<org.telegram.messenger.MessageObject> messages) {
             if (ApplicationLoader.mainInterfacePaused || !current() || !enabledHint()
                 || !chat.equals(PurpleSyncChat.boundChat(opening.slot))) return;
-            if (!chat.equals(pickupChat)) pickupIds.clear();
+            if (!chat.equals(pickupChat)) { pickupIds.clear(); pickupOverflow = false; }
             pickupChat = chat;
             for (org.telegram.messenger.MessageObject message : messages) {
-                if (message.getId() > 0 && !message.scheduled && pickupIds.size() < 128)
-                    pickupIds.add(message.getId());
+                if (message.getId() <= 0 || message.scheduled || message.messageOwner == null
+                    || !chat.equals(PurpleSyncChatFacts.token(message.messageOwner.peer_id, opening.userId))) continue;
+                if (pickupIds.size() < 128) pickupIds.add(message.getId());
+                else if (!pickupIds.contains(message.getId())) pickupOverflow = true;
             }
             if (pickupIds.isEmpty() || pickup != null) return;
             pickup = () -> {
                 pickup = null;
                 int[] ids = pickupIds.stream().mapToInt(Integer::intValue).toArray();
                 pickupIds.clear();
+                boolean overflow = pickupOverflow;
+                pickupOverflow = false;
                 if (!ApplicationLoader.mainInterfacePaused && current() && enabledHint()
                     && chat.equals(PurpleSyncChat.boundChat(opening.slot)))
-                    engine.chatUpdated(chat, ids);
+                    engine.chatUpdated(chat, ids, overflow);
             };
             AndroidUtilities.runOnUIThread(pickup, 500);
         }
