@@ -140,6 +140,10 @@ final class PurpleChatHooks {
         updateSelectionCopy(menu, PurpleSelectionActions.visible(menu, copy));
     }
 
+    int visibleSelectionActions(org.telegram.ui.ActionBar.ActionBarMenu menu, ActionBarMenuItem... items) {
+        return PurpleSelectionActions.visibleCount(menu, items);
+    }
+
     void copySelectionAsMarkdown(android.util.SparseArray<MessageObject>[] selected, boolean encrypted) {
         ArrayList<MessageObject> messages = new ArrayList<>();
         for (int index = selected.length - 1; index >= 0; index--) {

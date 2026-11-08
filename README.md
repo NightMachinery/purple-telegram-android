@@ -2285,7 +2285,10 @@ Album messages are composed together and copied only after every member is ready
 The multi-message selection toolbar also has a code-brackets icon, labelled
 **Copy as Markdown** for accessibility. Actions use full 48dp targets. When they
 do not fit beside the selected count, the remaining actions appear in the stock
-More options menu. Widening the window restores them to the toolbar. It preserves
+More options menu. Tap More, then tap an action; this menu disables native
+press-and-drag opening so every action uses its guarded tap handler. Widening the
+window restores actions to the toolbar. Saved Messages keeps its native tag
+availability regardless of overflow. It preserves
 ordinary Copy alongside Markdown Copy,
 orders migrated messages before current messages using Telegram's existing
 message ordering, and resolves the complete selection before one clipboard

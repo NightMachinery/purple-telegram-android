@@ -100,7 +100,9 @@ count keeps its native AnimatedTextView and gradient ellipsis. Purple reserves
 its current animated text width (bounded to keep room for a 48dp overflow target),
 then keeps the actions that fit at full size. Excess actions use msg_actions and
 ActionBarMenuItem's stock ActionBarMenuSubItem popup rows. Their current native
-icons, accessible labels, enabled state and click handlers are retained. Native
+icons, accessible labels, enabled state and click handlers are retained. More is
+tap-only: native move-open, drag-release and long-press opening are disabled so
+all actions, including Markdown, use the same guarded row-tap route. Native
 physical action ordering and popup RTL layout remain in charge; there is no
 literal MD label to reorder in a right-to-left locale.
 
@@ -110,20 +112,28 @@ menu, without changing the stock glass backgrounds, clipping, icon colors or
 other action bars. Width and selection changes can move actions between toolbar
 and popup. Logical eligibility remains separate from presentation so that a
 Copy button moved to overflow still supplies the same eligibility to Markdown
-Copy. A revoked, disabled or no-longer-overflow action cannot invoke a stale
+Copy. Saved Messages retains its native Premium and fewer-than-four-actions tag
+rule, counting the same seven actions by logical visibility at selection update.
+A revoked, disabled or no-longer-overflow action cannot invoke a stale
 popup row. Copy's message, secret, view-once and provenance guards are unchanged.
 
 The upstream seams are ActionBarMenu.onMeasure (one Purple call after native
 glass margins), ActionBarMenuItem.setVisibility (one guarded call for direct
 native eligibility changes), and the existing ChatActivity Purple selection
-calls, which now pass the count view and native Copy item. All decisions and
+calls, which pass the count view and native Copy item and delegate the tag
+threshold count to logical visibility. All decisions and
 popup wiring stay in PurpleSelectionActions and PurpleChatHooks.
 
 The existing Markdown host runner includes production-controller cases with
 inert Android menu/layout ports: all seven-action eligibility combinations,
 240/320/360/406/600/1080 widths, short and large count widths, narrow-to-wide
 restoration, full 48dp targets, native tint/label preservation, original click
-routing and stale-popup revocation. These establish layout/dispatch contracts,
+routing and stale-popup revocation. The fixture also extracts the current native
+ActionBarMenuItem.onTouchEvent and flag setters, plus the ChatActivity tag block
+and its Purple helper, at run time. It checks closed/open popup gestures against
+disabled/revoked/native/Markdown rows, reproduces the former drag bypass as a
+control, and crosses Premium/tag eligibility through selection and width changes.
+These establish layout/dispatch contracts,
 not Android pixels, font measurement or popup placement. Real AGP compilation,
 canonical host suites and a same-app stock comparison in light/dark and RTL are
 separate acceptance requirements.

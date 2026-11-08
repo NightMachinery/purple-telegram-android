@@ -43,6 +43,8 @@ public final class PurpleSelectionActions {
             if (menu.getChildAt(i) instanceof ActionBarMenuItem) items.add((ActionBarMenuItem) menu.getChildAt(i));
         }
         more = menu.addItemWithWidth(MORE, R.drawable.msg_actions, dp(48), LocaleController.getString(R.string.AccDescrMoreOptions));
+        more.setShowSubmenuByMove(false);
+        more.setLongClickEnabled(false);
         more.setVisibility(View.GONE);
         for (ActionBarMenuItem item : items) {
             Drawable icon = item.getIconView().getDrawable();
@@ -90,6 +92,12 @@ public final class PurpleSelectionActions {
             for (Entry entry : state.entries) if (entry.item == item) return entry.visibility == View.VISIBLE;
         }
         return item != null && item.getVisibility() == View.VISIBLE;
+    }
+
+    public static int visibleCount(ActionBarMenu menu, ActionBarMenuItem... items) {
+        int count = 0;
+        for (ActionBarMenuItem item : items) if (visible(menu, item)) count++;
+        return count;
     }
 
     public static void measure(ActionBarMenu menu, int width) {

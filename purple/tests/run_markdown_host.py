@@ -39,6 +39,17 @@ sources += [java / name for name in ["org/telegram/messenger/SendMessagesHelper.
 result = {"scope": "host javac and supplied JNI library; Android UI, AGP and device behavior remain unqualified", "steps": {}, "inputs": {str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest() for path in sources}}
 
 
+def source_block(text, marker):
+    start = text.index(marker)
+    opening = text.index("{", start)
+    depth = 1
+    end = opening + 1
+    while depth:
+        depth += (text[end] == "{") - (text[end] == "}")
+        end += 1
+    return text[start:end]
+
+
 def floor():
     free = shutil.disk_usage(output).free
     result["minimumFreeBytes"] = min(free, result.get("minimumFreeBytes", free))
@@ -83,7 +94,44 @@ try:
         execute(name, plain, prefix + name, [output / "peek-fixtures"] if name == "PeekCopyRepairTest" else [])
     toolbar = output / "toolbar"
     toolbar_ports = list((tests / "selection_toolbar_ports").rglob("*.java"))
-    compile_sources("toolbar-javac", toolbar, toolbar_ports + [java / "org/telegram/ui/PurpleSelectionActions.java", tests / "SelectionToolbarCases.java"])
+    native_item = java / "org/telegram/ui/ActionBar/ActionBarMenuItem.java"
+    native_chat = java / "org/telegram/ui/ChatActivity.java"
+    chat_hooks = java / "org/telegram/ui/PurpleChatHooks.java"
+    gesture_port = next(path for path in toolbar_ports if path.name == "ActionBarMenuItem.java")
+    generated = output / "toolbar-generated"
+    generated.mkdir()
+    gesture = generated / "ActionBarMenuItem.java"
+    methods = [source_block(native_item.read_text(), marker) for marker in [
+        "public boolean onTouchEvent(", "public void setShowSubmenuByMove(", "public void setLongClickEnabled("]]
+    gesture.write_text(gesture_port.read_text().replace("// NATIVE_GESTURE_METHODS", "\n".join(methods)))
+    tag = generated / "SelectionTagPolicy.java"
+    chat_text = native_chat.read_text()
+    tag_end = chat_text.index("tagItem.setVisibility(getUserConfig().isPremium()")
+    tag_start = chat_text.rindex("if (tagItem != null)", 0, tag_end)
+    tag_block = source_block(chat_text[tag_start:], "if (tagItem != null)")
+    tag_helper = source_block(chat_hooks.read_text(), "int visibleSelectionActions(")
+    tag.write_text("""package org.telegram.ui;
+import android.view.View;
+import org.telegram.ui.ActionBar.*;
+class PurpleChatHooks {
+""" + tag_helper + """
+}
+class SelectionTagPolicy {
+    ActionBarMenuItem tagItem, editItem, forwardItem, saveItem, copyItem, deleteItem, starItem, shareItem;
+    final PurpleChatHooks purple = new PurpleChatHooks();
+    final NativeActionBar actionBar = new NativeActionBar();
+    boolean premium;
+    class NativeActionBar { ActionBarMenu menu; ActionBarMenu createActionMode() { return menu; } }
+    SelectionTagPolicy getUserConfig() { return this; }
+    boolean isPremium() { return premium; }
+    void update() {
+""" + tag_block + """
+    }
+}
+""")
+    for path in [native_item, native_chat, chat_hooks, java / "org/telegram/ui/PurpleSelectionActions.java"]:
+        result["inputs"][str(path.relative_to(root))] = hashlib.sha256(path.read_bytes()).hexdigest()
+    compile_sources("toolbar-javac", toolbar, [path for path in toolbar_ports if path != gesture_port] + [gesture, tag, java / "org/telegram/ui/PurpleSelectionActions.java", tests / "SelectionToolbarCases.java"])
     execute("toolbar", toolbar, "org.telegram.ui.SelectionToolbarCases")
     ports = list((tests / "markdown_ports").rglob("*.java"))
     route = output / "route"

@@ -19601,15 +19601,7 @@ public class ChatActivity extends BaseFragment implements
                 }
 
                 if (tagItem != null) {
-                    tagItem.setVisibility(getUserConfig().isPremium() && (
-                        (editItem != null && editItem.getVisibility() == View.VISIBLE ? 1 : 0) +
-                        (forwardItem != null && forwardItem.getVisibility() == View.VISIBLE ? 1 : 0) +
-                        (saveItem != null && saveItem.getVisibility() == View.VISIBLE ? 1 : 0) +
-                        (copyItem != null && copyItem.getVisibility() == View.VISIBLE ? 1 : 0) +
-                        (deleteItem != null && deleteItem.getVisibility() == View.VISIBLE ? 1 : 0) +
-                        (starItem != null && starItem.getVisibility() == View.VISIBLE ? 1 : 0) +
-                        (shareItem != null && shareItem.getVisibility() == View.VISIBLE ? 1 : 0)
-                    ) < 4 ? View.VISIBLE : View.GONE);
+                    tagItem.setVisibility(getUserConfig().isPremium() && purple.visibleSelectionActions(actionBar.createActionMode(), editItem, forwardItem, saveItem, copyItem, deleteItem, starItem, shareItem) < 4 ? View.VISIBLE : View.GONE);
                 }
             }
         }
