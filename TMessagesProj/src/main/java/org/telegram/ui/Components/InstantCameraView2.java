@@ -293,6 +293,7 @@ public final class InstantCameraView2 extends InstantCameraViewBase {
         drawable.setPadding(dp(6));
         drawable.setRadius(dp(21));
         buttonsLayout.setBackground(drawable);
+        PurpleRoundBubble.controlsBackground(this, factory, colorProvider);
     }
 
     @Override

@@ -12,15 +12,25 @@ public final class PurpleRoundBubble {
     public interface Dispatch { boolean run(); }
     public interface Visibility { void small(boolean small); }
     private static final int STATE_TAG = 0x70750521;
+    private static final int OVERLAY_TAG = 0x70750522;
+    private static final int BACKGROUND_TAG = 0x70750523;
     private static State state(InstantCameraViewBase view) { return view == null ? null : (State) view.getTag(STATE_TAG); }
     private static final class State {
         boolean small, tracking, dragging, nativeGesture;
         float downX, downY, startX, startY;
         int corner;
         Visibility visibility;
-        LinearLayout controls;
+        PurpleRoundControls controls;
     }
     private PurpleRoundBubble() { }
+    public static void attachOverlay(InstantCameraViewBase view, View overlay) {
+        view.setTag(OVERLAY_TAG, overlay);
+    }
+    public static void controlsBackground(InstantCameraViewBase view,
+            org.telegram.ui.Components.blur3.BlurredBackgroundDrawableViewFactory factory,
+            org.telegram.ui.Components.blur3.drawable.color.BlurredBackgroundColorProvider color) {
+        view.setTag(BACKGROUND_TAG, new Object[]{factory, color});
+    }
     public static void attach(InstantCameraViewBase view, Visibility visibility) {
         State state = new State();
         state.visibility = visibility;
@@ -122,14 +132,10 @@ public final class PurpleRoundBubble {
         view.getButtonsLayout().setVisibility(small ? View.INVISIBLE : View.VISIBLE);
         if (small) {
             if (state.controls == null) {
-                state.controls = new LinearLayout(view.getContext());
-                TextView flip = control(view, "↺", LocaleController.getString(R.string.AccDescrSwitchCamera), () -> {
+                state.controls = new PurpleRoundControls(view.getContext(), () -> {
                     View buttons = view.getButtonsLayout();
                     if (buttons instanceof ViewGroup && ((ViewGroup) buttons).getChildCount() > 0) ((ViewGroup) buttons).getChildAt(0).performClick();
-                });
-                TextView pause = control(view, "Ⅱ / ▷", LocaleController.getString(R.string.PurpleRecordingPause), view::togglePause);
-                state.controls.addView(flip, new LinearLayout.LayoutParams(AndroidUtilities.dp(44), AndroidUtilities.dp(32)));
-                state.controls.addView(pause, new LinearLayout.LayoutParams(AndroidUtilities.dp(60), AndroidUtilities.dp(32)));
+                }, view::togglePause, (Object[]) view.getTag(BACKGROUND_TAG));
                 view.addView(state.controls);
             }
             state.controls.setVisibility(View.VISIBLE);
@@ -138,17 +144,14 @@ public final class PurpleRoundBubble {
             View camera = view.getCameraContainer();
             camera.setScaleX(1); camera.setScaleY(1);
             camera.setTranslationX(0); camera.setTranslationY(0);
+            View overlay = (View) view.getTag(OVERLAY_TAG);
+            if (overlay != null) {
+                overlay.setScaleX(1); overlay.setScaleY(1);
+                overlay.setTranslationX(0); overlay.setTranslationY(0);
+            }
             if (state.controls != null) state.controls.setVisibility(View.GONE);
         }
         state.visibility.small(small);
-    }
-    private static TextView control(InstantCameraViewBase view, String label, String description, Runnable action) {
-        TextView text = new TextView(view.getContext());
-        text.setText(label); text.setContentDescription(description); text.setGravity(Gravity.CENTER);
-        text.setTextColor(Theme.getColor(Theme.key_inappPlayerTitle));
-        text.setBackgroundColor(Theme.getColor(Theme.key_inappPlayerBackground));
-        text.setOnClickListener(v -> action.run());
-        return text;
     }
     private static void place(InstantCameraViewBase view, State state) {
         View camera = view.getCameraContainer();
@@ -159,6 +162,17 @@ public final class PurpleRoundBubble {
         int y = PurpleRoundBubbleGeometry.y(state.corner, availableHeight(view), side, AndroidUtilities.dp(12));
         camera.setTranslationX(x - camera.getLeft() - camera.getPivotX() * (1 - scale));
         camera.setTranslationY(y - camera.getTop() - camera.getPivotY() * (1 - scale));
-        if (state.controls != null) { state.controls.setX(x); state.controls.setY(y + side); state.controls.bringToFront(); }
+        View overlay = (View) view.getTag(OVERLAY_TAG);
+        if (overlay != null) {
+            float overlayScale = side / (float) Math.max(1, overlay.getWidth());
+            overlay.setScaleX(overlayScale); overlay.setScaleY(overlayScale);
+            overlay.setTranslationX(x - overlay.getLeft() - overlay.getPivotX() * (1 - overlayScale));
+            overlay.setTranslationY(y - overlay.getTop() - overlay.getPivotY() * (1 - overlayScale));
+        }
+        view.getButtonsLayout().setVisibility(View.INVISIBLE);
+        if (state.controls != null) {
+            state.controls.update(view.isPaused());
+            state.controls.setX(x); state.controls.setY(y + side); state.controls.bringToFront();
+        }
     }
 }

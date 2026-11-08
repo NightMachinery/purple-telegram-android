@@ -44,7 +44,7 @@ Small paused bubbles can still expand or drag to a saved corner.
 
 Shrinking releases the round's native recording panel for typing and shows a
 video row in the recording strip with avatar, title, timer, waveform and native
-Pause/Resume, Preview, Send and confirmed Discard. The round send context is frozen
+Pause/Resume, Send and confirmed Discard icons. Long-press the timer for Preview. The round send context is frozen
 at start, including account, reply, topic, quote and send-as arguments. Text sent
 while it floats cannot change that context. Preview expands back into the native
 round preview; its existing duration cap and trimming remain in charge.
@@ -75,7 +75,7 @@ settings and bin remain in the same screen.
 pause and send transitions, retains the target, counts recorded time without
 pauses and expires the notification discard confirmation. `PurpleRecordingDock`
 connects that state to native events and `PurpleRecordingService`. The existing
-`PurpleRecordingStrip` hosts the controls above the stock player row.
+`PurpleRecordingStrip` hosts the controls within the stock player row.
 
 Upstream edits are confined to MediaController (pause decision, second-start
 refusal and draft-restore refusal), ChatActivity (back/overlay and camera binding),
@@ -342,3 +342,40 @@ keep policy and interruption during recovery itself. Native notifications,
 encoder writes and OS power-loss behavior remain device qualification; the host
 core stand-in deliberately keeps these incomplete MP4s raw and models voice
 finalization, while the existing recording suite covers real codec recovery.
+
+## Recording controls and bin playback
+
+The recording row uses stock FragmentContextView's 36dp height, player colors,
+PlayPauseDrawable, close icon and send-plane icon. Its transparent surface keeps
+ChatActivityTopPanelLayout's existing glass background, rounded clipping and
+shadow. The avatar has a 7dp start inset and gap. The title can ellipsize while
+the timer and actions retain their widths, with mirrored placement for RTL.
+
+Minimized rounds reuse the native camera's BlurredBackgroundDrawableViewFactory,
+6dp padding and 21dp radius for their controls, with 48dp button targets and the
+stock roundcamera_flip drawable. The legacy camera's placeholder is a sibling
+of its live preview, so both must share the bubble transform. Its progress arc
+also retains the bubble scale during a camera flip. Native camera adapters expose
+only the placeholder registration, background factory and scale predicate hooks.
+Camera2's placeholder already lives inside its camera container.
+
+A refused recording hold clears the pending long-press state before showing the
+existing Discard/Continue dialog. Releasing that gesture cannot run the short-tap
+voice/video mode toggle. The normal short tap and accepted hold keep stock behavior.
+
+Each bin row shows the chat, kind and duration, date, and status in wrapping text.
+The visible play/pause button and SeekBarView use stock chat-audio colors and
+PlayPauseDrawable. VideoPlayer supplies pause, rewind, elapsed and total duration;
+rounds reveal a circular preview. Starting or resuming a row pauses the other
+rows. Leaving the bin or detaching a row releases playback.
+
+The overflow and long-press menu includes Send to Saved Messages for sendable
+non-secret, non-view-once entries. It uses the selected account's own dialog,
+without a picker or recorded reply/topic. Every bin send copies its outgoing
+media and retains the original bin file and entry, including acknowledged round
+retries. Explicit deletion and configured expiry still remove bin items.
+
+The recording-dock suite executes the production playback and recording-button
+methods over inert ports, alongside minimized-placeholder transforms and the
+existing delayed identity/queue-acknowledgment tests. Those ports do not establish
+visual quality, codec playback or camera behavior on a device.

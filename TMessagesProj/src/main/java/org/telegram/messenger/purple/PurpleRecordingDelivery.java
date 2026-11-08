@@ -14,7 +14,7 @@ public final class PurpleRecordingDelivery {
         String id;
         int account;
         long user, dialog;
-        boolean bound, acknowledged;
+        boolean bound, acknowledged, keepInBin;
     }
     private static final class Request {
         Ticket ticket;
@@ -24,12 +24,22 @@ public final class PurpleRecordingDelivery {
 
     public static synchronized void send(String id, int account, long user, long dialog, SendMessageChatArguments arguments,
             Runnable prepare, Runnable queued) {
+        send(id, account, user, dialog, arguments, prepare, queued, false);
+    }
+
+    public static synchronized void sendCopy(String id, int account, long user, long dialog, SendMessageChatArguments arguments,
+            Runnable prepare, Runnable queued) {
+        send(id, account, user, dialog, arguments, prepare, queued, true);
+    }
+
+    private static synchronized void send(String id, int account, long user, long dialog, SendMessageChatArguments arguments,
+            Runnable prepare, Runnable queued, boolean keepInBin) {
         if (id == null || arguments == null || !PurpleRecordingSendAs.sameUser(account, user)) return;
         final Ticket previous = current.get(id);
         if (previous != null && previous.bound) return;
         final Ticket ticket = new Ticket();
         ticket.id = id; ticket.account = account; ticket.dialog = dialog;
-        ticket.user = user;
+        ticket.user = user; ticket.keepInBin = keepInBin;
         final Request request = new Request(); request.ticket = ticket; request.queued = queued;
         current.put(id, ticket); requests.put(arguments, request);
         PurpleRecordingRegistry.pendingRound(id, present -> {
@@ -79,7 +89,8 @@ public final class PurpleRecordingDelivery {
                 }
                 final Runnable done = request.queued;
                 request.queued = null;
-                PurpleRecordingRegistry.queuedRound(ticket.id, done);
+                if (ticket.keepInBin) done.run();
+                else PurpleRecordingRegistry.queuedRound(ticket.id, done);
             });
         });
     }

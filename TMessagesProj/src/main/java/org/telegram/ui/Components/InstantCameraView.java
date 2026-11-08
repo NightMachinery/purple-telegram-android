@@ -432,6 +432,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
             }
         };
         addView(textureOverlayView, new LayoutParams(AndroidUtilities.roundPlayingMessageSize, AndroidUtilities.roundPlayingMessageSize, Gravity.CENTER));
+        PurpleRoundBubble.attachOverlay(this, textureOverlayView);
 
         setVisibilityFromPause = false;
         setVisibility(INVISIBLE);
@@ -442,6 +443,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
         drawable.setPadding(dp(6));
         drawable.setRadius(dp(21));
         buttonsLayout.setBackground(drawable);
+        PurpleRoundBubble.controlsBackground(this, factory, colorProvider);
     }
 
     private Boolean wasFlashing;
@@ -628,7 +630,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
 
         if (progress != 0) {
             canvas.save();
-            if (!flipAnimationInProgress) {
+            if (!flipAnimationInProgress || PurpleRoundBubble.small(this)) {
                 canvas.scale(cameraContainer.getScaleX(), cameraContainer.getScaleY(), rect.centerX(), rect.centerY());
             }
             canvas.drawArc(rect, -90, 360 * progress, false, paint);

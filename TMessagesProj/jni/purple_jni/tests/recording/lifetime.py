@@ -43,12 +43,13 @@ def run(root, output, owners=None, context_source=None):
     put('org/telegram/ui/Components/FragmentContextView.java', 'package org.telegram.ui.Components;public class FragmentContextView {private boolean isLocation;public int relayouts;'+initializer+'public FragmentContextView(){this(false);}public FragmentContextView(boolean location){isLocation=location;}public org.telegram.ui.PurpleRecordingStrip recordingStrip(){return purple;}private void checkPlayer(boolean create){relayouts++;purple.showRecording();}public Object getContext(){return null;}public void addView(Object v,Object p){}}')
     put('org/telegram/ui/Components/LayoutHelper.java', 'package org.telegram.ui.Components;public class LayoutHelper {public static final int MATCH_PARENT=-1;public static Object createFrame(int w,int h,int g){return null;}}')
     put('android/view/Gravity.java', 'package android.view;public class Gravity {public static final int TOP=1;}')
-    put('org/telegram/ui/PurpleRecordingStripView.java', 'package org.telegram.ui;public class PurpleRecordingStripView extends android.view.View {public int refreshes;public PurpleRecordingStripView(Object c){}public void refresh(){refreshes++;}}')
+    put('org/telegram/ui/PurpleRecordingStripView.java', 'package org.telegram.ui;public class PurpleRecordingStripView extends android.view.View {public int refreshes;public PurpleRecordingStripView(Object c,Object resources){}public void refresh(){refreshes++;}}')
     put('org/telegram/ui/PurpleRecordingStrip.java', '''package org.telegram.ui;
 import android.view.*;import org.telegram.ui.Components.*;
 public final class PurpleRecordingStrip {
  private final FragmentContextView strip;
  private PurpleRecordingStripView recording;
+ private Object resourcesProvider;
  private static final java.util.Set<PurpleRecordingStrip> STRIPS=java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
 ''' + player_field + field(strip, 'changed') + '\n' + '\n'.join(block(strip, signature) for signature in ['public PurpleRecordingStrip(', 'public boolean docked()', 'public boolean showRecording()']) + '\n}')
     put('org/telegram/ui/PurpleChatHooks.java', '''package org.telegram.ui;

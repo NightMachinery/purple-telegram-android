@@ -1116,4 +1116,5 @@
     <string name="PurpleAfterVoiceUnheardShort">Unheard, then music</string>
     <string name="PurpleAfterVoiceAllShort">All, then music</string>
     <string name="PurpleResumeMusicAfterVoice">Resume music after voice messages</string>
+    <string name="PurpleRecordingBinSendSaved">Send to Saved Messages</string>
 </resources>

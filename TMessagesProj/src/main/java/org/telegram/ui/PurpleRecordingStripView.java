@@ -3,6 +3,10 @@ package org.telegram.ui;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffColorFilter;
+import android.widget.ImageView;
+import org.telegram.ui.Components.PlayPauseDrawable;
 import android.os.SystemClock;
 import android.text.TextUtils;
 import android.view.Gravity;
@@ -21,7 +25,10 @@ import org.telegram.ui.Components.AvatarDrawable;
 import org.telegram.ui.Components.BackupImageView;
 
 public final class PurpleRecordingStripView extends LinearLayout {
-    private final TextView target, timer, pause, preview, send, discard;
+    private final TextView target, timer;
+    private final ImageView pause, send, discard;
+    private final PlayPauseDrawable playPause = new PlayPauseDrawable(16);
+    private final Theme.ResourcesProvider resourcesProvider;
     private final BackupImageView avatar;
     private final AvatarDrawable avatarDrawable = new AvatarDrawable();
     private final View waveform;
@@ -32,26 +39,31 @@ public final class PurpleRecordingStripView extends LinearLayout {
     private boolean avatarHidden;
     private final Runnable tick = this::refresh;
 
-    public PurpleRecordingStripView(Context context) {
+    public PurpleRecordingStripView(Context context, Theme.ResourcesProvider resourcesProvider) {
         super(context);
+        this.resourcesProvider = resourcesProvider;
         setOrientation(HORIZONTAL);
+        setLayoutDirection(LocaleController.isRTL ? LAYOUT_DIRECTION_RTL : LAYOUT_DIRECTION_LTR);
+        setPaddingRelative(AndroidUtilities.dp(7), 0, AndroidUtilities.dp(4), 0);
         setGravity(Gravity.CENTER_VERTICAL);
         setClickable(true);
         avatar = new BackupImageView(context);
         avatar.setRoundRadius(AndroidUtilities.dp(14));
-        addView(avatar, new LayoutParams(AndroidUtilities.dp(28), AndroidUtilities.dp(28)));
+        LayoutParams avatarBounds = new LayoutParams(AndroidUtilities.dp(28), AndroidUtilities.dp(28));
+        avatarBounds.setMarginEnd(AndroidUtilities.dp(7));
+        addView(avatar, avatarBounds);
         avatar.setOnClickListener(v -> PurpleRecordingDock.open());
         target = button(context, "", PurpleRecordingDock::open);
         target.setEllipsize(TextUtils.TruncateAt.END);
         addView(target, new LayoutParams(0, -1, 1));
         timer = button(context, "", PurpleRecordingDock::open);
-        timer.setTextSize(10);
+        timer.setTextSize(13);
         addView(timer, new LayoutParams(AndroidUtilities.dp(56), -1));
         timer.setOnLongClickListener(v -> { PurpleRecordingDock.preview(generation); return true; });
         waveform = new View(context) {
             @Override protected void onDraw(Canvas canvas) {
                 PurpleRecordingDockState state = PurpleRecordingDock.state;
-                paint.setColor(Theme.getColor(Theme.key_inappPlayerTitle));
+                paint.setColor(Theme.getColor(Theme.key_inappPlayerTitle, resourcesProvider));
                 paint.setStrokeWidth(AndroidUtilities.dp(1));
                 for (int i = 0; i < 32; i++) {
                     float x = (i + .5f) * getWidth() / 32;
@@ -63,25 +75,31 @@ public final class PurpleRecordingStripView extends LinearLayout {
         };
         waveform.setOnClickListener(v -> PurpleRecordingDock.open());
         addView(waveform, new LayoutParams(AndroidUtilities.dp(36), -1));
-        pause = button(context, "", () -> PurpleRecordingDock.pause(generation));
-        addView(pause, new LayoutParams(AndroidUtilities.dp(44), -1));
-        preview = button(context, LocaleController.getString(R.string.PurpleRecordingPreview), () -> PurpleRecordingDock.preview(generation));
-        addView(preview, new LayoutParams(AndroidUtilities.dp(56), -1));
-        send = button(context, "", () -> PurpleRecordingDock.send(generation));
-        addView(send, new LayoutParams(AndroidUtilities.dp(44), -1));
-        discard = button(context, "×", () -> {
+        pause = icon(context, () -> PurpleRecordingDock.pause(generation));
+        pause.setImageDrawable(playPause);
+        send = icon(context, () -> PurpleRecordingDock.send(generation));
+        send.setImageResource(R.drawable.send_plane_24);
+        discard = icon(context, () -> {
             final long token = generation;
-            new AlertDialog.Builder(getContext()).setTitle(LocaleController.getString(R.string.DiscardVoiceMessageTitle))
+            new AlertDialog.Builder(getContext(), resourcesProvider).setTitle(LocaleController.getString(R.string.DiscardVoiceMessageTitle))
                     .setMessage(LocaleController.getString(R.string.DiscardVoiceMessageDescription))
                     .setPositiveButton(LocaleController.getString(R.string.DiscardVoiceMessageAction), (d, w) -> PurpleRecordingDock.discard(token))
                     .setNegativeButton(LocaleController.getString(R.string.Cancel), null).show();
         });
+        discard.setImageResource(R.drawable.miniplayer_close);
         discard.setContentDescription(LocaleController.getString(R.string.DiscardVoiceMessageAction));
-        addView(discard, new LayoutParams(AndroidUtilities.dp(32), -1));
+
+    }
+    private ImageView icon(Context context, Runnable action) {
+        ImageView view = new ImageView(context);
+        view.setScaleType(ImageView.ScaleType.CENTER);
+        view.setOnClickListener(v -> action.run());
+        addView(view, new LayoutParams(AndroidUtilities.dp(36), AndroidUtilities.dp(36)));
+        return view;
     }
     private TextView button(Context context, String text, Runnable action) {
         TextView view = new TextView(context);
-        view.setText(text); view.setTextSize(11); view.setGravity(Gravity.CENTER);
+        view.setText(text); view.setTextSize(15); view.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
         view.setSingleLine(true); view.setEllipsize(TextUtils.TruncateAt.END);
         view.setOnClickListener(v -> action.run());
         return view;
@@ -108,23 +126,26 @@ public final class PurpleRecordingStripView extends LinearLayout {
         removeCallbacks(tick);
         if (!state.active() || getVisibility() != VISIBLE) return;
         postDelayed(tick, 100);
-        setBackgroundColor(Theme.getColor(Theme.key_inappPlayerBackground));
-        for (TextView text : new TextView[]{target, timer, pause, preview, send, discard}) {
-            text.setTextColor(Theme.getColor(Theme.key_inappPlayerTitle));
-            text.setEnabled(!state.finishing);
+        final int primary = Theme.getColor(Theme.key_inappPlayerPerformer, resourcesProvider);
+        target.setTextColor(primary);
+        timer.setTextColor(Theme.getColor(Theme.key_inappPlayerTitle, resourcesProvider));
+        target.setTypeface(AndroidUtilities.bold());
+        for (ImageView icon : new ImageView[]{pause, send, discard}) {
+            final int color = Theme.getColor(icon == discard ? Theme.key_inappPlayerClose : Theme.key_inappPlayerPlayPause, resourcesProvider);
+            icon.setColorFilter(new PorterDuffColorFilter(color, PorterDuff.Mode.MULTIPLY));
+            icon.setBackground(Theme.createSelectorDrawable(color & 0x19ffffff, 1, AndroidUtilities.dp(14)));
+            icon.setEnabled(!state.finishing);
         }
+        playPause.setColor(Theme.getColor(Theme.key_inappPlayerPlayPause, resourcesProvider));
+        playPause.setPause(!state.paused, false);
         avatar(state);
         target.setText(PurpleRecordingDock.title());
-        timer.setText((state.paused ? "Ⅱ " : "● ") + android.text.format.DateUtils.formatElapsedTime(state.duration(SystemClock.elapsedRealtime()) / 1000));
+        timer.setText(android.text.format.DateUtils.formatElapsedTime(state.duration(SystemClock.elapsedRealtime()) / 1000));
         timer.setContentDescription(LocaleController.getString(state.round ? R.string.PurpleRecordingBinRound : R.string.PurpleRecordingVoice) + " " + timer.getText());
-        pause.setText(LocaleController.getString(state.paused ? R.string.PurpleRecordingResume : R.string.PurpleRecordingPause));
+        pause.setContentDescription(LocaleController.getString(state.paused ? R.string.PurpleRecordingResume : R.string.PurpleRecordingPause));
         boolean unavailable = PurpleRecordingDock.unavailable() && !DialogObject.isEncryptedDialog(state.dialog);
-        send.setText(LocaleController.getString(unavailable ? R.string.PurpleRecordingSendElsewhere : R.string.Send));
-        send.setContentDescription(send.getText());
-        int width = AndroidUtilities.dp(unavailable ? 100 : 44);
-        if (send.getLayoutParams().width != width) { send.getLayoutParams().width = width; send.requestLayout(); }
-        preview.setVisibility(getWidth() != 0 && getWidth() < AndroidUtilities.dp(420) ? GONE : VISIBLE);
-        waveform.setVisibility(unavailable && getWidth() < AndroidUtilities.dp(420) ? GONE : VISIBLE);
+        send.setContentDescription(LocaleController.getString(unavailable ? R.string.PurpleRecordingSendElsewhere : R.string.Send));
+        waveform.setVisibility(getWidth() != 0 && getWidth() < AndroidUtilities.dp(300) ? GONE : VISIBLE);
         waveform.invalidate();
     }
     @Override protected void onVisibilityChanged(View changedView, int visibility) {
