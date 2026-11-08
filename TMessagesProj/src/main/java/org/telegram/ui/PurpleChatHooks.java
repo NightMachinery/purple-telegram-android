@@ -608,17 +608,17 @@ final class PurpleChatHooks {
         return false;
     }
 
+    java.util.ArrayList<MessageObject> voicePlaylist(MessageObject start, boolean unread, long mergeDialog) {
+        return org.telegram.messenger.purple.PurpleVoicePlayback.playlist(start, chat.messages,
+                org.telegram.messenger.DialogObject.isEncryptedDialog(start.getDialogId()), unread, mergeDialog);
+    }
+
     /**
      * Whether {@code createVoiceMessagesPlaylist} leaves a message out of the
      * queue a manual play on {@code start} builds: your own messages, when the
      * play started on the other person's message in a one-to-one chat. See
      * {@link org.telegram.messenger.purple.PurpleVoiceQueue}.
      */
-    java.util.ArrayList<MessageObject> voicePlaylist(MessageObject start, boolean unread, long mergeDialog) {
-        return org.telegram.messenger.purple.PurpleVoicePlayback.playlist(start, chat.messages,
-                org.telegram.messenger.DialogObject.isEncryptedDialog(start.getDialogId()), unread, mergeDialog);
-    }
-
     boolean skipsInVoicePlaylist(MessageObject start, MessageObject candidate) {
         return org.telegram.messenger.purple.PurpleVoiceQueue.skipsInPlaylist(start, candidate);
     }

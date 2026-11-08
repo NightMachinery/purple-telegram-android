@@ -657,11 +657,6 @@ public class PurpleSettingsActivity extends UniversalFragment
         rebuild();
     }
 
-    /**
-     * The Seek step chooser (F9): 5, 10, 15 or 30 s, written as {@code
-     * [playback] seek_step}; the row shows the current step. After the write
-     * every live strip relabels its seek buttons at once.
-     */
     private CharSequence afterVoiceLabel(int mode) {
         return getString(mode == 0 ? R.string.PurpleAfterVoiceResume
                 : mode == 2 ? R.string.PurpleAfterVoiceAll : R.string.PurpleAfterVoiceUnheard);
@@ -676,6 +671,11 @@ public class PurpleSettingsActivity extends UniversalFragment
                 .setNegativeButton(getString(R.string.Cancel), null).create());
     }
 
+    /**
+     * The Seek step chooser (F9): 5, 10, 15 or 30 s, written as {@code
+     * [playback] seek_step}; the row shows the current step. After the write
+     * every live strip relabels its seek buttons at once.
+     */
     private void chooseSeekStep(PurpleWriter.Session session) {
         if (getParentActivity() == null) return;
         final int[] steps = org.telegram.messenger.purple.PurpleSeek.choices();
