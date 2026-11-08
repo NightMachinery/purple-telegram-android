@@ -71,8 +71,8 @@ public class View {
  public void bringToFront(){}
  public interface LayoutListener{void changed(View v,int l,int t,int r,int b,int ol,int ot,int or,int ob);}
  public void addOnLayoutChangeListener(LayoutListener l){}
- public static class Observer{public interface PreDraw{boolean run();}public void addOnPreDrawListener(PreDraw l){}}
- public Observer getViewTreeObserver(){return new Observer();}
+ public static class Observer{public interface PreDraw{boolean run();}PreDraw listener;public void addOnPreDrawListener(PreDraw l){listener=l;}}
+ private final Observer observer=new Observer();public Observer getViewTreeObserver(){return observer;}public void redraw(){if(observer.listener!=null)observer.listener.run();}
 }""")
     put('android/view/ViewGroup.java', """package android.view;
 import android.content.Context;import java.util.*;
@@ -117,6 +117,12 @@ public class LinearLayout extends ViewGroup {
     for name in ['blur3/BlurredBackgroundDrawableViewFactory','blur3/drawable/color/BlurredBackgroundColorProvider']:
         package,klass=name.rsplit('/',1)
         put('org/telegram/ui/Components/'+name+'.java','package org.telegram.ui.Components.'+package.replace('/','.')+';public interface '+klass+' {}')
+    put('org/telegram/ui/Components/PurpleRoundControls.java', """package org.telegram.ui.Components;
+import android.content.Context;import android.view.*;import android.widget.*;
+public class PurpleRoundControls extends LinearLayout {
+ public PurpleRoundControls(Context c,Runnable flip,Runnable pause,Object[] bg){super(c);View a=new View(c),b=new View(c);a.setOnClickListener(v->flip.run());b.setOnClickListener(v->pause.run());addView(a,new LayoutParams(48,48));addView(b,new LayoutParams(48,48));}
+ public void update(boolean paused){}
+}""")
     put('org/telegram/messenger/purple/PurpleCore.java', 'package org.telegram.messenger.purple;public class PurpleCore {public static int[] settings;public static int[] recordingSettings(){return settings;}}')
     put('org/telegram/messenger/purple/PurpleRecordingDock.java', 'package org.telegram.messenger.purple;public class PurpleRecordingDock {public static final PurpleRecordingDockState state=new PurpleRecordingDockState();}')
     put('org/telegram/ui/Components/HostCamera.java', """package org.telegram.ui.Components;

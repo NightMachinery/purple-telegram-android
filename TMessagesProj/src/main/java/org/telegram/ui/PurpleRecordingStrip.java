@@ -73,8 +73,8 @@ public final class PurpleRecordingStrip {
             return false;
         }
         if (recording == null) {
-            recording = new org.telegram.ui.PurpleRecordingStripView(strip.getContext());
-            strip.addView(recording, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP));
+            recording = new org.telegram.ui.PurpleRecordingStripView(strip.getContext(), resourcesProvider);
+            strip.addView(recording, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 36, Gravity.TOP));
         }
         recording.setVisibility(View.VISIBLE);
         recording.bringToFront();
@@ -112,7 +112,7 @@ public final class PurpleRecordingStrip {
     }
 
     public int height(int style, int stockHeight) {
-        return style == FragmentContextView.STYLE_AUDIO_PLAYER ? BUTTON_DP : stockHeight;
+        return style == FragmentContextView.STYLE_AUDIO_PLAYER && !docked() ? BUTTON_DP : stockHeight;
     }
 
     /** Runs after checkPlayer's title padding and speed visibility decisions, before measuring children. */

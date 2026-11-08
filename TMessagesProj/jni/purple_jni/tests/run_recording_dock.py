@@ -56,3 +56,5 @@ runpy.run_path(str(pathlib.Path(__file__).parent / 'recording/integration.py'))[
 runpy.run_path(str(pathlib.Path(__file__).parent / 'recording/bubble_routing.py'))['run'](root, args.output / 'bubble-routing')
 
 runpy.run_path(str(pathlib.Path(__file__).parent / 'recording/lifetime.py'))['run'](root, args.output / 'lifetime')
+
+runpy.run_path(str(pathlib.Path(__file__).parent / "recording/polish.py"))["run"](root, args.output / "polish")

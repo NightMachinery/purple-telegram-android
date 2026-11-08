@@ -11,13 +11,8 @@ package org.telegram.ui;
 import static org.telegram.messenger.LocaleController.getString;
 
 import android.app.Activity;
-import android.graphics.Outline;
-import android.media.MediaPlayer;
 import android.os.Bundle;
 import android.view.View;
-import android.view.ViewOutlineProvider;
-import android.widget.FrameLayout;
-import android.widget.VideoView;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.DialogObject;
@@ -36,7 +31,6 @@ import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.BulletinFactory;
-import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalAdapter;
 import org.telegram.ui.Components.UniversalFragment;
@@ -56,7 +50,7 @@ public class PurpleRecordingBinActivity extends UniversalFragment {
     private final List<PurpleRecordingEntry> items = new ArrayList<>();
     private boolean loaded;
     private final Runnable changed = this::reload;
-    private MediaPlayer player;
+    private final java.util.Map<String, PurpleRecordingBinRow> rows = new java.util.HashMap<>();
 
     @Override
     public boolean onFragmentCreate() {
@@ -68,7 +62,7 @@ public class PurpleRecordingBinActivity extends UniversalFragment {
     @Override
     public void onFragmentDestroy() {
         PurpleRecordingRegistry.removeListener(changed);
-        stopPlayer();
+        stopPlayers();
         super.onFragmentDestroy();
     }
 
@@ -91,6 +85,12 @@ public class PurpleRecordingBinActivity extends UniversalFragment {
 
     private void reload() {
         PurpleRecordingRegistry.bin(list -> {
+            java.util.Set<String> present = new java.util.HashSet<>();
+            for (PurpleRecordingEntry entry : list) present.add(entry.id);
+            rows.entrySet().removeIf(row -> {
+                if (present.contains(row.getKey())) return false;
+                row.getValue().stop(); return true;
+            });
             items.clear();
             items.addAll(list);
             loaded = true;
@@ -112,7 +112,13 @@ public class PurpleRecordingBinActivity extends UniversalFragment {
         }
         for (int i = 0; i < items.size() && ITEM_FIRST + i <= ITEM_LAST; i++) {
             final PurpleRecordingEntry e = items.get(i);
-            list.add(UItem.asButton(ITEM_FIRST + i, chatName(e), mark(e) + " · " + duration(e)));
+            PurpleRecordingBinRow row = rows.get(e.id);
+            if (row == null) {
+                row = new PurpleRecordingBinRow(getContext(), getResourceProvider(), e, chatName(e), mark(e),
+                        () -> showActions(e), () -> pauseOthers(e.id), () -> error(R.string.PurpleRecordingBinPlayFailed));
+                rows.put(e.id, row);
+            }
+            list.add(UItem.asFullyCustom(row));
         }
         list.add(UItem.asShadow(getString(R.string.PurpleRecordingBinInfo)));
     }
@@ -126,7 +132,8 @@ public class PurpleRecordingBinActivity extends UniversalFragment {
 
     @Override
     protected boolean onLongClick(UItem item, View view, int position, float x, float y) {
-        return false;
+        onClick(item, view, position, x, y);
+        return true;
     }
 
     // ---- What a row says ---------------------------------------------------------
@@ -175,7 +182,7 @@ public class PurpleRecordingBinActivity extends UniversalFragment {
         else if (PurpleRecordingEntry.RECOVERED.equals(e.state)) state = getString(R.string.PurpleRecordingBinRecovered);
         else state = getString(R.string.PurpleRecordingBinNotSent);
         final long when = e.startedAt != 0 ? e.startedAt : e.binnedAt * 1000;
-        return kind + " · " + state + " · " + LocaleController.formatDateAudio(when / 1000, true);
+        return kind + " · " + duration(e) + "\n" + LocaleController.formatDateAudio(when / 1000, true) + "\n" + state;
     }
 
     private static String duration(PurpleRecordingEntry e) {
@@ -200,6 +207,8 @@ public class PurpleRecordingBinActivity extends UniversalFragment {
             actions.add(() -> sendOriginal(e));
         }
         if (playable && !secret && !e.once) {
+            labels.add(getString(R.string.PurpleRecordingBinSendSaved));
+            actions.add(() -> sendSaved(e));
             labels.add(getString(R.string.PurpleRecordingSendElsewhere));
             actions.add(() -> sendElsewhere(e));
         }
@@ -216,55 +225,26 @@ public class PurpleRecordingBinActivity extends UniversalFragment {
     }
 
     private void play(PurpleRecordingEntry e) {
-        final Activity activity = getParentActivity();
-        if (activity == null || e.media == null) return;
-        stopPlayer();
-        if (!e.round()) {
-            try {
-                player = new MediaPlayer();
-                player.setDataSource(e.media);
-                player.setOnCompletionListener(mp -> stopPlayer());
-                player.prepare();
-                player.start();
-            } catch (Exception failure) {
-                stopPlayer();
-                error(R.string.PurpleRecordingBinPlayFailed);
-            }
-            return;
-        }
-        // A round plays in a small circle.
-        final FrameLayout frame = new FrameLayout(activity);
-        final VideoView video = new VideoView(activity);
-        final int size = AndroidUtilities.dp(240);
-        video.setOutlineProvider(new ViewOutlineProvider() {
-            @Override
-            public void getOutline(View view, Outline outline) {
-                outline.setOval(0, 0, view.getWidth(), view.getHeight());
-            }
-        });
-        video.setClipToOutline(true);
-        frame.addView(video, LayoutHelper.createFrame(240, 240, android.view.Gravity.CENTER));
-        final AlertDialog dialog = new AlertDialog.Builder(activity).setView(frame).create();
-        video.setOnErrorListener((mp, what, extra) -> {
-            dialog.dismiss();
-            error(R.string.PurpleRecordingBinPlayFailed);
-            return true;
-        });
-        video.setOnCompletionListener(mp -> dialog.dismiss());
-        video.setVideoPath(e.media);
-        video.start();
-        showDialog(dialog);
-        frame.setMinimumHeight(size);
+        PurpleRecordingBinRow row = rows.get(e.id);
+        if (row != null) row.toggle();
     }
 
-    private void stopPlayer() {
-        if (player != null) {
-            try {
-                player.release();
-            } catch (Exception ignored) {
-            }
-            player = null;
+    private void pauseOthers(String id) {
+        for (java.util.Map.Entry<String, PurpleRecordingBinRow> row : rows.entrySet()) {
+            if (!row.getKey().equals(id)) row.getValue().pause();
         }
+    }
+
+    private void stopPlayers() {
+        for (PurpleRecordingBinRow row : rows.values()) row.stop();
+    }
+
+    @Override
+    public void onPause() { stopPlayers(); super.onPause(); }
+
+    private void sendSaved(PurpleRecordingEntry entry) {
+        final long self = UserConfig.getInstance(currentAccount).getClientUserId();
+        PurpleRecordingSend.send(entry, currentAccount, self, 0, 0, false, this::sentResult);
     }
 
     /**

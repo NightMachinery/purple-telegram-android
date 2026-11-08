@@ -973,7 +973,10 @@
         "recording-dock:RETRY_IDENTITY_CHECKS": 46,
         "recording-dock:ROUND_ROUTING_CHECKS": 94,
         "recording-dock:RECORDING_LIFETIME_CHECKS": 13,
-        "recording-dock:RECORDING_STRIP_SCOPE_CHECKS": 6
+        "recording-dock:RECORDING_STRIP_SCOPE_CHECKS": 6,
+        "recording-dock:BIN_PLAYER_CHECKS": 24,
+        "recording-dock:RECORDING_MODE_CHECKS": 18,
+        "recording-dock:BIN_SOURCE_PINS": 5
       }
     },
     {

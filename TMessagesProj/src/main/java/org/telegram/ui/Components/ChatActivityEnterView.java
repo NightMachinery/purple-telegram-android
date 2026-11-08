@@ -897,12 +897,13 @@ public class ChatActivityEnterView extends FrameLayout implements
             if (delegate == null || parentActivity == null) {
                 return;
             }
+            recordAudioVideoRunnableStarted = false;
+            calledRecordRunnable = false;
             if (org.telegram.messenger.purple.PurpleRecordingDock.refuseStart()) return;
             delegate.onPreAudioVideoRecord();
             // Purple: see PurpleScreenTime#action
             org.telegram.messenger.purple.PurpleScreenTime.action(org.telegram.messenger.purple.PurpleScreenTime.ACTION_VOICE);
             calledRecordRunnable = true;
-            recordAudioVideoRunnableStarted = false;
             if (slideText != null) {
                 slideText.setAlpha(1.0f);
                 slideText.setTranslationY(0);

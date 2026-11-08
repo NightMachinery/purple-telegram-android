@@ -29,7 +29,7 @@ public class RetryIdentityBoundaryCases {
   check(source.isFile()&&Files.readAllBytes(source.toPath()).length==3,"source survives at "+step);
   if(step.equals("storage")){
    UserConfig.identity=9;MessagesStorage.immediate=true;RetryRoute.send(item,1,100,0,0,true,ok->{});
-   check(!PurpleRecordingRegistry.bin.contains(item.id),"failed ack releases ticket for authorized retry");
+   check(PurpleRecordingRegistry.bin.contains(item.id),"authorized retry retains bin copy");
   }
  }
  public static void main(String[] args)throws Exception{
@@ -37,7 +37,7 @@ public class RetryIdentityBoundaryCases {
   for(String step:new String[]{"ui","worker","copy","approval","pending","native","storage","ack"})changed(step,root);
   reset();UserConfig.identity=11;PurpleRecordingEntry item=new PurpleRecordingEntry();File source=new File(root,"alternate.mp4");Files.write(source.toPath(),new byte[]{7});item.media=source.getAbsolutePath();PurpleRecordingRegistry.bin.add(item.id);
   int sent=SendMessagesHelper.sends;RetryRoute.send(item,1,100,0,0,false,ok->{});
-  check(SendMessagesHelper.sends==sent+1&&SendMessagesHelper.sentUser==11,"explicit alternate retry binds selected identity");check(!PurpleRecordingRegistry.bin.contains(item.id),"actual queue ack removes alternate bin owner");check(source.isFile(),"alternate outgoing copy preserves source");
+  check(SendMessagesHelper.sends==sent+1&&SendMessagesHelper.sentUser==11,"explicit alternate retry binds selected identity");check(PurpleRecordingRegistry.bin.contains(item.id),"actual queue ack retains alternate bin owner");check(source.isFile(),"alternate outgoing copy preserves source");
   reset();UserConfig.active=false;PurpleRecordingRegistry.bin.add(item.id);sent=SendMessagesHelper.sends;RetryRoute.send(item,1,100,0,0,true,ok->{});check(SendMessagesHelper.sends==sent&&PurpleRecordingRegistry.bin.contains(item.id),"inactive original account rejected");
   System.out.println("RETRY_IDENTITY_CHECKS="+checks);
  }

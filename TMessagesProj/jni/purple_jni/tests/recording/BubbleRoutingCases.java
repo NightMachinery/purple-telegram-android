@@ -22,12 +22,17 @@ public final class BubbleRoutingCases {
     private static final class Surface {
         final FrameLayout root = new FrameLayout(new Context());
         final HostCamera camera;
+        final View overlay;
         int sends, deletes, resized;
         Surface(boolean v2, boolean paused) {
             dock();
             SharedSettings.roundVideoCamera2Enabled.value = v2;
             camera = (HostCamera) InstantCameraViewBase.create(root.getContext(), null, null, true);
             camera.paused = paused;
+            overlay = new View(root.getContext());
+            overlay.left = 400; overlay.top = 700; overlay.width = overlay.height = 280;
+            camera.addView(overlay);
+            PurpleRoundBubble.attachOverlay(camera, overlay);
             FrameLayout composer = new FrameLayout(root.getContext());
             composer.width = root.width = 1080;
             composer.height = root.height = 2400;
@@ -91,12 +96,21 @@ public final class BubbleRoutingCases {
         s.tap(1000, 2255); s.tap(80, 2255);
         check(s.sends == 1 && s.deletes == 1, "small outside passes native controls");
         LinearLayout controls = (LinearLayout) s.camera.getChildAt(s.camera.getChildCount() - 1);
+        check(controls.getChildAt(0).getWidth() == 48 && controls.getChildAt(1).getHeight() == 48, "48dp controls");
         float cx = controls.getX(), cy = controls.getY();
         s.tap(cx + 70, cy + 16);
         check(s.camera.pauses == 1 && s.camera.paused, "small pause control");
         check(PurpleRoundBubble.small(s.camera), "pause keeps small bubble");
         s.tap(cx + 20, cy + 16);
         check(s.camera.flips == 1 && PurpleRoundBubble.small(s.camera), "small flip control");
+        for (String update : new String[]{"pause", "flip", "resume"}) {
+            s.overlay.setScaleX(1); s.overlay.setScaleY(1); s.overlay.setTranslationX(0); s.overlay.setTranslationY(0);
+            s.camera.redraw();
+            View live = s.camera.getCameraContainer();
+            check(s.overlay.getScaleX() == live.getScaleX() && s.overlay.getScaleX() < 1, update + " placeholder stays small");
+            check(s.overlay.getX() == live.getX() && s.overlay.getY() == live.getY(), update + " placeholder follows bubble");
+            check(s.camera.getButtonsLayout().getVisibility() == View.INVISIBLE, update + " stock buttons stay hidden");
+        }
         int normal = s.camera.normalDispatches;
         s.camera.dispatchTouchEvent(event(MotionEvent.ACTION_DOWN, cx + 70, cy + 16));
         s.camera.dispatchTouchEvent(event(MotionEvent.ACTION_MOVE, cx + 200, cy - 50));
