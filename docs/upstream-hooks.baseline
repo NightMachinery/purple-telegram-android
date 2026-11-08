@@ -95,7 +95,7 @@ file TMessagesProj/src/main/java/org/telegram/ui/PhotoViewer.java 7 6 5
 file TMessagesProj/src/main/java/org/telegram/ui/ProfileActivity.java 17 13 14
 file TMessagesProj/src/main/java/org/telegram/ui/SecretMediaViewer.java 2 1 2
 file TMessagesProj/src/main/java/org/telegram/ui/SecretVoicePlayer.java 2 1 2
-file TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java 7 0 3
+file TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java 8 0 4
 file TMessagesProj/src/main/java/org/telegram/ui/Stories/DialogStoriesCell.java 8 5 4
 file TMessagesProj/src/main/java/org/telegram/ui/Stories/PeerStoriesView.java 2 2 1
 file TMessagesProj/src/main/java/org/telegram/ui/Stories/StoriesController.java 3 0 3

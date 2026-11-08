@@ -139,3 +139,28 @@ public class RoundControlsCases{
  controls.update(false);check(((PlayPauseDrawable)((ImageView)controls.getChildAt(1)).drawable).pause,"recording state shows pause");
  System.out.println("ROUND_CONTROLS_LAYOUT_CHECKS="+checks);}
 }''')
+    settings = (java/'ui/PurpleSettingsRow.java').read_text()
+    alignment = method(settings, '    public static void alignText(')
+    tag = re.search(r'    private static final int ALIGNMENT_TAG = [^;]+;', settings)[0]
+    put('SettingsAlignmentCases.java','''import android.content.Context;import android.view.*;import android.widget.TextView;import org.telegram.messenger.*;
+public class SettingsAlignmentCases{
+'''+tag+alignment+'''
+ static int checks;static void check(boolean b,String n){checks++;if(!b)throw new AssertionError(n);}
+ public static void main(String[] args){
+ for(boolean rtl:new boolean[]{false,true})for(String label:new String[]{"Purple Settings","عنوان","Mixed عنوان"}){
+ LocaleController.isRTL=rtl;TextView title=new TextView(new Context()),subtitle=new TextView(new Context());title.setText(label);subtitle.setText("Work عنوان");
+ title.setGravity(17);subtitle.setGravity(48);title.setTextAlignment(0);subtitle.setTextAlignment(4);title.setTextDirection(3);subtitle.setTextDirection(4);int titleGravity=title.getGravity(),subtitleGravity=subtitle.getGravity();
+ alignText(R.drawable.purple_settings,title,subtitle);
+ check((title.getGravity()&Gravity.HORIZONTAL_GRAVITY_MASK)==(rtl?Gravity.RIGHT:Gravity.LEFT)&&(subtitle.getGravity()&Gravity.HORIZONTAL_GRAVITY_MASK)==(title.getGravity()&Gravity.HORIZONTAL_GRAVITY_MASK),"locale gravity for Latin,Arabic,mixed labels");
+ check(title.getTextAlignment()==View.TEXT_ALIGNMENT_GRAVITY&&subtitle.getTextAlignment()==View.TEXT_ALIGNMENT_GRAVITY,"gravity owns physical label alignment");
+ check(title.getTextDirection()==3&&subtitle.getTextDirection()==4,"native text direction preserved");check(title.text.equals(label)&&subtitle.text.equals("Work عنوان"),"strings unchanged");
+ subtitle.setText("New preset");alignText(R.drawable.purple_settings,title,subtitle);check((subtitle.getGravity()&Gravity.HORIZONTAL_GRAVITY_MASK)==(title.getGravity()&Gravity.HORIZONTAL_GRAVITY_MASK),"dynamic subtitle uses same policy");
+ alignText(R.drawable.msg_actions,title,subtitle);check(title.getGravity()==titleGravity&&subtitle.getGravity()==subtitleGravity,"recycled stock row gravity restored");check(title.getTextAlignment()==0&&subtitle.getTextAlignment()==4,"native alignment restored");
+ check(title.getTag(ALIGNMENT_TAG)==null&&subtitle.getTag(ALIGNMENT_TAG)==null,"override state released");
+ }
+ System.out.println("SETTINGS_RTL_ALIGNMENT_CHECKS="+checks);}
+}''')
+    settings_cell = (java/'ui/SettingsActivity.java').read_text()
+    assert 'PurpleSettingsRow.alignText(icon, titleView, subtitleView);' in settings_cell
+    stock_text = (java/'ui/Cells/TextCell.java').read_text()
+    assert 'setGravity(LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT)' in stock_text

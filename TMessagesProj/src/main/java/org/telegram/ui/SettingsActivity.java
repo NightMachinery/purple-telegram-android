@@ -1255,6 +1255,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             titleView.setText(title);
             subtitleView.setVisibility((twoLines = !TextUtils.isEmpty(subtitle)) ? View.VISIBLE : View.GONE);
             subtitleView.setText(subtitle);
+            PurpleSettingsRow.alignText(icon, titleView, subtitleView);
             setValue(value);
             updateColors();
         }
