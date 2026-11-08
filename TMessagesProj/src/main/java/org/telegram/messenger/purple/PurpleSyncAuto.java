@@ -118,13 +118,14 @@ public final class PurpleSyncAuto {
             if (pickupIds.isEmpty() || pickup != null) return;
             pickup = () -> {
                 pickup = null;
+                PurpleSyncChatCore.Peer target = pickupChat;
                 int[] ids = pickupIds.stream().mapToInt(Integer::intValue).toArray();
                 pickupIds.clear();
                 boolean overflow = pickupOverflow;
                 pickupOverflow = false;
                 if (!ApplicationLoader.mainInterfacePaused && current() && enabledHint()
-                    && chat.equals(PurpleSyncChat.boundChat(opening.slot)))
-                    engine.chatUpdated(chat, ids, overflow);
+                    && target.equals(PurpleSyncChat.boundChat(opening.slot)))
+                    engine.chatUpdated(target, ids, overflow);
             };
             AndroidUtilities.runOnUIThread(pickup, 500);
         }
