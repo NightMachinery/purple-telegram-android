@@ -917,8 +917,8 @@
         "seekcore:MEDIA_SEEK_CORE_CHECKS": 38,
         "layout:MEDIA_STRIP_LAYOUT_CHECKS": 3000,
         "continuationcore:MEDIA_CONTINUATION_CORE_CHECKS": 60,
-        "media-playback:MEDIA_MIXED_QUEUE_CHECKS": 1900,
-        "media-playback:MEDIA_BUTTON_CHECKS": 6
+        "media-playback:MEDIA_MIXED_QUEUE_CHECKS": 4000,
+        "media-playback:MEDIA_BUTTON_CHECKS": 12
       }
     },
     {

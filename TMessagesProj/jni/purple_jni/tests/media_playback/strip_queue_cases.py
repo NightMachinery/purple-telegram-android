@@ -90,9 +90,9 @@ import java.util.*;import org.telegram.ui.*;import org.telegram.messenger.purple
 public class PortCases {
  static int checks;static void check(boolean b,String n){checks++;if(!b)throw new AssertionError(n);}
  static MessageObject msg(int id,long dialog,boolean out,boolean round){return new MessageObject(id,dialog,out,round);}
- static void queue(long dialog,boolean option,int mode,boolean resume,boolean music,boolean ownStart){
-  PurpleCore.on=option;PurpleCore.settings=mode|(resume?4:0);ChatActivity chat=new ChatActivity();MessageObject start=msg(10,dialog,ownStart,false);
-  MessageObject incomingRound=msg(11,dialog,false,true),ownVoice=msg(12,dialog,true,false),incomingVoice=msg(13,dialog,false,false),heardRound=msg(14,dialog,false,true),laterVoice=msg(15,dialog,false,false);heardRound.unread=false;
+ static void queue(long dialog,boolean option,int mode,boolean resume,boolean music,boolean ownStart,boolean roundStart){
+  PurpleCore.on=option;PurpleCore.settings=mode|(resume?4:0);ChatActivity chat=new ChatActivity();MessageObject start=msg(10,dialog,ownStart,roundStart);
+  MessageObject incomingRound=msg(11,dialog,false,true),ownVoice=msg(12,dialog,true,false),incomingVoice=msg(13,dialog,false,false),heardRound=msg(14,dialog,false,true),laterVoice=msg(15,dialog,false,false);heardRound.unread=false;ownVoice.unread=false;
   chat.messages.addAll(Arrays.asList(laterVoice,heardRound,incomingVoice,ownVoice,incomingRound,start));
   ArrayList<MessageObject> list=chat.createVoiceMessagesPlaylist(start,false);
   boolean confined=option&&dialog==42&&!ownStart;
@@ -100,6 +100,7 @@ public class PortCases {
   if(mode==1)expected.addAll(Arrays.asList(incomingRound,incomingVoice));
   if(mode==2){expected.add(incomingRound);if(!confined)expected.add(ownVoice);expected.addAll(Arrays.asList(incomingVoice,heardRound,laterVoice));}
   check(list.equals(expected),"mode "+mode+" mixed queue "+dialog+option+ownStart);
+  PurpleCore.settings=(2-mode)|(resume?0:4);
   MediaController c=MediaController.instance;MessageObject track=music?msg(50,99,false,false):null;if(track!=null)track.music=true;c.setup(list,track);
   for(int i=1;i<list.size();i++){c.complete();check(c.playingMessageObject==list.get(i),"next mixed message plays "+i);check(!c.paused,"next message playing");if(music)check(c.playlist.contains(track),"interrupted music list preserved");}
   c.complete();check(c.playingMessageObject==track,"queue end returns music or stops");
@@ -119,7 +120,8 @@ public class PortCases {
  }
  static void buttons(){
   MusicPlayerReceiver r=new MusicPlayerReceiver();MediaController c=MediaController.instance;c.playingMessageObject=msg(10,42,false,false);
-  for(int key:new int[]{android.view.KeyEvent.KEYCODE_HEADSETHOOK,android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE}){
+  for(boolean music:new boolean[]{false,true})for(int key:new int[]{android.view.KeyEvent.KEYCODE_HEADSETHOOK,android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE}){
+   c.playingMessageObject.music=music;
    c.paused=false;android.content.Intent intent=new android.content.Intent();intent.extras.value=new android.view.KeyEvent(0,key);r.onReceive(null,intent);check(c.paused,"down pauses "+key);
    intent.extras.value=new android.view.KeyEvent(1,key);r.onReceive(null,intent);check(c.paused,"up does not toggle twice "+key);
    intent.extras.value=new android.view.KeyEvent(0,key);r.onReceive(null,intent);check(!c.paused,"next down plays "+key);
@@ -127,7 +129,7 @@ public class PortCases {
  }
  public static void main(String[] args){
   geometry();System.out.println("MEDIA_STRIP_LAYOUT_CHECKS="+checks);checks=0;
-  for(long dialog:new long[]{42,-42,-43,1})for(boolean on:new boolean[]{false,true})for(int mode:new int[]{0,1,2})for(boolean resume:new boolean[]{false,true})for(boolean music:new boolean[]{false,true})for(boolean own:new boolean[]{false,true})queue(dialog,on,mode,resume,music,own);
+  for(long dialog:new long[]{42,-42,-43,1})for(boolean on:new boolean[]{false,true})for(int mode:new int[]{0,1,2})for(boolean resume:new boolean[]{false,true})for(boolean music:new boolean[]{false,true})for(boolean own:new boolean[]{false,true})for(boolean round:new boolean[]{false,true})queue(dialog,on,mode,resume,music,own,round);
   System.out.println("MEDIA_MIXED_QUEUE_CHECKS="+checks);checks=0;buttons();System.out.println("MEDIA_BUTTON_CHECKS="+checks);
  }
 }'''
