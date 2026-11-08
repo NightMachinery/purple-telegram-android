@@ -943,6 +943,69 @@ public final class PurpleSyncAutoCases {
             p.frame.unchangedA();p.engine.close();
         }
     }
+    static void adapterPickup(File parent) throws Exception {
+        PurpleArchiveLogin.Source source = PurpleArchiveLogin.source;
+        java.lang.reflect.Field accountsField = PurpleSyncChat.class.getDeclaredField("accounts");
+        accountsField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<Integer, PurpleSyncChat.Holder> accounts = (Map<Integer, PurpleSyncChat.Holder>) accountsField.get(null);
+        java.lang.reflect.Field last = PurpleSyncMagicChat.class.getDeclaredField("last");
+        last.setAccessible(true);
+        PurpleArchiveLogin.source = slot -> "00000000000000000000000000000001";
+        try {
+            for (String kind : new String[]{"control", "own-last", "own-only", "transient", "overflow", "binding"}) {
+                Port p = bound(parent, "adapter-pickup-" + kind);
+                try {
+                    initialPublish(p);
+                    PurpleSyncChat.Holder holder = new PurpleSyncChat.Holder(new PurpleSyncChat.Platform(1));
+                    last.set(holder.magic, new PurpleSyncMagicChat.Result(PurpleSyncMagicChat.Result.Kind.Use,
+                        PurpleSyncChatCore.Peer.self(), PurpleSyncMagicCore.Problem.None, false, 0, true, false, false));
+                    accounts.put(1, holder);
+                    check(PurpleSyncChatCore.Peer.self().equals(PurpleSyncChat.boundChat(1)), "adapter has a real cached typed binding");
+                    int own = new JSONObject(Files.readString(new File(p.frame.sync(1), "state.json").toPath()))
+                        .getJSONArray("own_messages").getJSONObject(0).getInt("message_id");
+                    p.testingBackoff = true;
+                    if (kind.equals("transient")) p.transientAt = (p.clock + 60) * 1000;
+                    else p.exceptionBackoff = new long[]{1, p.clock + 60};
+                    int before = p.checks;
+                    int[] first = kind.equals("own-only") ? new int[]{own} : new int[]{own + 1000};
+                    if (kind.equals("overflow")) {
+                        first = new int[129];
+                        for (int i = 0; i < first.length; ++i) first[i] = own + 1000 + i;
+                    }
+                    p.engine.chatUpdated(PurpleSyncChatCore.Peer.self(), first, false);
+                    if (!kind.equals("control")) p.engine.chatUpdated(PurpleSyncChatCore.Peer.self(), new int[]{own}, false);
+                    check(p.checks == before && p.delay == 60000, "adapter preserves wait deadline " + kind);
+                    java.lang.reflect.Field ids = PurpleSyncAutoEngine.class.getDeclaredField("pickupIds");
+                    ids.setAccessible(true);
+                    java.lang.reflect.Field overflow = PurpleSyncAutoEngine.class.getDeclaredField("pickupOverflow");
+                    overflow.setAccessible(true);
+                    check(((int[]) ids.get(p.engine)).length <= 128, "adapter pending ids stay bounded " + kind);
+                    if (kind.equals("overflow")) check(overflow.getBoolean(p.engine), "adapter overflow survives later own-only batch");
+                    if (kind.equals("binding")) {
+                        last.set(holder.magic, new PurpleSyncMagicChat.Result(PurpleSyncMagicChat.Result.Kind.Use,
+                            PurpleSyncChatCore.Peer.of(PurpleSyncChatCore.PeerKind.Channel, 99), PurpleSyncMagicCore.Problem.None, false, 0, true, false, false));
+                        p.engine.chatUpdated(PurpleSyncChatCore.Peer.of(PurpleSyncChatCore.PeerKind.Channel, 99), new int[]{own}, false);
+                        check(Arrays.equals((int[]) ids.get(p.engine), new int[]{own}) && !overflow.getBoolean(p.engine),
+                            "binding replacement discards earlier typed-chat ids and overflow");
+                    } else {
+                        p.clock += 60;
+                        p.fireRetry();
+                        check(kind.equals("own-only") ? p.checks == before : p.checks > before,
+                            "real adapter retains external pickup and suppresses own-only " + kind);
+                    }
+                    p.engine.close();
+                    check(ids.get(p.engine) == null && !overflow.getBoolean(p.engine), "closing the session clears pending adapter intent");
+                } finally {
+                    p.engine.close();
+                    accounts.clear();
+                }
+            }
+        } finally {
+            accounts.clear();
+            PurpleArchiveLogin.source = source;
+        }
+    }
     static void chatPickup(File parent) throws Exception {
         Port p = bound(parent, "chat-pickup");
         initialPublish(p);
@@ -985,6 +1048,7 @@ public final class PurpleSyncAutoCases {
         int before = PurpleModernSyncCases.checks;
         PurpleSyncManagedReadCases.run();
         chatPickup(parent);
+        adapterPickup(parent);
         transientWrite(parent);
         defaults(parent);
         publishAndEdit(parent);

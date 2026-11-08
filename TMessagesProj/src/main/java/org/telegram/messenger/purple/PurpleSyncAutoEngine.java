@@ -2,6 +2,7 @@ package org.telegram.messenger.purple;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.UUID;
 import java.util.function.BooleanSupplier;
 import org.json.JSONArray;
@@ -180,15 +181,31 @@ final class PurpleSyncAutoEngine {
     private int[] pickupIds;
     private boolean pickupOverflow;
     void chatUpdated(PurpleSyncChatCore.Peer chat, int[] ids, boolean overflow) {
-        int[] copy = ids.clone();
+        int[] copy = Arrays.copyOf(ids, Math.min(128, ids.length));
+        boolean truncated = overflow || ids.length > copy.length;
         port.queue(() -> {
-            if (!chat.equals(PurpleSyncChat.boundChat(account.account))) return;
+            PurpleSyncChatCore.Peer bound = PurpleSyncChat.boundChat(account.account);
+            if (!current() || pickupChat != null && !pickupChat.equals(bound)) clearPickupBatch();
+            if (!current() || !chat.equals(bound)) return;
+            if (!chat.equals(pickupChat)) clearPickupBatch();
             pickupChat = chat;
-            pickupIds = copy;
-            pickupOverflow = overflow;
+            LinkedHashSet<Integer> merged = new LinkedHashSet<>();
+            if (pickupIds != null) for (int id : pickupIds) merged.add(id);
+            for (int id : copy) {
+                if (id <= 0) continue;
+                if (merged.size() < 128) merged.add(id);
+                else if (!merged.contains(id)) pickupOverflow = true;
+            }
+            pickupIds = merged.stream().mapToInt(Integer::intValue).toArray();
+            pickupOverflow |= truncated;
             transition(PurpleSyncAutoCore.Event.ChatUpdated, null, null,
                 PurpleSyncAutoCore.Outcome.Inventory, null, null);
         });
+    }
+    private void clearPickupBatch() {
+        pickupIds = null;
+        pickupOverflow = false;
+        if (waitingTrigger == PurpleSyncAutoCore.Event.ChatUpdated) waitingTrigger = null;
     }
     void enabled(boolean value, BooleanSupplier admitted) {
         if (!value) {
@@ -223,10 +240,13 @@ final class PurpleSyncAutoEngine {
     }
     void close() {
         closed = true;
+        clearPickupBatch();
+        pickupChat = null;
         port.cancelRetry();
         end();
     }
     private void idle() {
+        if (pickupChat != null && !pickupChat.equals(PurpleSyncChat.boundChat(account.account))) clearPickupBatch();
         PurpleSyncAutoCore.Event toggle = waitingToggle, trigger = waitingTrigger;
         byte[] saved = waitingSave;
         BooleanSupplier toggleAdmission = waitingToggleAdmission;
@@ -365,8 +385,14 @@ final class PurpleSyncAutoEngine {
         if (!toggleAdmission.getAsBoolean())
             return;
         if (!current()) {
+            clearPickupBatch();
             end();
             return;
+        }
+        if (event == PurpleSyncAutoCore.Event.Disable) clearPickupBatch();
+        if (pickupChat != null && !pickupChat.equals(PurpleSyncChat.boundChat(account.account))) {
+            clearPickupBatch();
+            if (event == PurpleSyncAutoCore.Event.ChatUpdated) return;
         }
         if (opening != null && !opening.effects()) {
             port.status(null, PurpleSyncAutoCore.Reason.StateChanged);
@@ -375,6 +401,7 @@ final class PurpleSyncAutoEngine {
         }
         if (event != PurpleSyncAutoCore.Event.Enable && event != PurpleSyncAutoCore.Event.Disable
             && !port.enabledHint()) {
+            clearPickupBatch();
             end();
             return;
         }
@@ -470,10 +497,10 @@ final class PurpleSyncAutoEngine {
                     return;
                 }
                 facts = snapshot(store);
-                if (event == PurpleSyncAutoCore.Event.ChatUpdated && pickupIds != null) {
+                if (event == PurpleSyncAutoCore.Event.ChatUpdated && pickupChat != null) {
                     PurpleSyncChatCore.Peer bound = PurpleSyncChat.boundChat(account.account);
                     boolean needed = bound != null && bound.equals(pickupChat)
-                        && (pickupOverflow || PurpleSyncAutoCore.pickupNative(facts.state, bound.token(), pickupChat.token(), pickupIds, account.userId));
+                        && (pickupOverflow || pickupIds != null && PurpleSyncAutoCore.pickupNative(facts.state, bound.token(), pickupChat.token(), pickupIds, account.userId));
                     pickupIds = null;
                     pickupOverflow = false;
                     if (!needed) {
