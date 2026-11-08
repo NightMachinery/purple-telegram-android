@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import subprocess
 import importlib.util
+import re
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--receipt', type=Path, required=True)
@@ -150,3 +151,16 @@ assert controller.count('PurpleVoicePlayback.advance(') == 2
 assert 'if (org.telegram.messenger.purple.PurpleVoicePlayback.restorePaused()) pauseMessage(messageObject, false);' in controller
 assert 'PurpleVoicePlayback.keepsMusic(savedMusicPlaylistState != null, messageObject)' in controller
 assert 'if (purplePlaylist != null) return purplePlaylist;' in hooked['ui/ChatActivity.java'].read_text()
+
+settings = (java / 'ui/PurpleSettingsActivity.java').read_text()
+rows = re.findall(r'private static final int (ROW_\w+) = (0x[0-9a-fA-F]+|[0-9]+);', settings)
+row_values = [int(value, 0) for name, value in rows]
+assert len(row_values) == len(set(row_values)), 'settings row ids collide'
+settings_checks = len(rows)
+for route in ['case ROW_AFTER_VOICE:', 'case ROW_RESUME_MUSIC:',
+              '"playback", "after_voice"', '"playback", "resume_music_after_voice_p"',
+              'UItem.asButton(ROW_AFTER_VOICE', 'UItem.asCheck(ROW_RESUME_MUSIC']:
+    assert route in settings, route
+    settings_checks += 1
+(args.output / 'settings.log').write_text('MEDIA_PLAYBACK_SETTINGS_CHECKS=%d\n' % settings_checks)
+print('MEDIA_PLAYBACK_SETTINGS_CHECKS=%d' % settings_checks)

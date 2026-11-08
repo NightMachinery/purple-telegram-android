@@ -91,8 +91,8 @@ public class PurpleSettingsActivity extends UniversalFragment
     private static final int ROW_VOICE_QUEUE = 0x70750027;
     /** F9's step chooser, first of the media recording block 0x70750500-0x7075050f. */
     private static final int ROW_SEEK_STEP = 0x70750500;
-    private static final int ROW_AFTER_VOICE = 0x70750501;
-    private static final int ROW_RESUME_MUSIC = 0x70750502;
+    private static final int ROW_AFTER_VOICE = 0x7075050a;
+    private static final int ROW_RESUME_MUSIC = 0x7075050b;
     /** F10: the Media recording screen and the Recording bin. */
     private static final int ROW_MEDIA_RECORDING = 0x70750501;
     private static final int ROW_RECORDING_BIN = 0x70750502;
