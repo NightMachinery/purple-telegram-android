@@ -37,20 +37,20 @@ public final class PurpleRecordingStripView extends LinearLayout {
     private long avatarDialog = Long.MIN_VALUE;
     private int avatarAccount = -1;
     private boolean avatarHidden;
+    private Boolean layoutRtl;
     private final Runnable tick = this::refresh;
 
     public PurpleRecordingStripView(Context context, Theme.ResourcesProvider resourcesProvider) {
         super(context);
         this.resourcesProvider = resourcesProvider;
         setOrientation(HORIZONTAL);
-        setLayoutDirection(LocaleController.isRTL ? LAYOUT_DIRECTION_RTL : LAYOUT_DIRECTION_LTR);
-        setPaddingRelative(AndroidUtilities.dp(7), 0, AndroidUtilities.dp(4), 0);
+        setLayoutDirection(LAYOUT_DIRECTION_LTR);
         setGravity(Gravity.CENTER_VERTICAL);
         setClickable(true);
         avatar = new BackupImageView(context);
         avatar.setRoundRadius(AndroidUtilities.dp(14));
         LayoutParams avatarBounds = new LayoutParams(AndroidUtilities.dp(28), AndroidUtilities.dp(28));
-        avatarBounds.setMarginEnd(AndroidUtilities.dp(7));
+        avatarBounds.rightMargin = AndroidUtilities.dp(7);
         addView(avatar, avatarBounds);
         avatar.setOnClickListener(v -> PurpleRecordingDock.open());
         target = button(context, "", PurpleRecordingDock::open);
@@ -58,6 +58,7 @@ public final class PurpleRecordingStripView extends LinearLayout {
         addView(target, new LayoutParams(0, -1, 1));
         timer = button(context, "", PurpleRecordingDock::open);
         timer.setTextSize(13);
+        timer.setTextDirection(TEXT_DIRECTION_LTR);
         addView(timer, new LayoutParams(AndroidUtilities.dp(56), -1));
         timer.setOnLongClickListener(v -> { PurpleRecordingDock.preview(generation); return true; });
         waveform = new View(context) {
@@ -88,7 +89,7 @@ public final class PurpleRecordingStripView extends LinearLayout {
         });
         discard.setImageResource(R.drawable.miniplayer_close);
         discard.setContentDescription(LocaleController.getString(R.string.DiscardVoiceMessageAction));
-
+        updateLocaleLayout();
     }
     private ImageView icon(Context context, Runnable action) {
         ImageView view = new ImageView(context);
@@ -99,11 +100,34 @@ public final class PurpleRecordingStripView extends LinearLayout {
     }
     private TextView button(Context context, String text, Runnable action) {
         TextView view = new TextView(context);
-        view.setText(text); view.setTextSize(15); view.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
+        view.setText(text); view.setTextSize(15); view.setGravity(Gravity.CENTER_VERTICAL | Gravity.LEFT);
+        view.setTextAlignment(TEXT_ALIGNMENT_GRAVITY);
         view.setSingleLine(true); view.setEllipsize(TextUtils.TruncateAt.END);
         view.setOnClickListener(v -> action.run());
         return view;
     }
+    private void updateLocaleLayout() {
+        boolean rtl = LocaleController.isRTL;
+        if (layoutRtl != null && layoutRtl == rtl) return;
+        setPadding(AndroidUtilities.dp(rtl ? 4 : 7), 0, AndroidUtilities.dp(rtl ? 7 : 4), 0);
+        LayoutParams bounds = (LayoutParams) avatar.getLayoutParams();
+        bounds.leftMargin = AndroidUtilities.dp(rtl ? 7 : 0);
+        bounds.rightMargin = AndroidUtilities.dp(rtl ? 0 : 7);
+        target.setGravity(Gravity.CENTER_VERTICAL | (rtl ? Gravity.RIGHT : Gravity.LEFT));
+        View[] order = {avatar, target, timer, waveform, pause, send, discard};
+        removeAllViews();
+        for (int i = 0; i < order.length; i++) {
+            View child = order[rtl ? order.length - 1 - i : i];
+            addView(child, child.getLayoutParams());
+        }
+        layoutRtl = rtl;
+    }
+
+    @Override protected void onMeasure(int widthSpec, int heightSpec) {
+        updateLocaleLayout();
+        super.onMeasure(widthSpec, heightSpec);
+    }
+
     private void avatar(PurpleRecordingDockState state) {
         boolean hidden = PurpleGate.hiddenEverywhere(state.account, state.dialog);
         if (state.dialog == avatarDialog && state.account == avatarAccount && hidden == avatarHidden) return;
@@ -121,6 +145,7 @@ public final class PurpleRecordingStripView extends LinearLayout {
         avatar.setContentDescription(PurpleRecordingDock.title());
     }
     public void refresh() {
+        updateLocaleLayout();
         PurpleRecordingDockState state = PurpleRecordingDock.state;
         generation = state.generation;
         removeCallbacks(tick);

@@ -352,7 +352,14 @@ are invisible; leaving recording restores their native visibility. Its
 transparent surface keeps
 ChatActivityTopPanelLayout's existing glass background, rounded clipping and
 shadow. The avatar has a 7dp start inset and gap. The title can ellipsize while
-the timer and actions retain their widths, with mirrored placement for RTL.
+the timer and actions retain their widths. RTL mirrors the stock player's
+physical ordering: Discard and Send move to the left, followed by Pause, waveform,
+timer, title and the right-inset avatar. The avatar's 7dp gap stays next to the
+title. Child ordering and physical margins are explicit because the app disables
+framework RTL layout. The existing view updates them on refresh and measurement
+after a locale change; it preserves all child instances and handlers. Title
+alignment uses TextCell's locale-based RIGHT/LEFT policy without changing bidi
+content. The timer retains left-to-right digits and text direction.
 
 Minimized rounds reuse the native camera's BlurredBackgroundDrawableViewFactory,
 6dp padding and 21dp radius for their controls, with 48dp button targets and the
@@ -413,3 +420,10 @@ The bin constructor ports cover Latin, Arabic and mixed metadata in both locales
 and locale changes on the same row, including physical text anchors, overflow
 order and unchanged numerical seek/time direction. These are source contracts;
 real Arabic glyph shaping and rendered row alignment need a device comparison.
+
+The recording-strip constructor ports compile the complete production view over
+inert Android boundaries, with no automatic framework RTL mirroring. They check
+physical child order, insets, avatar gap, retained dimensions, long Latin/Arabic/
+mixed titles, and repeated locale changes while active and inactive. They do not
+render Android views; the final combined tree still needs canonical checks, an
+APK and stock-versus-recording-strip screenshots in both locales.
