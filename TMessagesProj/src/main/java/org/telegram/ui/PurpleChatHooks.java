@@ -211,7 +211,7 @@ final class PurpleChatHooks {
             }
         } else if (id == DOWNLOAD_PINNED_MUSIC) {
             PurplePinnedMusic.show(chat, chat.getCurrentAccount(), chat.getDialogId(),
-                    chat.getTopicId(), chat.mergeDialogId);
+                    chat.getTopicId(), chat.getMergeDialogId());
         } else if (id == KEEP_MEDIA) {
             showKeepMedia();
         } else if (id == CHAT_STORAGE) {
@@ -330,7 +330,7 @@ final class PurpleChatHooks {
     private void openPinnedMusicList() {
         final long topicId = chat.getTopicId();
         chat.presentFragment(new PurplePinnedMusicList(chat, chat.getDialogId(), topicId,
-                topicId == 0 ? chat.mergeDialogId : 0));
+                topicId == 0 ? chat.getMergeDialogId() : 0));
     }
 
     // ---- keep media and chat storage -----------------------------------------
@@ -392,7 +392,7 @@ final class PurpleChatHooks {
         }
         final Bundle args = new Bundle();
         args.putLong("dialog_id", chat.getDialogId());
-        args.putLong("merge_dialog_id", chat.mergeDialogId);
+        args.putLong("merge_dialog_id", chat.getMergeDialogId());
         chat.presentFragment(new CacheControlActivity(args));
     }
 
