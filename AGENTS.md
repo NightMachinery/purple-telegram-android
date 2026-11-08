@@ -157,6 +157,24 @@ during the run, and `UNVERIFIED` when a populated submodule does not match its
 gitlink or cannot be checked. The exit status is 0 for a clean full pass, 3 for
 a clean partial one, and 1 otherwise.
 
+## GUI and device testing
+
+The desktop guide's rules apply here too (tdesktop `docs/purple/agents.md`,
+"GUI and device testing" and "Sharing the build machine"). In short: every
+visible UI change reuses a named stock component, and its device pass puts the
+Purple surface beside the nearest stock equivalent in the same app, in light and
+dark, with long titles and one right-to-left check. Android specifics:
+
+- Run visual passes on the emulator with `adb install -r`, keeping data. Never
+  restart the ADB server or the emulator.
+- With a right-to-left app language, a label such as "−10" renders as "10−"
+  unless it is isolated as left-to-right text.
+- A sparse checkout can leave tracked build inputs out (an `.aar` under
+  `TMessagesProj/libs` once stopped APK packaging). Materialize every tracked
+  input a build reads, and verify submodule contents against their pinned
+  commits before trusting a build receipt.
+- Keep worktrees on the scratch volume, never in a folder the owner empties.
+
 ## Release handoff
 
 Private build-machine notes live in the private purple-build repo; when it is cloned at ~/.purple-build, see ~/.purple-build/readme.md.
