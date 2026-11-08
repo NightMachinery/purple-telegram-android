@@ -975,7 +975,7 @@ public final class PurpleSyncAutoCases {
         p.clock += 90;
         p.fireRetry();
         check(p.checks > before, "pickup retained until transient wait expires");
-        p.engine.enabled(false);
+        p.engine.enabled(false, () -> true);
         before = p.checks;
         p.engine.event(PurpleSyncAutoCore.Event.ChatUpdated);
         check(p.checks == before, "disabled automatic sync ignores chat update");
