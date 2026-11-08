@@ -7423,6 +7423,10 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
         savedMusicPlaylistState = null;
     }
 
+    public boolean purpleHasInterruptedMusic() {
+        return savedMusicPlaylistState != null;
+    }
+
     private boolean saveMusicPlaylistStateIfNeeded() {
         if (playingMessageObject != null && playingMessageObject.isMusic() && !playlist.isEmpty()) {
             savedMusicPlaylistState = new SavedMusicPlaylistState(playingMessageObject);

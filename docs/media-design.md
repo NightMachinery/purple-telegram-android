@@ -715,3 +715,7 @@ Agent-days including host tests, excluding build and GUI time.
    - Option A (recommended): as designed, 200% = 480px with the softness note.
    - Option B: cap at the bubble limit of 430px (about 1.8×). This drops one hook and looks slightly
      sharper, but it does not honour "twice as big".
+
+## Queues without interrupted music
+
+After-voice settings apply only when a manual voice or round start interrupts a saved music playlist. Without saved music, all following eligible voice and round messages play, including heard messages. The private-chat ownership switch still applies. The chooser explains that scope; the host queue matrix covers each policy with and without interrupted music. `MediaController.purpleHasInterruptedMusic()` exposes only the saved-playlist predicate to the Purple queue builder.

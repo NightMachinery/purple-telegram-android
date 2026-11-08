@@ -1109,6 +1109,7 @@
     <string name="PurpleRecordingNotificationHint">Allow notifications to control recordings from the lock screen</string>
     <string name="PurpleRecordingSendUnavailable">Sending is unavailable in this chat right now. The recording is kept.</string>
     <string name="PurpleAfterVoice">After a voice message</string>
+    <string name="PurpleAfterVoiceInfo">When a voice or video message interrupts music, choose what plays before returning to the music. Without interrupted music, all following voice and video messages play, including ones already heard.</string>
     <string name="PurpleAfterVoiceResume">Resume music</string>
     <string name="PurpleAfterVoiceUnheard">Play unheard, then resume music</string>
     <string name="PurpleAfterVoiceAll">Play all following, then resume music</string>
