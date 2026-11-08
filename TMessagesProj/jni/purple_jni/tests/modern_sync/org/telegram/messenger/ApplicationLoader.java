@@ -1,6 +1,7 @@
 package org.telegram.messenger;
 import java.io.File;
 public final class ApplicationLoader {
+    public static volatile boolean mainInterfacePaused;
     public static boolean androidTestEnvironment=true;
     public static boolean isAndroidTestEnvironment(){return androidTestEnvironment;}
     public static File files;
