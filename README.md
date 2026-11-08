@@ -2349,3 +2349,5 @@ See [capture and history](docs/archive-capture.md) and
 The per-account settings sync screen uses Magic Purple Sync: a private group found from the account's chat lists, with automatic sync, manual Check and one-time first-use choices. Dormant search, mark, setup and carry controllers have been removed. See [Magic Purple Sync](docs/sync-chat.md) and [automatic sync](docs/sync-auto.md) for scope and host qualification.
 
 The [recording controls and bin player](docs/recording-continuity.md#recording-controls-and-bin-playback) use native media controls, inline round previews and source-preserving sends.
+
+Settings sync picks up delivered chat updates while the app is open; see [pickup and delivery limits](docs/sync-chat.md).

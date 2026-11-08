@@ -176,6 +176,17 @@ final class PurpleSyncAutoEngine {
         }
         port.queue(() -> transition(event, saved, null, PurpleSyncAutoCore.Outcome.Inventory, null, null));
     }
+    private PurpleSyncChatCore.Peer pickupChat;
+    private int[] pickupIds;
+    void chatUpdated(PurpleSyncChatCore.Peer chat, int[] ids) {
+        int[] copy = ids.clone();
+        port.queue(() -> {
+            pickupChat = chat;
+            pickupIds = copy;
+            transition(PurpleSyncAutoCore.Event.ChatUpdated, null, null,
+                PurpleSyncAutoCore.Outcome.Inventory, null, null);
+        });
+    }
     void enabled(boolean value, BooleanSupplier admitted) {
         if (!value) {
             port.enabledHint(false);
@@ -366,7 +377,8 @@ final class PurpleSyncAutoEngine {
         }
         long[] backoff = port.backoff();
         if ((event == PurpleSyncAutoCore.Event.SessionReady || event == PurpleSyncAutoCore.Event.Foreground
-                || event == PurpleSyncAutoCore.Event.Unlock || event == PurpleSyncAutoCore.Event.Retry)
+                || event == PurpleSyncAutoCore.Event.Unlock || event == PurpleSyncAutoCore.Event.Retry
+                || event == PurpleSyncAutoCore.Event.ChatUpdated)
             && backoff[0] > 0 && port.now() < backoff[1]) {
             // A pass that is not a real change waits out the backoff, across restarts too.
             end();
@@ -396,7 +408,7 @@ final class PurpleSyncAutoEngine {
                 } else if (event == PurpleSyncAutoCore.Event.LocalSaved)
                     waitingSave = saved != null ? saved.clone() : null;
                 else {
-                    waitingTrigger = event;
+                    if (waitingTrigger != PurpleSyncAutoCore.Event.ChatUpdated) waitingTrigger = event;
                     waitingRetry = expectedRetry;
                 }
                 PurpleSyncOperations.whenIdle(operationKey(), this, () -> port.queue(this::idle));
@@ -453,6 +465,16 @@ final class PurpleSyncAutoEngine {
                     return;
                 }
                 facts = snapshot(store);
+                if (event == PurpleSyncAutoCore.Event.ChatUpdated && pickupIds != null) {
+                    PurpleSyncChatCore.Peer bound = PurpleSyncChat.boundChat(account.account);
+                    boolean needed = bound != null && pickupChat != null
+                        && PurpleSyncAutoCore.pickupNative(facts.state, bound.token(), pickupChat.token(), pickupIds, account.userId);
+                    pickupIds = null;
+                    if (!needed) {
+                        if (running.isEmpty()) end();
+                        return;
+                    }
+                }
                 boolean pendingAuthority = !record.value.optString("record").isEmpty()
                     || !record.value.optString("expectedState").isEmpty();
                 if (event != PurpleSyncAutoCore.Event.Disable && pendingAuthority

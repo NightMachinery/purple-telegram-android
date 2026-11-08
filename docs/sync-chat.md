@@ -49,3 +49,20 @@ The removed search/mark/setup/carry controllers were dormant. Their still-active
 ## Host checks
 
 The canonical host roster retains ownership/eligibility, typed scanner/reader, exact metadata, upload/post-effect, account-lock and Magic/automatic/first-use cases. The record bridge has exact-byte and invalid-envelope cases. The ordinary upload still requires its current account capability at every post and exact owned readback before confirmation. See [automatic sync](sync-auto.md) and [RPC retries](rpc-retry.md). Host qualification uses synthetic ports, with no GUI, device or Telegram requests.
+
+While the app is open, account-scoped new-message and edited-message notifications
+schedule one pickup after 500 ms. The callback rechecks the login and bound chat.
+Core excludes message ids already issued by this install; messages sent by another
+device remain eligible even though Telegram marks them outgoing. The engine
+uses `ChatUpdated` through its usual account lock, pause and backoff gates.
+The fifteen-minute lifecycle check remains the fallback. No short poll is added.
+
+### Delivery while the sync chat stays closed
+
+Mute and archive do not gate either client's update dispatch. Global/channel
+difference recovery also reaches the adapters. Telegram usually sends passive
+updates to joined supergroups, but may stop or reduce them. Pickup therefore
+fires for delivered updates while the chat is closed, with no guarantee of
+prompt delivery. Normal channel short polling belongs to opened chats; the
+sync chat is not registered for it. The fifteen-minute backstop remains.
+See [Telegram's delivery contract](https://core.telegram.org/api/updates#subscribing-to-updates-of-channels-supergroups).

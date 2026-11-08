@@ -44,6 +44,26 @@ inline QJsonObject AutoRecord(const QByteArray &bytes, const QString &key, bool 
 }
 } // namespace PurpleAndroid
 
+extern "C" JNIEXPORT jboolean JNICALL Java_org_telegram_messenger_purple_PurpleSyncAutoCore_pickupNative(
+    JNIEnv *env, jclass, jbyteArray bytes, jstring bound, jstring observed, jintArray ids, jlong user) {
+    auto data = QByteArray();
+    auto error = QString();
+    auto boundText = QString();
+    auto observedText = QString();
+    if (!ReadOptionalBytes(env, bytes, data, error) || !ReadString(env, bound, boundText)
+        || !ReadString(env, observed, observedText) || !ids || env->GetArrayLength(ids) > 128 || user <= 0)
+        return false;
+    const auto target = Purple::ParsePeerToken(boundText, user);
+    const auto source = Purple::ParsePeerToken(observedText, user);
+    if (!target || !source) return false;
+    auto messages = std::vector<int32_t>(env->GetArrayLength(ids));
+    env->GetIntArrayRegion(ids, 0, messages.size(), messages.data());
+    if (env->ExceptionCheck()) return false;
+    const auto state = data.isEmpty() ? decltype(Purple::ParseSyncLocalState(data))() : Purple::ParseSyncLocalState(data);
+    if (!data.isEmpty() && !state) return false;
+    return Purple::SyncAutoPickupNeeded(*target, *source, messages, state ? &state.state : nullptr);
+}
+
 extern "C" JNIEXPORT jstring JNICALL Java_org_telegram_messenger_purple_PurpleSyncAutoCore_codecNative(JNIEnv *env,
                                                                                                        jclass,
                                                                                                        jbyteArray bytes,
@@ -86,7 +106,7 @@ extern "C" JNIEXPORT jstring JNICALL Java_org_telegram_messenger_purple_PurpleSy
     input.now = int64_t(now);
     input.completedTicket = PurpleAndroid::AutoCounter(json.value("completedTicket"), ok);
     const auto event = json.value("event").toInt(-1), outcome = json.value("outcome").toInt(-1);
-    if (event < 0 || event > int(Purple::SyncAutoEvent::Completed) || outcome < 0 ||
+    if (event < 0 || event > int(Purple::SyncAutoEvent::ChatUpdated) || outcome < 0 ||
         outcome > int(Purple::SyncAutoOutcome::DeletionRefused))
         return nullptr;
     input.event = Purple::SyncAutoEvent(event);

@@ -17,6 +17,7 @@ public final class PurpleSyncAuto {
     private static final HashMap<String, Runtime> accounts = new HashMap<>();
     private static DispatchQueue queue;
     private static boolean observing;
+    private static final boolean[] updateObservers = new boolean[UserConfig.MAX_ACCOUNT_COUNT];
     private static final PurpleSaveDebounce.Scheduler scheduler = new PurpleSaveDebounce.Scheduler() {
         public boolean currentThread() {
             return android.os.Looper.myLooper() == android.os.Looper.getMainLooper();
@@ -77,6 +78,9 @@ public final class PurpleSyncAuto {
         final String preference;
         final ArrayList<Consumer<Status>> listeners = new ArrayList<>();
         Runnable retry;
+        Runnable pickup;
+        PurpleSyncChatCore.Peer pickupChat;
+        final java.util.LinkedHashSet<Integer> pickupIds = new java.util.LinkedHashSet<>();
         /** The last first-use answer while it waits or asks (PurpleSyncFirstUse); null once a state exists. */
         volatile PurpleSyncFirstUse.Result firstUse;
         volatile boolean firstUseRunning;
@@ -98,6 +102,26 @@ public final class PurpleSyncAuto {
             PurpleSyncClient client = PurpleSyncTelegramClient.create(origin.slot, origin.userId);
             client.transientWait(value->AndroidUtilities.runOnUIThread(this::render));
             network = new PurpleSyncAutoNetwork(client, engine.session, () -> current() && enabledHint());
+        }
+        void updated(PurpleSyncChatCore.Peer chat, java.util.List<org.telegram.messenger.MessageObject> messages) {
+            if (ApplicationLoader.mainInterfacePaused || !current() || !enabledHint()
+                || !chat.equals(PurpleSyncChat.boundChat(opening.slot))) return;
+            if (!chat.equals(pickupChat)) pickupIds.clear();
+            pickupChat = chat;
+            for (org.telegram.messenger.MessageObject message : messages) {
+                if (message.getId() > 0 && !message.scheduled && pickupIds.size() < 128)
+                    pickupIds.add(message.getId());
+            }
+            if (pickupIds.isEmpty() || pickup != null) return;
+            pickup = () -> {
+                pickup = null;
+                int[] ids = pickupIds.stream().mapToInt(Integer::intValue).toArray();
+                pickupIds.clear();
+                if (!ApplicationLoader.mainInterfacePaused && current() && enabledHint()
+                    && chat.equals(PurpleSyncChat.boundChat(opening.slot)))
+                    engine.chatUpdated(chat, ids);
+            };
+            AndroidUtilities.runOnUIThread(pickup, 500);
         }
         public boolean current() {
             return !org.telegram.messenger.SharedConfig.appLocked
@@ -555,6 +579,22 @@ public final class PurpleSyncAuto {
     }
     public static void sessionReady(int account) {
         observe();
+        if (!updateObservers[account]) {
+            updateObservers[account] = true;
+            NotificationCenter.NotificationCenterDelegate updates = (id, slot, args) -> {
+                if (args.length < 2 || !(args[0] instanceof Long) || !(args[1] instanceof java.util.List)) return;
+                PurpleAccountFiles.Identity identity = PurpleAccountFiles.capture(slot);
+                Runtime runtime = identity != null ? accounts.get(identity.key) : null;
+                PurpleSyncChatCore.Peer chat = PurpleSyncChat.boundChat(slot);
+                if (runtime == null || chat == null) return;
+                long dialog = (Long) args[0];
+                long expected = chat.kind == PurpleSyncChatCore.PeerKind.Self ? identity.userId
+                    : chat.kind == PurpleSyncChatCore.PeerKind.User ? chat.id : -chat.id;
+                if (dialog == expected) runtime.updated(chat, (java.util.List<org.telegram.messenger.MessageObject>) args[1]);
+            };
+            NotificationCenter.getInstance(account).addObserver(updates, NotificationCenter.didReceiveNewMessages);
+            NotificationCenter.getInstance(account).addObserver(updates, NotificationCenter.replaceMessagesObjects);
+        }
         trigger(account, PurpleSyncAutoCore.Event.SessionReady);
     }
     static void refresh(Runnable reload) {

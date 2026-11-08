@@ -937,9 +937,32 @@ public final class PurpleSyncAutoCases {
             p.frame.unchangedA();p.engine.close();
         }
     }
+    static void chatPickup(File parent) throws Exception {
+        Port p = bound(parent, "chat-pickup");
+        initialPublish(p);
+        int before = p.checks;
+        p.engine.event(PurpleSyncAutoCore.Event.Foreground);
+        check(p.checks == before, "ordinary lifecycle remains rate limited");
+        p.engine.event(PurpleSyncAutoCore.Event.ChatUpdated);
+        check(p.checks > before, "chat update bypasses lifecycle interval through JNI");
+        byte[] state = Files.readAllBytes(new File(p.frame.sync(1), "state.json").toPath());
+        JSONObject local = new JSONObject(new String(state, java.nio.charset.StandardCharsets.UTF_8));
+        JSONArray own = local.getJSONArray("own_messages");
+        int id = own.getJSONObject(0).getInt("message_id");
+        check(!PurpleSyncAutoCore.pickupNative(state, "self", "self", new int[]{id}, 202), "own issued record suppressed");
+        check(PurpleSyncAutoCore.pickupNative(state, "self", "self", new int[]{id + 1000}, 202), "other device eligible even when outgoing");
+        check(!PurpleSyncAutoCore.pickupNative(state, "self", "channel:99", new int[]{id + 1000}, 202), "other typed chat refused");
+        check(!PurpleSyncAutoCore.pickupNative(state, "self", "self", new int[]{0, -1}, 202), "local unsent ids refused");
+        p.engine.enabled(false);
+        before = p.checks;
+        p.engine.event(PurpleSyncAutoCore.Event.ChatUpdated);
+        check(p.checks == before, "disabled automatic sync ignores chat update");
+        p.engine.close();
+    }
     public static int run(File parent) throws Exception {
         int before = PurpleModernSyncCases.checks;
         PurpleSyncManagedReadCases.run();
+        chatPickup(parent);
         transientWrite(parent);
         defaults(parent);
         publishAndEdit(parent);

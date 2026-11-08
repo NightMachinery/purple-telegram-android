@@ -103,7 +103,8 @@ public final class PurpleSyncFirstUse {
      * device that waits or asks does not scan the chat on every activation.
      */
     static boolean due(PurpleSyncAutoCore.Event event, long now, long last) {
-        return event == PurpleSyncAutoCore.Event.Enable || event == PurpleSyncAutoCore.Event.LocalSaved
+        return event == PurpleSyncAutoCore.Event.Enable || event == PurpleSyncAutoCore.Event.ChatUpdated
+            || event == PurpleSyncAutoCore.Event.LocalSaved
                 || last <= 0 || now < last || now - last >= CHECK_SECONDS;
     }
 
