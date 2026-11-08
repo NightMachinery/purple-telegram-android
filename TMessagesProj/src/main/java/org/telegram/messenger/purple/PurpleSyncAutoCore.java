@@ -8,7 +8,7 @@ import org.json.JSONObject;
 
 final class PurpleSyncAutoCore {
     enum Action { NoOp, Check, AutoApply, Publish, EditInPlace, Post, Reconcile, Retire, Hold, RetryAt }
-    enum Event { Enable, Disable, SessionReady, Foreground, Unlock, LocalSaved, Retry, Completed }
+    enum Event { Enable, Disable, SessionReady, Foreground, Unlock, LocalSaved, Retry, Completed, ChatUpdated }
     enum Outcome {
         Inventory,
         Applied,
@@ -187,6 +187,7 @@ final class PurpleSyncAutoCore {
     static byte[] decode(String text) {
         return Base64.decode(text, Base64.NO_WRAP);
     }
+    static native boolean pickupNative(byte[] state, String bound, String observed, int[] ids, long user);
     static native String codecNative(byte[] bytes, String account);
     static native String planNative(String request, long user, boolean complete, int[] ids, int[] transport,
         long[] documents, long[] edits, byte[][] records, boolean global, int mode, byte[] globalFile,
