@@ -46,7 +46,8 @@ file TMessagesProj/src/main/java/org/telegram/messenger/UserConfig.java 6 0 4
 file TMessagesProj/src/main/java/org/telegram/messenger/video/Mp4Movie.java 2 0 2
 file TMessagesProj/src/main/java/org/telegram/messenger/video/VideoAds.java 1 0 1
 file TMessagesProj/src/main/java/org/telegram/tgnet/ConnectionsManager.java 7 1 4
-file TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBarMenuItem.java 2 1 1
+file TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBarMenu.java 1 0 1
+file TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBarMenuItem.java 8 1 2
 file TMessagesProj/src/main/java/org/telegram/ui/Adapters/ContactsAdapter.java 55 24 16
 file TMessagesProj/src/main/java/org/telegram/ui/Adapters/DialogsSearchAdapter.java 23 3 8
 file TMessagesProj/src/main/java/org/telegram/ui/Adapters/SearchAdapter.java 28 18 6

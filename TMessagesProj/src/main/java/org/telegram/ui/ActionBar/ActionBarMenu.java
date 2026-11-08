@@ -651,6 +651,7 @@ public class ActionBarMenu extends LinearLayout {
                 }
             }
         }
+        org.telegram.ui.PurpleSelectionActions.measure(this, MeasureSpec.getSize(widthMeasureSpec));
         super.onMeasure(widthMeasureSpec, heightMeasureSpec);
     }
 

@@ -1,0 +1,1 @@
+package org.telegram.ui.Components;import android.view.View;public class AnimatedTextView extends View{public int width;public class Text{public float getWidth(){return width;}}public Text getDrawable(){return new Text();}}

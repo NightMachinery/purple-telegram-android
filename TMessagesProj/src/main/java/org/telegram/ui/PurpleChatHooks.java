@@ -125,14 +125,19 @@ final class PurpleChatHooks {
                         | (quickReply ? org.telegram.messenger.purple.PurpleRecordingSessions.FLAG_QUICK_REPLY : 0)};
     }
 
-    View addSelectionCopy(org.telegram.ui.ActionBar.ActionBarMenu menu) {
-        ActionBarMenuItem item = menu.addItem(COPY_SELECTION_AS_MARKDOWN, getString(R.string.PurpleMarkdownShort));
+    View addSelectionCopy(org.telegram.ui.ActionBar.ActionBarMenu menu, org.telegram.ui.Components.AnimatedTextView count) {
+        ActionBarMenuItem item = menu.addItemWithWidth(COPY_SELECTION_AS_MARKDOWN, R.drawable.formatting_code, dp(48), getString(R.string.PurpleCopyAsMarkdown));
         item.setContentDescription(getString(R.string.PurpleCopyAsMarkdown));
+        PurpleSelectionActions.install(menu, count);
         return item;
     }
 
     void updateSelectionCopy(org.telegram.ui.ActionBar.ActionBarMenu menu, boolean visible) {
         menu.setItemVisibility(COPY_SELECTION_AS_MARKDOWN, visible ? View.VISIBLE : View.GONE);
+    }
+
+    void updateSelectionCopy(org.telegram.ui.ActionBar.ActionBarMenu menu, ActionBarMenuItem copy) {
+        updateSelectionCopy(menu, PurpleSelectionActions.visible(menu, copy));
     }
 
     void copySelectionAsMarkdown(android.util.SparseArray<MessageObject>[] selected, boolean encrypted) {

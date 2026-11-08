@@ -1,0 +1,4 @@
+package org.telegram.ui.ActionBar;import android.view.View;import android.graphics.drawable.Drawable;import java.util.*;public class ActionBarMenuItem extends View{
+ public class Icon{public Drawable getDrawable(){return icon;}}public ActionBarMenu parent;public void setVisibility(int v){if(!org.telegram.ui.PurpleSelectionActions.visibility(parent,this,v))super.setVisibility(v);}public Drawable icon;public final Map<Integer,ActionBarMenuSubItem> popup=new LinkedHashMap<>();public Icon getIconView(){return new Icon();}
+ public ActionBarMenuSubItem addSubItem(int id,int res,Drawable d,CharSequence s,boolean dismiss,boolean check,Object provider){ActionBarMenuSubItem p=new ActionBarMenuSubItem();p.setTag(id);p.setContentDescription(s);popup.put(id,p);return p;}public boolean showing;public boolean isSubMenuShowing(){return showing;}public void closeSubMenu(){showing=false;}
+}

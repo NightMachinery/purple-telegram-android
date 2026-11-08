@@ -278,6 +278,12 @@ public class ActionBarMenuItem extends FrameLayout {
     }
 
     @Override
+    public void setVisibility(int visibility) {
+        if (org.telegram.ui.PurpleSelectionActions.visibility(parentMenu, this, visibility)) return;
+        super.setVisibility(visibility);
+    }
+
+    @Override
     public void setTranslationX(float translationX) {
         super.setTranslationX(translationX + transitionOffset);
     }

@@ -81,6 +81,10 @@ try:
     for name in names:
         prefix = "" if name in ["MarkdownExportTest", "ArticleMarkdownTest"] else "org.telegram.messenger.purple."
         execute(name, plain, prefix + name, [output / "peek-fixtures"] if name == "PeekCopyRepairTest" else [])
+    toolbar = output / "toolbar"
+    toolbar_ports = list((tests / "selection_toolbar_ports").rglob("*.java"))
+    compile_sources("toolbar-javac", toolbar, toolbar_ports + [java / "org/telegram/ui/PurpleSelectionActions.java", tests / "SelectionToolbarCases.java"])
+    execute("toolbar", toolbar, "org.telegram.ui.SelectionToolbarCases")
     ports = list((tests / "markdown_ports").rglob("*.java"))
     route = output / "route"
     compile_sources("route-javac", route, ports + [tests / "MarkdownCopyRouteTest.java"])

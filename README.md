@@ -2282,8 +2282,11 @@ displayed translations still copy without substituting original source. Requests
 the chat is destroyed or another Markdown copy starts. Deletion, replacement,
 account changes, errors and still-partial replies leave the clipboard unchanged.
 Album messages are composed together and copied only after every member is ready.
-The multi-message selection toolbar also has an **MD** action, labelled
-**Copy as Markdown** for accessibility. It preserves ordinary Copy alongside it,
+The multi-message selection toolbar also has a code-brackets icon, labelled
+**Copy as Markdown** for accessibility. Actions use full 48dp targets. When they
+do not fit beside the selected count, the remaining actions appear in the stock
+More options menu. Widening the window restores them to the toolbar. It preserves
+ordinary Copy alongside Markdown Copy,
 orders migrated messages before current messages using Telegram's existing
 message ordering, and resolves the complete selection before one clipboard
 write. Identical numeric IDs in the two histories remain separate messages.

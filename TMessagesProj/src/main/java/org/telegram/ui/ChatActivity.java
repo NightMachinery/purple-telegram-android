@@ -10408,7 +10408,7 @@ public class ChatActivity extends BaseFragment implements
             actionModeViews.add(actionMode.addItemWithWidth(copy, R.drawable.msg_copy, dp(48), LocaleController.getString(R.string.Copy)));
             actionModeViews.add(actionMode.addItemWithWidth(delete, R.drawable.msg_delete, dp(48), LocaleController.getString(R.string.Delete)));
         }
-        actionModeViews.add(purple.addSelectionCopy(actionMode));
+        actionModeViews.add(purple.addSelectionCopy(actionMode, selectedMessagesCountTextView));
         purple.updateSelectionCopy(actionMode, selectedMessagesCanCopyIds[0].size() + selectedMessagesCanCopyIds[1].size() != 0);
         actionMode.setItemVisibility(edit, canEditMessagesCount == 1 && selectedMessagesIds[0].size() + selectedMessagesIds[1].size() == 1 ? View.VISIBLE : View.GONE);
         actionMode.setItemVisibility(copy, (org.telegram.messenger.purple.PurpleCopyPolicy.unrestricted() || !isPeerNoForwards()) && selectedMessagesCanCopyIds[0].size() + selectedMessagesCanCopyIds[1].size() != 0 ? View.VISIBLE : View.GONE);
@@ -19501,7 +19501,7 @@ public class ChatActivity extends BaseFragment implements
                     copyVisible = copyItem.getVisibility();
                     copyItem.setVisibility((org.telegram.messenger.purple.PurpleCopyPolicy.unrestricted() || !noforwards) && selectedMessagesCanCopyIds[0].size() + selectedMessagesCanCopyIds[1].size() != 0 ? View.VISIBLE : View.GONE);
                     newCopyVisible = copyItem.getVisibility();
-                    purple.updateSelectionCopy(actionBar.createActionMode(), newCopyVisible == View.VISIBLE);
+                    purple.updateSelectionCopy(actionBar.createActionMode(), copyItem);
                 }
                 if (starItem != null) {
                     starVisible = starItem.getVisibility();
