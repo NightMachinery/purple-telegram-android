@@ -24,7 +24,7 @@ public final class PurpleVoicePlayback {
         Queue(MessageObject start, int settings) {
             account = start.currentAccount;
             dialog = start.getDialogId();
-            mode = settings & 3;
+            mode = MediaController.getInstance().purpleHasInterruptedMusic() ? settings & 3 : ALL;
             resume = (settings & 4) != 0;
             ids.add(start.getId());
             closed = mode == RESUME;

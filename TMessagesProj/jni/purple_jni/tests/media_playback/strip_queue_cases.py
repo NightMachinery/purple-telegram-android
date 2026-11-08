@@ -69,6 +69,7 @@ public class MediaController {
  static class Pip{void close(boolean v){}}
  static class SavedMusicPlaylistState{MessageObject playingMessage;float progress=.4f;int progressMs=400,progressSec;SavedMusicPlaylistState(MessageObject m){playingMessage=m;}}
  public void setup(ArrayList<MessageObject> voices,MessageObject music){playlist.clear();shuffledPlaylist.clear();savedMusicPlaylistState=null;paused=false;plays=restores=0;playingMessageObject=voices.get(0);setVoiceMessagesPlaylist(voices,false);if(music!=null){playlist.add(music);currentPlaylistNum=0;savedMusicPlaylistState=new SavedMusicPlaylistState(music);}}
+ public boolean purpleHasInterruptedMusic(){return savedMusicPlaylistState!=null;}
  public MessageObject getPlayingMessageObject(){return playingMessageObject;}
  public boolean isMessagePaused(){return paused;}
  public boolean playMessage(MessageObject messageObject){boolean saved=org.telegram.messenger.purple.PurpleVoicePlayback.keepsMusic(savedMusicPlaylistState!=null,messageObject);if(messageObject.isVoice()||messageObject.isRoundVideo()){if(!saved)playlist.clear();}playingMessageObject=messageObject;paused=false;plays++;return true;}
@@ -107,7 +108,9 @@ public class PortCases {
   PurpleCore.on=option;PurpleCore.settings=mode|(resume?4:0);ChatActivity chat=new ChatActivity();MessageObject start=msg(10,dialog,ownStart,roundStart);
   MessageObject incomingRound=msg(11,dialog,false,true),ownVoice=msg(12,dialog,true,false),incomingVoice=msg(13,dialog,false,false),heardRound=msg(14,dialog,false,true),laterVoice=msg(15,dialog,false,false);heardRound.unread=false;ownVoice.unread=false;
   chat.messages.addAll(Arrays.asList(laterVoice,heardRound,incomingVoice,ownVoice,incomingRound,start));
+  MediaController.instance.savedMusicPlaylistState=music?new MediaController.SavedMusicPlaylistState(msg(50,99,false,false)):null;
   ArrayList<MessageObject> list=chat.createVoiceMessagesPlaylist(start,false);
+  mode=music?mode:2;
   boolean confined=option&&dialog==42&&!ownStart;
   ArrayList<MessageObject> expected=new ArrayList<>();expected.add(start);
   if(mode==1)expected.addAll(Arrays.asList(incomingRound,incomingVoice));

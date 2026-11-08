@@ -670,7 +670,7 @@ public class PurpleSettingsActivity extends UniversalFragment
     private void chooseAfterVoice(PurpleWriter.Session session) {
         if (getParentActivity() == null) return;
         final CharSequence[] labels = {afterVoiceLabel(0), afterVoiceLabel(1), afterVoiceLabel(2)};
-        showDialog(new AlertDialog.Builder(getParentActivity()).setTitle(getString(R.string.PurpleAfterVoice))
+        showDialog(new AlertDialog.Builder(getParentActivity()).setTitle(getString(R.string.PurpleAfterVoice)).setMessage(getString(R.string.PurpleAfterVoiceInfo))
                 .setItems(labels, (d, which) -> write(PurpleWriter.setTableString(session,
                         "playback", "after_voice", org.telegram.messenger.purple.PurpleVoicePlayback.value(which), "after voice chooser")))
                 .setNegativeButton(getString(R.string.Cancel), null).create());
