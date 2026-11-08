@@ -986,7 +986,7 @@
         "recording-dock:ROUND_CONTROLS_NATIVE_FILTER_CHECKS": 6,
         "recording-dock:ROUND_CONTROLS_PLACEMENT_CHECKS": 576,
         "recording-dock:SETTINGS_RTL_ALIGNMENT_CHECKS": 48,
-        "recording-dock:CROSS_CHAT_CAPTURE_CHECKS": 60
+        "recording-dock:CROSS_CHAT_CAPTURE_CHECKS": 76
       }
     },
     {

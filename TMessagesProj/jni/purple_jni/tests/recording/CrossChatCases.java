@@ -12,7 +12,7 @@ public class CrossChatCases {
     }
     private static void start(ChatActivity chat) { check(PurpleRoundCapture.command(chat,0,true,0,0,0,0,0), "managed start"); }
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
         for (boolean v2 : new boolean[]{false,true}) {
             InstantCameraViewBase.v2=v2;
             LaunchActivity activity=new LaunchActivity();
@@ -33,6 +33,10 @@ public class CrossChatCases {
             check(camera.texture.surface==surface && camera.getParent()==parent,"two switches preserve root and surface");
             check(camera.pauses==0&&camera.stops==0&&camera.starts==1,"navigation does not pause or restart");
             start(b);check(InstantCameraViewBase.creations==created,"second recording cannot create another adapter");
+            check(PurpleRoundCapture.command(b,1,true,0,0,0,0,0),"other-chat finish is consumed");
+            check(camera.stops==0,"other-chat finish cannot end the original take");
+            check(PurpleRoundCapture.command(c,3,true,0,0,0,0,0),"other-chat preview cannot fall through to a new camera");
+            check(camera.pauses==0,"other-chat preview cannot change capture state");
             ChatActivity returned=new ChatActivity(activity,4,10);
             PurpleRoundCapture.attach(returned);
             check(!PurpleRoundCapture.detach(a),"old fragment cannot unbind returned screen");
@@ -49,6 +53,9 @@ public class CrossChatCases {
             check(PurpleRecordingRegistry.retained[1]==10,"retained output belongs to original chat");
             check(PurpleRecordingRegistry.retained[3]==8,"original reply survives detachment");
             check(activity.root.children.isEmpty(),"completed take releases activity root");
+            check(PurpleRoundCapture.command(a,4,true,0,0,0,0,0),"late finished-take controls cannot create a stock camera");
+            java.lang.reflect.Field textureField=PurpleRoundCapture.class.getDeclaredField("lastTexture");textureField.setAccessible(true);
+            check(textureField.get(camera.delegate)==null,"released owner drops Activity-backed preview observations");
             start(a);InstantCameraViewBase next=InstantCameraViewBase.last;
             check(next!=camera,"next take gets new session adapter");
             PurpleRoundCapture.activityPaused(new android.app.Activity());check(next.stops==0,"unrelated activity pause ignored");
