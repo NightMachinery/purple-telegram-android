@@ -67,7 +67,7 @@ file TMessagesProj/src/main/java/org/telegram/ui/Components/ChatNotificationsPop
 file TMessagesProj/src/main/java/org/telegram/ui/Components/ContactsEmptyView.java 10 0 1
 file TMessagesProj/src/main/java/org/telegram/ui/Components/DialogsChannelsAdapter.java 8 2 4
 file TMessagesProj/src/main/java/org/telegram/ui/Components/FilterTabsView.java 13 3 5
-file TMessagesProj/src/main/java/org/telegram/ui/Components/FragmentContextView.java 4 1 4
+file TMessagesProj/src/main/java/org/telegram/ui/Components/FragmentContextView.java 6 2 6
 file TMessagesProj/src/main/java/org/telegram/ui/Components/InstantCameraView.java 5 0 5
 file TMessagesProj/src/main/java/org/telegram/ui/Components/InstantCameraView2.java 4 1 4
 file TMessagesProj/src/main/java/org/telegram/ui/Components/InstantCameraViewBase.java 5 0 1

@@ -914,7 +914,8 @@
         "queue:MEDIA_QUEUE_CHECKS": 28,
         "restart:MEDIA_RESTART_CHECKS": 37,
         "seek:MEDIA_SEEK_CHECKS": 70,
-        "seekcore:MEDIA_SEEK_CORE_CHECKS": 38
+        "seekcore:MEDIA_SEEK_CORE_CHECKS": 38,
+        "layout:MEDIA_STRIP_LAYOUT_CHECKS": 3000
       }
     },
     {

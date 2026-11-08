@@ -30,7 +30,7 @@ purple = [java / 'messenger/purple' / name for name in [
 hooked = {name: java / name for name in [
     'ui/Cells/ChatMessageCell.java', 'ui/Components/PipRoundVideoView.java', 'ui/ChatActivity.java',
     'ui/PurpleChatHooks.java', 'messenger/MediaController.java', 'ui/Components/FragmentContextView.java',
-    'messenger/MusicPlayerService.java', 'ui/PurpleRecordingStrip.java']}
+    'messenger/MusicPlayerService.java', 'ui/PurpleRecordingStrip.java', 'ui/PurplePlayerStripLayout.java']}
 hashes = {Path(item['path']): item['sha256'] for item in receipt['sources']}
 for path in purple + list(hooked.values()):
     assert hashes.get(path) == hashlib.sha256(path.read_bytes()).hexdigest(), str(path) + ' receipt mismatch'
@@ -96,7 +96,7 @@ pinned += 1
 # The strip routes style and dock show/hide through its one helper;
 # the media session calls PurpleSeek five times.
 text = hooked['ui/Components/FragmentContextView.java'].read_text(encoding='utf-8')
-assert text.count('org.telegram.ui.PurpleRecordingStrip') == 2 and text.count('purple.') == 3, 'FragmentContextView: one helper, style plus dock show/hide calls'
+assert text.count('org.telegram.ui.PurpleRecordingStrip') == 2 and text.count('purple.') == 5, 'FragmentContextView: one helper, style, measure, height and dock calls'
 pinned += 1
 text = hooked['messenger/MusicPlayerService.java'].read_text(encoding='utf-8')
 assert text.count('PurpleSeek.') == 5 and text.count('import org.telegram.messenger.purple.PurpleSeek;\n') == 1, 'MusicPlayerService: five PurpleSeek calls'
@@ -112,17 +112,19 @@ destination.mkdir()
 empty = args.output / 'empty-sourcepath'
 empty.mkdir()
 case = tests / 'media_playback/MediaPlaybackCases.java'
+layout_case = tests / 'media_playback/PlayerStripLayoutCases.java'
 (args.output / 'inputs.json').write_text(json.dumps([
     {'path': str(p), 'sha256': hashlib.sha256(p.read_bytes()).hexdigest()}
     for p in [args.receipt, args.library, case, *purple, *hooked.values()]], indent=2) + '\n')
 commands = {'javac': [str(compiler), '-source', '8', '-target', '8', '-proc:none', '-sourcepath', str(empty),
-                      '-cp', str(classes), '-d', str(destination), str(case)]}
+                      '-cp', str(classes), '-d', str(destination), str(case), str(layout_case)]}
 # The core and seekcore programs load the host libpurplecore through the real PurpleCore,
 # which reads its load result with org.json.
 for program, _ in PROGRAMS:
     commands[program] = [str(compiler.with_name('java')), '-Xmx256m', '-Xcheck:jni', '-Djava.library.path=' + str(args.library.parent),
                          '-cp', os.pathsep.join([str(destination), str(classes), str(args.json)]),
                          'org.telegram.messenger.purple.MediaPlaybackCases', program]
+commands['layout'] = [str(compiler.with_name('java')), '-cp', os.pathsep.join([str(destination), str(classes)]), 'org.telegram.ui.PlayerStripLayoutCases']
 for name, command in commands.items():
     (args.output / (name + '.argv.json')).write_text(json.dumps(command, indent=2) + '\n')
     with (args.output / (name + '.log')).open('w') as log:
@@ -133,3 +135,5 @@ for name, command in commands.items():
         raise SystemExit(result.returncode)
 for program, key in PROGRAMS:
     assert key + '=' in (args.output / (program + '.log')).read_text(), program + ' printed no ' + key
+
+assert 'MEDIA_STRIP_LAYOUT_CHECKS=' in (args.output / 'layout.log').read_text()

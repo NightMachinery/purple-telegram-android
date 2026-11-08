@@ -8,10 +8,10 @@ import android.graphics.Canvas;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
-import android.widget.FrameLayout;
 import android.widget.TextView;
 
 import org.telegram.messenger.R;
+import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.purple.PurpleSeek;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.FragmentContextView;
@@ -22,7 +22,7 @@ import org.telegram.ui.Components.LayoutHelper;
  * instance per strip. It hosts F9's seek buttons and the recording dock's
  * voice or in-chat round controls (docs/recording-continuity.md).
  *
- * The two buttons sit left of the speed button and show only in the audio
+ * The two buttons sit before the speed button and show only in the audio
  * player style. Their labels follow {@code [playback] seek_step}: they are
  * read again whenever the strip enters the audio style, the buttons are
  * attached, one is pressed, or the Seek step row writes a new step
@@ -32,11 +32,8 @@ import org.telegram.ui.Components.LayoutHelper;
  */
 public final class PurpleRecordingStrip {
 
-    /** Each button's width and height, the same as the speed button's. */
-    static final int BUTTON_DP = 36;
-
-    /** Where the speed button ends, counted from the strip's right edge. */
-    static final int SPEED_END_DP = 72;
+    /** A full touch target even though the stock strip used to be only 36dp high. */
+    static final int BUTTON_DP = PurplePlayerStripLayout.HEIGHT_DP;
 
     /** The live strips, for {@link #relabelAll}. Main thread only. */
     private static final java.util.Set<PurpleRecordingStrip> STRIPS =
@@ -48,8 +45,8 @@ public final class PurpleRecordingStrip {
     private int color;
     private TextView back;
     private TextView forward;
-    private View paddedTitle;
-    private int titlePadding;
+    private boolean audio;
+    private final java.util.Map<View, android.widget.FrameLayout.LayoutParams> stockBounds = new java.util.HashMap<>();
     private org.telegram.ui.PurpleRecordingStripView recording;
     @androidx.annotation.Keep
     private final Runnable changed;
@@ -77,7 +74,7 @@ public final class PurpleRecordingStrip {
         }
         if (recording == null) {
             recording = new org.telegram.ui.PurpleRecordingStripView(strip.getContext());
-            strip.addView(recording, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 36, Gravity.TOP));
+            strip.addView(recording, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP));
         }
         recording.setVisibility(View.VISIBLE);
         recording.bringToFront();
@@ -92,47 +89,77 @@ public final class PurpleRecordingStrip {
         }
     }
 
-    /**
-     * Called by {@code FragmentContextView.updateStyle} once the new style is
-     * set and before its branches lay the strip out: shows the seek buttons in
-     * the audio player style and hides them in every other, and keeps the
-     * title clear of them by its right padding.
-     *
-     * It runs before the branches so that a style which sets the title's
-     * padding outright (the group call styles) does so after Purple has taken
-     * its share back.
-     */
+    /** Visibility follows the style; measurement owns the title and control bounds. */
     public void updateStyle(int style, View title, Theme.ResourcesProvider resourcesProvider) {
-        final boolean audio = style == FragmentContextView.STYLE_AUDIO_PLAYER;
+        for (java.util.Map.Entry<View, android.widget.FrameLayout.LayoutParams> entry : stockBounds.entrySet()) {
+            entry.getKey().setLayoutParams(entry.getValue());
+        }
+        stockBounds.clear();
+        audio = style == FragmentContextView.STYLE_AUDIO_PLAYER;
         this.resourcesProvider = resourcesProvider;
         if (audio && back == null) {
             final Context context = strip.getContext();
             back = button(context, -1);
             forward = button(context, 1);
-            strip.addView(forward, LayoutHelper.createFrame(BUTTON_DP, BUTTON_DP, Gravity.TOP | Gravity.RIGHT, 0, 0, SPEED_END_DP, 0));
-            strip.addView(back, LayoutHelper.createFrame(BUTTON_DP, BUTTON_DP, Gravity.TOP | Gravity.RIGHT, 0, 0, SPEED_END_DP + BUTTON_DP, 0));
+            strip.addView(forward, LayoutHelper.createFrame(BUTTON_DP, BUTTON_DP, Gravity.TOP | Gravity.LEFT));
+            strip.addView(back, LayoutHelper.createFrame(BUTTON_DP, BUTTON_DP, Gravity.TOP | Gravity.LEFT));
         }
         if (back != null) {
-            back.setVisibility(audio ? View.VISIBLE : View.GONE);
-            forward.setVisibility(audio ? View.VISIBLE : View.GONE);
-            if (audio) {
-                relabel();
-            }
+            back.setVisibility(audio && !docked() ? View.VISIBLE : View.GONE);
+            forward.setVisibility(back.getVisibility());
+            if (audio) relabel();
         }
-        padTitle(audio ? title : null, audio ? dp(2 * BUTTON_DP) : 0);
     }
 
-    private void padTitle(View title, int padding) {
-        if (paddedTitle != null && titlePadding != 0) {
-            paddedTitle.setPadding(paddedTitle.getPaddingLeft(), paddedTitle.getPaddingTop(),
-                    Math.max(0, paddedTitle.getPaddingRight() - titlePadding), paddedTitle.getPaddingBottom());
+    public int height(int style, int stockHeight) {
+        return style == FragmentContextView.STYLE_AUDIO_PLAYER ? BUTTON_DP : stockHeight;
+    }
+
+    /** Runs after checkPlayer's title padding and speed visibility decisions, before measuring children. */
+    public void measure(int width, View title, View play, View close, View speed, boolean sideMenu) {
+        if (!audio || back == null) return;
+        final boolean recording = docked();
+        back.setVisibility(recording ? View.GONE : View.VISIBLE);
+        forward.setVisibility(back.getVisibility());
+        if (recording) return;
+        for (View view : new View[]{title, play, close, speed}) {
+            if (view != null && !stockBounds.containsKey(view)) {
+                stockBounds.put(view, new android.widget.FrameLayout.LayoutParams(
+                        (android.widget.FrameLayout.LayoutParams) view.getLayoutParams()));
+            }
         }
-        paddedTitle = title;
-        titlePadding = title == null ? 0 : padding;
-        if (title != null && padding != 0) {
-            title.setPadding(title.getPaddingLeft(), title.getPaddingTop(),
-                    title.getPaddingRight() + padding, title.getPaddingBottom());
+        final int touch = dp(BUTTON_DP);
+        final int stock = dp(36);
+        final PurplePlayerStripLayout bounds = new PurplePlayerStripLayout(width, touch, stock,
+                sideMenu ? dp(64) : 0, LocaleController.isRTL, visible(play), visible(close), visible(speed));
+        place(play, bounds.playLeft, touch, touch);
+        place(close, bounds.closeLeft, stock, touch);
+        if (speed != null) place(speed, bounds.speedLeft, stock, touch);
+        place(back, bounds.backLeft, touch, touch);
+        place(forward, bounds.forwardLeft, touch, touch);
+        title.setPadding(0, 0, 0, 0);
+        place(title, bounds.titleLeft, bounds.titleWidth, touch);
+        if (title instanceof org.telegram.ui.Components.AudioPlayerAlert.ClippingTextViewSwitcher) {
+            final org.telegram.ui.Components.AudioPlayerAlert.ClippingTextViewSwitcher switcher =
+                    (org.telegram.ui.Components.AudioPlayerAlert.ClippingTextViewSwitcher) title;
+            for (TextView text : new TextView[]{switcher.getTextView(), switcher.getNextTextView()}) {
+                if (text != null) text.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            }
         }
+    }
+
+    private static boolean visible(View view) {
+        return view != null && view.getVisibility() == View.VISIBLE && view.getAlpha() > 0;
+    }
+
+    private static void place(View view, int left, int width, int height) {
+        final android.widget.FrameLayout.LayoutParams params =
+                (android.widget.FrameLayout.LayoutParams) view.getLayoutParams();
+        params.gravity = Gravity.TOP | Gravity.LEFT;
+        params.leftMargin = left;
+        params.rightMargin = params.topMargin = params.bottomMargin = 0;
+        params.width = width;
+        params.height = height;
     }
 
     private TextView button(Context context, int direction) {
@@ -180,7 +207,7 @@ public final class PurpleRecordingStrip {
         if (back == null) {
             return;
         }
-        final int now = Theme.getColor(Theme.key_inappPlayerClose, resourcesProvider);
+        final int now = Theme.getColor(Theme.key_inappPlayerTitle, resourcesProvider);
         if (now == color && back.getBackground() != null) {
             return;
         }

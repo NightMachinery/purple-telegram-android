@@ -190,15 +190,17 @@ computes the target and seeks through `MediaController.seekToProgressMs`;
 `PurpleCore.seekStepSeconds` reads the step from purple-core.
 `PurpleRecordingStrip` is the strip's per-instance helper (the recording dock
 will share it); its buttons take their colour from the theme on each draw, so
-they follow a day and night switch.
+they follow a day and night switch. The 48dp player row gives each seek button
+a 48dp square target, using the player title color. Titles end before the seek
+controls, including when speed, close or play controls are absent, in LTR and
+RTL. See [player strip layout](docs/player-strip-layout.md).
 
 Upstream files it touches, and why:
 
-- `FragmentContextView`: a field holding the per-instance helper, and one call
-  in `updateStyle`, right after the new style is set and before the style
-  branches, that shows or hides the buttons and keeps the title clear of them by
-  its right padding. It runs before the branches so the group call styles, which
-  set the title's padding outright, do so after Purple has taken its share back.
+- `FragmentContextView`: a per-instance helper, a style visibility hook, a
+  measurement hook after upstream's title and speed decisions, and a height
+  hook for 48dp audio rows. The helper owns physical control and title bounds;
+  it restores stock bounds when leaving the audio style.
 - `MusicPlayerService`: one `actions |= PurpleSeek.sessionActions(playbackState)`
   line at each of the two places that build the session's state (the
   notification and `updatePlaybackState`), which adds the rewind and

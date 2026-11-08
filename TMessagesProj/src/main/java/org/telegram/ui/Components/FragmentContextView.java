@@ -1512,6 +1512,7 @@ public class FragmentContextView extends FrameLayout implements NotificationCent
 
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        purple.measure(MeasureSpec.getSize(widthMeasureSpec), titleTextView, playButton, closeButton, playbackSpeedButton, isSideMenued);
         super.onMeasure(widthMeasureSpec, AndroidUtilities.dp2(getStyleHeight()));
     }
 
@@ -1610,7 +1611,7 @@ public class FragmentContextView extends FrameLayout implements NotificationCent
     float micAmplitude;
 
     public int getStyleHeight() {
-        return currentStyle == STYLE_INACTIVE_GROUP_CALL ? 48 : 36;
+        return purple.height(currentStyle, currentStyle == STYLE_INACTIVE_GROUP_CALL ? 48 : 36);
     }
 
     public boolean isCallTypeVisible() {
