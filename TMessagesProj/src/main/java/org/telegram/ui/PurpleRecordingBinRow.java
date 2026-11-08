@@ -25,7 +25,8 @@ public final class PurpleRecordingBinRow extends LinearLayout {
     private final PurpleRecordingEntry entry;
     private final PurpleRecordingPlayButton toggle;
     private final SeekBarView seek;
-    private final TextView elapsed, total;
+    private final TextView elapsed, total, name, metadata;
+    private final LinearLayout heading;
     private final FrameLayout preview;
     private final TextureView texture;
     private final Runnable activate, failure;
@@ -43,10 +44,10 @@ public final class PurpleRecordingBinRow extends LinearLayout {
         setPadding(AndroidUtilities.dp(18), AndroidUtilities.dp(12), AndroidUtilities.dp(18), AndroidUtilities.dp(12));
         setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite, resources));
         setOnLongClickListener(v -> { menu.run(); return true; });
-        LinearLayout heading = new LinearLayout(context);
+        heading = new LinearLayout(context);
         heading.setGravity(Gravity.CENTER_VERTICAL);
         heading.setLayoutDirection(LAYOUT_DIRECTION_LTR);
-        TextView name = text(context, resources, 16, false);
+        name = text(context, resources, 16, false);
         name.setText(title);
         name.setSingleLine(true);
         name.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -59,15 +60,10 @@ public final class PurpleRecordingBinRow extends LinearLayout {
         more.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector, resources), 1));
         more.setContentDescription(LocaleController.getString(R.string.AccDescrMoreOptions));
         more.setOnClickListener(v -> menu.run());
-        if (LocaleController.isRTL) {
-            heading.addView(more, LayoutHelper.createLinear(48, 48));
-            heading.addView(name, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
-        } else {
-            heading.addView(name, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
-            heading.addView(more, LayoutHelper.createLinear(48, 48));
-        }
+        heading.addView(name, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
+        heading.addView(more, LayoutHelper.createLinear(48, 48));
         addView(heading, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-        TextView metadata = text(context, resources, 14, true);
+        metadata = text(context, resources, 14, true);
         metadata.setText(details);
         addView(metadata, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
         preview = new FrameLayout(context);
@@ -83,7 +79,7 @@ public final class PurpleRecordingBinRow extends LinearLayout {
         preview.setVisibility(GONE);
         LinearLayout controls = new LinearLayout(context);
         controls.setGravity(Gravity.CENTER_VERTICAL);
-        controls.setLayoutDirection(LocaleController.isRTL ? LAYOUT_DIRECTION_RTL : LAYOUT_DIRECTION_LTR);
+        controls.setLayoutDirection(LAYOUT_DIRECTION_LTR);
         toggle = new PurpleRecordingPlayButton(context, resources);
         toggle.setOnClickListener(v -> toggle());
         seek = new SeekBarView(context, resources);
@@ -101,26 +97,46 @@ public final class PurpleRecordingBinRow extends LinearLayout {
         controls.addView(seek, LayoutHelper.createLinear(0, 48, 1f));
         addView(controls, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48, 0, 6, 0, 0));
         LinearLayout times = new LinearLayout(context);
+        times.setLayoutDirection(LAYOUT_DIRECTION_LTR);
         elapsed = text(context, resources, 12, true);
         total = text(context, resources, 12, true);
         elapsed.setTextColor(Theme.getColor(Theme.key_player_time, resources));
         total.setTextColor(Theme.getColor(Theme.key_player_time, resources));
         elapsed.setTextDirection(TEXT_DIRECTION_LTR); total.setTextDirection(TEXT_DIRECTION_LTR);
-        elapsed.setText(time(0)); total.setText(time(entry.durationMs)); total.setGravity(Gravity.END);
+        elapsed.setText(time(0)); total.setText(time(entry.durationMs)); total.setGravity(Gravity.RIGHT);
         times.addView(elapsed, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
         times.addView(total, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT));
         addView(times, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 48, 0, 0, 0));
         boolean playable = !PurpleRecordingEntry.UNRECOVERABLE.equals(entry.state) && entry.media != null;
         toggle.setEnabled(playable); seek.setEnabled(playable);
         label(false);
+        updateLocaleLayout();
     }
 
     private static TextView text(Context context, Theme.ResourcesProvider resources, int size, boolean secondary) {
         TextView text = new TextView(context);
         text.setTextSize(size);
         text.setTextColor(Theme.getColor(secondary ? Theme.key_windowBackgroundWhiteGrayText : Theme.key_windowBackgroundWhiteBlackText, resources));
-        text.setGravity(Gravity.START);
+        text.setGravity(Gravity.LEFT);
+        text.setTextAlignment(TEXT_ALIGNMENT_GRAVITY);
         return text;
+    }
+
+    private void updateLocaleLayout() {
+        boolean rtl = LocaleController.isRTL;
+        for (TextView text : new TextView[]{name, metadata}) {
+            text.setGravity(rtl ? Gravity.RIGHT : Gravity.LEFT);
+        }
+        int index = rtl ? 1 : 0;
+        if (heading.getChildAt(index) != name) {
+            heading.removeView(name);
+            heading.addView(name, index, name.getLayoutParams());
+        }
+    }
+
+    @Override protected void onMeasure(int widthSpec, int heightSpec) {
+        updateLocaleLayout();
+        super.onMeasure(widthSpec, heightSpec);
     }
 
     public void toggle() {

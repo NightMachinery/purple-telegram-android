@@ -35,13 +35,13 @@ public class View{
  public interface OnClickListener{void run(View v);}public interface OnLongClickListener{boolean run(View v);}
  public void setOnClickListener(OnClickListener l){click=l;}public boolean performClick(){if(!enabled||click==null)return false;click.run(this);return true;}
  public void setOnLongClickListener(OnLongClickListener l){}public void setPressed(boolean p){pressed=p;}public boolean isPressed(){return pressed;}
- protected void onDraw(Canvas c){}public void draw(Canvas c){onDraw(c);}protected void onAttachedToWindow(){}protected void onDetachedFromWindow(){}
+ protected void onDraw(Canvas c){}public void draw(Canvas c){onDraw(c);}protected void onAttachedToWindow(){}protected void onDetachedFromWindow(){}protected void onMeasure(int w,int h){}public void measure(int w,int h){onMeasure(w,h);}
 }''')
     put('android/view/ViewGroup.java','''package android.view;import android.content.Context;import java.util.*;
 public class ViewGroup extends View{
  public static class LayoutParams{public int width,height;public LayoutParams(int w,int h){width=w;height=h;}}
  public static class MarginLayoutParams extends LayoutParams{public int leftMargin,topMargin,rightMargin,bottomMargin;public MarginLayoutParams(int w,int h){super(w,h);}public void setMargins(int l,int t,int r,int b){leftMargin=l;topMargin=t;rightMargin=r;bottomMargin=b;}}
- public final List<View> children=new ArrayList<>();public ViewGroup(Context c){super(c);}public void addView(View v,LayoutParams p){v.setLayoutParams(p);children.add(v);}public View getChildAt(int n){return children.get(n);}public int getChildCount(){return children.size();}
+ public final List<View> children=new ArrayList<>();public ViewGroup(Context c){super(c);}public void addView(View v,LayoutParams p){v.setLayoutParams(p);children.add(v);}public void removeView(View v){children.remove(v);}public void addView(View v,int index,LayoutParams p){v.setLayoutParams(p);children.add(index,v);}public View getChildAt(int n){return children.get(n);}public int getChildCount(){return children.size();}
 }''')
     put('android/widget/LinearLayout.java','''package android.widget;import android.content.Context;import android.view.*;
 public class LinearLayout extends ViewGroup{public static final int HORIZONTAL=0,VERTICAL=1;public int orientation;
@@ -93,6 +93,30 @@ public class UiConstructorCases{
  System.out.println("RECORDING_UI_CONSTRUCTOR_CHECKS="+checks);
  }
 }''')
+    put('BinRtlCases.java','''import android.content.Context;import android.view.*;import android.widget.*;import org.telegram.ui.*;import org.telegram.messenger.*;import org.telegram.messenger.purple.*;
+public class BinRtlCases{
+ static int checks;static void check(boolean b,String n){checks++;if(!b)throw new AssertionError(n);}
+ public static void main(String[] args){
+ for(boolean initial:new boolean[]{false,true})for(String label:new String[]{"Long Latin title","عنوان طويل","Mixed عنوان"}){
+  LocaleController.isRTL=initial;String details=label+" · 1:25\\nالساعة 5:22\\nDiscarded";
+  PurpleRecordingBinRow row=new PurpleRecordingBinRow(new Context(),null,new PurpleRecordingEntry(),label,details,()->{},()->{},()->{});
+  LinearLayout heading=(LinearLayout)row.getChildAt(0);TextView name=(TextView)heading.getChildAt(initial?1:0),metadata=(TextView)row.getChildAt(1);
+  for(boolean rtl:new boolean[]{!initial,initial,!initial}){
+   LocaleController.isRTL=rtl;row.measure(320,600);
+   check(heading.getChildAt(rtl?1:0)==name,"title and overflow use explicit physical order on locale reuse");
+   check(name.getGravity()==(rtl?Gravity.RIGHT:Gravity.LEFT)&&metadata.getGravity()==name.getGravity(),"all metadata lines share stock physical anchor");
+   check(name.getTextAlignment()==View.TEXT_ALIGNMENT_GRAVITY&&metadata.getTextAlignment()==View.TEXT_ALIGNMENT_GRAVITY,"bidi content cannot choose paragraph anchor");
+   check(name.text.equals(label)&&metadata.text.equals(details),"Latin Arabic mixed content preserved");
+   check(name.getTextDirection()==0&&metadata.getTextDirection()==0,"native bidi text direction preserved");
+   LinearLayout controls=(LinearLayout)row.getChildAt(3),times=(LinearLayout)row.getChildAt(4);
+   check(controls.direction==View.LAYOUT_DIRECTION_LTR&&times.direction==View.LAYOUT_DIRECTION_LTR,"native seek and numerical time row stay LTR");
+   check(times.getChildAt(0).getTextDirection()==View.TEXT_DIRECTION_LTR&&times.getChildAt(1).getTextDirection()==View.TEXT_DIRECTION_LTR,"numeric times isolated LTR");
+   check(((TextView)times.getChildAt(0)).getGravity()==Gravity.LEFT&&((TextView)times.getChildAt(1)).getGravity()==Gravity.RIGHT,"elapsed left and total right like AudioPlayerAlert");
+  }
+ }
+ System.out.println("RECORDING_BIN_RTL_CHECKS="+checks);}
+}''')
+    assert 'android:supportsRtl="false"' in (root/'TMessagesProj/src/main/AndroidManifest.xml').read_text()
     strip = (java / 'ui/PurpleRecordingStrip.java').read_text()
     visibility = method(strip, '    private void recordingVisibility(')
     height = method(strip, '    public int height(')

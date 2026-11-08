@@ -374,7 +374,13 @@ voice/video mode toggle. The normal short tap and accepted hold keep stock behav
 Each bin row uses UniversalAdapter's full-width custom row with wrapping height.
 Its title, seek bar and elapsed time use explicit floating-point weights in
 LayoutHelper, so they cannot select the integer gravity overload. The title stays
-on one line; kind and duration, date, and status wrap below it.
+on one line; kind and duration, date, and status wrap below it. The title and
+all metadata lines use TextCell's explicit locale-based RIGHT/LEFT gravity and
+TextView gravity alignment, retaining native bidi text direction. The title and
+overflow physically exchange sides when the locale changes on an existing row.
+The manifest disables framework RTL layouts, so direction setters alone cannot
+perform this placement. SeekBarView keeps AudioPlayerAlert's left-to-right
+numerical progress, with LTR elapsed time on the left and total on the right.
 
 The 48dp play target uses SharedAudioCell's RadialProgress2, MediaActionDrawable
 and incoming loader/media-icon color keys, including pressed colors. SeekBarView
@@ -402,3 +408,8 @@ real LayoutHelper methods and verify its FrameLayout bounds, stock capsule
 parameters and child targets. Separate production-placement ports cover all
 four corners with narrow and keyboard-sized surfaces. These checks establish
 layout contracts, not rendered glass/shadow pixels or camera drag behavior.
+
+The bin constructor ports cover Latin, Arabic and mixed metadata in both locales
+and locale changes on the same row, including physical text anchors, overflow
+order and unchanged numerical seek/time direction. These are source contracts;
+real Arabic glyph shaping and rendered row alignment need a device comparison.
