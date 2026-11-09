@@ -95,24 +95,35 @@ circles are the default, ordinary video is secondary, review cancellation sends
 nothing, paid approval covers the prepared count, and a duplicate approval cannot
 restart or abort an already accepted sequence.
 
-V2 preview publishes a descriptor-owned original before any destructive trim or
-resume. The registry worker copies its full bytes into a separately marked bin
-entry, syncs the media through the existing store, verifies its hash and saves
-the manifest. Native trim and resume wait for that acknowledgement. Repeated
-callbacks for the same inode share one reservation; retry reuses its entry.
-The descriptor protects source identity and readable bytes if native cancellation
-or teardown unlinks the file while persistence runs. Stale source callbacks and
-account replacement cannot admit another source. Full-original bin entries have
-a separate label from outgoing selected copies and use normal retention.
+Before V2 exposes a completed long preview or finishes a long active take, its
+serialized file worker reserves that exact full source in the existing Recording
+bin manifest. The reservation captures account, user, generation, pathname,
+device and inode before copying. The worker syncs an independent bin copy,
+checks original and copy hashes, then atomically commits the bin entry. Native
+trim and resume require that acknowledgment. A copy or final-manifest failure
+leaves the source reservation discoverable at startup, without depending on an
+open descriptor or a pending callback. Repeated callbacks reuse the reservation.
 
-A failed original save leaves trim/resume blocked and reports the failure. Its
-descriptor remains owned for a persistence retry when the Recording bin reopens;
-that retry never sends a message. Until synced media and manifest acknowledgement,
-this descriptor is only process-local protection, not crash or power-loss
-durability. The implementation uses the existing store's sync/atomic-manifest
-contract and makes no stronger filesystem power-loss claim. A process death
-during a failed save can still lose an unlinked source; the error explicitly
-asks the user to keep the app open. Only newly recorded media is retained.
+The native erase hook defers its usual truncate-before-unlink operation only for
+an independently protected long original or writer. Cancel, destroy and native
+error cleanup can release hardware while preserving those source bytes. The
+registered writer's existing snapshot reservation also keeps its full take when
+this feature owns it, even with keep-discarded disabled. If a new reservation
+cannot be committed, that existing writer reservation remains the recovery
+fallback; a failed new reservation never counts as a saved original. Ordinary
+unprotected erase and the usual discard policy remain unchanged.
+
+Startup reconstructs ownership from the real manifest, validates source identity,
+and retries the full copy before retiring its reserved pathname. A replacement
+inode is refused without adopting or deleting another capture. The runtime bin
+retry never sends a message. Once a synced copy and manifest are acknowledged,
+native cleanup may erase the old source; the separately marked full-original bin
+entry remains under normal retention. This uses the existing synced-file and
+atomic-manifest contract, without a stronger claim about directory durability,
+power loss, or recovery when the underlying storage itself is unavailable. Only
+newly recorded media is retained. Host regressions execute the actual native
+erase, store and manifest code with controlled I/O failures and reconstructed
+stores; Android filesystem and hardware behavior still require device checks.
 
 Muted Camera2 results may contain video only. Sending one ordinary video
 preserves that track set and the selected range. Circle parts encode explicit

@@ -328,6 +328,7 @@ public final class InstantCameraView2 extends InstantCameraViewBase {
     @Override
     public void destroy(boolean async) {
         if (org.telegram.messenger.purple.PurpleRecordingDock.roundFinalizing(currentAccount, recordingGuid)) return;
+        if (session != null) session.purpleProtectOriginal();
         org.telegram.messenger.purple.PurpleLongRoundOriginals.release(currentAccount, recordingGuid);
         setRecordingUiFrameClockActive(false);
         cancelCameraFlipAnimation();
@@ -392,6 +393,7 @@ public final class InstantCameraView2 extends InstantCameraViewBase {
                 .setCameraResolution(SharedSettings.roundVideoCameraResolution.get())
                 .setFrameRate(SharedSettings.roundVideoFrameRate.get())
                 .setCompositionEnabled(SharedSettings.roundVideoComposition.get())
+                .setPurpleOriginalOwner(org.telegram.messenger.purple.PurpleLongRoundOriginals.owner(currentAccount, recordingGuid))
                 .setListener(sessionListener)
                 .setOutputListener(upload)
                 .setScreenFlashController(this::setScreenFlashEnabled)
@@ -536,6 +538,7 @@ public final class InstantCameraView2 extends InstantCameraViewBase {
     public void cancel(boolean byGesture) {
         if (org.telegram.messenger.purple.PurpleRecordingDock.roundFinalizing(currentAccount, recordingGuid)) return;
         if (session == null) return;
+        session.purpleProtectOriginal();
         postRecordStopped(byGesture ? 0 : 6);
         session.cancel();
         if (upload != null) upload.release(true);

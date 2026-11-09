@@ -193,6 +193,16 @@ public final class PurpleRecordingFiles {
         }
     }
 
+    public static byte[] digest(File file) throws IOException {
+        try (FileInputStream input = new FileInputStream(file)) {
+            final java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            final byte[] buffer = new byte[64 * 1024];
+            int size;
+            while ((size = input.read(buffer)) > 0) digest.update(buffer, 0, size);
+            return digest.digest();
+        } catch (java.security.NoSuchAlgorithmException failure) { throw new IOException(failure); }
+    }
+
     /** Copies a file, synced. */
     public static void copy(File from, File to) throws IOException {
         try (FileInputStream in = new FileInputStream(from)) {

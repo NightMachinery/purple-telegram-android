@@ -1130,6 +1130,6 @@
     <string name="PurpleLongRoundLocal">Long local recording</string>
     <string name="PurpleLongRoundSelectionInvalid">The selected range is invalid. Nothing was sent. The full original remains in the Recording bin; review it there before sending.</string>
     <string name="PurpleLongRoundOriginalSaving">Saving the full original to the Recording bin. Try again once it is saved.</string>
-    <string name="PurpleLongRoundOriginalFailed">The full original could not be saved. Trim and resume are blocked. Keep the app open and reopen the Recording bin to retry saving.</string>
+    <string name="PurpleLongRoundOriginalFailed">The full original could not be added to Recording bin. Its source is being kept for another save attempt.</string>
     <string name="PurpleLongRoundOriginalKept">Full original retained</string>
 </resources>

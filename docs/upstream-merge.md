@@ -801,14 +801,17 @@ PurpleLongRoundMedia; do not replace the scoped input with prior-sync stream-cop
 The owned adapter must be recreated safely by native converter retries and
 released on failure as well as success.
 
-InstantCameraView2 delegates full preview ownership before publishing preview
-notification and checks owned persistence/selection admission before its native
-finish reservation and resume. Teardown releases the UI association while pending
-original bytes remain descriptor-owned until persistence. Preserve this order
-when merging; V2 already remuxes selected preview ranges and resets send offsets,
-while legacy dispatches selection offsets in microseconds without materializing.
+InstantCameraView2 freezes a long-original owner into the native session builder.
+RoundVideoSession calls it on the serialized file worker after completing a full
+preview or active take and before cancellation checks or destructive remuxing.
+The owner reserves the exact source identity in the existing manifest and commits
+a synced full copy. RoundVideoRemuxer delegates erase admission before its normal
+truncate-before-unlink body. Cancel/destroy arm registered-writer protection
+before stop notifications; the existing snapshot handoff honors that independent
+ownership even with keep-discarded disabled. Preserve this order after merges.
+V2 still materializes selected preview ranges and resets offsets; legacy sends
+selection offsets in microseconds without materializing them.
 
 The long-round converter audio hook also handles an explicitly supplied silence
 input when native Camera2 mute has removed the source audio track. Ordinary
-callers retain the native track-selection policy. See `docs/long-round-
-recording.md`.
+callers retain the native track-selection policy. See [long-round-recording.md](long-round-recording.md).

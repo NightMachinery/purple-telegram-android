@@ -71,7 +71,7 @@ file TMessagesProj/src/main/java/org/telegram/ui/Components/DialogsChannelsAdapt
 file TMessagesProj/src/main/java/org/telegram/ui/Components/FilterTabsView.java 13 3 5
 file TMessagesProj/src/main/java/org/telegram/ui/Components/FragmentContextView.java 6 2 6
 file TMessagesProj/src/main/java/org/telegram/ui/Components/InstantCameraView.java 15 5 12
-file TMessagesProj/src/main/java/org/telegram/ui/Components/InstantCameraView2.java 11 2 8
+file TMessagesProj/src/main/java/org/telegram/ui/Components/InstantCameraView2.java 14 2 8
 file TMessagesProj/src/main/java/org/telegram/ui/Components/InstantCameraViewBase.java 5 0 1
 file TMessagesProj/src/main/java/org/telegram/ui/Components/MessagePreviewView.java 1 0 1
 file TMessagesProj/src/main/java/org/telegram/ui/Components/MessagePrivateSeenView.java 4 1 4
@@ -104,6 +104,8 @@ file TMessagesProj/src/main/java/org/telegram/ui/Stories/StoriesController.java 
 file TMessagesProj/src/main/java/org/telegram/ui/Stories/StoryViewer.java 2 2 2
 file TMessagesProj/src/main/java/org/telegram/ui/TopicsFragment.java 5 5 4
 file TMessagesProj/src/main/java/org/telegram/utils/recorder/round/RoundVideoMp4Writer.java 1 0 1
+file TMessagesProj/src/main/java/org/telegram/utils/recorder/round/RoundVideoRemuxer.java 1 0 1
+file TMessagesProj/src/main/java/org/telegram/utils/recorder/round/RoundVideoSession.java 17 1 7
 file TMessagesProj/src/main/res/xml/auth.xml 1 1 1
 file TMessagesProj/src/main/res/xml/auth_menu.xml 1 1 1
 file TMessagesProj/src/main/res/xml/provider_paths.xml 1 0 1

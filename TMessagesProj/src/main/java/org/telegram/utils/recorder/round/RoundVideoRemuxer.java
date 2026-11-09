@@ -68,6 +68,7 @@ final class RoundVideoRemuxer {
     }
 
     static void erase(@NonNull File file) {
+        if (org.telegram.messenger.purple.PurpleLongRoundOriginals.protectErase(file)) return;
         try (RandomAccessFile randomAccessFile = new RandomAccessFile(file, "rw")) {
             randomAccessFile.setLength(0);
         } catch (IOException ignore) {

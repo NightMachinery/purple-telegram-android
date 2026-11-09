@@ -43,6 +43,8 @@ public final class PurpleRecordingStore {
          * nothing could be rebuilt; the raw file is then kept.
          */
         RoundResult recoverRound(File media, File journal, File out);
+
+        default boolean matchesLongOriginal(PurpleRecordingEntry entry, File file) { return false; }
     }
 
     /** A round recovery's result. */
@@ -145,6 +147,44 @@ public final class PurpleRecordingStore {
         return new File(e.snapshotBase);
     }
 
+    public void reserveLongOriginal(PurpleRecordingEntry entry, File source, String generation,
+            long device, long inode) throws IOException {
+        final String media = entry.media, previousSource = entry.snapshotSource, previousGeneration = entry.originalGeneration;
+        final long previousDevice = entry.originalDevice, previousInode = entry.originalInode;
+        final boolean original = entry.longOriginal, awaiting = entry.awaitingQueue, committed = entry.snapshotCommitted;
+        entry.media = source.getAbsolutePath(); entry.snapshotSource = entry.media;
+        entry.originalGeneration = generation; entry.originalDevice = device; entry.originalInode = inode;
+        entry.longOriginal = true; entry.awaitingQueue = true; entry.snapshotCommitted = false;
+        try { save(); } catch (IOException failure) {
+            entry.media = media; entry.snapshotSource = previousSource; entry.originalGeneration = previousGeneration;
+            entry.originalDevice = previousDevice; entry.originalInode = previousInode;
+            entry.longOriginal = original; entry.awaitingQueue = awaiting; entry.snapshotCommitted = committed;
+            throw failure;
+        }
+    }
+
+    public void keepLongOriginal(PurpleRecordingEntry entry, long nowSeconds) throws IOException {
+        final File source = new File(entry.snapshotSource), target = binFile(entry);
+        if (!core.matchesLongOriginal(entry, source)) throw new IOException("original identity");
+        final byte[] before = PurpleRecordingFiles.digest(source);
+        PurpleRecordingFiles.copy(source, target);
+        if (!core.matchesLongOriginal(entry, source)
+                || !java.util.Arrays.equals(before, PurpleRecordingFiles.digest(source))
+                || !java.util.Arrays.equals(before, PurpleRecordingFiles.digest(target))
+                || PurpleRecordingFiles.mp4Finished(target) != 1) throw new IOException("original copy");
+        final String previous = entry.media, state = entry.state;
+        final long binned = entry.binnedAt, duration = entry.durationMs;
+        final boolean awaiting = entry.awaitingQueue, committed = entry.snapshotCommitted;
+        entry.media = target.getAbsolutePath(); entry.state = PurpleRecordingEntry.UNSENT;
+        entry.durationMs = PurpleRecordingFiles.mp4DurationMs(target); entry.binnedAt = nowSeconds;
+        entry.awaitingQueue = false; entry.snapshotCommitted = true;
+        try { save(); } catch (IOException failure) {
+            entry.media = previous; entry.state = state; entry.durationMs = duration; entry.binnedAt = binned;
+            entry.awaitingQueue = awaiting; entry.snapshotCommitted = committed;
+            throw failure;
+        }
+    }
+
     public void snapshotKept(PurpleRecordingEntry e, File media, boolean discarded, long nowSeconds) throws IOException {
         e.discarded = discarded;
         e.snapshotCommitted = true;
@@ -160,6 +200,8 @@ public final class PurpleRecordingStore {
                 e.snapshotBase == null ? null : e.snapshotBase + ".error",
                 e.snapshotBase == null ? null : e.snapshotBase + ".discard",
                 e.snapshotBase == null ? null : e.snapshotBase + ".drop"}) {
+            if (e.longOriginal && path != null && path.equals(e.snapshotSource)
+                    && !core.matchesLongOriginal(e, new File(path))) continue;
             if (path != null && !path.equals(e.media) && !path.equals(e.journal)) new File(path).delete();
         }
     }
@@ -277,6 +319,11 @@ public final class PurpleRecordingStore {
         final Outcome outcome = new Outcome();
         for (PurpleRecordingEntry e : new ArrayList<>(entries)) {
             if (!e.unfinished()) { cleanupSnapshot(e); continue; }
+            if (e.longOriginal && e.originalGeneration != null) {
+                try { keepLongOriginal(e, nowSeconds); cleanupSnapshot(e); count(e, outcome); }
+                catch (IOException failure) { outcome.failures++; }
+                continue;
+            }
             File reserved = null;
             boolean drop = false, discarded = false;
             if (e.snapshotBase != null) {

@@ -220,6 +220,7 @@ public final class RoundVideoSession {
         private long maximumDurationMs = DEFAULT_MAXIMUM_DURATION_MS;
         private boolean compositionEnabled = true;
         private Listener listener;
+        private org.telegram.messenger.purple.PurpleLongRoundOriginals.Owner purpleOriginalOwner;
         private OutputListener outputListener;
         private ScreenFlashController screenFlashController;
 
@@ -274,6 +275,11 @@ public final class RoundVideoSession {
         /** Sets the directory used for output generations and preview snapshots. */
         public @NonNull Builder setOutputDirectory(@NonNull File directory) {
             outputDirectory = directory;
+            return this;
+        }
+
+        public Builder setPurpleOriginalOwner(org.telegram.messenger.purple.PurpleLongRoundOriginals.Owner value) {
+            purpleOriginalOwner = value;
             return this;
         }
 
@@ -499,6 +505,7 @@ public final class RoundVideoSession {
     private final TextureView previewView;
     private final File outputDirectory;
     private final Listener listener;
+    private final org.telegram.messenger.purple.PurpleLongRoundOriginals.Owner purpleOriginalOwner;
     private final OutputListener outputListener;
     private final ScreenFlashController screenFlashController;
     private final Object outputLock = new Object();
@@ -588,6 +595,7 @@ public final class RoundVideoSession {
         maximumDurationMs = builder.maximumDurationMs;
         compositionEnabled = builder.compositionEnabled;
         listener = builder.listener;
+        purpleOriginalOwner = builder.purpleOriginalOwner;
         outputListener = builder.outputListener;
         screenFlashController = builder.screenFlashController;
         diagnostics = new RoundVideoDiagnostics();
@@ -791,12 +799,17 @@ public final class RoundVideoSession {
         return true;
     }
 
+    public void purpleProtectOriginal() {
+        if (purpleOriginalOwner != null && writer != null) purpleOriginalOwner.arm(writer.getFile(), getRecordedDurationMs());
+    }
+
     /** Cancels the session, invalidates upload data and deletes temporary media. */
     @MainThread
     public boolean cancel() {
         requireMainThread();
         if (state == State.RELEASED || state == State.COMPLETED) return false;
         diagnostics.log("cancel requested: state=" + state);
+        purpleProtectOriginal();
         if (!cancelOutput(OutputInvalidationReason.CANCELLED)) return false;
         disableCameraEffects();
         releasePlayer();
@@ -986,11 +999,13 @@ public final class RoundVideoSession {
         previewSnapshotStartedNs = System.nanoTime();
         diagnostics.log("preview snapshot started: file=" + snapshot.getName());
         RoundVideoMp4Writer currentWriter = writer;
+        if (purpleOriginalOwner != null) purpleOriginalOwner.arm(currentWriter.getFile(), recordedDurationMs);
         fileExecutor.execute(() -> {
             try {
                 currentWriter.createPreview(snapshot);
-                ensureNotCancelled();
                 long duration = RoundVideoRemuxer.getDurationMs(snapshot);
+                if (purpleOriginalOwner != null) purpleOriginalOwner.capture(snapshot, currentWriter.getFile(), duration);
+                ensureNotCancelled();
                 diagnostics.log("preview snapshot completed: durationMs=" + duration
                         + ", size=" + snapshot.length()
                         + ", elapsedMs=" + elapsedMs(previewSnapshotStartedNs));
@@ -1132,6 +1147,7 @@ public final class RoundVideoSession {
             try {
                 currentWriter.finish();
                 long actualDurationMs = RoundVideoRemuxer.getDurationMs(currentWriter.getFile());
+                if (purpleOriginalOwner != null) purpleOriginalOwner.capture(currentWriter.getFile(), null, actualDurationMs);
                 diagnostics.log("active output finalized: size=" + currentWriter.getFile().length()
                         + ", durationMs=" + actualDurationMs
                         + ", elapsedMs=" + elapsedMs(finishStartedNs));

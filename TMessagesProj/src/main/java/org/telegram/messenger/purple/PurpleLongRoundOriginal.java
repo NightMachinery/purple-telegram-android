@@ -17,6 +17,10 @@ public final class PurpleLongRoundOriginal {
     public final AtomicBoolean busy = new AtomicBoolean();
     public volatile boolean saved, released;
     public String binId;
+    public final String generation = java.util.UUID.randomUUID().toString();
+    public final long device, inode;
+    String writerPath;
+    private StructStat writerIdentity;
     private final FileInputStream input;
     private final StructStat identity;
     private final long size;
@@ -26,6 +30,7 @@ public final class PurpleLongRoundOriginal {
         input = new FileInputStream(file);
         try {
             identity = Os.fstat(input.getFD());
+            device = identity.st_dev; inode = identity.st_ino;
             size = input.getChannel().size();
             if (size <= 0 || size > 256L * 1024 * 1024) throw new IOException("size");
         } catch (Exception failure) { input.close(); throw failure; }
@@ -35,6 +40,25 @@ public final class PurpleLongRoundOriginal {
             final StructStat current = Os.stat(file.getAbsolutePath());
             return path.equals(file.getAbsolutePath()) && identity.st_ino == current.st_ino
                     && identity.st_dev == current.st_dev && identity.st_size == current.st_size;
+        } catch (Exception missing) { return false; }
+    }
+    public void writer(File file) {
+        if (file == null) return;
+        try { writerIdentity = Os.stat(file.getAbsolutePath()); writerPath = file.getAbsolutePath(); }
+        catch (Exception missing) { writerIdentity = null; }
+    }
+    public boolean protectsWriter(File file) {
+        if (saved || writerIdentity == null || !file.getAbsolutePath().equals(writerPath)) return false;
+        try {
+            final StructStat current = Os.stat(writerPath);
+            return current.st_dev == writerIdentity.st_dev && current.st_ino == writerIdentity.st_ino;
+        } catch (Exception missing) { return false; }
+    }
+    public static boolean matchesReservation(PurpleRecordingEntry entry, File file) {
+        if (entry.originalGeneration == null || !file.getAbsolutePath().equals(entry.snapshotSource)) return false;
+        try {
+            final StructStat current = Os.stat(file.getAbsolutePath());
+            return current.st_dev == entry.originalDevice && current.st_ino == entry.originalInode;
         } catch (Exception missing) { return false; }
     }
     public FileChannel channel() throws IOException {
