@@ -3,10 +3,12 @@ import java.util.*;
 public class ConnectionsManager {
  public static final int RequestFlagFailOnServerErrors=1;
  public static int now=1000;
+ public static final ArrayList<Integer> cancelled=new ArrayList<>();
  public static final ArrayList<TLRPC.TL_messages_sendMessage> requests=new ArrayList<>();
  public static final ArrayList<RequestDelegate> callbacks=new ArrayList<>();
  public static ConnectionsManager getInstance(int account){return new ConnectionsManager();}
  public int getCurrentTime(){return now;}
+ public void cancelRequest(int token,boolean notifyServer){cancelled.add(token);}
  public int sendRequest(TLObject object,RequestDelegate callback,int flags){
   TLRPC.TL_messages_sendMessage request=(TLRPC.TL_messages_sendMessage)object;
   java.io.File journal=new java.io.File(System.getProperty("scratch"),"media-reply-journal.json");

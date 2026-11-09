@@ -69,7 +69,7 @@ public final class PurpleMediaReplySettingsActivity extends UniversalFragment {
         follow.checked = shown.optBoolean("round_follow_voice", true);
         items.add(follow);
         items.add(UItem.asButton(ROUND, getString(R.string.PurpleMediaReplyRound),
-                follow.checked ? getString(R.string.PurpleMediaReplyFollowing) : mode(shown.optInt("round", 0))).setEnabled(!follow.checked));
+                inheritedRound ? getString(R.string.PurpleMediaReplyInherit) : follow.checked ? getString(R.string.PurpleMediaReplyFollowing) : mode(shown.optInt("round", 0))).setEnabled(!follow.checked));
         if (row.startsWith("sets.")) {
             JSONArray peers = shown.optJSONArray("peers");
             items.add(UItem.asButton(PEERS, getString(R.string.PurpleMediaReplySelect), String.valueOf(peers == null ? 0 : peers.length())));
@@ -81,7 +81,7 @@ public final class PurpleMediaReplySettingsActivity extends UniversalFragment {
                 String label = getString(R.string.PurpleMediaReplyUnavailableChat);
                 try {
                     long id = Long.parseLong(parts[1]);
-                    int kind = 0;
+                    int kind = parts[0].equals("user") ? 0 : parts[0].equals("chat") ? 1 : -1;
                     if (parts[0].equals("user")) {
                         org.telegram.tgnet.TLRPC.User user = MessagesController.getInstance(currentAccount).getUser(id);
                         if (user != null) label = org.telegram.messenger.UserObject.getUserName(user);
@@ -89,7 +89,7 @@ public final class PurpleMediaReplySettingsActivity extends UniversalFragment {
                         org.telegram.tgnet.TLRPC.Chat chat = MessagesController.getInstance(currentAccount).getChat(id);
                         if (chat != null) { label = chat.title; kind = ChatObject.isChannel(chat) && !chat.megagroup ? 2 : 1; }
                     }
-                    JSONObject effective = PurpleMediaReply.resolved(currentAccount, token, kind);
+                    JSONObject effective = kind < 0 ? null : PurpleMediaReply.resolved(currentAccount, token, kind);
                     if (effective != null) label += ": " + mode(effective.optInt("voice")) + " / " + mode(effective.optInt("round"));
                 } catch (Exception e) { }
                 items.add(UItem.asButton(ENTRY + 1000 + i, label));

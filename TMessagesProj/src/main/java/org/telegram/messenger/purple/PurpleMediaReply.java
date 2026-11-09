@@ -27,6 +27,8 @@ public final class PurpleMediaReply {
         String journal;
         boolean failed;
         int inFlight;
+        ConnectionsManager connection;
+        final Map<Integer, Long> requests = new HashMap<>();
     }
     static native String policyNative(long handle);
     static native String resolvedNative(long handle, String peer, int kind);
@@ -43,11 +45,24 @@ public final class PurpleMediaReply {
     static native String reserveNative(String previous, String candidate);
 
     public static synchronized void invalidate() {
-        ++revision;
+        final long revokedBefore = ++revision;
         for (int slot = 0; slot < cutoffs.length; ++slot) {
             cutoffs[slot] = UserConfig.getInstance(slot).isClientActivated()
                     ? ConnectionsManager.getInstance(slot).getCurrentTime() : 0;
         }
+        AndroidUtilities.runOnUIThread(() -> {
+            for (State state : states.values()) {
+                java.util.Iterator<Map.Entry<Integer, Long>> iterator = state.requests.entrySet().iterator();
+                while (iterator.hasNext()) {
+                    Map.Entry<Integer, Long> request = iterator.next();
+                    if (request.getValue() >= revokedBefore) continue;
+                    final int token = request.getKey();
+                    iterator.remove();
+                    --state.inFlight;
+                    state.connection.cancelRequest(token, true);
+                }
+            }
+        });
     }
     public static JSONObject policy(int account) {
         PurpleAccountSettings.Effective settings = PurpleAccountSettings.forAccount(account);
@@ -121,6 +136,7 @@ public final class PurpleMediaReply {
             State state = states.get(identity.key);
             if (state == null || state.lifetime != identity.lifetime) {
                 state = new State(); state.lifetime = identity.lifetime;
+                state.connection = ConnectionsManager.getInstance(account);
                 states.put(identity.key, state);
                 AtomicFile store = new AtomicFile(journalFile);
                 if (journalFile.exists() || backupFile.exists()) {
@@ -162,9 +178,10 @@ public final class PurpleMediaReply {
                 synchronized (PurpleAccountSettings.class) {
                     if (!settings.current() || capturedRevision != revision || !identity.current()) return;
                     ++sending.inFlight;
-                    ConnectionsManager.getInstance(account).sendRequest(request, (response, error) -> {
+                    final int[] token = {0};
+                    token[0] = sending.connection.sendRequest(request, (response, error) -> {
                         AndroidUtilities.runOnUIThread(() -> {
-                            --sending.inFlight;
+                            if (sending.requests.remove(token[0]) != null) --sending.inFlight;
                             if (identity.current() && response instanceof TLRPC.Updates) {
                                 org.telegram.messenger.Utilities.stageQueue.postRunnable(() -> {
                                     if (identity.current()) controller.processUpdates((TLRPC.Updates) response, false);
@@ -172,6 +189,7 @@ public final class PurpleMediaReply {
                             }
                         });
                     }, ConnectionsManager.RequestFlagFailOnServerErrors);
+                    sending.requests.put(token[0], capturedRevision);
                 }
             }
         } catch (Exception | UnsatisfiedLinkError e) {

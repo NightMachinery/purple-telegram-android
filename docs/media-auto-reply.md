@@ -44,3 +44,10 @@ branch (with explicit difference/scheduled facts) and SendMessagesHelper's
 successful ACK notifications (with explicit scheduled state). Purple's own
 settings screen links the new page. Native UI rendering and live acceptance
 are separate from source and host qualification.
+
+Settings or account replacement cancels only request tokens owned by this
+feature on their frozen native connection/session. Cancellation is best effort:
+a reply the server already accepted may still arrive. Cancelled or uncertain
+actions retain their durable reservation and never become automatically
+sendable again. Late success/error callbacks do not reopen a reservation or
+retire a newer generation's capacity.
