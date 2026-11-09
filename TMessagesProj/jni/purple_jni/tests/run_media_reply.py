@@ -11,20 +11,21 @@ parser.add_argument("--receipt", type=Path, required=True)
 parser.add_argument("--json", type=Path, required=True)
 parser.add_argument("--library", type=Path, required=True)
 parser.add_argument("--output", type=Path, required=True)
+parser.add_argument("--phase", choices=["all", "compile", "run"], default="all")
 args = parser.parse_args()
 receipt = json.loads(args.receipt.read_text())
 classes = Path(receipt["destination"])
 compiler = Path(receipt["compiler"])
 assert receipt["executed"] and receipt["didWork"] and not receipt.get("skipped", False)
 assert classes.is_dir() and args.json.is_file() and args.library.is_file()
-assert not args.output.exists(), "fixture output must be fresh"
-args.output.mkdir(parents=True)
+if args.phase in ["all", "compile"]:
+    assert not args.output.exists(), "fixture output must be fresh"
+    args.output.mkdir(parents=True)
+    for name in ["classes", "fixtures", "empty"]:
+        (args.output / name).mkdir()
 out = args.output / "classes"
-out.mkdir()
 fixtures = args.output / "fixtures"
-fixtures.mkdir()
 empty = args.output / "empty"
-empty.mkdir()
 source = Path(__file__).resolve().parent / "media_reply"
 sources = sorted(source.rglob("*.java"))
 classpath = os.pathsep.join([str(classes), str(args.json)])
@@ -36,6 +37,8 @@ commands = [
         "org.telegram.messenger.purple.PurpleMediaReplyCases", args.library.resolve(), classes.resolve()]),
 ]
 for name, command in commands:
+    if args.phase == "compile" and name != "javac" or args.phase == "run" and name == "javac":
+        continue
     with (args.output / (name + ".log")).open("w") as log:
         result = subprocess.run([str(x) for x in command], stdout=log, stderr=subprocess.STDOUT)
     print((args.output / (name + ".log")).read_text(), end="", flush=True)

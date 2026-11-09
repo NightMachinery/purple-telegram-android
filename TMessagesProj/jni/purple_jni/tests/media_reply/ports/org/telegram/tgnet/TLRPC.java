@@ -2,7 +2,7 @@ package org.telegram.tgnet;
 public class TLRPC {
  public static class Peer {public long channel_id,chat_id,user_id;}
  public static class MessageReplyHeader {public int reply_to_top_id,reply_to_msg_id;public boolean forum_topic;}
- public static class Message {public int id,date,send_state,mediaKind,quick_reply_shortcut_id;public String quick_reply_shortcut;public boolean out,from_scheduled;public Peer peer_id;public MessageReplyHeader reply_to;public MessageAction action;}
+ public static class Message {public int id,date,send_state,mediaKind,quick_reply_shortcut_id;public String quick_reply_shortcut;public boolean out,from_scheduled;public long dialog_id;public Peer peer_id,from_id;public MessageReplyHeader reply_to;public MessageAction action;}
  public static class MessageAction {}
  public static class TL_messageActionEmpty extends MessageAction {}
  public static class Chat {public boolean allowed=true,channel,megagroup;}

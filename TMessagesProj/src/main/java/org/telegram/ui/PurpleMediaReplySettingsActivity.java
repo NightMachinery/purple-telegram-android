@@ -63,7 +63,9 @@ public final class PurpleMediaReplySettingsActivity extends UniversalFragment {
         }
         if (shown == null) return;
         items.add(UItem.asButton(VOICE, getString(R.string.PurpleMediaReplyVoice), shown.isNull("voice") && row.startsWith("sets.") ? getString(R.string.PurpleMediaReplyInherit) : mode(shown.optInt("voice", 0))));
-        UItem follow = UItem.asCheck(FOLLOW, getString(R.string.PurpleMediaReplyFollow));
+        boolean inheritedRound = row.startsWith("sets.") && shown.isNull("round_follow_voice");
+        UItem follow = inheritedRound ? UItem.asButton(FOLLOW, getString(R.string.PurpleMediaReplyFollow),
+                getString(R.string.PurpleMediaReplyInherit)) : UItem.asCheck(FOLLOW, getString(R.string.PurpleMediaReplyFollow));
         follow.checked = shown.optBoolean("round_follow_voice", true);
         items.add(follow);
         items.add(UItem.asButton(ROUND, getString(R.string.PurpleMediaReplyRound),
@@ -99,7 +101,7 @@ public final class PurpleMediaReplySettingsActivity extends UniversalFragment {
         if (!live() || policy == null) return;
         if (item.id == TEXT) edit(getString(R.string.PurpleMediaReplyText), policy.optString("text"), text -> write("", "text", text));
         else if (item.id == ADD) edit(getString(R.string.PurpleMediaReplyName), "", name -> {
-            if (!name.matches("[A-Za-z0-9_-]{1,64}")) { error(getString(R.string.PurpleMediaReplyNameInfo)); return; }
+            if (name.trim().isEmpty() || name.length() > 128) { error(getString(R.string.PurpleMediaReplyNameInfo)); return; }
             JSONArray sets = policy.optJSONArray("sets");
             if (sets != null) for (int i = 0; i < sets.length(); ++i) {
                 if (name.equals(sets.optJSONObject(i).optString("name"))) { error(getString(R.string.PurpleMediaReplyNameInfo)); return; }
@@ -124,7 +126,7 @@ public final class PurpleMediaReplySettingsActivity extends UniversalFragment {
             dialog.setItems(options, (d, which) -> write(row, item.id == VOICE ? "voice" : "round", which == 4 ? JSONObject.NULL : new String[]{"off", "own", "received", "both"}[which]));
             dialog.setNegativeButton(getString(R.string.Cancel), null);
             showDialog(dialog.create());
-        } else if (item.id == FOLLOW) write(row, "round_follow_voice", !item.checked);
+        } else if (item.id == FOLLOW) write(row, "round_follow_voice", shown.isNull("round_follow_voice") && row.startsWith("sets.") || !item.checked);
         else if (item.id == CLEAR) write(row, "peers", new JSONArray());
         else if (item.id == RESET) {
             if (write(row, "voice", JSONObject.NULL)

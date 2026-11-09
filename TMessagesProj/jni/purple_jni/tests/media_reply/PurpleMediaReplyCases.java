@@ -15,7 +15,7 @@ public final class PurpleMediaReplyCases {
   PurpleMediaReply.invalidate();
   TLRPC.Message cutoff=message(100,1,false);cutoff.date=1000;observe(cutoff,false,false);
   check(ConnectionsManager.requests.isEmpty(),"activation cutoff");
-  TLRPC.Message incoming=message(101,1,false);observe(incoming,false,false);
+  TLRPC.Message incoming=message(101,1,false);incoming.peer_id.user_id=42;incoming.from_id=new TLRPC.Peer();incoming.from_id.user_id=17;observe(incoming,false,false);
   check(ConnectionsManager.requests.size()==1,"new voice request");
   TLRPC.TL_messages_sendMessage sent=ConnectionsManager.requests.get(0);
   check(sent.peer.id==17&&sent.reply_to.reply_to_msg_id==101,"exact native reply");

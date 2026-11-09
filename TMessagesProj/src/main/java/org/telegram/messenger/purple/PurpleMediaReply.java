@@ -66,10 +66,10 @@ public final class PurpleMediaReply {
                 || raw.date > ConnectionsManager.getInstance(account).getCurrentTime()) return;
         final PurpleAccountFiles.Identity identity = PurpleAccountFiles.capture(account);
         if (identity == null) return;
-        final long did = raw.peer_id.channel_id != 0 ? -raw.peer_id.channel_id
-                : raw.peer_id.chat_id != 0 ? -raw.peer_id.chat_id : raw.peer_id.user_id;
+        final long did = MessageObject.getDialogId(raw);
+        if (did == 0) return;
         final String peer = raw.peer_id.channel_id != 0 ? "channel:" + raw.peer_id.channel_id
-                : raw.peer_id.chat_id != 0 ? "chat:" + raw.peer_id.chat_id : "user:" + raw.peer_id.user_id;
+                : raw.peer_id.chat_id != 0 ? "chat:" + raw.peer_id.chat_id : "user:" + did;
         final int id = raw.id, date = raw.date;
         final int topic = raw.reply_to != null && raw.reply_to.reply_to_top_id != 0
                 ? raw.reply_to.reply_to_top_id : raw.reply_to != null && raw.reply_to.forum_topic
@@ -158,17 +158,22 @@ public final class PurpleMediaReply {
             request.flags |= 1;
             request.no_webpage = true;
             State sending = state;
-            ++sending.inFlight;
-            ConnectionsManager.getInstance(account).sendRequest(request, (response, error) -> {
-                AndroidUtilities.runOnUIThread(() -> {
-                    synchronized (PurpleMediaReply.class) { --sending.inFlight; }
-                    if (identity.current() && response instanceof TLRPC.Updates) {
-                        org.telegram.messenger.Utilities.stageQueue.postRunnable(() -> {
-                            if (identity.current()) controller.processUpdates((TLRPC.Updates) response, false);
+            synchronized (PurpleAccountFiles.class) {
+                synchronized (PurpleAccountSettings.class) {
+                    if (!settings.current() || capturedRevision != revision || !identity.current()) return;
+                    ++sending.inFlight;
+                    ConnectionsManager.getInstance(account).sendRequest(request, (response, error) -> {
+                        AndroidUtilities.runOnUIThread(() -> {
+                            --sending.inFlight;
+                            if (identity.current() && response instanceof TLRPC.Updates) {
+                                org.telegram.messenger.Utilities.stageQueue.postRunnable(() -> {
+                                    if (identity.current()) controller.processUpdates((TLRPC.Updates) response, false);
+                                });
+                            }
                         });
-                    }
-                });
-            }, ConnectionsManager.RequestFlagFailOnServerErrors);
+                    }, ConnectionsManager.RequestFlagFailOnServerErrors);
+                }
+            }
         } catch (Exception | UnsatisfiedLinkError e) {
             State state = states.get(identity.key);
             if (state != null) state.failed = true;
