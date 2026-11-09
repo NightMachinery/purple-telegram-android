@@ -15,7 +15,7 @@ public final class PurpleLongRoundOriginal {
     public final long[] target;
     public final String path;
     public final AtomicBoolean busy = new AtomicBoolean();
-    public volatile boolean saved, released;
+    public volatile boolean reserved, saved, released;
     public String binId;
     public final String generation = java.util.UUID.randomUUID().toString();
     public final long device, inode;

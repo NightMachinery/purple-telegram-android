@@ -808,7 +808,12 @@ The owner reserves the exact source identity in the existing manifest and commit
 a synced full copy. RoundVideoRemuxer delegates erase admission before its normal
 truncate-before-unlink body. Cancel/destroy arm registered-writer protection
 before stop notifications; the existing snapshot handoff honors that independent
-ownership even with keep-discarded disabled. Preserve this order after merges.
+ownership even with keep-discarded disabled. Native fail must arm before output
+invalidation, ERROR state and listener notification, while active duration is
+available. Failed initial reservation must stop active remux/completion and hand
+the full writer to error cleanup; a committed reservation with failed copy may
+continue because its source remains restart-discoverable. Preserve both this
+admission distinction and early error order after merges.
 V2 still materializes selected preview ranges and resets offsets; legacy sends
 selection offsets in microseconds without materializing them.
 

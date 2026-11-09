@@ -105,7 +105,7 @@ file TMessagesProj/src/main/java/org/telegram/ui/Stories/StoryViewer.java 2 2 2
 file TMessagesProj/src/main/java/org/telegram/ui/TopicsFragment.java 5 5 4
 file TMessagesProj/src/main/java/org/telegram/utils/recorder/round/RoundVideoMp4Writer.java 1 0 1
 file TMessagesProj/src/main/java/org/telegram/utils/recorder/round/RoundVideoRemuxer.java 1 0 1
-file TMessagesProj/src/main/java/org/telegram/utils/recorder/round/RoundVideoSession.java 17 1 7
+file TMessagesProj/src/main/java/org/telegram/utils/recorder/round/RoundVideoSession.java 18 1 8
 file TMessagesProj/src/main/res/xml/auth.xml 1 1 1
 file TMessagesProj/src/main/res/xml/auth_menu.xml 1 1 1
 file TMessagesProj/src/main/res/xml/provider_paths.xml 1 0 1

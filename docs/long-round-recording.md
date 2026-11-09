@@ -110,8 +110,19 @@ error cleanup can release hardware while preserving those source bytes. The
 registered writer's existing snapshot reservation also keeps its full take when
 this feature owns it, even with keep-discarded disabled. If a new reservation
 cannot be committed, that existing writer reservation remains the recovery
-fallback; a failed new reservation never counts as a saved original. Ordinary
-unprotected erase and the usual discard policy remain unchanged.
+fallback. Initial reservation failure aborts active finalization before remux,
+completion or ordinary-entry rebinding, including cap trimming and audio removal.
+A completed durable reservation with a failed copy is different: its recorded
+source may coexist with the derived result until startup or a later retry saves
+it. Repeated native capture callbacks must obtain the same durable admission,
+including when a previous attempt failed. A failed new reservation never counts
+as a saved original.
+
+Native error handling arms the active writer before invalidating output, changing
+state or publishing the stop callback, while elapsed recording time is still
+available. The existing error snapshot handoff then retains the full writer even
+with keep-discarded disabled; camera, writer and executor cleanup still proceeds.
+Ordinary unprotected erase and the short-take discard policy remain unchanged.
 
 Startup reconstructs ownership from the real manifest, validates source identity,
 and retries the full copy before retiring its reserved pathname. A replacement
@@ -122,8 +133,10 @@ entry remains under normal retention. This uses the existing synced-file and
 atomic-manifest contract, without a stronger claim about directory durability,
 power loss, or recovery when the underlying storage itself is unavailable. Only
 newly recorded media is retained. Host regressions execute the actual native
-erase, store and manifest code with controlled I/O failures and reconstructed
-stores; Android filesystem and hardware behavior still require device checks.
+erase, native error and active-finalization methods, store and manifest code with
+controlled I/O failures and reconstructed stores. Camera, handler and executor
+ports check admission and cleanup ordering; Android filesystem behavior, real
+executor timing and hardware release still require device checks.
 
 Muted Camera2 results may contain video only. Sending one ordinary video
 preserves that track set and the selected range. Circle parts encode explicit

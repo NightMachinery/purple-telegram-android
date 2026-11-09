@@ -1,7 +1,7 @@
 """Exercise original descriptor ownership and persistence admission without a device."""
 import pathlib, subprocess, os, runpy
 
-def run(root, output):
+def run(root, output, native_case="all"):
     output.mkdir(parents=True,exist_ok=False)
     java=root/'TMessagesProj/src/main/java/org/telegram'
     def put(name,text):
@@ -79,10 +79,10 @@ def run(root, output):
     assert 'replaceWithFinalRange(source, trimStartMs, trimEndMs, includeAudio, reason)' in native
     assert native.index('purpleOriginalOwner.capture(snapshot,') < native.index('ensureNotCancelled();',native.index('currentWriter.createPreview(snapshot);'))
     print('LONG_ROUND_ORIGINAL_ORDER_PINS=5')
-    durable(root,output/'durable',compiler,output/'classes')
+    durable(root,output/'durable',compiler,output/'classes',native_case)
 
 
-def durable(root, output, compiler, ports):
+def durable(root, output, compiler, ports, native_case="all"):
     output.mkdir()
     java=root/'TMessagesProj/src/main/java/org/telegram'
     def put(name,text):
@@ -165,7 +165,7 @@ def durable(root, output, compiler, ports):
        }
        static void failedReservation()throws Exception{
         setup("reservation-failure");File writer=source("round_video_writer.mp4"),preview=source("preview.mp4");PurpleRecordingSessions sessions=new PurpleRecordingSessions(PurpleRecordingRegistry.store,new Env());sessions.roundRegistered(writer,null);sessions.started("1:11",1,target,false,400000);
-        DurableProbe.failReservation=true;int hits=DurableProbe.hits;PurpleLongRoundOriginals.Owner owner=PurpleLongRoundOriginals.owner(1,11);owner.capture(preview,writer,75000);
+        DurableProbe.failReservation=true;int hits=DurableProbe.hits;PurpleLongRoundOriginals.Owner owner=PurpleLongRoundOriginals.owner(1,11);try { owner.capture(preview,writer,75000); } catch (IOException admission) { }
         check(DurableProbe.hits>hits,"actual reservation manifest failure reached before copy");
         check(!PurpleLongRoundOriginals.ready(1,11,preview,75000),"reservation write failure never admits native finish");
         check(PurpleRecordingSnapshotHandoff.stop(sessions,"1:11",6,target,(task,delay)->task.run()),"existing registered-writer reservation protects cancellation when new reservation fails");
@@ -191,6 +191,108 @@ def durable(root, output, compiler, ports):
        }
        public static void main(String[] args)throws Exception{full=Files.readAllBytes(Path.of(args[0]));root=new File(args[1],"start");root.mkdirs();reservationCancel();failedCommit();failedReservation();replacement();acknowledged();System.out.println("LONG_ROUND_DURABLE_CHECKS="+checks);}
       }''')
+    native=(java/'utils/recorder/round/RoundVideoSession.java').read_text()
+    active_duration=method(native[native.rindex('    public long getRecordedDurationMs('):], '    public long getRecordedDurationMs(')
+    assert 'SystemClock.elapsedRealtime()' in active_duration, 'live session duration required, not StateInfo snapshot'
+    native_methods='\n'.join(method(native,signature).replace('@NonNull ', '') for signature in [
+        '    private void fail(', '    private void finishActiveRecording(',
+        '    private void finishCancellation(', '    private void deleteMediaFiles(',
+        '    private void shutdownExecutors(', '    private void handleRecordingStopped(',
+        '    private boolean cancelOutput(', '    public void purpleProtectOriginal('])+ '\n' + active_duration
+    put('org/telegram/messenger/purple/NativeSessionCases.java',r'''package org.telegram.messenger.purple;
+      import java.io.*;import java.nio.file.*;import java.util.*;import android.system.Os;
+      public class NativeSessionCases {
+       static int checks;
+       static void check(boolean ok,String why){checks++;if(!ok)throw new AssertionError(why);}
+       static class Tasks {final List<Runnable> jobs=new ArrayList<>();boolean closed;void execute(Runnable r){if(closed)throw new AssertionError("executor closed");jobs.add(r);}void post(Runnable r){execute(r);}void removeCallbacks(Object r){}void removeCallbacksAndMessages(Object r){}void shutdown(){closed=true;}void drain(){while(!jobs.isEmpty())jobs.remove(0).run();}}
+       static class SystemClock {static long elapsedRealtime(){return 90000;}}
+       static class RoundVideoRemuxer {static long getDurationMs(File f){return 75000;}static void erase(File f){NativeErase.erase(f);}}
+       static class RoundVideoMp4Writer {final File file;int finished,closed;RoundVideoMp4Writer(File f){file=f;}File getFile(){return file;}void finish()throws IOException{finished++;}void closeForReplacement()throws IOException{closed++;}}
+       enum State {RECORDING,PAUSING,FINISHING,ERROR,RELEASED,COMPLETED}
+       enum OutputInvalidationReason {ERROR,TRIMMED,AUDIO_REMOVED,CANCELLED}
+       static class OutputGeneration {long id=1,availableSize;boolean completed,invalidated;}
+       static class Diagnostics {void log(String s){}void error(String s,Exception e){}}
+       static class Camera {boolean pending;int stops,releases;boolean stopSegment(){stops++;return pending;}void release(){releases++;}}
+       static class OutputListener {void onOutputError(long id,Exception e){}void onOutputInvalidated(long id,OutputInvalidationReason r){}}
+       static class NativeSession {
+        State state=State.RECORDING;long recordedDurationMs,recordingStartedAtRealtimeMs,maximumDurationMs=180000;
+        RoundVideoMp4Writer writer;File previewFile;OutputGeneration outputGeneration=new OutputGeneration();final Object outputLock=new Object();
+        boolean cancelRequested,cleanupStarted,cameraStopPending,cancelAfterCameraStops,finishAfterCameraStops,finishWithAudio;
+        final Tasks mainHandler=new Tasks(),fileExecutor=new Tasks(),outputExecutor=new Tasks();final Camera cameraController=new Camera();final Diagnostics diagnostics=new Diagnostics();final OutputListener outputListener=new OutputListener();final Object durationLimitRunnable=new Object();
+        PurpleLongRoundOriginals.Owner purpleOriginalOwner;PurpleRecordingSessions sessions;String key;long[] target;int reason=6,remuxes,completions,errors;final List<Runnable> handoff=new ArrayList<>();
+        NativeSession(File f,int guid,PurpleRecordingSessions s,long[] t){writer=new RoundVideoMp4Writer(f);sessions=s;key="1:"+guid;target=t;purpleOriginalOwner=PurpleLongRoundOriginals.owner(1,guid);}
+        class Listener {void onError(Exception e){errors++;PurpleRecordingSnapshotHandoff.stop(sessions,key,reason,target,(task,delay)->handoff.add(task));}}
+        final Listener listener=new Listener();
+        void disableCameraEffects(){}void releasePlayer(){}void logSummary(String s){}void setState(State s){state=s;}void requireMainThread(){}void createPreviewSnapshot(){throw new AssertionError("no preview in active test");}
+        static long elapsedMs(long start){return 0;}static Exception asException(Exception e){return e;}void ensureNotCancelled()throws IOException{if(cancelRequested)throw new IOException("cancelled");}
+        void completeOutput(OutputGeneration g,File f,long duration,boolean audio){completions++;try{sessions.completedForQueue(key,f,target);}catch(IOException e){throw new RuntimeException(e);}}
+        void replaceWithFinalRange(File source,long start,long end,boolean audio,OutputInvalidationReason why)throws IOException{remuxes++;File derivative=new File(source.getParentFile(),"derivative.mp4");byte[] bytes=DurableCases.full.clone();bytes[bytes.length-1]^=1;Files.write(derivative.toPath(),bytes);writer=new RoundVideoMp4Writer(derivative);completeOutput(outputGeneration,derivative,end-start,audio);}
+    '''+native_methods+r'''
+       }
+       static NativeSession setup(String name,int guid)throws Exception{
+        DurableCases.setup(name);File writer=DurableCases.source("round_video_writer.mp4");PurpleRecordingSessions sessions=new PurpleRecordingSessions(PurpleRecordingRegistry.store,new DurableCases.Env());sessions.roundRegistered(writer,null);sessions.started("1:"+guid,1,DurableCases.target,false,400000);
+        return new NativeSession(writer,guid,sessions,DurableCases.target);
+       }
+       static void nativeError(boolean pending)throws Exception{
+        NativeSession n=setup("native-error-"+pending,pending?22:21);File full=n.writer.getFile();n.cameraController.pending=pending;
+        n.fail(new IOException("inert camera or encoder error"));
+        check(n.errors==1&&n.state==State.ERROR,"actual native fail publishes error once");
+        check(n.cameraController.stops==1,"native error still asks camera to stop");
+        if(pending)n.handleRecordingStopped();
+        n.fileExecutor.drain();n.outputExecutor.drain();
+        check(n.cameraController.releases==1&&n.fileExecutor.closed&&n.outputExecutor.closed,"native error cleanup releases camera and executors");
+        check(n.writer.closed==1,"native writer cleanup is not blocked indefinitely");
+        PurpleRecordingStore recovered=DurableCases.restart(PurpleRecordingRegistry.root);
+        check(recovered.bin().size()==1,"active native fail before any preview preserves keep-off writer through store reconstruction");
+        check(Arrays.equals(DurableCases.full,Files.readAllBytes(new File(recovered.bin().get(0).media).toPath())),"error snapshot owns exact full original bytes");
+        n.fail(new IOException("duplicate callback"));check(n.errors==1&&n.cameraController.releases==1,"duplicate error cannot resettle cleanup or original");
+        for(Runnable r:n.handoff)r.run();
+       }
+       static void shortError()throws Exception{
+        NativeSession n=setup("native-short-error",23);n.recordingStartedAtRealtimeMs=60000;n.fail(new IOException("inert short error"));n.fileExecutor.drain();for(Runnable r:n.handoff)r.run();
+        check(DurableCases.restart(PurpleRecordingRegistry.root).bin().isEmpty(),"short keep-off native error still discards");
+        check(n.cameraController.releases==1,"short native error still releases hardware");
+       }
+       static void initialFailure(boolean audio,boolean overCap)throws Exception{
+        NativeSession n=setup("native-admission-"+audio+"-"+overCap,audio?24:25);File original=n.writer.getFile();n.state=State.FINISHING;n.recordedDurationMs=75000;n.reason=7;if(overCap){n.maximumDurationMs=60000;n.recordedDurationMs=60000;}
+        DurableProbe.failReservation=true;int hits=DurableProbe.hits;n.finishActiveRecording(audio);n.fileExecutor.drain();
+        check(DurableProbe.hits>hits,"actual active writer-null path hits initial durable reservation failure");
+        check(n.remuxes==0&&n.completions==0,"initial reservation failure must stop actual active remux and ordinary-entry rebinding");
+        DurableProbe.failReservation=false;n.mainHandler.drain();n.fileExecutor.drain();
+        check(n.errors==1&&n.cameraController.releases==1,"failed active admission hands off error and releases hardware");
+        PurpleRecordingStore recovered=DurableCases.restart(PurpleRecordingRegistry.root);
+        check(recovered.bin().size()==1,"failed initial reservation keeps existing durable writer fallback discoverable");
+        check(Arrays.equals(DurableCases.full,Files.readAllBytes(new File(recovered.bin().get(0).media).toPath())),"active admission failure reconstructs unmodified full original not derivative");
+        check(!new File(original.getParentFile(),"derivative.mp4").exists(),"failed admission never materializes outgoing replacement");
+        for(Runnable r:n.handoff)r.run();
+       }
+       static void reservedCopyFailure()throws Exception{
+        NativeSession n=setup("native-reserved-copy-failure",26);File source=n.writer.getFile();n.state=State.FINISHING;n.recordedDurationMs=75000;
+        DurableProbe.blockCopy=true;n.finishActiveRecording(false);n.fileExecutor.drain();
+        check(n.remuxes==1&&n.completions==1&&n.mainHandler.jobs.isEmpty(),"durable admission with failed copy permits actual muted active remux and completion");
+        PurpleRecordingEntry e=DurableCases.original(PurpleRecordingRegistry.store);String id=e.id;
+        check(e.originalGeneration!=null&&!e.snapshotCommitted&&source.isFile(),"ordinary derivative rebinding cannot retire reserved full original");
+        DurableProbe.blockCopy=false;check(DurableProbe.blocked.delete(),"remove only inert source copy obstacle");
+        PurpleRecordingStore recovered=DurableCases.restart(PurpleRecordingRegistry.root);e=recovered.find(id);
+        check(e.inBin()&&Arrays.equals(DurableCases.full,Files.readAllBytes(new File(e.media).toPath())),"reserved full original reconstructs after successful derivative completion");
+       }
+       static void repeatedAdmission()throws Exception{
+        NativeSession n=setup("native-repeated-admission",27);File source=n.writer.getFile();DurableProbe.failReservation=true;
+        boolean first=false,second=false;try{n.purpleOriginalOwner.capture(source,null,75000);}catch(IOException e){first=true;}
+        try{n.purpleOriginalOwner.capture(source,null,75000);}catch(IOException e){second=true;}
+        check(first&&second,"duplicate unreserved capture cannot schedule a retry and silently admit destructive work");
+        DurableProbe.failReservation=false;n.purpleOriginalOwner.capture(source,null,75000);
+        PurpleRecordingEntry e=DurableCases.original(PurpleRecordingRegistry.store);
+        check(e.inBin()&&PurpleRecordingRegistry.store.bin().size()==1,"successful later retry reuses one reserved original");
+        check(Arrays.equals(DurableCases.full,Files.readAllBytes(new File(e.media).toPath())),"retry preserves exact full original bytes");
+       }
+       public static void main(String[] args)throws Exception{
+        DurableCases.full=Files.readAllBytes(Path.of(args[0]));DurableCases.root=new File(args[1],"start");DurableCases.root.mkdirs();String which=args[2];
+        if(which.equals("error")||which.equals("all")){nativeError(false);nativeError(true);shortError();}
+        if(which.equals("admission")||which.equals("all")){initialFailure(false,false);initialFailure(true,true);reservedCopyFailure();repeatedAdmission();}
+        System.out.println("LONG_ROUND_NATIVE_OWNERSHIP_CHECKS="+checks);
+       }
+      }''')
     jars=sorted((pathlib.Path(os.environ['GRADLE_USER_HOME'])/'caches/modules-2/files-2.1/org.json/json').glob('*/*/json-*.jar'))
     assert jars,'org.json host jar missing'
     cp=os.pathsep.join([str(output/'classes'),str(ports),str(jars[-1])])
@@ -198,3 +300,4 @@ def durable(root, output, compiler, ports):
     source=output/'full.mp4'
     subprocess.run(['ffmpeg','-v','error','-y','-f','lavfi','-i','color=black:size=160x160:rate=1','-t','75','-c:v','libx264','-preset','ultrafast','-pix_fmt','yuv420p',str(source)],check=True)
     subprocess.run([str(compiler.with_name('java')),'-cp',cp,'org.telegram.messenger.purple.DurableCases',str(source),str(output/'cases')],check=True)
+    subprocess.run([str(compiler.with_name('java')),'-cp',cp,'org.telegram.messenger.purple.NativeSessionCases',str(source),str(output/'native-cases'),native_case],check=True)

@@ -29,20 +29,26 @@ public final class PurpleLongRoundOriginals {
         }
         public void capture(File file, File writer, long durationMs) throws java.io.IOException {
             if (durationMs <= PurpleLongRoundPlan.CIRCLE_MS) return;
+            final File protectedWriter = writer == null ? file : writer;
+            arm(protectedWriter, durationMs);
             if (target == null) throw new java.io.IOException("original owner unavailable");
             try {
                 final PurpleLongRoundOriginal previous = captured.get(file.getAbsolutePath());
-                if (previous != null && previous.matches(file)) { if (!previous.saved) persist(previous); return; }
-                final PurpleLongRoundOriginal original = new PurpleLongRoundOriginal(file, target);
+                final PurpleLongRoundOriginal original = previous != null && previous.matches(file)
+                        ? previous : new PurpleLongRoundOriginal(file, target);
+                if (original.saved) { writers.remove(protectedWriter.getAbsolutePath()); return; }
                 captured.put(file.getAbsolutePath(), original);
-                original.writer(writer);
+                original.writer(protectedWriter);
                 pending.put(original, true);
                 if (owners.get(key) == this) current.put(key, original);
                 original.busy.set(true);
-                try { original.saved = PurpleRecordingRegistry.keepLongOriginalBlocking(original); }
+                try { original.saved |= PurpleRecordingRegistry.keepLongOriginalBlocking(original); }
                 finally { original.busy.set(false); }
-                if (original.saved) { original.closeSaved(); pending.remove(original); if (writer != null) writers.remove(writer.getAbsolutePath()); }
-                else AndroidUtilities.runOnUIThread(() -> notice(false));
+                if (original.saved) { original.closeSaved(); pending.remove(original); writers.remove(protectedWriter.getAbsolutePath()); }
+                else {
+                    AndroidUtilities.runOnUIThread(() -> notice(false));
+                    if (!original.reserved) throw new java.io.IOException("original reservation not committed");
+                }
             } catch (Exception failure) { throw new java.io.IOException("original reservation", failure); }
         }
     }

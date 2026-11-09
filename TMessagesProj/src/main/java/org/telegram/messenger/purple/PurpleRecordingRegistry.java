@@ -450,6 +450,7 @@ public final class PurpleRecordingRegistry {
             if (!original.generation.equals(entry.originalGeneration) || !original.matches(new File(original.path))) {
                 throw new IOException("original generation");
             }
+            original.reserved = true;
             if (directory().getUsableSpace() < new File(original.path).length() + 16L * 1024 * 1024) throw new IOException("space");
             store.keepLongOriginal(entry, System.currentTimeMillis() / 1000);
             changed();
