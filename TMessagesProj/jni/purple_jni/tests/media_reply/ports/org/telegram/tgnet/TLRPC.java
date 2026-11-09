@@ -12,5 +12,5 @@ public class TLRPC {
  public static class TL_inputReplyToMessage extends InputReplyTo {}
  public static class TL_messages_sendMessage extends TLObject {public InputPeer peer;public String message;public long random_id;public InputReplyTo reply_to;public int flags;public boolean no_webpage;public long allow_paid_stars;public boolean allow_paid_floodskip;}
  public static class Updates extends TLObject {}
- public static class TL_error extends TLObject {}
+ public static class TL_error extends TLObject {public int code;public String text;}
 }

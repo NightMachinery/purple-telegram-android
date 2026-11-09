@@ -1,0 +1,51 @@
+package org.telegram.ui;
+import android.os.Bundle;
+import org.json.*;
+import org.telegram.messenger.*;
+import org.telegram.messenger.purple.*;
+import org.telegram.ui.ActionBar.BaseFragment;
+import org.telegram.ui.Components.BulletinFactory;
+public final class @CLASS@ extends BaseFragment {
+ private String row="sets.Pick";
+ private PurpleAccountFiles.Identity owner;
+ private JSONObject policy,shown;
+ private DialogsActivity picker;
+ private boolean live(){return owner!=null&&owner.current()&&owner.slot==currentAccount;}
+ private void rebuild(){}
+ private void error(String error){BulletinFactory.of(this).createErrorBulletin(error).show();}
+ private void presentFragment(DialogsActivity child){paused=true;child.paused=false;child.activity=activity;picker=child;}
+ @METHODS@
+ static int checks;
+ static void check(boolean value,String why){++checks;if(!value)throw new AssertionError(why);}
+ static @CLASS@ fresh()throws Exception {
+  PurpleAccountFiles.identity=new PurpleAccountFiles.Identity("0-42",++lifetime);
+  PurpleAccountSettings.policy("[media_reply.sets.Pick]\npeers=['user:8']\n");
+  @CLASS@ screen=new @CLASS@();screen.owner=PurpleAccountFiles.capture(0);screen.policy=PurpleMediaReply.policy(0);screen.shown=screen.policy.getJSONArray("sets").getJSONObject(0);return screen;
+ }
+ static long lifetime=20;
+ public static void main(String[] args)throws Exception {
+  System.load(args[0]);@CLASS@ screen=fresh();screen.select();
+  check(screen.isPaused()&&!screen.picker.isPaused(),"native picker covers and pauses parent");
+  check(!PurpleWriterUI.current(screen).current()&&PurpleWriterUI.current(screen.picker).current(),"literal global current-view guard rejects parent and accepts active picker");
+  screen.picker.choose(17);
+  if(args[1].equals("reviewed")){
+   check(PurpleWriter.writes==0&&!screen.picker.isFinished,"reviewed native picker cannot save through paused parent");
+   System.out.println("REVIEWED_PICKER_REFUSAL="+checks);return;
+  }
+  check(PurpleWriter.writes==1&&screen.picker.isFinished,"active picker writes and closes");
+  JSONArray values=(JSONArray)PurpleWriter.last;
+  check(values.length()==2&&values.getString(0).equals("user:8")&&values.getString(1).equals("user:17"),"opening members and typed user preserved");
+  screen=fresh();screen.select();screen.picker.choose(-17);
+  check(PurpleWriter.writes==2&&((JSONArray)PurpleWriter.last).getString(1).equals("channel:17"),"native channel picker preserves peer kind");
+  int before=PurpleWriter.writes;screen=fresh();screen.select();screen.picker.finishFragment();screen.picker.choose(17);
+  check(PurpleWriter.writes==before,"cancelled picker cannot write");
+  screen=fresh();screen.select();PurpleAccountFiles.identity=new PurpleAccountFiles.Identity("0-43",++lifetime);screen.picker.choose(17);
+  check(PurpleWriter.writes==before,"account replacement rejects opening owner");
+  screen=fresh();screen.select();PurpleAccountSettings.policy("[media_reply.sets.Pick]\npeers=['user:9']\n");screen.picker.choose(17);
+  check(PurpleWriter.writes==before&&!screen.picker.isFinished,"synced member replacement is not overwritten");
+  check(PurpleMediaReply.policy(0).getJSONArray("sets").getJSONObject(0).getJSONArray("peers").getString(0).equals("user:9"),"external membership snapshot retained");
+  screen=fresh();screen.select();screen.picker.setCurrentAccount(1);screen.picker.choose(17);
+  check(PurpleWriter.writes==before,"active picker account switch refuses frozen edit");
+  System.out.println("MEDIA_REPLY_PICKER_CHECKS="+checks);
+ }
+}

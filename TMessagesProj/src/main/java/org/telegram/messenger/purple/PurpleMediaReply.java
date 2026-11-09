@@ -1,6 +1,5 @@
 package org.telegram.messenger.purple;
 
-import android.util.AtomicFile;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.telegram.messenger.AndroidUtilities;
@@ -11,7 +10,6 @@ import org.telegram.messenger.UserConfig;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.HashMap;
@@ -28,8 +26,40 @@ public final class PurpleMediaReply {
         boolean failed;
         int inFlight;
         ConnectionsManager connection;
+        PurpleAccountFiles.Identity identity;
+        Reason reason = Reason.None;
+        int reserved = -1;
+        boolean loaded;
         final Map<Integer, Long> requests = new HashMap<>();
     }
+    public enum Reason { None, JournalFull, JournalUnreadable, StorageRefused, Permission, Flood, ApprovalRequired, Uncertain, Cancelled }
+    public static final class Status {
+        public final Reason reason;
+        public final int reserved, inFlight;
+        public final boolean failed, disabled;
+        Status(State state, boolean disabled) {
+            this.disabled = disabled;
+            reason = state == null ? Reason.None : state.reason;
+            reserved = state == null ? -1 : state.reserved;
+            inFlight = state == null ? 0 : state.inFlight;
+            failed = state != null && state.failed;
+        }
+    }
+    public static Status status(int account) {
+        PurpleAccountFiles.Identity identity = PurpleAccountFiles.capture(account);
+        JSONObject policy = policy(account);
+        State state = identity == null ? null : states.get(identity.key);
+        if (state != null && state.lifetime != identity.lifetime) state = null;
+        return new Status(state, policy != null && !policy.optBoolean("enabled"));
+    }
+    private static Reason failure(TLRPC.TL_error error) {
+        String type = error.text == null ? "" : error.text;
+        if (type.contains("PAYMENT") || type.contains("STARS")) return Reason.ApprovalRequired;
+        if (error.code == 420 || type.startsWith("FLOOD_") || type.startsWith("SLOWMODE_")) return Reason.Flood;
+        if (type.contains("FORBIDDEN") || type.contains("BANNED") || type.contains("RESTRICTED")) return Reason.Permission;
+        return Reason.Uncertain;
+    }
+    static native int journalCountNative(String journal, String account);
     static native String policyNative(long handle);
     static native String resolvedNative(long handle, String peer, int kind);
     public static JSONObject resolved(int account, String peer, int kind) {
@@ -59,9 +89,12 @@ public final class PurpleMediaReply {
                     final int token = request.getKey();
                     iterator.remove();
                     --state.inFlight;
+                    if (!state.failed) state.reason = Reason.Cancelled;
                     state.connection.cancelRequest(token, true);
                 }
             }
+            states.entrySet().removeIf(entry -> !entry.getValue().identity.current()
+                    && entry.getValue().requests.isEmpty());
         });
     }
     public static JSONObject policy(int account) {
@@ -104,6 +137,15 @@ public final class PurpleMediaReply {
             if (identity.current()) dispatch(identity, peer, did, id, topic, date, media, own, ack, capturedRevision);
         });
     }
+    private static State ensureState(PurpleAccountFiles.Identity identity) {
+        State state = states.get(identity.key);
+        if (state == null || state.lifetime != identity.lifetime) {
+            state = new State(); state.lifetime = identity.lifetime; state.identity = identity;
+            state.connection = ConnectionsManager.getInstance(identity.slot);
+            states.put(identity.key, state);
+        }
+        return state;
+    }
     private static void dispatch(PurpleAccountFiles.Identity identity, String peer, long did,
             int id, int topic, int date, int media, boolean own, boolean ack, long capturedRevision) {
         if (!PurpleAccountOwner.ready() || !identity.current()) return;
@@ -118,7 +160,11 @@ public final class PurpleMediaReply {
         int kind = 0;
         if (did < 0) {
             TLRPC.Chat chat = controller.getChat(-did);
-            if (chat == null || !ChatObject.canSendMessages(chat)) return;
+            if (chat == null || !ChatObject.canSendMessages(chat)) {
+                State state = ensureState(identity);
+                if (!state.failed) state.reason = Reason.Permission;
+                return;
+            }
             kind = ChatObject.isChannel(chat) && !chat.megagroup ? 2 : 1;
         }
         final PurpleAccountSettings.Effective settings = PurpleAccountSettings.forAccount(account);
@@ -127,40 +173,32 @@ public final class PurpleMediaReply {
             String candidate = planNative(settings.handle, identity.key, peer, kind, id, topic, date,
                     media, own, ack, cutoff, capturedRevision);
             if (candidate == null || !settings.current() || capturedRevision != revision) return;
-            PurpleAccountFiles files = PurpleAccountFiles.resolve(identity.key, PurpleAccountOwner.owner());
-            if (files == null || !files.directory.isDirectory()
-                    || !files.directory.getCanonicalFile().equals(files.directory.getAbsoluteFile())) return;
-            File journalFile = new File(files.directory, "media-reply-journal.json");
-            File backupFile = new File(journalFile.getPath() + ".bak");
-            if (Files.isSymbolicLink(journalFile.toPath()) || Files.isSymbolicLink(backupFile.toPath())) return;
-            State state = states.get(identity.key);
-            if (state == null || state.lifetime != identity.lifetime) {
-                state = new State(); state.lifetime = identity.lifetime;
-                state.connection = ConnectionsManager.getInstance(account);
-                states.put(identity.key, state);
-                AtomicFile store = new AtomicFile(journalFile);
-                if (journalFile.exists() || backupFile.exists()) {
-                    if (journalFile.length() > 32 * 1024 * 1024 || backupFile.length() > 32 * 1024 * 1024) { state.failed = true; return; }
-                    state.journal = new String(store.readFully(), StandardCharsets.UTF_8);
-                }
-            }
+            State state = ensureState(identity);
             if (state.failed || state.inFlight >= 8) return;
+            PurpleAccountFiles files = PurpleAccountFiles.resolve(identity.key, PurpleAccountOwner.owner());
+            if (files == null || !files.directory.isDirectory() || Files.isSymbolicLink(files.directory.toPath())) {
+                state.failed = true; state.reason = Reason.StorageRefused; return;
+            }
+            File journalFile = new File(files.directory, "media-reply-journal.json");
+            if (!state.loaded) {
+                try {
+                    byte[] previous = PurpleMediaReplyStore.read(journalFile);
+                    state.journal = previous == null ? null : new String(previous, StandardCharsets.UTF_8);
+                    state.reserved = journalCountNative(state.journal, identity.key);
+                    if (state.reserved < 0) throw new java.io.IOException("InvalidJournal");
+                    state.loaded = true;
+                } catch (Exception e) { state.failed = true; state.reason = Reason.JournalUnreadable; return; }
+            }
+            if (state.reserved >= 4096) { state.failed = true; state.reason = Reason.JournalFull; return; }
             String reserved = reserveNative(state.journal, candidate);
             if (reserved == null) return;
             byte[] reservedBytes = reserved.getBytes(StandardCharsets.UTF_8);
-            if (reservedBytes.length > 32 * 1024 * 1024) { state.failed = true; return; }
-            AtomicFile store = new AtomicFile(journalFile);
-            FileOutputStream stream = null;
             try {
-                stream = store.startWrite();
-                stream.write(reservedBytes);
-                store.finishWrite(stream);
+                PurpleMediaReplyStore.replace(journalFile,
+                        state.journal == null ? null : state.journal.getBytes(StandardCharsets.UTF_8), reservedBytes);
                 state.journal = reserved;
-            } catch (Exception e) {
-                if (stream != null) store.failWrite(stream);
-                state.failed = true;
-                return;
-            }
+                ++state.reserved;
+            } catch (Exception e) { state.failed = true; state.reason = Reason.StorageRefused; return; }
             if (!settings.current() || capturedRevision != revision || !identity.current()) return;
             JSONObject plan = new JSONObject(candidate);
             JSONObject action = plan.getJSONArray("reserved").getJSONObject(0);
@@ -182,6 +220,9 @@ public final class PurpleMediaReply {
                     token[0] = sending.connection.sendRequest(request, (response, error) -> {
                         AndroidUtilities.runOnUIThread(() -> {
                             if (sending.requests.remove(token[0]) != null) --sending.inFlight;
+                            if (identity.current() && capturedRevision == revision && states.get(identity.key) == sending && !sending.failed) {
+                                sending.reason = error != null ? failure(error) : response instanceof TLRPC.Updates ? Reason.None : Reason.Uncertain;
+                            }
                             if (identity.current() && response instanceof TLRPC.Updates) {
                                 org.telegram.messenger.Utilities.stageQueue.postRunnable(() -> {
                                     if (identity.current()) controller.processUpdates((TLRPC.Updates) response, false);
@@ -194,7 +235,7 @@ public final class PurpleMediaReply {
             }
         } catch (Exception | UnsatisfiedLinkError e) {
             State state = states.get(identity.key);
-            if (state != null) state.failed = true;
+            if (state != null) { state.failed = true; state.reason = Reason.StorageRefused; }
         }
     }
     private PurpleMediaReply() { }

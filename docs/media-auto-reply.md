@@ -51,3 +51,21 @@ a reply the server already accepted may still arrive. Cancelled or uncertain
 actions retain their durable reservation and never become automatically
 sendable again. Late success/error callbacks do not reopen a reservation or
 retire a newer generation's capacity.
+
+The journal writer checks each write, file sync, close, same-directory replacement,
+directory sync and expected-byte readback before advancing memory or transport.
+A platform AtomicFile finishWrite return is not used as a commit result because
+that API can log failures and return normally. Any unsuccessful checked stage
+pauses this account without sending that action. The guarantee is limited to
+these reported filesystem operations, not arbitrary power-loss behavior.
+
+The settings page shows an account-bound status snapshot, last confirmed journal
+capacity and in-flight count. Reasons distinguish storage/full/corrupt refusal,
+permissions, flood limits, payment approval, cancellation and uncertain outcomes.
+The stock status dialog explains manual approval and terminal reservations; it
+does not grant payment or retry. Reopening the page refreshes the snapshot.
+Selected-chat picker edits originate from the active chooser and retain the
+opening account and full policy snapshot, so sync changes cannot be overwritten
+by an older membership selection. Independent round inheritance is labeled as
+inheritance, with chat-type and member effective values and a matching stock
+radio chooser selection.

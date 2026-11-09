@@ -3,7 +3,35 @@ Java_org_telegram_messenger_purple_PurpleMediaReply_policyNative(
         JNIEnv *env, jclass, jlong handle) {
     const auto lock = std::lock_guard(mutex);
     const auto i = layers.find(handle);
-    return i == layers.end() ? nullptr : Json(env, Purple::MediaReplySettingsJson(i->second.settings));
+    if (i == layers.end()) return nullptr;
+    const auto &settings = i->second.settings;
+    auto enabled = false;
+    const auto inspect = [&](Purple::PeerToken peer, Purple::ChatKind kind) {
+        const auto value = Purple::ResolveMediaReply(settings, peer, kind);
+        enabled = enabled || value.voice != Purple::MediaReplyMode::Off || value.round != Purple::MediaReplyMode::Off;
+    };
+    inspect({Purple::PeerTokenKind::User, 0}, Purple::ChatKind::Private);
+    inspect({Purple::PeerTokenKind::Chat, 0}, Purple::ChatKind::Group);
+    inspect({Purple::PeerTokenKind::Channel, 0}, Purple::ChatKind::Channel);
+    for (const auto &set : settings.mediaReply.sets) for (const auto &peer : set.peers) {
+        if (peer.kind == Purple::PeerTokenKind::User) inspect(peer, Purple::ChatKind::Private);
+        else if (peer.kind == Purple::PeerTokenKind::Chat) inspect(peer, Purple::ChatKind::Group);
+        else { inspect(peer, Purple::ChatKind::Group); inspect(peer, Purple::ChatKind::Channel); }
+    }
+    auto result = Purple::MediaReplySettingsJson(settings);
+    result.insert("enabled", enabled);
+    auto defaults = result.value("defaults").toArray();
+    const auto kinds = std::array{Purple::ChatKind::Private, Purple::ChatKind::Group, Purple::ChatKind::Channel};
+    const auto peers = std::array{Purple::PeerToken{Purple::PeerTokenKind::User, 0},
+        Purple::PeerToken{Purple::PeerTokenKind::Chat, 0}, Purple::PeerToken{Purple::PeerTokenKind::Channel, 0}};
+    for (auto index = 0; index != 3; ++index) {
+        const auto value = Purple::ResolveMediaReply(settings, peers[index], kinds[index]);
+        auto row = defaults[index].toObject();
+        row.insert("effective_voice", int(value.voice)); row.insert("effective_round", int(value.round));
+        row.insert("effective_follow", value.roundFollow); defaults[index] = row;
+    }
+    result.insert("defaults", defaults);
+    return Json(env, result);
 }
 
 extern "C" JNIEXPORT jstring JNICALL
@@ -64,4 +92,12 @@ Java_org_telegram_messenger_purple_PurpleMediaReply_resolvedNative(
     const auto resolved = Purple::ResolveMediaReply(i->second.settings, *token, Purple::ChatKind(kind));
     return Json(env, {{"voice", int(resolved.voice)}, {"round", int(resolved.round)},
         {"roundFollow", resolved.roundFollow}, {"set", resolved.set}});
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_org_telegram_messenger_purple_PurpleMediaReply_journalCountNative(
+        JNIEnv *env, jclass, jstring journal, jstring account) {
+    if (!journal) return 0;
+    const auto value = Purple::DecodeMediaReplyJournal(Text(env, journal).toUtf8(), Text(env, account));
+    return value ? int(value->reserved.size()) : -1;
 }

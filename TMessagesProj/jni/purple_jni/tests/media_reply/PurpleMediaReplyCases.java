@@ -70,10 +70,12 @@ public final class PurpleMediaReplyCases {
   ConnectionsManager.callbacks.get(11).run(new TLRPC.Updates(),null);ConnectionsManager.callbacks.get(11).run(null,new TLRPC.TL_error());AndroidUtilities.drain();
   observe(fresh(300),false,false);check(ConnectionsManager.requests.size()==12,"late disabled outcomes never renew send");
   ConnectionsManager.now=1010;policy("[media_reply.private]\nvoice='both'\n");ConnectionsManager.now=1011;
-  android.util.AtomicFile.failWrites=true;observe(fresh(301),false,false);
+  android.system.Os.fault="sync";observe(fresh(301),false,false);
   check(ConnectionsManager.requests.size()==12,"journal write failure prevents transport");
-  android.util.AtomicFile.failWrites=false;observe(fresh(302),false,false);
+  android.system.Os.fault="";observe(fresh(302),false,false);
   check(ConnectionsManager.requests.size()==12,"journal failure remains fail closed");
+  check(PurpleMediaReply.status(0).reason==PurpleMediaReply.Reason.StorageRefused,"storage refusal visible for frozen account");
+  account("0-43",6);check(PurpleMediaReply.status(0).reason==PurpleMediaReply.Reason.None,"replacement account cannot inherit failure status");
   System.out.println("MEDIA_REPLY_ADAPTER_CHECKS="+checks);
  }
 }
