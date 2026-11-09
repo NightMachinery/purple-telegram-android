@@ -1,5 +1,7 @@
 package org.telegram.ui;
 
+import android.content.DialogInterface;
+
 import java.io.File;
 import java.lang.ref.WeakReference;
 import java.util.HashMap;
@@ -103,12 +105,13 @@ public final class PurpleLongRoundSend {
         void prepare(boolean circles) {
             final BaseFragment host = host();
             if (host == null || arguments[0] == null) { finish(false); return; }
+            final AlertDialog spinner = new AlertDialog(host.getParentActivity(), AlertDialog.ALERT_TYPE_SPINNER, host.getResourceProvider());
+            progress = spinner;
+            spinner.setMessage(text(R.string.PurpleLongRoundPreparing));
+            spinner.setOnCancelListener(dialog -> finish(false));
+            if (!showOwnedDialog(host, spinner, dialog -> { if (progress == spinner) finish(false); })) return;
+            spinner.setCanceledOnTouchOutside(false);
             preparing = true;
-            progress = new AlertDialog(host.getParentActivity(), AlertDialog.ALERT_TYPE_SPINNER, host.getResourceProvider());
-            progress.setMessage(text(R.string.PurpleLongRoundPreparing));
-            progress.setCanceledOnTouchOutside(false);
-            progress.setOnCancelListener(dialog -> finish(false));
-            host.showDialog(progress);
             worker.execute(() -> {
                 List<PurpleLongRoundMedia.Output> result = null;
                 boolean invalid = false;
@@ -124,7 +127,7 @@ public final class PurpleLongRoundSend {
                 final boolean invalidSelection = invalid;
                 AndroidUtilities.runOnUIThread(() -> {
                     preparing = false;
-                    if (progress != null) { progress.dismiss(); progress = null; }
+                    if (progress == spinner) { progress = null; spinner.dismiss(); }
                     if (closed) { worker.execute(work::discard); return; }
                     if (host() == null) { finish(false); return; }
                     if (prepared == null) { preparationFailed(circles, invalidSelection); return; }
@@ -144,8 +147,7 @@ public final class PurpleLongRoundSend {
             if (circles && !invalidSelection) builder.setPositiveButton(text(R.string.PurpleLongRoundVideo), (dialog, which) -> {
                 if (retry.compareAndSet(false, true)) prepare(false);
             });
-            builder.setOnDismissListener(dialog -> { if (!retry.get()) finish(false); });
-            host.showDialog(builder.create());
+            showOwnedDialog(host, builder.create(), dialog -> { if (!retry.get()) finish(false); });
         }
 
         void confirm() {
@@ -164,7 +166,8 @@ public final class PurpleLongRoundSend {
             });
             builder.setPositiveButton(circles ? LocaleController.formatString(R.string.PurpleLongRoundSendParts, outputs.size())
                     : text(R.string.PurpleLongRoundVideo), (dialog, which) -> {
-                if (!approved.compareAndSet(false, true) || host() == null) return;
+                if (!approved.compareAndSet(false, true)) return;
+                if (host() == null) { finish(false); return; }
                 awaitingPayment = true;
                 final int generation = ++paymentGeneration;
                 AlertsCreator.ensurePaidMessageConfirmation(account, this.dialog, outputs.size(), paid -> {
@@ -175,8 +178,19 @@ public final class PurpleLongRoundSend {
                     enqueue(paid);
                 }, 0);
             });
-            builder.setOnDismissListener(dialog -> { if (!approved.get()) finish(false); });
-            host.showDialog(builder.create());
+            showOwnedDialog(host, builder.create(), dialog -> { if (!approved.get()) finish(false); });
+        }
+        boolean showOwnedDialog(BaseFragment host, AlertDialog dialog, DialogInterface.OnDismissListener onDismiss) {
+            dialog.setOnDismissListener(onDismiss);
+            try {
+                if (host.showDialog(dialog, onDismiss) != null) return !closed;
+            } catch (Exception failure) {
+                PurpleDiagLog.event("recordings", "long_dialog", PurpleDiagLog.reason("io_failed"));
+            }
+            finish(false);
+            try { dialog.dismiss(); }
+            catch (Exception failure) { PurpleDiagLog.event("recordings", "long_dialog", PurpleDiagLog.reason("io_failed")); }
+            return false;
         }
         boolean replaceablePayment(int account, long user) {
             return !closed && awaitingPayment && this.account == account && this.user == user
