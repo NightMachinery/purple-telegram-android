@@ -38,7 +38,12 @@ Native pause/resume and flip remain native operations.
 
 Background, passcode, account switch and audio-focus/telephone interruption
 finish into a local draft, without automatic capture resume. The root becomes
-invisible and stops receiving touches while preservation completes. Activity
+invisible and stops receiving touches while preservation completes. V2 finish
+requests during PAUSING/RESUMING stay pending without reserving dock or lease
+finalization. The native state callback posts one retry after RECORDING or
+PREVIEWING becomes finishable, including the recordResumed path. Pending
+preservation consumes further capture/playback controls. Terminal error/release
+invalidates queued retries and closes only the matching capture owner. Activity
 destruction requests the same preservation and bounds old-host retention; it
 does not promise a live surface in a replacement window. The actual destruction,
 permission/error and recovery paths still require device qualification and the
@@ -58,6 +63,15 @@ start/stop, independent guid, frozen retention destination, repeated finish,
 background/recreation cleanup, no automatic resume, account/user/topic/mode
 binding checks and stale binding tokens. These are ownership tests; the ports do
 not open cameras or encode media.
+
+The transition regression additionally compiles the production V2 `send()`,
+`isPaused()` and state callback, native `StateInfo.canFinish()` and
+`RoundVideoSession.finish()` against inert camera/handler ports. It verifies
+native rejection during PAUSING/RESUMING, one accepted local finish after the
+stable callback, repeated Save/background, resource-stop requests, terminal
+error/release before a queued retry, stale callbacks and the frozen destination.
+The fixture supplies asynchronous external completions; it does not qualify
+actual hardware shutdown or encoded continuity.
 
 The always-on Purple diagnostics include `round_capture` events with a local
 take counter, adapter choice, preview-window and surface create/destroy counts,

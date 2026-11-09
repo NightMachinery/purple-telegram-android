@@ -791,7 +791,11 @@ composer bindings. InstantCameraView.Delegate supplies the captured account;
 both camera constructors and the shared factory use it before account-dependent
 initialization. The two existing preview surface listeners delegate observation
 to PurpleRoundCapture, including RoundVideoCameraController for the newer
-adapter. Encoder and surface implementations remain in their original files.
+adapter. InstantCameraView2 delegates deferred finish admission before dock
+reservation and native state readiness/terminal outcomes to PurpleRoundCapture.
+The owner retries local preservation once after native transition completion;
+recordResumed must not be treated as a fresh recordStarted event. Encoder and
+surface implementations remain in their original files.
 LaunchActivity delegates background, teardown, account switch and passcode
 preservation; MediaController delegates record-audio focus and phone-call loss.
 No stock native recorder body is copied or moved. Read

@@ -2,7 +2,7 @@
 import os, pathlib, shutil, subprocess
 
 
-def run(root, output):
+def run(root, output, configure=None, case="CrossChatCases"):
     output.mkdir(parents=True, exist_ok=False)
     java = root / 'TMessagesProj/src/main/java/org/telegram'
     def put(name, text):
@@ -132,10 +132,12 @@ def run(root, output):
       public static void floatRound(int a,int g,boolean small){if(small)host.release();}
       public static void roundEnded(int a,int g){endings++;}
     }'''
+    if configure is not None:
+        configure(root, ports)
     for name, body in ports.items():
         package, unused, klass = name.rpartition('/')
         put(name + '.java', 'package ' + package.replace('/', '.') + ';import org.telegram.messenger.MessageObject;' + body)
-    shutil.copyfile(pathlib.Path(__file__).with_name('CrossChatCases.java'), output / 'org/telegram/ui/CrossChatCases.java')
+    shutil.copyfile(pathlib.Path(__file__).with_name(case + '.java'), output / ('org/telegram/ui/' + case + '.java'))
     compiler = pathlib.Path(os.environ['JAVA_HOME']) / 'bin/javac'
     subprocess.run([str(compiler), '-d', str(output / 'classes'), *map(str, sorted(output.rglob('*.java')))], check=True)
-    subprocess.run([str(compiler.with_name('java')), '-cp', str(output / 'classes'), 'org.telegram.ui.CrossChatCases'], check=True)
+    subprocess.run([str(compiler.with_name('java')), '-cp', str(output / 'classes'), 'org.telegram.ui.' + case], check=True)

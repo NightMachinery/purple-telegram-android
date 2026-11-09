@@ -70,7 +70,7 @@ file TMessagesProj/src/main/java/org/telegram/ui/Components/DialogsChannelsAdapt
 file TMessagesProj/src/main/java/org/telegram/ui/Components/FilterTabsView.java 13 3 5
 file TMessagesProj/src/main/java/org/telegram/ui/Components/FragmentContextView.java 6 2 6
 file TMessagesProj/src/main/java/org/telegram/ui/Components/InstantCameraView.java 16 3 14
-file TMessagesProj/src/main/java/org/telegram/ui/Components/InstantCameraView2.java 7 2 7
+file TMessagesProj/src/main/java/org/telegram/ui/Components/InstantCameraView2.java 10 2 8
 file TMessagesProj/src/main/java/org/telegram/ui/Components/InstantCameraViewBase.java 6 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/Components/MessagePreviewView.java 1 0 1
 file TMessagesProj/src/main/java/org/telegram/ui/Components/MessagePrivateSeenView.java 4 1 4

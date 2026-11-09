@@ -35,6 +35,7 @@ public final class PurpleRoundCapture implements InstantCameraView.Delegate, Pur
     private long bindingToken;
     private Object[] preview;
     private boolean frameClock, suspended, ready, released;
+    private boolean pendingFinish, finishQueued, nativeFinishable, nativeTerminal;
     private MediaController.PhotoEntry output;
     private VideoEditedInfo outputInfo;
     private int attached, detached, surfaces, destroyedSurfaces;
@@ -82,7 +83,7 @@ public final class PurpleRoundCapture implements InstantCameraView.Delegate, Pur
     private void start(ChatActivity chat) {
         root = new FrameLayout(activity) {
             @Override public boolean dispatchTouchEvent(android.view.MotionEvent event) {
-                return !suspended && !lease.finishing() && super.dispatchTouchEvent(event);
+                return !suspended && !pendingFinish && !lease.finishing() && super.dispatchTouchEvent(event);
             }
         };
         root.setClipChildren(false);
@@ -166,7 +167,7 @@ public final class PurpleRoundCapture implements InstantCameraView.Delegate, Pur
 
     public static void attach(ChatActivity chat) {
         PurpleRoundCapture session = forChat(chat);
-        if (session != null && !session.suspended && !session.lease.finishing()) session.bind(chat);
+        if (session != null && !session.suspended && !session.pendingFinish && !session.lease.finishing()) session.bind(chat);
     }
 
     private void bind(ChatActivity chat) {
@@ -235,7 +236,7 @@ public final class PurpleRoundCapture implements InstantCameraView.Delegate, Pur
     public static boolean previewState(ChatActivity chat, int state, float progress) {
         PurpleRoundCapture session = forChat(chat);
         if (session == null) return false;
-        if (session.camera != null) session.camera.changeVideoPreviewState(state, progress);
+        if (session.camera != null && !session.suspended && !session.pendingFinish && !session.lease.finishing()) session.camera.changeVideoPreviewState(state, progress);
         return true;
     }
 
@@ -291,13 +292,39 @@ public final class PurpleRoundCapture implements InstantCameraView.Delegate, Pur
     }
 
     private void pauseForPreview() {
-        if (camera != null && ready && !lease.finishing() && !camera.isPaused()) camera.togglePause();
+        if (camera != null && ready && !suspended && !pendingFinish && !lease.finishing() && !camera.isPaused()) camera.togglePause();
     }
 
     public static boolean save(int account, int guid) {
         if (active == null || active.lease.account != account || active.lease.guid != guid) return false;
         active.finish();
         return true;
+    }
+
+    public static boolean deferFinish(InstantCameraViewBase view, boolean canFinish) {
+        PurpleRoundCapture session = active;
+        if (session == null || session.camera != view || session.released) return false;
+        session.nativeFinishable = canFinish;
+        session.pendingFinish = !canFinish;
+        return !canFinish;
+    }
+
+    public static void nativeState(InstantCameraViewBase view, boolean canFinish, boolean terminal) {
+        PurpleRoundCapture session = active;
+        if (session == null || session.camera != view || session.released) return;
+        session.nativeFinishable = canFinish;
+        session.nativeTerminal |= terminal;
+        if (terminal) {
+            session.pendingFinish = false;
+            AndroidUtilities.runOnUIThread(session::closeCapture);
+        } else if (canFinish && session.pendingFinish && !session.finishQueued) {
+            session.finishQueued = true;
+            AndroidUtilities.runOnUIThread(() -> {
+                session.finishQueued = false;
+                if (active == session && !session.released && !session.nativeTerminal
+                        && session.pendingFinish && session.nativeFinishable) session.finish();
+            });
+        }
     }
 
     private void finish() {
@@ -324,12 +351,12 @@ public final class PurpleRoundCapture implements InstantCameraView.Delegate, Pur
     public void roundFinishing() { lease.finish(); snapshot("finalizing"); }
     public boolean roundVisible() { return !released && !suspended && !ApplicationLoader.mainInterfacePaused; }
     public void roundPause() {
-        if (camera != null && ready && !lease.finishing() && !suspended) camera.togglePause();
+        if (camera != null && ready && !lease.finishing() && !suspended && !pendingFinish) camera.togglePause();
     }
-    public void roundPreview() { if (camera != null) { PurpleRoundBubble.expand(camera); pauseForPreview(); } }
+    public void roundPreview() { if (camera != null && !suspended && !pendingFinish && !lease.finishing()) { PurpleRoundBubble.expand(camera); pauseForPreview(); } }
     public void roundPreviewReady(Object[] args) {
         preview = args.clone(); snapshot("paused");
-        if (!PurpleRoundBubble.small(camera)) restoreComposer();
+        if (!suspended && !pendingFinish && !lease.finishing() && !PurpleRoundBubble.small(camera)) restoreComposer();
     }
     public void roundSend(boolean notify, int date, long stars) { finish(); }
     public void roundDiscard() {

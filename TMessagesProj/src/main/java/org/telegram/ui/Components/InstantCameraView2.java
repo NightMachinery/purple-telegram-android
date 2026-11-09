@@ -512,6 +512,7 @@ public final class InstantCameraView2 extends InstantCameraViewBase {
             cancel(false);
             return;
         }
+        if (org.telegram.ui.PurpleRoundCapture.deferFinish(this, stateInfo.canFinish())) return;
         if (!org.telegram.messenger.purple.PurpleRecordingDock.beginRoundFinish(currentAccount, recordingGuid)) return;
         if (stateInfo.getState() == RoundVideoSession.State.RECORDING) {
             postRecordStopped(5);
@@ -704,6 +705,8 @@ public final class InstantCameraView2 extends InstantCameraViewBase {
                 postRecordStopped(2);
             }
             updateButtons();
+            org.telegram.ui.PurpleRoundCapture.nativeState(InstantCameraView2.this, info.canFinish(),
+                    info.getState() == RoundVideoSession.State.ERROR || info.getState() == RoundVideoSession.State.RELEASED);
         }
 
         @Override

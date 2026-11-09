@@ -60,3 +60,5 @@ runpy.run_path(str(pathlib.Path(__file__).parent / 'recording/lifetime.py'))['ru
 runpy.run_path(str(pathlib.Path(__file__).parent / "recording/polish.py"))["run"](root, args.output / "polish")
 
 runpy.run_path(str(pathlib.Path(__file__).parent / "recording/cross_chat.py"))["run"](root, args.output / "cross-chat")
+
+runpy.run_path(str(pathlib.Path(__file__).parent / "recording/v2_interruption.py"))["run"](root, args.output / "v2-interruption")
