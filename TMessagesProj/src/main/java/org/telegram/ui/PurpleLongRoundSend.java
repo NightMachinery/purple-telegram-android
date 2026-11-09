@@ -61,8 +61,13 @@ public final class PurpleLongRoundSend {
 
     public static void review(BaseFragment host, PurpleRecordingEntry item, int account, long user, long dialog,
             SendMessageChatArguments arguments, Sender sender, Runnable done, long startUs, long endUs) {
-        if (active.containsKey(item.id) || host.getParentActivity() == null || host.isPaused()
+        if (host.getParentActivity() == null || host.isPaused()
                 || !PurpleRecordingSendAs.sameUser(account, user)) return;
+        final Request previous = active.get(item.id);
+        if (previous != null) {
+            if (!previous.replaceablePayment(account, user)) return;
+            previous.finish(false);
+        }
         final Request request = new Request(host, item, account, user, dialog, arguments, sender, done, startUs, endUs);
         active.put(item.id, request);
         request.prepare(true);
@@ -81,7 +86,8 @@ public final class PurpleLongRoundSend {
         PurpleLongRoundQueue queue;
         List<PurpleLongRoundMedia.Output> outputs;
         AlertDialog progress;
-        boolean closed, preparing;
+        boolean closed, preparing, awaitingPayment;
+        int paymentGeneration;
         Request(BaseFragment host, PurpleRecordingEntry item, int account, long user, long dialog,
                 SendMessageChatArguments original, Sender sender, Runnable done, long startUs, long endUs) {
             owner = new WeakReference<>(host); this.item = item; this.account = account; this.user = user;
@@ -159,7 +165,11 @@ public final class PurpleLongRoundSend {
             builder.setPositiveButton(circles ? LocaleController.formatString(R.string.PurpleLongRoundSendParts, outputs.size())
                     : text(R.string.PurpleLongRoundVideo), (dialog, which) -> {
                 if (!approved.compareAndSet(false, true) || host() == null) return;
+                awaitingPayment = true;
+                final int generation = ++paymentGeneration;
                 AlertsCreator.ensurePaidMessageConfirmation(account, this.dialog, outputs.size(), paid -> {
+                    if (closed || !awaitingPayment || generation != paymentGeneration || active.get(item.id) != this) return;
+                    awaitingPayment = false;
                     if (host() == null) { finish(false); return; }
                     if (!queue.confirm()) return;
                     enqueue(paid);
@@ -167,6 +177,10 @@ public final class PurpleLongRoundSend {
             });
             builder.setOnDismissListener(dialog -> { if (!approved.get()) finish(false); });
             host.showDialog(builder.create());
+        }
+        boolean replaceablePayment(int account, long user) {
+            return !closed && awaitingPayment && this.account == account && this.user == user
+                    && queue != null && queue.attempted == 0 && queue.queued == 0;
         }
         void enqueue(long paid) {
             if (host() == null) { finish(true); return; }
@@ -187,7 +201,7 @@ public final class PurpleLongRoundSend {
         void finish(boolean error) {
             if (closed) return;
             final BaseFragment host = host();
-            closed = true; work.cancelled.set(true);
+            closed = true; awaitingPayment = false; paymentGeneration++; work.cancelled.set(true);
             if (queue != null) queue.stop();
             PurpleRecordingDelivery.revoke(item.id);
             active.remove(item.id, this);

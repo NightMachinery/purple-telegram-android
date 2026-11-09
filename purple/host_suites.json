@@ -996,7 +996,8 @@
         "recording-dock:LONG_ROUND_ORIGINAL_CHECKS": 14,
         "recording-dock:LONG_ROUND_ORIGINAL_ORDER_PINS": 4,
         "recording-dock:LONG_ROUND_MUTED_CHECKS": 8,
-        "recording-dock:LONG_ROUND_MUTED_DECODE_CHECKS": 4
+        "recording-dock:LONG_ROUND_MUTED_DECODE_CHECKS": 4,
+        "recording-dock:LONG_ROUND_PAYMENT_CHECKS": 6
       }
     },
     {

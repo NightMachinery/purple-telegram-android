@@ -24,12 +24,13 @@ def run(root, output):
         public Builder(Object a,Object b){latest=this;}public Builder setTitle(String s){return this;}public Builder setMessage(String s){message=s;return this;}
         public Builder setNegativeButton(String s,Click c){return this;}public Builder setNeutralButton(String s,Click c){neutral=c;return this;}public Builder setPositiveButton(String s,Click c){primary=s;positive=c;return this;}public Builder setOnDismissListener(Dismiss d){dismiss=d;return this;}public Object create(){return this;}}
       }''')
-    put('org/telegram/ui/Components/AlertsCreator.java','''package org.telegram.ui.Components;public class AlertsCreator{public interface Paid{void run(long p);}public static Paid pending;public static int count;public static void ensurePaidMessageConfirmation(int a,long d,int n,Paid paid,long stars){count=n;pending=paid;}}''')
+    put('org/telegram/ui/Components/AlertsCreator.java','''package org.telegram.ui.Components;public class AlertsCreator{public interface Paid{void run(long p);}public static Paid pending;public static int count;public static void dismissNative(){/* Native cancel has no success callback. */}public static void ensurePaidMessageConfirmation(int a,long d,int n,Paid paid,long stars){count=n;pending=paid;}}''')
     put('org/telegram/messenger/purple/PurpleLongRoundQueue.java',(java/'messenger/purple/PurpleLongRoundQueue.java').read_text())
     review=method(source,'    public static void review(')
     constructor=method(source,'        Request(BaseFragment host,')
     confirm=method(source,'        void confirm()')
     host=method(source,'        BaseFragment host()')
+    replaceable=method(source,'        boolean replaceablePayment(') if '        boolean replaceablePayment(' in source else ''
     put('org/telegram/ui/LongChoices.java','''package org.telegram.ui;
       import java.util.*;import java.lang.ref.WeakReference;import java.util.concurrent.atomic.AtomicBoolean;
       import org.telegram.messenger.*;import org.telegram.messenger.purple.*;import org.telegram.ui.ActionBar.*;import org.telegram.ui.Components.*;
@@ -41,11 +42,11 @@ def run(root, output):
        static class Request {
         final WeakReference<BaseFragment> owner;final PurpleRecordingEntry item;final int account;final long user,dialog,startUs,endUs;
         final Sender sender;final Runnable done;final SendMessageChatArguments[] arguments=new SendMessageChatArguments[6];
-        List<Output> outputs;PurpleLongRoundQueue queue;boolean closed,lastCircles;int preparations,enqueues,finishes;
-      '''+constructor+host+confirm+'''
+        List<Output> outputs;PurpleLongRoundQueue queue;boolean closed,lastCircles,awaitingPayment;int paymentGeneration,preparations,enqueues,finishes;
+      '''+constructor+host+confirm+replaceable+'''
         void prepare(boolean circles){lastCircles=circles;preparations++;}
         void enqueue(long paid){enqueues++;}
-        void finish(boolean error){closed=true;finishes++;}
+        void finish(boolean error){if(closed)return;closed=true;awaitingPayment=false;paymentGeneration++;active.remove(item.id,this);finishes++;}
         void ready(boolean circles,int n){outputs=new ArrayList<>();for(int i=0;i<n;i++)outputs.add(new Output(circles));queue=new PurpleLongRoundQueue(n);confirm();}
        }
        static int checks;static void check(boolean ok,String why){checks++;if(!ok)throw new AssertionError(why);}
@@ -65,6 +66,19 @@ def run(root, output):
         check(AlertsCreator.count==3&&request.enqueues==0&&!request.closed,"paid approval covers actual count before enqueue");
         AlertsCreator.pending.run(0);check(request.enqueues==1,"approval starts one sequence");
         AlertsCreator.pending.run(0);check(request.enqueues==1&&!request.closed,"duplicate approval cannot send twice or abort accepted sequence");
+        active.clear();review(host,item,1,9,100,new SendMessageChatArguments(),null,()->{},-1,-1);Request cancelled=active.get(item.id);cancelled.ready(true,3);
+        AlertDialog.latest.positive.run(null,0);AlertDialog.latest.dismiss.run(null);AlertsCreator.Paid late=AlertsCreator.pending;
+        AlertsCreator.dismissNative();int payments=0;
+        review(host,item,1,9,100,new SendMessageChatArguments(),null,()->{},-1,-1);Request retry=active.get(item.id);
+        check(retry!=cancelled&&cancelled.closed&&cancelled.finishes==1,"native paid cancel allows immediate explicit retry by replacing zero-attempt payment generation");payments++;
+        check(retry.lastCircles&&retry.preparations==1&&retry.enqueues==0,"retry returns to default circles and deliberate review");payments++;
+        late.run(12);check(cancelled.enqueues==0&&!retry.closed,"old payment success cannot send or close replacement");payments++;
+        retry.ready(true,2);AlertDialog.latest.positive.run(null,0);AlertDialog.latest.dismiss.run(null);AlertsCreator.pending.run(12);
+        check(retry.enqueues==1&&!retry.closed,"new paid generation approval is usable");payments++;
+        review(host,item,1,9,100,new SendMessageChatArguments(),null,()->{},-1,-1);
+        check(active.get(item.id)==retry&&!retry.closed,"approved or attempted generation is never replaced");payments++;
+        late.run(12);AlertsCreator.pending.run(12);check(retry.enqueues==1&&cancelled.enqueues==0,"late and duplicate approvals remain idempotent");payments++;
+        System.out.println("LONG_ROUND_PAYMENT_CHECKS="+payments);
         active.clear();PurpleRecordingSendAs.valid=false;review(host,item,1,9,100,new SendMessageChatArguments(),null,()->{},-1,-1);
         check(active.isEmpty(),"replacement account cannot open review");
         System.out.println("LONG_ROUND_CHOICE_CHECKS="+checks);

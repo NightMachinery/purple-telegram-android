@@ -120,3 +120,9 @@ AAC silence when the selected source has no audio, without opening a decoder
 for the retained unmuted original. Every derived track set and duration is
 checked before review. Synthetic host decode covers silent outputs; Android
 codec behavior still needs device qualification.
+
+After cancelling native paid approval or its Stars sheet, an explicit Send can
+replace only that same account owner’s payment request with zero enqueue attempts.
+The old generation closes before the new review opens; late payment callbacks
+cannot send or revoke the replacement. An approved or attempted send remains
+protected against replacement and blind retry.
