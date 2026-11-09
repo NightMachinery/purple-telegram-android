@@ -32,6 +32,26 @@ public final class PurpleRecordingDelivery {
         send(id, account, user, dialog, arguments, prepare, queued, true);
     }
 
+    public static synchronized void sendRetained(String id, int account, long user, long dialog,
+            SendMessageChatArguments arguments, Runnable prepare, Runnable queued, Runnable failed) {
+        if (id == null || arguments == null || !PurpleRecordingSendAs.sameUser(account, user) || current.containsKey(id)) {
+            failed.run(); return;
+        }
+        final Ticket ticket = new Ticket();
+        ticket.id = id; ticket.account = account; ticket.user = user; ticket.dialog = dialog; ticket.keepInBin = true;
+        final Request request = new Request(); request.ticket = ticket; request.queued = queued;
+        current.put(id, ticket); requests.put(arguments, request);
+        PurpleRecordingRegistry.retainedRound(id, entry -> {
+            if (entry != null && allowed(arguments)) prepare.run();
+            else {
+                synchronized (PurpleRecordingDelivery.class) {
+                    if (current.get(id) == ticket) current.remove(id);
+                }
+                failed.run();
+            }
+        });
+    }
+
     private static synchronized void send(String id, int account, long user, long dialog, SendMessageChatArguments arguments,
             Runnable prepare, Runnable queued, boolean keepInBin) {
         if (id == null || arguments == null || !PurpleRecordingSendAs.sameUser(account, user)) return;

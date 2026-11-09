@@ -64,7 +64,8 @@ public final class PurpleRecordingBinRow extends LinearLayout {
         heading.addView(more, LayoutHelper.createLinear(48, 48));
         addView(heading, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
         metadata = text(context, resources, 14, true);
-        metadata.setText(details);
+        metadata.setText(entry.round() && entry.durationMs > 60_000
+                ? details + " · " + LocaleController.getString(R.string.PurpleLongRoundLocal) : details);
         addView(metadata, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
         preview = new FrameLayout(context);
         texture = new TextureView(context);

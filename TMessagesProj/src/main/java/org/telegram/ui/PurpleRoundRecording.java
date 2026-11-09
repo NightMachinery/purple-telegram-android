@@ -133,6 +133,12 @@ final class PurpleRoundRecording {
                 chat.instantCameraView.setVisibility(View.INVISIBLE);
             }
             if (!complete || !PurpleRecordingSendAs.sameUser(frozen.account, frozen.user)) return;
+            PurpleRecordingRegistry.retainedRound(retained, original -> {
+                if (original != null) deliver(retained, original, dockGeneration);
+            });
+        }
+        void deliver(String retained, PurpleRecordingEntry original, long dockGeneration) {
+            if (!PurpleRecordingSendAs.sameUser(frozen.account, frozen.user)) return;
             final Target destination = frozen;
             final MediaController.PhotoEntry media = entry;
             final VideoEditedInfo video = info;
@@ -140,6 +146,20 @@ final class PurpleRoundRecording {
             final int sendDate = date, sendRepeat = repeat;
             final long sourceGeneration = generation;
             final java.lang.ref.WeakReference<PurpleRoundRecording> owner = new java.lang.ref.WeakReference<>(PurpleRoundRecording.this);
+            if (original.durationMs > PurpleLongRoundPlan.CIRCLE_MS) {
+                PurpleLongRoundSend.review(chat, original, destination.account, destination.user, destination.dialog,
+                        destination.arguments, (output, arguments, paid) ->
+                                SendMessagesHelper.prepareSendingVideo(AccountInstance.getInstance(destination.account),
+                                        output.file.getAbsolutePath(), output.info(), media.coverPath, media.coverPhoto,
+                                        destination.dialog, destination.reply, destination.top, null, destination.quote,
+                                        media.entities, media.ttl, null, sendNotify, sendDate, sendRepeat, false,
+                                        media.hasSpoiler, media.caption, arguments, media.effectId, paid,
+                                        destination.mono, destination.suggestion), () -> {
+                            final PurpleRoundRecording active = owner.get();
+                            if (active != null) active.cleanCompose(sourceGeneration, dockGeneration, destination.reply, destination.quote);
+                        });
+                return;
+            }
             final java.util.concurrent.atomic.AtomicBoolean approved = new java.util.concurrent.atomic.AtomicBoolean();
             AlertsCreator.ensurePaidMessageConfirmation(destination.account, destination.dialog, 1, paid -> {
                 if (!approved.compareAndSet(false, true)) return;

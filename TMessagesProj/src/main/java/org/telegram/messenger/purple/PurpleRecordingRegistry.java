@@ -408,6 +408,23 @@ public final class PurpleRecordingRegistry {
         });
     }
 
+    public static void retainedRound(String id, java.util.function.Consumer<PurpleRecordingEntry> done) {
+        start();
+        worker.execute(() -> {
+            PurpleRecordingEntry copy = null;
+            try {
+                final PurpleRecordingEntry entry = store == null ? null : store.find(id);
+                if (entry != null && entry.inBin() && entry.round() && !PurpleRecordingEntry.UNRECOVERABLE.equals(entry.state)) {
+                    copy = PurpleRecordingEntry.fromJson(entry.toJson(), System.currentTimeMillis() / 1000);
+                }
+            } catch (Exception failure) {
+                PurpleDiagLog.event("recordings", "long_original", PurpleDiagLog.reason("io_failed"));
+            }
+            final PurpleRecordingEntry retained = copy;
+            AndroidUtilities.runOnUIThread(() -> done.accept(retained));
+        });
+    }
+
     public static void pendingRound(String id, java.util.function.Consumer<Boolean> done) {
         worker.execute(() -> {
             final PurpleRecordingEntry entry = store == null ? null : store.find(id);

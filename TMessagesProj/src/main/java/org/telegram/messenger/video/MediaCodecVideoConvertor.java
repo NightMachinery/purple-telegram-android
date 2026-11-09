@@ -550,7 +550,7 @@ public class MediaCodecVideoConvertor {
 
                             if (audioIndex >= 0) {
                                 MediaFormat audioFormat = extractor.getTrackFormat(audioIndex);
-                                copyAudioBuffer = Math.abs(volume - 1f) < 0.001f && (convertVideoParams.soundInfos.isEmpty() && audioFormat.getString(MediaFormat.KEY_MIME).equals(MediaController.AUDIO_MIME_TYPE) || audioFormat.getString(MediaFormat.KEY_MIME).equals("audio/mpeg"));
+                                copyAudioBuffer = convertVideoParams.purpleAudioInput == null && Math.abs(volume - 1f) < 0.001f && (convertVideoParams.soundInfos.isEmpty() && audioFormat.getString(MediaFormat.KEY_MIME).equals(MediaController.AUDIO_MIME_TYPE) || audioFormat.getString(MediaFormat.KEY_MIME).equals("audio/mpeg"));
 
                                 if (audioFormat.getString(MediaFormat.KEY_MIME).equals("audio/unknown")) {
                                     audioIndex = -1;
@@ -577,7 +577,7 @@ public class MediaCodecVideoConvertor {
                                         }
                                     } else {
                                         ArrayList<AudioInput> audioInputs = new ArrayList<>();
-                                        GeneralAudioInput mainInput = new GeneralAudioInput(videoPath, audioIndex);
+                                        AudioInput mainInput = convertVideoParams.purpleAudioInput != null ? convertVideoParams.purpleAudioInput : new GeneralAudioInput(videoPath, audioIndex);
                                         if (endTime > 0) {
                                             mainInput.setEndTimeUs(endTime);
                                         }
@@ -588,7 +588,7 @@ public class MediaCodecVideoConvertor {
                                         audioInputs.add(mainInput);
                                         applyAudioInputs(convertVideoParams.soundInfos, audioInputs);
 
-                                        audioRecoder = new AudioRecoder(audioInputs, duration);
+                                        audioRecoder = new AudioRecoder(audioInputs, convertVideoParams.purpleAudioInput != null ? convertVideoParams.purpleAudioDurationUs : duration);
                                         audioTrackIndex = muxer.addTrack(audioRecoder.format, true);
                                     }
                                 }
@@ -1571,6 +1571,8 @@ public class MediaCodecVideoConvertor {
         float volume;
         boolean isStory;
         StoryEntry.HDRInfo hdrInfo;
+        public AudioInput purpleAudioInput;
+        public long purpleAudioDurationUs;
         public ArrayList<MixedSoundInfo> soundInfos = new ArrayList<MixedSoundInfo>();
         int account;
         boolean isDark;

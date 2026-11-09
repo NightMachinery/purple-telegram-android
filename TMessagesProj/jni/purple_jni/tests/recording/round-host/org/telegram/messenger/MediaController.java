@@ -1,1 +1,1 @@
-package org.telegram.messenger; public class MediaController {public static class PhotoEntry {static int next; public String path="fixture-"+(++next)+".mp4",coverPath,caption; public Object coverPhoto,entities; public int ttl; public boolean hasSpoiler; public long effectId;}}
+package org.telegram.messenger; public class MediaController {public static class PhotoEntry {static int next; public String path="fixture-"+(++next)+".mp4",coverPath,caption; public Object coverPhoto,entities; public int ttl,duration; public boolean hasSpoiler; public long effectId;}}

@@ -792,3 +792,11 @@ and uses the resulting StateInfo maximum for progress. Native trim/resume and
 encoder bodies stay in place. Check default short takes and local1/3/5minute
 boundaries on both adapters after upstream merges. Read
 [long-round-recording.md](long-round-recording.md) for policy and test limits.
+
+MediaCodecVideoConvertor has an optional owned audio input plus its explicit
+microsecond duration for long-circle re-encoding. Its three selection hooks keep
+all ordinary conversions on their existing path. After merges, check the AAC
+copy condition, AudioInput start/end setup and AudioRecoder duration units against
+PurpleLongRoundMedia; do not replace the scoped input with prior-sync stream-copy.
+The owned adapter must be recreated safely by native converter retries and
+released on failure as well as success.

@@ -60,3 +60,7 @@ runpy.run_path(str(pathlib.Path(__file__).parent / 'recording/lifetime.py'))['ru
 runpy.run_path(str(pathlib.Path(__file__).parent / "recording/polish.py"))["run"](root, args.output / "polish")
 
 runpy.run_path(str(pathlib.Path(__file__).parent / "recording/long_limits.py"))["run"](root, args.output / "long-limits")
+
+runpy.run_path(str(pathlib.Path(__file__).parent / "recording/long_outputs.py"))["run"](root, args.output / "long-outputs")
+
+runpy.run_path(str(pathlib.Path(__file__).parent / "recording/long_choices.py"))["run"](root, args.output / "long-choices")

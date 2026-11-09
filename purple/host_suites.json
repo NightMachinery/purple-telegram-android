@@ -986,7 +986,12 @@
         "recording-dock:ROUND_CONTROLS_NATIVE_FILTER_CHECKS": 6,
         "recording-dock:ROUND_CONTROLS_PLACEMENT_CHECKS": 576,
         "recording-dock:SETTINGS_RTL_ALIGNMENT_CHECKS": 48,
-        "recording-dock:LONG_ROUND_LIMIT_CHECKS": 38
+        "recording-dock:LONG_ROUND_LIMIT_CHECKS": 38,
+        "recording-dock:LONG_ROUND_ROUTE_CHECKS": 12,
+        "recording-dock:LONG_ROUND_REVIEW_CHECKS": 6,
+        "recording-dock:LONG_ROUND_OUTPUT_CHECKS": 100,
+        "recording-dock:LONG_ROUND_DECODE_CHECKS": 4,
+        "recording-dock:LONG_ROUND_CHOICE_CHECKS": 9
       }
     },
     {

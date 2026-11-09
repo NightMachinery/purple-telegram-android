@@ -1119,4 +1119,13 @@
     <string name="PurpleRecordingBinSendSaved">Send to Saved Messages</string>
     <string name="PurpleLocalRoundLimit">Local round recording length</string>
     <string name="PurpleLocalRoundLimitInfo">Record for 1, 3 or 5 minutes. Telegram circles stay within one minute. Longer recordings keep the full original and let you choose ordinary video or circle parts before sending.</string>
+    <string name="PurpleLongRoundSendParts">Send %1$d circle parts</string>
+    <string name="PurpleLongRoundTitle">Send longer recording</string>
+    <string name="PurpleLongRoundVideo">Send one full video</string>
+    <string name="PurpleLongRoundCircles">Use circle parts</string>
+    <string name="PurpleLongRoundPreparing">Preparing copies. The full original stays in the Recording bin.</string>
+    <string name="PurpleLongRoundConfirm">Send %1$d prepared message(s) in order? The full original stays in the Recording bin. Sending several parts can partially succeed. Check the chat before retrying to avoid duplicates.</string>
+    <string name="PurpleLongRoundPrepareFailed">Could not prepare copies. The full original remains in the Recording bin under its retention policy. You can try again or choose one ordinary video.</string>
+    <string name="PurpleLongRoundFailed">Could not finish this send. %1$d message(s) confirmed in the local queue; another may already be queued. Check the chat before retrying. The full original remains in the Recording bin under its retention policy.</string>
+    <string name="PurpleLongRoundLocal">Long local recording</string>
 </resources>

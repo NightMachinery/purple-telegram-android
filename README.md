@@ -230,6 +230,13 @@ Completed rounds waiting for payment or queueing stay in the Recording bin.
 If you dismiss payment confirmation or the Stars sheet, use the bin to retry
 or save the recording. The camera is released once the bin owns a synced copy.
 
+**Longer local rounds.** Media recording settings offer a local 1, 3 or 5 minute
+limit, defaulting to one minute. Longer takes prepare circle parts by default;
+review shows the part count before sending. One ordinary full-length video is a
+secondary option. The full original stays in the bin under its retention policy.
+See [long-round-recording.md](docs/long-round-recording.md) for format limits and
+verification scope.
+
 - **The registry.** `PurpleRecordingRegistry` keeps
   `files/purple-recordings/recordings.json`, one entry per recording (account
   slot, chat, topic and reply ids, kind, start, the file, and a state:
