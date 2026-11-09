@@ -113,3 +113,10 @@ durability. The implementation uses the existing store's sync/atomic-manifest
 contract and makes no stronger filesystem power-loss claim. A process death
 during a failed save can still lose an unlinked source; the error explicitly
 asks the user to keep the app open. Only newly recorded media is retained.
+
+Muted Camera2 results may contain video only. Sending one ordinary video
+preserves that track set and the selected range. Circle parts encode explicit
+AAC silence when the selected source has no audio, without opening a decoder
+for the retained unmuted original. Every derived track set and duration is
+checked before review. Synthetic host decode covers silent outputs; Android
+codec behavior still needs device qualification.

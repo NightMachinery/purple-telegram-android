@@ -7,6 +7,8 @@ import android.os.SystemClock;
 import org.telegram.messenger.MediaController;
 import org.telegram.messenger.VideoEditedInfo;
 import org.telegram.messenger.video.MediaCodecVideoConvertor;
+import org.telegram.messenger.video.audio_input.AudioInput;
+import org.telegram.messenger.video.audio_input.BlankAudioInput;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -36,7 +38,7 @@ public final class PurpleLongRoundMedia {
                 @Override public boolean needConvert() { return false; }
             };
             result.startTime = result.endTime = -1;
-            result.roundVideo = circle;
+            result.roundVideo = circle; result.muted = facts.audioTrack < 0;
             result.estimatedSize = file.length(); result.estimatedDuration = facts.durationMs;
             result.resultWidth = result.originalWidth = facts.width;
             result.resultHeight = result.originalHeight = facts.height;
@@ -91,13 +93,14 @@ public final class PurpleLongRoundMedia {
                 final String mime = format.getString(MediaFormat.KEY_MIME);
                 if ("video/avc".equals(mime)) video = i;
                 if ("audio/mp4a-latm".equals(mime)) audio = i;
+                else if (mime != null && mime.startsWith("audio/")) throw new IOException("audio format");
                 if (format.containsKey(MediaFormat.KEY_DURATION)) {
                     duration = Math.max(duration, (format.getLong(MediaFormat.KEY_DURATION) + 999) / 1000);
                 }
             }
-            if (video < 0 || audio < 0) throw new IOException("tracks");
+            if (video < 0) throw new IOException("tracks");
             if (part) {
-                for (int track : new int[]{video, audio}) {
+                for (int track : audio < 0 ? new int[]{video} : new int[]{video, audio}) {
                     extractor.selectTrack(track);
                     extractor.seekTo(0, MediaExtractor.SEEK_TO_PREVIOUS_SYNC);
                     final long first = extractor.getSampleTime();
@@ -147,7 +150,7 @@ public final class PurpleLongRoundMedia {
                 final File file = work.create(directory);
                 final long start = selection.startUs(i, count), end = selection.endUs(i, count);
                 final VideoEditedInfo info = new VideoEditedInfo();
-                info.roundVideo = circles;
+                info.roundVideo = circles; info.muted = facts.audioTrack < 0 && !circles;
                 final MediaCodecVideoConvertor.ConvertVideoParams params = MediaCodecVideoConvertor.ConvertVideoParams.of(
                         source.getAbsolutePath(), file, 0, facts.rotation, false, facts.width, facts.height,
                         facts.width, facts.height, 30, 1_200_000, 0, start, end, -1, true,
@@ -157,13 +160,16 @@ public final class PurpleLongRoundMedia {
                             }
                             @Override public void didWriteData(long size, float progress) { }
                         }, info);
-                final PurpleLongRoundAudioInput audio = new PurpleLongRoundAudioInput(source.getAbsolutePath(), facts.audioTrack);
+                final AudioInput audio = facts.audioTrack >= 0
+                        ? new PurpleLongRoundAudioInput(source.getAbsolutePath(), facts.audioTrack)
+                        : circles ? new BlankAudioInput(end - start) : null;
                 params.purpleAudioInput = audio; params.purpleAudioDurationUs = end - start;
                 try {
                     if (new MediaCodecVideoConvertor().convertVideo(params)) throw new IOException("conversion");
-                } finally { audio.release(); }
+                } finally { if (audio != null) audio.release(); }
                 work.check();
                 final Facts actual = inspect(file, circles);
+                if ((actual.audioTrack >= 0) != (facts.audioTrack >= 0 || circles)) throw new IOException("output audio");
                 if (circles) plan.validatePart(i, actual.durationMs);
                 else if (Math.abs(actual.durationMs - selection.durationMs()) > 150) throw new IOException("selected duration");
                 outputs.add(new Output(file, actual, circles));

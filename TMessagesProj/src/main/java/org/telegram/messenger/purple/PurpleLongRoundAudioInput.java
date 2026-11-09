@@ -3,11 +3,20 @@ package org.telegram.messenger.purple;
 import org.telegram.messenger.video.AudioBufferConverter;
 import org.telegram.messenger.video.AudioConversions;
 import org.telegram.messenger.video.AudioDecoder;
+import org.telegram.messenger.video.AudioRecoder;
+import org.telegram.messenger.video.MediaCodecVideoConvertor;
+import java.util.ArrayList;
 import org.telegram.messenger.video.audio_input.AudioInput;
 import java.io.IOException;
 import java.nio.ShortBuffer;
 
 public final class PurpleLongRoundAudioInput extends AudioInput {
+    public static AudioRecoder silentRecorder(
+            MediaCodecVideoConvertor.ConvertVideoParams params) throws IOException {
+        final ArrayList<AudioInput> inputs = new ArrayList<>();
+        inputs.add(params.purpleAudioInput);
+        return new AudioRecoder(inputs, params.purpleAudioDurationUs);
+    }
     private AudioDecoder decoder;
     private final String path;
     private final int track;

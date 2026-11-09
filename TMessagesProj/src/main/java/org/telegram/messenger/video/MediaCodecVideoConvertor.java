@@ -592,6 +592,9 @@ public class MediaCodecVideoConvertor {
                                         audioTrackIndex = muxer.addTrack(audioRecoder.format, true);
                                     }
                                 }
+                            } else if (convertVideoParams.purpleAudioInput != null) {
+                                audioRecoder = org.telegram.messenger.purple.PurpleLongRoundAudioInput.silentRecorder(convertVideoParams);
+                                audioTrackIndex = muxer.addTrack(audioRecoder.format, true);
                             } else if (!convertVideoParams.soundInfos.isEmpty()) {
                                 copyAudioBuffer = false;
                                 ArrayList<AudioInput> audioInputs = new ArrayList<>();

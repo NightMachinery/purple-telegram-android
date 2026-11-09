@@ -807,3 +807,8 @@ finish reservation and resume. Teardown releases the UI association while pendin
 original bytes remain descriptor-owned until persistence. Preserve this order
 when merging; V2 already remuxes selected preview ranges and resets send offsets,
 while legacy dispatches selection offsets in microseconds without materializing.
+
+The long-round converter audio hook also handles an explicitly supplied silence
+input when native Camera2 mute has removed the source audio track. Ordinary
+callers retain the native track-selection policy. See `docs/long-round-
+recording.md`.

@@ -13,7 +13,7 @@ def run(root, output):
     put('org/telegram/messenger/purple/PurpleDiagLog.java', 'package org.telegram.messenger.purple; public class PurpleDiagLog {public static void event(String... x){} public static String reason(String x){return x;}}')
     put('android/os/SystemClock.java', 'package android.os; public class SystemClock {public static long elapsedRealtime(){return System.nanoTime()/1000000;}}')
     put('org/telegram/messenger/VideoEditedInfo.java', '''package org.telegram.messenger;
-      public class VideoEditedInfo {public long startTime,endTime,estimatedSize,estimatedDuration;public boolean roundVideo;
+      public class VideoEditedInfo {public long startTime,endTime,estimatedSize,estimatedDuration;public boolean roundVideo,muted;
        public int resultWidth,originalWidth,resultHeight,originalHeight,rotationValue,framerate;public String originalPath;
        public boolean needConvert(){return true;}}''')
     put('org/telegram/messenger/MediaController.java', '''package org.telegram.messenger;
@@ -34,17 +34,18 @@ def run(root, output):
     ''')
     put('android/media/MediaExtractor.java', '''package android.media; import java.util.*;
       public class MediaExtractor {public static final int SEEK_TO_PREVIOUS_SYNC=0,SAMPLE_FLAG_SYNC=1;String path;int track,pos;List<String> packets;
-       public void setDataSource(String path){this.path=path;}public int getTrackCount(){return 2;}
+       public void setDataSource(String path){this.path=path;}public int getTrackCount(){try{return Probe.facts(path,"a:0").isEmpty()?1:2;}catch(Exception e){throw new RuntimeException(e);}}
        public MediaFormat getTrackFormat(int i){try{Map<String,String> f=Probe.facts(path,i==0?"v:0":"a:0");MediaFormat m=new MediaFormat();m.m.put("mime",i==0?"video/avc":"audio/mp4a-latm");m.m.put("duration",Probe.micros(f.get("duration")));return m;}catch(Exception e){throw new RuntimeException(e);}}
        public void selectTrack(int track){this.track=track;}public void unselectTrack(int i){packets=null;}
        public void seekTo(long time,int mode){try{String all=Probe.exec("ffprobe","-v","error","-select_streams",track==0?"v:0":"a:0","-show_packets","-show_entries","packet=pts_time,flags","-of","csv=p=0",path);packets=new ArrayList<>();for(String l:all.split("\\n")){if(l.contains(",")&&!l.startsWith("-")&&!l.startsWith("Skip"))packets.add(l);}pos=0;}catch(Exception e){throw new RuntimeException(e);}}
        public long getSampleTime(){return pos>=packets.size()?-1:Probe.micros(packets.get(pos).split(",")[0]);}
        public int getSampleFlags(){return packets.get(pos).contains("K")?1:0;}public boolean advance(){return ++pos<packets.size();}public void release(){}}
     ''')
-    for name in ['AudioInput']:
+    put('org/telegram/messenger/video/AudioRecoder.java', 'package org.telegram.messenger.video; public class AudioRecoder {public AudioRecoder(java.util.ArrayList<org.telegram.messenger.video.audio_input.AudioInput> inputs,long duration){}}')
+    for name in ['AudioInput', 'BlankAudioInput']:
         put('org/telegram/messenger/video/audio_input/' + name + '.java', (java/('messenger/video/audio_input/'+name+'.java')).read_text())
     put('org/telegram/messenger/video/AudioConversions.java', '''package org.telegram.messenger.video;
-      public class AudioConversions {public static long bytesToUs(int size,int rate,int channels){return size*1000000L/(rate*channels*2);}}''')
+      public class AudioConversions {public static int usToShorts(long us,int rate,int channels){return (int)(us*rate*channels/1000000);}public static long bytesToUs(int size,int rate,int channels){return size*1000000L/(rate*channels*2);}}''')
     put('org/telegram/messenger/video/AudioBufferConverter.java', '''package org.telegram.messenger.video; import java.nio.*;
       public class AudioBufferConverter {public ShortBuffer convert(ShortBuffer b,int a,int c,int d,int e){ShortBuffer out=ShortBuffer.allocate(b.remaining());out.put(b).flip();return out;}}''')
     put('org/telegram/messenger/video/AudioDecoder.java', '''package org.telegram.messenger.video; import java.nio.*; import java.io.*;
@@ -58,11 +59,14 @@ def run(root, output):
       import java.io.*;import java.util.*;import org.telegram.messenger.*;import org.telegram.messenger.video.audio_input.*;import android.media.Probe;
       public class MediaCodecVideoConvertor {public static int calls,failAt=-1;public static Runnable hook;public static java.util.List<long[]> ranges=new java.util.ArrayList<>();
        public boolean convertVideo(ConvertVideoParams p){calls++;ranges.add(new long[]{p.start,p.end});try{if(hook!=null)hook.run();if(p.cb.checkConversionCanceled()||calls==failAt)return true;
-        if(!p.compress||p.purpleAudioInput==null||p.purpleAudioDurationUs!=p.end-p.start||p.duration!=(p.end-p.start+999)/1000)throw new AssertionError("production conversion contract");
+        boolean sourceAudio=!Probe.exec("ffprobe","-v","error","-select_streams","a:0","-show_entries","stream=codec_name","-of","csv=p=0",p.path).isEmpty();boolean silence=!sourceAudio&&p.circle;
+        if(!p.compress||sourceAudio&&p.purpleAudioInput==null||silence&&!(p.purpleAudioInput instanceof BlankAudioInput)||!sourceAudio&&!p.circle&&p.purpleAudioInput!=null||p.purpleAudioInput!=null&&p.purpleAudioDurationUs!=p.end-p.start||p.duration!=(p.end-p.start+999)/1000)throw new AssertionError("production conversion contract");
+        if(silence){p.purpleAudioInput.start(48000,1);for(int i=0;i<480;i++)if(p.purpleAudioInput.getNext()!=0)throw new AssertionError("silence input");
+         Probe.exec("ffmpeg","-v","error","-y","-i",p.path,"-f","lavfi","-i","anullsrc=r=48000:cl=mono","-ss",Double.toString(p.start/1000000.0),"-t",Double.toString((p.end-p.start)/1000000.0),"-map","0:v:0","-map","1:a:0","-c:v","libx264","-preset","ultrafast","-profile:v","baseline","-bf","0","-r","30","-pix_fmt","yuv420p","-c:a","aac","-movflags","+faststart",p.file.toString());return false;}
         Probe.exec("ffmpeg","-v","error","-y","-i",p.path,"-ss",Double.toString(p.start/1000000.0),"-t",Double.toString((p.end-p.start)/1000000.0),"-c:v","libx264","-preset","ultrafast","-profile:v","baseline","-bf","0","-r","30","-pix_fmt","yuv420p","-c:a","aac","-b:a","128k","-movflags","+faststart",p.file.toString());return p.cb.checkConversionCanceled();
        }catch(Exception e){throw new RuntimeException(e);}}
-       public static class ConvertVideoParams {public AudioInput purpleAudioInput;public long purpleAudioDurationUs,start,end,duration;String path;File file;boolean compress;MediaController.VideoConvertorListener cb;
-        public static ConvertVideoParams of(String path,File file,long offset,int rotation,boolean secret,int w,int h,int rw,int rh,int fps,int bitrate,int original,long start,long end,long avatar,boolean compress,long duration,MediaController.VideoConvertorListener cb,VideoEditedInfo info){ConvertVideoParams p=new ConvertVideoParams();p.path=path;p.file=file;p.start=start;p.end=end;p.duration=duration;p.compress=compress;p.cb=cb;return p;}}}
+       public static class ConvertVideoParams {public AudioInput purpleAudioInput;public long purpleAudioDurationUs,start,end,duration;String path;File file;boolean compress,circle;MediaController.VideoConvertorListener cb;
+        public static ConvertVideoParams of(String path,File file,long offset,int rotation,boolean secret,int w,int h,int rw,int rh,int fps,int bitrate,int original,long start,long end,long avatar,boolean compress,long duration,MediaController.VideoConvertorListener cb,VideoEditedInfo info){ConvertVideoParams p=new ConvertVideoParams();p.path=path;p.file=file;p.start=start;p.end=end;p.duration=duration;p.compress=compress;p.circle=info.roundVideo;p.cb=cb;return p;}}}
     ''')
     put('LongOutputCases.java', '''import java.io.*;import java.nio.file.*;import java.util.*;import org.telegram.messenger.purple.*;import org.telegram.messenger.video.*;
       public class LongOutputCases {static int checks;static void check(boolean ok,String name){checks++;if(!ok)throw new AssertionError(name);}
@@ -96,6 +100,20 @@ def run(root, output):
         check(video.size()==1&&!video.get(0).circle&&video.get(0).facts.durationMs<=1150&&MediaCodecVideoConvertor.ranges.size()==1,"ordinary video honors same explicit trim instead of copying full source");selectionChecks++;
         System.out.println("DERIVED_PART="+video.get(0).file);
         check(Arrays.equals(original,hash(source)),"all selections preserve full original bytes");selectionChecks++;
+        File mutedSource=new File(args[2]);byte[] mutedHash=hash(mutedSource);int releases=AudioDecoder.released;int mutedChecks=0;
+        check(PurpleLongRoundMedia.inspect(mutedSource,false).audioTrack<0,"native V2 materialized mute is video-only");mutedChecks++;
+        PurpleLongRoundMedia.Work mutedCopy=new PurpleLongRoundMedia.Work();List<PurpleLongRoundMedia.Output> muteCopy=PurpleLongRoundMedia.prepare(mutedSource,directory,false,mutedCopy);
+        check(muteCopy.size()==1&&muteCopy.get(0).facts.audioTrack<0&&muteCopy.get(0).info().muted&&Arrays.equals(mutedHash,hash(muteCopy.get(0).file)),"ordinary mute preserves actual silent native bytes");mutedChecks++;
+        System.out.println("SILENT_VIDEO="+muteCopy.get(0).file);
+        PurpleLongRoundMedia.Work mutedSelected=new PurpleLongRoundMedia.Work();List<PurpleLongRoundMedia.Output> muteRange=PurpleLongRoundMedia.prepare(mutedSource,directory,false,10000000,11000000,mutedSelected);
+        check(muteRange.size()==1&&muteRange.get(0).facts.audioTrack<0&&muteRange.get(0).facts.durationMs<=1150,"selected ordinary remains silent");mutedChecks++;
+        System.out.println("SILENT_VIDEO="+muteRange.get(0).file);
+        PurpleLongRoundMedia.Work mutedCircles=new PurpleLongRoundMedia.Work();List<PurpleLongRoundMedia.Output> muteParts=PurpleLongRoundMedia.prepare(mutedSource,directory,true,10000000,71000000,mutedCircles);
+        check(muteParts.size()==2,"muted selected interval splits to circles");mutedChecks++;
+        for(PurpleLongRoundMedia.Output output:muteParts){check(output.facts.audioTrack>=0&&output.facts.durationMs<=60000,"muted circle uses explicit AAC silence");mutedChecks++;System.out.println("SILENT_CIRCLE="+output.file);}
+        check(AudioDecoder.released==releases,"no original-audio decoder for video-only source");mutedChecks++;
+        check(Arrays.equals(mutedHash,hash(mutedSource))&&Arrays.equals(original,hash(source)),"mute preserves both full originals");mutedChecks++;
+        System.out.println("LONG_ROUND_MUTED_CHECKS="+mutedChecks);
         System.out.println("LONG_ROUND_SELECTION_CHECKS="+selectionChecks);
         check(source.isFile()&&Arrays.equals(original,hash(source)),"full original survives success cancel failure and retry");System.out.println("LONG_ROUND_OUTPUT_CHECKS="+checks);
        }}''')
@@ -103,8 +121,13 @@ def run(root, output):
     subprocess.run([str(compiler),'-d',str(output/'classes'),*map(str,output.rglob('*.java'))],check=True)
     source=output/'source-179967.mp4'
     subprocess.run(['ffmpeg','-v','error','-y','-f','lavfi','-i','testsrc2=size=160x160:rate=30','-f','lavfi','-i','sine=frequency=997:sample_rate=48000','-t','179.967','-c:v','libx264','-preset','ultrafast','-profile:v','baseline','-bf','0','-pix_fmt','yuv420p','-c:a','aac','-b:a','128k',str(source)],check=True)
+    muted=output/'native-muted.mp4'
+    subprocess.run(['ffmpeg','-v','error','-y','-i',str(source),'-map','0:v:0','-c','copy','-an',str(muted)],check=True)
+    native=(java/'utils/recorder/round/RoundVideoSession.java').read_text()
+    view=(java/'ui/Components/InstantCameraView2.java').read_text()
+    assert 'finish(!muted)' in view and 'includeAudio' in native and 'replaceWithFinalRange' in native
     derived=output/'derived';derived.mkdir()
-    result=subprocess.run([str(compiler.with_name('java')),'-cp',str(output/'classes'),'LongOutputCases',str(source),str(derived)],check=True,text=True,stdout=subprocess.PIPE)
+    result=subprocess.run([str(compiler.with_name('java')),'-cp',str(output/'classes'),'LongOutputCases',str(source),str(derived),str(muted)],check=True,text=True,stdout=subprocess.PIPE)
     print(result.stdout,end='')
     evidence=[]
     for line in result.stdout.splitlines():
@@ -115,5 +138,20 @@ def run(root, output):
         assert {s['codec_name'] for s in data['streams']}=={'h264','aac'}
         subprocess.run(['ffmpeg','-v','error','-xerror','-i',str(part),'-f','null','-'],check=True)
         evidence.append({'file':part.name,'duration':data['format']['duration'],'streams':[{k:s.get(k) for k in ['codec_name','duration','start_time','nb_frames']} for s in data['streams']]})
+    silent=[]
+    for line in result.stdout.splitlines():
+        if not line.startswith(('SILENT_VIDEO=','SILENT_CIRCLE=')):continue
+        kind,path=line.split('=',1);part=pathlib.Path(path)
+        data=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_format','-show_streams','-of','json',str(part)],text=True))
+        codecs={stream['codec_name'] for stream in data['streams']}
+        assert codecs==({'h264','aac'} if kind=='SILENT_CIRCLE' else {'h264'})
+        subprocess.run(['ffmpeg','-v','error','-xerror','-i',str(part),'-f','null','-'],check=True)
+        if kind=='SILENT_CIRCLE':
+            pcm=subprocess.check_output(['ffmpeg','-v','error','-i',str(part),'-map','0:a:0','-f','s16le','-'])
+            assert pcm and not any(pcm), 'muted AAC contains nonzero PCM'
+        silent.append({'file':part.name,'kind':kind,'duration':data['format']['duration'],'codecs':sorted(codecs)})
+    assert len(silent)==4
+    (output/'decoded-muted.json').write_text(json.dumps(silent,indent=2)+'\n')
+    print('LONG_ROUND_MUTED_DECODE_CHECKS='+str(len(silent)))
     (output/'decoded-parts.json').write_text(json.dumps(evidence,indent=2)+'\n')
     print('LONG_ROUND_DECODE_CHECKS='+str(len(evidence)))
