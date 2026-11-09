@@ -107,6 +107,7 @@ def run(root, output, configure=None, case="CrossChatCases"):
           public static boolean small(InstantCameraViewBase v){return v.small;}
         }''',
         'org/telegram/ui/Components/LayoutHelper': 'public class LayoutHelper {public static final int MATCH_PARENT=-1,WRAP_CONTENT=-2;public static Object createFrame(int a,int b,Object...rest){return null;}}',
+        'org/telegram/ui/ActionBar/Theme': 'public class Theme {public interface ResourcesProvider {int getColor(int key);}public static int getColor(int key){return key;}}',
         'org/telegram/ui/ActionBar/AlertDialog': '''public class AlertDialog {public static class Builder {
           public Builder(android.app.Activity a){}public Builder setTitle(String s){return this;}public Builder setMessage(String s){return this;}
           public interface Click{void run(Object d,int w);}public Builder setPositiveButton(String s,Click c){return this;}public Builder setNegativeButton(String s,Click c){return this;}public void show(){}

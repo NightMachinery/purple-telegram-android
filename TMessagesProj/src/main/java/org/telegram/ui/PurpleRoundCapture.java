@@ -14,12 +14,14 @@ import org.telegram.messenger.*;
 import org.telegram.messenger.purple.*;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.ui.ActionBar.AlertDialog;
+import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.*;
 import org.telegram.ui.Components.blur3.BlurredBackgroundDrawableViewFactory;
 import org.telegram.ui.Components.blur3.drawable.color.impl.BlurredBackgroundProviderImpl;
 import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceColor;
 
 public final class PurpleRoundCapture implements InstantCameraView.Delegate, PurpleRecordingDock.Host {
+    private static final Theme.ResourcesProvider ROOT_RESOURCES = Theme::getColor;
     private static PurpleRoundCapture active;
     private static int captures;
     private final int capture = ++captures;
@@ -92,7 +94,7 @@ public final class PurpleRoundCapture implements InstantCameraView.Delegate, Pur
         PurpleRecordingRegistry.watchSession(lease.guid, this::target);
         PurpleRecordingDock.watch(lease.guid, this);
         bind(chat);
-        camera = InstantCameraViewBase.create(activity, this, null, true);
+        camera = InstantCameraViewBase.create(activity, this, ROOT_RESOURCES, true);
         camera.setClipToPadding(false);
         camera.setAnimationCallback((open, fromPaused) -> {
             boolean expanded = PurpleRoundBubble.animation(camera, open, fromPaused);

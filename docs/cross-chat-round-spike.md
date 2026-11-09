@@ -51,7 +51,11 @@ full lifecycle model in the next phase.
 
 Root controls use activity-owned resources. They do not keep an old chat's blur
 factory alive. The spike uses the native background factory with its color
-source fallback. Full rendering, layering, sizing, IME and tablet polish remain
+source fallback. Native camera construction receives a shared, capture-free
+`Theme.ResourcesProvider` whose color lookup is `Theme.getColor`. The stock
+interface defaults read the global dark/paint/filter/service policy. It retains
+no chat theme provider and does not change the native icon/filter implementation.
+Full rendering, layering, sizing, IME and tablet polish remain
 subject to the device gate.
 
 ## Evidence
@@ -72,6 +76,15 @@ stable callback, repeated Save/background, resource-stop requests, terminal
 error/release before a queued retry, stale callbacks and the frozen destination.
 The fixture supplies asynchronous external completions; it does not qualify
 actual hardware shutdown or encoded continuity.
+
+The construction regression compiles the production owner and factory plus
+both native constructors' setup prefix and design/theme branch over inert view
+ports. It uses the complete production `Theme.ResourcesProvider` interface and
+its defaults. The baseline fails with the native null `isDark()` dereference;
+the corrected owner covers both adapters, explicit/default adapter selection,
+light/dark, old/new design branches, live global palette/default resources and
+no captured chat references. UI setup outside that extracted contract and real
+Android construction/rendering still require the device gate.
 
 The always-on Purple diagnostics include `round_capture` events with a local
 take counter, adapter choice, preview-window and surface create/destroy counts,

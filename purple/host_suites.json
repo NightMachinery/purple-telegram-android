@@ -958,7 +958,7 @@
         "--output",
         "{output}"
       ],
-      "coverage": "F6-F8 voice ownership, stale action rejection, pause/resume/send serialization, original target retention and bubble bounds on narrow and keyboard-sized surfaces. Includes the F10 terminal target handoff in either observer order, production bubble/base touch dispatch over inert Android ports for both camera adapters, and all recording lifecycle and bubble seams. Includes the complete production root capture owner over inert camera/window/storage ports, navigation and stale binding tokens, local-only finalization and interruption preservation. Extracts production V2 send, state callback and native finish acceptance to cover rejected PAUSING/RESUMING finishes, repeated preservation, terminal and stale callbacks.",
+      "coverage": "F6-F8 voice ownership, stale action rejection, pause/resume/send serialization, original target retention and bubble bounds on narrow and keyboard-sized surfaces. Includes the F10 terminal target handoff in either observer order, production bubble/base touch dispatch over inert Android ports for both camera adapters, and all recording lifecycle and bubble seams. Includes the complete production root capture owner over inert camera/window/storage ports, navigation and stale binding tokens, local-only finalization and interruption preservation. Extracts production V2 send, state callback and native finish acceptance to cover rejected PAUSING/RESUMING finishes, repeated preservation, terminal and stale callbacks. Also compiles the production owner/factory and native constructor theme contract with the stock ResourcesProvider defaults, captured-account adapter selection and global light/dark policy.",
       "expects": {
         "recording-dock:RECORDING_DOCK_CHECKS": 304,
         "recording-dock:RECORDING_DOCK_PINS": 27,
@@ -987,7 +987,8 @@
         "recording-dock:ROUND_CONTROLS_PLACEMENT_CHECKS": 576,
         "recording-dock:SETTINGS_RTL_ALIGNMENT_CHECKS": 48,
         "recording-dock:CROSS_CHAT_CAPTURE_CHECKS": 76,
-        "recording-dock:V2_INTERRUPTION_CHECKS": 93
+        "recording-dock:V2_INTERRUPTION_CHECKS": 93,
+        "recording-dock:ROUND_CONSTRUCTION_CHECKS": 131
       }
     },
     {

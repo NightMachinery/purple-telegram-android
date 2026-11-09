@@ -62,3 +62,5 @@ runpy.run_path(str(pathlib.Path(__file__).parent / "recording/polish.py"))["run"
 runpy.run_path(str(pathlib.Path(__file__).parent / "recording/cross_chat.py"))["run"](root, args.output / "cross-chat")
 
 runpy.run_path(str(pathlib.Path(__file__).parent / "recording/v2_interruption.py"))["run"](root, args.output / "v2-interruption")
+
+runpy.run_path(str(pathlib.Path(__file__).parent / "recording/construction.py"))["run"](root, args.output / "construction")
