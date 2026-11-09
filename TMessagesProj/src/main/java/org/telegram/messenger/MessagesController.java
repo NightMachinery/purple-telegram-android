@@ -18564,6 +18564,8 @@ public class MessagesController extends BaseController implements NotificationCe
                 if (message instanceof TLRPC.TL_messageEmpty) {
                     continue;
                 }
+                org.telegram.messenger.purple.PurpleMediaReply.observe(currentAccount, message, false,
+                        fromGetDifference || baseUpdate instanceof TL_update.TL_updateNewScheduledMessage);
                 if (newMessageCallback != null && newMessageCallback.onMessageReceived(message)) {
                     newMessageCallback = null;
                 }

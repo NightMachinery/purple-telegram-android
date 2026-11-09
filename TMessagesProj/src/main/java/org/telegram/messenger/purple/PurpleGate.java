@@ -400,6 +400,7 @@ public final class PurpleGate {
         // Only now, so the watch is never the thing that triggers the first
         // load: it exists to notice the file changing afterwards.
         PurpleWatcher.start();
+        PurpleMediaReply.invalidate();
     }
 
     /**

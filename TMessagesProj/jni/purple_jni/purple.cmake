@@ -22,6 +22,8 @@ add_library(purplecore SHARED
         purple_jni/archive_core_bridge.cpp
         purple_jni/recording_bridge.cpp
         purple/purple/purple_passcode.cpp
+        purple/purple/purple_media_reply.cpp
+        purple/purple/purple_media_reply_splice.cpp
         purple/purple/purple_playback.cpp
         purple/purple/purple_recording.cpp
         purple/purple/purple_recording_file.cpp

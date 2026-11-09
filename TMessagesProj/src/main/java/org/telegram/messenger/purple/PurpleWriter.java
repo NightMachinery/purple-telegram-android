@@ -325,6 +325,14 @@ public final class PurpleWriter {
                 reason);
     }
 
+    public static String setMediaReplyValue(Session session, String row, String key, Object value) {
+        if (session == null) return noSession();
+        byte[] settings = session.bytes();
+        if (settings == null) return "settings context changed";
+        return apply(session, PurpleCore.mediaReplySplice(settings, row, key,
+                new org.json.JSONArray().put(value).toString()), "media auto-reply settings");
+    }
+
     public static String setTableString(
             Session session, String table, String key, String value, String reason) {
         if (session == null) return noSession();

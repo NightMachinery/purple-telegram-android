@@ -2,6 +2,7 @@
 
 #include "purple/purple_account_files.h"
 #include "purple/purple_settings.h"
+#include "purple/purple_media_reply_splice.h"
 #include "purple/purple_state.h"
 #include "purple/purple_splice.h"
 #include "purple/purple_config_diff.h"
@@ -950,3 +951,5 @@ Java_org_telegram_messenger_purple_PurpleSyncRecoveryFiles_writeNative(
         if (count <= 0) { ::close(fd); return false; } offset += count; }
     const auto ok = ::fsync(fd) == 0; const auto closed = ::close(fd) == 0; return ok && closed;
 }
+
+#include "media_reply_bridge.inc"

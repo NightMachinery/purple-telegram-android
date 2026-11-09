@@ -289,6 +289,7 @@ public class PurpleSettingsActivity extends UniversalFragment
         // [recording] (F10): its own screen, and the bin with its count.
         items.add(UItem.asHeader(getString(R.string.PurpleMediaRecording)));
         items.add(UItem.asButton(ROW_MEDIA_RECORDING, getString(R.string.PurpleMediaRecording)));
+        items.add(UItem.asButton(PurpleMediaReplySettingsActivity.ENTRY, getString(R.string.PurpleMediaReply)));
         items.add(UItem.asButton(ROW_RECORDING_BIN, getString(R.string.PurpleRecordingBin),
                 recordingBinCount > 0 ? Integer.toString(recordingBinCount) : ""));
         if (recordingBinCount < 0) {
@@ -489,6 +490,12 @@ public class PurpleSettingsActivity extends UniversalFragment
     @Override
     protected void onClick(UItem item, View view, int position, float x, float y) {
         final PurpleWriter.Session writer = rowWriter;
+        if (item.id == PurpleMediaReplySettingsActivity.ENTRY) {
+            PurpleMediaReplySettingsActivity next = new PurpleMediaReplySettingsActivity();
+            next.setCurrentAccount(currentAccount);
+            presentFragment(next);
+            return;
+        }
         if (item.id == ROW_MEDIA_RECORDING || item.id == ROW_RECORDING_BIN) {
             recordingBinCount = -1;
             presentFragment(item.id == ROW_MEDIA_RECORDING ? new PurpleRecordingSettingsActivity() : new PurpleRecordingBinActivity());

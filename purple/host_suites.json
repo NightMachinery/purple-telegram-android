@@ -1012,6 +1012,27 @@
         "crash:CRASH_TRACE_CHECKS": 15,
         "pins:RECORDING_HOOK_PINS": 1
       }
+    },
+    {
+      "name": "media-auto-reply",
+      "driver": "TMessagesProj/jni/purple_jni/tests/run_media_reply.py",
+      "args": [
+        "--receipt",
+        "{receipt}",
+        "--json",
+        "{json}",
+        "--library",
+        "{library}",
+        "--output",
+        "{output}"
+      ],
+      "phases": [
+        "compile",
+        "run"
+      ],
+      "expects": {
+        "adapter:MEDIA_REPLY_ADAPTER_CHECKS": 18
+      }
     }
   ]
 }

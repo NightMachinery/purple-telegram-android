@@ -56,6 +56,7 @@ public final class PurpleAccountSettings {
 
     public static synchronized void invalidate() {
         ++generation;
+        PurpleMediaReply.invalidate();
         effective.clear();
         try { clearNative(); } catch (UnsatisfiedLinkError e) { }
     }

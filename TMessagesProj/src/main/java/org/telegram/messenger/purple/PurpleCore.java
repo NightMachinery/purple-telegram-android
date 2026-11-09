@@ -1429,6 +1429,15 @@ public final class PurpleCore {
      * as the user wrote them, and a file that never mentioned the table gains
      * it rather than being re-serialised.
      */
+    private static native String mediaReplySpliceNative(byte[] settings, String row, String key, String value);
+    public static SpliceResult mediaReplySplice(byte[] settings, String row, String key, String value) {
+        ensureLoaded();
+        try { return splice(mediaReplySpliceNative(settings, row, key, value)); }
+        catch (UnsatisfiedLinkError | RuntimeException e) {
+            return new SpliceResult(null, false, "media auto-reply settings are unavailable");
+        }
+    }
+
     public static SpliceResult setTableString(
             byte[] settings, String table, String key, String value) {
         ensureLoaded();

@@ -2901,6 +2901,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                                                     AndroidUtilities.runOnUIThread(() -> {
                                                         newMsgObj1.send_state = MessageObject.MESSAGE_SEND_STATE_SENT;
                                                         getMediaDataController().increasePeerRaiting(peer);
+                                                        org.telegram.messenger.purple.PurpleMediaReply.observe(currentAccount, message, true, scheduleDate != 0);
                                                         getNotificationCenter().postNotificationName(NotificationCenter.messageReceivedByServer, oldId, message.id, message, peer, 0L, existFlags, scheduleDate != 0);
                                                         getNotificationCenter().postNotificationName(NotificationCenter.messageReceivedByServer2, oldId, message.id, message, peer, 0L, existFlags, scheduleDate != 0);
                                                         processSentMessage(oldId, newMsgObj1);
@@ -7961,6 +7962,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                             newMsgObj.send_state = MessageObject.MESSAGE_SEND_STATE_SENT;
                             newMsgObj.errorAllowedPriceStars = 0;
                             newMsgObj.errorNewPriceStars = 0;
+                            org.telegram.messenger.purple.PurpleMediaReply.observe(currentAccount, newMsgObj, true, currentSchedule);
                             getNotificationCenter().postNotificationName(NotificationCenter.messageReceivedByServer, oldId, newMsgObj.id, newMsgObj, newMsgObj.dialog_id, grouped_id, existFlags, currentSchedule);
                             getNotificationCenter().postNotificationName(NotificationCenter.messageReceivedByServer2, oldId, newMsgObj.id, newMsgObj, newMsgObj.dialog_id, grouped_id, existFlags, currentSchedule);
                             getMessagesStorage().getStorageQueue().postRunnable(() -> {
@@ -7989,6 +7991,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                                         getMessagesController().deleteMessages(oldIds, null, null, dialogId, false, scheduled ? ChatActivity.MODE_SCHEDULED : 0, false, 0, null, 0, finalCurrentSchedule && !scheduled, scheduledMessageId);
                                     }
                                     getMediaDataController().increasePeerRaiting(newMsgObj.dialog_id);
+                                    org.telegram.messenger.purple.PurpleMediaReply.observe(currentAccount, newMsgObj, true, finalCurrentSchedule);
                                     getNotificationCenter().postNotificationName(NotificationCenter.messageReceivedByServer, oldId, newMsgObj.id, newMsgObj, newMsgObj.dialog_id, grouped_id, existFlags, finalCurrentSchedule);
                                     getNotificationCenter().postNotificationName(NotificationCenter.messageReceivedByServer2, oldId, newMsgObj.id, newMsgObj, newMsgObj.dialog_id, grouped_id, existFlags, finalCurrentSchedule);
                                     processSentMessage(oldId, newMsgObj);
@@ -8511,6 +8514,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                                     });
                                 });
                             } else {
+                                org.telegram.messenger.purple.PurpleMediaReply.observe(currentAccount, newMsgObj, true, scheduled);
                                 getNotificationCenter().postNotificationName(NotificationCenter.messageReceivedByServer, oldId, newMsgObj.id, newMsgObj, newMsgObj.dialog_id, 0L, existFlags, scheduled);
                                 getNotificationCenter().postNotificationName(NotificationCenter.messageReceivedByServer2, oldId, newMsgObj.id, newMsgObj, newMsgObj.dialog_id, 0L, existFlags, scheduled);
                                 getMessagesStorage().getStorageQueue().postRunnable(() -> {
@@ -8533,6 +8537,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
 
                                     AndroidUtilities.runOnUIThread(() -> {
                                         getMediaDataController().increasePeerRaiting(newMsgObj.dialog_id);
+                                        org.telegram.messenger.purple.PurpleMediaReply.observe(currentAccount, newMsgObj, true, scheduled);
                                         getNotificationCenter().postNotificationName(NotificationCenter.messageReceivedByServer, oldId, newMsgObj.id, newMsgObj, newMsgObj.dialog_id, 0L, existFlags, scheduled);
                                         getNotificationCenter().postNotificationName(NotificationCenter.messageReceivedByServer2, oldId, newMsgObj.id, newMsgObj, newMsgObj.dialog_id, 0L, existFlags, scheduled);
                                         processSentMessage(oldId, newMsgObj);
