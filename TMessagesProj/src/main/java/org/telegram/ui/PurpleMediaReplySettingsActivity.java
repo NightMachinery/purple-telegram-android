@@ -39,7 +39,8 @@ public final class PurpleMediaReplySettingsActivity extends UniversalFragment {
         policy = live() ? PurpleMediaReply.policy(currentAccount) : null;
         if (policy == null) { items.add(UItem.asShadow(getString(R.string.PurpleMediaReplyUnavailable))); return; }
         PurpleMediaReply.Status status = PurpleMediaReply.status(currentAccount);
-        items.add(UItem.asButton(STATUS, getString(R.string.PurpleMediaReplyStatus), statusText(status)));
+        items.add(UItem.asButton(STATUS, getString(R.string.PurpleMediaReplyStatus)));
+        items.add(UItem.asShadow(statusText(status)));
         if (row.isEmpty()) {
             items.add(UItem.asButton(TEXT, getString(R.string.PurpleMediaReplyText), policy.optString("text")));
             String[] types = {getString(R.string.PurpleMediaReplyPrivate), getString(R.string.PurpleMediaReplyGroups), getString(R.string.PurpleMediaReplyChannels)};
