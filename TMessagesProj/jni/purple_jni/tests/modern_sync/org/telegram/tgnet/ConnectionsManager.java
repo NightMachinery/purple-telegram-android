@@ -5,5 +5,6 @@ public final class ConnectionsManager {
     public boolean test;
     public static ConnectionsManager getInstance(int account){return accounts[account];}
     public boolean isTestBackend(){return test;}
+    public int getCurrentTime(){return 1800000000;}
     public long getCurrentTimeMillis(){return 1800000000000L;}
 }

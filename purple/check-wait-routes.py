@@ -40,7 +40,7 @@ expected = {
     "apply": {"org/telegram/ui/PurplePeekControls.java": 1,
         "org/telegram/messenger/purple/PurpleGlobalAccountChoice.java": 2,
         "org/telegram/messenger/purple/PurpleAppWideRemoval.java": 2,
-        "org/telegram/messenger/purple/PurpleWriter.java": 16},
+        "org/telegram/messenger/purple/PurpleWriter.java": 17},
 }
 noncode = re.compile(r'""".*?"""|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|/\*.*?\*/|//[^\n]*', re.S)
 found = {name: {} for name in expected}
