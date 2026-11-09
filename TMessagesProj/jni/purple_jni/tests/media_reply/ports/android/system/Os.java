@@ -8,9 +8,13 @@ public final class Os {
  private static final Map<FileDescriptor,FileOutputStream> streams=new IdentityHashMap<>();
  private static final Set<FileDescriptor> directories=Collections.newSetFromMap(new IdentityHashMap<FileDescriptor,Boolean>());
  public static FileDescriptor open(String path,int flags,int mode)throws ErrnoException {
-  try { if((flags&OsConstants.O_DIRECTORY)!=0){FileDescriptor fd=new FileDescriptor();directories.add(fd);return fd;}
+  try { if(new File(path).isDirectory()){FileDescriptor fd=new FileDescriptor();directories.add(fd);return fd;}
    FileOutputStream out=new FileOutputStream(path);FileDescriptor fd=out.getFD();streams.put(fd,out);return fd;
   }catch(IOException e){throw new ErrnoException("open",5);}
+ }
+ public static StructStat fstat(FileDescriptor fd)throws ErrnoException {
+  if(fault.equals("directory-stat"))throw new ErrnoException("fstat",5);
+  return new StructStat(directories.contains(fd)&&!fault.equals("directory-kind")?0040000:0100000);
  }
  public static int write(FileDescriptor fd,byte[] bytes,int start,int length)throws ErrnoException {
   try { if(fault.equals("write"))throw new IOException();int size=Math.min(length,4096);streams.get(fd).write(bytes,start,size);return size; }catch(IOException e){throw new ErrnoException("write",5);}

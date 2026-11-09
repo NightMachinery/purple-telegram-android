@@ -69,3 +69,7 @@ opening account and full policy snapshot, so sync changes cannot be overwritten
 by an older membership selection. Independent round inheritance is labeled as
 inheritance, with chat-type and member effective values and a matching stock
 radio chooser selection.
+
+The checked journal writer uses public Android `Os.fstat` and `S_ISDIR` to
+validate the parent descriptor before syncing it. An unavailable directory flag
+is not assumed; a failed descriptor check refuses admission before transport.

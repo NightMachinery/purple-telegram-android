@@ -73,7 +73,7 @@ def java(name, main, extra, origin=classes):
     return (name, [compiler.with_name("java"), "-Xcheck:jni", "-Xmx512m", "-XX:ActiveProcessorCount=2",
         "-Dscratch=" + str(scratch), "-cp", os.pathsep.join(map(str, [out, origin, classes, args.json])),
         main, args.library.resolve(), *extra])
-for fault in ["", "write", "sync", "close", "rename", "directory-sync", "readback"]:
+for fault in ["", "write", "sync", "close", "rename", "directory-stat", "directory-kind", "directory-sync", "readback"]:
     commands.append(java("commit-" + (fault or "success"), "org.telegram.messenger.purple.PurpleMediaReplyCommitCases",
         [classes.resolve(), "current", fault]))
 for mode in ["errors", "corrupt", "full"]:

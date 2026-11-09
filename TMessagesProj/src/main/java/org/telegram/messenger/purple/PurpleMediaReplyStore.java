@@ -44,8 +44,11 @@ final class PurpleMediaReplyStore {
             if (!Arrays.equals(expected, read(file))) throw new IOException("JournalChanged");
             Os.rename(temporary.getPath(), file.getPath());
             FileDescriptor directory = Os.open(file.getParent(),
-                    OsConstants.O_RDONLY | OsConstants.O_DIRECTORY | OsConstants.O_CLOEXEC, 0);
-            try { Os.fsync(directory); } finally { Os.close(directory); }
+                    OsConstants.O_RDONLY | OsConstants.O_NOFOLLOW | OsConstants.O_CLOEXEC, 0);
+            try {
+                if (!OsConstants.S_ISDIR(Os.fstat(directory).st_mode)) throw new IOException("JournalParentNotDirectory");
+                Os.fsync(directory);
+            } finally { Os.close(directory); }
             if (!Arrays.equals(bytes, read(file))) throw new IOException("JournalReadbackFailed");
         } finally { if (temporary.exists()) temporary.delete(); }
     }

@@ -1037,6 +1037,8 @@
         "commit-sync:MEDIA_REPLY_COMMIT_CHECKS": 5,
         "commit-close:MEDIA_REPLY_COMMIT_CHECKS": 5,
         "commit-rename:MEDIA_REPLY_COMMIT_CHECKS": 5,
+        "commit-directory-stat:MEDIA_REPLY_COMMIT_CHECKS": 5,
+        "commit-directory-kind:MEDIA_REPLY_COMMIT_CHECKS": 5,
         "commit-directory-sync:MEDIA_REPLY_COMMIT_CHECKS": 5,
         "commit-readback:MEDIA_REPLY_COMMIT_CHECKS": 5,
         "status-errors:MEDIA_REPLY_STATUS_CHECKS": 10,
@@ -1045,7 +1047,7 @@
         "presentation:MEDIA_REPLY_PRESENTATION_CHECKS": 13,
         "picker:MEDIA_REPLY_PICKER_CHECKS": 9
       },
-      "coverage": "Actual AGP adapter/store/presentation classes, actual JNI policy, faithful platform silent-commit control, checked write/sync/close/replace/directory-sync/readback failures, bounded account refusal/capacity, inherited round presentation, literal production picker and global current-view guard over inert views. No GUI or live transport."
+      "coverage": "Actual AGP adapter/store/presentation classes, actual JNI policy, faithful platform silent-commit control, checked write/sync/close/replace/directory-stat/directory-sync/readback failures, bounded account refusal/capacity, inherited round presentation, literal production picker and global current-view guard over inert views. No GUI or live transport."
     }
   ]
 }
