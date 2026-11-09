@@ -781,3 +781,14 @@ PurpleComposeSource. Verify formatting, split sends, cancelled/failed sends,
 acknowledgements and account/purge changes after upstream merges. Rich-editor
 blocks are not an original Markdown boundary. File capture extends the owned
 PurpleArchiveAcquiredSource path and adds no upstream download hook.
+
+### Longer local round recording
+
+InstantCameraView delegates the new-take limit to PurpleRoundLimits, retaining
+that value for progress and its encoder's audio drain. ChatActivityEnterView
+snapshots the same account preference for the composer timer and delegates its
+stop margin. InstantCameraView2 supplies the existing builder's maximum duration
+and uses the resulting StateInfo maximum for progress. Native trim/resume and
+encoder bodies stay in place. Check default short takes and local1/3/5minute
+boundaries on both adapters after upstream merges. Read
+[long-round-recording.md](long-round-recording.md) for policy and test limits.

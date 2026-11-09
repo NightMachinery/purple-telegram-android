@@ -386,6 +386,7 @@ public final class InstantCameraView2 extends InstantCameraViewBase {
                 .setInitialFacing(SharedSettings.roundVideoLastCamera.get())
                 .setOutputResolution(activeOutputResolution)
                 .setVideoBitrate(SharedSettings.roundVideoVideoBitrate.get())
+                .setMaximumDurationMs(org.telegram.messenger.purple.PurpleRoundLimits.maximumDurationMs(currentAccount))
                 .setCameraResolution(SharedSettings.roundVideoCameraResolution.get())
                 .setFrameRate(SharedSettings.roundVideoFrameRate.get())
                 .setCompositionEnabled(SharedSettings.roundVideoComposition.get())
@@ -740,7 +741,7 @@ public final class InstantCameraView2 extends InstantCameraViewBase {
 
         @Override
         public void onPreviewReady(long durationMs, long trimStartMs, long trimEndMs) {
-            progressView.setProgress(durationMs / 60_000f);
+            progressView.setProgress(durationMs / (float) stateInfo.getMaximumDurationMs());
             muted = false;
             muteImageView.setAlpha(0f);
             File previewFile = session == null ? null : session.getPreviewFile();
