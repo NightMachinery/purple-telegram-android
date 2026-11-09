@@ -8,7 +8,7 @@ def run(root, output):
         p = output / name
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(text)
-    for name in ['PurpleLongRoundPlan', 'PurpleLongRoundMedia', 'PurpleLongRoundQueue', 'PurpleLongRoundAudioInput', 'PurpleRecordingFiles']:
+    for name in ['PurpleLongRoundPlan', 'PurpleLongRoundSelection', 'PurpleLongRoundMedia', 'PurpleLongRoundQueue', 'PurpleLongRoundAudioInput', 'PurpleRecordingFiles']:
         put('org/telegram/messenger/purple/' + name + '.java', (java / ('messenger/purple/' + name + '.java')).read_text())
     put('org/telegram/messenger/purple/PurpleDiagLog.java', 'package org.telegram.messenger.purple; public class PurpleDiagLog {public static void event(String... x){} public static String reason(String x){return x;}}')
     put('android/os/SystemClock.java', 'package android.os; public class SystemClock {public static long elapsedRealtime(){return System.nanoTime()/1000000;}}')
@@ -56,8 +56,8 @@ def run(root, output):
     ''')
     put('org/telegram/messenger/video/MediaCodecVideoConvertor.java', '''package org.telegram.messenger.video;
       import java.io.*;import java.util.*;import org.telegram.messenger.*;import org.telegram.messenger.video.audio_input.*;import android.media.Probe;
-      public class MediaCodecVideoConvertor {public static int calls,failAt=-1;public static Runnable hook;
-       public boolean convertVideo(ConvertVideoParams p){calls++;try{if(hook!=null)hook.run();if(p.cb.checkConversionCanceled()||calls==failAt)return true;
+      public class MediaCodecVideoConvertor {public static int calls,failAt=-1;public static Runnable hook;public static java.util.List<long[]> ranges=new java.util.ArrayList<>();
+       public boolean convertVideo(ConvertVideoParams p){calls++;ranges.add(new long[]{p.start,p.end});try{if(hook!=null)hook.run();if(p.cb.checkConversionCanceled()||calls==failAt)return true;
         if(!p.compress||p.purpleAudioInput==null||p.purpleAudioDurationUs!=p.end-p.start||p.duration!=(p.end-p.start+999)/1000)throw new AssertionError("production conversion contract");
         Probe.exec("ffmpeg","-v","error","-y","-i",p.path,"-ss",Double.toString(p.start/1000000.0),"-t",Double.toString((p.end-p.start)/1000000.0),"-c:v","libx264","-preset","ultrafast","-profile:v","baseline","-bf","0","-r","30","-pix_fmt","yuv420p","-c:a","aac","-b:a","128k","-movflags","+faststart",p.file.toString());return p.cb.checkConversionCanceled();
        }catch(Exception e){throw new RuntimeException(e);}}
@@ -70,7 +70,7 @@ def run(root, output):
        public static void main(String[] args)throws Exception{
         File source=new File(args[0]),directory=new File(args[1]);byte[] original=hash(source);
         for(long duration:new long[]{60001,60100,75000,119001,180000,300000,305000}){PurpleLongRoundPlan p=new PurpleLongRoundPlan(duration);long end=0;for(int i=0;i<p.count;i++){check(p.startUs(i)==end,"exact consecutive boundary");end=p.endUs(i);check(end-p.startUs(i)<=59500000,"conservative part bound");p.validatePart(i,(end-p.startUs(i)+999)/1000);}check(end==duration*1000,"full source coverage");}
-        for(long bad:new long[]{-1,0,60000,305001,Long.MAX_VALUE}){try{new PurpleLongRoundPlan(bad);throw new AssertionError("bad plan admitted");}catch(IllegalArgumentException expected){checks++;}}
+        for(long bad:new long[]{-1,0,799,305001,Long.MAX_VALUE}){try{new PurpleLongRoundPlan(bad);throw new AssertionError("bad plan admitted");}catch(IllegalArgumentException expected){checks++;}}
         PurpleLongRoundQueue q=new PurpleLongRoundQueue(3);check(q.begin()==-1,"no unreviewed send");check(q.confirm()&&!q.confirm(),"one approval");check(q.begin()==0&&q.begin()==-1,"only one pending part");check(q.acknowledge(0)&&!q.acknowledge(0),"exactly once acknowledgement");check(q.begin()==1,"ordered next part");q.stop();check(!q.acknowledge(1)&&q.begin()==-1&&q.queued==1,"uncertain failure stops without blind retry");
         PurpleLongRoundAudioInput audio=new PurpleLongRoundAudioInput("inert",0);audio.setStartTimeUs(10000);audio.setEndTimeUs(30000);audio.start(1000,1);int count=0;while(audio.hasRemaining()){check(audio.getNext()==10+count,"prior sync PCM excluded");count++;}check(count==20,"audio boundary coverage");audio.release();audio.release();audio.start(1000,1);check(audio.hasRemaining()&&audio.getNext()==10,"codec retry reconstructs audio decoder");audio.release();
         PurpleLongRoundMedia.Work ordinary=new PurpleLongRoundMedia.Work();List<PurpleLongRoundMedia.Output> copy=PurpleLongRoundMedia.prepare(source,directory,false,ordinary);check(copy.size()==1&&!copy.get(0).info().roundVideo&&!copy.get(0).info().needConvert(),"ordinary full video with honest flag and no reconversion");check(Arrays.equals(hash(copy.get(0).file),original),"ordinary preserves all original bytes");ordinary.discard();
@@ -78,6 +78,25 @@ def run(root, output):
         PurpleLongRoundMedia.Work cancelled=new PurpleLongRoundMedia.Work();cancelled.cancelled.set(true);try{PurpleLongRoundMedia.prepare(source,directory,true,cancelled);throw new AssertionError("cancel ignored");}catch(IOException expected){checks++;}cancelled.discard();
         MediaCodecVideoConvertor.failAt=MediaCodecVideoConvertor.calls+2;PurpleLongRoundMedia.Work failed=new PurpleLongRoundMedia.Work();try{PurpleLongRoundMedia.prepare(source,directory,true,failed);throw new AssertionError("failure ignored");}catch(IOException expected){checks++;}failed.discard();MediaCodecVideoConvertor.failAt=-1;
         PurpleLongRoundMedia.Work interrupted=new PurpleLongRoundMedia.Work();MediaCodecVideoConvertor.hook=()->interrupted.cancelled.set(true);try{PurpleLongRoundMedia.prepare(source,directory,true,interrupted);throw new AssertionError("mid encode cancel ignored");}catch(IOException expected){checks++;}interrupted.discard();MediaCodecVideoConvertor.hook=null;
+        int selectionChecks=0;
+        PurpleLongRoundSelection full=new PurpleLongRoundSelection(180000,-1,-1);check(full.startUs==0&&full.endUs==180000000,"estimate is never a selection");selectionChecks++;
+        for(long[] bad:new long[][]{{-2,-1},{0,0},{1000000,500000},{0,180000001},{179500000,-1}}){try{new PurpleLongRoundSelection(180000,bad[0],bad[1]);throw new AssertionError("invalid range widened");}catch(PurpleLongRoundSelection.Invalid expected){selectionChecks++;}}
+        MediaCodecVideoConvertor.ranges.clear();PurpleLongRoundMedia.Work selected=new PurpleLongRoundMedia.Work();
+        List<PurpleLongRoundMedia.Output> one=PurpleLongRoundMedia.prepare(source,directory,true,10000000,11000000,selected);
+        check(one.size()==1&&one.get(0).facts.durationMs<=1150,"genuine explicit one-second selection only");selectionChecks++;
+        check(MediaCodecVideoConvertor.ranges.size()==1&&MediaCodecVideoConvertor.ranges.get(0)[0]==10000000&&MediaCodecVideoConvertor.ranges.get(0)[1]==11000000,"actual converter receives selected us, not full source");selectionChecks++;
+        System.out.println("DERIVED_PART="+one.get(0).file);
+        MediaCodecVideoConvertor.ranges.clear();PurpleLongRoundMedia.Work selectedLong=new PurpleLongRoundMedia.Work();
+        List<PurpleLongRoundMedia.Output> range=PurpleLongRoundMedia.prepare(source,directory,true,10250000,130750000,selectedLong);
+        long boundary=10250000;for(long[] interval:MediaCodecVideoConvertor.ranges){check(interval[0]==boundary&&interval[1]>interval[0],"selected source interval has no gap or overlap");boundary=interval[1];selectionChecks++;}
+        check(boundary==130750000&&range.size()==3,"only selected 120.5s covered through all parts");selectionChecks++;
+        for(PurpleLongRoundMedia.Output output:range)System.out.println("DERIVED_PART="+output.file);
+        MediaCodecVideoConvertor.ranges.clear();PurpleLongRoundMedia.Work selectedVideo=new PurpleLongRoundMedia.Work();
+        List<PurpleLongRoundMedia.Output> video=PurpleLongRoundMedia.prepare(source,directory,false,10000000,11000000,selectedVideo);
+        check(video.size()==1&&!video.get(0).circle&&video.get(0).facts.durationMs<=1150&&MediaCodecVideoConvertor.ranges.size()==1,"ordinary video honors same explicit trim instead of copying full source");selectionChecks++;
+        System.out.println("DERIVED_PART="+video.get(0).file);
+        check(Arrays.equals(original,hash(source)),"all selections preserve full original bytes");selectionChecks++;
+        System.out.println("LONG_ROUND_SELECTION_CHECKS="+selectionChecks);
         check(source.isFile()&&Arrays.equals(original,hash(source)),"full original survives success cancel failure and retry");System.out.println("LONG_ROUND_OUTPUT_CHECKS="+checks);
        }}''')
     compiler=pathlib.Path(os.environ['JAVA_HOME'])/'bin/javac'

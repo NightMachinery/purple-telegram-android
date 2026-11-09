@@ -177,6 +177,7 @@ public class PurpleRecordingBinActivity extends UniversalFragment {
         final String kind = getString(e.round() ? R.string.PurpleRecordingBinRound : R.string.PurpleRecordingBinVoice);
         final String state;
         if (PurpleRecordingEntry.UNRECOVERABLE.equals(e.state)) state = getString(R.string.PurpleRecordingBinUnrecoverable);
+        else if (e.longOriginal) state = getString(R.string.PurpleLongRoundOriginalKept);
         else if (e.discarded) state = getString(R.string.PurpleRecordingBinDiscarded);
         else if (e.partial) state = getString(R.string.PurpleRecordingBinPartial);
         else if (PurpleRecordingEntry.RECOVERED.equals(e.state)) state = getString(R.string.PurpleRecordingBinRecovered);
@@ -241,6 +242,9 @@ public class PurpleRecordingBinActivity extends UniversalFragment {
 
     @Override
     public void onPause() { stopPlayers(); super.onPause(); }
+
+    @Override
+    public void onResume() { super.onResume(); org.telegram.messenger.purple.PurpleLongRoundOriginals.retryPending(); }
 
     private void sendSaved(PurpleRecordingEntry entry) {
         final long self = UserConfig.getInstance(currentAccount).getClientUserId();

@@ -147,6 +147,7 @@ final class PurpleRoundRecording {
             final long sourceGeneration = generation;
             final java.lang.ref.WeakReference<PurpleRoundRecording> owner = new java.lang.ref.WeakReference<>(PurpleRoundRecording.this);
             if (original.durationMs > PurpleLongRoundPlan.CIRCLE_MS) {
+                final long selectedStartUs = video.startTime, selectedEndUs = video.endTime;
                 PurpleLongRoundSend.review(chat, original, destination.account, destination.user, destination.dialog,
                         destination.arguments, (output, arguments, paid) ->
                                 SendMessagesHelper.prepareSendingVideo(AccountInstance.getInstance(destination.account),
@@ -157,7 +158,7 @@ final class PurpleRoundRecording {
                                         destination.mono, destination.suggestion), () -> {
                             final PurpleRoundRecording active = owner.get();
                             if (active != null) active.cleanCompose(sourceGeneration, dockGeneration, destination.reply, destination.quote);
-                        });
+                        }, selectedStartUs, selectedEndUs);
                 return;
             }
             final java.util.concurrent.atomic.AtomicBoolean approved = new java.util.concurrent.atomic.AtomicBoolean();

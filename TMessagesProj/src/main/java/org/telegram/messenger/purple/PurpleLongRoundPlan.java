@@ -8,7 +8,7 @@ public final class PurpleLongRoundPlan {
     public final int count;
 
     public PurpleLongRoundPlan(long durationMs) {
-        if (durationMs <= CIRCLE_MS || durationMs > MAX_MS) throw new IllegalArgumentException("duration");
+        if (durationMs < 800 || durationMs > MAX_MS) throw new IllegalArgumentException("duration");
         this.durationMs = durationMs;
         count = (int) ((durationMs + PART_MS - 1) / PART_MS);
     }

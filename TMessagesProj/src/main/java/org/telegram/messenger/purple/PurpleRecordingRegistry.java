@@ -408,6 +408,43 @@ public final class PurpleRecordingRegistry {
         });
     }
 
+    public static long[] roundOriginalTarget(int account, int guid) {
+        final long[] value = target(guid);
+        return value != null && value.length > 4 && value[0] == account
+                && PurpleRecordingSendAs.sameUser(account, value[4]) ? value.clone() : null;
+    }
+
+    public static void keepLongOriginal(PurpleLongRoundOriginal original, java.util.function.Consumer<Boolean> done) {
+        start();
+        worker.execute(() -> {
+            boolean kept = false;
+            try {
+                if (store == null || directory().getUsableSpace() < original.channel().size() + 16L * 1024 * 1024) {
+                    throw new IOException("space");
+                }
+                final long[] target = original.target;
+                PurpleRecordingEntry entry = original.binId == null ? null : store.find(original.binId);
+                if (entry == null) {
+                    entry = store.begin((int) target[0], target[1], target[2], (int) target[3], PurpleRecordingEntry.ROUND,
+                            System.currentTimeMillis(), false);
+                    original.binId = entry.id;
+                }
+                entry.userId = target[4]; entry.longOriginal = true;
+                entry.once = target.length > 5 && (target[5] & PurpleRecordingSessions.FLAG_ONCE) != 0;
+                store.keepFailed(entry, original.channel(), System.currentTimeMillis() / 1000);
+                original.verify(new File(entry.media));
+                if (PurpleRecordingEntry.UNRECOVERABLE.equals(entry.state)) throw new IOException("original not playable");
+                entry.state = PurpleRecordingEntry.UNSENT;
+                store.update(entry);
+                kept = true; changed();
+            } catch (Exception failure) {
+                PurpleDiagLog.event("recordings", "original_keep", PurpleDiagLog.reason("io_failed"));
+            }
+            final boolean saved = kept;
+            AndroidUtilities.runOnUIThread(() -> done.accept(saved));
+        });
+    }
+
     public static void retainedRound(String id, java.util.function.Consumer<PurpleRecordingEntry> done) {
         start();
         worker.execute(() -> {

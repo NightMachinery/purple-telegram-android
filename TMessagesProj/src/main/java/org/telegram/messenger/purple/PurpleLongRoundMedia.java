@@ -121,26 +121,33 @@ public final class PurpleLongRoundMedia {
     }
 
     public static List<Output> prepare(File source, File directory, boolean circles, Work work) throws Exception {
+        return prepare(source, directory, circles, -1, -1, work);
+    }
+
+    public static List<Output> prepare(File source, File directory, boolean circles,
+            long requestedStartUs, long requestedEndUs, Work work) throws Exception {
         final Facts facts = inspect(source, false);
-        final PurpleLongRoundPlan plan = new PurpleLongRoundPlan(facts.durationMs);
-        final long budget = source.length() + facts.durationMs * 1_500_000L / 8000;
+        final PurpleLongRoundSelection selection = new PurpleLongRoundSelection(facts.durationMs, requestedStartUs, requestedEndUs);
+        final PurpleLongRoundPlan plan = new PurpleLongRoundPlan(selection.durationMs());
+        final long budget = source.length() + selection.durationMs() * 1_500_000L / 8000;
         if (directory.getUsableSpace() < RESERVE + budget * 2) throw new IOException("space");
         final byte[] before = digest(source, work);
         final List<Output> outputs = new ArrayList<>();
-        if (!circles) {
+        if (!circles && selection.full(facts.durationMs)) {
             final File copy = work.create(directory);
             PurpleRecordingFiles.copy(source, copy);
             work.check();
             if (!Arrays.equals(before, digest(copy, work))) throw new IOException("copy");
             outputs.add(new Output(copy, inspect(copy, false), false));
         } else {
-            for (int i = 0; i < plan.count; i++) {
+            final int count = circles ? plan.count : 1;
+            for (int i = 0; i < count; i++) {
                 work.check();
                 if (directory.getUsableSpace() < RESERVE + budget) throw new IOException("space");
                 final File file = work.create(directory);
-                final long start = plan.startUs(i), end = plan.endUs(i);
+                final long start = selection.startUs(i, count), end = selection.endUs(i, count);
                 final VideoEditedInfo info = new VideoEditedInfo();
-                info.roundVideo = true;
+                info.roundVideo = circles;
                 final MediaCodecVideoConvertor.ConvertVideoParams params = MediaCodecVideoConvertor.ConvertVideoParams.of(
                         source.getAbsolutePath(), file, 0, facts.rotation, false, facts.width, facts.height,
                         facts.width, facts.height, 30, 1_200_000, 0, start, end, -1, true,
@@ -156,9 +163,10 @@ public final class PurpleLongRoundMedia {
                     if (new MediaCodecVideoConvertor().convertVideo(params)) throw new IOException("conversion");
                 } finally { audio.release(); }
                 work.check();
-                final Facts actual = inspect(file, true);
-                plan.validatePart(i, actual.durationMs);
-                outputs.add(new Output(file, actual, true));
+                final Facts actual = inspect(file, circles);
+                if (circles) plan.validatePart(i, actual.durationMs);
+                else if (Math.abs(actual.durationMs - selection.durationMs()) > 150) throw new IOException("selected duration");
+                outputs.add(new Output(file, actual, circles));
             }
         }
         if (!Arrays.equals(before, digest(source, work))) throw new IOException("source changed");

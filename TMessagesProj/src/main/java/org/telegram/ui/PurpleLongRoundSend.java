@@ -53,17 +53,17 @@ public final class PurpleLongRoundSend {
                         SendMessagesHelper.prepareSendingVideo(AccountInstance.getInstance(account), output.file.getAbsolutePath(),
                                 output.info(), null, null, dialog, frozenReply, frozenTop, null, null, null,
                                 item.once ? 0x7fffffff : 0, null, true, 0, 0, false, false, null, frozen, 0, paid),
-                        () -> done.done(true));
+                        () -> done.done(true), -1, -1);
             });
         });
         return true;
     }
 
     public static void review(BaseFragment host, PurpleRecordingEntry item, int account, long user, long dialog,
-            SendMessageChatArguments arguments, Sender sender, Runnable done) {
+            SendMessageChatArguments arguments, Sender sender, Runnable done, long startUs, long endUs) {
         if (active.containsKey(item.id) || host.getParentActivity() == null || host.isPaused()
                 || !PurpleRecordingSendAs.sameUser(account, user)) return;
-        final Request request = new Request(host, item, account, user, dialog, arguments, sender, done);
+        final Request request = new Request(host, item, account, user, dialog, arguments, sender, done, startUs, endUs);
         active.put(item.id, request);
         request.prepare(true);
         AndroidUtilities.runOnUIThread(() -> request.finish(false), 30 * 60_000L);
@@ -73,7 +73,7 @@ public final class PurpleLongRoundSend {
         final WeakReference<BaseFragment> owner;
         final PurpleRecordingEntry item;
         final int account;
-        final long user, dialog;
+        final long user, dialog, startUs, endUs;
         final Sender sender;
         final Runnable done;
         final SendMessageChatArguments[] arguments = new SendMessageChatArguments[6];
@@ -83,8 +83,9 @@ public final class PurpleLongRoundSend {
         AlertDialog progress;
         boolean closed, preparing;
         Request(BaseFragment host, PurpleRecordingEntry item, int account, long user, long dialog,
-                SendMessageChatArguments original, Sender sender, Runnable done) {
+                SendMessageChatArguments original, Sender sender, Runnable done, long startUs, long endUs) {
             owner = new WeakReference<>(host); this.item = item; this.account = account; this.user = user;
+            this.startUs = startUs; this.endUs = endUs;
             this.dialog = dialog; this.sender = sender; this.done = done;
             for (int i = 0; i < arguments.length; i++) arguments[i] = PurpleRecordingSendAs.copyFrozen(account, user, dialog, original);
         }
@@ -104,34 +105,37 @@ public final class PurpleLongRoundSend {
             host.showDialog(progress);
             worker.execute(() -> {
                 List<PurpleLongRoundMedia.Output> result = null;
+                boolean invalid = false;
                 try {
                     work.discard();
                     if (!PurpleRecordingSendAs.sameUser(account, user)) throw new IllegalStateException();
-                    result = PurpleLongRoundMedia.prepare(new File(item.media), FileLoader.getDirectory(FileLoader.MEDIA_DIR_DOCUMENT), circles, work);
+                    result = PurpleLongRoundMedia.prepare(new File(item.media), FileLoader.getDirectory(FileLoader.MEDIA_DIR_DOCUMENT), circles, startUs, endUs, work);
                 } catch (Exception failure) {
+                    invalid = failure instanceof PurpleLongRoundSelection.Invalid;
                     PurpleDiagLog.event("recordings", "long_prepare", PurpleDiagLog.reason("io_failed"));
                 }
                 final List<PurpleLongRoundMedia.Output> prepared = result;
+                final boolean invalidSelection = invalid;
                 AndroidUtilities.runOnUIThread(() -> {
                     preparing = false;
                     if (progress != null) { progress.dismiss(); progress = null; }
                     if (closed) { worker.execute(work::discard); return; }
                     if (host() == null) { finish(false); return; }
-                    if (prepared == null) { preparationFailed(circles); return; }
+                    if (prepared == null) { preparationFailed(circles, invalidSelection); return; }
                     outputs = prepared; queue = new PurpleLongRoundQueue(outputs.size());
                     confirm();
                 });
             });
         }
-        void preparationFailed(boolean circles) {
+        void preparationFailed(boolean circles, boolean invalidSelection) {
             final BaseFragment host = host();
             if (host == null) { finish(false); return; }
             final AtomicBoolean retry = new AtomicBoolean();
             final AlertDialog.Builder builder = new AlertDialog.Builder(host.getParentActivity(), host.getResourceProvider());
             builder.setTitle(text(R.string.PurpleLongRoundTitle));
-            builder.setMessage(text(R.string.PurpleLongRoundPrepareFailed));
+            builder.setMessage(text(invalidSelection ? R.string.PurpleLongRoundSelectionInvalid : R.string.PurpleLongRoundPrepareFailed));
             builder.setNegativeButton(text(R.string.Cancel), null);
-            if (circles) builder.setPositiveButton(text(R.string.PurpleLongRoundVideo), (dialog, which) -> {
+            if (circles && !invalidSelection) builder.setPositiveButton(text(R.string.PurpleLongRoundVideo), (dialog, which) -> {
                 if (retry.compareAndSet(false, true)) prepare(false);
             });
             builder.setOnDismissListener(dialog -> { if (!retry.get()) finish(false); });

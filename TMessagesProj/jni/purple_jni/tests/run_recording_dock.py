@@ -64,3 +64,5 @@ runpy.run_path(str(pathlib.Path(__file__).parent / "recording/long_limits.py"))[
 runpy.run_path(str(pathlib.Path(__file__).parent / "recording/long_outputs.py"))["run"](root, args.output / "long-outputs")
 
 runpy.run_path(str(pathlib.Path(__file__).parent / "recording/long_choices.py"))["run"](root, args.output / "long-choices")
+
+runpy.run_path(str(pathlib.Path(__file__).parent / "recording/long_originals.py"))["run"](root, args.output / "long-originals")

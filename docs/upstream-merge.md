@@ -800,3 +800,10 @@ copy condition, AudioInput start/end setup and AudioRecoder duration units again
 PurpleLongRoundMedia; do not replace the scoped input with prior-sync stream-copy.
 The owned adapter must be recreated safely by native converter retries and
 released on failure as well as success.
+
+InstantCameraView2 delegates full preview ownership before publishing preview
+notification and checks owned persistence/selection admission before its native
+finish reservation and resume. Teardown releases the UI association while pending
+original bytes remain descriptor-owned until persistence. Preserve this order
+when merging; V2 already remuxes selected preview ranges and resets send offsets,
+while legacy dispatches selection offsets in microseconds without materializing.

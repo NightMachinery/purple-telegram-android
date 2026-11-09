@@ -991,7 +991,10 @@
         "recording-dock:LONG_ROUND_REVIEW_CHECKS": 6,
         "recording-dock:LONG_ROUND_OUTPUT_CHECKS": 100,
         "recording-dock:LONG_ROUND_DECODE_CHECKS": 4,
-        "recording-dock:LONG_ROUND_CHOICE_CHECKS": 9
+        "recording-dock:LONG_ROUND_CHOICE_CHECKS": 9,
+        "recording-dock:LONG_ROUND_SELECTION_CHECKS": 14,
+        "recording-dock:LONG_ROUND_ORIGINAL_CHECKS": 14,
+        "recording-dock:LONG_ROUND_ORIGINAL_ORDER_PINS": 4
       }
     },
     {

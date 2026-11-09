@@ -328,6 +328,7 @@ public final class InstantCameraView2 extends InstantCameraViewBase {
     @Override
     public void destroy(boolean async) {
         if (org.telegram.messenger.purple.PurpleRecordingDock.roundFinalizing(currentAccount, recordingGuid)) return;
+        org.telegram.messenger.purple.PurpleLongRoundOriginals.release(currentAccount, recordingGuid);
         setRecordingUiFrameClockActive(false);
         cancelCameraFlipAnimation();
         if (zoomResetAnimator != null) zoomResetAnimator.cancel();
@@ -350,6 +351,7 @@ public final class InstantCameraView2 extends InstantCameraViewBase {
         if (stateInfo.getState() == RoundVideoSession.State.RECORDING) {
             pauseForPreview();
         } else if (stateInfo.getState() == RoundVideoSession.State.PREVIEWING) {
+            if (!org.telegram.messenger.purple.PurpleLongRoundOriginals.beforeV2(currentAccount, recordingGuid, session.getPreviewFile(), stateInfo.getRecordedDurationMs(), videoEditedInfo)) return;
             videoEditedInfo = null;
             resumeNotificationPending = true;
             stopNotificationSent = false;
@@ -512,6 +514,7 @@ public final class InstantCameraView2 extends InstantCameraViewBase {
             cancel(false);
             return;
         }
+        if (!org.telegram.messenger.purple.PurpleLongRoundOriginals.beforeV2(currentAccount, recordingGuid, session.getPreviewFile(), stateInfo.getRecordedDurationMs(), videoEditedInfo)) return;
         if (!org.telegram.messenger.purple.PurpleRecordingDock.beginRoundFinish(currentAccount, recordingGuid)) return;
         if (stateInfo.getState() == RoundVideoSession.State.RECORDING) {
             postRecordStopped(5);
@@ -746,6 +749,7 @@ public final class InstantCameraView2 extends InstantCameraViewBase {
             muteImageView.setAlpha(0f);
             File previewFile = session == null ? null : session.getPreviewFile();
             if (previewFile == null) return;
+            org.telegram.messenger.purple.PurpleLongRoundOriginals.capture(currentAccount, recordingGuid, previewFile, durationMs);
             videoEditedInfo = createVideoEditedInfo(previewFile, durationMs, null);
             videoEditedInfo.startTime = trimStartMs > 0 ? trimStartMs : -1;
             videoEditedInfo.endTime = trimEndMs < durationMs ? trimEndMs : -1;

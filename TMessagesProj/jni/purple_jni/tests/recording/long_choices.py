@@ -39,7 +39,7 @@ def run(root, output):
        static String text(int r){return LocaleController.getString(r);}
       '''+review+'''
        static class Request {
-        final WeakReference<BaseFragment> owner;final PurpleRecordingEntry item;final int account;final long user,dialog;
+        final WeakReference<BaseFragment> owner;final PurpleRecordingEntry item;final int account;final long user,dialog,startUs,endUs;
         final Sender sender;final Runnable done;final SendMessageChatArguments[] arguments=new SendMessageChatArguments[6];
         List<Output> outputs;PurpleLongRoundQueue queue;boolean closed,lastCircles;int preparations,enqueues,finishes;
       '''+constructor+host+confirm+'''
@@ -51,7 +51,7 @@ def run(root, output):
        static int checks;static void check(boolean ok,String why){checks++;if(!ok)throw new AssertionError(why);}
        public static void main(String[] args){
         BaseFragment host=new BaseFragment();PurpleRecordingEntry item=new PurpleRecordingEntry();
-        review(host,item,1,9,100,new SendMessageChatArguments(),null,()->{});
+        review(host,item,1,9,100,new SendMessageChatArguments(),null,()->{},-1,-1);
         Request request=active.get(item.id);check(request.preparations==1&&request.lastCircles,"normal Send defaults to preparing circles without picker");
         check(request.enqueues==0,"preparation cannot send before review");
         request.ready(true,3);AlertDialog.Builder review=AlertDialog.latest;
@@ -60,12 +60,12 @@ def run(root, output):
         check(!request.closed&&!request.lastCircles&&request.preparations==2&&request.enqueues==0,"ordinary video is secondary deliberate preparation, no send");
         request.ready(false,1);review=AlertDialog.latest;review.dismiss.run(null);
         check(request.closed&&request.enqueues==0,"review cancel preserves unsent state");
-        active.clear();review(host,item,1,9,100,new SendMessageChatArguments(),null,()->{});request=active.get(item.id);request.ready(true,3);
+        active.clear();review(host,item,1,9,100,new SendMessageChatArguments(),null,()->{},-1,-1);request=active.get(item.id);request.ready(true,3);
         review=AlertDialog.latest;review.positive.run(null,0);review.dismiss.run(null);
         check(AlertsCreator.count==3&&request.enqueues==0&&!request.closed,"paid approval covers actual count before enqueue");
         AlertsCreator.pending.run(0);check(request.enqueues==1,"approval starts one sequence");
         AlertsCreator.pending.run(0);check(request.enqueues==1&&!request.closed,"duplicate approval cannot send twice or abort accepted sequence");
-        active.clear();PurpleRecordingSendAs.valid=false;review(host,item,1,9,100,new SendMessageChatArguments(),null,()->{});
+        active.clear();PurpleRecordingSendAs.valid=false;review(host,item,1,9,100,new SendMessageChatArguments(),null,()->{},-1,-1);
         check(active.isEmpty(),"replacement account cannot open review");
         System.out.println("LONG_ROUND_CHOICE_CHECKS="+checks);
        }}''')

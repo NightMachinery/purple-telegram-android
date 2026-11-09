@@ -40,9 +40,13 @@ notice. The primary button sends those parts. A secondary button prepares one
 ordinary full-length video instead and returns to review. Neither path sends
 until the final review and any stock paid-message confirmation are approved.
 The Recording bin marks these entries as long local recordings and offers the
-same default. Routing uses the retained file's measured duration, even if editable preview
-metadata describes a shorter trim. The full retained source is used, rather than replacing it with a
-one-minute trim or deleting it after a successful queue acknowledgement.
+same default. The retained file's measured duration decides whether the long-output review is
+needed. An estimate alone never defines a selection. A genuine legacy preview
+selection is validated in microseconds against measured source bounds and limits
+both outgoing formats to that selected range. Invalid ranges are refused without
+widening them. The full unedited original stays separate from selected outputs.
+V2 physically materializes its selection before delivery and resets offsets, so
+that resulting file is not trimmed a second time.
 
 Circle preparation balances consecutive source intervals with a 59.5-second
 planning ceiling, avoiding a tiny final tail. All parts are prepared and checked
@@ -90,3 +94,22 @@ The actual owned review/confirmation methods also run against inert dialog ports
 circles are the default, ordinary video is secondary, review cancellation sends
 nothing, paid approval covers the prepared count, and a duplicate approval cannot
 restart or abort an already accepted sequence.
+
+V2 preview publishes a descriptor-owned original before any destructive trim or
+resume. The registry worker copies its full bytes into a separately marked bin
+entry, syncs the media through the existing store, verifies its hash and saves
+the manifest. Native trim and resume wait for that acknowledgement. Repeated
+callbacks for the same inode share one reservation; retry reuses its entry.
+The descriptor protects source identity and readable bytes if native cancellation
+or teardown unlinks the file while persistence runs. Stale source callbacks and
+account replacement cannot admit another source. Full-original bin entries have
+a separate label from outgoing selected copies and use normal retention.
+
+A failed original save leaves trim/resume blocked and reports the failure. Its
+descriptor remains owned for a persistence retry when the Recording bin reopens;
+that retry never sends a message. Until synced media and manifest acknowledgement,
+this descriptor is only process-local protection, not crash or power-loss
+durability. The implementation uses the existing store's sync/atomic-manifest
+contract and makes no stronger filesystem power-loss claim. A process death
+during a failed save can still lose an unlinked source; the error explicitly
+asks the user to keep the app open. Only newly recorded media is retained.

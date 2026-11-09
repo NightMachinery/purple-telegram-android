@@ -14,6 +14,11 @@ public class LongRoundReviewCases {
   PurpleLongRoundSend.sender.send(new PurpleLongRoundMedia.Output(),PurpleLongRoundSend.arguments,0);
   check(SendMessagesHelper.last.peer==100,"long send closure keeps captured target");
   check(PurpleRecordingRegistry.bin.size()==1,"derived copy cannot acknowledge original away");
+  check(PurpleLongRoundSend.selectedStart==-1&&PurpleLongRoundSend.selectedEnd==-1,"bogus estimate creates no selection");
+  ChatActivity second=new ChatActivity();PurpleRoundRecording selected=new PurpleRoundRecording(second);selected.started();
+  VideoEditedInfo trimmed=new VideoEditedInfo();trimmed.estimatedDuration=1000;trimmed.startTime=10000000;trimmed.endTime=11000000;
+  selected.sendMedia(new MediaController.PhotoEntry(),trimmed,true,0,0,0);
+  check(PurpleLongRoundSend.selectedStart==10000000&&PurpleLongRoundSend.selectedEnd==11000000,"actual microsecond trim captured separately from full original duration");
   System.out.println("LONG_ROUND_REVIEW_CHECKS="+checks);
  }
 }
