@@ -25,6 +25,7 @@ def run(root, output, bubble=None):
                  'messenger/purple/PurpleRecordingDockState.java', 'messenger/purple/PurpleRecordingSettings.java']:
         text = pathlib.Path(bubble).read_text() if bubble and name.endswith('/PurpleRoundBubble.java') else (java / name).read_text()
         put('org/telegram/' + name, text)
+    put('org/telegram/messenger/purple/PurpleRecordingRegistry.java', 'package org.telegram.messenger.purple;public class PurpleRecordingRegistry{public static boolean mayDeleteFailedLegacyRound(java.io.File writer){return true;}}')
     put('android/content/Context.java', """package android.content;
 public class Context {
  public static final int MODE_PRIVATE=0;
@@ -176,9 +177,10 @@ public abstract class NativeTerminal extends HostCamera {
  protected void invalidate(){} protected void postRecordStopped(int reason){org.telegram.messenger.purple.PurpleRecordingDock.state.clear();}
  public void startAnimation(boolean open,boolean fromPaused){dispatchAnimationState(open,fromPaused);animateButtons(open);Object current=new Object();animatorSet=visibilityAnimator=current;if(!open)closeCompletion=()->finishClose(current);}
  protected abstract void finishClose(Object animation);
- public static class Resource {
+ public static class Resource extends java.io.File {
+  public Resource(){super("inert-camera-resource");}
   public void releasePlayer(boolean b){} public void shutdown(int a,boolean b,int c,int d,int e,int f){}
-  public void stopRecording(int a,SendOptions b){} public void delete(){} public void cancel(){} public void release(boolean b){}
+  public void stopRecording(int a,SendOptions b){} public boolean delete(){return true;} public void cancel(){} public void release(boolean b){}
   public void purpleProtectOriginal(){}
  }
  static class SendOptions {SendOptions(boolean a,int b,int c,int d,int e,int f){}}
