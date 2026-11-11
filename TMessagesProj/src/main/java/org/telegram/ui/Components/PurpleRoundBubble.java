@@ -41,12 +41,16 @@ public final class PurpleRoundBubble {
     }
     public static boolean animation(InstantCameraViewBase view, boolean open, boolean fromPaused) {
         State state = state(view);
+        if (state != null && !open) {
+            state.small = state.tracking = state.dragging = state.nativeGesture = false;
+            if (state.controls != null) state.controls.setVisibility(View.GONE);
+        }
         if (state != null && open && !fromPaused && state.small) resize(view, state, false);
         return open && (state == null || !state.small);
     }
     public static void expand(InstantCameraViewBase view) {
         State state = state(view);
-        if (state != null && state.small) resize(view, state, false);
+        if (state != null && state.small && view.getVisibility() == View.VISIBLE) resize(view, state, false);
     }
     public static boolean small(InstantCameraViewBase view) {
         State state = state(view);
@@ -137,9 +141,12 @@ public final class PurpleRoundBubble {
         if (small) {
             if (state.controls == null) {
                 state.controls = new PurpleRoundControls(view.getContext(), () -> {
+                    if (!state.small || view.getVisibility() != View.VISIBLE) return;
                     View buttons = view.getButtonsLayout();
                     if (buttons instanceof ViewGroup && ((ViewGroup) buttons).getChildCount() > 0) ((ViewGroup) buttons).getChildAt(0).performClick();
-                }, view::togglePause, (Object[]) view.getTag(BACKGROUND_TAG),
+                }, () -> {
+                    if (state.small && view.getVisibility() == View.VISIBLE) view.togglePause();
+                }, (Object[]) view.getTag(BACKGROUND_TAG),
                         () -> ((ImageView) ((ViewGroup) view.getButtonsLayout()).getChildAt(0)).getColorFilter());
                 view.addView(state.controls);
             }

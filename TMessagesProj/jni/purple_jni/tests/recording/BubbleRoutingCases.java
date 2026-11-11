@@ -207,9 +207,49 @@ public final class BubbleRoutingCases {
         check(controls.tint.get() == filter, "native tint remains live after pause");
     }
 
+    private static void terminal(boolean v2) {
+        implementation = v2 ? "v2 terminal" : "legacy terminal";
+        dock();
+        NativeTerminal camera = v2 ? new TerminalInstantCameraView2(new Context()) : new TerminalInstantCameraView(new Context());
+        RetainedChat chat = new RetainedChat(camera);
+        Runnable oldClose = null;
+        for (int take = 0; take < 2; take++) {
+            dock(); camera.setVisibility(View.VISIBLE);
+            camera.startAnimation(true, false);
+            if (oldClose != null) oldClose.run();
+            check(camera.getVisibility() == View.VISIBLE, "old close listener cannot hide new recording");
+            check(chat.roundVideoRecordBackground.alpha == 1, "new take owns feature backdrop");
+            camera.dispatchTouchEvent(event(MotionEvent.ACTION_DOWN, 100, 1500));
+            camera.dispatchTouchEvent(event(MotionEvent.ACTION_UP, 100, 1500));
+            View oldControls = camera.getChildAt(camera.getChildCount() - 1);
+            check(PurpleRoundBubble.small(camera) && chat.roundVideoRecordBackground.alpha == 0, "minimize releases feature backdrop");
+            chat.nativeDim = true;
+            camera.cancel(false);
+            check(!PurpleRecordingDock.state.active(), "native discard terminal before close animation completes");
+            chat.leave();
+            check(chat.roundVideoRecordBackground.alpha == 0 && chat.overlayView.getVisibility() == View.GONE, "pause during terminal animation cannot reacquire overlay or dim");
+            oldClose = camera.closeCompletion;
+            camera.closeCompletion.run();
+            check(camera.getVisibility() == View.INVISIBLE, "native animation listener hides camera");
+            chat.leave(); PurpleRoundBubble.pause(camera);
+            camera.redraw();
+            check(chat.roundVideoRecordBackground.alpha == 0 && chat.overlayView.getVisibility() == View.GONE, "same chat background and resume stays clear");
+            check(!PurpleRoundBubble.small(camera) && oldControls.getVisibility() == View.GONE, "terminal presentation and old controls retired");
+            check(chat.nativeDim, "unrelated native dim remains owned by native dialog");
+            int resizes = chat.resizes, flips = camera.flips, pauses = camera.pauses;
+            ((ViewGroup) oldControls).getChildAt(0).performClick();
+            ((ViewGroup) oldControls).getChildAt(1).performClick();
+            check(camera.flips == flips && camera.pauses == pauses, "late discarded controls cannot switch or pause camera");
+            PurpleRoundBubble.expand(camera); camera.redraw();
+            check(chat.resizes == resizes && chat.roundVideoRecordBackground.alpha == 0, "late expansion/layout callback cannot restore terminal dim");
+        }
+    }
+
     public static void main(String[] args) {
         run(false); run(true);
-        System.out.println("ROUND_ROUTING_CHECKS=" + checks);
+        int terminalStart = checks; terminal(false); terminal(true);
+        System.out.println("ROUND_TERMINAL_CHECKS=" + (checks - terminalStart));
+        System.out.println("ROUND_ROUTING_CHECKS=" + terminalStart);
         int before = checks;
         bounds(false); bounds(true);
         System.out.println("ROUND_CONTROLS_PLACEMENT_CHECKS=" + (checks - before));

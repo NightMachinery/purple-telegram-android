@@ -47,7 +47,7 @@ import android.content.Context;import android.graphics.Rect;import java.util.*;
 public class View {
  public static final int VISIBLE=0,INVISIBLE=4,GONE=8;
  protected final Context context;public int left,top,width,height,paddingBottom,visibility,events;
- private float tx,ty,sx=1,sy=1;private OnClickListener click;
+ public float alpha=1;public void setAlpha(float v){alpha=v;}private float tx,ty,sx=1,sy=1;private OnClickListener click;
  private final Map<Integer,Object> tags=new HashMap<>();
  public View(Context c){context=c;}public Context getContext(){return context;}
  public float getX(){return left+tx;}public float getY(){return top+ty;}
@@ -153,6 +153,69 @@ public class HostCamera extends InstantCameraViewBase {
     inset = legacy[legacy.index('if ('):legacy.index('if (ev.getAction() == MotionEvent.ACTION_DOWN && delegate')]
     for name, touch in [('InstantCameraView', 'public boolean onTouchEvent(MotionEvent ev) {'+inset+'return true;}'), ('InstantCameraView2', v2)]:
         put('org/telegram/ui/Components/'+name+'.java', 'package org.telegram.ui.Components;import android.content.Context;import android.view.MotionEvent;import org.telegram.ui.ActionBar.Theme;public class '+name+' extends HostCamera {public interface Delegate {}public '+name+'(Context c,InstantCameraView.Delegate d,Theme.ResourcesProvider r,boolean n){super(c);}'+touch+'}')
+    # Run the native terminal methods with inert resources and animation scheduling.
+    put('org/telegram/ui/Components/NativeTerminal.java', """package org.telegram.ui.Components;
+import android.view.*;
+public abstract class NativeTerminal extends HostCamera {
+ protected int currentAccount, recordingGuid;
+ protected Object textureView=new Object(); protected boolean cancelled,recording=true,flashing;
+ protected Resource videoPlayer,cameraThread,videoEncoder,cameraFile,upload;
+ protected Resource session=new Resource();
+ protected Object animatorSet,visibilityAnimator; protected boolean setVisibilityFromPause;
+ public Runnable closeCompletion;
+ public NativeTerminal(android.content.Context c){super(c);}
+ protected void stopProgressTimer(){} protected void updateFlash(){} protected void saveLastCameraBitmap(){}
+ protected void invalidate(){} protected void postRecordStopped(int reason){org.telegram.messenger.purple.PurpleRecordingDock.state.clear();}
+ public void startAnimation(boolean open,boolean fromPaused){dispatchAnimationState(open,fromPaused);Object current=new Object();animatorSet=visibilityAnimator=current;if(!open)closeCompletion=()->finishClose(current);}
+ protected abstract void finishClose(Object animation);
+ public static class Resource {
+  public void releasePlayer(boolean b){} public void shutdown(int a,boolean b,int c,int d,int e,int f){}
+  public void stopRecording(int a,SendOptions b){} public void delete(){} public void cancel(){} public void release(boolean b){}
+ }
+ static class SendOptions {SendOptions(boolean a,int b,int c,int d,int e,int f){}}
+ static class VideoRecorder {static final int ENCODER_SEND_CANCEL=0;}
+ static class BuildVars {static final boolean LOGS_ENABLED=false;}
+ static class FileLog {static void e(String s){}}
+ static class AutoDeleteMediaTask {static void unlockFile(Object f){}}
+ static class MediaController {static MediaController getInstance(){return new MediaController();}void requestRecordAudioFocus(boolean b){}}
+ static class NotificationCenter {
+  static final int recordStopped=1;static NotificationCenter getInstance(int a){return new NotificationCenter();}
+  void postNotificationName(int a,int b,int c){org.telegram.messenger.purple.PurpleRecordingDock.state.clear();}
+ }
+}
+""")
+    for name in ['InstantCameraView', 'InstantCameraView2']:
+        native = (java / ('ui/Components/' + name + '.java')).read_text()
+        cancel = method(native, 'public void cancel(boolean byGesture)')
+        animation = method(native, 'public void startAnimation(boolean open, boolean fromPaused)')
+        terminal = method(animation, 'public void onAnimationEnd(Animator animation)')
+        terminal = terminal.replace('public void onAnimationEnd(Animator animation)', 'protected void finishClose(Object animation)')
+        put('org/telegram/ui/Components/Terminal' + name + '.java',
+            'package org.telegram.ui.Components; public class Terminal' + name + ' extends NativeTerminal {'
+            + 'public Terminal' + name + '(android.content.Context c){super(c);}' + cancel + terminal + '}')
+    dock_path = output / 'org/telegram/messenger/purple/PurpleRecordingDock.java'
+    dock_path.write_text(dock_path.read_text().replace('public static final', 'public static boolean roundFinalizing(int a,int g){return false;}public static final'))
+    chat = (java / 'ui/ChatActivity.java').read_text()
+    hooks = (java / 'ui/PurpleChatHooks.java').read_text()
+    before_leave = method((java / 'ui/PurpleRoundRecording.java').read_text(), 'void beforeLeave()')
+    resize_binding = chat[chat.index('purple.attachRoundCamera(instantCameraView, small ->'):].split('\n', 1)[0]
+    animation_binding = chat[chat.index('instantCameraView.setAnimationCallback((open, fromPaused) ->'):].split(';', 1)[0] + ';'
+    factor = chat[chat.index('            if (roundVideoRecordBackground != null) {', chat.index('public void onFactorChanged(')):].split('            //', 1)[0]
+    put('org/telegram/ui/Components/RetainedChat.java', """package org.telegram.ui.Components;
+import android.view.View;
+public class RetainedChat {
+ public final InstantCameraViewBase instantCameraView;
+ public final View overlayView=new View(new android.content.Context()), roundVideoRecordBackground=new View(new android.content.Context());
+ public boolean nativeDim; public int resizes;
+ private final RetainedChat chat=this, purple=this, roundRecording=this;
+ private final Factor animatorRoundMessageCameraVisibility=new Factor();
+ private class Factor {void setValue(boolean visible,boolean animated){float factor=visible?1:0;
+""" + factor + """}}
+ public RetainedChat(InstantCameraViewBase camera){instantCameraView=camera;""" + animation_binding + resize_binding + """}
+ public void leave(){beforeLeave();}
+ public void resized(boolean small){resizes++;}
+""" + method(hooks, 'boolean roundCameraVisible(') + method(hooks, 'void attachRoundCamera(') + before_leave + """}
+""")
     shutil.copyfile(pathlib.Path(__file__).with_name('BubbleRoutingCases.java'), output/'BubbleRoutingCases.java')
     compiler = pathlib.Path(os.environ['JAVA_HOME'])/'bin/javac'
     subprocess.run([str(compiler),'-d',str(output/'classes'),*map(str,sorted(output.rglob('*.java')))],check=True)
