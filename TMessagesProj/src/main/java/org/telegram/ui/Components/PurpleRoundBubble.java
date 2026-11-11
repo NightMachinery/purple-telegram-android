@@ -41,12 +41,17 @@ public final class PurpleRoundBubble {
     }
     public static boolean animation(InstantCameraViewBase view, boolean open, boolean fromPaused) {
         State state = state(view);
+        if (state != null && !open) {
+            state.small = state.tracking = state.dragging = state.nativeGesture = false;
+            if (state.controls != null) state.controls.setVisibility(View.GONE);
+        }
         if (state != null && open && !fromPaused && state.small) resize(view, state, false);
+        if (state != null && open && !state.small) view.getButtonsLayout().setVisibility(View.VISIBLE);
         return open && (state == null || !state.small);
     }
     public static void expand(InstantCameraViewBase view) {
         State state = state(view);
-        if (state != null && state.small) resize(view, state, false);
+        if (state != null && state.small && view.getVisibility() == View.VISIBLE) resize(view, state, false);
     }
     public static boolean small(InstantCameraViewBase view) {
         State state = state(view);
@@ -59,7 +64,7 @@ public final class PurpleRoundBubble {
         if (view == null || view.getVisibility() != View.VISIBLE || !PurpleRecordingSettings.read().roundFloat) return false;
         State state = state(view);
         if (state == null) return false;
-        if (!state.small && event.getActionMasked() == MotionEvent.ACTION_DOWN && canShrink(view) && !inComposer(view, event)) resize(view, state, true);
+        if (!state.small && event.getActionMasked() == MotionEvent.ACTION_DOWN && canShrink(view) && !inComposer(view, event) && !inControls(view, state, event)) resize(view, state, true);
         return state.small;
     }
     public static boolean dispatch(InstantCameraViewBase view, MotionEvent event, Dispatch normal) {
@@ -72,14 +77,12 @@ public final class PurpleRoundBubble {
         if (state.nativeGesture) return nativeDispatch(state, event, normal);
         if (!state.tracking && (view.getVisibility() != View.VISIBLE || (!state.small
                 && (!PurpleRecordingSettings.read().roundFloat || !canShrink(view) || inComposer(view, event))))) return nativeDispatch(state, event, normal);
+        if (!state.tracking && inControls(view, state, event)) return nativeDispatch(state, event, normal);
         View camera = view.getCameraContainer();
         float left = camera.getX() + camera.getPivotX() * (1 - camera.getScaleX());
         float top = camera.getY() + camera.getPivotY() * (1 - camera.getScaleY());
         float side = camera.getWidth() * camera.getScaleX();
         boolean inside = event.getX() >= left && event.getX() <= left + side && event.getY() >= top && event.getY() <= top + side;
-        if (!state.tracking && state.small && state.controls != null && event.getY() >= state.controls.getY()
-                && event.getY() <= state.controls.getY() + state.controls.getHeight()
-                && event.getX() >= state.controls.getX() && event.getX() <= state.controls.getX() + state.controls.getWidth()) return nativeDispatch(state, event, normal);
         if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
             if (state.small && !inside) return false;
             if (!state.small && inside) return nativeDispatch(state, event, normal);
@@ -113,6 +116,12 @@ public final class PurpleRoundBubble {
         state.nativeGesture = event.getActionMasked() != MotionEvent.ACTION_UP && event.getActionMasked() != MotionEvent.ACTION_CANCEL;
         return normal.run();
     }
+    private static boolean inControls(InstantCameraViewBase view, State state, MotionEvent event) {
+        View controls = state.small ? state.controls : view.getButtonsLayout();
+        return controls != null && controls.getVisibility() == View.VISIBLE
+                && event.getX() >= controls.getX() && event.getX() <= controls.getX() + controls.getWidth()
+                && event.getY() >= controls.getY() && event.getY() <= controls.getY() + controls.getHeight();
+    }
     private static boolean inComposer(InstantCameraViewBase view, MotionEvent event) {
         return event.getY() > view.getMeasuredHeight() - view.getPaddingBottom();
     }
@@ -133,9 +142,12 @@ public final class PurpleRoundBubble {
         if (small) {
             if (state.controls == null) {
                 state.controls = new PurpleRoundControls(view.getContext(), () -> {
+                    if (!state.small || view.getVisibility() != View.VISIBLE) return;
                     View buttons = view.getButtonsLayout();
                     if (buttons instanceof ViewGroup && ((ViewGroup) buttons).getChildCount() > 0) ((ViewGroup) buttons).getChildAt(0).performClick();
-                }, view::togglePause, (Object[]) view.getTag(BACKGROUND_TAG),
+                }, () -> {
+                    if (state.small && view.getVisibility() == View.VISIBLE) view.togglePause();
+                }, (Object[]) view.getTag(BACKGROUND_TAG),
                         () -> ((ImageView) ((ViewGroup) view.getButtonsLayout()).getChildAt(0)).getColorFilter());
                 view.addView(state.controls);
             }

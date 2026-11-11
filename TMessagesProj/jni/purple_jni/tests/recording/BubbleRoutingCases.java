@@ -63,6 +63,16 @@ public final class BubbleRoutingCases {
                 check(s.camera.normalDispatches == 1, "native down rejects bottom inset");
             }
         }
+        Surface expanded = new Surface(v2, false);
+        View stock = expanded.camera.getButtonsLayout();
+        expanded.tap(stock.getX() + 20, stock.getY() + 20);
+        check(expanded.camera.flips == 1, "expanded stock flip click reaches native listener");
+        check(!PurpleRoundBubble.small(expanded.camera) && expanded.resized == 0, "expanded flip retains presentation");
+        expanded.camera.dispatchTouchEvent(event(MotionEvent.ACTION_DOWN, stock.getX() + 20, stock.getY() + 20));
+        expanded.camera.dispatchTouchEvent(event(MotionEvent.ACTION_MOVE, 100, 1500));
+        expanded.camera.dispatchTouchEvent(event(MotionEvent.ACTION_UP, 100, 1500));
+        check(!PurpleRoundBubble.small(expanded.camera) && expanded.resized == 0, "stock control owns stream outside button bounds");
+        check(!PurpleRoundBubble.background(expanded.camera, event(MotionEvent.ACTION_DOWN, stock.getX() + 20, stock.getY() + 20)), "parent background hit respects native controls");
         Surface s = new Surface(v2, true);
         s.tap(100, 1500);
         check(!PurpleRoundBubble.small(s.camera) && s.resized == 0, "paused background stays native");
@@ -197,15 +207,106 @@ public final class BubbleRoutingCases {
         check(controls.tint.get() == filter, "native tint remains live after pause");
     }
 
+    private static void terminal(boolean v2) {
+        implementation = v2 ? "v2 terminal" : "legacy terminal";
+        dock();
+        NativeTerminal camera = v2 ? new TerminalInstantCameraView2(new Context()) : new TerminalInstantCameraView(new Context());
+        RetainedChat chat = new RetainedChat(camera);
+        Runnable oldClose = null;
+        for (int take = 0; take < 2; take++) {
+            dock(); camera.setVisibility(View.VISIBLE);
+            camera.startAnimation(true, false);
+            if (oldClose != null) oldClose.run();
+            check(camera.getVisibility() == View.VISIBLE, "old close listener cannot hide new recording");
+            check(chat.roundVideoRecordBackground.alpha == 1, "new take owns feature backdrop");
+            camera.dispatchTouchEvent(event(MotionEvent.ACTION_DOWN, 100, 1500));
+            camera.dispatchTouchEvent(event(MotionEvent.ACTION_UP, 100, 1500));
+            View oldControls = camera.getChildAt(camera.getChildCount() - 1);
+            check(PurpleRoundBubble.small(camera) && chat.roundVideoRecordBackground.alpha == 0, "minimize releases feature backdrop");
+            chat.nativeDim = true;
+            camera.cancel(false);
+            check(!PurpleRecordingDock.state.active(), "native discard terminal before close animation completes");
+            chat.leave();
+            check(chat.roundVideoRecordBackground.alpha == 0 && chat.overlayView.getVisibility() == View.GONE, "pause during terminal animation cannot reacquire overlay or dim");
+            oldClose = camera.closeCompletion;
+            camera.closeCompletion.run();
+            check(camera.getVisibility() == View.INVISIBLE, "native animation listener hides camera");
+            chat.leave(); PurpleRoundBubble.pause(camera);
+            camera.redraw();
+            check(chat.roundVideoRecordBackground.alpha == 0 && chat.overlayView.getVisibility() == View.GONE, "same chat background and resume stays clear");
+            check(!PurpleRoundBubble.small(camera) && oldControls.getVisibility() == View.GONE, "terminal presentation and old controls retired");
+            check(chat.nativeDim, "unrelated native dim remains owned by native dialog");
+            int resizes = chat.resizes, flips = camera.flips, pauses = camera.pauses;
+            ((ViewGroup) oldControls).getChildAt(0).performClick();
+            ((ViewGroup) oldControls).getChildAt(1).performClick();
+            check(camera.flips == flips && camera.pauses == pauses, "late discarded controls cannot switch or pause camera");
+            PurpleRoundBubble.expand(camera); camera.redraw();
+            check(chat.resizes == resizes && chat.roundVideoRecordBackground.alpha == 0, "late expansion/layout callback cannot restore terminal dim");
+        }
+    }
+
+    private static void secondTake(boolean v2, boolean background) {
+        implementation = (v2 ? "v2" : "legacy") + " retained take background=" + background;
+        dock();
+        NativeTerminal camera = v2 ? new TerminalInstantCameraView2(new android.app.Activity()) : new TerminalInstantCameraView(new android.app.Activity());
+        RetainedChat chat = new RetainedChat(camera);
+        Runnable oldClose = null;
+        for (int take = 0; take < 3; take++) {
+            dock();
+            int resized = chat.resizes;
+            camera.setVisibility(View.VISIBLE);
+            check(camera.getButtonsLayout().alpha == 0, "native visibility initialization resets alpha only");
+            camera.startAnimation(true, false);
+            if (oldClose != null) oldClose.run();
+            View buttons = camera.getButtonsLayout();
+            check(buttons.getVisibility() == View.VISIBLE && buttons.alpha == 1, "fresh expanded take exposes native camera bar take=" + take);
+            check(camera.getVisibility() == View.VISIBLE && !PurpleRoundBubble.small(camera), "old close cannot hide fresh expanded take");
+            check(chat.resizes == resized, "fresh open restores presentation without resize callback replay");
+            int flips = camera.flips;
+            camera.dispatchTouchEvent(event(MotionEvent.ACTION_DOWN, buttons.getX() + 20, buttons.getY() + 20));
+            camera.dispatchTouchEvent(event(MotionEvent.ACTION_UP, buttons.getX() + 20, buttons.getY() + 20));
+            check(camera.flips == flips + 1 && !PurpleRoundBubble.small(camera), "visible native flip target receives expanded stream take=" + take);
+            camera.togglePause(); camera.startAnimation(true, true);
+            check(buttons.getVisibility() == View.VISIBLE && chat.resizes == resized, "expanded paused open preserves native controls without resize");
+            camera.togglePause(); camera.startAnimation(true, true);
+            check(buttons.getVisibility() == View.VISIBLE && chat.roundVideoRecordBackground.alpha == 1, "expanded resumed open retains controls and feature backdrop");
+            camera.dispatchTouchEvent(event(MotionEvent.ACTION_DOWN, 100, 1500));
+            camera.dispatchTouchEvent(event(MotionEvent.ACTION_UP, 100, 1500));
+            View compact = camera.getChildAt(camera.getChildCount() - 1);
+            camera.startAnimation(true, true);
+            check(PurpleRoundBubble.small(camera) && buttons.getVisibility() == View.INVISIBLE && compact.getVisibility() == View.VISIBLE, "compact paused open retains compact controls");
+            check(chat.roundVideoRecordBackground.alpha == 0, "compact paused open cannot acquire expanded backdrop");
+            camera.cancel(false);
+            oldClose = camera.closeCompletion;
+            if (background) chat.leave();
+            check(!PurpleRecordingDock.state.active() && chat.roundVideoRecordBackground.alpha == 0 && chat.overlayView.getVisibility() == View.GONE, "discard terminal stays clear before native close");
+            oldClose.run();
+            if (background) { chat.leave(); PurpleRoundBubble.pause(camera); }
+            PurpleRoundBubble.expand(camera); camera.redraw();
+            check(camera.getVisibility() == View.INVISIBLE && !PurpleRoundBubble.small(camera) && compact.getVisibility() == View.GONE, "closed take stays retired through retained lifecycle");
+            flips = camera.flips;
+            int pauses = camera.pauses;
+            ((ViewGroup) compact).getChildAt(0).performClick();
+            ((ViewGroup) compact).getChildAt(1).performClick();
+            check(camera.flips == flips && camera.pauses == pauses && chat.roundVideoRecordBackground.alpha == 0, "discarded controls cannot change terminal capture");
+        }
+    }
+
     public static void main(String[] args) {
         run(false); run(true);
-        System.out.println("ROUND_ROUTING_CHECKS=" + checks);
+        int terminalStart = checks; terminal(false); terminal(true);
+        System.out.println("ROUND_TERMINAL_CHECKS=" + (checks - terminalStart));
+        System.out.println("ROUND_ROUTING_CHECKS=" + terminalStart);
         int before = checks;
         bounds(false); bounds(true);
         System.out.println("ROUND_CONTROLS_PLACEMENT_CHECKS=" + (checks - before));
         before = checks;
         nativeFilter(false); nativeFilter(true);
         System.out.println("ROUND_CONTROLS_NATIVE_FILTER_CHECKS=" + (checks - before));
+        before = checks;
+        secondTake(false, false); secondTake(true, false);
+        secondTake(false, true); secondTake(true, true);
+        System.out.println("ROUND_SECOND_TAKE_CHECKS=" + (checks - before));
         System.out.println(checks + " checks, " + failures + " failures");
         if (failures != 0) throw new AssertionError("round routing failures=" + failures);
     }

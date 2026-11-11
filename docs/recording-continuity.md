@@ -40,7 +40,16 @@ base touch-dispatch seam. Native composer taps in the bottom inset pass through
 before the bubble can claim a gesture. Paused full-size previews and captures
 that the dock cannot shrink keep native routing. A native gesture stays native
 through move, up and cancel, including the small bubble's camera/pause controls.
-Small paused bubbles can still expand or drag to a saved corner.
+Small paused bubbles can still expand or drag to a saved corner. Expanded stock
+camera buttons also retain their entire native gesture, even outside the camera
+circle, so flipping does not shrink the recording. Closing a camera retires its
+small presentation and controls before the native close animation completes.
+A retained chat cannot expand a closed or hidden capture when it backgrounds,
+so reopening after docked discard does not restore the feature backdrop or input
+overlay. Fresh expanded opens restore the retained camera's native flip/flash
+bar independently of the retired small state, without replaying a resize or dim
+callback. Paused compact opens keep their compact controls. Other native dimming
+retains its own ownership.
 
 Shrinking releases the round's native recording panel for typing and shows a
 video row in the recording strip with avatar, title, timer, waveform and native
@@ -441,3 +450,18 @@ null-provider fallback, old-design defaults, pause/resume, live inversion and th
 production bubble's selected-native-button wiring. These establish tint policy
 and filter identity, not final pixels; combined-source APK/device comparison
 against native controls in light and dark is still required.
+
+The bubble regression fixture runs both production native cancel methods and
+extracts the chat animation/resize callbacks, feature-backdrop setters and
+before-leave expansion. Resource effects and animation timing are inert ports;
+close listeners are invoked explicitly. It covers pause during close, same-chat
+background/resume, repeated takes and discarded controls without resetting any
+global alpha or dialog dim. Hardware, platform animation and device rendering
+remain separate qualification.
+
+The retained-camera fixture also executes both native visibility initializers
+and derives the button-alpha animation endpoint from each backend. Three takes
+on the same chat/view cover direct discard and discard with background/resume,
+visible native-bar flip targeting, expanded and compact paused opens, and old
+close listeners after a new open. Native initializers reset alpha without fixing
+visibility, so the fixture detects a bar stranded invisible across takes.
