@@ -21,7 +21,7 @@ def run(root, output, parent=False, case='all', prepare=None, classpath=None):
     put('org/telegram/messenger/purple/PurpleRecordingDock.java','''package org.telegram.messenger.purple;public class PurpleRecordingDock{
       public static boolean roundFinalizing(int a,int g){return false;}public static boolean beginRoundFinish(int a,int g){throw new AssertionError("cap must not reserve send");}}''')
     put('org/telegram/messenger/purple/PurpleRoundJournal.java','package org.telegram.messenger.purple;public class PurpleRoundJournal{public static int registrations;public static void register(Object m,boolean secret,boolean sync){registrations++;}}')
-    put('org/telegram/messenger/purple/PurpleRecordingRegistry.java','package org.telegram.messenger.purple;public class PurpleRecordingRegistry{public static void retainFailedLegacyRound(int a,int g,String p,java.util.function.Consumer<Boolean> done){done.accept(true);}}')
+    put('org/telegram/messenger/purple/PurpleRecordingRegistry.java','package org.telegram.messenger.purple;public class PurpleRecordingRegistry{public static boolean mayDeleteFailedLegacyRound(java.io.File f){return true;}public static java.io.File legacyRoundWriter(java.io.File f){return f;}public static void retainFailedLegacyRound(int a,int g,String p,java.util.function.Consumer<Boolean> done){done.accept(true);}}')
     put('android/os/SystemClock.java','package android.os;public class SystemClock{public static long now;public static long elapsedRealtime(){return now;}}')
     put('android/os/Message.java','package android.os;public class Message{public int what,arg1,arg2;public Object obj;}')
     put('android/os/Handler.java','''package android.os;import java.util.*;public class Handler{

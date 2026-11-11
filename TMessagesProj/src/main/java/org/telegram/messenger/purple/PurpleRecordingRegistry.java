@@ -404,16 +404,30 @@ public final class PurpleRecordingRegistry {
         final File writer = new File(path);
         final PurpleRecordingSessions.LegacyFailure claim = owner == null ? null : owner.reserveLegacyFailure(key, writer);
         worker.execute(() -> {
-            boolean retained = false;
-            try {
-                final PurpleRecordingSessions current = owner == null ? sessions : owner;
-                if (current != null) retained = current.retainLegacyFailure(claim == null ? current.reserveLegacyFailure(key, writer) : claim);
-            } catch (IOException | RuntimeException failure) {
-                PurpleDiagLog.event("recordings", "failed_round", PurpleDiagLog.reason("io_failed"));
-            }
-            final boolean saved = retained;
-            AndroidUtilities.runOnUIThread(() -> done.accept(saved));
+            final PurpleRecordingSessions current = owner == null ? sessions : owner;
+            retainFailedLegacyRoundOnWorker(current, current == null ? null : claim == null ? current.reserveLegacyFailure(key, writer) : claim, done);
         });
+    }
+
+    private static void retainFailedLegacyRoundOnWorker(PurpleRecordingSessions owner, PurpleRecordingSessions.LegacyFailure claim, java.util.function.Consumer<Boolean> done) {
+        boolean retained = false;
+        try {
+            if (owner != null) retained = owner.retainLegacyFailure(claim);
+        } catch (IOException | RuntimeException failure) {
+            PurpleDiagLog.event("recordings", "failed_round", PurpleDiagLog.reason("io_failed"));
+        }
+        if (!retained && owner != null && claim != null) owner.retryLegacyFailure(claim, () -> retainFailedLegacyRoundOnWorker(owner, claim, done));
+        final boolean saved = retained;
+        AndroidUtilities.runOnUIThread(() -> done.accept(saved));
+    }
+
+    public static boolean mayDeleteFailedLegacyRound(File writer) {
+        final PurpleRecordingSessions owner = sessions;
+        return owner == null || !owner.protectsLegacyWriter(writer);
+    }
+
+    public static File legacyRoundWriter(File candidate) throws IOException {
+        return mayDeleteFailedLegacyRound(candidate) ? candidate : File.createTempFile("camera_tmp", ".mp4", candidate.getParentFile());
     }
 
     public static void retainFailedRound(int account, int guid, String path, long[] target, java.util.function.Consumer<String> done) {

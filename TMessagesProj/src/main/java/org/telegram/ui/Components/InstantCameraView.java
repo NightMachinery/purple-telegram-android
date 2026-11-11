@@ -775,7 +775,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
                     if (BuildVars.LOGS_ENABLED) {
                         FileLog.e("delete camera file");
                     }
-                    return super.delete();
+                    return org.telegram.messenger.purple.PurpleRecordingRegistry.mayDeleteFailedLegacyRound(this) && super.delete();
                 }
             };
         }
@@ -1114,7 +1114,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
             if (BuildVars.LOGS_ENABLED) {
                 FileLog.e("delete camera file by cancel");
             }
-            cameraFile.delete();
+            if (org.telegram.messenger.purple.PurpleRecordingRegistry.mayDeleteFailedLegacyRound(cameraFile)) cameraFile.delete();
             AutoDeleteMediaTask.unlockFile(cameraFile);
             cameraFile = null;
         }
@@ -3074,10 +3074,10 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
                     }
                 }
                 FileLog.d("InstantCamera handleStopRecording finish muxer");
-                if (writingToDifferentFile) {
+                if (writingToDifferentFile && (send != ENCODER_SEND_PLAYER || purpleEos.canPreview())) {
                     if (videoFile.exists()) {
                         try {
-                            videoFile.delete();
+                            if (org.telegram.messenger.purple.PurpleRecordingRegistry.mayDeleteFailedLegacyRound(videoFile)) videoFile.delete();
                         } catch (Exception e) {
                             FileLog.e("InstantCamera copying fileToWrite to videoFile, deleting videoFile error " + videoFile);
                             FileLog.e(e);
@@ -3087,7 +3087,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
                         FileLog.e("InstantCamera unable to rename file, try move file");
                         try {
                             AndroidUtilities.copyFile(fileToWrite, videoFile);
-                            fileToWrite.delete();
+                            if (org.telegram.messenger.purple.PurpleRecordingRegistry.mayDeleteFailedLegacyRound(fileToWrite)) fileToWrite.delete();
                         } catch (IOException e) {
                             FileLog.e(e);
                             FileLog.e("InstantCamera unable to move file");
@@ -3106,10 +3106,10 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
             if (send == ENCODER_SEND_CANCEL) {
                 FileLoader.getInstance(currentAccount).cancelFileUpload(videoFile.getAbsolutePath(), false);
                 try {
-                    fileToWrite.delete();
+                    if (org.telegram.messenger.purple.PurpleRecordingRegistry.mayDeleteFailedLegacyRound(fileToWrite)) fileToWrite.delete();
                 } catch (Throwable ignore) {}
                 try {
-                    videoFile.delete();
+                    if (org.telegram.messenger.purple.PurpleRecordingRegistry.mayDeleteFailedLegacyRound(videoFile)) videoFile.delete();
                 } catch (Throwable ignore) {}
             } else {
                 if (send == ENCODER_SEND_PLAYER && !purpleEos.hasVideoSample()) {
@@ -3338,9 +3338,9 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
                     fileToWrite = videoFile;
                     if (isSdCard) {
                         try {
-                            fileToWrite = new File(ApplicationLoader.getFilesDirFixed(), "camera_tmp.mp4");
+                            fileToWrite = org.telegram.messenger.purple.PurpleRecordingRegistry.legacyRoundWriter(new File(ApplicationLoader.getFilesDirFixed(), "camera_tmp.mp4"));
                             if (fileToWrite.exists()) {
-                                fileToWrite.delete();
+                                if (org.telegram.messenger.purple.PurpleRecordingRegistry.mayDeleteFailedLegacyRound(fileToWrite)) fileToWrite.delete();
                             }
                             writingToDifferentFile = true;
                         } catch (Throwable e) {

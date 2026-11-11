@@ -89,6 +89,7 @@ public final class PurpleRecordingSessions {
     private final PurpleRecordingStore store;
     private final Env env;
     private final Map<String, Session> sessions = new HashMap<>();
+    private final java.util.concurrent.ConcurrentHashMap<String, LegacyFailure> legacyFailures = new java.util.concurrent.ConcurrentHashMap<>();
     private File pendingMedia;
     private File pendingJournal;
     private long pendingAt;
@@ -318,23 +319,53 @@ public final class PurpleRecordingSessions {
 
     static final class LegacyFailure {
         final Session session;
-        boolean retained;
-        LegacyFailure(Session session) { this.session = session; }
+        final Part part;
+        final String writer, key;
+        volatile boolean retained;
+        boolean retryScheduled;
+        LegacyFailure(Session session) {
+            this.session = session; part = session.current;
+            writer = part.file.getAbsolutePath(); key = session.key + "\n" + writer;
+        }
     }
 
     synchronized LegacyFailure reserveLegacyFailure(String key, File writer) {
+        final LegacyFailure pending = legacyFailures.get(key + "\n" + writer.getAbsolutePath());
+        if (pending != null) return pending;
         final Session session = sessions.get(key);
         if (session == null || !session.round || session.capture != null || session.current.file == null
                 || !session.current.file.getAbsolutePath().equals(writer.getAbsolutePath())) return null;
-        if (session.legacyFailure == null) session.legacyFailure = new LegacyFailure(session);
+        if (session.legacyFailure == null) {
+            session.legacyFailure = new LegacyFailure(session);
+            legacyFailures.put(session.legacyFailure.key, session.legacyFailure);
+        }
         return session.legacyFailure;
+    }
+
+    boolean protectsLegacyWriter(File writer) {
+        for (LegacyFailure failure : legacyFailures.values()) {
+            if (!failure.retained && failure.writer.equals(writer.getAbsolutePath())) return true;
+        }
+        return false;
+    }
+
+    synchronized void retryLegacyFailure(LegacyFailure failure, Runnable retry) {
+        if (failure.retained || failure.retryScheduled) return;
+        failure.retryScheduled = true;
+        env.schedule(() -> {
+            synchronized (PurpleRecordingSessions.this) {
+                failure.retryScheduled = false;
+                if (failure.retained) return;
+            }
+            retry.run();
+        }, SENDING_CHECK_MS);
     }
 
     synchronized boolean retainLegacyFailure(LegacyFailure failure) throws IOException {
         if (failure == null) return false;
         if (failure.retained) return true;
         final Session session = failure.session;
-        final Part part = session.current;
+        final Part part = failure.part;
         if (part.held == null) throw new IOException("no registered round writer");
         part.entry.awaitingQueue = true;
         store.update(part.entry);
@@ -342,6 +373,7 @@ public final class PurpleRecordingSessions {
         final String journal = part.entry.journal;
         store.keepFailed(part.entry, part.held, env.now() / 1000);
         failure.retained = true;
+        legacyFailures.remove(failure.key, failure);
         detach(session);
         for (Part owned : session.parts()) owned.close();
         env.closeJournal(journal);

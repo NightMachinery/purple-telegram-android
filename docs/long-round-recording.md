@@ -83,8 +83,28 @@ end a replacement session. A superseding start or late cancel cannot drop the
 reserved entry before settlement. If persistence fails, codecs are already
 released but the native UI owner stays latched; the original manifest/journal
 and held ownership remain available for recovery instead of reporting success.
+Failed reservations also live in a separate writer-identity claim map until
+settlement, independently of the active session. A failed copy or manifest save
+schedules a worker retry against that same claim; Cancel, end and replacement
+cannot remove it. Native Cancel still releases its UI file reference and emits
+its ordinary stop event, but unlink of a reserved writer is fenced until the
+owned bin copy and settlement succeed. The camera File deletion override and
+encoder cleanup share that fence. A failed SD writer stays at its registered
+temporary pathname instead of being relocated, and a later SD take gets a fresh
+temporary name rather than reusing the reserved source. Successful settlement
+retires the claim and restores ordinary source deletion. Retries retain media
+locally and never send a message.
+
 A process loss before the worker syncs recovery intent retains only the prior
 manifest guarantee; this does not introduce a new crash transaction/schema.
+After synced intent, a failed copy followed by native Cancel keeps the named
+writer and journal discoverable at restart even while the bin destination is
+unavailable. The host regression executes actual Cancel, reason6 registry
+session discard and Store reconstruction before any successful retry for both
+indexed and unfinished media, then restores storage and verifies one settlement
+after replacement without touching its writer. Its SD case checks native failed
+finalization and protected temporary-name selection. Camera, codec, repair and
+Android filesystem behavior remain ports or device qualification requirements.
 
 The finalization regression composes complete native stop/drain/producer and
 registry dispatch with real Sessions, Store, Files and synced Manifest classes.
