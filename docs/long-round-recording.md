@@ -90,26 +90,29 @@ qualification must check both recorder adapters, boundary audio and video,
 cancellation, storage pressure, partial sends and the stock AlertDialog review
 beside a stock confirmation in light, dark, long text and RTL layouts.
 
-The owned stock AlertDialog review and preparation-error dialogs pass dismissal
-through BaseFragment.showDialog's callback overload. Cancellation, back, outside
-dismissal and a refused native show close the active request so the same bin entry
-can be reviewed again. A deliberately replaced review marks its format choice
-before opening the next spinner, and completed preparation clears that spinner's
-ownership before dismissing it. Unexpected spinner replacement cancels pending
-work; late results cannot reopen review. The preinstalled callback also covers
-the native sheet-owned show path, which returns before BaseFragment wraps it.
+The owned stock AlertDialog review, preparation-error dialog and spinner attach
+cleanup to the builder's internal pre-dismiss hook. BaseFragment and its shown
+StoryViewer or PremiumPreviewBottomSheet may replace Android's dismissal
+listener; that native listener remains available for playback, visual and fragment
+cleanup. The internal hook runs independently and closes the active request on
+cancellation, back, outside dismissal or unexpected spinner dismissal, allowing
+the same bin entry to be reviewed again. A refused show closes the request too.
+A deliberately replaced review marks its format choice before opening the next
+spinner, and completed preparation clears that spinner's ownership before
+intentional dismissal. Late worker results cannot reopen a closed request.
 
-Host regressions execute the actual review, preparation and cleanup methods with
-all three extracted BaseFragment.showDialog overloads, including native listener
-replacement and transition refusal. Exact-parent controls fail cancellation and
-preparation-error dismissal; corrected code permits same-entry retry, preserves
-native dismissal cleanup and keeps neutral/fallback work alive. Circles remain
-the default, cancellation enqueues nothing, paid approval covers the prepared
-count, and duplicate or late approval cannot restart or abort an accepted sequence.
-AlertDialog buttons, Android window rendering, handlers, workers and media
-preparation remain ports. This source ordering evidence does not establish that
-the observed device retry was this exact runtime instance, or replace a device
-cancellation/retry and decoded-media pass.
+Host regressions execute the actual review, preparation and cleanup methods,
+all three BaseFragment.showDialog overloads, both native sheet showDialog
+implementations, AlertDialog.dismiss and its internal pre-dismiss setter.
+Exact-parent controls reproduce lost cleanup for review, preparation error and
+spinner in each sheet. Corrected code preserves both owned request cleanup and
+native sheet cleanup, permits same-entry retry and keeps neutral/fallback work
+alive. Circles remain the default, cancellation enqueues nothing, paid approval
+covers the prepared count, and duplicate or late approval cannot restart or abort
+an accepted sequence. Android window and button dispatch, handlers, workers,
+media preparation, playback and texture surfaces remain ports. This source
+ordering evidence does not attribute the observed device retry to an exact
+runtime callback, or replace a device cancellation/retry and decoded-media pass.
 
 Before V2 exposes a completed long preview or finishes a long active take, its
 serialized file worker reserves that exact full source in the existing Recording

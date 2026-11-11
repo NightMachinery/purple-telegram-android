@@ -1000,7 +1000,8 @@
         "recording-dock:LONG_ROUND_PAYMENT_CHECKS": 6,
         "recording-dock:LONG_ROUND_DURABLE_CHECKS": 26,
         "recording-dock:LONG_ROUND_NATIVE_OWNERSHIP_CHECKS": 32,
-        "recording-dock:LONG_ROUND_DIALOG_LIFECYCLE_CHECKS": 30
+        "recording-dock:LONG_ROUND_DIALOG_LIFECYCLE_CHECKS": 30,
+        "recording-dock:LONG_ROUND_SHEET_LIFECYCLE_CHECKS": 50
       }
     },
     {

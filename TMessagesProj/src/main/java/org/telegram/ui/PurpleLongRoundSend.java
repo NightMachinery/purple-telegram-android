@@ -1,7 +1,5 @@
 package org.telegram.ui;
 
-import android.content.DialogInterface;
-
 import java.io.File;
 import java.lang.ref.WeakReference;
 import java.util.HashMap;
@@ -105,11 +103,13 @@ public final class PurpleLongRoundSend {
         void prepare(boolean circles) {
             final BaseFragment host = host();
             if (host == null || arguments[0] == null) { finish(false); return; }
-            final AlertDialog spinner = new AlertDialog(host.getParentActivity(), AlertDialog.ALERT_TYPE_SPINNER, host.getResourceProvider());
+            final AlertDialog.Builder spinnerBuilder = new AlertDialog.Builder(host.getParentActivity(), AlertDialog.ALERT_TYPE_SPINNER, host.getResourceProvider());
+            final AlertDialog spinner = spinnerBuilder.create();
             progress = spinner;
             spinner.setMessage(text(R.string.PurpleLongRoundPreparing));
             spinner.setOnCancelListener(dialog -> finish(false));
-            if (!showOwnedDialog(host, spinner, dialog -> { if (progress == spinner) finish(false); })) return;
+            spinnerBuilder.setOnPreDismissListener(dialog -> { if (progress == spinner) finish(false); });
+            if (!showOwnedDialog(host, spinner)) return;
             spinner.setCanceledOnTouchOutside(false);
             preparing = true;
             worker.execute(() -> {
@@ -147,7 +147,8 @@ public final class PurpleLongRoundSend {
             if (circles && !invalidSelection) builder.setPositiveButton(text(R.string.PurpleLongRoundVideo), (dialog, which) -> {
                 if (retry.compareAndSet(false, true)) prepare(false);
             });
-            showOwnedDialog(host, builder.create(), dialog -> { if (!retry.get()) finish(false); });
+            builder.setOnPreDismissListener(dialog -> { if (!retry.get()) finish(false); });
+            showOwnedDialog(host, builder.create());
         }
 
         void confirm() {
@@ -178,12 +179,12 @@ public final class PurpleLongRoundSend {
                     enqueue(paid);
                 }, 0);
             });
-            showOwnedDialog(host, builder.create(), dialog -> { if (!approved.get()) finish(false); });
+            builder.setOnPreDismissListener(dialog -> { if (!approved.get()) finish(false); });
+            showOwnedDialog(host, builder.create());
         }
-        boolean showOwnedDialog(BaseFragment host, AlertDialog dialog, DialogInterface.OnDismissListener onDismiss) {
-            dialog.setOnDismissListener(onDismiss);
+        boolean showOwnedDialog(BaseFragment host, AlertDialog dialog) {
             try {
-                if (host.showDialog(dialog, onDismiss) != null) return !closed;
+                if (host.showDialog(dialog) != null) return !closed;
             } catch (Exception failure) {
                 PurpleDiagLog.event("recordings", "long_dialog", PurpleDiagLog.reason("io_failed"));
             }
