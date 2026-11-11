@@ -973,6 +973,7 @@
         "recording-dock:RETRY_IDENTITY_CHECKS": 46,
         "recording-dock:ROUND_ROUTING_CHECKS": 120,
         "recording-dock:ROUND_TERMINAL_CHECKS": 42,
+        "recording-dock:ROUND_SECOND_TAKE_CHECKS": 140,
         "recording-dock:RECORDING_LIFETIME_CHECKS": 13,
         "recording-dock:RECORDING_STRIP_SCOPE_CHECKS": 6,
         "recording-dock:BIN_PLAYER_CHECKS": 24,

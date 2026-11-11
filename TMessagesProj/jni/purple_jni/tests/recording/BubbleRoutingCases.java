@@ -245,6 +245,53 @@ public final class BubbleRoutingCases {
         }
     }
 
+    private static void secondTake(boolean v2, boolean background) {
+        implementation = (v2 ? "v2" : "legacy") + " retained take background=" + background;
+        dock();
+        NativeTerminal camera = v2 ? new TerminalInstantCameraView2(new android.app.Activity()) : new TerminalInstantCameraView(new android.app.Activity());
+        RetainedChat chat = new RetainedChat(camera);
+        Runnable oldClose = null;
+        for (int take = 0; take < 3; take++) {
+            dock();
+            int resized = chat.resizes;
+            camera.setVisibility(View.VISIBLE);
+            check(camera.getButtonsLayout().alpha == 0, "native visibility initialization resets alpha only");
+            camera.startAnimation(true, false);
+            if (oldClose != null) oldClose.run();
+            View buttons = camera.getButtonsLayout();
+            check(buttons.getVisibility() == View.VISIBLE && buttons.alpha == 1, "fresh expanded take exposes native camera bar take=" + take);
+            check(camera.getVisibility() == View.VISIBLE && !PurpleRoundBubble.small(camera), "old close cannot hide fresh expanded take");
+            check(chat.resizes == resized, "fresh open restores presentation without resize callback replay");
+            int flips = camera.flips;
+            camera.dispatchTouchEvent(event(MotionEvent.ACTION_DOWN, buttons.getX() + 20, buttons.getY() + 20));
+            camera.dispatchTouchEvent(event(MotionEvent.ACTION_UP, buttons.getX() + 20, buttons.getY() + 20));
+            check(camera.flips == flips + 1 && !PurpleRoundBubble.small(camera), "visible native flip target receives expanded stream take=" + take);
+            camera.togglePause(); camera.startAnimation(true, true);
+            check(buttons.getVisibility() == View.VISIBLE && chat.resizes == resized, "expanded paused open preserves native controls without resize");
+            camera.togglePause(); camera.startAnimation(true, true);
+            check(buttons.getVisibility() == View.VISIBLE && chat.roundVideoRecordBackground.alpha == 1, "expanded resumed open retains controls and feature backdrop");
+            camera.dispatchTouchEvent(event(MotionEvent.ACTION_DOWN, 100, 1500));
+            camera.dispatchTouchEvent(event(MotionEvent.ACTION_UP, 100, 1500));
+            View compact = camera.getChildAt(camera.getChildCount() - 1);
+            camera.startAnimation(true, true);
+            check(PurpleRoundBubble.small(camera) && buttons.getVisibility() == View.INVISIBLE && compact.getVisibility() == View.VISIBLE, "compact paused open retains compact controls");
+            check(chat.roundVideoRecordBackground.alpha == 0, "compact paused open cannot acquire expanded backdrop");
+            camera.cancel(false);
+            oldClose = camera.closeCompletion;
+            if (background) chat.leave();
+            check(!PurpleRecordingDock.state.active() && chat.roundVideoRecordBackground.alpha == 0 && chat.overlayView.getVisibility() == View.GONE, "discard terminal stays clear before native close");
+            oldClose.run();
+            if (background) { chat.leave(); PurpleRoundBubble.pause(camera); }
+            PurpleRoundBubble.expand(camera); camera.redraw();
+            check(camera.getVisibility() == View.INVISIBLE && !PurpleRoundBubble.small(camera) && compact.getVisibility() == View.GONE, "closed take stays retired through retained lifecycle");
+            flips = camera.flips;
+            int pauses = camera.pauses;
+            ((ViewGroup) compact).getChildAt(0).performClick();
+            ((ViewGroup) compact).getChildAt(1).performClick();
+            check(camera.flips == flips && camera.pauses == pauses && chat.roundVideoRecordBackground.alpha == 0, "discarded controls cannot change terminal capture");
+        }
+    }
+
     public static void main(String[] args) {
         run(false); run(true);
         int terminalStart = checks; terminal(false); terminal(true);
@@ -256,6 +303,10 @@ public final class BubbleRoutingCases {
         before = checks;
         nativeFilter(false); nativeFilter(true);
         System.out.println("ROUND_CONTROLS_NATIVE_FILTER_CHECKS=" + (checks - before));
+        before = checks;
+        secondTake(false, false); secondTake(true, false);
+        secondTake(false, true); secondTake(true, true);
+        System.out.println("ROUND_SECOND_TAKE_CHECKS=" + (checks - before));
         System.out.println(checks + " checks, " + failures + " failures");
         if (failures != 0) throw new AssertionError("round routing failures=" + failures);
     }

@@ -46,6 +46,7 @@ public final class PurpleRoundBubble {
             if (state.controls != null) state.controls.setVisibility(View.GONE);
         }
         if (state != null && open && !fromPaused && state.small) resize(view, state, false);
+        if (state != null && open && !state.small) view.getButtonsLayout().setVisibility(View.VISIBLE);
         return open && (state == null || !state.small);
     }
     public static void expand(InstantCameraViewBase view) {

@@ -46,7 +46,10 @@ circle, so flipping does not shrink the recording. Closing a camera retires its
 small presentation and controls before the native close animation completes.
 A retained chat cannot expand a closed or hidden capture when it backgrounds,
 so reopening after docked discard does not restore the feature backdrop or input
-overlay. Other native dimming retains its own ownership.
+overlay. Fresh expanded opens restore the retained camera's native flip/flash
+bar independently of the retired small state, without replaying a resize or dim
+callback. Paused compact opens keep their compact controls. Other native dimming
+retains its own ownership.
 
 Shrinking releases the round's native recording panel for typing and shows a
 video row in the recording strip with avatar, title, timer, waveform and native
@@ -455,3 +458,10 @@ close listeners are invoked explicitly. It covers pause during close, same-chat
 background/resume, repeated takes and discarded controls without resetting any
 global alpha or dialog dim. Hardware, platform animation and device rendering
 remain separate qualification.
+
+The retained-camera fixture also executes both native visibility initializers
+and derives the button-alpha animation endpoint from each backend. Three takes
+on the same chat/view cover direct discard and discard with background/resume,
+visible native-bar flip targeting, expanded and compact paused opens, and old
+close listeners after a new open. Native initializers reset alpha without fixing
+visibility, so the fixture detects a bar stranded invisible across takes.
