@@ -15,6 +15,7 @@ parser.add_argument("--reviewed-classes", type=Path)
 parser.add_argument("--reviewed-ui", type=Path)
 parser.add_argument("--parent-classes", type=Path)
 parser.add_argument("--parent-ui", type=Path)
+parser.add_argument("--parent-kind", choices=["routing", "cached"], default="routing")
 parser.add_argument("--phase", choices=["all", "compile", "run"], default="all")
 args = parser.parse_args()
 receipt = json.loads(args.receipt.read_text())
@@ -126,8 +127,8 @@ writer_sources += writer_generated
 commands.append(("native-javac", [compiler, "-source", "8", "-target", "8", "-proc:none", "-sourcepath", empty,
     "-cp", classpath, "-d", writer_out, *writer_sources]))
 for name, origin, main, mode in [("native-writer", classes, "NativeWriterCurrent", "current"),
-        *([("parent-writer", args.parent_classes, "NativeWriterParent", "parent")] if args.parent_classes else [])]:
-    assert mode != "parent" or args.parent_ui
+        *([("parent-writer", args.parent_classes, "NativeWriterParent", "cached-parent" if args.parent_kind == "cached" else "parent")] if args.parent_classes else [])]:
+    assert mode not in ["parent", "cached-parent"] or args.parent_ui
     scratch = fixtures / name
     if args.phase in ["all", "compile"]: scratch.mkdir()
     commands.append((name, [compiler.with_name("java"), "-Xcheck:jni", "-Xmx512m", "-XX:ActiveProcessorCount=2",

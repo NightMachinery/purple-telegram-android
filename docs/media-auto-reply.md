@@ -81,3 +81,12 @@ the editor validates the committed file receipt, live account and view through
 refresh before acknowledging and closing. Native writer controls use actual AGP
 writer/routing/editor classes and real JNI publication over controlled account,
 view and filesystem-context ports. They do not render UI or run live sync.
+
+Picker admission derives fresh effective policy from the writer's captured own,
+global and fallback file bytes using the existing native layering and projection.
+It does not trust a cached Effective while a watcher invalidation is queued. A
+newer external membership therefore refuses an obsolete selection before any
+publication or acknowledgement. The actual-writer fixture retains cached
+Effective values until explicit invalidation and covers both that interval and
+changes during publication/refresh, with the exact reviewed picker as a negative
+control. Unrelated settings callers keep their existing cache behavior.

@@ -35,6 +35,19 @@ Java_org_telegram_messenger_purple_PurpleMediaReply_policyNative(
 }
 
 extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleRoutedWriteModel_mediaReplyPolicyNative(
+        JNIEnv *env, jclass type, jbyteArray global, jstring globalPath, jbyteArray globalGood,
+        jbyteArray own, jstring ownPath, jbyteArray ownGood) {
+    const auto epoch = Java_org_telegram_messenger_purple_PurpleAccountSettings_epochNative(env, type);
+    const auto handle = Java_org_telegram_messenger_purple_PurpleAccountSettings_createNative(
+        env, type, epoch, global, globalPath, globalGood, own, ownPath, ownGood);
+    if (!handle) return nullptr;
+    const auto result = Java_org_telegram_messenger_purple_PurpleMediaReply_policyNative(env, type, handle);
+    Java_org_telegram_messenger_purple_PurpleAccountSettings_releaseNative(env, type, handle);
+    return result;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
 Java_org_telegram_messenger_purple_PurpleMediaReply_planNative(
         JNIEnv *env, jclass, jlong handle, jstring account, jstring peer,
         jint kind, jint id, jint topic, jlong date, jint media, jboolean own,

@@ -1046,7 +1046,7 @@
         "status-full:MEDIA_REPLY_STATUS_CHECKS": 3,
         "presentation:MEDIA_REPLY_PRESENTATION_CHECKS": 13,
         "picker:MEDIA_REPLY_PICKER_CHECKS": 9,
-        "native-writer:MEDIA_REPLY_NATIVE_WRITER_CHECKS": 21
+        "native-writer:MEDIA_REPLY_NATIVE_WRITER_CHECKS": 34
       },
       "coverage": "Actual AGP adapter/store/presentation classes, actual JNI policy, faithful platform silent-commit control, checked write/sync/close/replace/directory-stat/directory-sync/readback failures, bounded account refusal/capacity, inherited round presentation, actual AGP writer/routed/editor publication with two accounts and JNI, literal native picker/global current-view and context guards over controlled views/context. No GUI or live transport."
     }

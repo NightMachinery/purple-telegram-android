@@ -218,11 +218,9 @@ public final class PurpleMediaReplySettingsActivity extends UniversalFragment {
         if (!openingOwner.current() || origin.getCurrentAccount() != openingOwner.slot) return false;
         PurpleWriter.Session session = PurpleWriterUI.captureMediaReplyOrExplain(origin, this::rebuild);
         if (session == null) return false;
-        session.guardBeforePublish(() -> {
-            JSONObject current = PurpleMediaReply.policy(openingOwner.slot);
-            return openingOwner.current() && current != null
-                    && (expectedPolicy == null || expectedPolicy.equals(current.toString()));
-        });
+        final JSONObject capturedPolicy = session.mediaReplyPolicy();
+        session.guardBeforePublish(() -> openingOwner.current() && capturedPolicy != null
+                && (expectedPolicy == null || expectedPolicy.equals(capturedPolicy.toString())));
         String error = PurpleWriter.setMediaReplyValue(session, row, key, value);
         if (error != null) BulletinFactory.of(origin).createErrorBulletin(error).show();
         rebuild(); return error == null;

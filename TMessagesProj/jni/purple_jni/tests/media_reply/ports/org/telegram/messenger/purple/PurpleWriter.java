@@ -6,6 +6,7 @@ public final class PurpleWriter {
  public static final class Session {
   final Current view;Current guard=()->true;
   public Session(Current view){this.view=view;}
+  public org.json.JSONObject mediaReplyPolicy(){return PurpleMediaReply.policy(0);}
   public void guard(Current value){guard=value;}
   public void guardBeforePublish(Current value){guard=value;}
   public boolean current(){return view.current()&&guard.current();}

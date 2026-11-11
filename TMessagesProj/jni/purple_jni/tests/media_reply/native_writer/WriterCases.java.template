@@ -11,6 +11,16 @@ public class @CLASS@ extends BaseFragment {
  public static void main(String[] args)throws Exception {
   System.load(args[0]);boolean parent=args[1].equals("parent");
   check(new java.io.File(PurpleWriter.class.getProtectionDomain().getCodeSource().getLocation().toURI()).getCanonicalPath().equals(new java.io.File(args[2]).getCanonicalPath()),"exact native writer bytecode origin");
+  if(args[1].equals("cached-parent")){
+   for(String mode:new String[]{"follow","own"})for(int account:new int[]{0,1}){
+    @CLASS@ stale=fresh(account,mode);stale.select();JSONObject cached=PurpleMediaReply.policy(account);
+    NativeWriterFixture.replace(account,"version=2\n[media_reply.sets.Pick]\npeers=['user:99']\n");
+    check(PurpleMediaReply.policy(account).toString().equals(cached.toString()),"exact parent holds cached Effective before queued watcher invalidation");
+    stale.picker.choose(17);
+    check(stale.picker.isFinished&&NativeWriterFixture.synced==1&&NativeWriterFixture.text(account).contains("user:8")&&NativeWriterFixture.text(account).contains("user:17")&&!NativeWriterFixture.text(account).contains("user:99"),"exact reviewed parent loses newer external member and acknowledges stale selection");
+   }
+   System.out.println("MEDIA_REPLY_CACHED_PARENT_VIOLATIONS="+checks);return;
+  }
   @CLASS@ screen=fresh(1,"follow");String global=NativeWriterFixture.text(0),own=NativeWriterFixture.text(1),local=NativeWriterFixture.local();
   boolean ack=screen.write("private","voice","both");
   if(parent){
@@ -32,6 +42,17 @@ public class @CLASS@ extends BaseFragment {
   screen=fresh(1,"follow");screen.select();NativeWriterFixture.replace(1,"version=2\n[media_reply.sets.Pick]\npeers=['user:99']\n");screen.picker.choose(17);check(NativeWriterFixture.writes==0&&!screen.picker.isFinished&&NativeWriterFixture.text(1).contains("user:99"),"external opening membership replacement refuses");
   screen=fresh(1,"follow");screen.select();NativeWriterFixture.duringWrite=()->NativeWriterFixture.replace(1,"version=2\n[media_reply.sets.Pick]\npeers=['user:77']\n");screen.picker.choose(17);check(!screen.picker.isFinished&&NativeWriterFixture.synced==0&&NativeWriterFixture.text(1).contains("user:77"),"replacement during real backup write refuses target publication");
   screen=fresh(1,"follow");screen.select();NativeWriterFixture.afterRefresh=()->NativeWriterFixture.replace(1,"version=2\n[media_reply.sets.Pick]\npeers=['user:66']\n");screen.picker.choose(17);check(!screen.picker.isFinished&&NativeWriterFixture.synced==0&&NativeWriterFixture.text(1).contains("user:66"),"post-publication external replacement fails expected committed snapshot ACK");
+  for(String mode:new String[]{"follow","own"})for(int account:new int[]{0,1}){
+   screen=fresh(account,mode);screen.select();String cached=PurpleMediaReply.policy(account).toString(),other=NativeWriterFixture.text(1-account);
+   NativeWriterFixture.replace(account,"version=2\n[media_reply.sets.Pick]\npeers=['user:99']\n");
+   check(PurpleMediaReply.policy(account).toString().equals(cached),"Effective remains cached until explicit watcher invalidation");
+   screen.picker.choose(17);int writes=NativeWriterFixture.writes;
+   check(writes==0&&NativeWriterFixture.synced==0&&NativeWriterFixture.notified==0&&!screen.picker.isFinished&&NativeWriterFixture.text(account).contains("user:99")&&NativeWriterFixture.text(1-account).equals(other),"fresh captured-input admission refuses stale selection before writer capture without publication or ACK");
+   PurpleAccountSettings.invalidate();screen.picker.choose(17);
+   check(NativeWriterFixture.writes==writes&&NativeWriterFixture.synced==0&&!screen.picker.isFinished&&NativeWriterFixture.text(account).contains("user:99"),"delayed watcher and duplicate callback cannot revive obsolete opening policy");
+  }
+  screen=fresh(1,"follow");screen.select();String defaults=screen.policy.getJSONArray("defaults").toString();screen.picker.choose(17);int published=NativeWriterFixture.writes;screen.picker.choose(17);
+  check(screen.picker.isFinished&&NativeWriterFixture.writes==published&&NativeWriterFixture.synced==1&&PurpleMediaReply.policy(1).getJSONArray("defaults").toString().equals(defaults),"duplicate successful callback refuses and independent default inheritance remains unchanged");
   screen=fresh(1,"follow");NativeWriterFixture.ordinaryFollowControl();check(NativeWriterFixture.mode()==1,"ordinary Work Mode route remains global");
   System.out.println("MEDIA_REPLY_NATIVE_WRITER_CHECKS="+checks);
  }

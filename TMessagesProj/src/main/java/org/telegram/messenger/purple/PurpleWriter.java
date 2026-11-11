@@ -77,6 +77,11 @@ public final class PurpleWriter {
                     && java.util.Objects.equals(context.owner, PurpleAccountOwner.owner())
                     && java.util.Objects.equals(globalKey, PurpleAccountOwner.global());
         }
+        public org.json.JSONObject mediaReplyPolicy() {
+            if (!ownAccount) return null;
+            try { return model.mediaReplyPolicy(); }
+            catch (Exception | UnsatisfiedLinkError e) { return null; }
+        }
         public void retire() { retired = true; }
         public void guard(Current action) { this.action = action; }
         public void guardBeforePublish(Current admission) { this.admission = admission; }

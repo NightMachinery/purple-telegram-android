@@ -45,6 +45,15 @@ final class PurpleRoutedWriteModel {
 
     byte[] bytes() { return editor.openedText.getBytes(StandardCharsets.UTF_8); }
     boolean current() { return editor.current(); }
+    JSONObject mediaReplyPolicy() throws Exception {
+        if (!current()) return null;
+        JSONObject result = new JSONObject(mediaReplyPolicyNative(global, globalFile.getPath(),
+                editor.capturedBytes(new File(globalFile.getPath() + ".good")), own, ownFile.getPath(),
+                editor.capturedBytes(new File(ownFile.getPath() + ".good"))));
+        return current() ? result : null;
+    }
+    static native String mediaReplyPolicyNative(byte[] global, String globalPath, byte[] globalGood,
+            byte[] own, String ownPath, byte[] ownGood);
     JSONObject lists(long peer) throws Exception {
         if (!current()) return null;
         JSONObject result = new JSONObject(listNative(local, own, ownFile.getPath(), global, globalFile.getPath(), key, globalKey, null, peer, false, null));
