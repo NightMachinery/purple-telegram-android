@@ -673,6 +673,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
 
     public void togglePause() {
         if (recording) {
+            if (videoEncoder != null) recordedTime = videoEncoder.purpleBudget.durationMs();
             cancelled = recordedTime < 800;
             recording = false;
             updateFlash();
@@ -690,6 +691,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
                 videoEncoder.pause();
             }
         } else if (videoEncoder != null) {
+            if (!videoEncoder.purpleBudget.canResume()) return;
             videoEncoder.resume();
             hideCamera(false);
             if (videoPlayer != null) {
@@ -1034,6 +1036,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
             }
             MediaController.getInstance().requestRecordAudioFocus(false);
         } else {
+            if (videoEncoder != null) recordedTime = videoEncoder.purpleBudget.durationMs();
             cancelled = recordedTime < 800;
             recording = false;
             flashing = false;
@@ -2184,6 +2187,17 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
 
     private class VideoRecorder implements Runnable {
         private final long purpleAudioLimitUs = purpleRoundLimitMs * 1000L;
+        private final org.telegram.messenger.purple.PurpleLegacyRoundBudget purpleBudget =
+                new org.telegram.messenger.purple.PurpleLegacyRoundBudget(currentAccount, recordingGuid, purpleRoundLimitMs);
+
+        private void purpleLimitPreview() {
+            AndroidUtilities.runOnUIThread(() -> {
+                if (InstantCameraView.this.videoEncoder != this || cancelled || !recording
+                        || currentAccount != purpleBudget.account || recordingGuid != purpleBudget.guid) return;
+                recordedTime = purpleBudget.durationMs();
+                send(3, true, 0, 0, 0, 0, 0);
+            });
+        }
 
         private static final String VIDEO_MIME_TYPE = "video/avc";
         private static final String AUDIO_MIME_TYPE = "audio/mp4a-latm";
@@ -2611,6 +2625,14 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
                         if (prevAudioLast >= 0) {
                             time += prevAudioLast;
                         }
+                        int admitted = purpleBudget.audioBytes(time, inputBuffer.position(), audioSampleRate);
+                        if (admitted < inputBuffer.position()) {
+                            inputBuffer.position(admitted);
+                            audioStopedByTime = isLast = true;
+                            input = null;
+                            buffersToWrite.clear();
+                        }
+                        time = purpleBudget.audioTimeUs(time);
                         audioLastDt = time - audioLast;
                         audioLast = time;
                         audioEncoder.queueInputBuffer(inputBufferIndex, 0, inputBuffer.position(), time, isLast ? MediaCodec.BUFFER_FLAG_END_OF_STREAM : 0);
@@ -2675,6 +2697,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
                 }
                 skippedFirst = true;
             }
+            if (!purpleBudget.video(currentTimestamp + dt)) return;
             currentTimestamp += dt;
             if (videoFirst == -1) {
                 videoFirst = timestampNanos / 1000;
@@ -2803,6 +2826,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
         }
 
         private void handlePauseRecording() {
+            purpleBudget.pause();
             pauseRecorder = true;
             if (previewFile != null) {
                 previewFile.delete();
@@ -2951,6 +2975,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
         private boolean sentMedia;
 
         private void handleStopRecording(final int send, final SendOptions sendOptions) {
+            purpleBudget.stop();
             final boolean runDone;
             if (send == ENCODER_SEND_SEND && (videoEditedInfo == null || !videoEditedInfo.needConvert()) && !delegate.isInScheduleMode()) {
                 runDone = false;
@@ -3255,6 +3280,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
 
                 audioRecorder = new AudioRecord(MediaRecorder.AudioSource.DEFAULT, audioSampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufferSize);
                 audioRecorder.startRecording();
+                purpleBudget.resume(handler, this::purpleLimitPreview);
                 if (BuildVars.LOGS_ENABLED) {
                     FileLog.d("InstantCamera initied audio record with channels " + audioRecorder.getChannelCount() + " sample rate = " + audioRecorder.getSampleRate() + " bufferSize = " + bufferSize);
                 }

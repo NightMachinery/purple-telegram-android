@@ -12,14 +12,28 @@ not change the shared core settings schema. UniversalFragment UItem buttons,
 AlertDialog item choosers and the stock Minutes plural supply settings UI. New
 explanatory text lives in purple_strings.xml.
 
-Legacy captures the selected limit when a new take starts, retains it on resume,
-and snapshots it for its encoder's audio drain. Its progress ring uses the same
-limit. The composer timer keeps the existing half-second stop margin and reads
-the setting only for a new take. V2 passes the selected limit to the existing
-RoundVideoSession builder; native duration timers, trim/resume admission and
-finalization already use that immutable session limit. V2 progress reads the
-session's actual maximum. One-minute behavior retains the existing59.5s composer
-stop and60s native/audio bounds.
+Legacy captures account, recording guid and the selected limit in each native
+recorder. A recorder-handler deadline and codec admission use a cumulative active
+budget, excluding paused time. Neither depends on composer, ring or dock draws.
+The existing half-second stop margin applies in expanded, docked and pending
+discard-confirmation states. Video PTS at or beyond that boundary are rejected;
+PCM is restricted to complete mono16 samples before it, including cumulative
+resume offsets, and empty EOS timestamps cannot exceed it. Encoder padding and
+video-frame duration remain codec-dependent. The500ms reserve accommodates the
+nominal30fps frame and1024-sample AAC packet; host tests prove input admission,
+not measured Android output duration or instant camera/microphone release.
+
+The native deadline posts exactly one generation-fenced call to the existing
+local-preview stop. While that UI callback is delayed, admission remains closed
+for over-budget input. Cancellation or another recorder cannot be replaced by
+the old callback. Pause removes its deadline, resume uses only remaining active
+time, and stop/start failure retires it. No cap callback sends a message or
+changes the captured destination. Existing native stop/drain, file ownership and
+original retention paths remain in charge of finalization. The legacy progress
+ring and composer timer use the captured limit as before; the composer keeps its
+half-second margin as a compatible early stop. V2 retains its existing immutable
+RoundVideoSession limit and independent session deadline, trim/resume admission
+and finalization. This correction does not change that backend.
 
 Native encoders stream to disk rather than retaining a take in Java memory.
 V2 remuxing uses its existing bounded2MiB sample buffer. Increasing local length
@@ -27,11 +41,27 @@ increases disk usage and processing time; it changes no capture codec, source
 resolution or global camera policy. Hardware startup, real audio/video duration
 and release still require a device pass.
 
-The host regression executes the production preference and extracted native
-composer, legacy ring/audio-drain and V2 duration/trim-resume expressions. A
-negative control compiles the delivered60s expressions with a3minute preference
-and fails its cutoff contract. These inert-port checks do not exercise codecs or
-physical capture. Source and device evidence have separate acceptance scopes.
+The original38 preference/timer/ring/drain/V2 checks remain. A separate host
+regression compiles complete legacy start, prepare, audio/video admission,
+pause/resume, stop, send and cancel methods, plus actual dock float/discard,
+composer-release and strip confirmation callbacks. Exact-parent controls fail
+independently for deadline, video and PCM admission with a correct one-minute
+preference, compact mode, a pending discard dialog and zero composer draws.
+Corrected checks cover1/3/5 minutes, delayed UI completion, confirmation choices,
+pause/resume, changed preferences and stale recorder callbacks. Clock, handler,
+window, audio, codec, GL, muxer and file-ownership behavior remain inert ports;
+player setup models its native EGL release. These checks preserve original bytes
+and journal registration, but the real store/retention suite remains the source
+of durability evidence. No device duration, hardware-release latency or sample
+continuity is inferred from these host checks.
+
+The upstream InstantCameraView seams capture one PurpleLegacyRoundBudget per
+VideoRecorder, arm it when audio capture starts, pause/retire it with native
+transitions, and guard video and PCM codec input. A small private callback must
+access recorder identity and the existing private send(3) path; PCM admission
+must set the native EOS/drain flags. Those two seams stay beside the native
+state they control. Duration policy and scheduling live in Purple's helper.
+
 
 
 For recordings longer than one minute, normal Send prepares circle parts by

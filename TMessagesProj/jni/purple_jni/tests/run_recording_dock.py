@@ -66,3 +66,5 @@ runpy.run_path(str(pathlib.Path(__file__).parent / "recording/long_outputs.py"))
 runpy.run_path(str(pathlib.Path(__file__).parent / "recording/long_choices.py"))["run"](root, args.output / "long-choices")
 
 runpy.run_path(str(pathlib.Path(__file__).parent / "recording/long_originals.py"))["run"](root, args.output / "long-originals")
+
+runpy.run_path(str(pathlib.Path(__file__).parent / "recording/native_cap.py"))["run"](root, args.output / "native-cap")
