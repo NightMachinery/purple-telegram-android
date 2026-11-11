@@ -63,6 +63,16 @@ public final class BubbleRoutingCases {
                 check(s.camera.normalDispatches == 1, "native down rejects bottom inset");
             }
         }
+        Surface expanded = new Surface(v2, false);
+        View stock = expanded.camera.getButtonsLayout();
+        expanded.tap(stock.getX() + 20, stock.getY() + 20);
+        check(expanded.camera.flips == 1, "expanded stock flip click reaches native listener");
+        check(!PurpleRoundBubble.small(expanded.camera) && expanded.resized == 0, "expanded flip retains presentation");
+        expanded.camera.dispatchTouchEvent(event(MotionEvent.ACTION_DOWN, stock.getX() + 20, stock.getY() + 20));
+        expanded.camera.dispatchTouchEvent(event(MotionEvent.ACTION_MOVE, 100, 1500));
+        expanded.camera.dispatchTouchEvent(event(MotionEvent.ACTION_UP, 100, 1500));
+        check(!PurpleRoundBubble.small(expanded.camera) && expanded.resized == 0, "stock control owns stream outside button bounds");
+        check(!PurpleRoundBubble.background(expanded.camera, event(MotionEvent.ACTION_DOWN, stock.getX() + 20, stock.getY() + 20)), "parent background hit respects native controls");
         Surface s = new Surface(v2, true);
         s.tap(100, 1500);
         check(!PurpleRoundBubble.small(s.camera) && s.resized == 0, "paused background stays native");

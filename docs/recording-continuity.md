@@ -40,7 +40,9 @@ base touch-dispatch seam. Native composer taps in the bottom inset pass through
 before the bubble can claim a gesture. Paused full-size previews and captures
 that the dock cannot shrink keep native routing. A native gesture stays native
 through move, up and cancel, including the small bubble's camera/pause controls.
-Small paused bubbles can still expand or drag to a saved corner.
+Small paused bubbles can still expand or drag to a saved corner. Expanded stock
+camera buttons also retain their entire native gesture, even outside the camera
+circle, so flipping does not shrink the recording.
 
 Shrinking releases the round's native recording panel for typing and shows a
 video row in the recording strip with avatar, title, timer, waveform and native
