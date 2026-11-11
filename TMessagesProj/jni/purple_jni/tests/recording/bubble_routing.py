@@ -179,6 +179,7 @@ public abstract class NativeTerminal extends HostCamera {
  public static class Resource {
   public void releasePlayer(boolean b){} public void shutdown(int a,boolean b,int c,int d,int e,int f){}
   public void stopRecording(int a,SendOptions b){} public void delete(){} public void cancel(){} public void release(boolean b){}
+  public void purpleProtectOriginal(){}
  }
  static class SendOptions {SendOptions(boolean a,int b,int c,int d,int e,int f){}}
  static class VideoRecorder {static final int ENCODER_SEND_CANCEL=0;}
