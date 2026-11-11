@@ -239,7 +239,11 @@ public final class PurpleRecordingRegistry {
             final long[] target = draft ? target(guid) : null;
             worker.execute(() -> { if (sessions != null) sessions.didSent(key, draft, path, account, target); });
         } else if (event == NotificationCenter.audioRecordTooShort) {
-            worker.execute(() -> { if (sessions != null) sessions.tooShort(key); });
+            final String writer = args.length > 3 && args[3] instanceof String ? (String) args[3] : null;
+            worker.execute(() -> {
+                if (sessions == null) return;
+                if (writer == null) sessions.tooShort(key); else sessions.tooShort(key, writer);
+            });
         }
     }
 
@@ -391,6 +395,25 @@ public final class PurpleRecordingRegistry {
 
     public static void retainRound(int account, int guid, String path, long[] target, java.util.function.Consumer<String> done) {
         retainRound(account, guid, path, target, false, done);
+    }
+
+    public static void retainFailedLegacyRound(int account, int guid, String path, java.util.function.Consumer<Boolean> done) {
+        start();
+        final PurpleRecordingSessions owner = sessions;
+        final String key = account + ":" + guid;
+        final File writer = new File(path);
+        final PurpleRecordingSessions.LegacyFailure claim = owner == null ? null : owner.reserveLegacyFailure(key, writer);
+        worker.execute(() -> {
+            boolean retained = false;
+            try {
+                final PurpleRecordingSessions current = owner == null ? sessions : owner;
+                if (current != null) retained = current.retainLegacyFailure(claim == null ? current.reserveLegacyFailure(key, writer) : claim);
+            } catch (IOException | RuntimeException failure) {
+                PurpleDiagLog.event("recordings", "failed_round", PurpleDiagLog.reason("io_failed"));
+            }
+            final boolean saved = retained;
+            AndroidUtilities.runOnUIThread(() -> done.accept(saved));
+        });
     }
 
     public static void retainFailedRound(int account, int guid, String path, long[] target, java.util.function.Consumer<String> done) {

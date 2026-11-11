@@ -7,9 +7,11 @@ public final class PurpleLegacyCodecEos {
     private boolean videoOutputEnded;
     private boolean videoSample;
     private boolean failed;
+    private boolean muxerFinished;
 
     public void reset() {
         audioInputEnded = audioOutputEnded = videoInputEnded = videoOutputEnded = false;
+        muxerFinished = false;
     }
 
     public boolean audioInputEnded() { return audioInputEnded; }
@@ -22,5 +24,16 @@ public final class PurpleLegacyCodecEos {
     public void videoOutput(boolean end) { videoOutputEnded |= end; }
     public void videoSample() { videoSample = true; }
     public void fail() { failed = true; }
-    public boolean canPreview() { return videoSample && !failed; }
+    public void awaitMuxer(java.util.concurrent.CountDownLatch done) {
+        boolean interrupted = false;
+        while (true) {
+            try { done.await(); break; }
+            catch (InterruptedException ignored) { interrupted = true; }
+        }
+        if (interrupted) Thread.currentThread().interrupt();
+    }
+
+    public void muxerFinished() { muxerFinished = true; }
+    public boolean hasVideoSample() { return videoSample; }
+    public boolean canPreview() { return videoSample && !failed && muxerFinished; }
 }

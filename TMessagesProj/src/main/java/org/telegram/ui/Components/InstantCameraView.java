@@ -3056,20 +3056,20 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
                     fileWriteQueue.postRunnable(() -> {
                         try {
                             mediaMuxer.finishMovie();
+                            purpleEos.muxerFinished();
                         } catch (Exception e) {
+                            purpleEos.fail();
                             e.printStackTrace();
                         }
                         countDownLatch.countDown();
                     });
-                    try {
-                        countDownLatch.await();
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
+                    purpleEos.awaitMuxer(countDownLatch);
                 } else {
                     try {
                         mediaMuxer.finishMovie();
+                        purpleEos.muxerFinished();
                     } catch (Exception e) {
+                        purpleEos.fail();
                         FileLog.e(e);
                     }
                 }
@@ -3112,7 +3112,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
                     videoFile.delete();
                 } catch (Throwable ignore) {}
             } else {
-                if (send == ENCODER_SEND_PLAYER && !purpleEos.canPreview()) {
+                if (send == ENCODER_SEND_PLAYER && !purpleEos.hasVideoSample()) {
                     AndroidUtilities.runOnUIThread(() -> NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.audioRecordTooShort, recordingGuid, true, (int) recordedTime));
                 }
                 if (runDone && (send != ENCODER_SEND_PLAYER || purpleEos.canPreview()) && (send != ENCODER_SEND_SEND || !sentMedia)) {
@@ -3211,9 +3211,17 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
                 overlayHelper.destroy();
                 overlayHelper = null;
             }
-            AndroidUtilities.runOnUIThread(() -> {
-                InstantCameraView.this.videoEncoder = null;
-            });
+            if (send == ENCODER_SEND_PLAYER && purpleEos.hasVideoSample() && !purpleEos.canPreview()) {
+                org.telegram.messenger.purple.PurpleRecordingRegistry.retainFailedLegacyRound(purpleBudget.account, purpleBudget.guid, fileToWrite.getAbsolutePath(), retained -> {
+                    if (!retained || InstantCameraView.this.videoEncoder != this) return;
+                    if (currentAccount == purpleBudget.account && recordingGuid == purpleBudget.guid) NotificationCenter.getInstance(purpleBudget.account).postNotificationName(NotificationCenter.audioRecordTooShort, purpleBudget.guid, true, (int) recordedTime, fileToWrite.getAbsolutePath());
+                    InstantCameraView.this.videoEncoder = null;
+                });
+            } else {
+                AndroidUtilities.runOnUIThread(() -> {
+                    if (InstantCameraView.this.videoEncoder == this) InstantCameraView.this.videoEncoder = null;
+                });
+            }
         }
 
         private void setBluetoothScoOn(boolean scoOn) {

@@ -1,9 +1,9 @@
 """Full legacy recorder methods over inert clock, codec, GL, window and file ports."""
-import hashlib,json,os,pathlib,runpy,subprocess
+import hashlib,json,os,pathlib,runpy,shlex,subprocess
 method=runpy.run_path(str(pathlib.Path(__file__).with_name('bubble_routing.py')))['method']
 PARENT='a7c1a9c36b0bbf92a775cb0e64cb0463eaecf229'
 
-def run(root, output, parent=False, case='all', prepare=None):
+def run(root, output, parent=False, case='all', prepare=None, classpath=None):
     output.mkdir(parents=True,exist_ok=False)
     java=root/'TMessagesProj/src/main/java/org/telegram'
     path='TMessagesProj/src/main/java/org/telegram/ui/Components/InstantCameraView.java'
@@ -21,6 +21,7 @@ def run(root, output, parent=False, case='all', prepare=None):
     put('org/telegram/messenger/purple/PurpleRecordingDock.java','''package org.telegram.messenger.purple;public class PurpleRecordingDock{
       public static boolean roundFinalizing(int a,int g){return false;}public static boolean beginRoundFinish(int a,int g){throw new AssertionError("cap must not reserve send");}}''')
     put('org/telegram/messenger/purple/PurpleRoundJournal.java','package org.telegram.messenger.purple;public class PurpleRoundJournal{public static int registrations;public static void register(Object m,boolean secret,boolean sync){registrations++;}}')
+    put('org/telegram/messenger/purple/PurpleRecordingRegistry.java','package org.telegram.messenger.purple;public class PurpleRecordingRegistry{public static void retainFailedLegacyRound(int a,int g,String p,java.util.function.Consumer<Boolean> done){done.accept(true);}}')
     put('android/os/SystemClock.java','package android.os;public class SystemClock{public static long now;public static long elapsedRealtime(){return now;}}')
     put('android/os/Message.java','package android.os;public class Message{public int what,arg1,arg2;public Object obj;}')
     put('android/os/Handler.java','''package android.os;import java.util.*;public class Handler{
@@ -144,8 +145,8 @@ public class InstantCameraView {
     (output/'provenance.json').write_text(json.dumps({'parent':parent,'sources':provenance,'completeNativeMethods':signatures,'completeUiMethods':['send','cancel','togglePause'],'ports':['clock','handler','codec','GL','audio hardware','window','muxer','CameraGL shutdown','file ownership']},indent=2)+'\n')
     if prepare is not None:prepare(root, output, native)
     compiler=pathlib.Path(os.environ['JAVA_HOME'])/'bin/javac'
-    subprocess.run([str(compiler),'-d',str(output/'classes'),*map(str,output.rglob('*.java'))],check=True)
-    subprocess.run([str(compiler.with_name('java')),'-cp',str(output/'classes'),'InstantCameraView',str(output/'files'),case],check=True)
+    subprocess.run([*shlex.split(os.environ.get('PURPLE_NATIVE_COMPILE_WRAPPER','')),str(compiler),*(['-cp',str(classpath)] if classpath else []),'-d',str(output/'classes'),*map(str,output.rglob('*.java'))],check=True)
+    subprocess.run([str(compiler.with_name('java')),'-cp',str(output/'classes')+(os.pathsep+str(classpath) if classpath else ''),'InstantCameraView',str(output/'files'),case],check=True)
 
 CASES=r'''
  static int checks;static File directory;static String selected;

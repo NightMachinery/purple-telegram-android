@@ -989,6 +989,7 @@
         "recording-dock:LONG_ROUND_LIMIT_CHECKS": 38,
         "recording-dock:LEGACY_NATIVE_CAP_CHECKS": 150,
         "recording-dock:LEGACY_NATIVE_EOS_CHECKS": 110,
+        "recording-dock:LEGACY_NATIVE_FINALIZATION_CHECKS": 115,
         "recording-dock:LONG_ROUND_ROUTE_CHECKS": 12,
         "recording-dock:LONG_ROUND_REVIEW_CHECKS": 6,
         "recording-dock:LONG_ROUND_OUTPUT_CHECKS": 100,

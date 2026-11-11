@@ -5,7 +5,7 @@ PARENT='44ed2af1cec16e5eaeeec9d0f2e046f31b8133e9'
 base=runpy.run_path(str(pathlib.Path(__file__).with_name('native_cap.py')))
 method=base['method']
 
-def run(root,output,parent=False,case='all'):
+def run(root,output,parent=False,case='all',after_prepare=None,classpath=None):
     # Keep parent production bodies exact; only the new helper is unused there.
     base['run'].__globals__['PARENT']=PARENT
     def prepare(root,out,native):
@@ -34,11 +34,12 @@ def run(root,output,parent=False,case='all'):
         p=out/'android/os/Handler.java';t=p.read_text().replace('public boolean sendMessage(Message m){handleMessage(m);return true;}', 'public static List<Runnable> queue=new ArrayList<>();public boolean sendMessage(Message m){queue.add(()->handleMessage(m));return true;}public static void next(){if(queue.isEmpty())throw new AssertionError("missing native handler message");queue.remove(0).run();}public static void flush(){int limit=100;while(!queue.isEmpty()){if(--limit==0)throw new AssertionError("native handler progress exhausted");next();}}')
         p.write_text(t)
         p=out/'android/opengl/EGLExt.java';t=p.read_text().replace('public static List<Long> pts=', 'public static java.util.function.LongConsumer sample;public static List<Long> pts=').replace('pts.add(t);','pts.add(t);if(sample!=null)sample.accept(t);');p.write_text(t)
+        if after_prepare is not None:after_prepare(root,out,native)
         provenance=json.loads((out/'provenance.json').read_text())
         provenance.update(parentPin=PARENT if parent else None,completeDrainSha256=hashlib.sha256(method(native,'        public void drainEncoder(').encode()).hexdigest(),completeProducerSha256=hashlib.sha256(method(native,'        private Runnable recorderRunnable =').encode()).hexdigest(),schedule='queued actual EncoderHandler, producer EOF before terminal STOP; explicit UI/encoder turns',ports=['monotonic clock','stateful consumptive codec with EOS flags and bounded retry sentinel','AudioRecord hardware','GL','muxer/file ownership','window','thread launch'])
         provenance['generatedJavaSha256']={str(p.relative_to(out)):hashlib.sha256(p.read_bytes()).hexdigest() for p in out.rglob('*.java')}
         (out/'provenance.json').write_text(json.dumps(provenance,indent=2)+'\n')
-    base['run'](root,output,parent=parent,case=case,prepare=prepare)
+    base['run'](root,output,parent=parent,case=case,prepare=prepare,classpath=classpath)
 
 CODEC=r'''
 class MediaCodec{

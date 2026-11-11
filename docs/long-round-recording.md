@@ -64,12 +64,39 @@ retains input/output completion across every drain, resets only codec-generation
 state on prepare, and remembers successful video writes across resumed segments.
 Final drain submits a single zero-byte audio EOS if the producer could not align
 any PCM. It continues through delayed format/sample output until EOS, including
-when an earlier nonterminal drain already consumed audio EOS. Empty or failed
-local-preview finalization releases native resources and reports the existing
-too-short event without publishing a playable preview or deleting the original.
+when an earlier nonterminal drain already consumed audio EOS. A playable local
+preview additionally requires successful muxer finalization. Both native finish
+branches acknowledge success; the background branch keeps its completion latch
+even if the encoder waiter is interrupted. Successful sample writes returning0
+remain successful. A genuinely empty take follows the existing too-short path.
 The codec, hardware, muxer and file ports remain synthetic; these checks do not
 measure Android codec progress, encoded duration or physical hardware release.
 The original171 admission assertions and all previous suite floors remain.
+
+A nonempty failed local preview first reserves its registered legacy session
+and writer. The registry worker syncs recovery ownership, flushes the journal,
+and uses the existing failed-recording store policy to retain the writer in the
+bin, irrespective of keep-discarded. Only a durable acknowledgement permits the
+captured recorder to emit its terminal UI event and retire. The acknowledgement
+is fenced by recorder identity, captured account/guid and writer path; it cannot
+end a replacement session. A superseding start or late cancel cannot drop the
+reserved entry before settlement. If persistence fails, codecs are already
+released but the native UI owner stays latched; the original manifest/journal
+and held ownership remain available for recovery instead of reporting success.
+A process loss before the worker syncs recovery intent retains only the prior
+manifest guarantee; this does not introduce a new crash transaction/schema.
+
+The finalization regression composes complete native stop/drain/producer and
+registry dispatch with real Sessions, Store, Files and synced Manifest classes.
+It reconstructs the store for a finished prefix and unfinished failed outputs,
+with keep-discarded off, and verifies journal ownership and captured target.
+Its throwing muxer covers synchronous and background finish, including the latch
+under interruption; further cases cover failed bin persistence/retry, stale
+account/generation, successful pause/resume and truly empty output. Exact7290
+parent controls lose the reconstructed owner or advertise a failed preview.
+MP4 boxes, journal bytes, codec/hardware and the repair result remain ports;
+these are persistence/protocol checks, not Android output or repair-codec proof.
+All121 EOS and171 admission assertions and previous suite floors remain.
 
 The upstream InstantCameraView seams capture one PurpleLegacyRoundBudget per
 VideoRecorder, arm it when audio capture starts, pause/retire it with native
@@ -80,6 +107,8 @@ state they control. Duration policy and scheduling live in Purple's helper.
 Codec EOS submission/release acknowledgements and the preview guard also stay
 beside native codec and muxer operations; their persistent state lives in
 PurpleLegacyCodecEos rather than changing the native queue or muxer design.
+The terminal failure handoff uses PurpleRecordingRegistry/Sessions and the
+existing failed-store policy; no native file deletion or send route is added.
 
 
 

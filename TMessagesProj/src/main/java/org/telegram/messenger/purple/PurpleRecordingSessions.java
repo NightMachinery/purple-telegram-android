@@ -141,6 +141,7 @@ public final class PurpleRecordingSessions {
         boolean sending;
         int tries;
         Capture capture;
+        LegacyFailure legacyFailure;
 
         Session(String key, boolean round, long[] target) {
             this.key = key;
@@ -163,6 +164,9 @@ public final class PurpleRecordingSessions {
      */
     public synchronized void started(String key, int account, long[] target, boolean voice, long startedAt) {
         Session existing = sessions.get(key);
+        if (existing != null && existing.legacyFailure != null) {
+            detach(existing); existing = null;
+        }
         if (existing != null && existing.capture != null && existing.capture.reserved()) {
             detach(existing); existing = null;
         }
@@ -304,6 +308,45 @@ public final class PurpleRecordingSessions {
     public synchronized void tooShort(String key) {
         final Session session = sessions.get(key);
         if (session != null) end(session);
+    }
+
+    public synchronized void tooShort(String key, String writer) {
+        final Session session = sessions.get(key);
+        if (session != null && session.current.file != null
+                && session.current.file.getAbsolutePath().equals(writer)) end(session);
+    }
+
+    static final class LegacyFailure {
+        final Session session;
+        boolean retained;
+        LegacyFailure(Session session) { this.session = session; }
+    }
+
+    synchronized LegacyFailure reserveLegacyFailure(String key, File writer) {
+        final Session session = sessions.get(key);
+        if (session == null || !session.round || session.capture != null || session.current.file == null
+                || !session.current.file.getAbsolutePath().equals(writer.getAbsolutePath())) return null;
+        if (session.legacyFailure == null) session.legacyFailure = new LegacyFailure(session);
+        return session.legacyFailure;
+    }
+
+    synchronized boolean retainLegacyFailure(LegacyFailure failure) throws IOException {
+        if (failure == null) return false;
+        if (failure.retained) return true;
+        final Session session = failure.session;
+        final Part part = session.current;
+        if (part.held == null) throw new IOException("no registered round writer");
+        part.entry.awaitingQueue = true;
+        store.update(part.entry);
+        env.flushJournal(part.entry.journal);
+        final String journal = part.entry.journal;
+        store.keepFailed(part.entry, part.held, env.now() / 1000);
+        failure.retained = true;
+        detach(session);
+        for (Part owned : session.parts()) owned.close();
+        env.closeJournal(journal);
+        env.changed();
+        return true;
     }
 
     /** {@code recordResumed} (no guid): the account's paused recording continues. */
@@ -630,6 +673,7 @@ public final class PurpleRecordingSessions {
 
     /** Sent, or too short: the entries go, and so do the descriptors and the journal. */
     private void end(Session session) {
+        if (session.legacyFailure != null) { detach(session); return; }
         if (session.capture != null && !session.capture.phase.compareAndSet(0, 3)) { detach(session); return; }
         detach(session);
         for (Part part : session.parts()) {
@@ -643,6 +687,7 @@ public final class PurpleRecordingSessions {
     }
 
     private void discard(Session session) {
+        if (session.legacyFailure != null) { detach(session); return; }
         detach(session);
         final boolean keep = env.keepDiscarded();
         boolean kept = false;
