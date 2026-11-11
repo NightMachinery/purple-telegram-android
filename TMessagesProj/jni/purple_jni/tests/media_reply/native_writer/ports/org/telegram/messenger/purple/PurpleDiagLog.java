@@ -1,0 +1,2 @@
+package org.telegram.messenger.purple;
+public class PurpleDiagLog {public static PurpleDiagLogStore.Field slot(int slot){return null;}public static PurpleDiagLogStore.Field flag(String key,boolean v){return null;}public static PurpleDiagLogStore.Field reason(String code){return null;}public static PurpleDiagLogStore.Field error(Throwable e){return null;}public static void event(String a,String b,PurpleDiagLogStore.Field...fields){}}

@@ -1,0 +1,9 @@
+package org.telegram.messenger.purple;
+import java.io.File;import java.util.*;
+public class PurpleGlobalAccountChoice {
+ public interface Current {boolean current();}
+ static final PurpleGlobalChoiceFiles.Physical PHYSICAL=NativeWriterFixture.physical();
+ private static List<PurpleGlobalChoiceModel.Account> roster(){List<PurpleGlobalChoiceModel.Account> list=new ArrayList<>();for(PurpleAccountFiles.Identity id:PurpleAccountOwner.signedIn())list.add(new PurpleGlobalChoiceModel.Account(id.slot,id.key,id.lifetime,id,id,id));return list;}
+ @SESSION@
+ static Session begin(int account,Current ui,String[] reason){if(!ui.current())return null;Session session=new Session(account,ui);return session.current()?session:null;}
+}

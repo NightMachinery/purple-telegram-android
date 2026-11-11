@@ -73,3 +73,11 @@ radio chooser selection.
 The checked journal writer uses public Android `Os.fstat` and `S_ISDIR` to
 validate the parent descriptor before syncing it. An unavailable directory flag
 is not assumed; a failed descriptor check refuses admission before transport.
+
+Media settings use a forced own-account writer route, independent of the account
+Work Mode. Ordinary Follow writes retain their existing global destination.
+Picker policy snapshots gate admission before publication; after publication,
+the editor validates the committed file receipt, live account and view through
+refresh before acknowledging and closing. Native writer controls use actual AGP
+writer/routing/editor classes and real JNI publication over controlled account,
+view and filesystem-context ports. They do not render UI or run live sync.

@@ -38,10 +38,13 @@ public final class PurpleWriter {
         private final long role, revision, generation, epoch;
         private final int gate;
         private boolean retired;
+        private final boolean ownAccount;
+        private Current admission = () -> true;
         private Current action = () -> true;
 
         private Session(PurpleGlobalAccountChoice.Session context, PurpleAccountFiles.Identity origin,
-                boolean appWide, Runnable offlineNotice, Current view) throws Exception {
+                boolean appWide, boolean ownAccount, Runnable offlineNotice, Current view) throws Exception {
+            this.ownAccount = ownAccount;
             this.context = context; this.origin = origin; this.offlineNotice = offlineNotice; this.view = view;
             globalKey = context.global;
             role = PurpleAccountOwner.roleEpoch(); revision = PurpleAccountOwner.revision();
@@ -50,11 +53,12 @@ public final class PurpleWriter {
             PurpleAccountFiles global = PurpleAccountFiles.resolve(context.global, context.owner);
             if (own == null || global == null) throw new IllegalStateException("missing settings route");
             model = new PurpleRoutedWriteModel(PurpleAccountFiles.root(), own.settings, global.settings,
-                    context.owner, context.global, origin.key, appWide, PurpleGlobalAccountChoice.PHYSICAL,
+                    context.owner, context.global, origin.key, appWide, ownAccount, PurpleGlobalAccountChoice.PHYSICAL,
                     new PurpleAccountEditorModel.Context() {
                         public boolean current(boolean refreshed) {
                             return !retired && action.current() && origin.current() && PurpleAccountOwner.ready() && context.currentAfterAccountRefresh(refreshed);
                         }
+                        public boolean beforePublish() { return admission.current(); }
                         public void refresh() { PurpleAccountSettings.invalidate(); }
                         public void notifyChanged() {
                             org.telegram.messenger.NotificationCenter.getInstance(origin.slot).postNotificationName(
@@ -75,6 +79,7 @@ public final class PurpleWriter {
         }
         public void retire() { retired = true; }
         public void guard(Current action) { this.action = action; }
+        public void guardBeforePublish(Current admission) { this.admission = admission; }
         private byte[] bytes() { return current() ? model.bytes() : null; }
         public java.util.List<PurpleCore.ListEntry> lists(long peer) {
             java.util.List<PurpleCore.ListEntry> lists = listsOrNull(peer);
@@ -177,7 +182,15 @@ public final class PurpleWriter {
      * the reason and the exception class only.
      */
     public static Capture captureResult(int account, boolean appWide, Current current, Runnable offlineNotice) {
-        Capture result = open(account, appWide, current, offlineNotice);
+        return captureResult(account, appWide, false, current, offlineNotice);
+    }
+
+    public static Capture captureMediaReplyResult(int account, Current current) {
+        return captureResult(account, false, true, current, null);
+    }
+
+    private static Capture captureResult(int account, boolean appWide, boolean ownAccount, Current current, Runnable offlineNotice) {
+        Capture result = open(account, appWide, ownAccount, current, offlineNotice);
         lastRefusal = result.session == null ? result.reason : null;
         if (result.session == null) {
             PurpleDiagLog.event("writer", "capture_refused", PurpleDiagLog.slot(account),
@@ -231,7 +244,7 @@ public final class PurpleWriter {
             "route_missing", "local_choice_invalid", "route_changed", "files_changed", "recovery_required",
             "unsafe_file", "file_too_large", "file_unreadable", "session_failed"};
 
-    private static Capture open(int account, boolean appWide, Current current, Runnable offlineNotice) {
+    private static Capture open(int account, boolean appWide, boolean ownAccount, Current current, Runnable offlineNotice) {
         if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) return refused("not_ui_thread", null);
         synchronized (PurpleAccountOwner.class) {
             synchronized (PurpleAccountFiles.class) {
@@ -249,7 +262,7 @@ public final class PurpleWriter {
                     if (origin == null) return refused("account_signed_out", null);
                     if (!context.current()) return refused("choice_changed", null);
                     try {
-                        Session result = new Session(context, origin, appWide, offlineNotice, current);
+                        Session result = new Session(context, origin, appWide, ownAccount, offlineNotice, current);
                         return result.current() ? new Capture(result, null, null) : refused("session_stale", null);
                     } catch (Exception | UnsatisfiedLinkError e) { return refused(failure(e), e); }
                 }
@@ -327,6 +340,7 @@ public final class PurpleWriter {
 
     public static String setMediaReplyValue(Session session, String row, String key, Object value) {
         if (session == null) return noSession();
+        if (!session.ownAccount) return "media settings require the account route";
         byte[] settings = session.bytes();
         if (settings == null) return "settings context changed";
         return apply(session, PurpleCore.mediaReplySplice(settings, row, key,

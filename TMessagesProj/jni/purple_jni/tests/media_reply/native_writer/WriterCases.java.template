@@ -1,0 +1,38 @@
+package org.telegram.ui;
+import android.os.Bundle;import org.json.*;import org.telegram.messenger.*;import org.telegram.messenger.purple.*;import org.telegram.ui.ActionBar.BaseFragment;import org.telegram.ui.Components.BulletinFactory;
+public class @CLASS@ extends BaseFragment {
+ private String row="sets.Pick";private PurpleAccountFiles.Identity owner;private JSONObject policy,shown;private DialogsActivity picker;
+ private boolean live(){return owner!=null&&owner.current()&&owner.slot==currentAccount;}private void rebuild(){}private void error(String text){BulletinFactory.of(this).createErrorBulletin(text).show();}
+ private void presentFragment(DialogsActivity child){paused=true;child.paused=false;child.activity=activity;picker=child;}
+ @METHODS@
+ static int checks;static void check(boolean value,String why){++checks;if(!value)throw new AssertionError(why);}
+ static @CLASS@ fresh(int account,String mode){NativeWriterFixture.reset(mode);@CLASS@ screen=new @CLASS@();screen.setCurrentAccount(account);screen.owner=PurpleAccountFiles.capture(account);screen.policy=PurpleMediaReply.policy(account);screen.shown=screen.policy.getJSONArray("sets").getJSONObject(0);return screen;}
+ static int voice(int account){return PurpleMediaReply.policy(account).getJSONArray("defaults").getJSONObject(0).getInt("effective_voice");}
+ public static void main(String[] args)throws Exception {
+  System.load(args[0]);boolean parent=args[1].equals("parent");
+  check(new java.io.File(PurpleWriter.class.getProtectionDomain().getCodeSource().getLocation().toURI()).getCanonicalPath().equals(new java.io.File(args[2]).getCanonicalPath()),"exact native writer bytecode origin");
+  @CLASS@ screen=fresh(1,"follow");String global=NativeWriterFixture.text(0),own=NativeWriterFixture.text(1),local=NativeWriterFixture.local();
+  boolean ack=screen.write("private","voice",3);
+  if(parent){
+   check(voice(0)==3&&voice(1)==0&&!NativeWriterFixture.text(0).equals(global)&&NativeWriterFixture.text(1).equals(own),"exact parent Follow edit enables global A instead of B");
+   screen=fresh(0,"own");screen.select();screen.picker.choose(17);
+   check(NativeWriterFixture.text(0).contains("user:17")&&!screen.picker.isFinished&&NativeWriterFixture.synced==0,"exact parent publishes membership then rejects refresh ACK and picker remains open");
+   System.out.println("MEDIA_REPLY_PARENT_WRITER_VIOLATIONS="+checks);return;
+  }
+  check(ack&&voice(1)==3&&voice(0)==0&&NativeWriterFixture.text(0).equals(global),"Follow edit changes only B own policy and A stays Off");
+  check(NativeWriterFixture.local().equals(local)&&NativeWriterFixture.mode()==1&&NativeWriterFixture.synced==1&&NativeWriterFixture.notified==1,"Follow mode unchanged with normal publication refresh and sync ACK");
+  for(String mode:new String[]{"follow","own"})for(int account:new int[]{0,1}){
+   screen=fresh(account,mode);String other=NativeWriterFixture.text(1-account);screen.select();check(screen.isPaused()&&!screen.picker.isPaused(),"active native picker covers paused parent");screen.picker.choose(17);
+   check(screen.picker.isFinished&&NativeWriterFixture.text(account).contains("user:17")&&NativeWriterFixture.text(1-account).equals(other),"real writer/editor typed membership publishes only opening account and closes picker");
+   check(NativeWriterFixture.synced==1&&NativeWriterFixture.notified==1,"publication refresh has normal notify and sync ACK");
+  }
+  screen=fresh(1,"follow");screen.select();NativeWriterFixture.replaceAccount(1);screen.picker.choose(17);check(NativeWriterFixture.writes==0&&!screen.picker.isFinished,"replaced account/user lifetime refuses retained picker");
+  screen=fresh(1,"follow");screen.select();screen.picker.setCurrentAccount(0);screen.picker.choose(17);check(NativeWriterFixture.writes==0,"active picker account switch refuses");
+  screen=fresh(1,"follow");screen.select();screen.picker.finishFragment();screen.picker.choose(17);check(NativeWriterFixture.writes==0,"finished picker cannot publish");
+  screen=fresh(1,"follow");screen.select();NativeWriterFixture.replace(1,"version=2\n[media_reply.sets.Pick]\npeers=['user:99']\n");screen.picker.choose(17);check(NativeWriterFixture.writes==0&&!screen.picker.isFinished&&NativeWriterFixture.text(1).contains("user:99"),"external opening membership replacement refuses");
+  screen=fresh(1,"follow");screen.select();NativeWriterFixture.duringWrite=()->NativeWriterFixture.replace(1,"version=2\n[media_reply.sets.Pick]\npeers=['user:77']\n");screen.picker.choose(17);check(!screen.picker.isFinished&&NativeWriterFixture.synced==0&&NativeWriterFixture.text(1).contains("user:77"),"replacement during real backup write refuses target publication");
+  screen=fresh(1,"follow");screen.select();NativeWriterFixture.afterRefresh=()->NativeWriterFixture.replace(1,"version=2\n[media_reply.sets.Pick]\npeers=['user:66']\n");screen.picker.choose(17);check(!screen.picker.isFinished&&NativeWriterFixture.synced==0&&NativeWriterFixture.text(1).contains("user:66"),"post-publication external replacement fails expected committed snapshot ACK");
+  screen=fresh(1,"follow");NativeWriterFixture.ordinaryFollowControl();check(NativeWriterFixture.mode()==1,"ordinary Work Mode route remains global");
+  System.out.println("MEDIA_REPLY_NATIVE_WRITER_CHECKS="+checks);
+ }
+}

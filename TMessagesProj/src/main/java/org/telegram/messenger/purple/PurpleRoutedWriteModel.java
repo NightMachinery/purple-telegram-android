@@ -18,13 +18,18 @@ final class PurpleRoutedWriteModel {
     PurpleRoutedWriteModel(File root, File ownFile, File globalFile, String owner, String globalKey,
             String key, boolean appWide, PurpleGlobalChoiceFiles.Physical physical,
             PurpleAccountEditorModel.Context context, PurpleEditorDirectories.Creator creator) throws Exception {
+        this(root, ownFile, globalFile, owner, globalKey, key, appWide, false, physical, context, creator);
+    }
+    PurpleRoutedWriteModel(File root, File ownFile, File globalFile, String owner, String globalKey,
+            String key, boolean appWide, boolean ownAccount, PurpleGlobalChoiceFiles.Physical physical,
+            PurpleAccountEditorModel.Context context, PurpleEditorDirectories.Creator creator) throws Exception {
         this.key = key; this.globalKey = globalKey; this.globalFile = globalFile; this.ownFile = ownFile;
         this.physical = physical;
         localFile = new File(root, "local.toml");
         PurpleGlobalChoiceFiles.Snapshot choice = new PurpleGlobalChoiceFiles.Snapshot(localFile, false, PurpleGlobalChoiceFiles.LIMIT, physical);
         mode = modeNative(choice.bytes, key, globalKey);
         if (mode < 0) throw new IllegalStateException("invalid Work Mode choice");
-        this.appWide = appWide || key.equals(globalKey) || mode == 1;
+        this.appWide = key.equals(globalKey) || !ownAccount && (appWide || mode == 1);
         targetKey = this.appWide ? globalKey : key;
         File target = this.appWide ? globalFile : ownFile;
         editor = new PurpleAccountEditorModel(root, target, new File(target.getPath() + ".bak"), owner, globalKey, targetKey,

@@ -15,6 +15,7 @@ import java.util.Map;
 final class PurpleAccountEditorModel {
     interface Context {
         boolean current(boolean refreshed);
+        default boolean beforePublish() { return true; }
         void refresh();
         void notifyChanged();
     }
@@ -119,6 +120,7 @@ final class PurpleAccountEditorModel {
     boolean current() { return current(null); }
     private boolean current(Result result) { return current(result, null, null); }
     private boolean current(Result result, File pending, PurpleGlobalChoiceFiles.Snapshot receipt) {
+        if ((result == null || result.main == null) && !context.beforePublish()) return false;
         if (!saveAdmission.getAsBoolean() || !context.current(result != null && result.refreshed)) return false;
         for (PurpleGlobalChoiceFiles.Snapshot value : inputs.values()) {
             PurpleGlobalChoiceFiles.Snapshot expected = value;
@@ -131,7 +133,8 @@ final class PurpleAccountEditorModel {
             PurpleGlobalChoiceFiles.Snapshot expected = value.file.equals(pending) ? receipt : value;
             if (expected == null || !expected.current(physical)) return false;
         }
-        return saveAdmission.getAsBoolean() && context.current(result != null && result.refreshed);
+        return ((result != null && result.main != null) || context.beforePublish())
+                && saveAdmission.getAsBoolean() && context.current(result != null && result.refreshed);
     }
     private boolean prepareParents(Result result) throws Exception {
         for (File directory : targetParents) {

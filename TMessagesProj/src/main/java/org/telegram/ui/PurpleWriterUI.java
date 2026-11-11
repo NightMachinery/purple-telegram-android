@@ -153,6 +153,12 @@ final class PurpleWriterUI {
      * a held write is answered with its reason and remedy at the tap, never
      * dropped silently or refused only after a dialog was filled in.
      */
+    static PurpleWriter.Session captureMediaReplyOrExplain(BaseFragment fragment, Runnable retry) {
+        PurpleWriter.Capture result = PurpleWriter.captureMediaReplyResult(fragment.getCurrentAccount(), current(fragment));
+        if (result.session == null) explain(fragment, result.reason, retry);
+        return result.session;
+    }
+
     static PurpleWriter.Session captureOrExplain(BaseFragment fragment, boolean appWide, Runnable retry) {
         PurpleWriter.Capture result = captureResult(fragment, appWide);
         if (result.session == null) explain(fragment, result.reason, retry);
