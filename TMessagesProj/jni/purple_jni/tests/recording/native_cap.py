@@ -3,7 +3,7 @@ import hashlib,json,os,pathlib,runpy,subprocess
 method=runpy.run_path(str(pathlib.Path(__file__).with_name('bubble_routing.py')))['method']
 PARENT='a7c1a9c36b0bbf92a775cb0e64cb0463eaecf229'
 
-def run(root, output, parent=False, case='all'):
+def run(root, output, parent=False, case='all', prepare=None):
     output.mkdir(parents=True,exist_ok=False)
     java=root/'TMessagesProj/src/main/java/org/telegram'
     path='TMessagesProj/src/main/java/org/telegram/ui/Components/InstantCameraView.java'
@@ -11,7 +11,7 @@ def run(root, output, parent=False, case='all'):
     provenance={path:hashlib.sha256(native.encode()).hexdigest()}
     def put(name,text):
         p=output/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(text)
-    for name in ['PurpleLegacyRoundBudget','PurpleRoundLimits']:
+    for name in ['PurpleLegacyRoundBudget','PurpleRoundLimits','PurpleLegacyCodecEos']:
         text=(java/('messenger/purple/'+name+'.java')).read_text()
         provenance[name]=hashlib.sha256(text.encode()).hexdigest()
         put('org/telegram/messenger/purple/'+name+'.java',text)
@@ -137,10 +137,12 @@ public class InstantCameraView {
     wrapper+='\n private class VideoRecorder implements Runnable{'+fields+'''
         private boolean started,sentMedia;private Runnable recorderRunnable=()->{};
         public static final int ENCODER_SEND_CANCEL=0,ENCODER_SEND_SEND=1,ENCODER_SEND_PLAYER=2;
-        public void run(){}void drainEncoder(boolean end){}void setBluetoothScoOn(boolean b){}void createKeyframeThumb(){}void setupVideoPlayer(File f){eglDisplay=EGL14.EGL_NO_DISPLAY;eglContext=EGL14.EGL_NO_CONTEXT;eglSurface=EGL14.EGL_NO_SURFACE;}void didWriteData(File f,long a,boolean b){}
+        public void run(){}void drainEncoder(boolean end){if(!EGLExt.pts.isEmpty())purpleEos.videoSample();}void setBluetoothScoOn(boolean b){}void createKeyframeThumb(){}void setupVideoPlayer(File f){eglDisplay=EGL14.EGL_NO_DISPLAY;eglContext=EGL14.EGL_NO_CONTEXT;eglSurface=EGL14.EGL_NO_SURFACE;}void didWriteData(File f,long a,boolean b){}
     '''+methods+'\n}\n'+CASES+'\n}'
+    if 'purpleEos' not in fields:wrapper=wrapper.replace('if(!EGLExt.pts.isEmpty())purpleEos.videoSample();','')
     put('InstantCameraView.java',wrapper)
     (output/'provenance.json').write_text(json.dumps({'parent':parent,'sources':provenance,'completeNativeMethods':signatures,'completeUiMethods':['send','cancel','togglePause'],'ports':['clock','handler','codec','GL','audio hardware','window','muxer','CameraGL shutdown','file ownership']},indent=2)+'\n')
+    if prepare is not None:prepare(root, output, native)
     compiler=pathlib.Path(os.environ['JAVA_HOME'])/'bin/javac'
     subprocess.run([str(compiler),'-d',str(output/'classes'),*map(str,output.rglob('*.java'))],check=True)
     subprocess.run([str(compiler.with_name('java')),'-cp',str(output/'classes'),'InstantCameraView',str(output/'files'),case],check=True)

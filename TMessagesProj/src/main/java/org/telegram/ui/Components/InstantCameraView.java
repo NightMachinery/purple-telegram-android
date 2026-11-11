@@ -2262,6 +2262,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
         private long prevAudioLast = -1;
         private long audioDiff;
         private boolean audioStopedByTime;
+        private final org.telegram.messenger.purple.PurpleLegacyCodecEos purpleEos = new org.telegram.messenger.purple.PurpleLegacyCodecEos();
 
         private int drawProgram;
         private int vertexMatrixHandle;
@@ -2509,7 +2510,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
             if (pauseRecorder) {
                 return;
             }
-            if (audioStopedByTime) {
+            if (audioStopedByTime || purpleEos.audioInputEnded()) {
                 return;
             }
             buffersToWrite.add(input);
@@ -2636,6 +2637,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
                         audioLastDt = time - audioLast;
                         audioLast = time;
                         audioEncoder.queueInputBuffer(inputBufferIndex, 0, inputBuffer.position(), time, isLast ? MediaCodec.BUFFER_FLAG_END_OF_STREAM : 0);
+                        purpleEos.audioInput(isLast);
                     }
                 }
             } catch (Throwable e) {
@@ -3021,6 +3023,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
                 FileLog.d("InstantCamera handleStopRecording drain encoders");
                 drainEncoder(true);
             } catch (Exception e) {
+                purpleEos.fail();
                 FileLog.e(e);
             }
             if (videoEncoder != null) {
@@ -3109,7 +3112,10 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
                     videoFile.delete();
                 } catch (Throwable ignore) {}
             } else {
-                if (runDone && (send != ENCODER_SEND_SEND || !sentMedia)) {
+                if (send == ENCODER_SEND_PLAYER && !purpleEos.canPreview()) {
+                    AndroidUtilities.runOnUIThread(() -> NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.audioRecordTooShort, recordingGuid, true, (int) recordedTime));
+                }
+                if (runDone && (send != ENCODER_SEND_PLAYER || purpleEos.canPreview()) && (send != ENCODER_SEND_SEND || !sentMedia)) {
                     sentMedia = true;
                     AndroidUtilities.runOnUIThread(() -> {
                         if (videoEditedInfo == null) {
@@ -3268,6 +3274,8 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
                 }
                 lastTimestamp = -1;
                 lastCommitedFrameTime = 0;
+                purpleEos.reset();
+                audioStopedByTime = false;
                 audioStartTime = -1;
                 audioFirst = -1;
                 videoFirst = -1;
@@ -3483,12 +3491,13 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
         }
 
         public void drainEncoder(boolean endOfStream) throws Exception {
-            if (endOfStream) {
+            if (endOfStream && !purpleEos.videoInputEnded()) {
                 videoEncoder.signalEndOfInputStream();
+                purpleEos.videoInputEnd();
             }
 
             ByteBuffer[] encoderOutputBuffers = null;
-            while (true) {
+            while (!purpleEos.videoOutputEnded()) {
                 int encoderStatus = videoEncoder.dequeueOutputBuffer(videoBufferInfo, 10000);
                 if (encoderStatus == MediaCodec.INFO_TRY_AGAIN_LATER) {
                     if (!endOfStream || pauseRecorder) {
@@ -3547,6 +3556,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
                                     long availableSize = 0;
                                     try {
                                         availableSize = mediaMuxer.writeSampleData(videoTrackIndex, byteBuffer, bufferInfo, true);
+                                        purpleEos.videoSample();
                                     } catch (Exception e) {
                                         e.printStackTrace();
                                     }
@@ -3556,6 +3566,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
                                 });
                             } else {
                                 long availableSize = mediaMuxer.writeSampleData(videoTrackIndex, encodedData, videoBufferInfo, true);
+                                purpleEos.videoSample();
                                 if (availableSize != 0 && !writingToDifferentFile && allowSendingWhileRecording) {
                                     didWriteData(videoFile, availableSize, false);
                                 }
@@ -3590,14 +3601,22 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
                         }
                     }
                     videoEncoder.releaseOutputBuffer(encoderStatus, false);
+                    purpleEos.videoOutput((videoBufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0);
                     if ((videoBufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
                         break;
                     }
                 }
             }
 
-            while (true) {
-                int encoderStatus = audioEncoder.dequeueOutputBuffer(audioBufferInfo, 0);
+            while (!purpleEos.audioOutputEnded()) {
+                if (endOfStream && !purpleEos.audioInputEnded()) {
+                    int inputIndex = audioEncoder.dequeueInputBuffer(10000);
+                    if (inputIndex >= 0) {
+                        audioEncoder.queueInputBuffer(inputIndex, 0, 0, purpleBudget.audioTimeUs(Math.max(0, audioLast)), MediaCodec.BUFFER_FLAG_END_OF_STREAM);
+                        purpleEos.audioInput(true);
+                    }
+                }
+                int encoderStatus = audioEncoder.dequeueOutputBuffer(audioBufferInfo, endOfStream ? 10000 : 0);
                 if (encoderStatus == MediaCodec.INFO_TRY_AGAIN_LATER) {
                     if (!endOfStream || !running && sendWhenDone == ENCODER_SEND_CANCEL || pauseRecorder) {
                         break;
@@ -3650,6 +3669,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
                     } else if (audioEncoder != null) {
                         audioEncoder.releaseOutputBuffer(encoderStatus, false);
                     }
+                    purpleEos.audioOutput((audioBufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0);
                     if ((audioBufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
                         break;
                     }

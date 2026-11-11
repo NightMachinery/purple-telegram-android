@@ -55,12 +55,31 @@ and journal registration, but the real store/retention suite remains the source
 of durability evidence. No device duration, hardware-release latency or sample
 continuity is inferred from these host checks.
 
+The EOS regression additionally executes the complete native drain and actual
+AudioRecord producer body through queued EncoderHandler dispatch. Its stateful
+codec port consumes each output once, retains EOS flags and delays output or
+input availability. Exact44ed parent controls detect waiting after consumed EOS
+and missing terminal audio with no first video or PCM. PurpleLegacyCodecEos
+retains input/output completion across every drain, resets only codec-generation
+state on prepare, and remembers successful video writes across resumed segments.
+Final drain submits a single zero-byte audio EOS if the producer could not align
+any PCM. It continues through delayed format/sample output until EOS, including
+when an earlier nonterminal drain already consumed audio EOS. Empty or failed
+local-preview finalization releases native resources and reports the existing
+too-short event without publishing a playable preview or deleting the original.
+The codec, hardware, muxer and file ports remain synthetic; these checks do not
+measure Android codec progress, encoded duration or physical hardware release.
+The original171 admission assertions and all previous suite floors remain.
+
 The upstream InstantCameraView seams capture one PurpleLegacyRoundBudget per
 VideoRecorder, arm it when audio capture starts, pause/retire it with native
 transitions, and guard video and PCM codec input. A small private callback must
 access recorder identity and the existing private send(3) path; PCM admission
 must set the native EOS/drain flags. Those two seams stay beside the native
 state they control. Duration policy and scheduling live in Purple's helper.
+Codec EOS submission/release acknowledgements and the preview guard also stay
+beside native codec and muxer operations; their persistent state lives in
+PurpleLegacyCodecEos rather than changing the native queue or muxer design.
 
 
 
