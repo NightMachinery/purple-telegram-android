@@ -131,6 +131,7 @@ for name, origin, main, mode in [("native-writer", classes, "NativeWriterCurrent
     scratch = fixtures / name
     if args.phase in ["all", "compile"]: scratch.mkdir()
     commands.append((name, [compiler.with_name("java"), "-Xcheck:jni", "-Xmx512m", "-XX:ActiveProcessorCount=2",
+        "-Djava.library.path=" + str(args.library.resolve().parent),
         "-Dscratch=" + str(scratch), "-cp", os.pathsep.join(map(str, [writer_out, origin, classes, args.json])),
         "org.telegram.ui." + main, args.library.resolve(), mode, origin.resolve()]))
 for name, command in commands:
