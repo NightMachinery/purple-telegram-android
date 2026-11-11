@@ -12,7 +12,7 @@ public class @CLASS@ extends BaseFragment {
   System.load(args[0]);boolean parent=args[1].equals("parent");
   check(new java.io.File(PurpleWriter.class.getProtectionDomain().getCodeSource().getLocation().toURI()).getCanonicalPath().equals(new java.io.File(args[2]).getCanonicalPath()),"exact native writer bytecode origin");
   @CLASS@ screen=fresh(1,"follow");String global=NativeWriterFixture.text(0),own=NativeWriterFixture.text(1),local=NativeWriterFixture.local();
-  boolean ack=screen.write("private","voice",3);
+  boolean ack=screen.write("private","voice","both");
   if(parent){
    check(voice(0)==3&&voice(1)==0&&!NativeWriterFixture.text(0).equals(global)&&NativeWriterFixture.text(1).equals(own),"exact parent Follow edit enables global A instead of B");
    screen=fresh(0,"own");screen.select();screen.picker.choose(17);
