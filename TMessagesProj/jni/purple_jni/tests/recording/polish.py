@@ -99,6 +99,6 @@ public class VideoPlayer {
     send = (java / 'messenger/purple/PurpleRecordingSend.java').read_text()
     assert 'PurpleRecordingFiles.move' not in send and 'PurpleRecordingRegistry.sent' not in send
     activity = (java / 'ui/PurpleRecordingBinActivity.java').read_text()
-    assert 'R.string.PurpleRecordingBinSendSaved' in activity and 'self, 0, 0, false, this::sentResult' in activity
+    assert 'R.string.PurpleRecordingBinSendSaved' in activity and 'sendItem(entry, currentAccount, self, 0, 0, false)' in activity
     assert 'PurpleRecordingDock' not in row
     print('BIN_SOURCE_PINS=5')

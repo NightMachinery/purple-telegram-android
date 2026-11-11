@@ -781,3 +781,42 @@ PurpleComposeSource. Verify formatting, split sends, cancelled/failed sends,
 acknowledgements and account/purge changes after upstream merges. Rich-editor
 blocks are not an original Markdown boundary. File capture extends the owned
 PurpleArchiveAcquiredSource path and adds no upstream download hook.
+
+### Longer local round recording
+
+InstantCameraView delegates the new-take limit to PurpleRoundLimits, retaining
+that value for progress and its encoder's audio drain. ChatActivityEnterView
+snapshots the same account preference for the composer timer and delegates its
+stop margin. InstantCameraView2 supplies the existing builder's maximum duration
+and uses the resulting StateInfo maximum for progress. Native trim/resume and
+encoder bodies stay in place. Check default short takes and local1/3/5minute
+boundaries on both adapters after upstream merges. Read
+[long-round-recording.md](long-round-recording.md) for policy and test limits.
+
+MediaCodecVideoConvertor has an optional owned audio input plus its explicit
+microsecond duration for long-circle re-encoding. Its three selection hooks keep
+all ordinary conversions on their existing path. After merges, check the AAC
+copy condition, AudioInput start/end setup and AudioRecoder duration units against
+PurpleLongRoundMedia; do not replace the scoped input with prior-sync stream-copy.
+The owned adapter must be recreated safely by native converter retries and
+released on failure as well as success.
+
+InstantCameraView2 freezes a long-original owner into the native session builder.
+RoundVideoSession calls it on the serialized file worker after completing a full
+preview or active take and before cancellation checks or destructive remuxing.
+The owner reserves the exact source identity in the existing manifest and commits
+a synced full copy. RoundVideoRemuxer delegates erase admission before its normal
+truncate-before-unlink body. Cancel/destroy arm registered-writer protection
+before stop notifications; the existing snapshot handoff honors that independent
+ownership even with keep-discarded disabled. Native fail must arm before output
+invalidation, ERROR state and listener notification, while active duration is
+available. Failed initial reservation must stop active remux/completion and hand
+the full writer to error cleanup; a committed reservation with failed copy may
+continue because its source remains restart-discoverable. Preserve both this
+admission distinction and early error order after merges.
+V2 still materializes selected preview ranges and resets offsets; legacy sends
+selection offsets in microseconds without materializing them.
+
+The long-round converter audio hook also handles an explicitly supplied silence
+input when native Camera2 mute has removed the source audio track. Ordinary
+callers retain the native track-selection policy. See [long-round-recording.md](long-round-recording.md).

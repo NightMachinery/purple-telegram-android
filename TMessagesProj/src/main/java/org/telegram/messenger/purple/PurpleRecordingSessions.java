@@ -61,6 +61,8 @@ public final class PurpleRecordingSessions {
 
         boolean keepDiscarded();
 
+        default boolean keepLongOriginal(File media) { return false; }
+
         void flushJournal(String path);
 
         void closeJournal(String path);
@@ -401,7 +403,7 @@ public final class PurpleRecordingSessions {
     Capture snapshotCapture(String key) { return captures.get(key); }
 
     SnapshotStop reserveStop(Capture capture, int reason, long[] target) {
-        return capture.phase.compareAndSet(0, 1) ? new SnapshotStop(capture, reason, reason == 7 || env.keepDiscarded(), target) : null;
+        return capture.phase.compareAndSet(0, 1) ? new SnapshotStop(capture, reason, reason == 7 || env.keepDiscarded() || env.keepLongOriginal(capture.media), target) : null;
     }
 
     public File snapshotSource(String key) {

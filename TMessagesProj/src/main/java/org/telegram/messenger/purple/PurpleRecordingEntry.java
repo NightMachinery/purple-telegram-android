@@ -55,6 +55,9 @@ public final class PurpleRecordingEntry {
     /** A legacy voice segment from before a resume: kept at a crash even though its file is a finished stream. */
     public boolean segment;
     public boolean awaitingQueue;
+    public boolean longOriginal;
+    public String originalGeneration;
+    public long originalDevice, originalInode;
     public String snapshotBase, snapshotSource, snapshotJournal;
     public boolean snapshotCommitted;
     /** Recorded in the quick-reply editor: never sent to a chat as a message. */
@@ -121,6 +124,9 @@ public final class PurpleRecordingEntry {
         o.put("quick_reply", quickReply);
         o.put("segment", segment);
         o.put("awaiting_queue", awaitingQueue);
+        o.put("long_original", longOriginal);
+        if (originalGeneration != null) o.put("original_generation", originalGeneration);
+        o.put("original_device", originalDevice); o.put("original_inode", originalInode);
         if (snapshotBase != null) o.put("snapshot_base", snapshotBase);
         if (snapshotSource != null) o.put("snapshot_source", snapshotSource);
         if (snapshotJournal != null) o.put("snapshot_journal", snapshotJournal);
@@ -166,6 +172,9 @@ public final class PurpleRecordingEntry {
         e.quickReply = o.optBoolean("quick_reply", false);
         e.segment = o.optBoolean("segment", false);
         e.awaitingQueue = o.optBoolean("awaiting_queue", false);
+        e.longOriginal = o.optBoolean("long_original", false);
+        e.originalGeneration = o.optString("original_generation", null);
+        e.originalDevice = o.optLong("original_device", 0); e.originalInode = o.optLong("original_inode", 0);
         e.snapshotBase = o.optString("snapshot_base", null);
         e.snapshotSource = o.optString("snapshot_source", null);
         e.snapshotJournal = o.optString("snapshot_journal", null);

@@ -293,6 +293,11 @@ public final class PurpleRecordingRegistry {
         }
 
         @Override
+        public boolean keepLongOriginal(File media) {
+            return PurpleLongRoundOriginals.protectWriter(media);
+        }
+
+        @Override
         public boolean keepDiscarded() {
             return PurpleRecordingSettings.read().keepDiscarded;
         }
@@ -408,6 +413,71 @@ public final class PurpleRecordingRegistry {
         });
     }
 
+    public static long[] roundOriginalTarget(int account, int guid) {
+        final long[] value = target(guid);
+        return value != null && value.length > 4 && value[0] == account
+                && PurpleRecordingSendAs.sameUser(account, value[4]) ? value.clone() : null;
+    }
+
+    public static boolean keepLongOriginalBlocking(PurpleLongRoundOriginal original) throws Exception {
+        start();
+        return worker.submit(() -> keepLongOriginalOnWorker(original)).get();
+    }
+
+    public static void keepLongOriginal(PurpleLongRoundOriginal original, java.util.function.Consumer<Boolean> done) {
+        start();
+        worker.execute(() -> {
+            final boolean saved = keepLongOriginalOnWorker(original);
+            AndroidUtilities.runOnUIThread(() -> done.accept(saved));
+        });
+    }
+
+    private static boolean keepLongOriginalOnWorker(PurpleLongRoundOriginal original) {
+        try {
+            if (store == null) throw new IOException("store unavailable");
+            final long[] target = original.target;
+            PurpleRecordingEntry entry = original.binId == null ? null : store.find(original.binId);
+            if (entry == null) {
+                entry = store.begin((int) target[0], target[1], target[2], (int) target[3], PurpleRecordingEntry.ROUND,
+                        System.currentTimeMillis(), true);
+                original.binId = entry.id;
+                entry.userId = target[4];
+                entry.once = target.length > 5 && (target[5] & PurpleRecordingSessions.FLAG_ONCE) != 0;
+            }
+            if (entry.originalGeneration == null) {
+                store.reserveLongOriginal(entry, new File(original.path), original.generation, original.device, original.inode);
+            }
+            if (!original.generation.equals(entry.originalGeneration) || !original.matches(new File(original.path))) {
+                throw new IOException("original generation");
+            }
+            original.reserved = true;
+            if (directory().getUsableSpace() < new File(original.path).length() + 16L * 1024 * 1024) throw new IOException("space");
+            store.keepLongOriginal(entry, System.currentTimeMillis() / 1000);
+            changed();
+            return true;
+        } catch (Exception failure) {
+            PurpleDiagLog.event("recordings", "original_keep", PurpleDiagLog.reason("io_failed"));
+            return false;
+        }
+    }
+
+    public static void retainedRound(String id, java.util.function.Consumer<PurpleRecordingEntry> done) {
+        start();
+        worker.execute(() -> {
+            PurpleRecordingEntry copy = null;
+            try {
+                final PurpleRecordingEntry entry = store == null ? null : store.find(id);
+                if (entry != null && entry.inBin() && entry.round() && !PurpleRecordingEntry.UNRECOVERABLE.equals(entry.state)) {
+                    copy = PurpleRecordingEntry.fromJson(entry.toJson(), System.currentTimeMillis() / 1000);
+                }
+            } catch (Exception failure) {
+                PurpleDiagLog.event("recordings", "long_original", PurpleDiagLog.reason("io_failed"));
+            }
+            final PurpleRecordingEntry retained = copy;
+            AndroidUtilities.runOnUIThread(() -> done.accept(retained));
+        });
+    }
+
     public static void pendingRound(String id, java.util.function.Consumer<Boolean> done) {
         worker.execute(() -> {
             final PurpleRecordingEntry entry = store == null ? null : store.find(id);
@@ -463,6 +533,11 @@ public final class PurpleRecordingRegistry {
         @Override
         public boolean binItemExpired(long binnedAt, long now, int keepSeconds) {
             return PurpleRecordingCore.binItemExpired(binnedAt, now, keepSeconds);
+        }
+
+        @Override
+        public boolean matchesLongOriginal(PurpleRecordingEntry entry, File file) {
+            return PurpleLongRoundOriginal.matchesReservation(entry, file);
         }
 
         @Override

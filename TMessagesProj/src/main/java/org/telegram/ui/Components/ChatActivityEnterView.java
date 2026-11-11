@@ -14312,6 +14312,7 @@ public class ChatActivityEnterView extends FrameLayout implements
     }
 
     public class TimerView extends View {
+        private long purpleRoundLimitMs = 60_000L;
         boolean isRunning;
         boolean stoppedInternal;
         String oldString;
@@ -14340,6 +14341,7 @@ public class ChatActivityEnterView extends FrameLayout implements
         }
 
         public void start(long milliseconds) {
+            if (milliseconds == 0) purpleRoundLimitMs = org.telegram.messenger.purple.PurpleRoundLimits.maximumDurationMs(currentAccount);
             isRunning = true;
             startTime = System.currentTimeMillis() - milliseconds;
             externalElapsedMs = milliseconds;
@@ -14387,7 +14389,7 @@ public class ChatActivityEnterView extends FrameLayout implements
             int ms = (int) (t % 1000L) / 10;
 
             if (isInVideoMode()) {
-                if (t >= 59500 && !stoppedInternal) {
+                if (t >= org.telegram.messenger.purple.PurpleRoundLimits.composerStopMs(purpleRoundLimitMs) && !stoppedInternal) {
                     startedDraggingX = -1;
                     delegate.needStartRecordVideo(3, true, 0, 0, voiceOnce ? 0x7FFFFFFF : 0, effectId, 0);
                     sendButton.setEffect(effectId = 0);

@@ -31,6 +31,7 @@ import java.util.*;import java.util.function.Consumer;public class PurpleRecordi
 public static boolean workerDefer,pendingDefer;public static Set<String> bin=new HashSet<>();public static List<Runnable> workers=new ArrayList<>(),pending=new ArrayList<>();public static int ack;
 public static void onWorker(Runnable r){if(workerDefer)workers.add(r);else r.run();}
 public static void pendingRound(String id,Consumer<Boolean> done){Runnable r=()->done.accept(bin.contains(id));if(pendingDefer)pending.add(r);else r.run();}
+public static void retainedRound(String id,Consumer<PurpleRecordingEntry> done){Runnable r=()->done.accept(bin.contains(id)?new PurpleRecordingEntry():null);if(pendingDefer)pending.add(r);else r.run();}
 public static void queuedRound(String id,Runnable done){bin.remove(id);ack++;done.run();}
 public static void sent(String id){throw new AssertionError("prepare is not acknowledgment");}
 public static void workers(){List<Runnable> q=new ArrayList<>(workers);workers.clear();for(Runnable r:q)r.run();}
@@ -71,7 +72,10 @@ SendMessageParams p=new SendMessageParams();p.peer=(Long)args[5];p.sendMessageCh
 public static class SendMessageParams{public SendMessageChatArguments sendMessageChatArguments;public long peer;public int scheduleDate;}}
 """)
     shutil.copyfile(tests/'RetryIdentityBoundaryCases.java',output/'org/telegram/messenger/purple/RetryIdentityBoundaryCases.java')
+    shutil.copyfile(tests/'LongRoundRouteCases.java',output/'org/telegram/messenger/purple/LongRoundRouteCases.java')
     compiler=pathlib.Path(os.environ['JAVA_HOME'])/'bin/javac';classes=output/'classes'
     sources=sorted(output.rglob('*.java'))
     subprocess.run([str(compiler),'-d',str(classes),*map(str,sources)],check=True)
     subprocess.run([str(compiler.with_name('java')),'-cp',str(classes),'org.telegram.messenger.purple.RetryIdentityBoundaryCases',str(output/'files')],check=True)
+
+    subprocess.run([str(compiler.with_name('java')),'-cp',str(classes),'org.telegram.messenger.purple.LongRoundRouteCases'],check=True)

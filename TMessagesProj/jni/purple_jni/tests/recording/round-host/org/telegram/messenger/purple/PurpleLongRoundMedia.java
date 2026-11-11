@@ -1,0 +1,1 @@
+package org.telegram.messenger.purple; public class PurpleLongRoundMedia {public static class Output {public java.io.File file=new java.io.File("retained-copy.mp4");public org.telegram.messenger.VideoEditedInfo info(){return new org.telegram.messenger.VideoEditedInfo();}}}

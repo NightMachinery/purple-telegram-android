@@ -254,6 +254,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
     private boolean isMessageTransition;
     private boolean updateTextureViewSize;
     private final Theme.ResourcesProvider resourcesProvider;
+    private long purpleRoundLimitMs = 60_000L;
 
     private final static int audioSampleRate = 48000;
 
@@ -624,7 +625,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
         rect.set(x - dp(8), y - dp(8), x + cameraContainer.getMeasuredWidth() + dp(8), y + cameraContainer.getMeasuredHeight() + dp(8));
         if (recording) {
             recordedTime = System.currentTimeMillis() - recordStartTime + recordPlusTime;
-            progress = Math.min(1f, recordedTime / 60000.0f);
+            progress = Math.min(1f, recordedTime / (float) purpleRoundLimitMs);
             invalidate();
         }
 
@@ -739,6 +740,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
         cameraReady = false;
         selectedCamera = null;
         if (!fromPaused) {
+            purpleRoundLimitMs = org.telegram.messenger.purple.PurpleRoundLimits.maximumDurationMs(currentAccount);
             if (!useCamera2) {
                 isFrontface = true;
             }
@@ -2181,6 +2183,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
     }
 
     private class VideoRecorder implements Runnable {
+        private final long purpleAudioLimitUs = purpleRoundLimitMs * 1000L;
 
         private static final String VIDEO_MIME_TYPE = "video/avc";
         private static final String AUDIO_MIME_TYPE = "audio/mp4a-latm";
@@ -2567,10 +2570,10 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
                         for (int a = input.lastWroteBuffer; a <= input.results; a++) {
                             if (a < input.results) {
                                 long totalTime = input.offset[a] - audioStartTime;
-                                if (!running && (input.offset[a] >= videoLast - desyncTime || totalTime >= 60_000000)) {
+                                if (!running && (input.offset[a] >= videoLast - desyncTime || totalTime >= purpleAudioLimitUs)) {
                                     if (BuildVars.LOGS_ENABLED) {
-                                        if (totalTime >= 60_000000) {
-                                            FileLog.d("InstantCamera stop audio encoding because recorded time more than 60s");
+                                        if (totalTime >= purpleAudioLimitUs) {
+                                            FileLog.d("InstantCamera stop audio encoding at local duration limit");
                                         } else {
                                             FileLog.d("InstantCamera stop audio encoding because of stoped video recording at " + input.offset[a] + " last video " + videoLast);
                                         }

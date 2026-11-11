@@ -36,6 +36,7 @@ public class PurpleRecordingSettingsActivity extends UniversalFragment {
     static final int ROW_KEEP_CHATS = 0x70750507;
     static final int ROW_BACKGROUND = 0x70750508;
     static final int ROW_ROUND_FLOAT = 0x70750509;
+    static final int ROW_LOCAL_ROUND_LIMIT = 0x7075050a;
 
     @Override
     protected CharSequence getTitle() {
@@ -52,6 +53,9 @@ public class PurpleRecordingSettingsActivity extends UniversalFragment {
     protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
         // Read once per rebuild, so a refused write leaves each row where the file is.
         final PurpleRecordingSettings settings = PurpleRecordingSettings.read();
+        items.add(UItem.asButton(ROW_LOCAL_ROUND_LIMIT, getString(R.string.PurpleLocalRoundLimit),
+                org.telegram.messenger.LocaleController.formatPluralString("Minutes", org.telegram.messenger.purple.PurpleRoundLimits.minutes(currentAccount))));
+        items.add(UItem.asShadow(getString(R.string.PurpleLocalRoundLimitInfo)));
         addCheck(items, ROW_KEEP_CHATS, R.string.PurpleRecordingKeepChats, settings.keepAcrossChats);
         addCheck(items, ROW_BACKGROUND, R.string.PurpleRecordingBackground, settings.background);
         addCheck(items, ROW_ROUND_FLOAT, R.string.PurpleRecordingRoundFloat, settings.roundFloat);
@@ -80,6 +84,9 @@ public class PurpleRecordingSettingsActivity extends UniversalFragment {
             write(PurpleWriter.setTableBool(session, "recording", key, !item.checked, "recording switch"));
             break;
         }
+        case ROW_LOCAL_ROUND_LIMIT:
+            chooseLocalRoundLimit();
+            break;
         case ROW_BIN:
             presentFragment(new PurpleRecordingBinActivity());
             break;
@@ -139,6 +146,22 @@ public class PurpleRecordingSettingsActivity extends UniversalFragment {
             if (session == null) return;
             write(PurpleWriter.setTableString(session, "recording", "round_journal",
                     PurpleRecordingSettings.journalValue(choices[which]), "round journal chooser"));
+        });
+        dialog.setNegativeButton(getString(R.string.Cancel), null);
+        showDialog(dialog.create());
+    }
+
+    private void chooseLocalRoundLimit() {
+        if (getParentActivity() == null) return;
+        final int account = currentAccount;
+        final int[] choices = org.telegram.messenger.purple.PurpleRoundLimits.MINUTES;
+        final CharSequence[] labels = new CharSequence[choices.length];
+        for (int i = 0; i < choices.length; i++) labels[i] = org.telegram.messenger.LocaleController.formatPluralString("Minutes", choices[i]);
+        final AlertDialog.Builder dialog = new AlertDialog.Builder(getParentActivity());
+        dialog.setTitle(getString(R.string.PurpleLocalRoundLimit));
+        dialog.setItems(labels, (d, which) -> {
+            org.telegram.messenger.purple.PurpleRoundLimits.setMinutes(account, choices[which]);
+            rebuild();
         });
         dialog.setNegativeButton(getString(R.string.Cancel), null);
         showDialog(dialog.create());

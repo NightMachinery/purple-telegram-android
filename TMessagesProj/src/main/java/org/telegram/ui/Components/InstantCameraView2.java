@@ -328,6 +328,8 @@ public final class InstantCameraView2 extends InstantCameraViewBase {
     @Override
     public void destroy(boolean async) {
         if (org.telegram.messenger.purple.PurpleRecordingDock.roundFinalizing(currentAccount, recordingGuid)) return;
+        if (session != null) session.purpleProtectOriginal();
+        org.telegram.messenger.purple.PurpleLongRoundOriginals.release(currentAccount, recordingGuid);
         setRecordingUiFrameClockActive(false);
         cancelCameraFlipAnimation();
         if (zoomResetAnimator != null) zoomResetAnimator.cancel();
@@ -350,6 +352,7 @@ public final class InstantCameraView2 extends InstantCameraViewBase {
         if (stateInfo.getState() == RoundVideoSession.State.RECORDING) {
             pauseForPreview();
         } else if (stateInfo.getState() == RoundVideoSession.State.PREVIEWING) {
+            if (!org.telegram.messenger.purple.PurpleLongRoundOriginals.beforeV2(currentAccount, recordingGuid, session.getPreviewFile(), stateInfo.getRecordedDurationMs(), videoEditedInfo)) return;
             videoEditedInfo = null;
             resumeNotificationPending = true;
             stopNotificationSent = false;
@@ -386,9 +389,11 @@ public final class InstantCameraView2 extends InstantCameraViewBase {
                 .setInitialFacing(SharedSettings.roundVideoLastCamera.get())
                 .setOutputResolution(activeOutputResolution)
                 .setVideoBitrate(SharedSettings.roundVideoVideoBitrate.get())
+                .setMaximumDurationMs(org.telegram.messenger.purple.PurpleRoundLimits.maximumDurationMs(currentAccount))
                 .setCameraResolution(SharedSettings.roundVideoCameraResolution.get())
                 .setFrameRate(SharedSettings.roundVideoFrameRate.get())
                 .setCompositionEnabled(SharedSettings.roundVideoComposition.get())
+                .setPurpleOriginalOwner(org.telegram.messenger.purple.PurpleLongRoundOriginals.owner(currentAccount, recordingGuid))
                 .setListener(sessionListener)
                 .setOutputListener(upload)
                 .setScreenFlashController(this::setScreenFlashEnabled)
@@ -511,6 +516,7 @@ public final class InstantCameraView2 extends InstantCameraViewBase {
             cancel(false);
             return;
         }
+        if (!org.telegram.messenger.purple.PurpleLongRoundOriginals.beforeV2(currentAccount, recordingGuid, session.getPreviewFile(), stateInfo.getRecordedDurationMs(), videoEditedInfo)) return;
         if (!org.telegram.messenger.purple.PurpleRecordingDock.beginRoundFinish(currentAccount, recordingGuid)) return;
         if (stateInfo.getState() == RoundVideoSession.State.RECORDING) {
             postRecordStopped(5);
@@ -532,6 +538,7 @@ public final class InstantCameraView2 extends InstantCameraViewBase {
     public void cancel(boolean byGesture) {
         if (org.telegram.messenger.purple.PurpleRecordingDock.roundFinalizing(currentAccount, recordingGuid)) return;
         if (session == null) return;
+        session.purpleProtectOriginal();
         postRecordStopped(byGesture ? 0 : 6);
         session.cancel();
         if (upload != null) upload.release(true);
@@ -740,11 +747,12 @@ public final class InstantCameraView2 extends InstantCameraViewBase {
 
         @Override
         public void onPreviewReady(long durationMs, long trimStartMs, long trimEndMs) {
-            progressView.setProgress(durationMs / 60_000f);
+            progressView.setProgress(durationMs / (float) stateInfo.getMaximumDurationMs());
             muted = false;
             muteImageView.setAlpha(0f);
             File previewFile = session == null ? null : session.getPreviewFile();
             if (previewFile == null) return;
+            org.telegram.messenger.purple.PurpleLongRoundOriginals.capture(currentAccount, recordingGuid, previewFile, durationMs);
             videoEditedInfo = createVideoEditedInfo(previewFile, durationMs, null);
             videoEditedInfo.startTime = trimStartMs > 0 ? trimStartMs : -1;
             videoEditedInfo.endTime = trimEndMs < durationMs ? trimEndMs : -1;

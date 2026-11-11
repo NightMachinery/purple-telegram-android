@@ -101,7 +101,7 @@ public class VoicePreviewCases {
 }""")
     sources = sorted(dest.rglob('*.java'))
     subprocess.run([str(compiler), '-d', str(dest / 'classes'), *map(str, sources)], check=True)
-    for klass, args in [('org.telegram.ui.RoundReviewCases', ['backdrop']), ('org.telegram.ui.RoundReviewCases', ['destroy']), ('org.telegram.ui.RoundReviewCases', ['paid']), ('org.telegram.ui.VoicePreviewCases', []), ('org.telegram.ui.PaymentCancelCases', []), ('org.telegram.ui.PaymentNextCaptureCases', []), ('org.telegram.ui.CompletionBoundaryCases', [])]:
+    for klass, args in [('org.telegram.ui.LongRoundReviewCases', []), ('org.telegram.ui.RoundReviewCases', ['backdrop']), ('org.telegram.ui.RoundReviewCases', ['destroy']), ('org.telegram.ui.RoundReviewCases', ['paid']), ('org.telegram.ui.VoicePreviewCases', []), ('org.telegram.ui.PaymentCancelCases', []), ('org.telegram.ui.PaymentNextCaptureCases', []), ('org.telegram.ui.CompletionBoundaryCases', [])]:
         subprocess.run([str(compiler.with_name('java')), '-cp', str(dest / 'classes'), klass, *args], check=True)
     mc = (java_root / 'messenger/MediaController.java').read_text()
     assert 'PurpleRecordingVoicePreview.remember(recordingCurrentAccount, recordingAudio,' in mc

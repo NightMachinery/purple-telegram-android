@@ -38,6 +38,16 @@ public final class PurpleRecordingSendAs {
         identities.put(result, new PurpleRecordingSendIdentity(account, user, dialog, peer));
         return result;
     }
+    public static SendMessageChatArguments copyFrozen(int account, long user, long dialog, SendMessageChatArguments original) {
+        final PurpleRecordingSendIdentity identity = identities.get(original);
+        if (!sameUser(account, user) || identity == null || !identity.matches(account, user, dialog)) return null;
+        final SendMessageChatArguments.Builder builder = new SendMessageChatArguments.Builder();
+        builder.setWelcomeMessageChatId(original.welcomeMessageChatId);
+        builder.setQuickReplyShortcut(original.quickReplyShortcut, original.quickReplyShortcutId);
+        final SendMessageChatArguments result = builder.build();
+        identities.put(result, identity);
+        return result;
+    }
     public static boolean reject(int account, long dialog, SendMessageChatArguments arguments) {
         PurpleRecordingSendIdentity identity = identities.get(arguments);
         return identity != null && !sameUser(account, identity.user)

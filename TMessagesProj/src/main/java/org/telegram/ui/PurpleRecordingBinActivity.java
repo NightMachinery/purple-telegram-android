@@ -177,6 +177,7 @@ public class PurpleRecordingBinActivity extends UniversalFragment {
         final String kind = getString(e.round() ? R.string.PurpleRecordingBinRound : R.string.PurpleRecordingBinVoice);
         final String state;
         if (PurpleRecordingEntry.UNRECOVERABLE.equals(e.state)) state = getString(R.string.PurpleRecordingBinUnrecoverable);
+        else if (e.longOriginal) state = getString(R.string.PurpleLongRoundOriginalKept);
         else if (e.discarded) state = getString(R.string.PurpleRecordingBinDiscarded);
         else if (e.partial) state = getString(R.string.PurpleRecordingBinPartial);
         else if (PurpleRecordingEntry.RECOVERED.equals(e.state)) state = getString(R.string.PurpleRecordingBinRecovered);
@@ -242,9 +243,12 @@ public class PurpleRecordingBinActivity extends UniversalFragment {
     @Override
     public void onPause() { stopPlayers(); super.onPause(); }
 
+    @Override
+    public void onResume() { super.onResume(); org.telegram.messenger.purple.PurpleLongRoundOriginals.retryPending(); }
+
     private void sendSaved(PurpleRecordingEntry entry) {
         final long self = UserConfig.getInstance(currentAccount).getClientUserId();
-        PurpleRecordingSend.send(entry, currentAccount, self, 0, 0, false, this::sentResult);
+        sendItem(entry, currentAccount, self, 0, 0, false);
     }
 
     /**
@@ -265,10 +269,18 @@ public class PurpleRecordingBinActivity extends UniversalFragment {
             if (e.account == currentAccount) presentFragment(new ChatActivity(args));
             return;
         }
-        PurpleRecordingSend.send(e, e.account, e.dialogId, e.topicId, e.replyId, true, this::sentResult);
+        sendItem(e, e.account, e.dialogId, e.topicId, e.replyId, true);
+    }
+
+    private void sendItem(PurpleRecordingEntry item, int account, long dialog, long topic, int reply, boolean original) {
+        if (!PurpleLongRoundSend.fromBin(this, item, account, dialog, topic, reply, original, this::sentResult)) {
+            PurpleRecordingSend.send(item, account, dialog, topic, reply, original, this::sentResult);
+        }
     }
 
     private void sendElsewhere(PurpleRecordingEntry e) {
+        final int account = currentAccount;
+        final long user = UserConfig.getInstance(account).getClientUserId();
         final Bundle args = new Bundle();
         args.putBoolean("onlySelect", true);
         args.putInt("dialogsType", DialogsActivity.DIALOGS_TYPE_FORWARD);
@@ -278,7 +290,8 @@ public class PurpleRecordingBinActivity extends UniversalFragment {
             if (dids.isEmpty()) return false;
             final MessagesStorage.TopicKey key = dids.get(0);
             fragment.finishFragment();
-            PurpleRecordingSend.send(e, currentAccount, key.dialogId, key.topicId, 0, false, this::sentResult);
+            if (!org.telegram.messenger.purple.PurpleRecordingSendAs.sameUser(account, user)) { sentResult(false); return true; }
+            sendItem(e, account, key.dialogId, key.topicId, 0, false);
             return true;
         });
         presentFragment(picker);
