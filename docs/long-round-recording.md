@@ -279,7 +279,7 @@ protected against replacement and blind retry.
 
 A native-audio host regression executes the converter audio-initialization block,
 complete AudioDecoder/AudioRecoder and PCM conversion methods, and native Track
-sample timing with the unchanged production part validator. Short AAC tails
+sample timing with the production part validator. Short AAC tails
 reproduce a parent coverage rejection. Corrected checks retain selected PCM,
 fill the clean-EOS residual budget, reset on retry and propagate failed or
 interrupted decoding. Codec, extractor/metadata, AAC packet bytes and video/GL
@@ -298,6 +298,23 @@ are still removed by the existing owner; diagnostics do not retain media.
 
 The diagnostic host cases execute the changed production inspector, prepare
 method, request catch and log sanitizer over media/codec ports. A variable-rate
-589-frame timing vector exercises the existing coverage boundary and its
-reported facts. These checks do not encode Android parts or establish the
-cause of a particular native conversion failure.
+589-frame timing vector exercises the coverage boundary and its reported facts.
+These checks do not encode Android parts or establish successful device output.
+
+Part coverage distinguishes the last sample start from its presentation end.
+A final interval is credited only when a positive observed sample spacing of at
+most 200ms and the declared track end both support it. The smallest positive
+spacing caps that credit; a distant sample or arbitrary duration cannot supply
+it. The existing 200ms coverage tolerance still applies to the resulting end,
+and missing track duration receives no inferred extension. A declared end before
+the last sample is rejected. Start, sync, order, sample-count, 60-second and
+selected-duration bounds remain in force. This is a conservative tail check,
+not proof of every decoded frame or sample-boundary continuity.
+
+The host cases run complete native Track timing and production inspection with
+the observed low-frame-rate sample count, timestamps and per-track durations.
+They preserve the accepted first part and reject real missing tails and malformed
+tracks. The timing model and observed format end differ by 44 microseconds from
+90 kHz quantization; the fixture keeps those facts separate. Actual failed-part
+bytes were unavailable, so native encoding and decoded continuity remain device
+checks.

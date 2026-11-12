@@ -107,6 +107,7 @@ public final class PurpleLongRoundMedia {
             stage = "extractor_open";
             final MediaExtractor extractor = new MediaExtractor();
             int audio = -1, video = -1;
+            long audioDurationUs = -1, videoDurationUs = -1;
             try {
                 extractor.setDataSource(file.getAbsolutePath());
                 for (int i = 0; i < extractor.getTrackCount(); i++) {
@@ -124,6 +125,8 @@ public final class PurpleLongRoundMedia {
                         trackDurationUs = format.getLong(MediaFormat.KEY_DURATION);
                         duration = Math.max(duration, (trackDurationUs + 999) / 1000);
                     }
+                    if (i == video) videoDurationUs = trackDurationUs;
+                    if (i == audio) audioDurationUs = trackDurationUs;
                     PurpleLongRoundDiagnostics.format(partIndex, i, "video/avc".equals(mime) ? "avc"
                             : "audio/mp4a-latm".equals(mime) ? "aac" : "other", trackDurationUs);
                 }
@@ -144,7 +147,8 @@ public final class PurpleLongRoundMedia {
                             PurpleLongRoundDiagnostics.track(partIndex, track, kind, "start", duration, first, -1, first, 0, sync, true);
                             throw new IOException("start");
                         }
-                        long previous = -1;
+                        final long trackDurationUs = track == video ? videoDurationUs : audioDurationUs;
+                        long previous = -1, intervalUs = Long.MAX_VALUE;
                         int count = 0;
                         while (extractor.getSampleTime() >= 0) {
                             final long pts = extractor.getSampleTime();
@@ -152,10 +156,15 @@ public final class PurpleLongRoundMedia {
                                 PurpleLongRoundDiagnostics.track(partIndex, track, kind, "timestamps", duration, first, previous, pts, count, sync, pts >= previous);
                                 throw new IOException("timestamps");
                             }
+                            if (previous >= 0 && pts > previous) intervalUs = Math.min(intervalUs, pts - previous);
                             previous = pts;
                             if (!extractor.advance()) break;
                         }
-                        if (previous - first < (duration - 200) * 1000) {
+                        long endUs = previous;
+                        if (intervalUs <= 200_000 && trackDurationUs >= previous && trackDurationUs <= 60_000_000L) {
+                            endUs = Math.min(trackDurationUs, previous + intervalUs);
+                        }
+                        if ((trackDurationUs >= 0 && trackDurationUs < previous) || endUs - first < (duration - 200) * 1000) {
                             PurpleLongRoundDiagnostics.track(partIndex, track, kind, "missing_samples", duration, first, previous, previous, count, sync, true);
                             throw new IOException("missing samples");
                         }
