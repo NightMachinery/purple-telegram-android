@@ -21,6 +21,7 @@ def run(root, output):
     put('android/media/MediaFormat.java', '''package android.media; import java.util.*;
       public class MediaFormat {public static final String KEY_MIME="mime",KEY_DURATION="duration";Map<String,Object> m=new HashMap<>();
        public String getString(String k){return (String)m.get(k);}public long getLong(String k){return (Long)m.get(k);}public boolean containsKey(String k){return m.containsKey(k);}}''')
+    put('android/media/MediaCodec.java', 'package android.media; public class MediaCodec {public static final int BUFFER_FLAG_END_OF_STREAM=4;}')
     put('android/media/Probe.java', '''package android.media; import java.util.*;
       public class Probe {public static String exec(String... args)throws Exception{Process p=new ProcessBuilder(args).redirectError(ProcessBuilder.Redirect.INHERIT).start();String s=new String(p.getInputStream().readAllBytes());if(p.waitFor()!=0)throw new Exception("media tool failed");return s.trim();}
        static Map<String,String> facts(String path,String stream)throws Exception{Map<String,String> m=new HashMap<>();String s=exec("ffprobe","-v","error","-select_streams",stream,"-show_entries","stream=width,height,duration,codec_name","-of","default=noprint_wrappers=1",path);for(String l:s.split("\\n")){String[] pair=l.split("=",2);if(pair.length==2)m.put(pair[0],pair[1]);}return m;}
@@ -53,7 +54,7 @@ def run(root, output):
        public AudioDecoder(String p,int t)throws IOException{}public void setStartTimeUs(long v){start=v;}public void setEndTimeUs(long v){end=v;}
        public int getSampleRate(){return 1000;}public int getChannelCount(){return 1;}public int getBitrateRate(){return 16000;}public void start(){}public void release(){released++;}
        public DecodedBufferData decode(){DecodedBufferData d=new DecodedBufferData();if(index==3)return d;d.index=index;d.presentationTimeUs=index*10000;d.size=20;d.byteBuffer=ByteBuffer.allocate(20);for(int i=0;i<10;i++)d.byteBuffer.putShort((short)(index*10+i));d.byteBuffer.flip();index++;return d;}
-       public void releaseOutputBuffer(int i){}public static class DecodedBufferData{public int index=-1,size;public long presentationTimeUs;public ByteBuffer byteBuffer;}}
+       public void releaseOutputBuffer(int i){}public static class DecodedBufferData{public int index=-1,size,flags;public long presentationTimeUs;public ByteBuffer byteBuffer;}}
     ''')
     put('org/telegram/messenger/video/MediaCodecVideoConvertor.java', '''package org.telegram.messenger.video;
       import java.io.*;import java.util.*;import org.telegram.messenger.*;import org.telegram.messenger.video.audio_input.*;import android.media.Probe;

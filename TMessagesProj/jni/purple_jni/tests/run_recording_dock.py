@@ -72,3 +72,5 @@ runpy.run_path(str(pathlib.Path(__file__).parent / "recording/native_cap.py"))["
 runpy.run_path(str(pathlib.Path(__file__).parent / "recording/native_eos.py"))["run"](root, args.output / "native-eos")
 
 runpy.run_path(str(pathlib.Path(__file__).parent / "recording/native_finalization.py"))["run"](root, args.output / "native-finalization")
+
+runpy.run_path(str(pathlib.Path(__file__).parent / "recording/native_long_audio.py"))["run"](root, args.output / "native-long-audio")

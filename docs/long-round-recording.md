@@ -154,6 +154,15 @@ sample, and bounded timestamps. A scoped MediaCodecVideoConvertor extension
 accepts an owned AudioInput and its microsecond duration. PurpleLongRoundAudioInput
 excludes fully preceding decoded blocks and uses the native decoder's partial
 PCM trim, so prior-sync AAC packets are not blindly copied across a boundary.
+The owned audio input emits exactly the selected-range sample budget. If the
+selected source audio ends early, it preserves every decoded sample and fills
+only the uncovered tail after an observed clean codec EOS. A decoder stop
+without EOS, codec failure, timeout or cancellation cannot become silence.
+Release and codec retry reset both the budget and EOS observation. Validation
+and trim bounds remain unchanged. The caught missing-output-duration diagnostic
+in native AudioDecoder falls back to extractor duration; it alone is not a
+conversion failure.
+
 Ordinary video preserves all original bytes and carries roundVideo=false.
 Prepared files bypass another conversion; native send code reads their actual
 media attributes. No longer-than-one-minute circle metadata is emitted.
@@ -267,3 +276,12 @@ replace only that same account owner’s payment request with zero enqueue attem
 The old generation closes before the new review opens; late payment callbacks
 cannot send or revoke the replacement. An approved or attempted send remains
 protected against replacement and blind retry.
+
+A native-audio host regression executes the converter audio-initialization block,
+complete AudioDecoder/AudioRecoder and PCM conversion methods, and native Track
+sample timing with the unchanged production part validator. Short AAC tails
+reproduce a parent coverage rejection. Corrected checks retain selected PCM,
+fill the clean-EOS residual budget, reset on retry and propagate failed or
+interrupted decoding. Codec, extractor/metadata, AAC packet bytes and video/GL
+remain ports; this does not identify the exact device terminal failure or prove
+Android encoded output, decoded continuity or physical codec progress.
