@@ -1008,7 +1008,8 @@
         "recording-dock:LONG_ROUND_SHEET_LIFECYCLE_CHECKS": 50,
         "recording-dock:ROUND_TERMINAL_CHECKS": 42,
         "recording-dock:ROUND_SECOND_TAKE_CHECKS": 140,
-        "recording-dock:LONG_ROUND_NATIVE_AUDIO_CHECKS": 60
+        "recording-dock:LONG_ROUND_NATIVE_AUDIO_CHECKS": 60,
+        "recording-dock:LONG_OUTPUT_DIAGNOSTIC_CHECKS": 650
       }
     },
     {

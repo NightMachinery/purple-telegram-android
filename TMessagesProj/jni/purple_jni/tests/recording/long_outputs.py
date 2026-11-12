@@ -10,7 +10,9 @@ def run(root, output):
         p.write_text(text)
     for name in ['PurpleLongRoundPlan', 'PurpleLongRoundSelection', 'PurpleLongRoundMedia', 'PurpleLongRoundQueue', 'PurpleLongRoundAudioInput', 'PurpleRecordingFiles']:
         put('org/telegram/messenger/purple/' + name + '.java', (java / ('messenger/purple/' + name + '.java')).read_text())
-    put('org/telegram/messenger/purple/PurpleDiagLog.java', 'package org.telegram.messenger.purple; public class PurpleDiagLog {public static void event(String... x){} public static String reason(String x){return x;}}')
+    for diagnostic in ['PurpleLongRoundDiagnostics','PurpleDiagLogStore']:
+        put('org/telegram/messenger/purple/'+diagnostic+'.java', (root/'TMessagesProj/src/main/java/org/telegram/messenger/purple'/(diagnostic+'.java')).read_text())
+    put('org/telegram/messenger/purple/PurpleDiagLog.java','package org.telegram.messenger.purple;public class PurpleDiagLog{public static PurpleDiagLogStore.Field reason(String s){return PurpleDiagLogStore.reason(s);}public static PurpleDiagLogStore.Field code(String k,String v){return PurpleDiagLogStore.code(k,v);}public static PurpleDiagLogStore.Field count(String k,int v){return PurpleDiagLogStore.count(k,v);}public static PurpleDiagLogStore.Field flag(String k,boolean v){return PurpleDiagLogStore.flag(k,v);}public static void event(String a,String b,PurpleDiagLogStore.Field...c){}}')
     put('android/os/SystemClock.java', 'package android.os; public class SystemClock {public static long elapsedRealtime(){return System.nanoTime()/1000000;}}')
     put('org/telegram/messenger/VideoEditedInfo.java', '''package org.telegram.messenger;
       public class VideoEditedInfo {public long startTime,endTime,estimatedSize,estimatedDuration;public boolean roundVideo,muted;

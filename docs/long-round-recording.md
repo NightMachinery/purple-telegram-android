@@ -285,3 +285,19 @@ fill the clean-EOS residual budget, reset on retry and propagate failed or
 interrupted decoding. Codec, extractor/metadata, AAC packet bytes and video/GL
 remain ports; this does not identify the exact device terminal failure or prove
 Android encoded output, decoded continuity or physical codec progress.
+
+Preparation failures record their local stage, part index, native converter
+result and exact existing rejection in the bounded Purple diagnostic log.
+Track summaries include MIME class, duration, first/last/current timestamp,
+sample count, sync and monotonicity facts. Times use seconds, fractional
+milliseconds and fractional microseconds; values at or above306 seconds
+saturate. Fixed vocabulary and bounded fields exclude media paths, account or
+chat identifiers and exception messages. Logging failures do not change
+validation, returned exceptions, cancellation or cleanup. Generated copies
+are still removed by the existing owner; diagnostics do not retain media.
+
+The diagnostic host cases execute the changed production inspector, prepare
+method, request catch and log sanitizer over media/codec ports. A variable-rate
+589-frame timing vector exercises the existing coverage boundary and its
+reported facts. These checks do not encode Android parts or establish the
+cause of a particular native conversion failure.

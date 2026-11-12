@@ -121,7 +121,7 @@ public final class PurpleLongRoundSend {
                     result = PurpleLongRoundMedia.prepare(new File(item.media), FileLoader.getDirectory(FileLoader.MEDIA_DIR_DOCUMENT), circles, startUs, endUs, work);
                 } catch (Exception failure) {
                     invalid = failure instanceof PurpleLongRoundSelection.Invalid;
-                    PurpleDiagLog.event("recordings", "long_prepare", PurpleDiagLog.reason("io_failed"));
+                    PurpleLongRoundDiagnostics.failure("request", -1, failure);
                 }
                 final List<PurpleLongRoundMedia.Output> prepared = result;
                 final boolean invalidSelection = invalid;
