@@ -124,6 +124,25 @@ public final class PurpleDiagLogFacadeCases {
         trace.event(PurpleMediaTrace.Step.FLIP_FIRST_FRAME);
         drained();
 
+        PurpleMediaTrace.Take releasing = PurpleMediaTrace.operation("v2");
+        java.lang.reflect.Constructor<PurpleLongRoundOriginals.Owner> constructor =
+                PurpleLongRoundOriginals.Owner.class.getDeclaredConstructor(String.class, long[].class, PurpleMediaTrace.Take.class);
+        constructor.setAccessible(true);
+        PurpleLongRoundOriginals.Owner owner = constructor.newInstance("SENSITIVE_OWNER", null, releasing);
+        PurpleMediaTrace.v2(owner, "ERROR");
+        PurpleMediaTrace.v2(owner, "RELEASED");
+        PurpleMediaTrace.released(owner);
+        releasing.event(PurpleMediaTrace.Step.FLIP_FIRST_FRAME);
+        PurpleLongRoundMedia.Work work = new PurpleLongRoundMedia.Work();
+        java.lang.reflect.Field owned = PurpleLongRoundMedia.Work.class.getDeclaredField("owned");
+        owned.setAccessible(true);
+        ((List<File>) owned.get(work)).add(new File("SENSITIVE_OWNED_PATH") {
+            @Override public boolean exists() { return true; }
+            @Override public boolean delete() { return false; }
+        });
+        work.discard();
+        drained();
+
         // A legacy export in files/logs from the first diagnostic build.
         File logs = new File(app, PurpleDiagLog.LEGACY_EXPORT_DIRECTORY);
         check(logs.mkdirs(), "legacy export folder");
@@ -142,6 +161,11 @@ public final class PurpleDiagLogFacadeCases {
         check(!legacy.exists(), "export removes a legacy export");
         check(unrelated.isFile(), "export leaves other files in files/logs alone");
         String text = read(exported);
+        check(text.contains("step=state_error outcome=error"), "terminal error is an error outcome");
+        check(text.indexOf("step=state_released") < text.indexOf("step=release_returned"), "release API observation survives terminal state until API return");
+        check(text.contains("step=split_cleanup outcome=error") && text.contains("long_copy_cleanup reason=io_failed"), "actual refused delete is a failed cleanup outcome");
+        check(!text.contains("SENSITIVE_OWNER") && !text.contains("SENSITIVE_OWNED_PATH"), "failure export omits owner and file text");
+
         check(text.contains("capture_budget") && text.contains("cap_s=180"), "captured per-take budget reaches release export");
         check(text.contains("process_hi=") && text.contains("take_lo=") && text.contains("elapsed_ms="), "random process/take and monotonic delta exported");
         check(text.indexOf("step=pause_request") < text.indexOf("step=pause_ack"), "request precedes observed acknowledgement in export");
@@ -186,7 +210,7 @@ public final class PurpleDiagLogFacadeCases {
         File second = export("second export");
         check(second != null && second.isFile(), "the second export was written");
         check(exports(folder) == 1, "one export at a time");
-        check(read(second).contains(" diag exported lines=3\n"), "the first export logged its line count");
+        check(read(second).contains(" diag exported lines=" + body.chars().filter(c -> c == '\n').count() + "\n"), "the first export logged its actual line count");
 
         // Clear removes the log and the export.
         Files.write(legacy.toPath(), "old".getBytes(StandardCharsets.UTF_8));

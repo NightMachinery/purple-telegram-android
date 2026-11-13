@@ -6,7 +6,7 @@ def run(root, output, native_case="all"):
     java=root/'TMessagesProj/src/main/java/org/telegram'
     def put(name,text):
         p=output/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(text)
-    put('org/telegram/messenger/purple/PurpleMediaTrace.java', 'package org.telegram.messenger.purple;public class PurpleMediaTrace{public enum Step{RETAIN_REQUEST,RETAIN_SAVED,RETAIN_FAILED,RELEASE_RETURNED}public static class Take{public void event(Step s){}public void event(Step s,boolean b){}}public static Take begin(int a,int g,String b,long c){return new Take();}}')
+    put('org/telegram/messenger/purple/PurpleMediaTrace.java', 'package org.telegram.messenger.purple;public class PurpleMediaTrace{public enum Step{RETAIN_REQUEST,RETAIN_SAVED,RETAIN_FAILED,RELEASE_RETURNED}public static class Take{public void event(Step s){}public void event(Step s,boolean b){}}public static Take begin(int a,int g,String b,long c){return new Take();}public static void released(PurpleLongRoundOriginals.Owner o){}}')
     for name in ['PurpleLongRoundOriginal','PurpleLongRoundOriginals','PurpleLongRoundPlan','PurpleLongRoundSelection','PurpleRecordingFiles']:
         put('org/telegram/messenger/purple/'+name+'.java',(java/('messenger/purple/'+name+'.java')).read_text())
     put('android/system/StructStat.java','package android.system;public class StructStat {public long st_ino,st_dev,st_size;}')

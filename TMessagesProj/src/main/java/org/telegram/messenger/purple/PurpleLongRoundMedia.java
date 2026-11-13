@@ -68,8 +68,12 @@ public final class PurpleLongRoundMedia {
             return file;
         }
         public void discard() {
-            for (File file : owned) if (file.exists() && !file.delete()) PurpleDiagLog.event("recordings", "long_copy_cleanup", PurpleDiagLog.reason("io_failed"));
-            trace.event(PurpleMediaTrace.Step.SPLIT_CLEANUP);
+            boolean cleared = true;
+            for (File file : owned) if (file.exists() && !file.delete()) {
+                cleared = false;
+                PurpleDiagLog.event("recordings", "long_copy_cleanup", PurpleDiagLog.reason("io_failed"));
+            }
+            trace.event(PurpleMediaTrace.Step.SPLIT_CLEANUP, cleared);
             owned.clear();
         }
         public void handed(File file) { owned.remove(file); }

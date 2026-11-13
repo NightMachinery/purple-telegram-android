@@ -38,6 +38,7 @@ def run(root, output, owners=None, context_source=None):
     if chat[:host_field_start].endswith('    @androidx.annotation.Keep\n'):
         host_field_start -= len('    @androidx.annotation.Keep\n')
     host_field = chat[host_field_start:chat.index('\n    };', host_field_start) + 7]
+    put('org/telegram/messenger/purple/PurpleMediaTrace.java', 'package org.telegram.messenger.purple;public class PurpleMediaTrace{public enum Step{DISCARD_REQUEST}public static void event(int a,int g,Step s){}public static void detach(int a,int g){}}')
     put('androidx/annotation/Keep.java', 'package androidx.annotation;import java.lang.annotation.*;@Retention(RetentionPolicy.CLASS)@Target({ElementType.FIELD,ElementType.TYPE})public @interface Keep {}')
     put('android/view/View.java', 'package android.view;public class View {public static final int VISIBLE=0,GONE=8;private int visibility;public int getVisibility(){return visibility;}public void setVisibility(int v){visibility=v;}public void bringToFront(){}}')
     put('org/telegram/ui/Components/FragmentContextView.java', 'package org.telegram.ui.Components;public class FragmentContextView {private boolean isLocation;public int relayouts;'+initializer+'public FragmentContextView(){this(false);}public FragmentContextView(boolean location){isLocation=location;}public org.telegram.ui.PurpleRecordingStrip recordingStrip(){return purple;}private void checkPlayer(boolean create){relayouts++;purple.showRecording();}public Object getContext(){return null;}public void addView(Object v,Object p){}}')

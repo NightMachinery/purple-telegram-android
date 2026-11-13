@@ -53,7 +53,8 @@ V2 `state_*` events report the session's actual state setter. STARTING, PAUSING,
 RESUMING and FINISHING are intermediate states, not completion. RECORDING,
 PREVIEWING and COMPLETED report the matching state acknowledgement. ERROR is a
 terminal error, never a playable-preview claim. `release_returned` means the
-camera controller release API returned. Camera flips distinguish request,
+camera controller release API returned, after which that trace is retired.
+A RELEASED state alone does not retire it before the pending release return. Camera flips distinguish request,
 configured-session callback and first-frame callback. Legacy
 `flip_frame_submitted` records its existing GL target-frame submission boundary,
 not a physical display observation. Failed camera creation emits failure.
@@ -68,8 +69,9 @@ outcome, actual per-track format duration, sample count, first/last/current PTS,
 sync count and monotonicity, plus typed rejection. A work-scoped correlation and
 elapsed delta are appended during preparation and removed on return or failure.
 A standalone inspection outside preparation has no work correlation.
-`split_cleanup` records that cleanup was attempted, not proof that every delete
-succeeded; existing typed cleanup failures remain authoritative. No validation,
+`split_cleanup outcome=ok` means every owned file was absent or its delete
+returned true. A refused deletion emits `outcome=error` and the existing typed
+cleanup failure; this still does not prove durable filesystem removal. No validation,
 audio timing, threshold, retention or send decision is changed by diagnostics.
 
 ## What logs cannot establish

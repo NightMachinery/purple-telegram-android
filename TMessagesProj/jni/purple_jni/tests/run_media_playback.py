@@ -160,7 +160,7 @@ assert len(row_values) == len(set(row_values)), 'settings row ids collide'
 settings_checks = len(rows)
 for route in ['case ROW_AFTER_VOICE:', 'case ROW_RESUME_MUSIC:',
               '"playback", "after_voice"', '"playback", "resume_music_after_voice_p"',
-              'UItem.asButton(ROW_AFTER_VOICE', 'UItem.asCheck(ROW_RESUME_MUSIC']:
+              'PurpleMediaSettingsRow.button(ROW_AFTER_VOICE', 'UItem.asCheck(ROW_RESUME_MUSIC']:
     assert route in settings, route
     settings_checks += 1
 (args.output / 'settings.log').write_text('MEDIA_PLAYBACK_SETTINGS_CHECKS=%d\n' % settings_checks)

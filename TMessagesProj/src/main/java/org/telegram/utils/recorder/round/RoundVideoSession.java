@@ -846,7 +846,7 @@ public final class RoundVideoSession {
         disableCameraEffects();
         releasePlayer();
         cameraController.release();
-        if (purpleOriginalOwner != null) purpleOriginalOwner.trace.event(org.telegram.messenger.purple.PurpleMediaTrace.Step.RELEASE_RETURNED);
+        org.telegram.messenger.purple.PurpleMediaTrace.released(purpleOriginalOwner);
         cleanupStarted = true;
         setState(State.RELEASED);
         logSummary("released");
@@ -1486,7 +1486,7 @@ public final class RoundVideoSession {
         logSummary("cancelled");
         deleteMediaFiles();
         cameraController.release();
-        if (purpleOriginalOwner != null) purpleOriginalOwner.trace.event(org.telegram.messenger.purple.PurpleMediaTrace.Step.RELEASE_RETURNED);
+        org.telegram.messenger.purple.PurpleMediaTrace.released(purpleOriginalOwner);
         shutdownExecutors();
     }
 

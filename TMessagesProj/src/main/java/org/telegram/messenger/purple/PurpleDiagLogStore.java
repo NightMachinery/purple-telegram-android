@@ -128,7 +128,7 @@ public final class PurpleDiagLogStore {
             "recovered", "unrecoverable", "missing", "finished_cleanly", "orphans", "failures", "expired",
             "kind", "kept", "io_failed", "voice", "round", "journal_stopped",
             "long_work", "cancelled",
-            "long_prepare", "long_reject", "long_range", "long_convert", "long_metadata",
+            "long_copy_cleanup", "long_prepare", "long_reject", "long_range", "long_convert", "long_metadata",
             "long_format", "long_track", "long_duration", "part", "track",
             "exception", "avc", "aac", "conversion", "metadata",
             "metadata_release", "track_format", "track_scan", "track_unselect", "extractor_open",

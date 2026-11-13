@@ -89,11 +89,14 @@ public final class PurpleMediaTrace {
     public static synchronized Take current(int account, int guid) { return takes.get(account + ":" + guid); }
     public static void event(int account, int guid, Step step) {
         Take take = current(account, guid);
-        if (take != null) take.event(step);
+        if (take != null) take.event(step, step != Step.FAILURE);
     }
     public static void v2(PurpleLongRoundOriginals.Owner owner, String state) {
-        try { if (owner != null) { owner.trace.event(Step.valueOf("STATE_" + state)); if ("RELEASED".equals(state)) owner.trace.retire(); } }
+        try { if (owner != null) owner.trace.event(Step.valueOf("STATE_" + state), !"ERROR".equals(state)); }
         catch (Throwable ignored) { }
+    }
+    public static void released(PurpleLongRoundOriginals.Owner owner) {
+        if (owner != null) { owner.trace.event(Step.RELEASE_RETURNED); owner.trace.retire(); }
     }
     static Take enter(Take take) { Take previous = operation.get(); operation.set(take); return previous; }
     static void leave(Take previous) { if (previous == null) operation.remove(); else operation.set(previous); }
