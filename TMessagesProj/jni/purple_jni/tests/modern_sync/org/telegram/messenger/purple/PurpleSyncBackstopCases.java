@@ -25,8 +25,9 @@ final class PurpleSyncBackstopCases {
     }
     static void run(File parent) throws Exception {
         for(String scenario:new String[]{"idle","disabled","secondary","owner","logout","replaced","background","inflight","backoff","nostate"}) {
-            PurpleSyncAutoCases.Port p=PurpleSyncAutoCases.bound(parent,"backstop-"+scenario);
-            PurpleSyncAutoCases.initialPublish(p);
+            boolean fresh=scenario.equals("nostate");
+            PurpleSyncAutoCases.Port p=fresh ? new PurpleSyncAutoCases.Port(new Frame(parent,"backstop-nostate",true),1) : PurpleSyncAutoCases.bound(parent,"backstop-"+scenario);
+            if(fresh)p.enabled=true;else PurpleSyncAutoCases.initialPublish(p);
             Clock c=new Clock(p);PurpleSyncAutoBackstop timer=new PurpleSyncAutoBackstop(c);
             timer.resume();Runnable old=c.callback();timer.resume();check(c.scheduled.size()==1,"resume cannot multiply timers");
             int scans=p.checks;c.time+=900000;
@@ -41,11 +42,10 @@ final class PurpleSyncBackstopCases {
             } else {
                 if(scenario.equals("inflight")){p.holdCheck=true;p.clock=c.time/1000;p.engine.event(PurpleSyncAutoCore.Event.ChatUpdated);}
                 if(scenario.equals("backoff")){p.testingBackoff=true;p.exceptionBackoff=new long[]{2,c.time/1000+120};}
-                if(scenario.equals("nostate")){java.nio.file.Files.delete(new File(p.frame.sync(1),"state.json").toPath());}
                 c.fire();check(c.checks==1&&c.scheduled.size()==1,"due registered callback executes and rearms once");
                 if(scenario.equals("backoff"))check(p.checks==scans&&p.delay==120000,"periodic trigger respects exact backoff");
                 else if(scenario.equals("inflight"))check(p.checks==scans+1,"periodic trigger coalesces while actual check in flight");
-                else if(scenario.equals("nostate"))check(p.reason==PurpleSyncAutoCore.Reason.AccountUnbound&&p.posts==1,"no-state backstop does not create or publish state");
+                else if(scenario.equals("nostate"))check(p.reason==PurpleSyncAutoCore.Reason.AccountUnbound&&p.posts==0&&!new File(p.frame.sync(1),"state.json").exists(),"no-state backstop does not create or publish state");
                 else check(p.checks==scans+1,"idle and stored secondary account check without lifecycle event");
                 old.run();check(c.checks==1,"consumed callback cannot replay");
             }
