@@ -121,11 +121,17 @@ public class PurpleSyncActivity extends UniversalFragment {
                 if(opening!=manualTicket){if(value!=null)value.close();return;}
                 manualOpening=false;
                 if(destroyed||!inFront()){if(value!=null)value.close();return;}
-                runner=value;if(value!=null)value.transientWait(wait->setStatus(org.telegram.messenger.purple.PurpleRpcRequests.text(wait)));refresh();checkOnOpenAsk();
+                runner=value;
+                if(value==null){stopForLostAccount();return;}
+                if(lost){lost=false;setStatus(getString(R.string.PurpleSyncReady));}
+                value.transientWait(wait->setStatus(org.telegram.messenger.purple.PurpleRpcRequests.text(wait)));refresh();checkOnOpenAsk();
             });
         }
         if (runner != null && !lost && !runner.accountAvailable()) {
             stopForLostAccount();
+        } else if (runner != null && lost && runner.accountAvailable()) {
+            lost = false;
+            setStatus(getString(R.string.PurpleSyncReady));
         } else {
             refresh();
         }

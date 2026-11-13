@@ -77,3 +77,8 @@ sticky overflow through client backoff or transient waits. A later own-record-on
 batch cannot replace earlier external intent. Binding replacement and session
 closure discard the previous batch. The host adapter-entry regression covers
 external then own-only updates during both waits, bounded overflow and replacement.
+
+The Sync screen shows unavailable when its asynchronous manual-runner resolution
+returns no runner. If the same captured runner later becomes available, its
+resume status returns to Ready. A retired runner remains held rather than being
+silently replaced with another account/context; stale paused resolutions close.
