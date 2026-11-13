@@ -18,6 +18,7 @@ def run(root, output, baseline_helper=None):
         target = dest / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text)
+    put('org/telegram/messenger/purple/PurpleMediaTrace.java', 'package org.telegram.messenger.purple;public class PurpleMediaTrace{public enum Step{CHAT_HIDDEN,CHAT_VISIBLE}public static void event(int a,int g,Step s){}}')
     put('org/telegram/tgnet/TLRPC.java', 'package org.telegram.tgnet; public class TLRPC { public static class TL_document {} public static class Message {public int id,local_id;} }')
     put('org/telegram/tgnet/tl/TL_stories.java', 'package org.telegram.tgnet.tl; public class TL_stories { public static class StoryItem {} }')
     put('org/telegram/messenger/SendMessagesHelper.java', """package org.telegram.messenger;

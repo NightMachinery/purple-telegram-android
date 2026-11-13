@@ -2905,12 +2905,14 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
                 videoEditedInfo.originalPath = previewFile.getAbsolutePath();
                 setupVideoPlayer(previewFile);
                 videoEditedInfo.estimatedDuration = recordedTime;
+                purpleBudget.trace.event(org.telegram.messenger.purple.PurpleMediaTrace.Step.PAUSE_PREVIEW_READY);
                 NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.audioDidSent, recordingGuid, videoEditedInfo, previewFile.getAbsolutePath(), keyframeThumbs);
             });
         }
 
         private void handleResumeRecording() {
             pauseRecorder = false;
+            purpleBudget.trace.event(org.telegram.messenger.purple.PurpleMediaTrace.Step.RESUME_APPLIED);
         }
 
         private void setupVideoPlayer(File file) {
@@ -3302,6 +3304,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
 
                 audioRecorder = new AudioRecord(MediaRecorder.AudioSource.DEFAULT, audioSampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufferSize);
                 audioRecorder.startRecording();
+                purpleBudget.trace.event(org.telegram.messenger.purple.PurpleMediaTrace.Step.AUDIO_RECORD_START_RETURNED);
                 purpleBudget.resume(handler, this::purpleLimitPreview);
                 if (BuildVars.LOGS_ENABLED) {
                     FileLog.d("InstantCamera initied audio record with channels " + audioRecorder.getChannelCount() + " sample rate = " + audioRecorder.getSampleRate() + " bufferSize = " + bufferSize);

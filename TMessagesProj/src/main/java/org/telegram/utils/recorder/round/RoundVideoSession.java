@@ -560,9 +560,13 @@ public final class RoundVideoSession {
     private volatile File previewFile;
     private ExoPlayer player;
 
+    private void purpleTraceDeadline() {
+        if (purpleOriginalOwner != null) purpleOriginalOwner.trace.event(org.telegram.messenger.purple.PurpleMediaTrace.Step.DEADLINE);
+    }
+
     private final Runnable durationLimitRunnable = () -> {
         if (state == State.RECORDING) {
-            if (purpleOriginalOwner != null) purpleOriginalOwner.trace.event(org.telegram.messenger.purple.PurpleMediaTrace.Step.DEADLINE);
+            purpleTraceDeadline();
             pauseRecording();
         }
     };

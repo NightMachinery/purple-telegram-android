@@ -26,7 +26,12 @@ cap means unspecified (voice has no round cap; a V2 owner is created before its
 session config is attached). The V2 session subsequently records its exact
 configured cap. `started` is the native recording notification. Legacy budget
 resume/pause events are requests at the budget boundary, not hardware completion.
-The dock records native pause/resume notifications as acknowledgements.
+Legacy `audio_record_start_returned` observes AudioRecord.startRecording's
+return, `resume_applied` observes the encoder thread clearing its pause flag,
+and `pause_preview_ready` observes the native preview callback after setup.
+These are distinct API/state boundaries, not physical microphone proof. The
+dock's guid-less pause/resume notifications are deliberately not logged as
+acknowledgements: resume can be posted before the encoder thread handles it.
 
 `pause_request`, `resume_request`, `stop_request`, `discard_request`, and
 `discard_modal` describe requested actions. Continue or native dialog cancellation

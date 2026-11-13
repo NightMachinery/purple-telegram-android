@@ -129,7 +129,6 @@ public final class PurpleRecordingDock {
             return;
         }
         if (event == NotificationCenter.recordPaused || event == NotificationCenter.recordResumed) {
-            PurpleMediaTrace.event(state.account, state.guid, event == NotificationCenter.recordPaused ? PurpleMediaTrace.Step.PAUSE_ACK : PurpleMediaTrace.Step.RESUME_ACK);
             state.pause(event == NotificationCenter.recordPaused, SystemClock.elapsedRealtime());
             if (event == NotificationCenter.recordResumed && !state.round && !ApplicationLoader.mainInterfacePaused && PurpleRecordingSettings.read().background) PurpleRecordingService.start();
             if (event == NotificationCenter.recordResumed && state.sendPending) {

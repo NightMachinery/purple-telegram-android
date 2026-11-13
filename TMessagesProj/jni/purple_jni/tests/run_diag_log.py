@@ -38,7 +38,7 @@ classpath = os.pathsep.join([str(classes), str(args.json)] + [item["path"] for k
 main = args.output / "DiagLogHostMain.java"
 main.write_text('import java.io.File;public final class DiagLogHostMain{public static void main(String[] a)throws Exception{'
                 'File expected=new File(a[0]).getCanonicalFile();'
-                'for(String n:new String[]{"PurpleDiagLogStore","PurpleDiagLog","PurpleDiagRepeats"}){'
+                'for(String n:new String[]{"PurpleDiagLogStore","PurpleDiagLog","PurpleDiagRepeats","PurpleMediaTrace","PurpleLegacyCodecEos"}){'
                 'File origin=new File(Class.forName("org.telegram.messenger.purple."+n).getProtectionDomain().getCodeSource().getLocation().toURI()).getCanonicalFile();'
                 'if(!expected.equals(origin))throw new AssertionError("business class shadow: "+n);'
                 'System.out.println(n+" origin="+origin);}'
