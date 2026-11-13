@@ -142,3 +142,8 @@ control rereads the durable automatic record instead of repeating an earlier
 unavailable/error status. A missing record already decodes as normal off state;
 a corrupt present record still reports recovery attention. This refresh does not
 reset sync files or bypass a real recovery failure.
+
+Enabling commits the account hint before posting backstop resumption. A held
+Enable without a new check therefore still has its idle callback even when the
+UI runs ahead of the worker. Disable suspends immediately and stale account
+callbacks retain their existing admission fences.

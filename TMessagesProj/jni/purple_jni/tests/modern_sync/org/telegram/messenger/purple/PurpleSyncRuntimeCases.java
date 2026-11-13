@@ -8,6 +8,29 @@ final class PurpleSyncRuntimeCases {
     static Object field(Class<?> type,Object target,String name)throws Exception { Field f=type.getDeclaredField(name);f.setAccessible(true);return f.get(target); }
     static void set(Class<?> type,Object target,String name,Object value)throws Exception { Field f=type.getDeclaredField(name);f.setAccessible(true);f.set(target,value); }
     static void ui() { int left=100;while(!AndroidUtilities.pending.isEmpty()){check(--left>0,"UI settles");AndroidUtilities.pending.remove(0).run();} }
+    static boolean sequence(PurpleSyncAuto.Control control,Object runtime,Frame frame)throws Exception {
+        String mode=System.getProperty("purple.test.followup","");
+        if(!mode.equals("enable-order"))return false;
+        ((PurpleSyncAutoEngine)field(runtime.getClass(),runtime,"engine")).close();
+        set(runtime.getClass(),runtime,"engine",new PurpleSyncAutoEngine(new PurpleSyncRunner.Session(1,202,frame.env(1)),B,(PurpleSyncAutoEngine.Port)runtime));
+        set(runtime.getClass(),runtime,"firstUse",PurpleSyncFirstUse.Result.Ask);
+        if(mode.equals("enable-order"))MessagesController.beforeAutoEnableCommit=PurpleSyncRuntimeCases::ui;
+        control.setEnabled(true);DispatchQueue.flush();ui();
+        check(new File(frame.sync(1),"auto.json").isFile(),"actual Runtime native enable produces durable record, reason="+field(runtime.getClass(),runtime,"reason")+" errors="+FileLog.lines);
+        org.json.JSONObject held=new org.json.JSONObject(java.nio.file.Files.readString(new File(frame.sync(1),"auto.json").toPath()));
+        check(held.getBoolean("enabled")&&!held.getBoolean("checked")&&held.getInt("held")!=0,"actual native Enable Hold without a new check");
+        ArrayList<Runnable> timers=new ArrayList<>();for(Runnable task:AndroidUtilities.delayed.keySet())if(task.getClass().getName().contains("PurpleSyncAutoBackstop"))timers.add(task);
+        if(mode.equals("enable-order")) {
+            check(timers.size()==1,"UI-before-worker preference commit retains exactly one held-enable callback");
+            Runnable old=timers.get(0);control.setEnabled(false);DispatchQueue.flush();ui();old.run();
+            check(!control.enabled()&&AndroidUtilities.delayed.isEmpty(),"Disable retires held-enable timer immediately");
+            control.setEnabled(true);DispatchQueue.flush();ui();
+            timers.clear();for(Runnable task:AndroidUtilities.delayed.keySet())if(task.getClass().getName().contains("PurpleSyncAutoBackstop"))timers.add(task);
+            check(timers.size()==1,"reenable has exactly one timer");old=timers.get(0);retire(1);AndroidUtilities.delayed.remove(old);int queued=DispatchQueue.pending.size();old.run();
+            check(DispatchQueue.pending.size()==queued&&AndroidUtilities.delayed.isEmpty(),"replacement rejects registered timer and rearm");
+        }
+        return true;
+    }
     static void run(File parent)throws Exception {
         Map<String,Object> saved=new HashMap<>();for(String key:new String[]{"started","ready","owner","global"})saved.put(key,field(PurpleAccountOwner.class,null,key));
         Map<String,Object> runtimes=(Map<String,Object>)field(PurpleSyncAuto.class,null,"accounts");
@@ -21,6 +44,7 @@ final class PurpleSyncRuntimeCases {
             AndroidUtilities.pending.clear();AndroidUtilities.delayed.clear();DispatchQueue.pending.clear();
             PurpleSyncAuto.Control control=PurpleSyncAuto.control(1,status->{});DispatchQueue.flush();ui();
             Object runtime=runtimes.get(B);check(runtime!=null,"actual facade secondary runtime");
+            if(sequence(control,runtime,frame))return;
             if(!"timer".equals(System.getProperty("purple.test.backstop"))) {
                 check(field(runtime.getClass(),runtime,"reason")==PurpleSyncAutoCore.Reason.None,"missing automatic record is normal fresh/off status");
                 Method report=runtime.getClass().getDeclaredMethod("status",PurpleSyncAutoCore.Record.class,PurpleSyncAutoCore.Reason.class);report.setAccessible(true);
@@ -46,7 +70,7 @@ final class PurpleSyncRuntimeCases {
             control.close();
         } finally {
             for(Object runtime:new ArrayList<>(runtimes.values())) {((PurpleSyncAutoEngine)field(runtime.getClass(),runtime,"engine")).close();try {Object timer=field(runtime.getClass(),runtime,"backstop");Method close=timer.getClass().getDeclaredMethod("close");close.setAccessible(true);close.invoke(timer);}catch(NoSuchFieldException ignored){} }
-            set(PurpleSyncAuto.class,null,"observing",observing);runtimes.clear();DispatchQueue.pending.clear();AndroidUtilities.pending.clear();AndroidUtilities.delayed.clear();android.os.Looper.mainThread=prior;
+            MessagesController.beforeAutoEnableCommit=null;set(PurpleSyncAuto.class,null,"observing",observing);runtimes.clear();DispatchQueue.pending.clear();AndroidUtilities.pending.clear();AndroidUtilities.delayed.clear();android.os.Looper.mainThread=prior;
             for(Map.Entry<String,Object> entry:saved.entrySet())set(PurpleAccountOwner.class,null,entry.getKey(),entry.getValue());
         }
     }

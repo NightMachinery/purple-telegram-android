@@ -174,10 +174,10 @@ public final class PurpleSyncAuto {
             if (enabled && Boolean.FALSE.equals(requested))
                 return;
             paused = !enabled;
-            AndroidUtilities.runOnUIThread(() -> { if (enabled) backstop.resume(); else backstop.suspend(); });
             if ((enabled ? current() : opening.current())
                 && !MessagesController.getMainSettings(account.account).edit().putBoolean(preference, enabled).commit())
                 reason = PurpleSyncAutoCore.Reason.StateChanged;
+            AndroidUtilities.runOnUIThread(() -> { if (enabled) backstop.resume(); else backstop.suspend(); });
             if (!enabled) {
                 cancelNetworks();
                 PurpleSyncAutoEdits.cleanup(account.account);

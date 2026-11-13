@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.Set;
 import java.util.HashSet;
 public final class MessagesController {
+    public static Runnable beforeAutoEnableCommit;
     private static final Preferences[] accounts=new Preferences[8];
     static{for(int i=0;i<accounts.length;++i)accounts[i]=new Preferences();}
     public static SharedPreferences getMainSettings(int account){return accounts[account];}
@@ -34,7 +35,7 @@ public final class MessagesController {
         public SharedPreferences.Editor putBoolean(String key,boolean value){changes.put(key,value);return this;}
         public SharedPreferences.Editor remove(String key){changes.put(key,null);return this;}
         public SharedPreferences.Editor clear(){clear=true;return this;}
-        public boolean commit(){synchronized(owner){if(clear)owner.values.clear();for(Map.Entry<String,Object> entry:changes.entrySet())if(entry.getValue()==null)owner.values.remove(entry.getKey());else owner.values.put(entry.getKey(),entry.getValue());}return true;}
+        public boolean commit(){if(beforeAutoEnableCommit!=null&&changes.entrySet().stream().anyMatch(e->e.getKey().startsWith("purple_sync_auto_enabled_")&&Boolean.TRUE.equals(e.getValue()))){Runnable task=beforeAutoEnableCommit;beforeAutoEnableCommit=null;task.run();}synchronized(owner){if(clear)owner.values.clear();for(Map.Entry<String,Object> entry:changes.entrySet())if(entry.getValue()==null)owner.values.remove(entry.getKey());else owner.values.put(entry.getKey(),entry.getValue());}return true;}
         public void apply(){commit();}
     }
 }
