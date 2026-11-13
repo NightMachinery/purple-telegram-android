@@ -21,6 +21,19 @@ final class PurpleSyncRuntimeCases {
             AndroidUtilities.pending.clear();AndroidUtilities.delayed.clear();DispatchQueue.pending.clear();
             PurpleSyncAuto.Control control=PurpleSyncAuto.control(1,status->{});DispatchQueue.flush();ui();
             Object runtime=runtimes.get(B);check(runtime!=null,"actual facade secondary runtime");
+            if(!"timer".equals(System.getProperty("purple.test.backstop"))) {
+                check(field(runtime.getClass(),runtime,"reason")==PurpleSyncAutoCore.Reason.None,"missing automatic record is normal fresh/off status");
+                Method report=runtime.getClass().getDeclaredMethod("status",PurpleSyncAutoCore.Record.class,PurpleSyncAutoCore.Reason.class);report.setAccessible(true);
+                report.invoke(runtime,null,PurpleSyncAutoCore.Reason.AccountUnavailable);ui();
+                PurpleSyncAuto.firstUseSettled(1,new PurpleSyncFirstUse.Outcome(PurpleSyncFirstUse.Result.Joined,null,"joined",null,null,false));ui();DispatchQueue.flush();ui();
+                check(field(runtime.getClass(),runtime,"reason")==PurpleSyncAutoCore.Reason.None,"successful join clears earlier unavailable status using durable record");
+                write(new File(frame.sync(1),"auto.json"),"{");
+                Method load=runtime.getClass().getDeclaredMethod("loadStatus");load.setAccessible(true);load.invoke(runtime);DispatchQueue.flush();ui();
+                check(field(runtime.getClass(),runtime,"reason")==PurpleSyncAutoCore.Reason.InvalidRecord,"present corrupt record stays a real recovery error");
+                java.nio.file.Files.delete(new File(frame.sync(1),"auto.json").toPath());
+                PurpleSyncAuto.firstUseSettled(1,new PurpleSyncFirstUse.Outcome(PurpleSyncFirstUse.Result.Joined,null,"joined",null,null,false));ui();DispatchQueue.flush();ui();
+                check(field(runtime.getClass(),runtime,"reason")==PurpleSyncAutoCore.Reason.None,"successful join refreshes existing off control from actual store");
+            }
             Method enabled=runtime.getClass().getDeclaredMethod("enabledHint",boolean.class);enabled.setAccessible(true);enabled.invoke(runtime,true);
             PurpleSyncAuto.foreground();ui();
             ArrayList<Runnable> timers=new ArrayList<>();for(Runnable task:AndroidUtilities.delayed.keySet())if(task.getClass().getName().contains("PurpleSyncAutoBackstop"))timers.add(task);

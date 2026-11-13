@@ -546,7 +546,7 @@ public final class PurpleSyncAuto {
             boolean on = MessagesController.getMainSettings(slot).getBoolean(hintKey(identity.key), false);
             if (outcome.result == PurpleSyncFirstUse.Result.Joined || outcome.result == PurpleSyncFirstUse.Result.Published) {
                 runtime.firstUseResult(null);
-                if (on) runtime.settle(outcome, false); else runtime.render();
+                if (on) runtime.settle(outcome, false); else runtime.loadStatus();
             } else if (outcome.result == PurpleSyncFirstUse.Result.Ask || outcome.result == PurpleSyncFirstUse.Result.Wait) {
                 runtime.firstUseResult(on ? outcome.result : null);
                 runtime.render();
