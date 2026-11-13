@@ -1159,7 +1159,7 @@
     <string name="PurpleMediaReplyCapacity">Reservations: %1$s / 4096; in flight: %2$d / 8.</string>
     <string name="PurpleMediaReplyNotRead">not yet inspected</string>
     <string name="PurpleLocalRoundLimit">Local round recording length</string>
-    <string name="PurpleLocalRoundLimitInfo">Record for 1, 3 or 5 minutes. Telegram circles stay within one minute. Longer recordings keep the full original and let you choose ordinary video or circle parts before sending.</string>
+    <string name="PurpleLocalRoundLimitInfo">Record for 1, 3 or 5 minutes. Telegram circles stay within one minute. Longer recordings keep the full original and prepare circle parts by default. Ordinary video is available as an alternative before sending.</string>
     <string name="PurpleLongRoundSendParts">Send %1$d circle parts</string>
     <string name="PurpleLongRoundTitle">Send longer recording</string>
     <string name="PurpleLongRoundVideo">Send as one video</string>
