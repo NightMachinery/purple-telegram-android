@@ -7,6 +7,7 @@ def run(root, output, compile_wrapper=None, case=None, media_source=None):
     java=root/'TMessagesProj/src/main/java/org/telegram'
     def put(name,text):
         p=output/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(text)
+    put('org/telegram/messenger/purple/PurpleMediaTrace.java', 'package org.telegram.messenger.purple;public class PurpleMediaTrace{public enum Step{RESUME_REQUEST,PAUSE_REQUEST,STOP_REQUEST,DEADLINE,FAILURE,AUDIO_INPUT_EOS,AUDIO_OUTPUT_EOS,VIDEO_INPUT_EOS,VIDEO_OUTPUT_EOS,MUXER_COMPLETE,DRAIN_RETURNED,ENCODER_RELEASE_RETURNED,FLIP_FIRST_FRAME,SPLIT_CANCELLED,SPLIT_CLEANUP,SPLIT_CREATED}public static class Take{public void event(Step s){}public void event(Step s,boolean b){}}public static Take begin(int a,int g,String b,long c){return new Take();}public static Take operation(String b){return new Take();}public static Take enter(Take t){return null;}public static void leave(Take t){}public static void decorate(java.util.ArrayList<PurpleDiagLogStore.Field> f){}}')
     copied={}
     for name in ['PurpleLongRoundMedia','PurpleLongRoundDiagnostics','PurpleLongRoundPlan','PurpleLongRoundSelection','PurpleDiagLogStore']:
         source=java/'messenger/purple'/(name+'.java')

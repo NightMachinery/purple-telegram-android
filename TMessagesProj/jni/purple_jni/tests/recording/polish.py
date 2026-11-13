@@ -69,18 +69,18 @@ public class VideoPlayer {
     release = enter.split('float alpha = 1.0f + dist / distCanMove;', 1)[1]
     release = method(release[release.index('if (recordAudioVideoRunnableStarted)'):], 'if (recordAudioVideoRunnableStarted)')
     dock_source = pathlib.Path(dock).read_text() if dock else (java / 'messenger/purple/PurpleRecordingDock.java').read_text()
-    put('DockModalPort.java', '''public class DockModalPort {
- static class State {boolean active,round;long generation;boolean active(){return active;}}
+    put('DockModalPort.java', '''import org.telegram.messenger.purple.PurpleMediaTrace;public class DockModalPort {
+ static class State {boolean active,round;int account,guid;long generation;boolean active(){return active;}}
  static final State state=new State();static long discarded=-1;
  static class LaunchActivity{static LaunchActivity instance=new LaunchActivity();}
  static class R{static class string{static final int DiscardVoiceMessageTitle=1,DiscardVoiceMessageDescription=2,DiscardVoiceMessageAction=3,Continue=4,DiscardVideoMessageTitle=5,DiscardVideoMessageDescription=6;}}
  static class LocaleController{static String getString(int id){return "localized:"+id;}}
  interface Click{void run(Object d,int w);}
  static class AlertDialog{static Builder shown;static class Builder{
-  String title,message;Click positive,negative;Builder(Object activity){}
+  String title,message;Click positive,negative;java.util.function.Consumer<Object> cancel;Builder(Object activity){}
   Builder setTitle(String v){title=v;return this;}Builder setMessage(String v){message=v;return this;}
   Builder setPositiveButton(String s,Click c){positive=c;return this;}Builder setNegativeButton(String s,Click c){negative=c;return this;}
-  void show(){shown=this;}
+  Builder setOnCancelListener(java.util.function.Consumer<Object> c){cancel=c;return this;}void show(){shown=this;}
  }}
  static void discard(long generation){discarded=generation;}
 ''' + method(dock_source, '    public static boolean refuseStart()') + '''
@@ -91,7 +91,7 @@ public class VideoPlayer {
    if(!refuseStart())throw new AssertionError("active refusal");checks++;
    AlertDialog.Builder d=AlertDialog.shown;
    if(!d.title.equals(LocaleController.getString(round?R.string.DiscardVideoMessageTitle:R.string.DiscardVoiceMessageTitle))||!d.message.equals(LocaleController.getString(round?R.string.DiscardVideoMessageDescription:R.string.DiscardVoiceMessageDescription)))throw new AssertionError("recorder kind copy");checks+=2;
-   if(d.negative!=null||discarded!=-1)throw new AssertionError("Continue dispatched discard");checks++;
+   if(d.negative!=null)d.negative.run(null,0);if(discarded!=-1)throw new AssertionError("Continue dispatched discard");checks++;
    state.generation=99;state.round=!round;d.positive.run(null,0);
    if(discarded!=42)throw new AssertionError("dialog lost captured generation");checks++;
   }
@@ -128,6 +128,35 @@ public class MediaFitPort extends MediaFitBase {
   int signAt=rtl.indexOf(sign);if((b.getLevelAt(signAt)&1)!=0||b.getLevelAt(signAt)!=b.getLevelAt(signAt+1))throw new AssertionError("seek sign reordered");checks++;
  }return checks;}
 }''')
+    for name in ['PurpleMediaTrace', 'PurpleDiagLogStore']:
+        put('org/telegram/messenger/purple/' + name + '.java', (java / 'messenger/purple' / (name + '.java')).read_text())
+    put('android/os/SystemClock.java', 'package android.os;public class SystemClock{public static long now=1000;public static long elapsedRealtime(){return now;}}')
+    put('org/telegram/messenger/purple/PurpleLongRoundOriginals.java','package org.telegram.messenger.purple;public class PurpleLongRoundOriginals{public static class Owner{public PurpleMediaTrace.Take trace;}}')
+    put('org/telegram/messenger/purple/PurpleDiagLog.java', '''package org.telegram.messenger.purple;public class PurpleDiagLog{
+ public static final java.util.List<String> lines=new java.util.ArrayList<>();
+ public static PurpleDiagLogStore.Field count(String k,int v){return PurpleDiagLogStore.count(k,v);}public static PurpleDiagLogStore.Field code(String k,String v){return PurpleDiagLogStore.code(k,v);}
+ public static void event(String a,String e,PurpleDiagLogStore.Field... f){lines.add(PurpleDiagLogStore.line(0,a,e,f));}
+}''')
+    put('MediaTraceCases.java','''package org.telegram.messenger.purple;
+public class MediaTraceCases{
+ public static int test(){int checks=0;PurpleDiagLog.lines.clear();
+ PurpleMediaTrace.Take a=PurpleMediaTrace.begin(0,123456789,"legacy",180000);
+ a.event(PurpleMediaTrace.Step.PAUSE_REQUEST);android.os.SystemClock.now+=37;a.event(PurpleMediaTrace.Step.PAUSE_ACK);
+ String lines=String.join("\\n",PurpleDiagLog.lines);
+ if(lines.indexOf("step=pause_request")>=lines.indexOf("step=pause_ack")||!lines.contains("elapsed_ms=37")||!lines.contains("cap_s=180"))throw new AssertionError("actual trace order/cap/monotonic delta");checks++;
+ int before=PurpleDiagLog.lines.size();PurpleMediaTrace.begin(0,123456789,"v2",60000);int replaced=PurpleDiagLog.lines.size();a.event(PurpleMediaTrace.Step.MUXER_COMPLETE);
+ if(PurpleDiagLog.lines.size()!=replaced||replaced!=before+1)throw new AssertionError("late old generation logged into replacement");checks++;
+ PurpleMediaTrace.Take b=PurpleMediaTrace.current(0,123456789);b.event(PurpleMediaTrace.Step.RETAIN_FAILED,false);b.event(PurpleMediaTrace.Step.RETAIN_FAILED,false);
+ if(PurpleDiagLog.lines.size()!=replaced+1)throw new AssertionError("retry failure flood");checks++;
+ b.event(PurpleMediaTrace.Step.RETAIN_SAVED);b.retire();int retired=PurpleDiagLog.lines.size();b.event(PurpleMediaTrace.Step.FLIP_FIRST_FRAME);
+ if(PurpleDiagLog.lines.size()!=retired)throw new AssertionError("late terminal callback logged");checks++;
+ PurpleMediaTrace.Take op=PurpleMediaTrace.operation("split"),previous=PurpleMediaTrace.enter(op);
+ java.util.ArrayList<PurpleDiagLogStore.Field> fields=new java.util.ArrayList<>();PurpleMediaTrace.decorate(fields);PurpleMediaTrace.leave(previous);
+ if(fields.size()!=7)throw new AssertionError("operation correlation missing");checks++;
+ fields.clear();PurpleMediaTrace.decorate(fields);if(!fields.isEmpty())throw new AssertionError("operation scope leaked");checks++;
+ for(String line:PurpleDiagLog.lines)if(line.contains("123456789")||line.contains("invalid")||line.length()>512)throw new AssertionError("trace privacy/format");checks++;
+ return checks;}
+}''')
     put('ModePort.java', '''public class ModePort {
  Object parentActivity=new Object(),recordAudioVideoRunnable=new Object();boolean recordAudioVideoRunnableStarted=true,calledRecordRunnable,sendVoiceEnabled=true,sendRoundEnabled=true,video;
  static class Delegate{int switches,pre;void onPreAudioVideoRecord(){pre++;}void onSwitchRecordMode(boolean video){switches++;}void needShowMediaBanHint(){}}
@@ -137,7 +166,7 @@ public class MediaFitPort extends MediaFitBase {
  boolean isInVideoMode(){return video;}void setRecordVideoButtonVisible(boolean v,boolean a){video=v;}void performHapticFeedback(int n){}void sendAccessibilityEvent(int n){}
  void hold(){''' + prefix + '''}
  void release(){''' + release + '''}
- public static void main(String[] args){int checks=DockModalPort.test()+MediaFitPort.test()+SeekLabelPort.test();
+ public static void main(String[] args){int checks=DockModalPort.test()+MediaFitPort.test()+SeekLabelPort.test()+org.telegram.messenger.purple.MediaTraceCases.test();
  for(boolean video:new boolean[]{false,true}){
   ModePort p=new ModePort();p.video=video;p.calledRecordRunnable=true;org.telegram.messenger.purple.PurpleRecordingDock.refuse=true;p.hold();p.release();
   if(p.video!=video||p.delegate.switches!=0||p.calledRecordRunnable||p.recordAudioVideoRunnableStarted)throw new AssertionError("refused hold toggled mode");checks+=4;
@@ -152,6 +181,7 @@ public class MediaFitPort extends MediaFitBase {
     layout = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(layout)
     layout.prepare(root, output, put, method)
+    put('android/os/SystemClock.java', 'package android.os;public class SystemClock{public static long now=1000;public static long elapsedRealtime(){return now;}public static long uptimeMillis(){return now;}}')
     compiler = pathlib.Path(os.environ['JAVA_HOME']) / 'bin/javac'
     subprocess.run([str(compiler), '-d', str(output/'classes'), *map(str, output.rglob('*.java'))], check=True)
     for name in ['BinPort', 'ModePort', 'UiConstructorCases', 'BinRtlCases', 'RecordingStripRtlCases', 'StripVisibilityCases', 'RoundControlsCases', 'RoundContrastCases', 'SettingsAlignmentCases']:

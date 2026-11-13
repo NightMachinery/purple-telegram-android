@@ -561,7 +561,10 @@ public final class RoundVideoSession {
     private ExoPlayer player;
 
     private final Runnable durationLimitRunnable = () -> {
-        if (state == State.RECORDING) pauseRecording();
+        if (state == State.RECORDING) {
+            if (purpleOriginalOwner != null) purpleOriginalOwner.trace.event(org.telegram.messenger.purple.PurpleMediaTrace.Step.DEADLINE);
+            pauseRecording();
+        }
     };
 
     private final Runnable previewProgressRunnable = new Runnable() {
@@ -596,6 +599,7 @@ public final class RoundVideoSession {
         compositionEnabled = builder.compositionEnabled;
         listener = builder.listener;
         purpleOriginalOwner = builder.purpleOriginalOwner;
+        if (purpleOriginalOwner != null) purpleOriginalOwner.trace.cap(maximumDurationMs);
         outputListener = builder.outputListener;
         screenFlashController = builder.screenFlashController;
         diagnostics = new RoundVideoDiagnostics();
@@ -838,6 +842,7 @@ public final class RoundVideoSession {
         disableCameraEffects();
         releasePlayer();
         cameraController.release();
+        if (purpleOriginalOwner != null) purpleOriginalOwner.trace.event(org.telegram.messenger.purple.PurpleMediaTrace.Step.RELEASE_RETURNED);
         cleanupStarted = true;
         setState(State.RELEASED);
         logSummary("released");
@@ -907,6 +912,7 @@ public final class RoundVideoSession {
                 @Override
                 public void onCameraSwitchStarted(@NonNull CameraFacing facing) {
                     mainHandler.post(() -> {
+                        if (purpleOriginalOwner != null && !isTerminalState()) purpleOriginalOwner.trace.event(org.telegram.messenger.purple.PurpleMediaTrace.Step.FLIP_REQUEST);
                         cameraSwitchCount++;
                         cameraSwitching = true;
                         diagnostics.log("camera switch started: target=" + facing);
@@ -917,7 +923,10 @@ public final class RoundVideoSession {
 
                 @Override
                 public void onCameraSwitchFirstFrame() {
-                    mainHandler.post(listener::onCameraSwitchFirstFrame);
+                    mainHandler.post(() -> {
+                        if (purpleOriginalOwner != null && !isTerminalState()) purpleOriginalOwner.trace.event(org.telegram.messenger.purple.PurpleMediaTrace.Step.FLIP_FIRST_FRAME);
+                        listener.onCameraSwitchFirstFrame();
+                    });
                 }
 
                 @Override
@@ -954,6 +963,7 @@ public final class RoundVideoSession {
                 + ", switch=" + cameraSwitch);
         if (cameraSwitch || cameraSwitching) {
             cameraSwitching = false;
+            if (purpleOriginalOwner != null) purpleOriginalOwner.trace.event(org.telegram.messenger.purple.PurpleMediaTrace.Step.FLIP_CONFIGURED);
             listener.onCameraSwitchCompleted(info.facing);
             notifyState();
         }
@@ -1349,6 +1359,7 @@ public final class RoundVideoSession {
     private void setState(@NonNull State newState) {
         State oldState = state;
         state = newState;
+        org.telegram.messenger.purple.PurpleMediaTrace.v2(purpleOriginalOwner, newState.name());
         diagnostics.log("state: " + oldState + " -> " + newState
                 + ", durationMs=" + getRecordedDurationMs());
         notifyState();
@@ -1471,6 +1482,7 @@ public final class RoundVideoSession {
         logSummary("cancelled");
         deleteMediaFiles();
         cameraController.release();
+        if (purpleOriginalOwner != null) purpleOriginalOwner.trace.event(org.telegram.messenger.purple.PurpleMediaTrace.Step.RELEASE_RETURNED);
         shutdownExecutors();
     }
 

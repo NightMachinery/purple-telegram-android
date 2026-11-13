@@ -221,6 +221,8 @@ public final class PurpleRecordingRegistry {
         final String key = account + ":" + guid;
         if (event == NotificationCenter.recordStarted) {
             final boolean voice = args.length < 2 || !(args[1] instanceof Boolean) || (Boolean) args[1];
+            if (voice) PurpleMediaTrace.begin(account, guid, "voice", 0).event(PurpleMediaTrace.Step.STARTED);
+            else PurpleMediaTrace.event(account, guid, PurpleMediaTrace.Step.STARTED);
             final ChatTarget source = chats.get(guid);
             final long[] target = source == null ? null : source.target();
             final long startedAt = System.currentTimeMillis();
@@ -399,13 +401,19 @@ public final class PurpleRecordingRegistry {
 
     public static void retainFailedLegacyRound(int account, int guid, String path, java.util.function.Consumer<Boolean> done) {
         start();
+        final PurpleMediaTrace.Take trace = PurpleMediaTrace.current(account, guid);
+        if (trace != null) trace.event(PurpleMediaTrace.Step.RETAIN_REQUEST);
+        final java.util.function.Consumer<Boolean> observed = saved -> {
+            if (trace != null) trace.event(saved ? PurpleMediaTrace.Step.RETAIN_SAVED : PurpleMediaTrace.Step.RETAIN_FAILED, saved);
+            done.accept(saved);
+        };
         final PurpleRecordingSessions owner = sessions;
         final String key = account + ":" + guid;
         final File writer = new File(path);
         final PurpleRecordingSessions.LegacyFailure claim = owner == null ? null : owner.reserveLegacyFailure(key, writer);
         worker.execute(() -> {
             final PurpleRecordingSessions current = owner == null ? sessions : owner;
-            retainFailedLegacyRoundOnWorker(current, current == null ? null : claim == null ? current.reserveLegacyFailure(key, writer) : claim, done);
+            retainFailedLegacyRoundOnWorker(current, current == null ? null : claim == null ? current.reserveLegacyFailure(key, writer) : claim, observed);
         });
     }
 

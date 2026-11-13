@@ -129,6 +129,7 @@ public final class PurpleRecordingDock {
             return;
         }
         if (event == NotificationCenter.recordPaused || event == NotificationCenter.recordResumed) {
+            PurpleMediaTrace.event(state.account, state.guid, event == NotificationCenter.recordPaused ? PurpleMediaTrace.Step.PAUSE_ACK : PurpleMediaTrace.Step.RESUME_ACK);
             state.pause(event == NotificationCenter.recordPaused, SystemClock.elapsedRealtime());
             if (event == NotificationCenter.recordResumed && !state.round && !ApplicationLoader.mainInterfacePaused && PurpleRecordingSettings.read().background) PurpleRecordingService.start();
             if (event == NotificationCenter.recordResumed && state.sendPending) {
@@ -248,10 +249,13 @@ public final class PurpleRecordingDock {
         LaunchActivity activity = LaunchActivity.instance;
         if (activity != null) {
             final long generation = state.generation;
+            PurpleMediaTrace.Take trace = PurpleMediaTrace.current(state.account, state.guid);
+            if (trace != null) trace.event(PurpleMediaTrace.Step.DISCARD_MODAL);
             new AlertDialog.Builder(activity).setTitle(LocaleController.getString(state.round ? R.string.DiscardVideoMessageTitle : R.string.DiscardVoiceMessageTitle))
                     .setMessage(LocaleController.getString(state.round ? R.string.DiscardVideoMessageDescription : R.string.DiscardVoiceMessageDescription))
                     .setPositiveButton(LocaleController.getString(R.string.DiscardVoiceMessageAction), (d, w) -> discard(generation))
-                    .setNegativeButton(LocaleController.getString(R.string.Continue), null).show();
+                    .setNegativeButton(LocaleController.getString(R.string.Continue), (d, w) -> { if (trace != null && state.active() && state.generation == generation) trace.event(PurpleMediaTrace.Step.DISCARD_CANCEL); })
+                    .setOnCancelListener(d -> { if (trace != null && state.active() && state.generation == generation) trace.event(PurpleMediaTrace.Step.DISCARD_CANCEL); }).show();
         }
         return true;
     }
@@ -261,6 +265,7 @@ public final class PurpleRecordingDock {
         syncOnce();
         if (state.round && (host(state.guid) == null || !host(state.guid).roundVisible())) return;
         if (state.requestPause()) {
+            PurpleMediaTrace.event(state.account, state.guid, state.paused ? PurpleMediaTrace.Step.RESUME_REQUEST : PurpleMediaTrace.Step.PAUSE_REQUEST);
             if (state.round) { Host host = host(state.guid); if (host != null) host.roundPause(); }
             else MediaController.getInstance().toggleRecordingPause(state.once);
         }
@@ -272,6 +277,7 @@ public final class PurpleRecordingDock {
         if (state.paused) finishPreview();
         else {
             if (state.requestPause()) {
+            PurpleMediaTrace.event(state.account, state.guid, state.paused ? PurpleMediaTrace.Step.RESUME_REQUEST : PurpleMediaTrace.Step.PAUSE_REQUEST);
                 previewPending = true;
                 MediaController.getInstance().toggleRecordingPause(state.once);
             }
@@ -379,6 +385,7 @@ public final class PurpleRecordingDock {
 
     public static void discard(long generation) {
         if (!valid(generation)) return;
+        PurpleMediaTrace.event(state.account, state.guid, PurpleMediaTrace.Step.DISCARD_REQUEST);
         state.finishing = true;
         if (state.round) {
             Host host = host(state.guid); if (host != null) host.roundDiscard();
@@ -433,6 +440,7 @@ public final class PurpleRecordingDock {
     public static void floatRound(int account, int guid, boolean small) {
         if (!state.round || !state.matches(account, guid)) return;
         syncOnce();
+        PurpleMediaTrace.event(account, guid, small ? PurpleMediaTrace.Step.DOCKED : PurpleMediaTrace.Step.EXPANDED);
         state.docked = small;
         if (small) { targetSnapshot.dock(); Host host = host(guid); if (host != null) host.release(); }
         changed();
@@ -522,6 +530,7 @@ public final class PurpleRecordingDock {
         if (state.active() && !state.paused && !state.finishing && state.requestPause()) MediaController.getInstance().toggleRecordingPause(state.once);
     }
     private static void clear() {
+        PurpleMediaTrace.detach(state.account, state.guid);
         state.clear();
         previewPending = false;
         targetPickerPending = false;

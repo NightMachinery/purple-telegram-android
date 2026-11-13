@@ -273,6 +273,7 @@ public final class PurpleScreenTime {
             return;
         }
         foreground = value;
+        PurpleMediaTrace.foreground(value);
         if (!enabled()) {
             sessionOpen = false;
             cancelIdle();

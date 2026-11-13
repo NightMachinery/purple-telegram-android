@@ -21,6 +21,7 @@ public final class PurpleLongRoundDiagnostics {
     }
 
     private static void emit(String event, ArrayList<PurpleDiagLogStore.Field> fields) {
+        PurpleMediaTrace.decorate(fields);
         PurpleDiagLog.event("recordings", event, fields.toArray(new PurpleDiagLogStore.Field[0]));
     }
 

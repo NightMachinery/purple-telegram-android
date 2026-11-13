@@ -13,15 +13,16 @@ public final class PurpleLongRoundOriginals {
     private static final Map<String, Owner> owners = new ConcurrentHashMap<>();
     private PurpleLongRoundOriginals() { }
     public static Owner owner(int account, int guid) {
-        final Owner owner = new Owner(account + ":" + guid, PurpleRecordingRegistry.roundOriginalTarget(account, guid));
+        final Owner owner = new Owner(account + ":" + guid, PurpleRecordingRegistry.roundOriginalTarget(account, guid), PurpleMediaTrace.begin(account, guid, "v2", 0));
         owners.put(owner.key, owner);
         return owner;
     }
     public static final class Owner {
+        public final PurpleMediaTrace.Take trace;
         private final String key;
         private final long[] target;
         private final Map<String, PurpleLongRoundOriginal> captured = new ConcurrentHashMap<>();
-        private Owner(String key, long[] target) { this.key = key; this.target = target == null ? null : target.clone(); }
+        private Owner(String key, long[] target, PurpleMediaTrace.Take trace) { this.trace = trace; this.key = key; this.target = target == null ? null : target.clone(); }
         public void arm(File writer, long durationMs) {
             if (writer == null || durationMs <= PurpleLongRoundPlan.CIRCLE_MS) return;
             try { writers.put(writer.getAbsolutePath(), android.system.Os.stat(writer.getAbsolutePath())); }
@@ -41,15 +42,17 @@ public final class PurpleLongRoundOriginals {
                 original.writer(protectedWriter);
                 pending.put(original, true);
                 if (owners.get(key) == this) current.put(key, original);
+                trace.event(PurpleMediaTrace.Step.RETAIN_REQUEST);
                 original.busy.set(true);
                 try { original.saved |= PurpleRecordingRegistry.keepLongOriginalBlocking(original); }
                 finally { original.busy.set(false); }
+                trace.event(original.saved ? PurpleMediaTrace.Step.RETAIN_SAVED : PurpleMediaTrace.Step.RETAIN_FAILED, original.saved);
                 if (original.saved) { original.closeSaved(); pending.remove(original); writers.remove(protectedWriter.getAbsolutePath()); }
                 else {
                     AndroidUtilities.runOnUIThread(() -> notice(false));
                     if (!original.reserved) throw new java.io.IOException("original reservation not committed");
                 }
-            } catch (Exception failure) { throw new java.io.IOException("original reservation", failure); }
+            } catch (Exception failure) { trace.event(PurpleMediaTrace.Step.RETAIN_FAILED, false); throw new java.io.IOException("original reservation", failure); }
         }
     }
     public static boolean protectErase(File file) {

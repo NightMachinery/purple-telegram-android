@@ -1154,6 +1154,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
     }
 
     private void switchCamera() {
+        org.telegram.messenger.purple.PurpleMediaTrace.event(currentAccount, recordingGuid, org.telegram.messenger.purple.PurpleMediaTrace.Step.FLIP_REQUEST);
         legacyCameraSwitchStartedNs = SystemClock.elapsedRealtimeNanos();
         legacyCameraSwitchSequence++;
         legacyCameraSwitchTargetSurface = useCamera2 && bothCameras
@@ -1192,6 +1193,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
                 camera2SessionCurrent = camera2Sessions[isFrontface ? 0 : 1] = Camera2Session.create(isFrontface, MessagesController.getInstance(UserConfig.selectedAccount).roundVideoSize, MessagesController.getInstance(UserConfig.selectedAccount).roundVideoSize);
                 if (camera2SessionCurrent == null) {
                     legacyCameraSwitchAwaitingFrame = false;
+                    org.telegram.messenger.purple.PurpleMediaTrace.event(currentAccount, recordingGuid, org.telegram.messenger.purple.PurpleMediaTrace.Step.FAILURE);
                     logLegacyCameraSwitchStage("failed: Camera2Session.create returned null");
                     return;
                 }
@@ -1916,6 +1918,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
             egl10.eglSwapBuffers(eglDisplay, eglSurface);
             if (completesCameraSwitch && legacyCameraSwitchAwaitingFrame) {
                 legacyCameraSwitchAwaitingFrame = false;
+                if (videoEncoder != null) videoEncoder.purpleBudget.trace.event(org.telegram.messenger.purple.PurpleMediaTrace.Step.FLIP_FRAME_SUBMITTED);
                 logLegacyCameraSwitchStage("first target frame presented: surface="
                         + surfaceIndex);
             }
@@ -2262,7 +2265,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
         private long prevAudioLast = -1;
         private long audioDiff;
         private boolean audioStopedByTime;
-        private final org.telegram.messenger.purple.PurpleLegacyCodecEos purpleEos = new org.telegram.messenger.purple.PurpleLegacyCodecEos();
+        private final org.telegram.messenger.purple.PurpleLegacyCodecEos purpleEos = new org.telegram.messenger.purple.PurpleLegacyCodecEos(purpleBudget.trace);
 
         private int drawProgram;
         private int vertexMatrixHandle;
@@ -3022,6 +3025,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
             try {
                 FileLog.d("InstantCamera handleStopRecording drain encoders");
                 drainEncoder(true);
+                purpleBudget.trace.event(org.telegram.messenger.purple.PurpleMediaTrace.Step.DRAIN_RETURNED, purpleEos.audioOutputEnded() && purpleEos.videoOutputEnded());
             } catch (Exception e) {
                 purpleEos.fail();
                 FileLog.e(e);
@@ -3030,6 +3034,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
                 try {
                     videoEncoder.stop();
                     videoEncoder.release();
+                    purpleBudget.trace.event(org.telegram.messenger.purple.PurpleMediaTrace.Step.VIDEO_ENCODER_RELEASE_RETURNED);
                     videoEncoder = null;
                 } catch (Exception e) {
                     FileLog.e(e);
@@ -3039,6 +3044,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
                 try {
                     audioEncoder.stop();
                     audioEncoder.release();
+                    purpleBudget.trace.event(org.telegram.messenger.purple.PurpleMediaTrace.Step.AUDIO_ENCODER_RELEASE_RETURNED);
                     audioEncoder = null;
 
                     setBluetoothScoOn(false);

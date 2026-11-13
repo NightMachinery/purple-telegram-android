@@ -6,6 +6,7 @@ import android.os.SystemClock;
 public final class PurpleLegacyRoundBudget {
     public final int account;
     public final int guid;
+    public final PurpleMediaTrace.Take trace;
     private final long stopMs;
     private long elapsedMs;
     private long startedMs;
@@ -20,12 +21,14 @@ public final class PurpleLegacyRoundBudget {
         this.account = account;
         this.guid = guid;
         stopMs = PurpleRoundLimits.composerStopMs(maximumMs);
+        trace = PurpleMediaTrace.begin(account, guid, "legacy", maximumMs, stopMs);
     }
 
     public synchronized void resume(Handler handler, Runnable onLimit) {
         if (ended || reached || active) return;
         this.handler = handler;
         this.onLimit = onLimit;
+        trace.event(PurpleMediaTrace.Step.RESUME_REQUEST);
         startedMs = SystemClock.elapsedRealtime();
         active = true;
         Runnable next = new Runnable() {
@@ -48,12 +51,14 @@ public final class PurpleLegacyRoundBudget {
     }
 
     public synchronized void pause() {
+        if (active) trace.event(PurpleMediaTrace.Step.PAUSE_REQUEST);
         elapsedMs = durationMs();
         active = false;
         cancelDeadline();
     }
 
     public synchronized void stop() {
+        trace.event(PurpleMediaTrace.Step.STOP_REQUEST);
         pause();
         ended = true;
     }
@@ -87,6 +92,7 @@ public final class PurpleLegacyRoundBudget {
 
     private void limit() {
         if (!active || ended || reached) return;
+        trace.event(PurpleMediaTrace.Step.DEADLINE);
         elapsedMs = stopMs;
         reached = true;
         active = false;

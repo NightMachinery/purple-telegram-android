@@ -48,6 +48,8 @@ final class PurpleRoundRecording {
         PurpleRecordingDock.floatRound(chat.getCurrentAccount(), chat.getClassGuid(), small);
         if (!small && target != null && chat.chatActivityEnterView != null) chat.chatActivityEnterView.purpleRestoreRoundUi(preview);
     }
+    void traceBackground() { if (managed && target != null) PurpleMediaTrace.event(target.account, chat.getClassGuid(), PurpleMediaTrace.Step.CHAT_HIDDEN); }
+    void traceForeground() { if (managed && target != null) PurpleMediaTrace.event(target.account, chat.getClassGuid(), PurpleMediaTrace.Step.CHAT_VISIBLE); }
     void pause() { if (chat.instantCameraView != null) chat.instantCameraView.togglePause(); }
     void preview() {
         if (chat.instantCameraView == null || chat.isPaused()) return;

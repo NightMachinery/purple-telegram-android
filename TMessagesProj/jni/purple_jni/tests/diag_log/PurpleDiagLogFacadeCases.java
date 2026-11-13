@@ -111,6 +111,19 @@ public final class PurpleDiagLogFacadeCases {
                 PurpleDiagLog.code("list", "work_projects"));
         drained();
 
+        PurpleMediaTrace.Take trace = PurpleMediaTrace.begin(0, 987654321, "legacy", 180000);
+        trace.event(PurpleMediaTrace.Step.PAUSE_REQUEST);
+        trace.event(PurpleMediaTrace.Step.PAUSE_ACK);
+        PurpleLegacyCodecEos eos = new PurpleLegacyCodecEos(trace);
+        eos.audioInput(true); eos.audioInput(true); eos.audioOutput(true);
+        eos.videoInputEnd(); eos.videoOutput(true); eos.muxerFinished();
+        trace.event(PurpleMediaTrace.Step.RETAIN_FAILED, false);
+        trace.event(PurpleMediaTrace.Step.RETAIN_SAVED);
+        trace.event(PurpleMediaTrace.Step.FAILURE, false);
+        PurpleMediaTrace.begin(0, 987654321, "v2", 60000);
+        trace.event(PurpleMediaTrace.Step.FLIP_FIRST_FRAME);
+        drained();
+
         // A legacy export in files/logs from the first diagnostic build.
         File logs = new File(app, PurpleDiagLog.LEGACY_EXPORT_DIRECTORY);
         check(logs.mkdirs(), "legacy export folder");
@@ -129,6 +142,14 @@ public final class PurpleDiagLogFacadeCases {
         check(!legacy.exists(), "export removes a legacy export");
         check(unrelated.isFile(), "export leaves other files in files/logs alone");
         String text = read(exported);
+        check(text.contains("capture_budget") && text.contains("cap_s=180"), "captured per-take budget reaches release export");
+        check(text.contains("process_hi=") && text.contains("take_lo=") && text.contains("elapsed_ms="), "random process/take and monotonic delta exported");
+        check(text.indexOf("step=pause_request") < text.indexOf("step=pause_ack"), "request precedes observed acknowledgement in export");
+        check(text.indexOf("step=audio_input_eos") < text.indexOf("step=audio_output_eos") && text.indexOf("step=video_output_eos") < text.indexOf("step=muxer_complete"), "native EOS observations precede muxer return");
+        check(text.indexOf("step=audio_input_eos") == text.lastIndexOf("step=audio_input_eos"), "repeated observation does not flood export");
+        check(text.contains("step=retain_failed outcome=error") && text.contains("step=retain_saved outcome=ok"), "failure remains distinct from later retained result");
+        check(!text.contains("987654321") && !text.contains("step=flip_first_frame"), "identifiers and late replaced callbacks absent from export");
+
         int split = text.indexOf("----\n");
         check(split > 0, "the header ends with a rule");
         String header = text.substring(0, split);

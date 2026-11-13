@@ -511,6 +511,7 @@ final class PurpleChatHooks {
      * the first resume the translate-availability log line.
      */
     void onResume() {
+        roundRecording.traceForeground();
         org.telegram.messenger.purple.PurpleRecordingDock.foreground();
         if (archiveScope != null) archiveScope.verify();
         PurplePeekControls.chatResumed(chat);
@@ -539,6 +540,7 @@ final class PurpleChatHooks {
     }
 
     void onPause() {
+        roundRecording.traceBackground();
         roundRecording.beforeLeave();
         org.telegram.ui.Components.PurpleRoundBubble.pause(chat.instantCameraView);
         markdownCopy.cancel();

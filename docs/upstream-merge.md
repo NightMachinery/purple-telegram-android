@@ -820,3 +820,10 @@ selection offsets in microseconds without materializing them.
 The long-round converter audio hook also handles an explicitly supplied silence
 input when native Camera2 mute has removed the source audio track. Ordinary
 callers retain the native track-selection policy. See [long-round-recording.md](long-round-recording.md).
+
+Recorder diagnostics add thin calls in `InstantCameraView` at the existing flip,
+encoder-drain and encoder-release boundaries. Its existing Purple budget/EOS
+helpers own correlation and typed observations. `RoundVideoSession` delegates
+state, deadline, camera-switch and release observations to the captured Purple
+original owner. These hooks preserve native recording decisions and carry no
+raw exception text or paths. See `recorder-diagnostics.md` for proof limits.

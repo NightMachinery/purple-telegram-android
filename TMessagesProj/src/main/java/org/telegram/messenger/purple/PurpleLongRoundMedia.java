@@ -49,12 +49,14 @@ public final class PurpleLongRoundMedia {
     }
     public static final class Work {
         public final AtomicBoolean cancelled = new AtomicBoolean();
+        private final PurpleMediaTrace.Take trace = PurpleMediaTrace.operation("split");
         private final List<File> owned = new ArrayList<>();
         private final long deadline = SystemClock.elapsedRealtime() + 30 * 60_000L;
         private void check() throws IOException {
             final boolean cancelledNow = cancelled.get();
             final boolean expired = !cancelledNow && SystemClock.elapsedRealtime() > deadline;
             if (cancelledNow || expired) {
+                trace.event(PurpleMediaTrace.Step.SPLIT_CANCELLED, !expired);
                 PurpleLongRoundDiagnostics.work(cancelledNow, expired);
                 throw new IOException("cancelled");
             }
@@ -67,6 +69,7 @@ public final class PurpleLongRoundMedia {
         }
         public void discard() {
             for (File file : owned) if (file.exists() && !file.delete()) PurpleDiagLog.event("recordings", "long_copy_cleanup", PurpleDiagLog.reason("io_failed"));
+            trace.event(PurpleMediaTrace.Step.SPLIT_CLEANUP);
             owned.clear();
         }
         public void handed(File file) { owned.remove(file); }
@@ -196,6 +199,8 @@ public final class PurpleLongRoundMedia {
 
     public static List<Output> prepare(File source, File directory, boolean circles,
             long requestedStartUs, long requestedEndUs, Work work) throws Exception {
+        PurpleMediaTrace.Take previousTrace = PurpleMediaTrace.enter(work.trace);
+        work.trace.event(PurpleMediaTrace.Step.SPLIT_CREATED);
         String stage = "source_inspect";
         int partIndex = -1;
         try {
@@ -282,6 +287,8 @@ public final class PurpleLongRoundMedia {
         } catch (Exception failure) {
             PurpleLongRoundDiagnostics.failure(stage, partIndex, failure);
             throw failure;
+        } finally {
+            PurpleMediaTrace.leave(previousTrace);
         }
     }
     private static byte[] digest(File file, Work work) throws Exception {

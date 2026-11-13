@@ -2366,3 +2366,7 @@ The [recording controls and bin player](docs/recording-continuity.md#recording-c
 Settings sync picks up delivered chat updates while the app is open; see [pickup and delivery limits](docs/sync-chat.md).
 
 Account-specific [media auto-reply](docs/media-auto-reply.md) supports voice and round notes with native controls and typed selected-chat sets.
+
+Recorder and split failures can be investigated through the existing manual
+[diagnostic log export](docs/recorder-diagnostics.md), including correlated
+requests, native acknowledgements and typed track facts.
