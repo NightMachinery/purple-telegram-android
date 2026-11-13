@@ -465,3 +465,11 @@ on the same chat/view cover direct discard and discard with background/resume,
 visible native-bar flip targeting, expanded and compact paused opens, and old
 close listeners after a new open. Native initializers reset alpha without fixing
 visibility, so the fixture detects a bar stranded invisible across takes.
+
+During a compact-camera drag, the gesture owns the camera transform. Pre-draw
+and layout callbacks align the placeholder and controls with that live position
+instead of restoring the saved corner. Release persists and snaps to the chosen
+corner; cancellation restores the previous corner. The production dispatch
+fixture interleaves real registered pre-draw/layout callbacks with movement,
+release and cancellation for both camera backends. Android input timing and
+rendered motion remain device checks.

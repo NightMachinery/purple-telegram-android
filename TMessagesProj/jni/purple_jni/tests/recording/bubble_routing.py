@@ -71,7 +71,8 @@ public class View {
  public void getWindowVisibleDisplayFrame(Rect r){r.bottom=2400;}public void getLocationOnScreen(int[] location){location[0]=left;location[1]=top;}
  public void bringToFront(){}
  public interface LayoutListener{void changed(View v,int l,int t,int r,int b,int ol,int ot,int or,int ob);}
- public void addOnLayoutChangeListener(LayoutListener l){}
+ private LayoutListener layout;public void addOnLayoutChangeListener(LayoutListener l){layout=l;}
+ public void relayout(){if(layout!=null)layout.changed(this,left,top,left+width,top+height,left,top,left+width,top+height);}
  public static class Observer{public interface PreDraw{boolean run();}PreDraw listener;public void addOnPreDrawListener(PreDraw l){listener=l;}}
  private final Observer observer=new Observer();public Observer getViewTreeObserver(){return observer;}public void redraw(){if(observer.listener!=null)observer.listener.run();}
 }""")

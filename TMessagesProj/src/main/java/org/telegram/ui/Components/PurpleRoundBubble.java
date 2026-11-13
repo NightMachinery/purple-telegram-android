@@ -98,6 +98,7 @@ public final class PurpleRoundBubble {
             state.dragging |= Math.hypot(dx, dy) > ViewConfiguration.get(view.getContext()).getScaledTouchSlop();
             camera.setTranslationX(state.startX + dx);
             camera.setTranslationY(state.startY + dy);
+            place(view, state);
         }
         if (event.getActionMasked() == MotionEvent.ACTION_UP) {
             state.tracking = false;
@@ -169,12 +170,19 @@ public final class PurpleRoundBubble {
     private static void place(InstantCameraViewBase view, State state) {
         View camera = view.getCameraContainer();
         int side = Math.min(AndroidUtilities.dp(120), Math.min(view.getWidth(), Math.max(1, availableHeight(view))));
-        float scale = side / (float) Math.max(1, camera.getWidth());
-        camera.setScaleX(scale); camera.setScaleY(scale);
-        int x = PurpleRoundBubbleGeometry.x(state.corner, view.getWidth(), side, AndroidUtilities.dp(12));
-        int y = PurpleRoundBubbleGeometry.y(state.corner, availableHeight(view), side, AndroidUtilities.dp(12));
-        camera.setTranslationX(x - camera.getLeft() - camera.getPivotX() * (1 - scale));
-        camera.setTranslationY(y - camera.getTop() - camera.getPivotY() * (1 - scale));
+        float scale = state.tracking ? camera.getScaleX() : side / (float) Math.max(1, camera.getWidth());
+        float x, y;
+        if (state.tracking) {
+            side = Math.round(camera.getWidth() * scale);
+            x = camera.getX() + camera.getPivotX() * (1 - scale);
+            y = camera.getY() + camera.getPivotY() * (1 - scale);
+        } else {
+            camera.setScaleX(scale); camera.setScaleY(scale);
+            x = PurpleRoundBubbleGeometry.x(state.corner, view.getWidth(), side, AndroidUtilities.dp(12));
+            y = PurpleRoundBubbleGeometry.y(state.corner, availableHeight(view), side, AndroidUtilities.dp(12));
+            camera.setTranslationX(x - camera.getLeft() - camera.getPivotX() * (1 - scale));
+            camera.setTranslationY(y - camera.getTop() - camera.getPivotY() * (1 - scale));
+        }
         View overlay = (View) view.getTag(OVERLAY_TAG);
         if (overlay != null) {
             float overlayScale = side / (float) Math.max(1, overlay.getWidth());
@@ -185,7 +193,7 @@ public final class PurpleRoundBubble {
         view.getButtonsLayout().setVisibility(View.INVISIBLE);
         if (state.controls != null) {
             state.controls.update(view.isPaused());
-            state.controls.setX(PurpleRoundBubbleGeometry.clamp(x, view.getWidth() - state.controls.getWidth()));
+            state.controls.setX(PurpleRoundBubbleGeometry.clamp(Math.round(x), view.getWidth() - state.controls.getWidth()));
             state.controls.setY(y + side); state.controls.bringToFront();
         }
     }
