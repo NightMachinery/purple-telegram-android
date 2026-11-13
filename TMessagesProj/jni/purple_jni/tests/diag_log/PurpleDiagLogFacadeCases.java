@@ -143,6 +143,9 @@ public final class PurpleDiagLogFacadeCases {
         work.discard();
         drained();
 
+        check(PurpleDiagLogStore.line(0, "recordings", "trace_build", PurpleDiagLogStore.sourceBuild("/SENSITIVE_PATH/person.test")).contains("source_build=unknown"), "source stamp rejects arbitrary text");
+        check(PurpleDiagLogStore.line(0, "recordings", "trace_build", PurpleDiagLogStore.sourceBuild("abcdef012345+dirty")).contains("source_build=abcdef012345+dirty"), "typed source stamp preserves the dirty build marker");
+
         // A legacy export in files/logs from the first diagnostic build.
         File logs = new File(app, PurpleDiagLog.LEGACY_EXPORT_DIRECTORY);
         check(logs.mkdirs(), "legacy export folder");
@@ -161,6 +164,7 @@ public final class PurpleDiagLogFacadeCases {
         check(!legacy.exists(), "export removes a legacy export");
         check(unrelated.isFile(), "export leaves other files in files/logs alone");
         String text = read(exported);
+        check(text.contains("source_build=" + BuildConfig.PURPLE_GIT_HASH), "take source build survives export across process scopes");
         check(text.contains("step=state_error outcome=error"), "terminal error is an error outcome");
         check(text.indexOf("step=state_released") < text.indexOf("step=release_returned"), "release API observation survives terminal state until API return");
         check(text.contains("step=split_cleanup outcome=error") && text.contains("long_copy_cleanup reason=io_failed"), "actual refused delete is a failed cleanup outcome");
@@ -202,7 +206,7 @@ public final class PurpleDiagLogFacadeCases {
         check(body.contains(" diag export_failed reason=invalid invalid=invalid\n"), "non-words are refused: " + body);
         for (String line : body.split("\n")) {
             check(line.matches("\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\dZ [a-z_]+ [a-z_]+( .*)?"), "line shape: " + line);
-            String rest = line.substring(line.indexOf(' ') + 1);
+            String rest = line.substring(line.indexOf(' ') + 1).replace(" source_build=" + BuildConfig.PURPLE_GIT_HASH, "");
             check(!rest.matches(".*\\d{6,}.*") && !rest.contains("/"), "no long number or path: " + line);
         }
 

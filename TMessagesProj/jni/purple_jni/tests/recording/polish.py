@@ -133,7 +133,7 @@ public class MediaFitPort extends MediaFitBase {
     put('android/os/SystemClock.java', 'package android.os;public class SystemClock{public static long now=1000;public static long elapsedRealtime(){return now;}}')
     put('org/telegram/messenger/purple/PurpleLongRoundOriginals.java','package org.telegram.messenger.purple;public class PurpleLongRoundOriginals{public static class Owner{public PurpleMediaTrace.Take trace;}}')
     put('org/telegram/messenger/purple/PurpleDiagLog.java', '''package org.telegram.messenger.purple;public class PurpleDiagLog{
- public static final java.util.List<String> lines=new java.util.ArrayList<>();
+ public static final java.util.List<String> lines=new java.util.ArrayList<>();public static PurpleDiagLogStore.Field sourceBuild(){return PurpleDiagLogStore.sourceBuild("abcdef0");}
  public static PurpleDiagLogStore.Field count(String k,int v){return PurpleDiagLogStore.count(k,v);}public static PurpleDiagLogStore.Field code(String k,String v){return PurpleDiagLogStore.code(k,v);}
  public static void event(String a,String e,PurpleDiagLogStore.Field... f){lines.add(PurpleDiagLogStore.line(0,a,e,f));}
 }''')
@@ -145,7 +145,7 @@ public class MediaTraceCases{
  String lines=String.join("\\n",PurpleDiagLog.lines);
  if(lines.indexOf("step=pause_request")>=lines.indexOf("step=pause_ack")||!lines.contains("elapsed_ms=37")||!lines.contains("cap_s=180"))throw new AssertionError("actual trace order/cap/monotonic delta");checks++;
  int before=PurpleDiagLog.lines.size();PurpleMediaTrace.begin(0,123456789,"v2",60000);int replaced=PurpleDiagLog.lines.size();a.event(PurpleMediaTrace.Step.MUXER_COMPLETE);
- if(PurpleDiagLog.lines.size()!=replaced||replaced!=before+1)throw new AssertionError("late old generation logged into replacement");checks++;
+ if(PurpleDiagLog.lines.size()!=replaced||replaced!=before+2)throw new AssertionError("late old generation logged into replacement");checks++;
  PurpleMediaTrace.Take b=PurpleMediaTrace.current(0,123456789);b.event(PurpleMediaTrace.Step.RETAIN_FAILED,false);b.event(PurpleMediaTrace.Step.RETAIN_FAILED,false);
  if(PurpleDiagLog.lines.size()!=replaced+1)throw new AssertionError("retry failure flood");checks++;
  b.event(PurpleMediaTrace.Step.RETAIN_SAVED);b.retire();int retired=PurpleDiagLog.lines.size();b.event(PurpleMediaTrace.Step.FLIP_FIRST_FRAME);

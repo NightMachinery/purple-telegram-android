@@ -99,6 +99,7 @@ public final class PurpleDiagLog {
     public interface Cleared { void run(boolean cleared); }
 
     public static PurpleDiagLogStore.Field slot(int slot) { return PurpleDiagLogStore.slot(slot); }
+    public static PurpleDiagLogStore.Field sourceBuild() { return PurpleDiagLogStore.sourceBuild(BuildConfig.PURPLE_GIT_HASH); }
     public static PurpleDiagLogStore.Field mode(int mode) { return PurpleDiagLogStore.mode(mode); }
     public static PurpleDiagLogStore.Field count(String key, int value) { return PurpleDiagLogStore.count(key, value); }
     public static PurpleDiagLogStore.Field version(String key, int value) { return PurpleDiagLogStore.version(key, value); }

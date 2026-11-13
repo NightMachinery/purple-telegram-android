@@ -18,7 +18,10 @@ identify a random take or split operation in that process. They contain no
 account, chat, message, phone or device identifier. Scope changes after process
 restart; events from separate process scopes cannot establish an ordering across
 boots. `elapsed_s` plus `elapsed_ms` is Android elapsed-realtime since that
-scope began, independent of wall-clock changes. The header identifies the build.
+scope began, independent of wall-clock changes. `trace_build source_build` captures the compile-time source commit for each
+take/operation. This stays meaningful if a later app update exports older events;
+the export header describes the currently installed build. No device or user
+identifier is accepted by the no-argument production source-build field.
 
 `capture_budget` records the captured backend and local cap in seconds. `stop_s` plus `stop_ms` records the captured native stop
 budget, including the legacy composer margin. A zero

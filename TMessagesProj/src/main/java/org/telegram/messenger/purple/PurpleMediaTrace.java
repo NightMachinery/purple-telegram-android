@@ -73,6 +73,13 @@ public final class PurpleMediaTrace {
             fields.add(PurpleDiagLog.count("elapsed_ms", (int) (elapsed % 1000)));
             return fields;
         }
+        private void build() {
+            try {
+                ArrayList<PurpleDiagLogStore.Field> fields = fields();
+                fields.add(PurpleDiagLog.sourceBuild());
+                PurpleDiagLog.event("recordings", "trace_build", fields.toArray(new PurpleDiagLogStore.Field[0]));
+            } catch (Throwable ignored) { }
+        }
         public synchronized void retire() { retired = true; }
     }
 
@@ -85,7 +92,7 @@ public final class PurpleMediaTrace {
         take.cap(capMs, stopMs);
         return take;
     }
-    public static Take operation(String backend) { return new Take(backend); }
+    public static Take operation(String backend) { Take take = new Take(backend); take.build(); return take; }
     public static synchronized Take current(int account, int guid) { return takes.get(account + ":" + guid); }
     public static void event(int account, int guid, Step step) {
         Take take = current(account, guid);
