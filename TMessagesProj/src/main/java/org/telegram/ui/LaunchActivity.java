@@ -6855,6 +6855,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         pipActivityHandler.onPause();
         NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.stopAllHeavyOperations, 4096);
         ApplicationLoader.mainInterfacePaused = true;
+        org.telegram.messenger.purple.PurpleSyncAuto.background();
         // Purple: see PurpleScreenTime#foreground
         org.telegram.messenger.purple.PurpleScreenTime.foreground(false);
         int account = currentAccount;

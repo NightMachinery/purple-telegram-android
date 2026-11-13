@@ -87,7 +87,7 @@ file TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java 61 14 27
 file TMessagesProj/src/main/java/org/telegram/ui/ExternalActionActivity.java 2 0 2
 file TMessagesProj/src/main/java/org/telegram/ui/FilterCreateActivity.java 1 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/FiltersSetupActivity.java 5 5 5
-file TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java 14 2 10
+file TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java 15 2 10
 file TMessagesProj/src/main/java/org/telegram/ui/LauncherIconController.java 4 2 2
 file TMessagesProj/src/main/java/org/telegram/ui/MainTabsActivity.java 6 2 3
 file TMessagesProj/src/main/java/org/telegram/ui/MultiContactsSelectorBottomSheet.java 1 1 1

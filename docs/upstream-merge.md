@@ -827,3 +827,7 @@ helpers own correlation and typed observations. `RoundVideoSession` delegates
 state, deadline, camera-switch and release observations to the captured Purple
 original owner. These hooks preserve native recording decisions and carry no
 raw exception text or paths. See `recorder-diagnostics.md` for proof limits.
+
+LaunchActivity.onPause retires automatic-sync backstop delivery through one Purple
+call after the existing background flag. Account identity invalidation retires
+the old account runtime; the callback rechecks captured authority before effects.

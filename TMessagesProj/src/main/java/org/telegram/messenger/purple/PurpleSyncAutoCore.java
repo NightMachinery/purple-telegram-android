@@ -66,6 +66,7 @@ final class PurpleSyncAutoCore {
         String ticket() {
             return value.optString("ticket");
         }
+        long lastCheck() { return value.optBoolean("checked") ? Long.parseLong(value.optString("lastCheck", "0")) : -1; }
         long retryAt() {
             return Long.parseLong(value.optString("retryAt", "0"));
         }

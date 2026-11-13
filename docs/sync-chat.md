@@ -56,7 +56,9 @@ Core excludes message ids already issued by this install; messages sent by anoth
 device remain eligible even though Telegram marks them outgoing. The engine
 uses `ChatUpdated` through its usual account lock, pause and backoff gates.
 The next lifecycle event may check after the fifteen-minute eligibility interval.
-There is no periodic idle timer, so no fifteen-minute idle deadline is guaranteed.
+An opted-in eligible open app has one fifteen-minute account-owned backstop through
+the automatic engine. Background delivery is cancelled; foreground checks overdue
+work once. OS suspension or process death cannot guarantee a wall-clock deadline.
 No short poll is added.
 
 ### Delivery while the sync chat stays closed
@@ -66,8 +68,8 @@ difference recovery also reaches the adapters. Telegram usually sends passive
 updates to joined supergroups, but may stop or reduce them. Pickup therefore
 fires for delivered updates while the chat is closed, with no guarantee of
 prompt delivery. Normal channel short polling belongs to opened chats; the
-sync chat is not registered for it. In the absence of a delivered update, a check
-waits for another lifecycle trigger after the eligibility interval.
+sync chat is not registered for it. In the absence of a delivered update, the eligible open-app backstop supplies a
+check after the fifteen-minute interval, or foreground re-evaluates overdue work.
 See [Telegram's delivery contract](https://core.telegram.org/api/updates#subscribing-to-updates-of-channels-supergroups).
 
 Pending update batches for the same typed chat retain a bounded union of ids and

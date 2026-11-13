@@ -1066,6 +1066,8 @@ public final class PurpleSyncAutoCases {
         queuedOptIn(parent);
         queuedManualOptIn(parent);
         replacedParents(parent);
+        PurpleSyncRuntimeCases.run(parent);
+        PurpleSyncBackstopCases.run(parent);
         PurpleSyncAutoReviewCases.run(parent);
         return PurpleModernSyncCases.checks - before;
     }

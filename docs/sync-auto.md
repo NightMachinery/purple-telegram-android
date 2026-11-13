@@ -51,7 +51,13 @@ nothing about the binding, and automatic sync then took the moved state for no
 state at all (AccountUnbound).
 
 An opted-in account checks when its session is ready, the app returns to the
-foreground or the device/app unlocks. Those checks are limited to one per 15 minutes.
+foreground or the device/app unlocks. While open and eligible, one account-owned
+callback also supplies a fifteen-minute backstop through the same engine. Its
+deadline follows the last durable check (or first-use attempt). Backgrounding
+cancels delivery, and foreground re-evaluates overdue work once. Disable, logout,
+owner/environment replacement and runtime disposal invalidate the callback;
+stale callbacks cannot rearm it. The engine still gates/coalesces every trigger
+and preserves retries, backoff, uncertain writes and no-state first use.
 Saving that account's existing settings file uses the existing five-second
 save debounce and bypasses the lifecycle limit. A newer settled save replaces
 queued intent. Creation, imports, remote applies, History/Undo and the legacy
@@ -101,8 +107,8 @@ even after restart or expiry. Terminal run state survives Holds and Disable.
 A stale retry callback cannot consume a newer run/ticket/deadline. Request and
 execution state is released on timeout; at most 128 weak identity tombstones
 recognize late replies and request reconciliation without delivering success. Request timeouts
-are bounded one-shot transport deadlines. There is no polling timer or WorkManager
-job. Disable blocks admission immediately, cancels reads and guards queued upload
+are bounded one-shot transport deadlines. There is no faster poll, background service, wakelock or WorkManager job.
+OS suspension, sleep or process death cannot guarantee a wall-clock deadline. Disable blocks admission immediately, cancels reads and guards queued upload
 and editor publication; uncertain already-issued work remains for reconciliation.
 
 The enabled preference is an early admission hint and an immediate off switch.

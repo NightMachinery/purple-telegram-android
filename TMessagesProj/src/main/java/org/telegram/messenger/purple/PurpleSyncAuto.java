@@ -77,6 +77,7 @@ public final class PurpleSyncAuto {
         final PurpleSyncAutoNetwork network;
         final String preference;
         final ArrayList<Consumer<Status>> listeners = new ArrayList<>();
+        final PurpleSyncAutoBackstop backstop;
         Runnable retry;
         Runnable pickup;
         boolean pickupOverflow;
@@ -99,10 +100,23 @@ public final class PurpleSyncAuto {
             };
             account = new PurpleSyncRunner.Session(origin.slot, origin.userId, env);
             preference = hintKey(origin.key);
+            backstop = new PurpleSyncAutoBackstop(new PurpleSyncAutoBackstop.Port() {
+                public boolean eligible() { return accounts.get(opening.key) == Runtime.this && current() && enabledHint() && !ApplicationLoader.mainInterfacePaused; }
+                public long now() { return System.currentTimeMillis(); }
+                public void post(Runnable task, long delay) { AndroidUtilities.runOnUIThread(task, delay); }
+                public void cancel(Runnable task) { AndroidUtilities.cancelRunOnUIThread(task); }
+                public void check() { periodicCheck(); }
+            });
             engine = new PurpleSyncAutoEngine(account, origin.key, this);
             PurpleSyncClient client = PurpleSyncTelegramClient.create(origin.slot, origin.userId);
             client.transientWait(value->AndroidUtilities.runOnUIThread(this::render));
             network = new PurpleSyncAutoNetwork(client, engine.session, () -> current() && enabledHint());
+        }
+        void periodicCheck() { engine.event(PurpleSyncAutoCore.Event.Foreground); }
+        void dispose() {
+            backstop.close(); engine.close(); cancelNetworks();
+            if (pickup != null) AndroidUtilities.cancelRunOnUIThread(pickup);
+            pickup = null;
         }
         void updated(PurpleSyncChatCore.Peer chat, java.util.List<org.telegram.messenger.MessageObject> messages) {
             if (ApplicationLoader.mainInterfacePaused || !current() || !enabledHint()
@@ -151,6 +165,7 @@ public final class PurpleSyncAuto {
             long generation = ++intent;
             if (!enabled) {
                 paused = true;
+                backstop.suspend();
                 engine.suspend();
             }
             engine.enabled(enabled, () -> generation == intent && opening.current());
@@ -159,6 +174,7 @@ public final class PurpleSyncAuto {
             if (enabled && Boolean.FALSE.equals(requested))
                 return;
             paused = !enabled;
+            AndroidUtilities.runOnUIThread(() -> { if (enabled) backstop.resume(); else backstop.suspend(); });
             if ((enabled ? current() : opening.current())
                 && !MessagesController.getMainSettings(account.account).edit().putBoolean(preference, enabled).commit())
                 reason = PurpleSyncAutoCore.Reason.StateChanged;
@@ -177,6 +193,7 @@ public final class PurpleSyncAuto {
             long now = now();
             if (!PurpleSyncFirstUse.due(event, now, preferences.getLong(checkedKey, 0))) return true;
             preferences.edit().putLong(checkedKey, now).commit();
+            AndroidUtilities.runOnUIThread(() -> backstop.checked(now * 1000));
             AndroidUtilities.runOnUIThread(() -> runFirstUse(event == PurpleSyncAutoCore.Event.Enable));
             return true;
         }
@@ -328,7 +345,11 @@ public final class PurpleSyncAuto {
             retryAt = record != null ? record.retryAt() : 0;
             if (record != null && !record.enabled())
                 enabledHint(false);
-            AndroidUtilities.runOnUIThread(this::render);
+            long checked = record == null ? -1 : record.lastCheck();
+            AndroidUtilities.runOnUIThread(() -> {
+                if (checked >= 0 && checked <= Long.MAX_VALUE / 1000) backstop.checked(checked * 1000);
+                render();
+            });
         }
         void loadStatus() {
             queue(() -> {
@@ -501,7 +522,7 @@ public final class PurpleSyncAuto {
     private static synchronized Runtime runtime(PurpleAccountFiles.Identity identity) {
         Runtime value = accounts.get(identity.key);
         if (value != null && !value.current()) {
-            value.engine.close();
+            value.dispose();
             accounts.remove(identity.key);
             value = null;
         }
@@ -553,7 +574,9 @@ public final class PurpleSyncAuto {
             return;
         if (!PurpleAccountOwner.ready())
             return;
-        runtime(identity).engine.event(event);
+        Runtime runtime = runtime(identity);
+        runtime.backstop.resume();
+        runtime.engine.event(event);
     }
     private static synchronized void observe() {
         if (observing)
@@ -579,6 +602,18 @@ public final class PurpleSyncAuto {
         for (int account = 0; account < UserConfig.MAX_ACCOUNT_COUNT; ++account)
             if (UserConfig.getInstance(account).isClientActivated())
                 trigger(account, event);
+    }
+    public static void background() {
+        for (Runtime runtime : new ArrayList<>(accounts.values())) runtime.backstop.suspend();
+    }
+    static void identityChanged(int slot) {
+        AndroidUtilities.runOnUIThread(() -> {
+            java.util.Iterator<Runtime> values = accounts.values().iterator();
+            while (values.hasNext()) {
+                Runtime runtime = values.next();
+                if (runtime.opening.slot == slot && !runtime.opening.current()) { runtime.dispose(); values.remove(); }
+            }
+        });
     }
     public static void foreground() {
         all(PurpleSyncAutoCore.Event.Foreground);

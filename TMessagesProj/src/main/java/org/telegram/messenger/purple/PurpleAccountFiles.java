@@ -101,6 +101,7 @@ public final class PurpleAccountFiles {
         synchronized (PurpleAccountFiles.class) {
             if (slot >= 0 && slot < lifetimes.length) ++lifetimes[slot];
         }
+        PurpleSyncAuto.identityChanged(slot);
         PurpleArchive.identityChanged(slot);
         PurpleSyncChat.identityChanged(slot);
         PurpleAccountSettings.invalidate();
