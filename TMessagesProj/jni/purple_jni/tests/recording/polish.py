@@ -7,7 +7,7 @@ _spec.loader.exec_module(_module)
 method = _module.method
 
 
-def run(root, output):
+def run(root, output, dock=None):
     output.mkdir()
     java = root / 'TMessagesProj/src/main/java/org/telegram'
     def put(name, content):
@@ -68,6 +68,37 @@ public class VideoPlayer {
     prefix = enter.split('private Runnable recordAudioVideoRunnable = new Runnable() {', 1)[1].split('public void run() {', 1)[1].split('            if (slideText != null)', 1)[0]
     release = enter.split('float alpha = 1.0f + dist / distCanMove;', 1)[1]
     release = method(release[release.index('if (recordAudioVideoRunnableStarted)'):], 'if (recordAudioVideoRunnableStarted)')
+    dock_source = pathlib.Path(dock).read_text() if dock else (java / 'messenger/purple/PurpleRecordingDock.java').read_text()
+    put('DockModalPort.java', '''public class DockModalPort {
+ static class State {boolean active,round;long generation;boolean active(){return active;}}
+ static final State state=new State();static long discarded=-1;
+ static class LaunchActivity{static LaunchActivity instance=new LaunchActivity();}
+ static class R{static class string{static final int DiscardVoiceMessageTitle=1,DiscardVoiceMessageDescription=2,DiscardVoiceMessageAction=3,Continue=4,DiscardVideoMessageTitle=5,DiscardVideoMessageDescription=6;}}
+ static class LocaleController{static String getString(int id){return "localized:"+id;}}
+ interface Click{void run(Object d,int w);}
+ static class AlertDialog{static Builder shown;static class Builder{
+  String title,message;Click positive,negative;Builder(Object activity){}
+  Builder setTitle(String v){title=v;return this;}Builder setMessage(String v){message=v;return this;}
+  Builder setPositiveButton(String s,Click c){positive=c;return this;}Builder setNegativeButton(String s,Click c){negative=c;return this;}
+  void show(){shown=this;}
+ }}
+ static void discard(long generation){discarded=generation;}
+''' + method(dock_source, '    public static boolean refuseStart()') + '''
+ static int test(){int checks=0;
+  state.active=false;AlertDialog.shown=null;if(refuseStart()||AlertDialog.shown!=null)throw new AssertionError("inactive dialog");checks++;
+  for(boolean round:new boolean[]{false,true}){
+   state.active=true;state.round=round;state.generation=42;discarded=-1;
+   if(!refuseStart())throw new AssertionError("active refusal");checks++;
+   AlertDialog.Builder d=AlertDialog.shown;
+   if(!d.title.equals(LocaleController.getString(round?R.string.DiscardVideoMessageTitle:R.string.DiscardVoiceMessageTitle))||!d.message.equals(LocaleController.getString(round?R.string.DiscardVideoMessageDescription:R.string.DiscardVoiceMessageDescription)))throw new AssertionError("recorder kind copy");checks+=2;
+   if(d.negative!=null||discarded!=-1)throw new AssertionError("Continue dispatched discard");checks++;
+   state.generation=99;state.round=!round;d.positive.run(null,0);
+   if(discarded!=42)throw new AssertionError("dialog lost captured generation");checks++;
+  }
+  LaunchActivity.instance=null;AlertDialog.shown=null;if(!refuseStart()||AlertDialog.shown!=null)throw new AssertionError("missing activity must still refuse");checks++;
+  return checks;
+ }
+}''')
     put('ModePort.java', '''public class ModePort {
  Object parentActivity=new Object(),recordAudioVideoRunnable=new Object();boolean recordAudioVideoRunnableStarted=true,calledRecordRunnable,sendVoiceEnabled=true,sendRoundEnabled=true,video;
  static class Delegate{int switches,pre;void onPreAudioVideoRecord(){pre++;}void onSwitchRecordMode(boolean video){switches++;}void needShowMediaBanHint(){}}
@@ -77,7 +108,7 @@ public class VideoPlayer {
  boolean isInVideoMode(){return video;}void setRecordVideoButtonVisible(boolean v,boolean a){video=v;}void performHapticFeedback(int n){}void sendAccessibilityEvent(int n){}
  void hold(){''' + prefix + '''}
  void release(){''' + release + '''}
- public static void main(String[] args){int checks=0;
+ public static void main(String[] args){int checks=DockModalPort.test();
  for(boolean video:new boolean[]{false,true}){
   ModePort p=new ModePort();p.video=video;p.calledRecordRunnable=true;org.telegram.messenger.purple.PurpleRecordingDock.refuse=true;p.hold();p.release();
   if(p.video!=video||p.delegate.switches!=0||p.calledRecordRunnable||p.recordAudioVideoRunnableStarted)throw new AssertionError("refused hold toggled mode");checks+=4;

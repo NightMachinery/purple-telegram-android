@@ -473,3 +473,9 @@ corner; cancellation restores the previous corner. The production dispatch
 fixture interleaves real registered pre-draw/layout callbacks with movement,
 release and cancellation for both camera backends. Android input timing and
 rendered motion remain device checks.
+
+The active-recorder refusal uses Telegram's localized video discard title and
+description for a round take, and its voice copy for voice. Continue leaves the
+take untouched; Discard retains the generation captured when the dialog opened.
+The host modal control executes the production refusal method for both kinds,
+including inactive state, missing activity and a replaced generation.

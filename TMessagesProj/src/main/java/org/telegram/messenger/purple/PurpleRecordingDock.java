@@ -248,8 +248,8 @@ public final class PurpleRecordingDock {
         LaunchActivity activity = LaunchActivity.instance;
         if (activity != null) {
             final long generation = state.generation;
-            new AlertDialog.Builder(activity).setTitle(LocaleController.getString(R.string.DiscardVoiceMessageTitle))
-                    .setMessage(LocaleController.getString(R.string.DiscardVoiceMessageDescription))
+            new AlertDialog.Builder(activity).setTitle(LocaleController.getString(state.round ? R.string.DiscardVideoMessageTitle : R.string.DiscardVoiceMessageTitle))
+                    .setMessage(LocaleController.getString(state.round ? R.string.DiscardVideoMessageDescription : R.string.DiscardVoiceMessageDescription))
                     .setPositiveButton(LocaleController.getString(R.string.DiscardVoiceMessageAction), (d, w) -> discard(generation))
                     .setNegativeButton(LocaleController.getString(R.string.Continue), null).show();
         }
