@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 import argparse
+import contextlib
+import runpy
 import hashlib
 import json
 import os
@@ -58,7 +60,7 @@ def run(name, command, env=None):
     print((args.output / (name + ".log")).read_text()[-5000:], flush=True)
     if result.returncode:
         raise SystemExit(result.returncode)
-manifest = [{"path": str(p), "sha256": hashlib.sha256(p.read_bytes()).hexdigest()} for p in sources + [args.library, args.receipt, tests / "modern_sync/rootdeny.c"]]
+manifest = [{"path": str(p), "sha256": hashlib.sha256(p.read_bytes()).hexdigest()} for p in sources + [args.library, args.receipt, tests / "modern_sync/rootdeny.c", tests / "sync_activity_methods.py", repo / "TMessagesProj/src/main/java/org/telegram/ui/PurpleSyncActivity.java"]]
 (args.output / "inputs.json").write_text(json.dumps(manifest, indent=2) + "\n")
 run("javac", [compiler, "-source", "8", "-target", "8", "-proc:none", "-sourcepath", empty, "-cp", classpath, "-d", out] + sources)
 suites = ["modern", "routed", "store", "core", "history-rules", "history-native"] if args.suite == "all" else ["store", "core", "history-rules", "history-native"] if args.suite == "existing" else ["history-rules", "history-native"] if args.suite == "history" else [args.suite]
@@ -75,3 +77,12 @@ if args.suite in ["all", "modern", "auto"]:
     retry_cp=str(out)+os.pathsep+classpath
     run("outbox-javac", [compiler,"-source","8","-target","8","-proc:none","-sourcepath",empty,"-cp",retry_cp,"-d",retry_out]+list((tests/"auto_outbox").glob("*.java"))+[retry_main])
     run("outbox", [java,"-Xcheck:jni","-Xmx768m","-XX:ActiveProcessorCount=2"]+deny_props+["-Djava.library.path="+str(args.library.parent),"-Dscratch="+str(fixtures),"-cp",str(retry_out)+os.pathsep+retry_cp,"OutboxHostMain",classes,fixtures/"outbox"],deny_env)
+
+if args.suite == "auto":
+    activity_log = args.output / "activity.log"
+    helper = runpy.run_path(str(tests / "sync_activity_methods.py"))
+    with activity_log.open("w") as log, contextlib.redirect_stdout(log), contextlib.redirect_stderr(log):
+        activity_code = helper["main"](["--source", str(repo / "TMessagesProj/src/main/java/org/telegram/ui/PurpleSyncActivity.java"), "--output", str(args.output / "activity"), "--javac", str(compiler)])
+    print(activity_log.read_text(), flush=True)
+    if activity_code:
+        raise SystemExit(activity_code)
