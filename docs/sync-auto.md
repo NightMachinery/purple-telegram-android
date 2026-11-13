@@ -147,3 +147,8 @@ Enabling commits the account hint before posting backstop resumption. A held
 Enable without a new check therefore still has its idle callback even when the
 UI runs ahead of the worker. Disable suspends immediately and stale account
 callbacks retain their existing admission fences.
+
+Automatic first-use work captures the toggle generation. Disable retires that
+route even if a later Enable occurs, and late Joined/Published settlement cannot
+replace the newer off intent or enqueue its unsent successor as a Save. Manual
+first-use settlement still follows its explicit account-bound user action.

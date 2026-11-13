@@ -250,12 +250,15 @@ public final class PurpleSyncAuto {
          * writes the automatic record for the new state.
          */
         void runFirstUse(boolean enabling) {
-            if (firstUseRunning || !current()) return;
+            if (firstUseRunning || !live()) return;
             firstUseRunning = true;
-            java.util.function.BooleanSupplier live = () -> current() && !Boolean.FALSE.equals(requested);
+            long generation = intent;
+            java.util.function.BooleanSupplier live = () -> live() && generation == intent;
             PurpleSyncChat.manualRunner(opening.slot, live, runner -> {
                 if (runner == null) { firstUseRunning = false; return; }
+                if (!live.getAsBoolean()) { firstUseRunning = false; runner.close(); return; }
                 PurpleSyncRunner.Start started = runner.check(null, checked -> {
+                    if (!live.getAsBoolean()) { firstUseRunning = false; runner.close(); return; }
                     if (checked.status != PurpleSyncRunner.CheckStatus.Finished || checked.check == null) {
                         PurpleDiagLog.event("sync", "first_use", PurpleDiagLogStore.slot(account.account),
                                 PurpleDiagLogStore.code("outcome", "refused"), PurpleDiagLogStore.reason("check_failed"));
@@ -264,7 +267,7 @@ public final class PurpleSyncAuto {
                     PurpleSyncFirstUse.run(runner, checked.check, PurpleSyncCore.FirstUseChoice.None, outcome -> {
                         firstUseRunning = false;
                         runner.close();
-                        settle(outcome, enabling);
+                        if (live.getAsBoolean()) settle(outcome, enabling);
                     });
                 });
                 if (started != PurpleSyncRunner.Start.Started) {
@@ -275,6 +278,7 @@ public final class PurpleSyncAuto {
             });
         }
         void settle(PurpleSyncFirstUse.Outcome outcome, boolean enabling) {
+            if (!live()) return;
             switch (outcome.result) {
                 case Wait:
                 case Ask:

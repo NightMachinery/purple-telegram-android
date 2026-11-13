@@ -10,7 +10,7 @@ final class PurpleSyncRuntimeCases {
     static void ui() { int left=100;while(!AndroidUtilities.pending.isEmpty()){check(--left>0,"UI settles");AndroidUtilities.pending.remove(0).run();} }
     static boolean sequence(PurpleSyncAuto.Control control,Object runtime,Frame frame)throws Exception {
         String mode=System.getProperty("purple.test.followup","");
-        if(!mode.equals("enable-order"))return false;
+        if(!mode.equals("enable-order")&&!mode.equals("settle-off")&&!mode.equals("firstuse-generation"))return false;
         ((PurpleSyncAutoEngine)field(runtime.getClass(),runtime,"engine")).close();
         set(runtime.getClass(),runtime,"engine",new PurpleSyncAutoEngine(new PurpleSyncRunner.Session(1,202,frame.env(1)),B,(PurpleSyncAutoEngine.Port)runtime));
         set(runtime.getClass(),runtime,"firstUse",PurpleSyncFirstUse.Result.Ask);
@@ -20,7 +20,14 @@ final class PurpleSyncRuntimeCases {
         org.json.JSONObject held=new org.json.JSONObject(java.nio.file.Files.readString(new File(frame.sync(1),"auto.json").toPath()));
         check(held.getBoolean("enabled")&&!held.getBoolean("checked")&&held.getInt("held")!=0,"actual native Enable Hold without a new check");
         ArrayList<Runnable> timers=new ArrayList<>();for(Runnable task:AndroidUtilities.delayed.keySet())if(task.getClass().getName().contains("PurpleSyncAutoBackstop"))timers.add(task);
-        if(mode.equals("enable-order")) {
+        if(mode.equals("firstuse-generation")) {
+            Method run=runtime.getClass().getDeclaredMethod("runFirstUse",boolean.class);run.setAccessible(true);run.invoke(runtime,false);
+            java.util.function.BooleanSupplier captured=null;
+            for(Runnable pending:AndroidUtilities.pending)for(Field f:pending.getClass().getDeclaredFields())if(java.util.function.BooleanSupplier.class.isAssignableFrom(f.getType())){f.setAccessible(true);captured=(java.util.function.BooleanSupplier)f.get(pending);}
+            check(captured!=null&&captured.getAsBoolean(),"actual queued automatic first-use route captured admission");
+            control.setEnabled(false);check(!captured.getAsBoolean(),"Disable retires automatic first-use route");
+            control.setEnabled(true);check(!captured.getAsBoolean(),"old automatic first-use route stays retired after disable and reenable");
+        } else if(mode.equals("enable-order")) {
             check(timers.size()==1,"UI-before-worker preference commit retains exactly one held-enable callback");
             Runnable old=timers.get(0);control.setEnabled(false);DispatchQueue.flush();ui();old.run();
             check(!control.enabled()&&AndroidUtilities.delayed.isEmpty(),"Disable retires held-enable timer immediately");
@@ -28,8 +35,20 @@ final class PurpleSyncRuntimeCases {
             timers.clear();for(Runnable task:AndroidUtilities.delayed.keySet())if(task.getClass().getName().contains("PurpleSyncAutoBackstop"))timers.add(task);
             check(timers.size()==1,"reenable has exactly one timer");old=timers.get(0);retire(1);AndroidUtilities.delayed.remove(old);int queued=DispatchQueue.pending.size();old.run();
             check(DispatchQueue.pending.size()==queued&&AndroidUtilities.delayed.isEmpty(),"replacement rejects registered timer and rearm");
+        } else {
+            control.setEnabled(false);long intent=(Long)field(runtime.getClass(),runtime,"intent");
+            Method settle=runtime.getClass().getDeclaredMethod("settle",PurpleSyncFirstUse.Outcome.class,boolean.class);settle.setAccessible(true);
+            settle.invoke(runtime,new PurpleSyncFirstUse.Outcome(PurpleSyncFirstUse.Result.Joined,null,"successor_unsent",null,null,false),false);
+            check(Boolean.FALSE.equals(field(runtime.getClass(),runtime,"requested"))&&(Long)field(runtime.getClass(),runtime,"intent")==intent,"stale first-use settlement cannot reverse Disable admission");
+            DispatchQueue.flush();ui();held=new org.json.JSONObject(java.nio.file.Files.readString(new File(frame.sync(1),"auto.json").toPath()));
+            check(!held.getBoolean("enabled")&&!control.enabled()&&AndroidUtilities.delayed.isEmpty(),"native Disable stays durable after stale Joined and unsent Save");
         }
         return true;
+    }
+    static void followups(File parent)throws Exception {
+        String previous=System.getProperty("purple.test.followup");
+        try {for(String mode:new String[]{"enable-order","settle-off","firstuse-generation"}){File root=new File(parent,"runtime-"+mode);directory(root);System.setProperty("purple.test.followup",mode);run(root);}}
+        finally {if(previous==null)System.clearProperty("purple.test.followup");else System.setProperty("purple.test.followup",previous);}
     }
     static void run(File parent)throws Exception {
         Map<String,Object> saved=new HashMap<>();for(String key:new String[]{"started","ready","owner","global"})saved.put(key,field(PurpleAccountOwner.class,null,key));
