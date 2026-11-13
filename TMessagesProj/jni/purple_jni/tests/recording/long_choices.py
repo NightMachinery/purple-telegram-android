@@ -23,6 +23,7 @@ def run(root, output, mode='all', production_root=None):
     resources={n:i+1 for i,n in enumerate(sorted(set(re.findall(r'R.string.(\w+)',source))))}
     xml={n.attrib['name']:''.join(n.itertext()) for n in ET.parse(root/'TMessagesProj/src/main/res/values/purple_strings.xml').getroot() if n.tag=='string'}
     xml.update(Cancel='Cancel',Send='Send',OK='OK')
+    put('org/telegram/messenger/purple/PurpleMediaTrace.java', 'package org.telegram.messenger.purple;public class PurpleMediaTrace{public static void decorate(java.util.ArrayList<PurpleDiagLogStore.Field> fields){}}')
     put('org/telegram/messenger/R.java','package org.telegram.messenger;public class R{public static class string{'+''.join('public static final int '+n+'='+str(i)+';' for n,i in resources.items())+'}}')
     put('org/telegram/messenger/LocaleController.java','package org.telegram.messenger;public class LocaleController {public static String getString(int id){switch(id){'+''.join('case '+str(i)+':return '+json.dumps(xml[n])+';' for n,i in resources.items())+'default:throw new AssertionError();}}public static String formatString(int id,Object... args){return String.format(java.util.Locale.ROOT,getString(id),args);}}')
     put('org/telegram/messenger/AndroidUtilities.java','package org.telegram.messenger;public class AndroidUtilities{public static void runOnUIThread(Runnable r){r.run();}public static void runOnUIThread(Runnable r,long delay){}public static void cancelRunOnUIThread(Runnable r){}}')
