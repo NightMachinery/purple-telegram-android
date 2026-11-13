@@ -831,3 +831,14 @@ raw exception text or paths. See `recorder-diagnostics.md` for proof limits.
 LaunchActivity.onPause retires automatic-sync backstop delivery through one Purple
 call after the existing background flag. Account identity invalidation retires
 the old account runtime; the callback rechecks captured authority before effects.
+
+### Media auto-reply admission diagnostics
+
+MessagesController.processUpdateArray delegates incoming updates through
+PurpleMediaReply.observeUpdate before the new-message callback, retaining the
+exact non-empty and scheduled flags so admission and non-media skips stay
+observable without changing update routing. SendMessagesHelper delegates
+forward, multi-media and single-message ACK correlation (enter, miss, match,
+error and end) to PurpleMediaReplyDiagnostics.AckTrace and passes only the
+bounded trigger sequence into PurpleMediaReply.observe; all retry, schedule
+and error handling stays untouched in upstream code.

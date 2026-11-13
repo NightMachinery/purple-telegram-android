@@ -83,6 +83,7 @@ for mode in ["errors", "corrupt", "full"]:
     commands.append(java("status-" + mode, "org.telegram.messenger.purple.PurpleMediaReplyStatusCases", [mode]))
 commands.append(java("presentation", "org.telegram.messenger.purple.PurpleMediaReplyPresentationCases", []))
 commands.append(java("picker", "org.telegram.ui.PickerCurrent", ["current"]))
+commands.append(java("diagnostics", "org.telegram.messenger.purple.PurpleMediaReplyDiagCases", [classes.resolve()]))
 if args.reviewed_classes:
     assert args.reviewed_ui
     for fault in ["sync", "rename"]:

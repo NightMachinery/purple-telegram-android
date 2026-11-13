@@ -2769,6 +2769,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                     final boolean scheduledOnline = scheduleDate == 0x7FFFFFFE;
                     final Runnable send = () -> {
                         getConnectionsManager().sendRequest(req, (response, error) -> {
+                            final org.telegram.messenger.purple.PurpleMediaReplyDiagnostics.AckTrace purpleAck = org.telegram.messenger.purple.PurpleMediaReplyDiagnostics.forwardAckEnter(currentAccount, response, error, newMsgObjArr);
                             if (error == null) {
                                 SparseLongArray newMessagesByIds = new SparseLongArray();
                                 TLRPC.Updates updates = (TLRPC.Updates) response;
@@ -2835,13 +2836,16 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                                             message.media_unread = false;
                                         }
                                         long random_id = newMessagesByIds.get(message.id);
+                                        if (purpleAck != null && random_id == 0) purpleAck.forwardMiss(message, "corr_miss_id");
                                         if (random_id != 0) {
                                             final TLRPC.Message newMsgObj1 = messagesByRandomIdsFinal.get(random_id);
                                             if (newMsgObj1 == null) {
+                                                if (purpleAck != null) purpleAck.forwardMiss(message, "corr_miss_rand");
                                                 continue;
                                             }
                                             int index = newMsgObjArr.indexOf(newMsgObj1);
                                             if (index == -1) {
+                                                if (purpleAck != null) purpleAck.forwardMiss(message, "corr_miss_idx");
                                                 continue;
                                             }
                                             MessageObject msgObj1 = newMsgArr.get(index);
@@ -2859,7 +2863,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                                             int existFlags = msgObj1.getMediaExistanceFlags();
                                             newMsgObj1.id = message.id;
                                             sentCount++;
-
+                                            if (purpleAck != null) purpleAck.forwardMatched(newMsgObj1, message, scheduled, currentSchedule);
                                             if (scheduled != currentSchedule) {
                                                 final int fromMode = scheduled ? ChatActivity.MODE_SCHEDULED : 0;
                                                 final int toMode = currentSchedule ? ChatActivity.MODE_SCHEDULED : 0;
@@ -2901,7 +2905,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                                                     AndroidUtilities.runOnUIThread(() -> {
                                                         newMsgObj1.send_state = MessageObject.MESSAGE_SEND_STATE_SENT;
                                                         getMediaDataController().increasePeerRaiting(peer);
-                                                        org.telegram.messenger.purple.PurpleMediaReply.observe(currentAccount, message, true, scheduleDate != 0);
+                                                        org.telegram.messenger.purple.PurpleMediaReply.observe(currentAccount, message, true, scheduleDate != 0, purpleAck != null ? purpleAck.seq : 0);
                                                         getNotificationCenter().postNotificationName(NotificationCenter.messageReceivedByServer, oldId, message.id, message, peer, 0L, existFlags, scheduleDate != 0);
                                                         getNotificationCenter().postNotificationName(NotificationCenter.messageReceivedByServer2, oldId, message.id, message, peer, 0L, existFlags, scheduleDate != 0);
                                                         processSentMessage(oldId, newMsgObj1);
@@ -2919,8 +2923,10 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                                     getMessagesController().processUpdates(updates, false);
                                 }
                                 getStatsController().incrementSentItemsCount(ApplicationLoader.getCurrentNetworkType(), StatsController.TYPE_MESSAGES, sentCount);
+                                if (purpleAck != null) purpleAck.forwardEnd(sentCount, updates, newMsgObjArr);
                             } else {
                                 AndroidUtilities.runOnUIThread(() -> AlertsCreator.processError(currentAccount, error, null, req));
+                                if (purpleAck != null) purpleAck.errorEnd(error);
                             }
                             for (int a1 = 0; a1 < newMsgObjArr.size(); a1++) {
                                 final TLRPC.Message newMsgObj1 = newMsgObjArr.get(a1);
@@ -7809,6 +7815,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 }
             }
             AndroidUtilities.runOnUIThread(() -> {
+                final org.telegram.messenger.purple.PurpleMediaReplyDiagnostics.AckTrace purpleAck = org.telegram.messenger.purple.PurpleMediaReplyDiagnostics.multiAckEnter(currentAccount, response, error, msgObjs, scheduled);
                 boolean isSentError = false;
                 if (error == null) {
                     SparseArray<TLRPC.Message> newMessages = new SparseArray<>();
@@ -7915,8 +7922,10 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                         final int existFlags;
 
                         Integer id = newIds.get(newMsgObj.random_id);
+                        if (purpleAck != null && id == null) purpleAck.multiMiss(newMsgObj, "corr_miss_rand");
                         if (id != null) {
                             TLRPC.Message message = newMessages.get(id);
+                            if (purpleAck != null && message == null) purpleAck.multiMiss(newMsgObj, "corr_miss_obj");
                             if (message != null) {
                                 MessageObject.getDialogId(message);
                                 sentMessages.add(message);
@@ -7936,6 +7945,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                                     newMsgObj.flags |= 1073741824;
                                 }
                                 grouped_id = message.grouped_id;
+                                if (purpleAck != null) purpleAck.multiMatched(newMsgObj, message, scheduled, currentSchedule);
 
                                 if (!scheduled) {
                                     Integer value = getMessagesController().dialogs_read_outbox_max.get(message.dialog_id);
@@ -7962,7 +7972,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                             newMsgObj.send_state = MessageObject.MESSAGE_SEND_STATE_SENT;
                             newMsgObj.errorAllowedPriceStars = 0;
                             newMsgObj.errorNewPriceStars = 0;
-                            org.telegram.messenger.purple.PurpleMediaReply.observe(currentAccount, newMsgObj, true, currentSchedule);
+                            org.telegram.messenger.purple.PurpleMediaReply.observe(currentAccount, newMsgObj, true, currentSchedule, purpleAck != null ? purpleAck.seq : 0);
                             getNotificationCenter().postNotificationName(NotificationCenter.messageReceivedByServer, oldId, newMsgObj.id, newMsgObj, newMsgObj.dialog_id, grouped_id, existFlags, currentSchedule);
                             getNotificationCenter().postNotificationName(NotificationCenter.messageReceivedByServer2, oldId, newMsgObj.id, newMsgObj, newMsgObj.dialog_id, grouped_id, existFlags, currentSchedule);
                             getMessagesStorage().getStorageQueue().postRunnable(() -> {
@@ -7991,7 +8001,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                                         getMessagesController().deleteMessages(oldIds, null, null, dialogId, false, scheduled ? ChatActivity.MODE_SCHEDULED : 0, false, 0, null, 0, finalCurrentSchedule && !scheduled, scheduledMessageId);
                                     }
                                     getMediaDataController().increasePeerRaiting(newMsgObj.dialog_id);
-                                    org.telegram.messenger.purple.PurpleMediaReply.observe(currentAccount, newMsgObj, true, finalCurrentSchedule);
+                                    org.telegram.messenger.purple.PurpleMediaReply.observe(currentAccount, newMsgObj, true, finalCurrentSchedule, purpleAck != null ? purpleAck.seq : 0);
                                     getNotificationCenter().postNotificationName(NotificationCenter.messageReceivedByServer, oldId, newMsgObj.id, newMsgObj, newMsgObj.dialog_id, grouped_id, existFlags, finalCurrentSchedule);
                                     getNotificationCenter().postNotificationName(NotificationCenter.messageReceivedByServer2, oldId, newMsgObj.id, newMsgObj, newMsgObj.dialog_id, grouped_id, existFlags, finalCurrentSchedule);
                                     processSentMessage(oldId, newMsgObj);
@@ -8001,9 +8011,11 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                         }
                     }
                     Utilities.stageQueue.postRunnable(() -> getMessagesController().processUpdates(updates, false));
+                    if (purpleAck != null) purpleAck.multiEnd(totalSent[0], updatesArr, isSentError);
                 } else {
                     AlertsCreator.processError(currentAccount, error, null, request);
                     isSentError = true;
+                    if (purpleAck != null) purpleAck.errorEnd(error);
                 }
                 if (isSentError) {
                     for (int i = 0; i < msgObjs.size(); i++) {
@@ -8295,7 +8307,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 });
             } else {
                 AndroidUtilities.runOnUIThread(() -> {
-
+                    final org.telegram.messenger.purple.PurpleMediaReplyDiagnostics.AckTrace purpleAck = org.telegram.messenger.purple.PurpleMediaReplyDiagnostics.singleAckEnter(currentAccount, response, error, newMsgObj, scheduled);
                     boolean currentSchedule = scheduled;
                     boolean isSentError = false;
                     if (error == null) {
@@ -8496,6 +8508,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                             newMsgObj.send_state = MessageObject.MESSAGE_SEND_STATE_SENT;
                             newMsgObj.errorNewPriceStars = 0;
                             newMsgObj.errorAllowedPriceStars = 0;
+                            if (purpleAck != null) purpleAck.singlePrepared(newMsgObj, response, scheduled, currentSchedule);
                             if (scheduled != currentSchedule) {
                                 final boolean finalCurrentSchedule = currentSchedule;
                                 ArrayList<Integer> messageIds = new ArrayList<>();
@@ -8514,7 +8527,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                                     });
                                 });
                             } else {
-                                org.telegram.messenger.purple.PurpleMediaReply.observe(currentAccount, newMsgObj, true, scheduled);
+                                org.telegram.messenger.purple.PurpleMediaReply.observe(currentAccount, newMsgObj, true, scheduled, purpleAck != null ? purpleAck.seq : 0);
                                 getNotificationCenter().postNotificationName(NotificationCenter.messageReceivedByServer, oldId, newMsgObj.id, newMsgObj, newMsgObj.dialog_id, 0L, existFlags, scheduled);
                                 getNotificationCenter().postNotificationName(NotificationCenter.messageReceivedByServer2, oldId, newMsgObj.id, newMsgObj, newMsgObj.dialog_id, 0L, existFlags, scheduled);
                                 getMessagesStorage().getStorageQueue().postRunnable(() -> {
@@ -8537,7 +8550,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
 
                                     AndroidUtilities.runOnUIThread(() -> {
                                         getMediaDataController().increasePeerRaiting(newMsgObj.dialog_id);
-                                        org.telegram.messenger.purple.PurpleMediaReply.observe(currentAccount, newMsgObj, true, scheduled);
+                                        org.telegram.messenger.purple.PurpleMediaReply.observe(currentAccount, newMsgObj, true, scheduled, purpleAck != null ? purpleAck.seq : 0);
                                         getNotificationCenter().postNotificationName(NotificationCenter.messageReceivedByServer, oldId, newMsgObj.id, newMsgObj, newMsgObj.dialog_id, 0L, existFlags, scheduled);
                                         getNotificationCenter().postNotificationName(NotificationCenter.messageReceivedByServer2, oldId, newMsgObj.id, newMsgObj, newMsgObj.dialog_id, 0L, existFlags, scheduled);
                                         processSentMessage(oldId, newMsgObj);
@@ -8551,6 +8564,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                         isSentError = true;
                     }
                     if (isSentError) {
+                        if (purpleAck != null) purpleAck.singleError(error, response);
                         getMessagesStorage().markMessageAsSendError(newMsgObj, scheduled ? 1 : 0);
                         newMsgObj.send_state = MessageObject.MESSAGE_SEND_STATE_SEND_ERROR;
                         if (error != null && error.text != null && error.text.startsWith("ALLOW_PAYMENT_REQUIRED_")) {

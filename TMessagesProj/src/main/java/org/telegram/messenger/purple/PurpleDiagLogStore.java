@@ -163,7 +163,33 @@ public final class PurpleDiagLogStore {
             "jni_error", "fortify", "check_failed", "scudo", "gwp_asan", "out_of_memory", "assertion", "mutex",
             "use_after_free", "double_free", "invalid_free", "buffer_overflow", "buffer_underflow",
             // ANR main thread states (PurpleCrashRecord)
-            "runnable", "sleeping", "native", "suspended", "blocked", "timed_waiting", "gc"
+            "runnable", "sleeping", "native", "suspended", "blocked", "timed_waiting", "gc",
+            // media auto-reply admission, ACK and dispatch diagnostics (PurpleMediaReplyDiagnostics)
+            "media_reply", "ack_enter", "ack_step", "ack_skip", "ack_end", "update_enter", "observe",
+            "dispatch_reject", "plan_result", "journal", "rpc_enqueued", "rpc_result", "invalidate",
+            "run", "seq", "ack", "history", "has_raw", "id_pos", "srv_id_pos", "send_state",
+            "from_scheduled", "quick_reply", "has_peer", "action_blocked", "own", "srv_own", "srv_media",
+            "peer_kind", "has_topic", "has_error", "updates_type", "msg_id_cnt", "new_msg_cnt",
+            "media_local_cnt", "media_server_cnt", "matched_cnt", "rem_cnt", "unmatched_cnt",
+            "sched_mismatch", "scheduled", "diff", "delta_sign", "date_vs_cutoff_s", "future_s",
+            "stage", "in_flight", "reserved", "pending", "slots", "tracked", "rpc_err", "error_code",
+            "stale", "reason",
+            "forward", "multi", "single", "new_message", "channel_message", "scheduled_message", "short_sent",
+            "updates", "null", "sending", "send_error", "editing",
+            "private", "group", "channel", "user", "chat",
+            "entry", "gate", "ui", "dispatch", "plan", "send",
+            "admitted", "seeded", "duplicate", "uncertain", "skipped", "matched",
+            "pos", "zero", "neg",
+            "security", "unsatisfied_link",
+            "payment", "slowmode", "forbidden", "banned", "permission",
+            "null_raw", "nonpositive_id", "unsent", "null_peer", "service_action", "not_media",
+            "incoming_ack", "future_date", "identity_missing", "zero_dialog_id", "queue_full",
+            "revision_stale", "identity_stale", "cutoff_seeded", "chat_missing", "chat_cannot_send",
+            "settings_missing", "settings_stale", "plan_null", "stale_after_plan", "state_failed",
+            "inflight_limit", "storage_refused", "journal_unreadable", "journal_full",
+            "reserve_duplicate", "storage_replace_failed", "stale_after_reserve", "stale_before_send",
+            "corr_miss_id", "corr_miss_rand", "corr_miss_obj", "corr_miss_idx", "message_null",
+            "schedule_mismatch"
     )));
 
     /** One {@code key=value} pair of a line. Only the factories below make one. */

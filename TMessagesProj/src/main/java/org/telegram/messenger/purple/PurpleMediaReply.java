@@ -75,12 +75,14 @@ public final class PurpleMediaReply {
     static native String reserveNative(String previous, String candidate);
 
     public static synchronized void invalidate() {
+        PurpleMediaReplyDiagnostics.invalidateStart(cutoffs.length);
         final long revokedBefore = ++revision;
         for (int slot = 0; slot < cutoffs.length; ++slot) {
             cutoffs[slot] = UserConfig.getInstance(slot).isClientActivated()
                     ? ConnectionsManager.getInstance(slot).getCurrentTime() : 0;
         }
         AndroidUtilities.runOnUIThread(() -> {
+            int cancelledCount = 0;
             for (State state : states.values()) {
                 java.util.Iterator<Map.Entry<Integer, Long>> iterator = state.requests.entrySet().iterator();
                 while (iterator.hasNext()) {
@@ -89,12 +91,14 @@ public final class PurpleMediaReply {
                     final int token = request.getKey();
                     iterator.remove();
                     --state.inFlight;
+                    ++cancelledCount;
                     if (!state.failed) state.reason = Reason.Cancelled;
                     state.connection.cancelRequest(token, true);
                 }
             }
             states.entrySet().removeIf(entry -> !entry.getValue().identity.current()
                     && entry.getValue().requests.isEmpty());
+            PurpleMediaReplyDiagnostics.invalidateComplete(cancelledCount, states.size());
         });
     }
     public static JSONObject policy(int account) {
@@ -106,35 +110,92 @@ public final class PurpleMediaReply {
         } catch (Exception | UnsatisfiedLinkError e) { return null; }
     }
     public static void observe(int account, TLRPC.Message raw, boolean ack, boolean history) {
+        observe(account, raw, ack, history, 0);
+    }
+
+    public static void observeUpdate(int account, Object baseUpdate, TLRPC.Message raw,
+            boolean fromGetDifference, boolean scheduledUpdate) {
+        final int seq = PurpleMediaReplyDiagnostics.traceUpdateEntry(
+                account, baseUpdate, raw, fromGetDifference, scheduledUpdate);
+        observe(account, raw, false, fromGetDifference || scheduledUpdate, seq);
+    }
+
+    public static void observe(int account, TLRPC.Message raw, boolean ack, boolean history, int trace) {
         if (history || raw == null || raw.id <= 0 || raw.send_state != 0 || raw.from_scheduled
                 || raw.quick_reply_shortcut_id != 0 || raw.quick_reply_shortcut != null
-                || raw.peer_id == null || raw.action != null && !(raw.action instanceof TLRPC.TL_messageActionEmpty)) return;
+                || raw.peer_id == null || raw.action != null && !(raw.action instanceof TLRPC.TL_messageActionEmpty)) {
+            PurpleMediaReplyDiagnostics.observeGateReject(account, trace, raw, ack, history);
+            return;
+        }
         final int media = MessageObject.isVoiceMessage(raw) ? 1 : MessageObject.isRoundVideoMessage(raw) ? 2 : 0;
-        if (media == 0 || ack && !raw.out
-                || raw.date > ConnectionsManager.getInstance(account).getCurrentTime()) return;
+        final int seq = trace > 0 ? trace : (media != 0 ? PurpleMediaReplyDiagnostics.nextSeq() : 0);
+        if (media == 0) {
+            PurpleMediaReplyDiagnostics.observeMediaReject(account, seq, raw, media, ack, "not_media", 0);
+            return;
+        }
+        if (ack && !raw.out) {
+            PurpleMediaReplyDiagnostics.observeMediaReject(account, seq, raw, media, ack, "incoming_ack", 0);
+            return;
+        }
+        final long now = ConnectionsManager.getInstance(account).getCurrentTime();
+        if (raw.date > now) {
+            PurpleMediaReplyDiagnostics.observeMediaReject(account, seq, raw, media, ack, "future_date", (long) raw.date - now);
+            return;
+        }
         final PurpleAccountFiles.Identity identity = PurpleAccountFiles.capture(account);
-        if (identity == null) return;
+        if (identity == null) {
+            PurpleMediaReplyDiagnostics.observeMediaReject(account, seq, raw, media, ack, "identity_missing", 0);
+            return;
+        }
         final long did = MessageObject.getDialogId(raw);
-        if (did == 0) return;
+        if (did == 0) {
+            PurpleMediaReplyDiagnostics.observeMediaReject(account, seq, raw, media, ack, "zero_dialog_id", 0);
+            return;
+        }
         final String peer = raw.peer_id.channel_id != 0 ? "channel:" + raw.peer_id.channel_id
                 : raw.peer_id.chat_id != 0 ? "chat:" + raw.peer_id.chat_id : "user:" + did;
         final int id = raw.id, date = raw.date;
         final int topic = raw.reply_to != null && raw.reply_to.reply_to_top_id != 0
                 ? raw.reply_to.reply_to_top_id : raw.reply_to != null && raw.reply_to.forum_topic
                 ? raw.reply_to.reply_to_msg_id : 0;
+        final boolean hasTopic = PurpleMediaReplyDiagnostics.hasTopic(raw);
         final boolean own = raw.out;
+        final String earlyKind = PurpleMediaReplyDiagnostics.kindFromDidPeer(did, peer);
         final long capturedRevision;
+        final int pendingSnapshot;
+        final boolean queueFull;
         synchronized (PurpleMediaReply.class) {
-            if (pending >= 32) return;
-            ++pending;
-            capturedRevision = revision;
+            queueFull = pending >= 32;
+            pendingSnapshot = pending;
+            if (!queueFull) {
+                ++pending;
+                capturedRevision = revision;
+            } else {
+                capturedRevision = 0;
+            }
         }
+        if (queueFull) {
+            PurpleMediaReplyDiagnostics.observeMediaReject(account, seq, raw, media, ack, "queue_full", 0);
+            return;
+        }
+        PurpleMediaReplyDiagnostics.observeAdmitted(account, seq, raw, media, ack, own, hasTopic, pendingSnapshot + 1);
         AndroidUtilities.runOnUIThread(() -> {
+            final boolean revStale;
             synchronized (PurpleMediaReply.class) {
                 --pending;
-                if (capturedRevision != revision) return;
+                revStale = capturedRevision != revision;
             }
-            if (identity.current()) dispatch(identity, peer, did, id, topic, date, media, own, ack, capturedRevision);
+            if (revStale) {
+                PurpleMediaReplyDiagnostics.dispatchReject(account, seq, "ui", "revision_stale",
+                        earlyKind, media, ack, own, hasTopic);
+                return;
+            }
+            if (!identity.current()) {
+                PurpleMediaReplyDiagnostics.dispatchReject(account, seq, "ui", "identity_stale",
+                        earlyKind, media, ack, own, hasTopic);
+                return;
+            }
+            dispatch(identity, peer, did, id, topic, date, media, own, ack, hasTopic, capturedRevision, seq);
         });
     }
     private static State ensureState(PurpleAccountFiles.Identity identity) {
@@ -147,14 +208,49 @@ public final class PurpleMediaReply {
         return state;
     }
     private static void dispatch(PurpleAccountFiles.Identity identity, String peer, long did,
-            int id, int topic, int date, int media, boolean own, boolean ack, long capturedRevision) {
-        if (!PurpleAccountOwner.ready() || !identity.current()) return;
+            int id, int topic, int date, int media, boolean own, boolean ack, boolean hasTopic,
+            long capturedRevision, int trace) {
+        final String earlyKind = PurpleMediaReplyDiagnostics.kindFromDidPeer(did, peer);
         final int account = identity.slot;
+        if (!PurpleAccountOwner.ready()) {
+            PurpleMediaReplyDiagnostics.dispatchReject(account, trace, "dispatch", "owner_not_ready",
+                    earlyKind, media, ack, own, hasTopic);
+            return;
+        }
+        if (!identity.current()) {
+            PurpleMediaReplyDiagnostics.dispatchReject(account, trace, "dispatch", "identity_stale",
+                    earlyKind, media, ack, own, hasTopic);
+            return;
+        }
         final long cutoff;
+        final boolean revStale;
+        final boolean seededCutoff;
+        int seededNow = 0;
         synchronized (PurpleMediaReply.class) {
-            if (capturedRevision != revision) return;
-            cutoff = cutoffs[account];
-            if (cutoff == 0) { cutoffs[account] = ConnectionsManager.getInstance(account).getCurrentTime(); return; }
+            revStale = capturedRevision != revision;
+            if (!revStale) {
+                cutoff = cutoffs[account];
+                if (cutoff == 0) {
+                    seededNow = ConnectionsManager.getInstance(account).getCurrentTime();
+                    cutoffs[account] = seededNow;
+                    seededCutoff = true;
+                } else {
+                    seededCutoff = false;
+                }
+            } else {
+                cutoff = 0;
+                seededCutoff = false;
+            }
+        }
+        if (revStale) {
+            PurpleMediaReplyDiagnostics.dispatchReject(account, trace, "dispatch", "revision_stale",
+                    earlyKind, media, ack, own, hasTopic);
+            return;
+        }
+        if (seededCutoff) {
+            PurpleMediaReplyDiagnostics.cutoffSeeded(account, trace, earlyKind, media, ack, own, hasTopic,
+                    (long) date - seededNow);
+            return;
         }
         final MessagesController controller = MessagesController.getInstance(account);
         int kind = 0;
@@ -163,21 +259,58 @@ public final class PurpleMediaReply {
             if (chat == null || !ChatObject.canSendMessages(chat)) {
                 State state = ensureState(identity);
                 if (!state.failed) state.reason = Reason.Permission;
+                String rejectKind = chat == null ? earlyKind
+                        : (ChatObject.isChannel(chat) && !chat.megagroup ? "channel" : "group");
+                PurpleMediaReplyDiagnostics.dispatchReject(account, trace, "dispatch",
+                        chat == null ? "chat_missing" : "chat_cannot_send",
+                        rejectKind, media, ack, own, hasTopic);
                 return;
             }
             kind = ChatObject.isChannel(chat) && !chat.megagroup ? 2 : 1;
         }
+        final int resolvedKind = kind;
+        final String kindStr = PurpleMediaReplyDiagnostics.kindName(resolvedKind);
         final PurpleAccountSettings.Effective settings = PurpleAccountSettings.forAccount(account);
-        if (settings == null || !settings.current()) return;
+        if (settings == null || !settings.current()) {
+            PurpleMediaReplyDiagnostics.dispatchReject(account, trace, "dispatch",
+                    settings == null ? "settings_missing" : "settings_stale",
+                    kindStr, media, ack, own, hasTopic);
+            return;
+        }
+        final long dateDelta = (long) date - cutoff;
         try {
-            String candidate = planNative(settings.handle, identity.key, peer, kind, id, topic, date,
+            String candidate = planNative(settings.handle, identity.key, peer, resolvedKind, id, topic, date,
                     media, own, ack, cutoff, capturedRevision);
-            if (candidate == null || !settings.current() || capturedRevision != revision) return;
+            if (candidate == null) {
+                PurpleMediaReplyDiagnostics.planOutcome(account, trace, "null", "plan_null",
+                        kindStr, media, ack, own, hasTopic, dateDelta);
+                return;
+            }
+            if (!settings.current()) {
+                PurpleMediaReplyDiagnostics.planOutcome(account, trace, "rejected", "settings_stale",
+                        kindStr, media, ack, own, hasTopic, dateDelta);
+                return;
+            }
+            if (capturedRevision != revision) {
+                PurpleMediaReplyDiagnostics.planOutcome(account, trace, "rejected", "stale_after_plan",
+                        kindStr, media, ack, own, hasTopic, dateDelta);
+                return;
+            }
+            PurpleMediaReplyDiagnostics.planOutcome(account, trace, "admitted", null,
+                    kindStr, media, ack, own, hasTopic, dateDelta);
             State state = ensureState(identity);
-            if (state.failed || state.inFlight >= 8) return;
+            if (state.failed || state.inFlight >= 8) {
+                PurpleMediaReplyDiagnostics.dispatchStateReject(account, trace, "dispatch",
+                        state.failed ? "state_failed" : "inflight_limit",
+                        kindStr, media, ack, own, hasTopic, state.inFlight, state.reserved, null);
+                return;
+            }
             PurpleAccountFiles files = PurpleAccountFiles.resolve(identity.key, PurpleAccountOwner.owner());
             if (files == null || !files.directory.isDirectory() || Files.isSymbolicLink(files.directory.toPath())) {
-                state.failed = true; state.reason = Reason.StorageRefused; return;
+                state.failed = true; state.reason = Reason.StorageRefused;
+                PurpleMediaReplyDiagnostics.dispatchStateReject(account, trace, "journal", "storage_refused",
+                        kindStr, media, ack, own, hasTopic, state.inFlight, state.reserved, null);
+                return;
             }
             File journalFile = new File(files.directory, "media-reply-journal.json");
             if (!state.loaded) {
@@ -187,19 +320,46 @@ public final class PurpleMediaReply {
                     state.reserved = journalCountNative(state.journal, identity.key);
                     if (state.reserved < 0) throw new java.io.IOException("InvalidJournal");
                     state.loaded = true;
-                } catch (Exception e) { state.failed = true; state.reason = Reason.JournalUnreadable; return; }
+                    PurpleMediaReplyDiagnostics.journalOutcome(account, trace, "loaded",
+                            kindStr, media, state.reserved, null);
+                } catch (Exception e) {
+                    state.failed = true; state.reason = Reason.JournalUnreadable;
+                    PurpleMediaReplyDiagnostics.dispatchStateReject(account, trace, "journal", "journal_unreadable",
+                            kindStr, media, ack, own, hasTopic, state.inFlight, state.reserved, e);
+                    return;
+                }
             }
-            if (state.reserved >= 4096) { state.failed = true; state.reason = Reason.JournalFull; return; }
+            if (state.reserved >= 4096) {
+                state.failed = true; state.reason = Reason.JournalFull;
+                PurpleMediaReplyDiagnostics.dispatchStateReject(account, trace, "journal", "journal_full",
+                        kindStr, media, ack, own, hasTopic, state.inFlight, state.reserved, null);
+                return;
+            }
             String reserved = reserveNative(state.journal, candidate);
-            if (reserved == null) return;
+            if (reserved == null) {
+                PurpleMediaReplyDiagnostics.dispatchStateReject(account, trace, "journal", "reserve_duplicate",
+                        kindStr, media, ack, own, hasTopic, state.inFlight, state.reserved, null);
+                return;
+            }
             byte[] reservedBytes = reserved.getBytes(StandardCharsets.UTF_8);
             try {
                 PurpleMediaReplyStore.replace(journalFile,
                         state.journal == null ? null : state.journal.getBytes(StandardCharsets.UTF_8), reservedBytes);
                 state.journal = reserved;
                 ++state.reserved;
-            } catch (Exception e) { state.failed = true; state.reason = Reason.StorageRefused; return; }
-            if (!settings.current() || capturedRevision != revision || !identity.current()) return;
+                PurpleMediaReplyDiagnostics.journalOutcome(account, trace, "reserved",
+                        kindStr, media, state.reserved, null);
+            } catch (Exception e) {
+                state.failed = true; state.reason = Reason.StorageRefused;
+                PurpleMediaReplyDiagnostics.dispatchStateReject(account, trace, "journal", "storage_replace_failed",
+                        kindStr, media, ack, own, hasTopic, state.inFlight, state.reserved, e);
+                return;
+            }
+            if (!settings.current() || capturedRevision != revision || !identity.current()) {
+                PurpleMediaReplyDiagnostics.dispatchReject(account, trace, "send", "stale_after_reserve",
+                        kindStr, media, ack, own, hasTopic);
+                return;
+            }
             JSONObject plan = new JSONObject(candidate);
             JSONObject action = plan.getJSONArray("reserved").getJSONObject(0);
             TLRPC.TL_messages_sendMessage request = new TLRPC.TL_messages_sendMessage();
@@ -212,30 +372,46 @@ public final class PurpleMediaReply {
             request.flags |= 1;
             request.no_webpage = true;
             State sending = state;
+            boolean sent = false;
+            int inFlightSnapshot = 0;
             synchronized (PurpleAccountFiles.class) {
                 synchronized (PurpleAccountSettings.class) {
-                    if (!settings.current() || capturedRevision != revision || !identity.current()) return;
-                    ++sending.inFlight;
-                    final int[] token = {0};
-                    token[0] = sending.connection.sendRequest(request, (response, error) -> {
-                        AndroidUtilities.runOnUIThread(() -> {
-                            if (sending.requests.remove(token[0]) != null) --sending.inFlight;
-                            if (identity.current() && capturedRevision == revision && states.get(identity.key) == sending && !sending.failed) {
-                                sending.reason = error != null ? failure(error) : response instanceof TLRPC.Updates ? Reason.None : Reason.Uncertain;
-                            }
-                            if (identity.current() && response instanceof TLRPC.Updates) {
-                                org.telegram.messenger.Utilities.stageQueue.postRunnable(() -> {
-                                    if (identity.current()) controller.processUpdates((TLRPC.Updates) response, false);
-                                });
-                            }
-                        });
-                    }, ConnectionsManager.RequestFlagFailOnServerErrors);
-                    sending.requests.put(token[0], capturedRevision);
+                    if (settings.current() && capturedRevision == revision && identity.current()) {
+                        ++sending.inFlight;
+                        inFlightSnapshot = sending.inFlight;
+                        final int[] token = {0};
+                        token[0] = sending.connection.sendRequest(request, (response, error) -> {
+                            AndroidUtilities.runOnUIThread(() -> {
+                                if (sending.requests.remove(token[0]) != null) --sending.inFlight;
+                                boolean current = identity.current() && capturedRevision == revision && states.get(identity.key) == sending && !sending.failed;
+                                if (current) {
+                                    sending.reason = error != null ? failure(error) : response instanceof TLRPC.Updates ? Reason.None : Reason.Uncertain;
+                                }
+                                PurpleMediaReplyDiagnostics.rpcResult(account, trace, resolvedKind, media, hasTopic,
+                                        current, sending.inFlight, sending.reserved, error, response, current ? sending.reason : null);
+                                if (identity.current() && response instanceof TLRPC.Updates) {
+                                    org.telegram.messenger.Utilities.stageQueue.postRunnable(() -> {
+                                        if (identity.current()) controller.processUpdates((TLRPC.Updates) response, false);
+                                    });
+                                }
+                            });
+                        }, ConnectionsManager.RequestFlagFailOnServerErrors);
+                        sending.requests.put(token[0], capturedRevision);
+                        sent = true;
+                    }
                 }
             }
+            if (!sent) {
+                PurpleMediaReplyDiagnostics.dispatchReject(account, trace, "send", "stale_before_send",
+                        kindStr, media, ack, own, hasTopic);
+                return;
+            }
+            PurpleMediaReplyDiagnostics.rpcEnqueued(account, trace, resolvedKind, media, hasTopic,
+                    inFlightSnapshot, sending.reserved);
         } catch (Exception | UnsatisfiedLinkError e) {
             State state = states.get(identity.key);
             if (state != null) { state.failed = true; state.reason = Reason.StorageRefused; }
+            PurpleMediaReplyDiagnostics.dispatchException(account, trace, kindStr, media, ack, own, hasTopic, e);
         }
     }
     private PurpleMediaReply() { }

@@ -90,3 +90,17 @@ publication or acknowledgement. The actual-writer fixture retains cached
 Effective values until explicit invalidation and covers both that interval and
 changes during publication/refresh, with the exact reviewed picker as a negative
 control. Unrelated settings callers keep their existing cache behavior.
+
+Privacy-safe admission, ACK and dispatch diagnostics (`media_reply` in
+`PurpleDiagLog`) trace trigger correlation across `SendMessagesHelper` (forward,
+multi-media and single-message ACKs), `MessagesController.processUpdateArray`
+(`TL_updateNewMessage`, `TL_updateNewChannelMessage`,
+`TL_updateNewScheduledMessage` and `fromGetDifference`) and
+`PurpleMediaReply` (`observe`, UI handoff, `dispatch`, `planNative`, journal
+load/reserve, `messages.sendMessage` enqueue and RPC result, plus `invalidate`).
+Every field uses bounded slot indices, clamped non-negative counts/deltas,
+process-local `run` and `seq` (`1..9999`), and fixed `PurpleDiagLogStore`
+vocabulary tokens, with no account/peer/message IDs, raw server error strings or
+chat contents. Non-media ordinary messages allocate no sequence and emit no
+lines, history voice/round drops omit `seq` so `PurpleDiagRepeats` collapses bulk
+syncs, and logging failures never alter admission or send behavior.
