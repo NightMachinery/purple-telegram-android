@@ -15,7 +15,7 @@ final class PurpleArchiveUI {
     private static final WeakHashMap<UniversalFragment, Boolean> requested = new WeakHashMap<>();
     static void add(ArrayList<UItem> items, UniversalFragment fragment) {
         PurpleArchive.Status status = PurpleArchive.status(fragment.getCurrentAccount());
-        items.add(UItem.asButton(ROW, text(R.string.PurpleArchiveTitle), summary(status)));
+        items.add(PurpleMediaSettingsRow.button(ROW, text(R.string.PurpleArchiveTitle), summary(status)));
         if (status.gap) items.add(UItem.asShadow(text(R.string.PurpleArchiveGap)));
         PurpleArchivePurgeUI.add(items, fragment);
         if (!requested.containsKey(fragment)) { requested.put(fragment, true); refresh(fragment); }

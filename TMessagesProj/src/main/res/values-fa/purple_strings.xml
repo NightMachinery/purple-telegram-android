@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="PurpleSeekBack">%1$s ثانیه عقب</string>
+    <string name="PurpleSeekForward">%1$s ثانیه جلو</string>
+    <string name="PurpleSeekStep">گام جلو و عقب بردن</string>
+    <string name="PurpleSeekStepValue">%1$d ثانیه</string>
+    <string name="PurpleMediaPlayback">پخش رسانه</string>
+    <string name="PurpleMediaRecording">ضبط رسانه</string>
+    <string name="PurpleRecordingBin">سبد ضبط‌ها</string>
+    <string name="PurpleRecordingBinKeep">مدت نگهداری ضبط‌ها</string>
+    <string name="PurpleRecordingBinKeepHours">%1$d ساعت</string>
+    <string name="PurpleRecordingBinKeepDays">%1$d روز</string>
+    <string name="PurpleRecordingBinKeepNever">تا وقتی خودم حذف کنم</string>
+    <string name="PurpleRecordingKeepDiscarded">نگهداری ضبط‌های لغوشده در سبد</string>
+    <string name="PurpleRecordingKeepDiscardedInfo">پیام صوتی یا ویدیویی لغوشده به جای حذف فوری به سبد ضبط‌ها می‌رود.</string>
+    <string name="PurpleRecordingJournal">محافظت پیام ویدیویی در برابر خرابی</string>
+    <string name="PurpleRecordingJournalOff">خاموش</string>
+    <string name="PurpleRecordingJournalEvery">ذخیرهٔ نمایه هر %1$s</string>
+    <string name="PurpleRecordingJournalSeconds">%1$d ثانیه</string>
+    <string name="PurpleRecordingJournalInfo">اگر برنامه ناگهان بسته شود، ویدیو تا آخرین ذخیره قابل بازیابی است. بدون نمایه، برنامه برای بازسازی تلاش می‌کند و زمان‌بندی ممکن است کمی تغییر کند.</string>
+    <string name="PurpleRecordingKeepChats">ادامهٔ ضبط هنگام تغییر گفتگو</string>
+    <string name="PurpleRecordingBackground">ضبط صدا در پس‌زمینه</string>
+    <string name="PurpleRecordingRoundFloat">دوربین شناور پیام ویدیویی</string>
+    <string name="PurpleRecordingBinClear">خالی کردن سبد</string>
+    <string name="PurpleRecordingPause">مکث</string>
+    <string name="PurpleRecordingResume">ادامه</string>
+    <string name="PurpleLocalRoundLimit">مدت ضبط محلی پیام ویدیویی</string>
+    <string name="PurpleLocalRoundLimitInfo">۱، ۳ یا ۵ دقیقه ضبط کنید. پیام‌های ویدیویی تلگرام حداکثر یک دقیقه هستند. ضبط‌های طولانی اصل کامل را نگه می‌دارند و پیش‌فرض به بخش‌های ویدیویی تقسیم می‌شوند؛ ویدیوی معمولی هم در دسترس است.</string>
+    <string name="PurpleArchiveTitle">بایگانی محلی پیام‌ها</string>
+    <string name="PurpleArchiveReady">آماده · %1$s بایت</string>
+</resources>

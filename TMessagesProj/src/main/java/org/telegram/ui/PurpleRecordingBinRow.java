@@ -92,7 +92,7 @@ public final class PurpleRecordingBinRow extends LinearLayout {
                 elapsed.setText(time((long) (fraction * duration())));
             }
             @Override public void onSeekBarPressed(boolean pressed) { dragging = pressed; }
-            @Override public CharSequence getContentDescription() { return LocaleController.getString(R.string.PurpleRecordingBinPlay); }
+            @Override public CharSequence getContentDescription() { return LocaleController.formatString(R.string.AccDescrPlayerDuration, elapsed.getText(), total.getText()); }
         });
         controls.addView(toggle, LayoutHelper.createLinear(48, 48));
         controls.addView(seek, LayoutHelper.createLinear(0, 48, 1f));

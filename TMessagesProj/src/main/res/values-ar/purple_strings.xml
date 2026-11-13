@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="PurpleSeekBack">رجوع %1$s ث</string>
+    <string name="PurpleSeekForward">تقديم %1$s ث</string>
+    <string name="PurpleSeekStep">خطوة التقديم والترجيع</string>
+    <string name="PurpleSeekStepValue">%1$d ث</string>
+    <string name="PurpleMediaPlayback">تشغيل الوسائط</string>
+    <string name="PurpleMediaRecording">تسجيل الوسائط</string>
+    <string name="PurpleRecordingBin">سلة التسجيلات</string>
+    <string name="PurpleRecordingBinKeep">الاحتفاظ بالتسجيلات لمدة</string>
+    <string name="PurpleRecordingBinKeepHours">%1$d ساعات</string>
+    <string name="PurpleRecordingBinKeepDays">%1$d أيام</string>
+    <string name="PurpleRecordingBinKeepNever">حتى أحذفها</string>
+    <string name="PurpleRecordingKeepDiscarded">الاحتفاظ بالتسجيلات الملغاة في السلة</string>
+    <string name="PurpleRecordingKeepDiscardedInfo">تُنقل الرسالة الصوتية أو المرئية الملغاة إلى سلة التسجيلات بدلاً من حذفها فوراً.</string>
+    <string name="PurpleRecordingJournal">حماية رسائل الفيديو من التعطل</string>
+    <string name="PurpleRecordingJournalOff">إيقاف</string>
+    <string name="PurpleRecordingJournalEvery">حفظ الفهرس كل %1$s</string>
+    <string name="PurpleRecordingJournalSeconds">%1$d ث</string>
+    <string name="PurpleRecordingJournalInfo">عند إغلاق التطبيق بشكل غير متوقع، يمكن استعادة الفيديو حتى آخر حفظ. بدون الفهرس، يحاول التطبيق إعادة بنائه وقد يختلف التوقيت قليلاً.</string>
+    <string name="PurpleRecordingKeepChats">متابعة التسجيل عند تبديل المحادثات</string>
+    <string name="PurpleRecordingBackground">تسجيل الصوت في الخلفية</string>
+    <string name="PurpleRecordingRoundFloat">كاميرا الفيديو الدائرية العائمة</string>
+    <string name="PurpleRecordingBinClear">إفراغ السلة</string>
+    <string name="PurpleRecordingPause">إيقاف مؤقت</string>
+    <string name="PurpleRecordingResume">متابعة</string>
+    <string name="PurpleLocalRoundLimit">مدة تسجيل الفيديو الدائري المحلي</string>
+    <string name="PurpleLocalRoundLimitInfo">سجّل لمدة دقيقة أو 3 أو 5 دقائق. لا تتجاوز دوائر تيليجرام دقيقة واحدة. تحتفظ التسجيلات الأطول بالأصل الكامل وتُجهّز أجزاء دائرية افتراضياً، مع خيار فيديو عادي.</string>
+    <string name="PurpleArchiveTitle">أرشيف الرسائل المحلي</string>
+    <string name="PurpleArchiveReady">جاهز · %1$s بايت</string>
+</resources>

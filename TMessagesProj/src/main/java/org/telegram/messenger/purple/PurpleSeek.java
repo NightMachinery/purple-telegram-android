@@ -243,6 +243,6 @@ public final class PurpleSeek {
 
     /** The button label, "−10" or "+10", with a real minus sign. */
     public static String label(int direction, int stepSeconds) {
-        return (direction < 0 ? "−" : "+") + stepSeconds;
+        return "\u2066" + (direction < 0 ? "−" : "+") + stepSeconds + "\u2069";
     }
 }

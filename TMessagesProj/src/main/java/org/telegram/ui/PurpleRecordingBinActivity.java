@@ -69,7 +69,8 @@ public class PurpleRecordingBinActivity extends UniversalFragment {
     @Override
     public View createView(android.content.Context context) {
         final View view = super.createView(context);
-        actionBar.createMenu().addItem(MENU_CLEAR, R.drawable.msg_delete);
+        actionBar.createMenu().addItem(MENU_CLEAR, R.drawable.msg_delete)
+                .setContentDescription(getString(R.string.PurpleRecordingBinClear));
         actionBar.setActionBarMenuOnItemClick(new org.telegram.ui.ActionBar.ActionBar.ActionBarMenuOnItemClick() {
             @Override
             public void onItemClick(int id) {

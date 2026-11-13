@@ -479,3 +479,13 @@ description for a round take, and its voice copy for voice. Continue leaves the
 take untouched; Discard retains the generation captured when the dialog opened.
 The host modal control executes the production refusal method for both kinds,
 including inactive state, missing activity and a replaced generation.
+
+Seek button numbers use Unicode LTR isolates, so Arabic and Persian keep the
+sign before the number. Their existing accessible descriptions remain localized
+Back/Forward actions. The bin trash action names Clear bin, and each native seek
+control reports localized elapsed/total time, including a dragged position.
+Media duration, retention, crash-safety and archive status buttons reuse stock
+TextDetailSettingsCell with wrapping title and detail. Detail placement follows
+the measured title height; row IDs, clicks and state remain unchanged. Only the
+affected media labels have Arabic/Persian resource overrides; other strings keep
+the existing fallback. Glyph rendering and TalkBack still require device checks.

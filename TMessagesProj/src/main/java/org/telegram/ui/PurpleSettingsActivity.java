@@ -277,9 +277,9 @@ public class PurpleSettingsActivity extends UniversalFragment
         voiceQueue.checked = org.telegram.messenger.purple.PurpleVoiceQueue.enabled();
         items.add(voiceQueue);
         // [playback] seek_step (F9): read through the core like the switch above.
-        items.add(UItem.asButton(ROW_SEEK_STEP, getString(R.string.PurpleSeekStep),
+        items.add(PurpleMediaSettingsRow.button(ROW_SEEK_STEP, getString(R.string.PurpleSeekStep),
                 formatString(R.string.PurpleSeekStepValue, org.telegram.messenger.purple.PurpleSeek.stepSeconds())));
-        items.add(UItem.asButton(ROW_AFTER_VOICE, getString(R.string.PurpleAfterVoice),
+        items.add(PurpleMediaSettingsRow.button(ROW_AFTER_VOICE, getString(R.string.PurpleAfterVoice),
                 afterVoiceSummary(org.telegram.messenger.purple.PurpleVoicePlayback.mode())));
         final UItem resumeMusic = UItem.asCheck(ROW_RESUME_MUSIC, getString(R.string.PurpleResumeMusicAfterVoice));
         resumeMusic.checked = org.telegram.messenger.purple.PurpleVoicePlayback.resumeMusic();
@@ -290,7 +290,7 @@ public class PurpleSettingsActivity extends UniversalFragment
         items.add(UItem.asHeader(getString(R.string.PurpleMediaRecording)));
         items.add(UItem.asButton(ROW_MEDIA_RECORDING, getString(R.string.PurpleMediaRecording)));
         items.add(UItem.asButton(PurpleMediaReplySettingsActivity.ENTRY, getString(R.string.PurpleMediaReply)));
-        items.add(UItem.asButton(ROW_RECORDING_BIN, getString(R.string.PurpleRecordingBin),
+        items.add(PurpleMediaSettingsRow.button(ROW_RECORDING_BIN, getString(R.string.PurpleRecordingBin),
                 recordingBinCount > 0 ? Integer.toString(recordingBinCount) : ""));
         if (recordingBinCount < 0) {
             recordingBinCount = 0;

@@ -53,7 +53,7 @@ public class PurpleRecordingSettingsActivity extends UniversalFragment {
     protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
         // Read once per rebuild, so a refused write leaves each row where the file is.
         final PurpleRecordingSettings settings = PurpleRecordingSettings.read();
-        items.add(UItem.asButton(ROW_LOCAL_ROUND_LIMIT, getString(R.string.PurpleLocalRoundLimit),
+        items.add(PurpleMediaSettingsRow.button(ROW_LOCAL_ROUND_LIMIT, getString(R.string.PurpleLocalRoundLimit),
                 org.telegram.messenger.LocaleController.formatPluralString("Minutes", org.telegram.messenger.purple.PurpleRoundLimits.minutes(currentAccount))));
         items.add(UItem.asShadow(getString(R.string.PurpleLocalRoundLimitInfo)));
         addCheck(items, ROW_KEEP_CHATS, R.string.PurpleRecordingKeepChats, settings.keepAcrossChats);
@@ -61,14 +61,14 @@ public class PurpleRecordingSettingsActivity extends UniversalFragment {
         addCheck(items, ROW_ROUND_FLOAT, R.string.PurpleRecordingRoundFloat, settings.roundFloat);
         items.add(UItem.asHeader(getString(R.string.PurpleRecordingBin)));
         items.add(UItem.asButton(ROW_BIN, getString(R.string.PurpleRecordingBin)));
-        items.add(UItem.asButton(ROW_BIN_KEEP, getString(R.string.PurpleRecordingBinKeep), binKeepLabel(settings.binKeepSeconds)));
+        items.add(PurpleMediaSettingsRow.button(ROW_BIN_KEEP, getString(R.string.PurpleRecordingBinKeep), binKeepLabel(settings.binKeepSeconds)));
         final UItem discarded = UItem.asCheck(ROW_KEEP_DISCARDED, getString(R.string.PurpleRecordingKeepDiscarded));
         discarded.checked = settings.keepDiscarded;
         items.add(discarded);
         items.add(UItem.asShadow(getString(R.string.PurpleRecordingKeepDiscardedInfo)));
 
         items.add(UItem.asHeader(getString(R.string.PurpleRecordingJournal)));
-        items.add(UItem.asButton(ROW_JOURNAL, getString(R.string.PurpleRecordingJournal), journalLabel(settings.roundJournalSeconds)));
+        items.add(PurpleMediaSettingsRow.button(ROW_JOURNAL, getString(R.string.PurpleRecordingJournal), journalLabel(settings.roundJournalSeconds)));
         items.add(UItem.asShadow(getString(R.string.PurpleRecordingJournalInfo)));
     }
 

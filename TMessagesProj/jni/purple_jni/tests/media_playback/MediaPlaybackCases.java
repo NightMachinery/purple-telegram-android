@@ -191,8 +191,8 @@ public final class MediaPlaybackCases {
             check(PurpleSeek.validStep(step) == step, step + " s is a valid step");
             check(PurpleSeek.targetMs(5 * min, 10 * min, -1, step) == 5 * min - step * 1000L, "back " + step + " s");
             check(PurpleSeek.targetMs(5 * min, 10 * min, 1, step) == 5 * min + step * 1000L, "forward " + step + " s");
-            check(PurpleSeek.label(-1, step).equals("\u2212" + step), "the back label for " + step);
-            check(PurpleSeek.label(1, step).equals("+" + step), "the forward label for " + step);
+            check(PurpleSeek.label(-1, step).equals("\u2066\u2212" + step + "\u2069"), "the back label for " + step);
+            check(PurpleSeek.label(1, step).equals("\u2066+" + step + "\u2069"), "the forward label for " + step);
         }
         for (int bad : new int[] {-10, 0, 1, 20, 60, Integer.MAX_VALUE}) {
             check(PurpleSeek.validStep(bad) == PurpleCore.SEEK_STEP_DEFAULT, bad + " falls back to the default step");

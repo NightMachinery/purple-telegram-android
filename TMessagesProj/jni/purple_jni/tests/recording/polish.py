@@ -99,6 +99,35 @@ public class VideoPlayer {
   return checks;
  }
 }''')
+    fit = (java / 'ui/PurpleMediaSettingsRow.java').read_text()
+    put('MediaFitPort.java', '''class MediaFitBase {int width,height;void onMeasure(int w,int h){width=w;height=0;}}
+public class MediaFitPort extends MediaFitBase {
+ static class MeasureSpec{static final int EXACTLY=1,UNSPECIFIED=0;static int getSize(int n){return n;}static int makeMeasureSpec(int n,int mode){return n;}}
+ static class Gravity{static final int TOP=48,RIGHT=5,LEFT=3;}
+ static class FrameLayout{static class LayoutParams{int gravity,width,topMargin;}}
+ static class AndroidUtilities{static int dp(int n){return n;}}
+ static class LocaleController{static boolean isRTL;}
+ static class Text{FrameLayout.LayoutParams params=new FrameLayout.LayoutParams();int measured,width,gravity;void measure(int w,int h){width=w;}int getMeasuredHeight(){return measured;}Object getLayoutParams(){return params;}void setGravity(int v){gravity=v;}}
+ final Text title=new Text(),value=new Text();Text getTextView(){return title;}Text getValueTextView(){return value;}
+''' + method(fit, '    protected void onMeasure(').replace('protected void', 'void') + '''
+ static int test(){int checks=0;
+ for(boolean rtl:new boolean[]{false,true})for(int width:new int[]{240,320,1080})for(int titleHeight:new int[]{20,48,96}){
+  LocaleController.isRTL=rtl;MediaFitPort p=new MediaFitPort();p.title.measured=titleHeight;p.onMeasure(width,0);
+  if(p.title.width!=width-42||p.title.params.width!=width-42||p.value.params.width!=width-42)throw new AssertionError("wrapped width");checks++;
+  if(p.value.params.topMargin!=titleHeight+14)throw new AssertionError("detail overlaps measured long title");checks++;
+  if(p.title.gravity!=(rtl?5:3)||p.value.gravity!=(rtl?5:3)||p.title.params.gravity!=(48|(rtl?5:3)))throw new AssertionError("native RTL anchor");checks++;
+ }return checks;}
+}''')
+    put('SeekLabelPort.java', '''public class SeekLabelPort {
+''' + method((java / 'messenger/purple/PurpleSeek.java').read_text(), '    public static String label(') + '''
+ static int test(){int checks=0;
+ for(int step:new int[]{5,10,15,30})for(int direction:new int[]{-1,1}){
+  String text=label(direction,step);String sign=direction<0?"−":"+";
+  if(!text.equals("\\u2066"+sign+step+"\\u2069"))throw new AssertionError("seek isolate");checks++;
+  String rtl="سلام "+text+" پایان";java.text.Bidi b=new java.text.Bidi(rtl,java.text.Bidi.DIRECTION_RIGHT_TO_LEFT);
+  int signAt=rtl.indexOf(sign);if((b.getLevelAt(signAt)&1)!=0||b.getLevelAt(signAt)!=b.getLevelAt(signAt+1))throw new AssertionError("seek sign reordered");checks++;
+ }return checks;}
+}''')
     put('ModePort.java', '''public class ModePort {
  Object parentActivity=new Object(),recordAudioVideoRunnable=new Object();boolean recordAudioVideoRunnableStarted=true,calledRecordRunnable,sendVoiceEnabled=true,sendRoundEnabled=true,video;
  static class Delegate{int switches,pre;void onPreAudioVideoRecord(){pre++;}void onSwitchRecordMode(boolean video){switches++;}void needShowMediaBanHint(){}}
@@ -108,7 +137,7 @@ public class VideoPlayer {
  boolean isInVideoMode(){return video;}void setRecordVideoButtonVisible(boolean v,boolean a){video=v;}void performHapticFeedback(int n){}void sendAccessibilityEvent(int n){}
  void hold(){''' + prefix + '''}
  void release(){''' + release + '''}
- public static void main(String[] args){int checks=DockModalPort.test();
+ public static void main(String[] args){int checks=DockModalPort.test()+MediaFitPort.test()+SeekLabelPort.test();
  for(boolean video:new boolean[]{false,true}){
   ModePort p=new ModePort();p.video=video;p.calledRecordRunnable=true;org.telegram.messenger.purple.PurpleRecordingDock.refuse=true;p.hold();p.release();
   if(p.video!=video||p.delegate.switches!=0||p.calledRecordRunnable||p.recordAudioVideoRunnableStarted)throw new AssertionError("refused hold toggled mode");checks+=4;
