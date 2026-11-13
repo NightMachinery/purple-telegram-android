@@ -1068,6 +1068,7 @@ public final class PurpleSyncAutoCases {
         replacedParents(parent);
         PurpleSyncRuntimeCases.run(parent);
         PurpleSyncRuntimeCases.followups(parent);
+        PurpleSyncPolicyCases.run(parent);
         PurpleSyncBackstopCases.run(parent);
         PurpleSyncAutoReviewCases.run(parent);
         return PurpleModernSyncCases.checks - before;

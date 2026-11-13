@@ -152,3 +152,10 @@ Automatic first-use work captures the toggle generation. Disable retires that
 route even if a later Enable occurs, and late Joined/Published settlement cannot
 replace the newer off intent or enqueue its unsent successor as a Save. Manual
 first-use settlement still follows its explicit account-bound user action.
+
+An Enable waiting on a transport cooldown remains uncommitted until its retry
+passes the existing gates; the latest toggle intent supersedes earlier requests.
+Settings Saves become eligible after confirmed opt-in. During an owned active
+post, newer Saves use the native checkpoint queue, while uncertain completion
+keeps reconciliation and backoff. A delayed chat lookup is reconsidered by the
+open-app backstop without bypassing the documented first-use cooldown.
