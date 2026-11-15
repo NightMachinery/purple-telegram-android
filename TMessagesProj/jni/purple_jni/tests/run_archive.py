@@ -14,7 +14,10 @@ parser.add_argument("--sqlite", required=True, type=Path)
 parser.add_argument("--output", required=True, type=Path)
 parser.add_argument("--platform-ports", type=Path)
 parser.add_argument("--suites", nargs="+")
+parser.add_argument("--suite", choices=["queue-readiness"], help="focused canonical readiness regression")
 a = parser.parse_args()
+if a.suite and a.suites:
+    parser.error("use --suite or --suites, not both")
 tests = Path(__file__).resolve().parent
 receipt = json.loads(a.receipt.read_text())
 assert receipt["task"] == ":TMessagesProj:compileStandaloneJavaWithJavac"
@@ -26,8 +29,12 @@ empty = a.output / "empty-sourcepath"
 empty.mkdir()
 production = Path(receipt["destination"])
 compiler = Path(receipt["compiler"])
-classpath = os.pathsep.join([str(production), str(a.json)] + [item["path"] for name in ["classpath", "bootstrapClasspath"] for item in receipt[name]])
-ports = [p for p in (a.platform_ports or tests / "modern_sync").rglob("*.java") if "/messenger/purple/" not in str(p)]
+classpath = os.pathsep.join([str(a.json), str(production)] + [item["path"] for name in ["classpath", "bootstrapClasspath"] for item in receipt[name]])
+platform = a.platform_ports or tests / "modern_sync"
+ports_by_relative = {p.relative_to(platform): p for p in platform.rglob("*.java") if "/messenger/purple/" not in str(p)}
+for p in (tests / "archive_ports").rglob("*.java"):
+    ports_by_relative[p.relative_to(tests / "archive_ports")] = p
+ports = [ports_by_relative[key] for key in sorted(ports_by_relative)]
 cases = list((tests / "archive").glob("*.java"))
 main = a.output / "ArchiveHostMain.java"
 main.write_text('''import java.io.File;
@@ -40,7 +47,28 @@ public final class ArchiveHostMain {
             if (!origin.equals(expected)) throw new AssertionError("business class shadow: " + type);
             System.out.println(type + " origin=" + origin);
         }
-        if (a[1].startsWith("maintenance-")) org.telegram.messenger.purple.PurpleArchiveMaintenanceCases.main(new String[]{a[2],a[3],a[1].substring(12)});
+        for (String name : new String[]{"org.telegram.messenger.purple.PurpleCore", "org.telegram.messenger.purple.PurpleAccountFiles"}) {
+            File origin = new File(Class.forName(name).getProtectionDomain().getCodeSource().getLocation().toURI()).getCanonicalFile();
+            if (!origin.equals(expected)) throw new AssertionError("business class shadow: " + name);
+        }
+        File packageRoot = new File(expected, "org/telegram/messenger/purple");
+        for (File file : packageRoot.listFiles()) {
+            if (!file.getName().startsWith("PurpleArchive$") || !file.getName().endsWith(".class")) continue;
+            String name = "org.telegram.messenger.purple." + file.getName().substring(0, file.getName().length()-6);
+            File origin = new File(Class.forName(name, false, ArchiveHostMain.class.getClassLoader()).getProtectionDomain().getCodeSource().getLocation().toURI()).getCanonicalFile();
+            if (!origin.equals(expected)) throw new AssertionError("nested business class shadow");
+        }
+        File jsonExpected = new File(a[4]).getCanonicalFile();
+        for (String name : new String[]{"org.json.JSONObject", "org.json.JSONArray", "org.json.JSONTokener"}) {
+            File origin = new File(Class.forName(name).getProtectionDomain().getCodeSource().getLocation().toURI()).getCanonicalFile();
+            if (!origin.equals(jsonExpected)) throw new AssertionError("JSON implementation shadow");
+        }
+        org.json.JSONObject probe = new org.json.JSONObject().put("n", 7).put("s", "synthetic");
+        org.json.JSONObject read = new org.json.JSONObject(probe.toString());
+        if (read.getInt("n") != 7 || !read.getString("s").equals("synthetic")) throw new AssertionError("JSON roundtrip");
+        System.out.println("HOST_JSON_ORIGIN_AND_ROUNDTRIP=PASS");
+        if (a[1].startsWith("lifecycle-")) org.telegram.messenger.purple.PurpleArchiveSaturatedLifecycleCases.main(new String[]{a[2],a[3],a[1].substring(10)});
+        else if (a[1].startsWith("maintenance-")) org.telegram.messenger.purple.PurpleArchiveMaintenanceCases.main(new String[]{a[2],a[3],a[1].substring(12)});
         else if (a[1].startsWith("unavailable-")) org.telegram.messenger.purple.PurpleArchiveUnavailableCases.main(new String[]{a[2],a[3],a[1].substring(12)});
         else if (a[1].startsWith("boundary-")) org.telegram.messenger.purple.PurpleArchiveDeletedBoundaryCases.main(new String[]{a[2],a[3],a[1].substring(9)});
         else if (a[1].startsWith("query-")) org.telegram.messenger.purple.PurpleArchiveQueryCases.main(new String[]{a[2],a[3],a[1].substring(6)});
@@ -66,8 +94,8 @@ public final class ArchiveHostMain {
     }
 }
 ''')
-sources = ports + list((tests / "archive_ports").rglob("*.java")) + cases + [main]
-(a.output / "inputs.json").write_text(json.dumps([{"path": str(p), "sha256": hashlib.sha256(p.read_bytes()).hexdigest()} for p in sources + [a.receipt, a.core, a.sqlite]], indent=2) + "\n")
+sources = ports + cases + [main]
+(a.output / "inputs.json").write_text(json.dumps([{"path": str(p), "sha256": hashlib.sha256(p.read_bytes()).hexdigest()} for p in sources + [a.receipt, a.core, a.sqlite, a.json]], indent=2) + "\n")
 def run(name, command):
     (a.output / (name + ".argv.json")).write_text(json.dumps(list(map(str, command)), indent=2) + "\n")
     with (a.output / (name + ".log")).open("w") as f:
@@ -76,8 +104,21 @@ def run(name, command):
     print((a.output / (name + ".log")).read_text()[-6000:], flush=True)
     if result.returncode:
         raise SystemExit(result.returncode)
-run("javac", [compiler,"-source","8","-target","8","-proc:none","-sourcepath",empty,"-cp",classpath,"-d",out]+sources)
+    if a.suite == "queue-readiness" and name != "javac":
+        text = (a.output / (name + ".log")).read_text()
+        if "HOST_JSON_ORIGIN_AND_ROUNDTRIP=PASS" not in text:
+            raise SystemExit("missing host JSON proof")
+        if name.startswith("lifecycle-"):
+            tag = name[len("lifecycle-"):].upper().replace("-", "_")
+            if ("LIFECYCLE_ORACLE_" + tag + "=GREEN" not in text
+                    or "LIFECYCLE_SEMANTIC_FAILURES=0" not in text
+                    or "LIFECYCLE_CLEANUP=PASS" not in text
+                    or "LIFECYCLE_SETUP_OR_INVARIANT_FAILURE=" in text):
+                raise SystemExit("lifecycle oracle or cleanup failed")
+run("javac", [compiler,"-encoding","UTF-8","-source","8","-target","8","-proc:none","-sourcepath",empty,"-cp",classpath,"-d",out]+sources)
 maintenance = ["maintenance-" + name for name in ["trash", "history", "wide", "account", "stale", "boundary", "ingress", "empty-proof", "selection", "scope-fences", "shared-gc", "many", "large-history", "lost-ack", "logout-race", "discard-race", "committed-selection", "journal-envelope", "journal-kind", "journal-cursor", "journal-schema", "cancelled-staging", "pinned-reader", "seedorphan", "recoverorphan", "cleanup-retry", "surviving-reference", "intentional-plain", "intentional-leased", "intentional-staged", "intentional-active", "staging-failure-control", "post-finish-partial", "post-finish-full", "seedorphanpartial", "recoverorphanpartial", "seedpartial-live", "recoverpartial-live", "seedcorruptpartial", "recovercorruptpartial"]]
 maintenance += ["maintenance-" + phase + str(cut) for count, phases in [(7, ["seed", "recover"]), (4, ["seedgc", "recovergc"])] for cut in range(count) for phase in phases]
-for suite in a.suites or ["unavailable-orphan-key", "unavailable-orphan-journal", "unavailable-orphan-database", "unavailable-orphan-store", "unavailable-diagnostics", "unavailable-upgrade-gap", "unavailable-upgrade-outbox", "unavailable-upgrade", "unavailable-legacy-record", "unavailable-bootstrap-failed", "unavailable-recovery", "staging-perf", "boundary-queued-history", "boundary-detached-history", "boundary-shown-history", "boundary-queued-deleted", "boundary-ordinary-write", "boundary-same-chat", "boundary-lease-write", "query-pages", "query-usage", "query-corrupt", "query-model", "query-logout", "query-discard", "owned-late-save", "owned-history-control", "owned-history-next", "owned-history-payload", "owned-history-purge", "owned-history-interleaved", "owned-history-release-retry", "owned-history-other-view", "owned-release-error", "owned-bound-version", "owned-login-change", "owned-slot-reuse", "foundation", "store", "manager", "manager-seed", "manager-recover", "login-seed", "login-same", "login-new", "logout-seed", "logout-restart", "logout-seed-reuse", "logout-reuse", "refusal-fence", "refusal-intent", "refusal-malformed", "refusal-oversized", "refusal-unreadable", "refusal-missing", "refusal-invalid", "selection-viewer", "selection-hook", "capture", "b3a", "b3b", "release-pressure", "b3b-seed", "b3b-recover", "b3a-seed", "b3a-recover", "provenance", "refused-retry", "seam-discard", "seam-origin", "seam-logout", "torn-between-seed", "torn-between-recover", "torn-during-seed", "torn-during-recover"] + maintenance:
-    run(suite, [compiler.with_name("java"),"-Xcheck:jni","--add-opens=java.base/sun.nio.fs=ALL-UNNAMED","-Xmx512m","-XX:ActiveProcessorCount=2","-Djava.library.path="+str(a.core.parent),"-Dpurple.archive.format1="+str(tests/"archive/format1.sql"),"-cp",str(out)+os.pathsep+classpath,"ArchiveHostMain",production,suite,a.sqlite,a.output/("maintenance-restart"+suite.split("-")[1].replace("seed", "").replace("recover", "")+"-fixtures" if suite.startswith(("maintenance-seed", "maintenance-recover")) else "torn-"+suite.split("-")[1]+"-fixtures" if suite.startswith("torn-") else "b3b-restart-fixtures" if suite.startswith("b3b-") else "b3a-restart-fixtures" if suite.startswith("b3a-") else "logout-reuse-fixtures" if suite in ["logout-seed-reuse", "logout-reuse"] else "logout-crash-fixtures" if suite.startswith("logout-") else "login-restart-fixtures" if suite.startswith("login-") else "manager-restart-fixtures" if suite in ["manager-seed", "manager-recover"] else suite+"-fixtures")])
+selected = (["foundation", "release-pressure", "lifecycle-identity-close", "lifecycle-removal-retry"]
+    if a.suite == "queue-readiness" else a.suites or ["unavailable-orphan-key", "unavailable-orphan-journal", "unavailable-orphan-database", "unavailable-orphan-store", "unavailable-diagnostics", "unavailable-upgrade-gap", "unavailable-upgrade-outbox", "unavailable-upgrade", "unavailable-legacy-record", "unavailable-bootstrap-failed", "unavailable-recovery", "staging-perf", "boundary-queued-history", "boundary-detached-history", "boundary-shown-history", "boundary-queued-deleted", "boundary-ordinary-write", "boundary-same-chat", "boundary-lease-write", "query-pages", "query-usage", "query-corrupt", "query-model", "query-logout", "query-discard", "owned-late-save", "owned-history-control", "owned-history-next", "owned-history-payload", "owned-history-purge", "owned-history-interleaved", "owned-history-release-retry", "owned-history-other-view", "owned-release-error", "owned-bound-version", "owned-login-change", "owned-slot-reuse", "foundation", "store", "manager", "manager-seed", "manager-recover", "login-seed", "login-same", "login-new", "logout-seed", "logout-restart", "logout-seed-reuse", "logout-reuse", "refusal-fence", "refusal-intent", "refusal-malformed", "refusal-oversized", "refusal-unreadable", "refusal-missing", "refusal-invalid", "selection-viewer", "selection-hook", "capture", "b3a", "b3b", "release-pressure", "b3b-seed", "b3b-recover", "b3a-seed", "b3a-recover", "provenance", "refused-retry", "seam-discard", "seam-origin", "seam-logout", "torn-between-seed", "torn-between-recover", "torn-during-seed", "torn-during-recover"] + maintenance)
+for suite in selected:
+    run(suite, [compiler.with_name("java"),"-Xcheck:jni","--add-opens=java.base/sun.nio.fs=ALL-UNNAMED","-Xmx512m","-XX:ActiveProcessorCount=2","-Djava.library.path="+str(a.core.parent),"-Dpurple.archive.format1="+str(tests/"archive/format1.sql"),"-cp",str(out)+os.pathsep+classpath,"ArchiveHostMain",production,suite,a.sqlite,a.output/("maintenance-restart"+suite.split("-")[1].replace("seed", "").replace("recover", "")+"-fixtures" if suite.startswith(("maintenance-seed", "maintenance-recover")) else "torn-"+suite.split("-")[1]+"-fixtures" if suite.startswith("torn-") else "b3b-restart-fixtures" if suite.startswith("b3b-") else "b3a-restart-fixtures" if suite.startswith("b3a-") else "logout-reuse-fixtures" if suite in ["logout-seed-reuse", "logout-reuse"] else "logout-crash-fixtures" if suite.startswith("logout-") else "login-restart-fixtures" if suite.startswith("login-") else "manager-restart-fixtures" if suite in ["manager-seed", "manager-recover"] else suite+"-fixtures"),a.json])

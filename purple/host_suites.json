@@ -10,7 +10,6 @@
   "undriven": {
     "TMessagesProj/jni/purple_jni/tests/run_account_sync_acknowledgement.sh": "B3: builds its own native smoke library; its Qt and JDK defaults need runner options first.",
     "TMessagesProj/jni/purple_jni/tests/run_build_version.sh": "B3: needs JDK 21 and a Gradle launcher of its own, in a temporary Gradle home.",
-    "TMessagesProj/jni/purple_jni/tests/run_archive.py": "B3, first: needs the bundled-SQLite JNI library and the core library built for the host.",
     "purple/tests/run_markdown_host.py": "B3: takes its own hold helper; its hold should go through the runner's compile wrapper instead."
   },
   "suites": [
@@ -30,6 +29,36 @@
       "name": "host-library",
       "kind": "host-library",
       "provides": "library"
+    },
+    {
+      "name": "archive-readiness",
+      "driver": "TMessagesProj/jni/purple_jni/tests/run_archive.py",
+      "args": [
+        "--receipt",
+        "{standalone-receipt}",
+        "--json",
+        "{json}",
+        "--core",
+        "{library}",
+        "--sqlite",
+        "{archive-sqlite}",
+        "--output",
+        "{output}",
+        "--suite",
+        "queue-readiness"
+      ],
+      "expects": {
+        "foundation:ARCHIVE_FOUNDATION_CHECKS": 330,
+        "release-pressure:ARCHIVE_RELEASE_PRESSURE_CHECKS": 30,
+        "lifecycle-identity-close:ARCHIVE_SATURATED_LIFECYCLE_CHECKS": 25,
+        "lifecycle-removal-retry:ARCHIVE_SATURATED_LIFECYCLE_CHECKS": 26,
+        "lifecycle-identity-close:LIFECYCLE_CLEANUP": "PASS",
+        "lifecycle-removal-retry:LIFECYCLE_CLEANUP": "PASS",
+        "foundation:HOST_JSON_ORIGIN_AND_ROUNDTRIP": "PASS",
+        "release-pressure:HOST_JSON_ORIGIN_AND_ROUNDTRIP": "PASS",
+        "lifecycle-identity-close:HOST_JSON_ORIGIN_AND_ROUNDTRIP": "PASS",
+        "lifecycle-removal-retry:HOST_JSON_ORIGIN_AND_ROUNDTRIP": "PASS"
+      }
     },
     {
       "name": "sync-chat-facts",

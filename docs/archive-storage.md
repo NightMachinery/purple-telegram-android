@@ -214,3 +214,15 @@ identity-close and delayed-removal paths. They retain account isolation and
 explicit incomplete-capture reporting. Host SQLite and software Keystore ports
 do not qualify hardware Keystore, a blocked Android native/provider call or the
 cause of a particular device's opening indication.
+
+
+The canonical `archive-readiness` configuration runs the foundation, pressure,
+identity-close and delayed-removal fixtures against freshly compiled standalone
+AGP classes and the current host core. Pass `--archive-sqlite` to the host runner
+with a verified host fixture library built from the unchanged bundled SQLite,
+production SQLite/files bridges and test-only fault hooks. The dependency is
+read-only and recorded in the fixture input hashes; it is not an AGP receipt.
+The driver uses explicit UTF-8, archive-specific host ports override matching
+platform ports, and every production/nested business class must originate from
+that run's real AGP output. Legacy archive scenarios remain selectable through
+`--suites`; the focused canonical configuration does not claim they all ran.

@@ -280,7 +280,7 @@ def self_check(tree, listing):
         for dependency in dependencies(suite) + prerequisites(suite, suites):
             if dependency not in seen:
                 problems.append(suite['name'] + ' reuses ' + dependency + ', which is not listed before it')
-        for key in sorted(set(re.findall(r'\{([\w-]+)\}', json.dumps(suite.get('args', [])))) - {'json', 'output'} - set(provided(suites))):
+        for key in sorted(set(re.findall(r'\{([\w-]+)\}', json.dumps(suite.get('args', [])))) - {'json', 'output', 'archive-sqlite'} - set(provided(suites))):
             problems.append(suite['name'] + ' names {' + key + '}, which no configuration provides')
         seen.add(suite['name'])
     return problems
@@ -518,6 +518,7 @@ def main():
     parser.add_argument('--qt-android', help='PURPLE_QT_ANDROID for a tree without local.properties')
     parser.add_argument('--qt-frameworks', help='host Qt frameworks folder the host JNI library links (macOS)')
     parser.add_argument('--json-jar', type=Path, help='org.json jar for the host JVM (default: from the Gradle cache)')
+    parser.add_argument('--archive-sqlite', type=Path, help='verified host fixture JNI library built from the current bundled SQLite/files bridges and fault hooks')
     parser.add_argument('--cxx', default='clang++', help='C++ compiler for the host JNI library')
     parser.add_argument('--compile-wrapper', default='', help='command prefix around every compiler or linker call')
     parser.add_argument('--build-wrapper', default='', help='command prefix around the Gradle call')
@@ -612,6 +613,11 @@ def main():
                     values['json'] = args.json_jar or find_json(Path(env.get('GRADLE_USER_HOME') or Path.home() / '.gradle'))
                     if not values['json'] or not values['json'].is_file():
                         raise RuntimeError('no org.json jar; pass --json-jar')
+
+                if '{archive-sqlite}' in json.dumps(suite.get('args', [])):
+                    if not args.archive_sqlite or not args.archive_sqlite.is_file():
+                        raise RuntimeError('no host archive SQLite JNI fixture; pass --archive-sqlite')
+                    values['archive-sqlite'] = args.archive_sqlite
 
                 def fill(value):
                     value = re.sub(r'\{out:([^}]+)\}', lambda match: str(out / 'suites' / match.group(1)), value)
