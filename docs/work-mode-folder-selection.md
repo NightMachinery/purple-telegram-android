@@ -47,3 +47,7 @@ both page slots, swipes, reversal, cancellation, old listeners and retirement.
 They do not execute the Android event loop. Fresh AGP compilation, the complete
 canonical host campaign and actual Android tap/swipe and visual checks remain
 required before claiming that the installed application is repaired.
+
+The host fixture prints its numeric completion on a separate
+`FOLDER_NAVIGATION_CHECKS=N` line. Keep scope annotations on other lines so the
+canonical runner can count the actual executed checks without relaxing floors.

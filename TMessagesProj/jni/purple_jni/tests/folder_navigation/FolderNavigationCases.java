@@ -147,6 +147,7 @@ public final class FolderNavigationCases {
         DialogsActivity stopReentry=scene(zero,ten,twenty);
         stopReentry.viewPages[0].listView.onStop=()->click(stopReentry,1);
         click(stopReentry,2);agrees(stopReentry,10,"nested stopScroll intent cannot inherit outer binding");
-        System.out.println("FOLDER_NAVIGATION_CHECKS="+checks+" FAILURES=0 NO_ANDROID_RUNTIME_CLAIM");
+        System.out.println("FOLDER_NAVIGATION_CHECKS="+checks);
+        System.out.println("NO_ANDROID_RUNTIME_CLAIM");
     }
 }
