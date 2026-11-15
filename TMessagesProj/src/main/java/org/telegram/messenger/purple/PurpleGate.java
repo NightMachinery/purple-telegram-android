@@ -436,6 +436,7 @@ public final class PurpleGate {
         PurpleWorkMode.reload(accepted.source.settings, file, primary, good);
         ++generation;
         rebuildViewFilters(current);
+        PurpleFolderProjection.publish(current, generation);
         PurpleListDiagnostics.afterReload();
         postRefresh();
         AndroidUtilities.runOnUIThread(() -> {
@@ -584,6 +585,7 @@ public final class PurpleGate {
         refreshPeekTimer(next);
         refreshOverrideTimer(next);
         rebuildViewFilters(next);
+        PurpleFolderProjection.publish(next, generation);
         PurpleListDiagnostics.afterReload();
         PurplePeekForeground.published();
         final PurpleCore.Loaded updated = next;
@@ -719,6 +721,7 @@ public final class PurpleGate {
             loaded = ended;
             ++generation;
         }
+        PurpleFolderProjection.publish(ended, generation);
         AndroidUtilities.runOnUIThread(() -> {
             try {
                 org.telegram.ui.PurplePeekControls.onGateReload(before, ended);

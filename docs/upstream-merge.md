@@ -842,3 +842,17 @@ forward, multi-media and single-message ACK correlation (enter, miss, match,
 error and end) to PurpleMediaReplyDiagnostics.AckTrace and passes only the
 bounded trigger sequence into PurpleMediaReply.observe; all retry, schedule
 and error handling stays untouched in upstream code.
+
+
+## Coherent Work Mode folder selection
+
+`FilterTabsView` has an optional pre-indicator preparation result and a
+transition serial. Preserve legacy delegate ordering for other screens and the
+post-callback serial check before reposting an indicator animation.
+`DialogsActivity` routes rendered tab admission, exact native binding, refresh
+reconciliation, swipe completion and fragment retirement through
+`PurpleFolderNavigation`. Its private page-state reset remains a screen callback.
+Keep the existing native filter-slot binding body in place. Do not replace the
+rendered identity with a fresh positional lookup or a synthetic stable ID alone.
+The detailed contract and remaining application checks are in
+[work-mode-folder-selection.md](work-mode-folder-selection.md).

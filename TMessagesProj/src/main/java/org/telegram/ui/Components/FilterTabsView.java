@@ -97,7 +97,17 @@ public class FilterTabsView extends FrameLayout {
         return false;
     }
 
+    public enum PagePreparation { LEGACY, READY, REFUSED }
+
     public interface FilterTabsViewDelegate {
+        default PagePreparation preparePageSelection(Tab tab, boolean forward) {
+            return PagePreparation.LEGACY;
+        }
+
+        default boolean isSamePage(Tab tab) {
+            return true;
+        }
+
         void onPageSelected(Tab tab, boolean forward);
 
         void onPageScrolled(float progress);
@@ -844,6 +854,7 @@ public class FilterTabsView extends FrameLayout {
     private final SparseIntArray positionToCount = new SparseIntArray(5);
     private final SparseIntArray positionToX = new SparseIntArray(5);
 
+    private long transitionSerial;
     private boolean animationRunning;
     private long lastAnimationTime;
     private float animationTime;
@@ -859,6 +870,7 @@ public class FilterTabsView extends FrameLayout {
             if (!animatingIndicator) {
                 return;
             }
+            long serial = transitionSerial;
             long newTime = SystemClock.elapsedRealtime();
             long dt = (newTime - lastAnimationTime);
             if (dt > 17) {
@@ -866,6 +878,7 @@ public class FilterTabsView extends FrameLayout {
             }
             animationTime += dt / 320.0f;
             setAnimationIdicatorProgress(interpolator.getInterpolation(animationTime));
+            if (serial != transitionSerial || !animatingIndicator) return;
             if (animationTime > 1.0f) {
                 animationTime = 1.0f;
             }
@@ -1121,7 +1134,7 @@ public class FilterTabsView extends FrameLayout {
                 }
                 return;
             }
-            if (position == currentPosition && delegate != null) {
+            if (position == currentPosition && delegate != null && delegate.isSamePage(tabView.currentTab)) {
                 delegate.onSamePageSelected();
                 return;
             }
@@ -1154,7 +1167,12 @@ public class FilterTabsView extends FrameLayout {
     }
 
     public void stopAnimatingIndicator() {
+        transitionSerial++;
+        AndroidUtilities.cancelRunOnUIThread(animationRunnable);
         animatingIndicator = false;
+        manualScrollingToPosition = -1;
+        manualScrollingToId = -1;
+        setEnabled(true);
     }
 
     BlurredBackgroundDrawable blurredBackgroundDrawable;
@@ -1170,7 +1188,18 @@ public class FilterTabsView extends FrameLayout {
             }
             return;
         }
+        long serial = ++transitionSerial;
+        AndroidUtilities.cancelRunOnUIThread(animationRunnable);
+        animatingIndicator = false;
         boolean scrollingForward = currentPosition < position;
+        PagePreparation preparation = delegate == null ? PagePreparation.LEGACY
+                : delegate.preparePageSelection(tab, scrollingForward);
+        if (serial != transitionSerial) return;
+        if (preparation == PagePreparation.REFUSED
+                || position < 0 || position >= tabs.size() || tabs.get(position) != tab) {
+            setEnabled(true);
+            return;
+        }
         scrollingToChild = -1;
         previousPosition = currentPosition;
         previousId = selectedTabId;
@@ -1189,10 +1218,10 @@ public class FilterTabsView extends FrameLayout {
 
         AndroidUtilities.runOnUIThread(animationRunnable, 16);
 
-        if (delegate != null) {
+        if (delegate != null && preparation == PagePreparation.LEGACY) {
             delegate.onPageSelected(tab, scrollingForward);
         }
-        scrollToChild(position);
+        if (serial == transitionSerial) scrollToChild(position);
     }
 
     public void selectFirstTab() {
@@ -1236,7 +1265,9 @@ public class FilterTabsView extends FrameLayout {
     }
 
     public void removeTabs() {
+        stopAnimatingIndicator();
         tabs.clear();
+        positionToStableId.clear();
         positionToId.clear();
         idToPosition.clear();
         positionToWidth.clear();

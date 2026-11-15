@@ -9,7 +9,7 @@ caller TMessagesProj/src/main/java/org/telegram/ui/Cells/DialogCell.java isDialo
 caller TMessagesProj/src/main/java/org/telegram/ui/Cells/ProfileSearchCell.java isDialogMuted 1
 caller TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java isDialogMuted 1
 caller TMessagesProj/src/main/java/org/telegram/ui/Components/TopicsTabsView.java isDialogMuted 6
-caller TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java getDialogFilters 13
+caller TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java getDialogFilters 9
 caller TMessagesProj/src/main/java/org/telegram/ui/EditWidgetActivity.java isDialogMuted 1
 caller TMessagesProj/src/main/java/org/telegram/ui/MainTabsActivity.java getDialogFilters 1
 caller TMessagesProj/src/main/java/org/telegram/ui/MainTabsActivity.java isDialogMuted 1
@@ -68,7 +68,7 @@ file TMessagesProj/src/main/java/org/telegram/ui/Components/ChatAvatarContainer.
 file TMessagesProj/src/main/java/org/telegram/ui/Components/ChatNotificationsPopupWrapper.java 4 4 4
 file TMessagesProj/src/main/java/org/telegram/ui/Components/ContactsEmptyView.java 10 0 1
 file TMessagesProj/src/main/java/org/telegram/ui/Components/DialogsChannelsAdapter.java 8 2 4
-file TMessagesProj/src/main/java/org/telegram/ui/Components/FilterTabsView.java 13 3 5
+file TMessagesProj/src/main/java/org/telegram/ui/Components/FilterTabsView.java 47 6 14
 file TMessagesProj/src/main/java/org/telegram/ui/Components/FragmentContextView.java 6 2 6
 file TMessagesProj/src/main/java/org/telegram/ui/Components/InstantCameraView.java 101 28 41
 file TMessagesProj/src/main/java/org/telegram/ui/Components/InstantCameraView2.java 14 2 8
@@ -83,7 +83,7 @@ file TMessagesProj/src/main/java/org/telegram/ui/Components/ShareAlert.java 12 2
 file TMessagesProj/src/main/java/org/telegram/ui/Components/TranslateAlert2.java 1 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/Components/quickforward/QuickShareSelectorOverlayLayout.java 2 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/ContactsActivity.java 24 1 9
-file TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java 61 14 27
+file TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java 275 95 42
 file TMessagesProj/src/main/java/org/telegram/ui/ExternalActionActivity.java 2 0 2
 file TMessagesProj/src/main/java/org/telegram/ui/FilterCreateActivity.java 1 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/FiltersSetupActivity.java 5 5 5

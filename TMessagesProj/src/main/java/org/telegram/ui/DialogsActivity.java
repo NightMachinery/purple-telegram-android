@@ -584,6 +584,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     @Nullable
     private ActionBarMenuSubItem removeFromFolderItem;
     private final PurpleDialogsHooks purple = new PurpleDialogsHooks(this);
+    private final PurpleFolderNavigation purpleFolders = new PurpleFolderNavigation();
+    private PurpleFolderNavigation.Binding purpleFolderBinding;
     @Nullable
     private ActionBarMenuSubItem archiveItem;
     @Nullable
@@ -807,17 +809,23 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             if (id < 0) {
                 return false;
             }
+            PurpleFolderNavigation.Attempt attempt = purpleFolders.begin(currentAccount, filterTabsView.getTab(id), viewPages[1]);
+            if (attempt == null || purpleFolders.needsRefresh(attempt)) {
+                updateFilterTabs(true, false);
+                return false;
+            }
             getParent().requestDisallowInterceptTouchEvent(true);
             maybeStartTracking = false;
             startedTracking = true;
             startedTrackingX = (int) (ev.getX() + additionalOffset);
             actionBar.setEnabled(false);
             filterTabsView.setEnabled(false);
-            viewPages[1].selectedType = id;
+            viewPages[1].selectedType = attempt.position();
             viewPages[1].setVisibility(View.VISIBLE);
             animatingForward = forward;
             showScrollbars(false);
             switchToCurrentSelectedMode(true);
+            if (!purpleFolderProgress(attempt)) return false;
             if (forward) {
                 viewPages[1].setTranslationX(viewPages[0].getMeasuredWidth());
             } else {
@@ -849,7 +857,9 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 if (cancel) {
                     showScrollbars(true);
                     if (tabsAnimation != null) {
+                        long stamp = purpleFolders.stamp();
                         tabsAnimation.cancel();
+                        if (!purpleFolders.unchanged(stamp)) return tabsAnimationInProgress;
                         tabsAnimation = null;
                     }
                     tabsAnimationInProgress = false;
@@ -1372,6 +1382,12 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                     velocityTracker.addMovement(ev);
                 }
                 if (ev != null && ev.getAction() == MotionEvent.ACTION_DOWN && checkTabsAnimationInProgress()) {
+                    PurpleFolderNavigation.Attempt reversed = purpleFolders.pending();
+                    purpleFolders.cancel(reversed);
+                    tabsAnimation.removeAllListeners();
+                    tabsAnimation.cancel();
+                    tabsAnimation = null;
+                    tabsAnimationInProgress = false;
                     startedTracking = true;
                     startedTrackingPointerId = ev.getPointerId(0);
                     startedTrackingX = (int) ev.getX();
@@ -1386,7 +1402,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                             additionalOffset = viewPages[0].getTranslationX();
                             filterTabsView.selectTabWithId(viewPages[0].selectedType, 1f);
                             filterTabsView.selectTabWithId(viewPages[1].selectedType, additionalOffset / viewPages[0].getMeasuredWidth());
-                            switchToCurrentSelectedMode(true);
+                            if (!purpleContinueFolderSwipe()) return false;
                             viewPages[0].dialogsAdapter.resume();
                             viewPages[1].dialogsAdapter.pause();
                         }
@@ -1399,16 +1415,14 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                             additionalOffset = viewPages[0].getTranslationX();
                             filterTabsView.selectTabWithId(viewPages[0].selectedType, 1f);
                             filterTabsView.selectTabWithId(viewPages[1].selectedType, -additionalOffset / viewPages[0].getMeasuredWidth());
-                            switchToCurrentSelectedMode(true);
+                            if (!purpleContinueFolderSwipe()) return false;
                             viewPages[0].dialogsAdapter.resume();
                             viewPages[1].dialogsAdapter.pause();
                         } else {
                             additionalOffset = viewPages[0].getTranslationX();
                         }
                     }
-                    tabsAnimation.removeAllListeners();
-                    tabsAnimation.cancel();
-                    tabsAnimationInProgress = false;
+                    if (purpleFolders.pending() == null && !purpleContinueFolderSwipe()) return false;
                 } else if (ev != null && ev.getAction() == MotionEvent.ACTION_DOWN) {
                     additionalOffset = 0;
                 }
@@ -1536,18 +1550,30 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                         duration = Math.max(150, Math.min(duration, 600));
 
                         tabsAnimation.setDuration(duration);
+                        final PurpleFolderNavigation.Attempt folderAttempt = purpleFolders.pending();
+                        final boolean folderBack = backAnimation;
                         tabsAnimation.addListener(new AnimatorListenerAdapter() {
                             @Override
                             public void onAnimationEnd(Animator animator) {
+                                if (animator != tabsAnimation || !purpleFolders.owns(folderAttempt)) return;
+                                if (!folderBack && !purpleFolders.finish(currentAccount, folderAttempt)) {
+                                    purpleRejectFolder(folderAttempt);
+                                    return;
+                                }
+                                if (folderBack) purpleFolders.cancel(folderAttempt);
+                                long stamp = purpleFolders.stamp();
                                 tabsAnimation = null;
-                                if (!backAnimation) {
+                                if (!folderBack) {
                                     ViewPage tempPage = viewPages[0];
                                     viewPages[0] = viewPages[1];
                                     viewPages[1] = tempPage;
                                     filterTabsView.selectTabWithId(viewPages[0].selectedType, 1.0f);
                                     updateCounters(false);
+                                    if (!purpleFolders.unchanged(stamp)) return;
                                     viewPages[0].dialogsAdapter.resume();
+                                    if (!purpleFolders.unchanged(stamp)) return;
                                     viewPages[1].dialogsAdapter.pause();
+                                    if (!purpleFolders.unchanged(stamp)) return;
                                 }
                                 viewPages[1].setVisibility(View.GONE);
                                 showScrollbars(true);
@@ -1556,6 +1582,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                                 actionBar.setEnabled(true);
                                 filterTabsView.setEnabled(true);
                                 checkListLoad(viewPages[0]);
+                                purpleFolders.acknowledged(folderAttempt);
                             }
                         });
                         tabsAnimation.start();
@@ -3080,6 +3107,13 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 
     @Override
     public void onFragmentDestroy() {
+        purpleFolders.close();
+        if (filterTabsView != null) filterTabsView.stopAnimatingIndicator();
+        if (tabsAnimation != null) {
+            tabsAnimation.removeAllListeners();
+            tabsAnimation.cancel();
+            tabsAnimation = null;
+        }
         super.onFragmentDestroy();
         if (observersGroup != null) {
             observersGroup.removeAllObservers();
@@ -3608,6 +3642,16 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 }
 
                 @Override
+                public FilterTabsView.PagePreparation preparePageSelection(FilterTabsView.Tab tab, boolean forward) {
+                    return purplePrepareFolder(tab, () -> onPageSelected(tab, forward));
+                }
+
+                @Override
+                public boolean isSamePage(FilterTabsView.Tab tab) {
+                    return purpleFolders.samePage(currentAccount, tab, viewPages[0]);
+                }
+
+                @Override
                 public void onSamePageSelected() {
                     scrollToTop(true, false);
                 }
@@ -3625,25 +3669,20 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 
                 @Override
                 public void onPageSelected(FilterTabsView.Tab tab, boolean forward) {
-                    if (viewPages[0].selectedType == tab.id) {
-                        return;
-                    }
                     if (tab.isLocked) {
                         filterTabsView.shakeLock(tab.id);
                         showDialog(new LimitReachedBottomSheet(DialogsActivity.this, context, LimitReachedBottomSheet.TYPE_FOLDERS, currentAccount, null));
                         return;
                     }
 
-                    ArrayList<MessagesController.DialogFilter> dialogFilters = getMessagesController().getDialogFilters();
-                    if (!tab.isDefault && (tab.id < 0 || tab.id >= dialogFilters.size())) {
-                        return;
-                    }
-                    viewPages[1].selectedType = tab.id;
+                    PurpleFolderNavigation.Attempt attempt = purpleFolders.pending();
+                    if (attempt == null) return;
+                    viewPages[1].selectedType = attempt.position();
                     viewPages[1].setVisibility(View.VISIBLE);
                     viewPages[1].setTranslationX(viewPages[0].getMeasuredWidth());
                     showScrollbars(false);
+                    animatingForward = viewPages[0].selectedType < attempt.position();
                     switchToCurrentSelectedMode(true);
-                    animatingForward = forward;
                 }
 
                 @Override
@@ -3653,6 +3692,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 
                 @Override
                 public void onPageScrolled(float progress) {
+                    PurpleFolderNavigation.Attempt attempt = purpleFolders.pending();
+                    if (!purpleFolderProgress(attempt)) return;
                     // Purple: see PurpleDialogsHooks#skipPageScroll
                     if (purple.skipPageScroll(currentAccount, viewPages[1].getVisibility(), searching)) {
                         return;
@@ -3668,16 +3709,25 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                         viewPages[1].setTranslationX(progress * viewPages[0].getMeasuredWidth() - viewPages[0].getMeasuredWidth());
                     }
                     if (progress == 1) {
+                        if (!purpleFolders.finish(currentAccount, attempt)) {
+                            purpleRejectFolder(attempt);
+                            return;
+                        }
+                        long stamp = purpleFolders.stamp();
                         ViewPage tempPage = viewPages[0];
                         viewPages[0] = viewPages[1];
                         viewPages[1] = tempPage;
                         viewPages[1].setVisibility(View.GONE);
                         showScrollbars(true);
                         updateCounters(false);
+                        if (!purpleFolders.unchanged(stamp)) return;
                         filterTabsView.stopAnimatingIndicator();
                         checkListLoad(viewPages[0]);
+                        if (!purpleFolders.unchanged(stamp)) return;
                         viewPages[0].dialogsAdapter.resume();
+                        if (!purpleFolders.unchanged(stamp)) return;
                         viewPages[1].dialogsAdapter.pause();
+                        purpleFolders.acknowledged(attempt);
                     }
                 }
 
@@ -6823,15 +6873,120 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         }
     }
 
+    private FilterTabsView.PagePreparation purplePrepareFolder(FilterTabsView.Tab tab, Runnable bind) {
+        return purpleFolders.prepare(currentAccount, tab, viewPages[1], bind,
+                () -> viewPages[1].getVisibility() == View.VISIBLE,
+                () -> updateFilterTabs(true, false), () -> purpleCancelFolderMotion(false));
+    }
+
+    private void purpleRequestFolderRefresh() {
+        purpleFolders.requestRefresh(() -> updateFilterTabs(true, false));
+    }
+
+    private void purpleRejectFolder(PurpleFolderNavigation.Attempt attempt) {
+        purpleFolders.reject(attempt, this::purpleCancelFolderMotion, () -> updateFilterTabs(true, false));
+    }
+
+    private boolean purpleFolderProgress(PurpleFolderNavigation.Attempt attempt) {
+        if (purpleFolders.prepared(currentAccount, attempt)) return true;
+        purpleRejectFolder(attempt);
+        return false;
+    }
+
+    private boolean purpleContinueFolderSwipe() {
+        PurpleFolderNavigation.Attempt attempt = purpleFolders.beginBound(currentAccount, viewPages[1]);
+        if (attempt == null || purpleFolders.needsRefresh(attempt)) {
+            updateFilterTabs(true, false);
+            return false;
+        }
+        viewPages[1].selectedType = attempt.position();
+        switchToCurrentSelectedMode(true);
+        return purpleFolderProgress(attempt);
+    }
+
+    private void purpleCancelFolderMotion() {
+        purpleCancelFolderMotion(true);
+    }
+
+    private void purpleCancelFolderMotion(boolean indicator) {
+        long stamp = purpleFolders.stamp();
+        if (tabsAnimation != null) {
+            tabsAnimation.removeAllListeners();
+            tabsAnimation.cancel();
+            tabsAnimation = null;
+        }
+        tabsAnimationInProgress = false;
+        startedTracking = false;
+        maybeStartTracking = false;
+        additionalOffset = 0;
+        if (indicator) filterTabsView.stopAnimatingIndicator();
+        purpleFolders.restoreIndicator(filterTabsView, viewPages[0]);
+        viewPages[0].setTranslationX(0);
+        viewPages[1].setTranslationX(viewPages[0].getMeasuredWidth());
+        viewPages[1].setVisibility(View.GONE);
+        viewPages[0].dialogsAdapter.resume();
+        if (!purpleFolders.unchanged(stamp)) return;
+        viewPages[1].dialogsAdapter.pause();
+        if (!purpleFolders.unchanged(stamp)) return;
+        actionBar.setEnabled(true);
+        filterTabsView.setEnabled(true);
+        showScrollbars(true);
+    }
+
+    private boolean purpleRebindFolders(PurpleFolderNavigation.Rebuild rebuild) {
+        for (int a = 0; a < viewPages.length; a++) {
+            if (!purpleFolders.current(rebuild)) {
+                purpleRequestFolderRefresh();
+                return false;
+            }
+            PurpleFolderNavigation.Binding binding = purpleFolders.rebuildBinding(rebuild, viewPages[a], a == 1);
+            if (binding == null) {
+                int oldType = viewPages[a].dialogsType;
+                if ((oldType == 7 || oldType == 8) && oldType != viewPages[0].dialogsType) {
+                    getMessagesController().selectDialogFilter(null, oldType - 7);
+                }
+                if (!purpleFolders.current(rebuild)) return false;
+                viewPages[a].selectedType = rebuild.current;
+                viewPages[a].dialogsType = initialDialogsType;
+                viewPages[a].dialogsAdapter.setDialogsType(initialDialogsType);
+                if (!purpleFolders.current(rebuild)) return false;
+                purpleFolders.forget(viewPages[a]);
+                continue;
+            }
+            viewPages[a].selectedType = purpleFolders.position(binding);
+            if (purpleFolders.alreadyBound(viewPages[a], binding)
+                    && (binding.filter.isDefault() || ((viewPages[a].dialogsType == 7 || viewPages[a].dialogsType == 8)
+                    && getMessagesController().selectedDialogFilter[viewPages[a].dialogsType - 7] == binding.filter))) {
+                if (!purpleFolders.bound(binding)) return false;
+                continue;
+            }
+            purpleFolderBinding = binding;
+            switchToCurrentSelectedMode(a == 1);
+            if (!purpleFolders.current(rebuild) || !purpleFolders.alreadyBound(viewPages[a], binding)) {
+                purpleRequestFolderRefresh();
+                return false;
+            }
+        }
+        return purpleFolders.current(rebuild);
+    }
+
     public void switchToCurrentSelectedMode(boolean animated) {
+        PurpleFolderNavigation.Binding suppliedBinding = purpleFolderBinding;
+        purpleFolderBinding = null;
+        long stamp = purpleFolders.stamp();
         for (int a = 0; a < viewPages.length; a++) {
             viewPages[a].listView.stopScroll();
+            if (!purpleFolders.unchanged(stamp)) return;
         }
         int a = animated && viewPages.length > 1 ? 1 : 0;
-        if (viewPages[a].selectedType < 0 || viewPages[a].selectedType >= getMessagesController().getDialogFilters().size()) {
+        PurpleFolderNavigation.Binding binding = suppliedBinding != null ? suppliedBinding
+                : purpleFolders.binding(currentAccount, viewPages[a], viewPages[a].selectedType);
+        if (!purpleFolders.current(binding, viewPages[a])) {
+            purpleRequestFolderRefresh();
             return;
         }
-        MessagesController.DialogFilter filter = getMessagesController().getDialogFilters().get(viewPages[a].selectedType);
+        viewPages[a].selectedType = purpleFolders.position(binding);
+        MessagesController.DialogFilter filter = binding.filter;
         if (filter.isDefault()) {
             viewPages[a].dialogsType = initialDialogsType;
             viewPages[a].listView.updatePullState();
@@ -6844,14 +6999,17 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             viewPages[a].listView.setScrollEnabled(true);
             getMessagesController().selectDialogFilter(filter, viewPages[a].dialogsType == 8 ? 1 : 0);
         }
+        if (!purpleFolders.current(binding, viewPages[a])) return;
 
         if (viewPages.length > 1) {
             viewPages[1].isLocked = filter.locked;
         }
 
         viewPages[a].dialogsAdapter.setDialogsType(viewPages[a].dialogsType);
+        if (!purpleFolders.current(binding, viewPages[a])) return;
         viewPages[a].layoutManager.scrollToPositionWithOffset(viewPages[a].dialogsType == DIALOGS_TYPE_DEFAULT && hasHiddenArchive() && viewPages[a].archivePullViewState == ARCHIVE_ITEM_STATE_HIDDEN ? 1 : 0, (int) scrollYOffset);
         checkListLoad(viewPages[a]);
+        if (!purpleFolders.bound(binding)) purpleRequestFolderRefresh();
     }
 
     private boolean scrollBarVisible = true;
@@ -6876,12 +7034,25 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         if (filterTabsView == null || inPreviewMode || searchIsShowed || (rightSlidingDialogContainer != null && rightSlidingDialogContainer.hasFragment())) {
             return;
         }
+        org.telegram.messenger.purple.PurpleFolderProjection.Frame folderFrame = purpleFolders.capture(currentAccount);
+        if (folderFrame == null || folderFrame.filters.isEmpty()) {
+            purpleRequestFolderRefresh();
+            return;
+        }
+        force |= purpleFolders.changed(folderFrame);
         final boolean purplePresetChanged = purple.changed(currentAccount);
         if (filterOptions != null) {
             filterOptions.dismiss();
             filterOptions = null;
         }
-        final ArrayList<MessagesController.DialogFilter> filters = getMessagesController().getDialogFilters();
+        final java.util.List<MessagesController.DialogFilter> filters = folderFrame.filters;
+        PurpleFolderNavigation.Rebuild folderRebuild = null;
+        if (force || filterTabsView.getVisibility() != View.VISIBLE || filters.size() <= 1) {
+            folderRebuild = purpleFolders.rebuild(folderFrame, viewPages[0], viewPages[1], purplePresetChanged);
+            if (folderRebuild == null) return;
+            purpleCancelFolderMotion();
+            if (!purpleRebindFolders(folderRebuild)) return;
+        }
         if (filters.size() > 1) {
             if (force || filterTabsView.getVisibility() != View.VISIBLE) {
                 boolean animatedUpdateItems = animated;
@@ -6889,15 +7060,10 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                     animatedUpdateItems = false;
                 }
                 canShowFilterTabsView = true;
-                boolean updateCurrentTab = filterTabsView.isEmpty();
                 updateFilterTabsVisibility(animated);
-                int id = filterTabsView.getCurrentTabId();
-                int stableId = filterTabsView.getCurrentTabStableId();
-                boolean selectWithStableId = false;
-                if (id != filterTabsView.getDefaultTabId() && id >= filters.size()) {
-                    filterTabsView.resetTabId();
-                    selectWithStableId = true;
-                }
+                if (!purpleFolders.current(folderRebuild)) return;
+                int id = viewPages[0].selectedType;
+                filterTabsView.resetTabId();
                 filterTabsView.removeTabs();
                 for (int a = 0, N = filters.size(); a < N; a++) {
                     if (filters.get(a).isDefault()) {
@@ -6907,22 +7073,12 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                         filterTabsView.addTab(a, filter.localId, filter.name, filter.entities, filter.title_noanimate, false, filters.get(a).locked);
                     }
                 }
-                if (stableId >= 0) {
-                    if (selectWithStableId) {
-                        if (!filterTabsView.selectTabWithStableId(stableId)) {
-                            while (id >= 0 && !filterTabsView.selectTabWithStableId(filterTabsView.getStableId(id))) {
-                                id--;
-                            }
-                            if (id < 0) {
-                                id = 0;
-                            }
-                        }
-                    }
-                    if (filterTabsView.getStableId(viewPages[0].selectedType) != stableId) {
-                        updateCurrentTab = true;
-                        viewPages[0].selectedType = id;
-                    }
+                if (!purpleFolders.current(folderRebuild)) {
+                    purpleRequestFolderRefresh();
+                    return;
                 }
+                purpleFolders.rendered(filterTabsView, folderFrame);
+                filterTabsView.selectTabWithId(id, 1f);
                 for (int a = 0; a < viewPages.length; a++) {
                     if (viewPages[a].selectedType >= filters.size()) {
                         viewPages[a].selectedType = filters.size() - 1;
@@ -6930,9 +7086,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                     viewPages[a].listView.setScrollingTouchSlop(RecyclerView.TOUCH_SLOP_PAGING);
                 }
                 filterTabsView.finishAddingTabs(animatedUpdateItems);
-                if (updateCurrentTab) {
-                    switchToCurrentSelectedMode(false);
-                }
+                if (!purpleFolders.current(folderRebuild)) return;
                 if (filterTabsView.isLocked(filterTabsView.getCurrentTabId())) {
                     filterTabsView.selectFirstTab();
                 } else if (purplePresetChanged
@@ -6942,42 +7096,21 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 }
             }
         } else {
-            if (filterTabsView.getVisibility() != View.GONE) {
-                filterTabsView.setIsEditing(false);
-                showDoneItem(false);
-
-                maybeStartTracking = false;
-                if (startedTracking) {
-                    startedTracking = false;
-                    viewPages[0].setTranslationX(0);
-                    viewPages[1].setTranslationX(viewPages[0].getMeasuredWidth());
-                }
-                if (viewPages[0].selectedType != filterTabsView.getDefaultTabId()) {
-                    viewPages[0].selectedType = filterTabsView.getDefaultTabId();
-                    viewPages[0].dialogsAdapter.setDialogsType(0);
-                    viewPages[0].dialogsType = initialDialogsType;
-                    viewPages[0].dialogsAdapter.notifyDataSetChanged();
-                }
-                viewPages[1].setVisibility(View.GONE);
-                viewPages[1].selectedType = 0;
-                viewPages[1].dialogsAdapter.setDialogsType(0);
-                viewPages[1].dialogsType = initialDialogsType;
-                viewPages[1].dialogsAdapter.notifyDataSetChanged();
-                canShowFilterTabsView = false;
-                updateFilterTabsVisibility(animated);
-                for (int a = 0; a < viewPages.length; a++) {
-                    if (viewPages[a].dialogsType == DIALOGS_TYPE_DEFAULT && viewPages[a].archivePullViewState == ARCHIVE_ITEM_STATE_HIDDEN && hasHiddenArchive()) {
-                        int p = viewPages[a].layoutManager.findFirstVisibleItemPosition();
-                        if (p == 0 || p == 1) {
-                            viewPages[a].layoutManager.scrollToPositionWithOffset(1, (int) scrollYOffset);
-                        }
-                    }
-                    viewPages[a].listView.setScrollingTouchSlop(RecyclerView.TOUCH_SLOP_DEFAULT);
-                    viewPages[a].listView.requestLayout();
-                    viewPages[a].requestLayout();
-                }
-
-                filterTabsView.resetTabId();
+            filterTabsView.setIsEditing(false);
+            showDoneItem(false);
+            filterTabsView.removeTabs();
+            filterTabsView.resetTabId();
+            MessagesController.DialogFilter filter = filters.get(0);
+            filterTabsView.addTab(0, filter.isDefault() ? 0 : filter.localId, filter.name,
+                    filter.entities, filter.title_noanimate, filter.isDefault(), filter.locked);
+            purpleFolders.rendered(filterTabsView, folderFrame);
+            filterTabsView.selectTabWithId(0, 1f);
+            canShowFilterTabsView = false;
+            updateFilterTabsVisibility(animated);
+            for (ViewPage page : viewPages) {
+                page.listView.setScrollingTouchSlop(RecyclerView.TOUCH_SLOP_DEFAULT);
+                page.listView.requestLayout();
+                page.requestLayout();
             }
         }
         updateCounters(false);
