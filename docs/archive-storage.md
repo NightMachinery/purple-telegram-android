@@ -198,3 +198,19 @@ Open and retained-account recovery failures emit `archive open_failed` or `archi
 The new `UserConfig.loadConfig` hook runs only after a persisted user has decoded, while the existing user lock is held. It passes the original serialized preference value to the owned bootstrap helper, so the bootstrap cannot persist a nonce separately from its login. The per-login transition and save hooks retain their previous behavior.
 
 Bootstrap admission distinguishes diagnostic gaps from archive authority. A metadata directory containing only `lock`, `capture-gap.json` and/or `gap-outbox.json`, with no store entry and no account-prefixed Keystore alias, is not an existing archive. A gap outbox with no retained store is durably converted to a generic capture-interrupted marker before normal creation, so Ready remains truthful with a gap. The marker is published before the old outbox is removed. Bootstrap never claims an existing store or alias. Any store entry, including its database/WAL/SHM/journal, wrapped key, causal journal, blobs, staging or lifecycle tree is protected. In the metadata root, binding, creation, fence, login, removal, recovery, cleared or capture-inflight records (and unknown entries) prevent gap-only conversion and remain subject to ordinary fail-closed admission. No existing content is adopted or erased by bootstrap.
+
+
+## Housekeeping queue pressure
+
+A full account queue refuses best-effort capture-gap flushing without changing
+store readiness or an existing unavailable state. The durable marker and visible
+capture gap remain for a later open. Identity-close and removal-retry obligations
+use the retrying control path; queue saturation cannot silently drop them.
+The account queue still holds at most 64 waiting tasks.
+
+The readiness fixtures fill actual remaining capacity while an owner is blocked,
+then check status preservation, capture after drain and the real saturated
+identity-close and delayed-removal paths. They retain account isolation and
+explicit incomplete-capture reporting. Host SQLite and software Keystore ports
+do not qualify hardware Keystore, a blocked Android native/provider call or the
+cause of a particular device's opening indication.

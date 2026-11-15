@@ -59,7 +59,8 @@ public final class PurpleArchive {
         void submit(Runnable task) {
             if (retired) return;
             try { queue.execute(task); }
-            catch (java.util.concurrent.RejectedExecutionException e) { status = new Status("Busy", status.bytes, status.gap); }
+            // A refused housekeeping task does not change the admitted store's state.
+            catch (java.util.concurrent.RejectedExecutionException e) { }
         }
         void open(PurpleAccountFiles.Identity captured) {
             String step = "paths";
@@ -159,7 +160,7 @@ public final class PurpleArchive {
                 status = new Status("Removal pending", status.bytes, status.gap);
                 if (expected == null && !retryScheduled) {
                     retryScheduled = true;
-                    recovery.schedule(() -> submit(() -> { retryScheduled = false; remove(); }), 60, TimeUnit.SECONDS);
+                    recovery.schedule(() -> control(() -> { retryScheduled = false; remove(); }), 60, TimeUnit.SECONDS);
                 }
             }
         }
@@ -352,7 +353,7 @@ public final class PurpleArchive {
         for (Worker worker : workers.values()) {
             PurpleAccountFiles.Identity identity = worker.identity;
             if (identity == null || identity.slot != slot) continue;
-            worker.submit(() -> {
+            worker.control(() -> {
                 if (!worker.closing && worker.identity == identity && !identity.current()) {
                     try { if (worker.store != null) { worker.store.drainReaders(); worker.store.close(); worker.store = null; } worker.status = new Status("Closed", worker.status.bytes, false); worker.retire(); }
                     catch (Exception | LinkageError e) { PurpleArchiveFailures.record(identity.slot, "store_close", e); worker.status = new Status("Close pending", worker.status.bytes, worker.status.gap); }

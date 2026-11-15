@@ -2356,6 +2356,8 @@ History starts when this device observes content. The read-only pages distinguis
 observations from accepted edits and show missing or unsupported content honestly.
 Purple settings shows archive usage and retention gaps, plus explicit account
 recovery. Logout deletes that account’s archive and dedicated keys.
+A busy housekeeping queue preserves archive readiness; close and removal work
+remain queued for retry. Capture gaps stay visible until recovered.
 See [capture and history](docs/archive-capture.md) and
 [archive storage](docs/archive-storage.md) for limits and recovery.
 
