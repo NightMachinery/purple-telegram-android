@@ -437,9 +437,15 @@ public final class PurpleAccountSyncStore implements AutoCloseable {
         if (status != Status.Ready || !bound()) return result(Status.InvalidTransition);
         try {
             if (!Arrays.equals(state, read(stateFile, STATE_LIMIT))) return result(Status.InvalidTransition);
-            String date = new java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.ROOT).format(new java.util.Date());
-            File archive = new File(root, "orphaned-" + date);
-            if (archive.exists() || !archive.mkdir()) return result(Status.IoError);
+            long now = System.currentTimeMillis();
+            java.text.SimpleDateFormat format = new java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.ROOT);
+            File archive = null;
+            for (int i = 0; i < 60 && archive == null; ++i) {
+                File candidate = new File(root, "orphaned-" + format.format(new java.util.Date(now + i * 1000L)));
+                if (candidate.mkdir()) archive = candidate;
+                else if (!java.nio.file.Files.exists(candidate.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)) return result(Status.IoError);
+            }
+            if (archive == null) return result(Status.IoError);
             android.system.Os.chmod(archive.getPath(), 0700);
             java.util.ArrayList<String> names = new java.util.ArrayList<>(Arrays.asList("pending", "auto.json", "retained-bases", "state.json"));
             for (String name : names) {

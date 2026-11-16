@@ -128,3 +128,10 @@ physical marker. A missing folder has no carry inventory and retains the normal
 first Join path. An existing unreadable or unsafe folder still blocks recovery
 discovery; it is never treated as empty. The first-file regression uses the
 actual runner, recovery model and native binding/Join checks.
+
+First use refuses to move a sync state while carry leftovers remain. The explicit
+carry-recovery action moves only those leftovers and retains state, settings and
+chat binding. A fresh Check can then continue the ordinary first-use choice.
+State set-aside checks a bounded sequence of dated names, so a carry archive or
+earlier operation in the same second cannot prevent that next step. Existing
+archives are never overwritten or merged.

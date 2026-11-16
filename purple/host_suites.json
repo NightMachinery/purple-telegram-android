@@ -226,7 +226,7 @@
         "modern-sync:FIRST_USE_R1R2": "PASS",
         "modern-sync:MAGIC_AUTOMATIC_CASES": "PASS",
         "modern-sync:MANAGED_READ_WATCHDOG_CHECKS": 105,
-        "modern-sync:MODERN_CHECKS": 5882,
+        "modern-sync:MODERN_CHECKS": 7200,
         "modern-sync:OUTBOX_CHECKS": 254,
         "modern-sync:PurpleAccountSyncStore": "PASS",
         "modern-sync:READ_SCOPE_LIFETIME_CHECKS": 65,
@@ -239,7 +239,7 @@
         "modern:FIRST_USE_R1R2": "PASS",
         "modern:MAGIC_AUTOMATIC_CASES": "PASS",
         "modern:MANAGED_READ_WATCHDOG_CHECKS": 105,
-        "modern:MODERN_CHECKS": 5882,
+        "modern:MODERN_CHECKS": 7200,
         "modern:READ_SCOPE_LIFETIME_CHECKS": 65,
         "outbox:OUTBOX_CHECKS": 254,
         "routed:EDITOR_CHECKS": 54,
@@ -248,7 +248,9 @@
         "store:PurpleAccountSyncStore": "PASS",
         "modern:LEGACY_CARRY_REFUSAL_CHECKS": 125,
         "modern:LEGACY_CARRY_AUTOMATIC_CHECKS": 20,
-        "modern:CARRY_SET_ASIDE_CHECKS": 540
+        "modern:CARRY_SET_ASIDE_CHECKS": 540,
+        "modern:FIRST_USE_CARRY": "PASS",
+        "modern-sync:FIRST_USE_CARRY": "PASS"
       },
       "coverage": " Refuses legacy carry artifacts before store recovery or writes, including late arrival; real automatic-engine/JNI checks retain synthetic edit/post positive controls and require zero sends or writes beside malformed carry evidence."
     },

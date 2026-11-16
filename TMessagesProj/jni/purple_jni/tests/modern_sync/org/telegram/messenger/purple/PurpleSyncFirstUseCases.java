@@ -192,7 +192,7 @@ final class PurpleSyncFirstUseCases {
         System.out.println("FIRST_USE_R1R2=PASS");
     }
 
-    /** First use keeps obsolete carry artifacts beside the state it sets aside. */
+    /** Carry requires explicit recovery before first use can set aside its separate sync state. */
     static void carryLeftovers(File parent) throws Exception {
         for (PurpleSyncCore.FirstUseChoice answer : new PurpleSyncCore.FirstUseChoice[] { PurpleSyncCore.FirstUseChoice.Synced, PurpleSyncCore.FirstUseChoice.ThisDevice }) {
             Device old = new Device(parent, "first-use-carry-" + answer, "fixture-device-carry");
@@ -206,14 +206,46 @@ final class PurpleSyncFirstUseCases {
             check(firstUse(other, chat, PurpleSyncCore.FirstUseChoice.None, "carry: another space first").result == PurpleSyncFirstUse.Result.Published, "carry: the chat holds another space");
             old.use();
             String[] leftovers = { "carry.json", "carry-cache.json", "carry-objects", "carry-history" };
+            byte[] stateBefore;
+            byte[] bindingBefore = Files.readAllBytes(new File(old.sync(), "chat.json").toPath());
             try (PurpleAccountSyncStore store = old.env(MAGIC).store()) {
                 check(store.open(true, 1, old.id).status == PurpleAccountSyncStore.Status.Ready, "carry: the old state opens");
+                stateBefore = Files.readAllBytes(new File(old.sync(), "state.json").toPath());
                 for (String name : leftovers) {
                     File file = new File(old.sync(), name);
                     if (name.endsWith(".json")) write(file, "{}"); else directory(file);
                 }
-                check(store.setAside().status == PurpleAccountSyncStore.Status.Uninitialized, "carry: the state is set aside with its carry leftovers");
+                check(store.setAside().status == PurpleAccountSyncStore.Status.InvalidTransition, "carry: ordinary state set-aside refuses legacy leftovers");
+                for (String name : leftovers) check(new File(old.sync(), name).exists(), "carry: refused state set-aside retains " + name);
+                check(Arrays.equals(stateBefore, Files.readAllBytes(new File(old.sync(), "state.json").toPath())), "carry: refused state set-aside retains state bytes");
             }
+            PurpleSyncRunner recovery = new PurpleSyncRunner(1, 202, chat, old.frame.env(1), Runnable::run, Runnable::run);
+            try {
+                PurpleSyncRunner.Check shown = checked(recovery, "carry: explicit recovery Check");
+                check(shown.recoveryAction == PurpleSyncRunner.RecoveryAction.SetAsideOld, "carry: explicit recovery offers only old carry entries");
+                int checksBefore = chat.checks, writesBefore = chat.writes();
+                PurpleSyncRunner.RecoveryOutcome[] recovered = { null };
+                check(recovery.setAsideOld(shown, value -> recovered[0] = value) == PurpleSyncRunner.Start.Started, "carry: confirmed carry recovery starts");
+                check(recovered[0] != null && recovered[0].ok && recovered[0].next == null, "carry: confirmed carry recovery finishes without automatic recheck");
+                check(chat.checks == checksBefore && chat.writes() == writesBefore, "carry: set-aside itself uses no transport");
+            } finally { recovery.close(); }
+            check(Arrays.equals(stateBefore, Files.readAllBytes(new File(old.sync(), "state.json").toPath()))
+                    && Arrays.equals(bindingBefore, Files.readAllBytes(new File(old.sync(), "chat.json").toPath())), "carry: explicit recovery retains state and binding bytes");
+            java.util.Map<File, byte[]> collisions = new java.util.LinkedHashMap<>();
+            long collisionTime = System.currentTimeMillis();
+            for (int i = 0; i < 4; ++i) {
+                String stamp = new java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.ROOT).format(new java.util.Date(collisionTime + i * 1000L));
+                File folder = new File(old.sync(), "orphaned-" + stamp);
+                if (!folder.exists()) directory(folder);
+                File sentinel = new File(folder, "first-use-collision-sentinel");
+                write(sentinel, "retained collision " + i);
+                collisions.put(sentinel, Files.readAllBytes(sentinel.toPath()));
+            }
+            try (PurpleAccountSyncStore store = old.env(MAGIC).store()) {
+                check(store.open(true, 1, old.id).status == PurpleAccountSyncStore.Status.Ready, "carry: state still opens after explicit recovery");
+                check(store.setAside().status == PurpleAccountSyncStore.Status.Uninitialized, "carry: state set-aside succeeds beside existing same-second archives");
+            }
+            for (java.util.Map.Entry<File, byte[]> entry : collisions.entrySet()) check(Arrays.equals(entry.getValue(), Files.readAllBytes(entry.getKey().toPath())), "carry: state set-aside retains existing archive contents");
             for (String name : leftovers) check(!new File(old.sync(), name).exists(), "carry: " + name + " left the sync folder");
             check(old.archived() && new File(old.sync(), "chat.json").isFile(), "carry: the old state is archived, the binding stays");
             check(!PurpleAccountSyncStore.hasState(old.sync()), "carry: the folder holds no carry and no state");
