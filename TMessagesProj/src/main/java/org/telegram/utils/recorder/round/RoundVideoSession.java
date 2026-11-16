@@ -1444,7 +1444,7 @@ public final class RoundVideoSession {
 
     private void fail(@NonNull Exception error) {
         if (state == State.ERROR || state == State.RELEASED) return;
-        purpleProtectOriginal();
+        if (purpleOriginalOwner != null && writer != null) purpleOriginalOwner.failed(writer.getFile());
         diagnostics.error("fatal error in state=" + state, error);
         if (!cancelOutput(OutputInvalidationReason.ERROR)) return;
         disableCameraEffects();

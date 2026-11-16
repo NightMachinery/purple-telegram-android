@@ -1233,3 +1233,13 @@ unrecoverable rather than discarded. The snapshot registry fixture exercises
 errors before and during finalization with discard retention on and off, both
 in process and after reloading the manifest. This does not identify the cause
 of a particular camera or codec failure.
+
+A native failure protects the current writer identity before notifying UI or
+scheduling destructive cleanup, even for a take shorter than one minute. If the
+snapshot cannot be renamed, the worker can still copy through its held descriptor
+without the native remuxer truncating it first. Protection matches the exact
+file device and inode; it does not authorize a replacement file at that path.
+Ordinary short-take cancellation keeps its existing discard policy. The native
+failure fixture drives the real failure and truncate-before-unlink methods,
+injects snapshot-rename failure and checks exact bytes after worker handoff and
+manifest reload. Camera and codec endpoints remain controlled host stand-ins.

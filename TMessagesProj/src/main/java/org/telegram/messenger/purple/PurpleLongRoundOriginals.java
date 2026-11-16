@@ -25,6 +25,12 @@ public final class PurpleLongRoundOriginals {
         private Owner(String key, long[] target, PurpleMediaTrace.Take trace) { this.trace = trace; this.key = key; this.target = target == null ? null : target.clone(); }
         public void arm(File writer, long durationMs) {
             if (writer == null || durationMs <= PurpleLongRoundPlan.CIRCLE_MS) return;
+            protect(writer);
+        }
+        public void failed(File writer) {
+            if (writer != null) protect(writer);
+        }
+        private void protect(File writer) {
             try { writers.put(writer.getAbsolutePath(), android.system.Os.stat(writer.getAbsolutePath())); }
             catch (Exception missing) { PurpleDiagLog.event("recordings", "original_writer", PurpleDiagLog.reason("io_failed")); }
         }

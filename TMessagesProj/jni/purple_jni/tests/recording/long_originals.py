@@ -93,6 +93,9 @@ def durable(root, output, compiler, ports, native_case="all"):
         if name=='PurpleRecordingManifest':
             text=text.replace('        if (!temp.renameTo(target)) {','        DurableProbe.before(bytes);\n        if (!temp.renameTo(target)) {')
             text=text.replace('            throw new IOException("rename failed");\n        }','            throw new IOException("rename failed");\n        }\n        DurableProbe.after(bytes);')
+        if name=='PurpleRecordingSnapshotHandoff':
+            assert text.count('capture.media.renameTo(stop.destination)')==1
+            text=text.replace('capture.media.renameTo(stop.destination)', '(!DurableProbe.failRename && capture.media.renameTo(stop.destination))')
         put('org/telegram/messenger/purple/'+name+'.java',text)
     put('org/telegram/messenger/purple/PurpleCore.java','package org.telegram.messenger.purple;public class PurpleCore {public static void ensureLoaded(){}}')
     put('org/telegram/messenger/purple/PurpleRecordingSettings.java','package org.telegram.messenger.purple;public class PurpleRecordingSettings{public boolean keepAcrossChats,background;public static PurpleRecordingSettings read(){return new PurpleRecordingSettings();}}')
@@ -112,7 +115,7 @@ def durable(root, output, compiler, ports, native_case="all"):
     '''+keep+'}')
     put('org/telegram/messenger/purple/DurableProbe.java',r'''package org.telegram.messenger.purple;
       import java.io.*;import org.json.*;
-      public class DurableProbe {static boolean blockCopy,failCommit,failReservation;static File blocked;static int hits;
+      public class DurableProbe {static boolean blockCopy,failCommit,failReservation;public static boolean failRename;static File blocked;static int hits;
        static void before(byte[] bytes)throws IOException{String manifest=new String(bytes,java.nio.charset.StandardCharsets.UTF_8);if(failReservation&&manifest.contains("\"original_generation\"")&&!manifest.contains("\"snapshot_committed\":true")){hits++;throw new IOException("inert reservation failure");}if(failCommit&&new String(bytes,java.nio.charset.StandardCharsets.UTF_8).contains("\"snapshot_committed\":true")){hits++;throw new IOException("inert commit failure");}}
        static void after(byte[] bytes)throws IOException{try{if(!blockCopy)return;JSONObject root=new JSONObject(new String(bytes,java.nio.charset.StandardCharsets.UTF_8));JSONArray rows=root.getJSONArray("entries");for(int i=0;i<rows.length();i++){JSONObject row=rows.getJSONObject(i);if(row.has("original_generation")&&!row.optBoolean("snapshot_committed")){File bin=new File(PurpleRecordingRegistry.root,"bin");if(!bin.isDirectory()&&!bin.mkdirs())throw new IOException("inert bin setup");blocked=new File(bin,row.getString("id")+".mp4");if(!blocked.exists()&&!blocked.mkdir())throw new IOException();hits++;}}}catch(JSONException e){throw new IOException(e);}}
       }''')
@@ -200,10 +203,14 @@ def durable(root, output, compiler, ports, native_case="all"):
         '    private void finishCancellation(', '    private void deleteMediaFiles(',
         '    private void shutdownExecutors(', '    private void handleRecordingStopped(',
         '    private boolean cancelOutput(', '    public void purpleProtectOriginal('])+ '\n' + active_duration
+    error_reason=method((java/'messenger/purple/PurpleRecordingDock.java').read_text(),'    public static int roundErrorReason(')
     put('org/telegram/messenger/purple/NativeSessionCases.java',r'''package org.telegram.messenger.purple;
       import java.io.*;import java.nio.file.*;import java.util.*;import android.system.Os;
       public class NativeSessionCases {
        static int checks;
+       static class ErrorRoute {static boolean roundFinalizing(int account,int guid){return false;}
+    '''+error_reason+r'''
+       }
        static void check(boolean ok,String why){checks++;if(!ok)throw new AssertionError(why);}
        static class Tasks {final List<Runnable> jobs=new ArrayList<>();boolean closed;void execute(Runnable r){if(closed)throw new AssertionError("executor closed");jobs.add(r);}void post(Runnable r){execute(r);}void removeCallbacks(Object r){}void removeCallbacksAndMessages(Object r){}void shutdown(){closed=true;}void drain(){while(!jobs.isEmpty())jobs.remove(0).run();}}
        static class SystemClock {static long elapsedRealtime(){return 90000;}}
@@ -222,7 +229,7 @@ def durable(root, output, compiler, ports, native_case="all"):
         final Tasks mainHandler=new Tasks(),fileExecutor=new Tasks(),outputExecutor=new Tasks();final Camera cameraController=new Camera();final Diagnostics diagnostics=new Diagnostics();final OutputListener outputListener=new OutputListener();final Object durationLimitRunnable=new Object();
         PurpleLongRoundOriginals.Owner purpleOriginalOwner;PurpleRecordingSessions sessions;String key;long[] target;int reason=6,remuxes,completions,errors;final List<Runnable> handoff=new ArrayList<>();
         NativeSession(File f,int guid,PurpleRecordingSessions s,long[] t){writer=new RoundVideoMp4Writer(f);sessions=s;key="1:"+guid;target=t;purpleOriginalOwner=PurpleLongRoundOriginals.owner(1,guid);}
-        class Listener {void onError(Exception e){errors++;PurpleRecordingSnapshotHandoff.stop(sessions,key,reason,target,(task,delay)->handoff.add(task));}}
+        class Listener {void onError(Exception e){errors++;reason=ErrorRoute.roundErrorReason(1,7);PurpleRecordingSnapshotHandoff.stop(sessions,key,reason,target,(task,delay)->handoff.add(task));}}
         final Listener listener=new Listener();
         void disableCameraEffects(){}void releasePlayer(){}void logSummary(String s){}void setState(State s){state=s;}void requireMainThread(){}void createPreviewSnapshot(){throw new AssertionError("no preview in active test");}
         static long elapsedMs(long start){return 0;}static Exception asException(Exception e){return e;}void ensureNotCancelled()throws IOException{if(cancelRequested)throw new IOException("cancelled");}
@@ -251,8 +258,25 @@ def durable(root, output, compiler, ports, native_case="all"):
        }
        static void shortError()throws Exception{
         NativeSession n=setup("native-short-error",23);n.recordingStartedAtRealtimeMs=60000;n.fail(new IOException("inert short error"));n.fileExecutor.drain();for(Runnable r:n.handoff)r.run();
-        check(DurableCases.restart(PurpleRecordingRegistry.root).bin().isEmpty(),"short keep-off native error still discards");
+        PurpleRecordingStore recovered=DurableCases.restart(PurpleRecordingRegistry.root);check(recovered.bin().size()==1,"short native error is retained independently of deliberate discard policy");check(!recovered.bin().get(0).discarded,"native error is not a user discard");check(Arrays.equals(DurableCases.full,Files.readAllBytes(new File(recovered.bin().get(0).media).toPath())),"short error retains exact media");
         check(n.cameraController.releases==1,"short native error still releases hardware");
+       }
+       static void failedRename(boolean pending)throws Exception{
+        NativeSession n=setup("native-rename-failed-"+pending,pending?29:28);File source=n.writer.getFile();n.recordingStartedAtRealtimeMs=55000;n.cameraController.pending=pending;
+        DurableProbe.failRename=true;
+        try{
+         n.fail(new IOException("inert encoder error"));if(pending)n.handleRecordingStopped();n.fileExecutor.drain();n.outputExecutor.drain();
+         check(source.isFile()&&Arrays.equals(DurableCases.full,Files.readAllBytes(source.toPath())),"native failure cleanup preserves short writer bytes when snapshot rename fails");
+         check(n.cameraController.releases==1&&n.writer.closed==1,"failed rename does not retain hardware resources");
+         for(Runnable task:n.handoff)task.run();
+         PurpleRecordingStore recovered=DurableCases.restart(PurpleRecordingRegistry.root);
+         check(recovered.bin().size()==1&&!recovered.bin().get(0).discarded,"failed rename keeps one error owner");
+         check(Arrays.equals(DurableCases.full,Files.readAllBytes(new File(recovered.bin().get(0).media).toPath())),"worker fallback preserves every byte after native cleanup");
+        }finally{DurableProbe.failRename=false;}
+       }
+       static void ordinaryShortCleanup()throws Exception{
+        NativeSession n=setup("ordinary-short-cancel",30);File source=n.writer.getFile();n.recordingStartedAtRealtimeMs=55000;n.purpleProtectOriginal();NativeErase.erase(source);
+        check(!source.exists(),"short ordinary cleanup remains outside error protection");
        }
        static void initialFailure(boolean audio,boolean overCap)throws Exception{
         NativeSession n=setup("native-admission-"+audio+"-"+overCap,audio?24:25);File original=n.writer.getFile();n.state=State.FINISHING;n.recordedDurationMs=75000;n.reason=7;if(overCap){n.maximumDurationMs=60000;n.recordedDurationMs=60000;}
@@ -289,7 +313,7 @@ def durable(root, output, compiler, ports, native_case="all"):
        }
        public static void main(String[] args)throws Exception{
         DurableCases.full=Files.readAllBytes(Path.of(args[0]));DurableCases.root=new File(args[1],"start");DurableCases.root.mkdirs();String which=args[2];
-        if(which.equals("error")||which.equals("all")){nativeError(false);nativeError(true);shortError();}
+        if(which.equals("error")||which.equals("all")){nativeError(false);nativeError(true);shortError();failedRename(false);failedRename(true);ordinaryShortCleanup();}
         if(which.equals("admission")||which.equals("all")){initialFailure(false,false);initialFailure(true,true);reservedCopyFailure();repeatedAdmission();}
         System.out.println("LONG_ROUND_NATIVE_OWNERSHIP_CHECKS="+checks);
        }
