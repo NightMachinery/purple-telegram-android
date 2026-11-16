@@ -719,6 +719,14 @@ Desktop builds rounds from FFmpeg packets (`RoundVideoRecorder::Private`, `av_in
 
 ### The Recording bin
 
+Android reuses the stock `SeekBarView` accessibility delegate and the audio
+player's `Minutes`, `Seconds` and `AccDescrPlayerDuration` localized resources.
+Its spoken elapsed and total positions use those units while the compact visible
+time labels stay numeric. The progress value also follows an accessibility seek.
+The trash menu item uses the localized Clear bin label. Screen-reader traversal
+and stock light/dark/RTL comparisons require a current application pass.
+
+
 - **Where.** Android: a "Recording bin" row in Purple settings opens `ui/PurpleRecordingBinActivity.java`. Desktop:
   a "Recording bin" button in the Purple "Media recording" group opens a box (`purple/purple_recording_bin_box.{h,cpp}`).
   The row shows a count when the bin is not empty.

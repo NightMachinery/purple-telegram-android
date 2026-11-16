@@ -92,7 +92,12 @@ public final class PurpleRecordingBinRow extends LinearLayout {
                 elapsed.setText(time((long) (fraction * duration())));
             }
             @Override public void onSeekBarPressed(boolean pressed) { dragging = pressed; }
-            @Override public CharSequence getContentDescription() { return LocaleController.formatString(R.string.AccDescrPlayerDuration, elapsed.getText(), total.getText()); }
+            @Override public CharSequence getContentDescription() {
+                long duration = duration();
+                long position = (long) (seek.getProgress() * duration);
+                return LocaleController.formatString(R.string.AccDescrPlayerDuration,
+                        spokenTime(position), spokenTime(duration));
+            }
         });
         controls.addView(toggle, LayoutHelper.createLinear(48, 48));
         controls.addView(seek, LayoutHelper.createLinear(0, 48, 1f));
@@ -172,6 +177,11 @@ public final class PurpleRecordingBinRow extends LinearLayout {
         return player != null && player.getDuration() > 0 ? player.getDuration() : Math.max(1, entry.durationMs);
     }
     private static String time(long ms) { return AndroidUtilities.formatShortDuration((int) (Math.max(0, ms) / 1000)); }
+    private static String spokenTime(long ms) {
+        int seconds = (int) Math.min(Integer.MAX_VALUE, Math.max(0, ms) / 1000);
+        return LocaleController.formatPluralString("Minutes", seconds / 60) + ' '
+                + LocaleController.formatPluralString("Seconds", seconds % 60);
+    }
     private void label(boolean playing) {
         toggle.setPlaying(playing);
         toggle.setContentDescription(LocaleController.getString(playing ? R.string.AccActionPause : R.string.AccActionPlay));
