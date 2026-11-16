@@ -122,3 +122,9 @@ also compile against both actual Android API variants. The automatic fixture's
 strict class-origin guard requires the coherent AGP build; mixed direct-compile
 classes do not satisfy it. Current full application and device/UI qualification
 remain required, and a successful file move does not itself start synchronization.
+
+Carry discovery first checks the sync folder with the existing metadata-only
+physical marker. A missing folder has no carry inventory and retains the normal
+first Join path. An existing unreadable or unsafe folder still blocks recovery
+discovery; it is never treated as empty. The first-file regression uses the
+actual runner, recovery model and native binding/Join checks.

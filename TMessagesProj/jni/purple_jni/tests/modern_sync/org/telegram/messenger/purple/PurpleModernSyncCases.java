@@ -193,6 +193,7 @@ public final class PurpleModernSyncCases {
     static void missingCases(File parent)throws Exception{
         Frame frame=new Frame(parent,"first-file",false);Env env=frame.env(1);String space=frame.newSpace();frame.clouds[1].remote(REMOTE,space,1);
         PurpleSyncRunner runner=env.runner();PurpleSyncRunner.Check shown=fresh(runner);check(shown.local.status==PurpleSyncSettingsFile.Status.Absent&&!shown.local.usingLastGood,"missing B is explicit absent, not A fallback");
+        check(shown.recoveryAction==PurpleSyncRunner.RecoveryAction.None&&shown.carryNotice==PurpleSyncRunner.CarryNotice.None,"absent sync directory permits ordinary first Join without carry recovery");
         PurpleSyncRunner.ApplyOutcome outcome=apply(runner,shown,remote(shown).key);
         check(outcome.result.status==PurpleSyncCore.ApplyStatus.Applied&&outcome.result.joined&&outcome.result.wroteFile,"Join safely creates first B file with owned directory receipts");
         check(Arrays.equals(REMOTE,Files.readAllBytes(frame.settings(1).toPath())),"first B file exact");

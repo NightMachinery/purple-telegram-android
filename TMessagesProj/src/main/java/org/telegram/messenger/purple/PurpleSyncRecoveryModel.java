@@ -230,6 +230,8 @@ final class PurpleSyncRecoveryModel {
     }
     /** Lists this account's own sync folder and lstats its top-level entries; reads no entry. Null without carry. */
     private Carry carryInventory() throws Exception {
+        PurpleGlobalChoiceFiles.Mark root=tree.physical.mark(sync,true);
+        if(root.missing())return null;
         String[] names=PurpleSyncRecoveryFiles.names(sync);
         boolean any=false;
         for(String name:names)if(PurpleAccountSyncStore.legacyArtifactName(name))any=true;
@@ -237,7 +239,6 @@ final class PurpleSyncRecoveryModel {
         // WHY: names-only snapshots of the folder's parent and ancestry, so the action can prove the same
         // directories. The sync folder itself and every carry entry get lstat marks only, never a Snapshot.
         tree.capture(sync.getParentFile(),true);
-        PurpleGlobalChoiceFiles.Mark root=tree.physical.mark(sync,true);
         java.util.TreeMap<String,Entry> entries=new java.util.TreeMap<>(),others=new java.util.TreeMap<>();
         boolean safe=!root.missing();
         int found=0;
