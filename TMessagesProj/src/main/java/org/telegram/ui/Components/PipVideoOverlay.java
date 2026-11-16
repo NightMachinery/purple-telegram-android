@@ -1108,8 +1108,10 @@ public class PipVideoOverlay implements IPipSourceDelegate {
             }
             if (photoViewerWebView != null) {
                 if (photoViewerWebView.isPlaying()) {
+                    org.telegram.messenger.purple.PurpleSleepTimer.get().explicitPause(org.telegram.messenger.purple.PurpleSleepTimerRules.Slot.VIEWER);
                     photoViewerWebView.pauseVideo();
                 } else {
+                    org.telegram.messenger.purple.PurpleSleepTimer.get().explicitPlay(org.telegram.messenger.purple.PurpleSleepTimerRules.Slot.VIEWER);
                     photoViewerWebView.playVideo();
                 }
             } else {
@@ -1118,8 +1120,10 @@ public class PipVideoOverlay implements IPipSourceDelegate {
                     return;
                 }
                 if (videoPlayer.isPlaying()) {
+                    org.telegram.messenger.purple.PurpleSleepTimer.get().explicitPause(org.telegram.messenger.purple.PurpleSleepTimerRules.Slot.VIEWER);
                     videoPlayer.pause();
                 } else {
+                    org.telegram.messenger.purple.PurpleSleepTimer.get().explicitPlay(org.telegram.messenger.purple.PurpleSleepTimerRules.Slot.VIEWER);
                     videoPlayer.play();
                 }
             }

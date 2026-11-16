@@ -28,6 +28,7 @@ import androidx.collection.LongSparseArray;
 
 import org.telegram.SQLite.SQLiteCursor;
 import org.telegram.messenger.audioinfo.AudioInfo;
+import org.telegram.messenger.purple.PurpleSleepTimerSession;
 import org.telegram.tgnet.NativeByteBuffer;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.LaunchActivity;
@@ -87,6 +88,8 @@ public class TelegramMediaSession {
     private final LongSparseArray<ArrayList<MessageObject>> musicObjects = new LongSparseArray<>();
     private final LongSparseArray<ArrayList<MediaSessionCompat.QueueItem>> musicQueues = new LongSparseArray<>();
     private final LongSparseArray<ArrayList<Runnable>> pendingMusicLoads = new LongSparseArray<>();
+    // Purple: see PurpleSleepTimerSession#defer
+    private final PurpleSleepTimerSession purpleSleep = new PurpleSleepTimerSession();
 
     private Paint roundPaint;
     private RectF bitmapRect;
@@ -131,6 +134,7 @@ public class TelegramMediaSession {
     }
 
     private void onAccountSwitched() {
+        purpleSleep.replace();
         currentAccount = UserConfig.selectedAccount;
         lastSelectedDialog = AndroidUtilities.getPrefIntOrLong(
                 MessagesController.getNotificationsSettings(currentAccount), "auto_lastSelectedDialog", 0);
@@ -185,6 +189,7 @@ public class TelegramMediaSession {
     }
 
     public void release() {
+        purpleSleep.replace();
         if (session != null) {
             session.release();
         }
@@ -613,6 +618,7 @@ public class TelegramMediaSession {
 
         @Override
         public void onPlay() {
+            if (purpleSleep.play(mediaId -> onPlayFromMediaId(mediaId, null))) return;
             MessageObject messageObject = MediaController.getInstance().getPlayingMessageObject();
             if (messageObject == null) {
                 if (lastSelectedDialog != 0) {
@@ -700,12 +706,12 @@ public class TelegramMediaSession {
 
         @Override
         public void onPrepareFromMediaId(String mediaId, Bundle extras) {
-            onPlayFromMediaId(mediaId, extras);
+            purpleSleep.prepare(() -> onPlayFromMediaId(mediaId, extras));
         }
 
         @Override
         public void onPrepareFromSearch(String query, Bundle extras) {
-            onPlayFromSearch(query, extras);
+            purpleSleep.prepare(() -> onPlayFromSearch(query, extras));
         }
 
         @Override
@@ -718,7 +724,7 @@ public class TelegramMediaSession {
                 int id = Integer.parseInt(args[1]);
                 ArrayList<MessageObject> arrayList = musicObjects.get(did);
                 if (arrayList == null) {
-                    loadMusicForDialog(did, () -> onPlayFromMediaId(mediaId, extras));
+                    loadMusicForDialog(did, purpleSleep.defer(() -> onPlayFromMediaId(mediaId, extras)));
                     return;
                 }
                 ArrayList<MediaSessionCompat.QueueItem> queueList = musicQueues.get(did);
@@ -726,7 +732,7 @@ public class TelegramMediaSession {
                 lastSelectedDialog = did;
                 MessagesController.getNotificationsSettings(currentAccount).edit()
                         .putLong("auto_lastSelectedDialog", did).apply();
-                MediaController.getInstance().setPlaylist(arrayList, arrayList.get(id), 0, false, null);
+                if (purpleSleep.select(mediaId)) MediaController.getInstance().setPlaylist(arrayList, arrayList.get(id), 0, false, null);
                 session.setQueue(queueList);
                 if (DialogObject.isUserDialog(did)) {
                     TLRPC.User user = users.get(did);

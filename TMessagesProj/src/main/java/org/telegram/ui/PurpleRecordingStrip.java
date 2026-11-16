@@ -45,6 +45,7 @@ public final class PurpleRecordingStrip {
     private int color;
     private TextView back;
     private TextView forward;
+    private PurpleSleepTimerUI.Button sleep;
     private boolean audio;
     private final java.util.Map<View, Integer> stockVisibility = new java.util.HashMap<>();
     private final java.util.Map<View, android.widget.FrameLayout.LayoutParams> stockBounds = new java.util.HashMap<>();
@@ -103,9 +104,12 @@ public final class PurpleRecordingStrip {
             final Context context = strip.getContext();
             back = button(context, -1);
             forward = button(context, 1);
+            sleep = new PurpleSleepTimerUI.Button(context, resourcesProvider, true, org.telegram.messenger.purple.PurpleSleepTimerRules.Slot.AUDIO);
+            strip.addView(sleep, LayoutHelper.createFrame(BUTTON_DP, BUTTON_DP, Gravity.TOP | Gravity.LEFT));
             strip.addView(forward, LayoutHelper.createFrame(BUTTON_DP, BUTTON_DP, Gravity.TOP | Gravity.LEFT));
             strip.addView(back, LayoutHelper.createFrame(BUTTON_DP, BUTTON_DP, Gravity.TOP | Gravity.LEFT));
         }
+        if (sleep != null) sleep.surface(audio && !docked());
         if (back != null) {
             back.setVisibility(audio && !docked() ? View.VISIBLE : View.GONE);
             forward.setVisibility(back.getVisibility());
@@ -121,6 +125,7 @@ public final class PurpleRecordingStrip {
     public void measure(int width, View title, View play, View close, View speed, boolean sideMenu) {
         if (!audio || back == null) return;
         final boolean recording = docked();
+        if (sleep != null) sleep.surface(!recording);
         back.setVisibility(recording ? View.GONE : View.VISIBLE);
         forward.setVisibility(back.getVisibility());
         recordingVisibility(recording, title, play, close, speed);
@@ -134,10 +139,11 @@ public final class PurpleRecordingStrip {
         final int touch = dp(BUTTON_DP);
         final int stock = dp(36);
         final PurplePlayerStripLayout bounds = new PurplePlayerStripLayout(width, touch, stock,
-                sideMenu ? dp(64) : 0, LocaleController.isRTL, visible(play), visible(close), visible(speed));
+                sideMenu ? dp(64) : 0, LocaleController.isRTL, visible(play), visible(close), visible(speed), visible(sleep));
         place(play, bounds.playLeft, touch, touch);
         place(close, bounds.closeLeft, stock, touch);
         if (speed != null) place(speed, bounds.speedLeft, stock, touch);
+        if (sleep != null) place(sleep, bounds.sleepLeft, touch, touch);
         place(back, bounds.backLeft, touch, touch);
         place(forward, bounds.forwardLeft, touch, touch);
         title.setPadding(0, 0, 0, 0);

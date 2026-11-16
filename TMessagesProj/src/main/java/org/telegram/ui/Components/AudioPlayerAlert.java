@@ -168,6 +168,7 @@ public class AudioPlayerAlert extends BottomSheet implements NotificationCenter.
     private boolean slidingSpeed;
     private ActionBarMenuSubItem[] speedItems = new ActionBarMenuSubItem[6];
     private TextView durationTextView;
+    private org.telegram.ui.PurpleSleepTimerUI.Button purpleSleepButton;
     private ActionBarMenuItem repeatButton;
     private ActionBarMenuSubItem repeatSongItem;
     private ActionBarMenuSubItem repeatListItem;
@@ -539,6 +540,7 @@ public class AudioPlayerAlert extends BottomSheet implements NotificationCenter.
                 if (playbackSpeedButton != null && durationTextView != null) {
                     int x = durationTextView.getLeft() - dp(4) - playbackSpeedButton.getMeasuredWidth();
                     playbackSpeedButton.layout(x, playbackSpeedButton.getTop(), x + playbackSpeedButton.getMeasuredWidth(), playbackSpeedButton.getBottom());
+                    org.telegram.ui.PurpleSleepTimerUI.layoutBeside(purpleSleepButton, playbackSpeedButton);
                 }
             }
         };
@@ -750,6 +752,8 @@ public class AudioPlayerAlert extends BottomSheet implements NotificationCenter.
             return true;
         });
         updatePlaybackButton(false);
+        purpleSleepButton = new org.telegram.ui.PurpleSleepTimerUI.Button(context, resourcesProvider, false, org.telegram.messenger.purple.PurpleSleepTimerRules.Slot.AUDIO);
+        playerLayout.addView(purpleSleepButton, LayoutHelper.createFrame(36, 36, Gravity.TOP | Gravity.RIGHT, 0, 86, 56, 0));
 
         FrameLayout bottomView = new FrameLayout(context) {
             @Override
@@ -970,7 +974,7 @@ public class AudioPlayerAlert extends BottomSheet implements NotificationCenter.
                 return;
             }
             if (MediaController.getInstance().isMessagePaused()) {
-                MediaController.getInstance().playMessage(MediaController.getInstance().getPlayingMessageObject());
+                org.telegram.messenger.purple.PurpleSleepTimerAudio.transportPlay(MediaController.getInstance());
             } else {
                 MediaController.getInstance().pauseMessage(MediaController.getInstance().getPlayingMessageObject());
             }
@@ -2207,6 +2211,7 @@ public class AudioPlayerAlert extends BottomSheet implements NotificationCenter.
     }
 
     private void checkIfMusicDownloaded(MessageObject messageObject) {
+        if (org.telegram.ui.PurpleSleepTimerUI.heldSongControls(messageObject, progressView, seekBarView, playButton)) return;
         File cacheFile = null;
         if (messageObject.messageOwner.attachPath != null && messageObject.messageOwner.attachPath.length() > 0) {
             cacheFile = new File(messageObject.messageOwner.attachPath);
@@ -2297,9 +2302,11 @@ public class AudioPlayerAlert extends BottomSheet implements NotificationCenter.
             titleTextView.setText(title);
             authorTextView.setText(author);
 
-            final MessagesController.SavedMusicIds musicIds = MessagesController.getInstance(currentAccount).getSavedMusicIds();
-            saveToProfileButton.setLoading(musicIds.loading);
-            setVisibleInProfile(musicIds.ids.contains(docId));
+            if (!org.telegram.ui.PurpleSleepTimerUI.localOnlyUpdate()) {
+                final MessagesController.SavedMusicIds musicIds = MessagesController.getInstance(currentAccount).getSavedMusicIds();
+                saveToProfileButton.setLoading(musicIds.loading);
+                setVisibleInProfile(musicIds.ids.contains(docId));
+            }
 
             int duration = lastDuration = (int) messageObject.getDuration();
 
@@ -2320,6 +2327,7 @@ public class AudioPlayerAlert extends BottomSheet implements NotificationCenter.
     }
 
     private void updateCover(MessageObject messageObject, boolean animated) {
+        if (org.telegram.ui.PurpleSleepTimerUI.localOnlyUpdate()) return;
         final BackupImageView imageView = animated ? coverContainer.getNextImageView() : coverContainer.getImageView();
         final AudioInfo audioInfo = MediaController.getInstance().getAudioInfo();
         if (animated) {
@@ -2363,6 +2371,7 @@ public class AudioPlayerAlert extends BottomSheet implements NotificationCenter.
     }
 
     private void preloadNeighboringThumbs() {
+        if (org.telegram.ui.PurpleSleepTimerUI.localOnlyUpdate()) return;
         final MediaController mediaController = MediaController.getInstance();
         final List<MessageObject> playlist = mediaController.getPlaylist();
         if (playlist.size() <= 1) {

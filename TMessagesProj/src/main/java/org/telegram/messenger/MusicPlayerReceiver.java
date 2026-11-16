@@ -32,13 +32,13 @@ public class MusicPlayerReceiver extends BroadcastReceiver {
                 case KeyEvent.KEYCODE_HEADSETHOOK:
                 case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
                     if (MediaController.getInstance().isMessagePaused()) {
-                        MediaController.getInstance().playMessage(MediaController.getInstance().getPlayingMessageObject());
+                        org.telegram.messenger.purple.PurpleSleepTimerAudio.transportPlay(MediaController.getInstance());
                     } else {
                         MediaController.getInstance().pauseMessage(MediaController.getInstance().getPlayingMessageObject());
                     }
                     break;
                 case KeyEvent.KEYCODE_MEDIA_PLAY:
-                    MediaController.getInstance().playMessage(MediaController.getInstance().getPlayingMessageObject());
+                    org.telegram.messenger.purple.PurpleSleepTimerAudio.transportPlay(MediaController.getInstance());
                     break;
                 case KeyEvent.KEYCODE_MEDIA_PAUSE:
                     MediaController.getInstance().pauseMessage(MediaController.getInstance().getPlayingMessageObject());
@@ -55,7 +55,7 @@ public class MusicPlayerReceiver extends BroadcastReceiver {
         } else {
             switch (intent.getAction()) {
                 case MusicPlayerService.NOTIFY_PLAY:
-                    MediaController.getInstance().playMessage(MediaController.getInstance().getPlayingMessageObject());
+                    org.telegram.messenger.purple.PurpleSleepTimerAudio.transportPlay(MediaController.getInstance());
                     break;
                 case MusicPlayerService.NOTIFY_PAUSE:
                 case android.media.AudioManager.ACTION_AUDIO_BECOMING_NOISY:

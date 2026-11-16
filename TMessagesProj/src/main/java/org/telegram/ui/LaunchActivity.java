@@ -6850,6 +6850,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
     @Override
     protected void onPause() {
+        org.telegram.messenger.purple.PurpleSleepTimer.get().foreground(false);
         super.onPause();
         isResumed = false;
         pipActivityHandler.onPause();
@@ -7092,6 +7093,8 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     @Override
     protected void onResume() {
         super.onResume();
+        org.telegram.ui.PurpleSleepTimerUI.installFeedback();
+        org.telegram.messenger.purple.PurpleSleepTimer.get().foreground(true);
         PurpleLastSeenTrade.start();
         isResumed = true;
         pipActivityHandler.onResume();

@@ -122,7 +122,7 @@ public class MusicPlayerService extends Service implements NotificationCenter.No
             mediaSession.setCallback(new MediaSessionCompat.Callback() {
                 @Override
                 public void onPlay() {
-                    MediaController.getInstance().playMessage(MediaController.getInstance().getPlayingMessageObject());
+                    org.telegram.messenger.purple.PurpleSleepTimerAudio.transportPlay(MediaController.getInstance());
                 }
 
                 @Override
@@ -847,6 +847,7 @@ public class MusicPlayerService extends Service implements NotificationCenter.No
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
         if (id == NotificationCenter.messagePlayingPlayStateChanged) {
+            if (org.telegram.messenger.purple.PurpleSleepTimerAudio.updateLocalTransport(MediaController.getInstance(), this::updatePlaybackState)) return;
             MessageObject messageObject = MediaController.getInstance().getPlayingMessageObject();
             if (messageObject != null) {
                 createNotification(messageObject, false);

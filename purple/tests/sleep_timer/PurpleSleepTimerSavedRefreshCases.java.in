@@ -1,0 +1,229 @@
+// Template for the source-bound Saved Music refresh fixture. run_sleep_timer.py replaces
+// every //@EXTRACT line with the named member copied from the production source, then
+// compiles the result with the real PurpleSleepTimerRules. The classes here only supply
+// inert stock endpoints and test-only fields; the timer facade, Audio classification and
+// the MediaController refresh fallback are production text.
+package org.telegram.messenger.purple.savedrefresh;
+
+import org.telegram.messenger.purple.PurpleSleepTimerRules;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.EnumMap;
+import java.util.Map;
+import java.util.WeakHashMap;
+import java.util.function.BooleanSupplier;
+import static org.telegram.messenger.purple.PurpleSleepTimerRules.*;
+
+final class SystemClock {
+    static long now = 1_000_000L;
+    static long elapsedRealtime() { return now; }
+}
+
+final class SharedConfig { static boolean shuffleMusic; }
+
+final class NotificationCenter {
+    static final int moreMusicDidLoad = 1;
+    private static final NotificationCenter INSTANCE = new NotificationCenter();
+    int posts;
+    static NotificationCenter getInstance(int account) { return INSTANCE; }
+    void postNotificationName(int id, Object... args) { posts++; }
+}
+
+final class VideoPlayer {}
+
+final class MessageObject {
+    static final class Document { final long id; Document(long id) { this.id = id; } }
+    final int currentAccount, id;
+    final long dialog;
+    final Document document;
+    float audioProgress;
+    MessageObject(int account, long dialog, int id, long document) {
+        currentAccount = account;
+        this.dialog = dialog;
+        this.id = id;
+        this.document = new Document(document);
+    }
+    Document getDocument() { return document; }
+    boolean isMusic() { return true; }
+    boolean isRoundVideo() { return false; }
+    boolean isVoice() { return false; }
+    boolean isVideo() { return false; }
+    long getDialogId() { return dialog; }
+    int getId() { return id; }
+}
+
+final class PurpleSleepTimer {
+    //@EXTRACT timer public interface Port {
+    //@EXTRACT timer public static final int STARTED = 1, CHANGED = 2, CANCELLED = 3, EXPIRED = 4, NOTHING = 5;
+    //@EXTRACT timer public interface Feedback { void show(int event); }
+    //@EXTRACT timer private static final class Entry {
+
+    private static PurpleSleepTimer instance = new PurpleSleepTimer();
+    static PurpleSleepTimer get() { return instance; }
+    static void reset() { instance = new PurpleSleepTimer(); }
+
+    final PurpleSleepTimerRules rules = new PurpleSleepTimerRules();
+    private final EnumMap<Slot, Entry> entries = new EnumMap<>(Slot.class);
+    private final Map<VideoPlayer, Entry> registered = java.util.Collections.synchronizedMap(new WeakHashMap<>());
+    private Feedback feedback;
+    private boolean foreground, pendingExpiryToast, checking;
+    private int localPauseDepth;
+
+    // Inert endpoints: no Looper on the host, and no wakeup or listener scheduling.
+    private static void main() {}
+    private void publish() {
+        for (Entry entry : new ArrayList<>(entries.values())) entry.port.refreshReceipt();
+    }
+
+    //@EXTRACT timer public static Item item(MessageObject message) {
+    //@EXTRACT timer public Item current(Slot slot) { return rules.current(slot); }
+    //@EXTRACT timer public Ticket ticket(Slot slot) { return rules.ticket(slot); }
+    //@EXTRACT timer public boolean blocked(Slot slot) { return rules.blocked(slot); }
+    //@EXTRACT timer public void attach(Slot slot, Item item, boolean eligible, VideoPlayer player, Port port) {
+    //@EXTRACT timer private void attach(Slot slot, Item item, boolean eligible, VideoPlayer player, Port port, Object authority) {
+    //@EXTRACT timer public void detach(Ticket ticket) {
+    //@EXTRACT timer public void check() {
+    //@EXTRACT timer private void expire(Item endedSong, Port voiceFinish) {
+    //@EXTRACT timer public boolean localPause() { return localPauseDepth != 0; }
+    //@EXTRACT timer public boolean automatic(Ticket ticket) {
+    //@EXTRACT timer public void explicitPlay(Slot slot) {
+    //@EXTRACT timer public boolean takePendingAdvance(Item item, boolean explicitItemPlay) {
+    //@EXTRACT timer private void refreshTickets() {
+    //@EXTRACT timer private void tell(int event) { if (feedback != null) feedback.show(event); }
+}
+
+final class PurpleSleepTimerAudio implements PurpleSleepTimer.Port {
+    private final MediaController controller;
+    private final PurpleSleepTimer timer = PurpleSleepTimer.get();
+    private int replacing, automatic;
+    private boolean restoring;
+    private Ticket download;
+    private VideoPlayer player;
+    private static MessageObject heldSong;
+    PurpleSleepTimerAudio(MediaController controller) { this.controller = controller; }
+
+    //@EXTRACT audio public boolean play(MessageObject message, BooleanSupplier stock) {
+    //@EXTRACT audio public boolean autoPlay(MessageObject message, Ticket request) {
+    //@EXTRACT audio public Ticket capture() { return timer.ticket(Slot.AUDIO); }
+    //@EXTRACT audio @Override public boolean playing() {
+    //@EXTRACT audio @Override public void fenceAutomaticResumes() { controller.purpleSleepFence(); }
+    //@EXTRACT audio @Override public void pauseLocal() { controller.purpleSleepPauseLocal(); }
+    //@EXTRACT audio @Override public void finishVoiceLocally() { controller.purpleSleepFinishVoice(); }
+    // Inert: END mode, which asks for eligibility, is not exercised here.
+    @Override public boolean eligibleEnd() { return false; }
+}
+
+final class MediaController {
+    static final class SavedMusicList { final ArrayList<MessageObject> list = new ArrayList<>(); }
+    final ArrayList<MessageObject> playlist = new ArrayList<>();
+    final ArrayList<MessageObject> shuffledPlaylist = new ArrayList<>();
+    int currentPlaylistNum;
+    MessageObject playingMessageObject;
+    SavedMusicList currentSavedMusicList;
+    PurpleSleepTimerAudio purpleSleep;
+    boolean resumeAudioOnFocusGain, wasPlayingAudioBeforePause;
+    // Observable stock state: whether the inert stock player is audible, and how often it was started.
+    boolean isPaused = true, audible;
+    int starts, cleanups;
+
+    void musicListLoaded(Object[] args) {
+        //@EXTRACT media if (currentSavedMusicList != null && args[0] == currentSavedMusicList) {
+    }
+    //@EXTRACT media public boolean playMessage(final MessageObject messageObject) {
+    //@EXTRACT media public boolean playMessage(final MessageObject messageObject, boolean silent) {
+    //@EXTRACT media public void purpleSleepFence() {
+
+    // Inert stock endpoints.
+    private boolean purpleSleepPlayMessage(MessageObject messageObject, boolean silent) {
+        playingMessageObject = messageObject;
+        isPaused = false;
+        audible = true;
+        starts++;
+        return true;
+    }
+    public void purpleSleepPauseLocal() { isPaused = true; audible = false; }
+    public void purpleSleepFinishVoice() {}
+    public MessageObject getPlayingMessageObject() { return playingMessageObject; }
+    public boolean isMessagePaused() { return isPaused; }
+    public boolean seekToProgress(MessageObject message, float progress) { return true; }
+    private void sortPlaylist() {}
+    private void buildShuffledPlayList() {}
+    public void cleanup() { cleanups++; playingMessageObject = null; isPaused = true; audible = false; }
+}
+
+public final class PurpleSleepTimerSavedRefreshCases {
+    private static int checks;
+    private static void check(boolean condition, String name) {
+        checks++;
+        if (!condition) throw new AssertionError(name);
+    }
+    private static MessageObject song(int id) { return new MessageObject(0, 7000, id, 9000 + id); }
+
+    private static final class Harness {
+        final MediaController controller = new MediaController();
+        final MediaController.SavedMusicList saved = new MediaController.SavedMusicList();
+        final PurpleSleepTimer timer;
+        Harness(MessageObject... songs) {
+            PurpleSleepTimer.reset();
+            timer = PurpleSleepTimer.get();
+            controller.purpleSleep = new PurpleSleepTimerAudio(controller);
+            controller.currentSavedMusicList = saved;
+            saved.list.addAll(Arrays.asList(songs));
+            controller.playlist.addAll(saved.list);
+        }
+        void refresh(MessageObject... songs) {
+            saved.list.clear();
+            saved.list.addAll(Arrays.asList(songs));
+            controller.musicListLoaded(new Object[]{saved});
+        }
+        void startTimer() { check(timer.rules.timed(SystemClock.now, MINUTE), "fixture starts a one-minute timer"); }
+        void elapse() { SystemClock.now += MINUTE; }
+        boolean blocked() { return timer.blocked(Slot.AUDIO); }
+    }
+
+    public static void main(String[] args) {
+        final MessageObject s1 = song(1), s2 = song(2), s3 = song(3);
+
+        Harness healthy = new Harness(s1, s2, s3);
+        check(healthy.controller.playMessage(s2) && healthy.controller.audible
+                && healthy.controller.playingMessageObject == s2, "user Play starts the selected song");
+        healthy.refresh(s1, s3);
+        check(healthy.controller.audible && healthy.controller.playingMessageObject == s1
+                && healthy.controller.starts == 2, "healthy refresh keeps the stock automatic fallback");
+        check(!healthy.blocked(), "healthy fallback leaves automatic playback allowed");
+
+        Harness expired = new Harness(s1, s2, s3);
+        check(expired.controller.playMessage(s2), "user Play before the timer");
+        expired.controller.resumeAudioOnFocusGain = expired.controller.wasPlayingAudioBeforePause = true;
+        expired.startTimer();
+        expired.elapse();
+        expired.timer.check();
+        check(!expired.controller.audible && expired.controller.isPaused && expired.blocked(), "timed expiry pauses locally and blocks");
+        check(!expired.controller.resumeAudioOnFocusGain && !expired.controller.wasPlayingAudioBeforePause, "expiry fences stock resumes");
+        expired.refresh(s1, s3);
+        check(!expired.controller.audible && expired.controller.starts == 1, "refresh missing the paused song stays silent");
+        check(expired.blocked(), "refresh does not grant Play");
+        check(expired.controller.playingMessageObject == s2 && expired.controller.isPaused
+                && PurpleSleepTimer.item(s2).equals(expired.timer.current(Slot.AUDIO)), "paused selection is retained");
+        check(expired.controller.playlist.equals(Arrays.asList(s1, s3)), "the refreshed list is still adopted");
+        expired.refresh(s3);
+        check(!expired.controller.audible && expired.blocked() && expired.controller.starts == 1, "repeated refresh stays silent");
+        expired.refresh(s1, s2, s3);
+        check(!expired.controller.audible && expired.blocked() && expired.controller.currentPlaylistNum == 1, "refresh that restores the song only reindexes");
+        check(expired.controller.playMessage(s1) && expired.controller.audible
+                && expired.controller.playingMessageObject == s1 && !expired.blocked(), "deliberate user Play grants a new intent");
+        expired.refresh(s2, s3);
+        check(expired.controller.audible && expired.controller.playingMessageObject == s2 && expired.controller.starts == 3,
+                "after user Play the fallback is automatic again");
+
+        Harness due = new Harness(s1, s2, s3);
+        check(due.controller.playMessage(s2), "user Play before an unchecked deadline");
+        due.startTimer();
+        due.elapse();
+        due.refresh(s1, s3);
+        check(!due.controller.audible && due.blocked() && due.controller.playingMessageObject == s2,
+                "a deadline that passed unchecked expires before the fallback");
+
+        System.out.println("SLEEP_TIMER_SAVED_REFRESH_CHECKS=" + checks);
+    }
+}

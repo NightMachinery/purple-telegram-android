@@ -274,7 +274,7 @@ public class VideoPlayer implements Player.Listener, VideoListener, AnalyticsLis
             } else if (surfaceView != null) {
                 player.setVideoSurfaceView(surfaceView);
             }
-            player.setPlayWhenReady(autoplay);
+            player.setPlayWhenReady(autoplay && org.telegram.messenger.purple.PurpleSleepTimer.get().beforeStart(this));
             player.setRepeatMode(looping ? ExoPlayer.REPEAT_MODE_ALL : ExoPlayer.REPEAT_MODE_OFF);
         }
         if (mixedAudio) {
@@ -292,7 +292,7 @@ public class VideoPlayer implements Player.Listener, VideoListener, AnalyticsLis
                         }
                     }
                 });
-                audioPlayer.setPlayWhenReady(autoplay);
+                audioPlayer.setPlayWhenReady(autoplay && org.telegram.messenger.purple.PurpleSleepTimer.get().beforeStart(this));
             }
         }
     }
@@ -1422,6 +1422,7 @@ public class VideoPlayer implements Player.Listener, VideoListener, AnalyticsLis
     }
 
     public void play() {
+        if (!org.telegram.messenger.purple.PurpleSleepTimer.get().beforeStart(this)) return;
         mixedPlayWhenReady = true;
         if (mixedAudio) {
             if (!audioPlayerReady || !videoPlayerReady) {
@@ -1473,6 +1474,7 @@ public class VideoPlayer implements Player.Listener, VideoListener, AnalyticsLis
     }
 
     public void setPlayWhenReady(boolean playWhenReady) {
+        if (playWhenReady && !org.telegram.messenger.purple.PurpleSleepTimer.get().beforeStart(this)) playWhenReady = false;
         mixedPlayWhenReady = playWhenReady;
         if (playWhenReady && mixedAudio) {
             if (!audioPlayerReady || !videoPlayerReady) {
@@ -1679,7 +1681,9 @@ public class VideoPlayer implements Player.Listener, VideoListener, AnalyticsLis
 
     @Override
     public void onPlayerError(PlaybackException error) {
+        final org.telegram.messenger.purple.PurpleSleepTimer.Deferred purpleSleepRetry = org.telegram.messenger.purple.PurpleSleepTimer.get().defer(this);
         AndroidUtilities.runOnUIThread(() -> {
+            if (!org.telegram.messenger.purple.PurpleSleepTimer.get().allowDeferred(this, purpleSleepRetry)) return;
             Throwable cause = error.getCause();
             if (cause instanceof MediaCodecDecoderException) {
                 if (cause.toString().contains("av1") || cause.toString().contains("av01")) {
@@ -1778,7 +1782,7 @@ public class VideoPlayer implements Player.Listener, VideoListener, AnalyticsLis
         boolean playWhenReady = player.getPlayWhenReady();
         int playbackState = player.getPlaybackState();
         if (lastReportedPlayWhenReady != playWhenReady || lastReportedPlaybackState != playbackState) {
-            delegate.onStateChanged(playWhenReady, playbackState);
+            org.telegram.messenger.purple.PurpleSleepTimer.get().dispatchState(this, () -> delegate.onStateChanged(playWhenReady, playbackState));
             lastReportedPlayWhenReady = playWhenReady;
             lastReportedPlaybackState = playbackState;
         }

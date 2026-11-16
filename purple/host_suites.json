@@ -1132,6 +1132,27 @@
         "folder-navigation:FOLDER_NAVIGATION_CHECKS": 60
       },
       "coverage": "Current complete selection/projection/navigation helpers and literal native tab, bind, refresh, swipe preparation and completion bodies over inert UI/account ports. Actual application Java compiles in the AGP gates; actual event loop and phone behavior are separate."
+    },
+    {
+      "name": "sleep-timer",
+      "driver": "purple/tests/run_sleep_timer.py",
+      "args": [
+        "--output",
+        "{output}"
+      ],
+      "phases": [
+        "compile",
+        "run"
+      ],
+      "coverage": "Actual dependency-free production sleep timer rules, captured stale end events, same-item timer replacement, manual and automatic transport, seek and Pause intent, saved song identity and preparation-free model adoption. Does not qualify Android adapters, Media3, device playback or Doze. Also exercises typed gallery/embed process-local identity and saved-song native-retirement ordering/recursion/failure rules, without Android adapter execution. Source-extracted timer facade, Audio intent classification and actual Saved Music refresh fallback run over inert stock player endpoints; timed expiry, repeated refresh, selection retention and deliberate Play. Production deferred Play receipts run on both slots. Source-extracted media session callbacks, the session prepare/lazy-load helper and chat timestamp scheduling run over inert storage, player, viewer and UI-queue endpoints: silent prepare then Play of the prepared target, loads finishing after expiry or Pause, later requests, account switch and session release, repeated callbacks, timer extension, and voice/round/video timestamps. These checks do not establish Android playback. Also executes the production embedded-port identity and finite-evidence contract.",
+      "expects": {
+        "rules:SLEEP_TIMER_RULES": 135,
+        "saved-refresh:SLEEP_TIMER_SAVED_REFRESH_CHECKS": 18,
+        "play-request:SLEEP_TIMER_PLAY_REQUEST_CHECKS": 55,
+        "deferred:SLEEP_TIMER_SESSION_CHECKS": 59,
+        "deferred:SLEEP_TIMER_TIMESTAMP_CHECKS": 52,
+        "embedded-port:EMBEDDED_PORT_CHECKS": 18
+      }
     }
   ]
 }

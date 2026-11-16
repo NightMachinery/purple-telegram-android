@@ -71,6 +71,9 @@ documents without those attributes can be excluded even when named MP3 or M4A.
 
 ### Media playback
 
+Sleep timer behavior and current qualification limits are documented in
+[Sleep timer](docs/sleep-timer.md).
+
 The design is [docs/media-design.md](docs/media-design.md) (F1-F3 on Android).
 
 **Double-tap restarts.** Double-tap a playing or paused voice message's play

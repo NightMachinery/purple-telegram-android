@@ -16276,13 +16276,13 @@ public class ChatActivity extends BaseFragment implements
                 if (startFromVideoTimestamp >= 0 && fragmentOpened && !chatListView.isFastScrollAnimationRunning() && startFromVideoMessageId == messageObject.getId() && (messageObject.isVideo() || messageObject.isRoundVideo() || messageObject.isVoice() || messageObject.isMusic())) {
                     messageObject.forceSeekTo = startFromVideoTimestamp / (float) messageObject.getDuration();
                     MessageObject finalMessage = messageObject;
-                    AndroidUtilities.runOnUIThread(() -> {
+                    AndroidUtilities.runOnUIThread(org.telegram.messenger.purple.PurpleSleepTimer.get().deferPlay(finalMessage, () -> {
                         if (finalMessage.isVideo()) {
                             openPhotoViewerForMessage(null, finalMessage);
                         } else {
                             MediaController.getInstance().playMessage(finalMessage);
                         }
-                    }, 40);
+                    }), 40);
                     startFromVideoTimestamp = -1;
                 }
 

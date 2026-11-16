@@ -34,6 +34,7 @@ public class ScreenReceiver extends BroadcastReceiver {
             ConnectionsManager.getInstance(UserConfig.selectedAccount).setAppPaused(false, true);
             ApplicationLoader.isScreenOn = true;
         }
+        org.telegram.messenger.purple.PurpleSleepTimer.get().check();
         NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.screenStateChanged);
     }
 }

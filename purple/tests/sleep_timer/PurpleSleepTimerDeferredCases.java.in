@@ -1,0 +1,696 @@
+// Template for the source-bound deferred Play fixture. run_sleep_timer.py replaces every
+// //@EXTRACT line with the named member copied from production source, then compiles the
+// result with the real PurpleSleepTimerRules. The session callbacks, the lazy-load and
+// prepare helper, the timestamp scheduling block, the timer facade, Audio classification
+// and MediaController.playMessage are production text. The classes here supply only inert
+// platform endpoints (storage loads, the stock player, the viewer and the UI queue).
+package org.telegram.messenger.purple.deferred;
+
+import org.telegram.messenger.purple.PurpleSleepTimerRules;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.EnumMap;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.WeakHashMap;
+import java.util.function.BooleanSupplier;
+import static org.telegram.messenger.purple.PurpleSleepTimerRules.*;
+
+final class SystemClock {
+    static long now = 1_000_000L;
+    static long elapsedRealtime() { return now; }
+}
+
+final class VideoPlayer {}
+final class Bundle {}
+
+final class TextUtils {
+    static boolean isEmpty(CharSequence text) { return text == null || text.length() == 0; }
+}
+
+final class FileLog {
+    static final ArrayList<Throwable> errors = new ArrayList<>();
+    static void e(Throwable error) { errors.add(error); }
+}
+
+final class UserConfig { static int selectedAccount; }
+
+final class DialogObject {
+    static boolean isUserDialog(long did) { return did > 0; }
+}
+
+final class ContactsController {
+    static String formatName(String first, String last) { return first + " " + last; }
+}
+
+final class TLRPC {
+    static final class User { String first_name, last_name; }
+    static final class Chat { String title; }
+}
+
+final class LongSparseArray<E> {
+    private final HashMap<Long, E> values = new HashMap<>();
+    E get(long key) { return values.get(key); }
+    void put(long key, E value) { values.put(key, value); }
+    void remove(long key) { values.remove(key); }
+    void clear() { values.clear(); }
+}
+
+final class Prefs {
+    static final Map<String, Long> stored = new HashMap<>();
+    final class Editor {
+        Editor putLong(String key, long value) { stored.put(key, value); return this; }
+        void apply() {}
+    }
+    Editor edit() { return new Editor(); }
+}
+
+final class MessagesController {
+    static Prefs getNotificationsSettings(int account) { return new Prefs(); }
+}
+
+final class AndroidUtilities {
+    static final ArrayList<Runnable> queued = new ArrayList<>();
+    static final ArrayList<Long> delays = new ArrayList<>();
+    static long getPrefIntOrLong(Prefs prefs, String key, long fallback) {
+        final Long value = Prefs.stored.get(key);
+        return value == null ? fallback : value;
+    }
+    static void runOnUIThread(Runnable runnable, long delay) { queued.add(runnable); delays.add(delay); }
+    static void drain() {
+        final ArrayList<Runnable> due = new ArrayList<>(queued);
+        queued.clear();
+        delays.clear();
+        for (Runnable runnable : due) runnable.run();
+    }
+}
+
+final class MediaSessionCompat {
+    static final class QueueItem {}
+    List<QueueItem> queue;
+    CharSequence title;
+    boolean released;
+    void setQueue(List<QueueItem> value) { queue = value; }
+    void setQueueTitle(CharSequence value) { title = value; }
+    void release() { released = true; }
+}
+
+final class MessageObject {
+    static final class Document { final long id; Document(long id) { this.id = id; } }
+    final int currentAccount, id;
+    final long dialog;
+    final Document document;
+    final char kind;
+    float audioProgress, forceSeekTo = -1;
+    MessageObject(int account, long dialog, int id, char kind) {
+        currentAccount = account;
+        this.dialog = dialog;
+        this.id = id;
+        this.kind = kind;
+        document = new Document(dialog * 1000 + id);
+    }
+    Document getDocument() { return document; }
+    boolean isMusic() { return kind == 'm'; }
+    boolean isRoundVideo() { return kind == 'r'; }
+    boolean isVoice() { return kind == 'v'; }
+    boolean isVideo() { return kind == 'f'; }
+    double getDuration() { return 100; }
+    long getDialogId() { return dialog; }
+    int getId() { return id; }
+}
+
+final class PurpleSleepTimer {
+    //@EXTRACT timer public interface Port {
+    //@EXTRACT timer public static final int STARTED = 1, CHANGED = 2, CANCELLED = 3, EXPIRED = 4, NOTHING = 5;
+    //@EXTRACT timer public interface Feedback { void show(int event); }
+    //@EXTRACT timer private static final class Entry {
+
+    private static PurpleSleepTimer instance = new PurpleSleepTimer();
+    static PurpleSleepTimer get() { return instance; }
+    static void reset() { instance = new PurpleSleepTimer(); }
+
+    final PurpleSleepTimerRules rules = new PurpleSleepTimerRules();
+    private final EnumMap<Slot, Entry> entries = new EnumMap<>(Slot.class);
+    private final Map<VideoPlayer, Entry> registered = java.util.Collections.synchronizedMap(new WeakHashMap<>());
+    private Feedback feedback;
+    private boolean foreground, pendingExpiryToast, checking;
+    private int localPauseDepth;
+
+    // Inert endpoints: no Looper on the host, and no wakeup or listener scheduling.
+    private static void main() {}
+    private void publish() {
+        for (Entry entry : new ArrayList<>(entries.values())) entry.port.refreshReceipt();
+    }
+
+    //@EXTRACT timer public static Item item(MessageObject message) {
+    //@EXTRACT timer public Item current(Slot slot) { return rules.current(slot); }
+    //@EXTRACT timer public Ticket ticket(Slot slot) { return rules.ticket(slot); }
+    //@EXTRACT timer public boolean blocked(Slot slot) { return rules.blocked(slot); }
+    //@EXTRACT timer public void attach(Slot slot, Item item, boolean eligible, VideoPlayer player, Port port) {
+    //@EXTRACT timer private void attach(Slot slot, Item item, boolean eligible, VideoPlayer player, Port port, Object authority) {
+    //@EXTRACT timer public void detach(Ticket ticket) {
+    //@EXTRACT timer public void check() {
+    //@EXTRACT timer private void expire(Item endedSong, Port voiceFinish) {
+    //@EXTRACT timer public boolean localPause() { return localPauseDepth != 0; }
+    //@EXTRACT timer public boolean automatic(Ticket ticket) {
+    //@EXTRACT timer public void explicitPlay(Slot slot) {
+    //@EXTRACT timer public void explicitPause(Slot slot) {
+    //@EXTRACT timer public PlayRequest requestPlay(Slot slot) {
+    //@EXTRACT timer public boolean acceptPlay(PlayRequest request) {
+    //@EXTRACT timer public Runnable deferPlay(MessageObject message, Runnable stock) {
+    //@EXTRACT timer public boolean takePendingAdvance(Item item, boolean explicitItemPlay) {
+    //@EXTRACT timer private void refreshTickets() {
+    //@EXTRACT timer private void tell(int event) { if (feedback != null) feedback.show(event); }
+}
+
+final class PurpleSleepTimerAudio implements PurpleSleepTimer.Port {
+    private final MediaController controller;
+    private final PurpleSleepTimer timer = PurpleSleepTimer.get();
+    private int replacing, automatic;
+    private boolean restoring;
+    private Ticket download;
+    private VideoPlayer player;
+    private static MessageObject heldSong;
+    PurpleSleepTimerAudio(MediaController controller) { this.controller = controller; }
+
+    //@EXTRACT audio public boolean play(MessageObject message, BooleanSupplier stock) {
+    //@EXTRACT audio public void pauseRequested() {
+    //@EXTRACT audio public boolean autoPlay(MessageObject message, Ticket request) {
+    //@EXTRACT audio public Ticket capture() { return timer.ticket(Slot.AUDIO); }
+    //@EXTRACT audio @Override public boolean playing() {
+    //@EXTRACT audio @Override public void fenceAutomaticResumes() { controller.purpleSleepFence(); }
+    //@EXTRACT audio @Override public void pauseLocal() { controller.purpleSleepPauseLocal(); }
+    //@EXTRACT audio @Override public void finishVoiceLocally() { controller.purpleSleepFinishVoice(); }
+    // Inert: END mode, which asks for eligibility, is not exercised here.
+    @Override public boolean eligibleEnd() { return false; }
+}
+
+final class MediaController {
+    private static MediaController instance;
+    static MediaController getInstance() { return instance; }
+    static MediaController reset() {
+        instance = new MediaController();
+        instance.purpleSleep = new PurpleSleepTimerAudio(instance);
+        return instance;
+    }
+    final ArrayList<MessageObject> playlist = new ArrayList<>();
+    MessageObject playingMessageObject;
+    PurpleSleepTimerAudio purpleSleep;
+    boolean resumeAudioOnFocusGain, wasPlayingAudioBeforePause;
+    // Observable stock state: whether the inert stock player is audible, and how often it was started.
+    boolean isPaused = true, audible;
+    int starts;
+
+    //@EXTRACT media public boolean playMessage(final MessageObject messageObject) {
+    //@EXTRACT media public boolean playMessage(final MessageObject messageObject, boolean silent) {
+    //@EXTRACT media public void purpleSleepFence() {
+
+    // Inert stock endpoints. Stock setPlaylist ends by calling playMessage(current) for a new list;
+    // stock pauseMessage starts with the production purpleSleep.pauseRequested() hook.
+    public boolean setPlaylist(ArrayList<MessageObject> messages, MessageObject current, long mergeDialogId, boolean loadMusic, Object params) {
+        playlist.clear();
+        playlist.addAll(messages);
+        return playMessage(current);
+    }
+    public boolean pauseMessage(MessageObject messageObject) {
+        purpleSleep.pauseRequested();
+        if (messageObject == null || messageObject != playingMessageObject) return false;
+        isPaused = true;
+        audible = false;
+        return true;
+    }
+    private boolean purpleSleepPlayMessage(MessageObject messageObject, boolean silent) {
+        playingMessageObject = messageObject;
+        isPaused = false;
+        audible = true;
+        starts++;
+        return true;
+    }
+    public void purpleSleepPauseLocal() { isPaused = true; audible = false; }
+    public void purpleSleepFinishVoice() {}
+    public MessageObject getPlayingMessageObject() { return playingMessageObject; }
+    public boolean isMessagePaused() { return isPaused; }
+    public boolean seekToProgress(MessageObject message, float progress) { return true; }
+}
+
+final class PurpleSleepTimerSession {
+    //@EXTRACT helper public interface Target { void play(String mediaId); }
+    //@EXTRACT helper private static final class Command {
+    //@EXTRACT helper private static final class Prepared {
+    //@EXTRACT helper private final PurpleSleepTimer timer = PurpleSleepTimer.get();
+    //@EXTRACT helper private long generation;
+    //@EXTRACT helper private Command latest, entering;
+    //@EXTRACT helper private Prepared prepared;
+    //@EXTRACT helper public void prepare(Runnable stock) {
+    //@EXTRACT helper public Runnable defer(Runnable stock) {
+    //@EXTRACT helper public boolean select(String mediaId) {
+    //@EXTRACT helper public boolean play(Target target) {
+    //@EXTRACT helper public void replace() {
+    //@EXTRACT helper private Command supersede(boolean play) {
+    //@EXTRACT helper private boolean unchanged(Ticket before) {
+    //@EXTRACT helper private void run(Command command, Runnable stock) {
+}
+
+final class TelegramMediaSession {
+    final MediaSessionCompat session = new MediaSessionCompat();
+    int currentAccount = UserConfig.selectedAccount;
+    long lastSelectedDialog;
+    boolean chatsLoaded, loadingChats;
+    final ArrayList<Long> dialogs = new ArrayList<>();
+    final LongSparseArray<TLRPC.User> users = new LongSparseArray<>();
+    final LongSparseArray<TLRPC.Chat> chats = new LongSparseArray<>();
+    final LongSparseArray<ArrayList<MessageObject>> musicObjects = new LongSparseArray<>();
+    final LongSparseArray<ArrayList<MediaSessionCompat.QueueItem>> musicQueues = new LongSparseArray<>();
+    final LongSparseArray<ArrayList<Runnable>> pendingMusicLoads = new LongSparseArray<>();
+    //@EXTRACT session private final PurpleSleepTimerSession purpleSleep = new PurpleSleepTimerSession();
+    final SessionCallback callback = new SessionCallback();
+
+    //@EXTRACT session private void onAccountSwitched() {
+    //@EXTRACT session public void release() {
+    void switchAccount(int account) {
+        UserConfig.selectedAccount = account;
+        onAccountSwitched();
+    }
+
+    // Inert storage load: the stock pending-callback bookkeeping and its UI-thread completion,
+    // without the storage queue or database. finish() mirrors the stock completion order.
+    static final class Load {
+        final long did;
+        final int account;
+        Load(long did, int account) { this.did = did; this.account = account; }
+    }
+    final ArrayList<Load> loads = new ArrayList<>();
+    final ArrayList<Runnable> continuations = new ArrayList<>();
+    private void loadMusicForDialog(long did, Runnable onLoaded) {
+        if (onLoaded != null) continuations.add(onLoaded);
+        ArrayList<Runnable> callbacks = pendingMusicLoads.get(did);
+        if (callbacks != null) {
+            if (onLoaded != null) callbacks.add(onLoaded);
+            return;
+        }
+        callbacks = new ArrayList<>();
+        if (onLoaded != null) callbacks.add(onLoaded);
+        pendingMusicLoads.put(did, callbacks);
+        loads.add(new Load(did, currentAccount));
+    }
+    void finish(Load load, ArrayList<MessageObject> list) {
+        loads.remove(load);
+        if (load.account != currentAccount) return;
+        final ArrayList<MediaSessionCompat.QueueItem> queue = new ArrayList<>();
+        for (int i = 0; i < list.size(); i++) queue.add(new MediaSessionCompat.QueueItem());
+        musicObjects.put(load.did, list);
+        musicQueues.put(load.did, queue);
+        final ArrayList<Runnable> loaded = pendingMusicLoads.get(load.did);
+        pendingMusicLoads.remove(load.did);
+        if (loaded != null) for (int i = 0; i < loaded.size(); i++) loaded.get(i).run();
+    }
+
+    final class SessionCallback {
+        //@EXTRACT session public void onPlay() {
+        //@EXTRACT session public void onPause() {
+        //@EXTRACT session public void onPrepareFromMediaId(String mediaId, Bundle extras) {
+        //@EXTRACT session public void onPrepareFromSearch(String query, Bundle extras) {
+        //@EXTRACT session public void onPlayFromMediaId(String mediaId, Bundle extras) {
+        //@EXTRACT session public void onPlayFromSearch(String query, Bundle extras) {
+    }
+}
+
+final class ChatActivity {
+    static final class ListView { boolean fastScroll; boolean isFastScrollAnimationRunning() { return fastScroll; } }
+    final ListView chatListView = new ListView();
+    int startFromVideoTimestamp = -1, startFromVideoMessageId;
+    boolean fragmentOpened = true;
+
+    // Inert viewer: it records the opening and stands in for the viewer's verified USER_OPEN grant.
+    final ArrayList<MessageObject> opened = new ArrayList<>();
+    float openedSeek = -1;
+    final Viewer viewer = new Viewer();
+    static final class Viewer implements PurpleSleepTimer.Port {
+        boolean audible;
+        @Override public boolean eligibleEnd() { return false; }
+        @Override public boolean playing() { return audible; }
+        @Override public void fenceAutomaticResumes() {}
+        @Override public void pauseLocal() { audible = false; }
+        @Override public void finishVoiceLocally() {}
+    }
+    void openPhotoViewerForMessage(Object cell, MessageObject message) {
+        opened.add(message);
+        openedSeek = message.forceSeekTo;
+        PurpleSleepTimer.get().attach(Slot.VIEWER, PurpleSleepTimer.item(message), true, null, viewer);
+        PurpleSleepTimer.get().explicitPlay(Slot.VIEWER);
+        viewer.audible = true;
+    }
+
+    void visible(MessageObject messageObject) {
+        //@EXTRACT chat if (startFromVideoTimestamp >= 0 && fragmentOpened
+    }
+
+    void link(MessageObject message, int seconds) {
+        startFromVideoTimestamp = seconds;
+        startFromVideoMessageId = message.getId();
+    }
+}
+
+public final class PurpleSleepTimerDeferredCases {
+    private static int checks;
+    private static void check(boolean condition, String name) {
+        checks++;
+        if (!condition) throw new AssertionError(name);
+    }
+
+    static final long ADA = 100, RADIO = -200;
+    static MessageObject song(long dialog, int id) { return new MessageObject(0, dialog, id, 'm'); }
+    static ArrayList<MessageObject> list(long dialog, int count) {
+        final ArrayList<MessageObject> result = new ArrayList<>();
+        for (int i = 0; i < count; i++) result.add(song(dialog, i));
+        return result;
+    }
+
+    static final class Harness {
+        final PurpleSleepTimer timer;
+        final MediaController controller;
+        final TelegramMediaSession media;
+        final TelegramMediaSession.SessionCallback cb;
+        final ArrayList<MessageObject> ada = list(ADA, 3), radio = list(RADIO, 2);
+        Harness(boolean loaded) {
+            PurpleSleepTimer.reset();
+            Prefs.stored.clear();
+            AndroidUtilities.queued.clear();
+            AndroidUtilities.delays.clear();
+            UserConfig.selectedAccount = 0;
+            timer = PurpleSleepTimer.get();
+            controller = MediaController.reset();
+            media = new TelegramMediaSession();
+            cb = media.callback;
+            final TLRPC.User user = new TLRPC.User();
+            user.first_name = "Ada";
+            user.last_name = "Lovelace";
+            media.users.put(ADA, user);
+            final TLRPC.Chat chat = new TLRPC.Chat();
+            chat.title = "Night Radio";
+            media.chats.put(-RADIO, chat);
+            media.dialogs.addAll(Arrays.asList(ADA, RADIO));
+            if (loaded) {
+                media.finish(new TelegramMediaSession.Load(ADA, 0), ada);
+                media.finish(new TelegramMediaSession.Load(RADIO, 0), radio);
+            }
+        }
+        TelegramMediaSession.Load load(long did) {
+            for (TelegramMediaSession.Load load : media.loads) if (load.did == did) return load;
+            throw new AssertionError("no pending load for " + did);
+        }
+        void finish(long did) { media.finish(load(did), did == ADA ? ada : radio); }
+        void startTimer() { check(timer.rules.timed(SystemClock.now, MINUTE), "fixture starts a one-minute timer"); }
+        void elapse() { SystemClock.now += MINUTE; }
+        void expire() { startTimer(); elapse(); timer.check(); }
+        boolean blocked() { return timer.blocked(Slot.AUDIO); }
+        boolean playing(MessageObject message) { return controller.audible && controller.playingMessageObject == message; }
+        boolean silentOn(MessageObject message, int starts) {
+            return !controller.audible && controller.playingMessageObject == message && controller.starts == starts;
+        }
+        // A song already in the player, started by deliberate in-app Play.
+        void inApp(MessageObject message) { check(controller.playMessage(message) && playing(message), "in-app Play starts a song"); }
+    }
+
+    static void session() {
+        FileLog.errors.clear();
+        Harness loaded = new Harness(true);
+        loaded.cb.onPlayFromMediaId(ADA + "_1", null);
+        check(loaded.playing(loaded.ada.get(1)) && loaded.controller.starts == 1, "loaded Play from media id plays the target");
+        check("Ada Lovelace".equals(loaded.media.session.title) && loaded.media.lastSelectedDialog == ADA
+                && Long.valueOf(ADA).equals(Prefs.stored.get("auto_lastSelectedDialog")), "loaded Play keeps queue title and selection");
+
+        Harness empty = new Harness(false);
+        empty.cb.onPlayFromMediaId(ADA + "_1", null);
+        check(empty.controller.starts == 0 && empty.media.loads.size() == 1, "lazy Play waits for its load");
+        empty.finish(ADA);
+        check(empty.playing(empty.ada.get(1)), "lazy Play from an empty player plays after the load");
+        empty.media.continuations.get(0).run();
+        check(empty.controller.starts == 1, "a repeated continuation plays nothing");
+
+        Harness expiry = new Harness(false);
+        expiry.inApp(expiry.radio.get(0));
+        expiry.cb.onPlayFromMediaId(ADA + "_1", null);
+        expiry.expire();
+        check(expiry.silentOn(expiry.radio.get(0), 1) && expiry.blocked(), "expiry pauses while the load is pending");
+        expiry.finish(ADA);
+        check(expiry.silentOn(expiry.radio.get(0), 1) && expiry.blocked(), "a load completing after expiry stays silent");
+        check(expiry.media.musicObjects.get(ADA) == expiry.ada, "the stock load still stores the list");
+        expiry.cb.onPlayFromMediaId(ADA + "_2", null);
+        check(expiry.playing(expiry.ada.get(2)) && !expiry.blocked(), "deliberate Play after expiry works");
+
+        Harness unchecked = new Harness(false);
+        unchecked.inApp(unchecked.radio.get(0));
+        unchecked.cb.onPlayFromMediaId(ADA + "_1", null);
+        unchecked.startTimer();
+        unchecked.elapse();
+        unchecked.finish(ADA);
+        check(unchecked.silentOn(unchecked.radio.get(0), 1) && unchecked.blocked(), "a deadline that passed unchecked expires before completion");
+
+        Harness paused = new Harness(false);
+        paused.inApp(paused.radio.get(0));
+        paused.cb.onPlayFromMediaId(ADA + "_1", null);
+        paused.cb.onPause();
+        check(paused.silentOn(paused.radio.get(0), 1), "session Pause pauses the current song");
+        paused.finish(ADA);
+        check(paused.silentOn(paused.radio.get(0), 1), "a load completing after Pause stays silent");
+
+        Harness later = new Harness(false);
+        later.cb.onPlayFromMediaId(ADA + "_1", null);
+        later.cb.onPlayFromMediaId(RADIO + "_1", null);
+        later.finish(RADIO);
+        check(later.playing(later.radio.get(1)), "the later request plays");
+        later.finish(ADA);
+        check(later.playing(later.radio.get(1)) && later.controller.starts == 1, "the earlier request cannot complete afterwards");
+        Harness earlier = new Harness(false);
+        earlier.cb.onPlayFromMediaId(ADA + "_1", null);
+        earlier.cb.onPlayFromMediaId(RADIO + "_1", null);
+        earlier.finish(ADA);
+        check(earlier.controller.starts == 0, "an older load finishing first plays nothing");
+        earlier.finish(RADIO);
+        check(earlier.playing(earlier.radio.get(1)), "the newer request still plays");
+        Harness shared = new Harness(false);
+        shared.cb.onPlayFromMediaId(ADA + "_1", null);
+        shared.cb.onPlayFromMediaId(ADA + "_2", null);
+        check(shared.media.loads.size() == 1, "two requests share the stock load");
+        shared.finish(ADA);
+        check(shared.playing(shared.ada.get(2)) && shared.controller.starts == 1, "only the later request on a shared load plays");
+        Harness direct = new Harness(false);
+        direct.media.finish(new TelegramMediaSession.Load(RADIO, 0), direct.radio);
+        direct.cb.onPlayFromMediaId(ADA + "_1", null);
+        direct.inApp(direct.radio.get(0));
+        direct.finish(ADA);
+        check(direct.playing(direct.radio.get(0)) && direct.controller.starts == 1, "an in-app Play revokes the pending session Play");
+
+        Harness account = new Harness(false);
+        account.cb.onPlayFromMediaId(ADA + "_1", null);
+        final TelegramMediaSession.Load stale = account.load(ADA);
+        account.media.switchAccount(1);
+        account.media.switchAccount(0);
+        account.media.finish(stale, account.ada);
+        account.media.continuations.get(0).run();
+        check(account.controller.starts == 0, "an account switch revokes the pending Play, even back to the same account");
+        account.cb.onPlayFromMediaId(ADA + "_1", null);
+        check(account.playing(account.ada.get(1)), "a new Play after the switch works");
+
+        Harness released = new Harness(false);
+        released.cb.onPlayFromMediaId(ADA + "_1", null);
+        released.media.release();
+        released.finish(ADA);
+        check(released.media.session.released && released.controller.starts == 0, "session release revokes the pending Play");
+
+        Harness extended = new Harness(false);
+        extended.inApp(extended.radio.get(0));
+        extended.startTimer();
+        extended.cb.onPlayFromMediaId(ADA + "_1", null);
+        check(extended.timer.rules.add(SystemClock.now, MINUTE), "timer extends during the load");
+        extended.finish(ADA);
+        check(extended.playing(extended.ada.get(1)), "timer extension keeps the user's Play");
+        extended.cb.onPlayFromMediaId(RADIO + "_1", null);
+        extended.timer.rules.cancel();
+        extended.finish(RADIO);
+        check(extended.playing(extended.radio.get(1)), "timer cancellation keeps the user's Play");
+
+        Harness prepare = new Harness(true);
+        prepare.inApp(prepare.radio.get(0));
+        prepare.expire();
+        prepare.cb.onPrepareFromMediaId(ADA + "_1", null);
+        check(prepare.silentOn(prepare.radio.get(0), 1) && prepare.blocked(), "prepare by media id stays silent and fenced");
+        check(prepare.media.lastSelectedDialog == ADA && "Ada Lovelace".equals(prepare.media.session.title)
+                && prepare.media.session.queue == prepare.media.musicQueues.get(ADA), "prepare selects the dialog, queue and title");
+        prepare.cb.onPlay();
+        check(prepare.playing(prepare.ada.get(1)) && !prepare.blocked(), "a later Play plays the prepared target");
+
+        Harness lazyPrepare = new Harness(false);
+        lazyPrepare.media.finish(new TelegramMediaSession.Load(RADIO, 0), lazyPrepare.radio);
+        lazyPrepare.inApp(lazyPrepare.radio.get(0));
+        lazyPrepare.cb.onPause();
+        lazyPrepare.cb.onPrepareFromMediaId(ADA + "_2", null);
+        lazyPrepare.finish(ADA);
+        check(lazyPrepare.silentOn(lazyPrepare.radio.get(0), 1) && lazyPrepare.media.lastSelectedDialog == ADA, "a lazily loaded prepare stays silent");
+        lazyPrepare.cb.onPlay();
+        check(lazyPrepare.playing(lazyPrepare.ada.get(2)), "Play after a lazy prepare plays the prepared target");
+
+        Harness during = new Harness(false);
+        during.media.finish(new TelegramMediaSession.Load(RADIO, 0), during.radio);
+        during.inApp(during.radio.get(0));
+        during.cb.onPause();
+        during.cb.onPrepareFromMediaId(ADA + "_2", null);
+        during.cb.onPlay();
+        check(during.silentOn(during.radio.get(0), 1), "Play during a prepare's load does not resume the old song");
+        during.finish(ADA);
+        check(during.playing(during.ada.get(2)), "the prepared target plays once its load arrives");
+
+        Harness duringExpiry = new Harness(false);
+        duringExpiry.media.finish(new TelegramMediaSession.Load(RADIO, 0), duringExpiry.radio);
+        duringExpiry.inApp(duringExpiry.radio.get(0));
+        duringExpiry.cb.onPrepareFromMediaId(ADA + "_2", null);
+        duringExpiry.cb.onPlay();
+        duringExpiry.expire();
+        duringExpiry.finish(ADA);
+        check(duringExpiry.silentOn(duringExpiry.radio.get(0), 1) && duringExpiry.blocked()
+                && duringExpiry.media.lastSelectedDialog == ADA, "expiry revokes that Play but keeps the silent selection");
+        duringExpiry.cb.onPlay();
+        check(duringExpiry.playing(duringExpiry.ada.get(2)), "a new Play then plays the prepared target");
+
+        Harness search = new Harness(true);
+        search.cb.onPrepareFromSearch("night", null);
+        check(search.controller.starts == 0 && "Night Radio".equals(search.media.session.title), "prepare from search stays silent");
+        search.cb.onPlay();
+        check(search.playing(search.radio.get(0)), "Play after a search prepare plays the match");
+        search.cb.onPlayFromSearch("ada", null);
+        check(search.playing(search.ada.get(0)), "Play from search still plays");
+
+        Harness moved = new Harness(true);
+        moved.inApp(moved.radio.get(0));
+        moved.cb.onPause();
+        moved.cb.onPrepareFromMediaId(ADA + "_1", null);
+        moved.inApp(moved.radio.get(1));
+        moved.cb.onPause();
+        moved.cb.onPlay();
+        check(moved.playing(moved.radio.get(1)), "a prepare overtaken by another selection yields stock Play");
+
+        Harness switched = new Harness(true);
+        switched.inApp(switched.radio.get(0));
+        switched.cb.onPause();
+        switched.cb.onPrepareFromMediaId(ADA + "_1", null);
+        switched.media.switchAccount(0);
+        switched.cb.onPlay();
+        check(switched.playing(switched.radio.get(0)), "an account switch drops the prepared target");
+
+        Harness superseded = new Harness(false);
+        superseded.media.finish(new TelegramMediaSession.Load(RADIO, 0), superseded.radio);
+        superseded.cb.onPrepareFromMediaId(ADA + "_1", null);
+        superseded.cb.onPlayFromMediaId(RADIO + "_1", null);
+        superseded.finish(ADA);
+        check(superseded.playing(superseded.radio.get(1)) && superseded.media.lastSelectedDialog == RADIO
+                && "Night Radio".equals(superseded.media.session.title), "a superseded prepare changes nothing when its load arrives");
+
+        Harness stock = new Harness(true);
+        stock.media.lastSelectedDialog = ADA;
+        stock.cb.onPlay();
+        check(stock.playing(stock.ada.get(0)), "stock Play from an empty player uses the last dialog");
+        check(FileLog.errors.isEmpty(), "no session callback logged an error");
+    }
+
+    static void timestamp() {
+        final char[] kinds = {'v', 'r', 'f'};
+        for (char kind : kinds) {
+            final String name = kind == 'v' ? "voice" : kind == 'r' ? "round" : "video";
+            final boolean video = kind == 'f';
+
+            Harness valid = new Harness(true);
+            ChatActivity chat = new ChatActivity();
+            MessageObject target = new MessageObject(0, ADA, 50, kind);
+            chat.link(target, 30);
+            chat.visible(target);
+            check(chat.startFromVideoTimestamp == -1 && AndroidUtilities.queued.size() == 1
+                    && AndroidUtilities.delays.get(0) == 40, name + " timestamp schedules once after 40 ms");
+            check(Math.abs(target.forceSeekTo - 0.3f) < 1e-6, name + " timestamp sets the seek");
+            AndroidUtilities.drain();
+            check(video ? chat.opened.size() == 1 && Math.abs(chat.openedSeek - 0.3f) < 1e-6 && chat.viewer.audible
+                    : valid.playing(target), name + " timestamp opens or plays with the seek");
+
+            Harness expired = new Harness(true);
+            expired.inApp(expired.radio.get(0));
+            chat = new ChatActivity();
+            target = new MessageObject(0, ADA, 50, kind);
+            chat.link(target, 30);
+            chat.visible(target);
+            expired.startTimer();
+            expired.elapse();
+            AndroidUtilities.drain();
+            check(chat.opened.isEmpty() && expired.silentOn(expired.radio.get(0), 1) && expired.blocked()
+                    && expired.timer.blocked(Slot.VIEWER), name + " timestamp due after expiry stays silent and fenced");
+
+            Harness paused = new Harness(true);
+            chat = new ChatActivity();
+            if (video) {
+                chat.openPhotoViewerForMessage(null, new MessageObject(0, ADA, 49, 'f'));
+            } else {
+                paused.inApp(paused.radio.get(0));
+            }
+            target = new MessageObject(0, ADA, 50, kind);
+            chat.link(target, 30);
+            chat.visible(target);
+            if (video) {
+                paused.timer.explicitPause(Slot.VIEWER);
+            } else {
+                paused.controller.pauseMessage(paused.radio.get(0));
+            }
+            AndroidUtilities.drain();
+            check(video ? chat.opened.size() == 1 : paused.silentOn(paused.radio.get(0), 1), name + " timestamp after Pause stays silent");
+
+            Harness extended = new Harness(true);
+            extended.inApp(extended.radio.get(0));
+            extended.startTimer();
+            chat = new ChatActivity();
+            target = new MessageObject(0, ADA, 50, kind);
+            chat.link(target, 30);
+            chat.visible(target);
+            check(extended.timer.rules.add(SystemClock.now, MINUTE), name + " timer extends in the window");
+            final Runnable scheduled = AndroidUtilities.queued.get(0);
+            AndroidUtilities.drain();
+            check(video ? chat.opened.size() == 1 : extended.playing(target), name + " timestamp survives timer extension");
+            scheduled.run();
+            check(video ? chat.opened.size() == 1 : extended.controller.starts == 2, name + " repeated callback does nothing");
+
+            Harness afterExpiry = new Harness(true);
+            afterExpiry.inApp(afterExpiry.radio.get(0));
+            afterExpiry.expire();
+            chat = new ChatActivity();
+            target = new MessageObject(0, ADA, 50, kind);
+            chat.link(target, 30);
+            chat.visible(target);
+            AndroidUtilities.drain();
+            check(video ? chat.opened.size() == 1 && !afterExpiry.timer.blocked(Slot.VIEWER) : afterExpiry.playing(target),
+                    name + " timestamp navigation after expiry is deliberate Play");
+
+            Harness other = new Harness(true);
+            chat = new ChatActivity();
+            target = new MessageObject(0, ADA, 50, kind);
+            chat.link(target, 30);
+            chat.visible(new MessageObject(0, ADA, 51, kind));
+            check(AndroidUtilities.queued.isEmpty() && chat.startFromVideoTimestamp == 30, name + " another message schedules nothing");
+        }
+
+        Harness later = new Harness(true);
+        ChatActivity chat = new ChatActivity();
+        MessageObject voice = new MessageObject(0, ADA, 50, 'v');
+        chat.link(voice, 30);
+        chat.visible(voice);
+        later.inApp(later.radio.get(1));
+        AndroidUtilities.drain();
+        check(later.playing(later.radio.get(1)) && later.controller.starts == 1, "an in-app Play in the window wins over the timestamp");
+    }
+
+    public static void main(String[] args) {
+        session();
+        final int sessionChecks = checks;
+        System.out.println("SLEEP_TIMER_SESSION_CHECKS=" + sessionChecks);
+        timestamp();
+        System.out.println("SLEEP_TIMER_TIMESTAMP_CHECKS=" + (checks - sessionChecks));
+    }
+}

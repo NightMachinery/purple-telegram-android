@@ -62,6 +62,7 @@ import java.util.Locale;
 import java.util.Map;
 
 public class PhotoViewerWebView extends FrameLayout {
+    private final org.telegram.ui.PurpleSleepTimerWeb purpleSleep;
     private final static int YT_NOT_STARTED = -1,
         YT_COMPLETED = 0,
         YT_PLAYING = 1,
@@ -113,6 +114,9 @@ public class PhotoViewerWebView extends FrameLayout {
     };
 
     private class YoutubeProxy {
+        private final long purpleSleepLoad = purpleSleep.load();
+        @JavascriptInterface
+        public void purpleSleepIdentity(String item, boolean retired) { purpleSleep.identity(purpleSleepLoad, item, retired); }
         @JavascriptInterface
         public void onPlayerLoaded() {
             AndroidUtilities.runOnUIThread(() -> {
@@ -185,6 +189,10 @@ public class PhotoViewerWebView extends FrameLayout {
 
         @JavascriptInterface
         public void onPlayerStateChange(String state) {
+            purpleSleep.state(purpleSleepLoad, state, () -> applyPlayerState(state));
+        }
+
+        private void applyPlayerState(String state) {
             int stateInt = Integer.parseInt(state);
             boolean wasPlaying = isPlaying;
             isPlaying = stateInt == YT_PLAYING || stateInt == YT_BUFFERING;
@@ -248,6 +256,7 @@ public class PhotoViewerWebView extends FrameLayout {
         super(context);
 
         this.photoViewer = photoViewer;
+        purpleSleep = new org.telegram.ui.PurpleSleepTimerWeb(this, photoViewer);
 
         pipItem = pip;
         webView = new WebView(context) {
@@ -278,6 +287,7 @@ public class PhotoViewerWebView extends FrameLayout {
                 super.onDetachedFromWindow();
             }
         };
+        purpleSleep.install(webView);
         webView.getSettings().setJavaScriptEnabled(true);
         webView.getSettings().setDomStorageEnabled(true);
         if (Build.VERSION.SDK_INT >= 17) {
@@ -312,6 +322,7 @@ public class PhotoViewerWebView extends FrameLayout {
                 }
                 String url = request.getUrl().toString();
                 if (isYouTube && url.startsWith("https://www.youtube.com/youtubei/v1/player?key=")) {
+                    final long purpleSleepLoad = purpleSleep.load();
                     Utilities.externalNetworkQueue.postRunnable(()->{
                         try {
                             HttpURLConnection con = (HttpURLConnection) new URL(url).openConnection();
@@ -346,6 +357,7 @@ public class PhotoViewerWebView extends FrameLayout {
 
                             String str = bos.toString("UTF-8");
                             JSONObject obj = new JSONObject(str);
+                            purpleSleep.observeResponse(purpleSleepLoad, obj);
                             JSONObject storyboards = obj.optJSONObject("storyboards");
                             if (storyboards != null) {
                                 JSONObject renderer = storyboards.optJSONObject("playerStoryboardSpecRenderer");
@@ -554,6 +566,7 @@ public class PhotoViewerWebView extends FrameLayout {
     }
 
     public void seekTo(long seekTo, boolean seekAhead) {
+        final org.telegram.messenger.purple.PurpleSleepTimer.BackendReceipt purpleSeek = purpleSleep.receipt();
         boolean playing = isPlaying;
         currentPosition = (int) seekTo;
         if (playing) {
@@ -561,9 +574,10 @@ public class PhotoViewerWebView extends FrameLayout {
         }
         if (playing) {
             AndroidUtilities.runOnUIThread(() -> {
+                if (!purpleSleep.allow(purpleSeek)) return;
                 runJsCode("seekTo(" + Math.round(seekTo / 1000f) + ", " + seekAhead + ");");
 
-                AndroidUtilities.runOnUIThread(this::playVideo, 100);
+                AndroidUtilities.runOnUIThread(() -> { if (purpleSleep.allow(purpleSeek)) playVideo(); }, 100);
             }, 100);
         } else {
             runJsCode("seekTo(" + Math.round(seekTo / 1000f) + ", " + seekAhead + ");");
@@ -653,6 +667,23 @@ public class PhotoViewerWebView extends FrameLayout {
         return isYouTube;
     }
 
+    public Object purpleSleepSource() { return currentWebpage; }
+    public String purpleSleepYoutubeId() { return currentYoutubeId == null ? "" : currentYoutubeId; }
+    public org.telegram.ui.PurpleEmbeddedPlaybackPort.Capability purpleSleepEmbeddedCapability() { return purpleSleep.embeddedCapability(); }
+    public boolean purpleSleepFinite() { return purpleSleep.finite(); }
+    public int purpleSleepUnavailable() { return purpleSleep.unavailableText(); }
+    public void purpleSleepUnregister() { purpleSleep.unregister(); }
+    public boolean purpleSleepEnded() { return purpleSleep.ended(); }
+    public void purpleSleepStartEnd() { purpleSleep.requestEnd(); }
+    public void purpleSleepPrepareEnd(Runnable accept) { purpleSleep.prepareEnd(accept); }
+    public void purpleSleepExplicitPlay() { purpleSleep.explicitPlay(); }
+    public void purpleSleepRefreshReceipt() { purpleSleep.refresh(); }
+    public void purpleSleepPauseLocal() {
+        if (!purpleSleep.pauseLocal()) runJsCode("pauseVideo();");
+        isPlaying = false;
+        checkPlayingPoll(true);
+    }
+
     public boolean isControllable() {
         return isYouTube();
     }
@@ -670,6 +701,7 @@ public class PhotoViewerWebView extends FrameLayout {
     }
 
     public void playVideo() {
+        if (!purpleSleep.beforePlay()) return;
         if (isPlaying || !isControllable()) {
             return;
         }
@@ -705,7 +737,9 @@ public class PhotoViewerWebView extends FrameLayout {
     @SuppressLint("AddJavascriptInterface")
     public void init(int seekTime, TLRPC.WebPage webPage) {
         currentWebpage = webPage;
+        purpleSleep.begin();
         currentYoutubeId = WebPlayerView.getYouTubeVideoId(webPage.embed_url);
+        purpleSleep.navigate(currentYoutubeId);
         String originalUrl = webPage.url;
         requestLayout();
 
@@ -748,7 +782,7 @@ public class PhotoViewerWebView extends FrameLayout {
                 }
                 bos.close();
                 in.close();
-                webView.loadDataWithBaseURL("https://messenger.telegram.org/", String.format(Locale.US, bos.toString("UTF-8"), currentYoutubeId, seekToTime), "text/html", "UTF-8", "https://youtube.com");
+                webView.loadDataWithBaseURL("https://messenger.telegram.org/", String.format(Locale.US, org.telegram.ui.PurpleSleepTimerWeb.html(getContext(), bos.toString("UTF-8")), currentYoutubeId, seekToTime), "text/html", "UTF-8", "https://youtube.com");
             } else {
                 HashMap<String, String> args = new HashMap<>();
                 args.put("Referer", "messenger.telegram.org");
@@ -802,6 +836,7 @@ public class PhotoViewerWebView extends FrameLayout {
     }
 
     public void release() {
+        purpleSleep.release();
         webView.stopLoading();
         webView.loadUrl("about:blank");
         webView.destroy();

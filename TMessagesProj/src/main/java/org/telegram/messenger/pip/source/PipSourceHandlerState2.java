@@ -304,6 +304,7 @@ public class PipSourceHandlerState2 implements IPipActivityListener, IPipActivit
         if (source != null) {
             Player player = source.getPlayer();
             if (player != null) {
+                org.telegram.messenger.purple.PurpleSleepTimerNative.stash(player);
                 player.pause();
             }
         }
@@ -313,7 +314,7 @@ public class PipSourceHandlerState2 implements IPipActivityListener, IPipActivit
     public void onPipStashEnd() {
         if (source != null) {
             Player player = source.getPlayer();
-            if (player != null) {
+            if (player != null && org.telegram.messenger.purple.PurpleSleepTimerNative.unstash(player)) {
                 player.play();
             }
         }

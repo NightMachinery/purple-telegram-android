@@ -416,7 +416,7 @@ public class FragmentContextView extends FrameLayout implements NotificationCent
         playButton.setOnClickListener(v -> {
             if (currentStyle == STYLE_AUDIO_PLAYER) {
                 if (MediaController.getInstance().isMessagePaused()) {
-                    MediaController.getInstance().playMessage(MediaController.getInstance().getPlayingMessageObject());
+                    org.telegram.messenger.purple.PurpleSleepTimerAudio.transportPlay(MediaController.getInstance());
                 } else {
                     MediaController.getInstance().pauseMessage(MediaController.getInstance().getPlayingMessageObject());
                 }

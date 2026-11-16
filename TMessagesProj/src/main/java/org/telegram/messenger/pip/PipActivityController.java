@@ -155,7 +155,7 @@ public class PipActivityController {
             }
 
             if (newSource != null) {
-                mediaSession = new MediaSession.Builder(activity, newSource.player)
+                mediaSession = new MediaSession.Builder(activity, org.telegram.messenger.purple.PurpleSleepTimerNative.transport(newSource.player, () -> mediaSession))
                         .setId("pip-media-session")
                         .build();
 
@@ -168,8 +168,8 @@ public class PipActivityController {
         }
 
         if (newSource != null) {
-            if (mediaSession != null && mediaSession.getPlayer() != newSource.player) {
-                mediaSession.setPlayer(newSource.player);
+            if (mediaSession != null && mediaSession.getPlayer() != org.telegram.messenger.purple.PurpleSleepTimerNative.transport(newSource.player, () -> mediaSession)) {
+                mediaSession.setPlayer(org.telegram.messenger.purple.PurpleSleepTimerNative.transport(newSource.player, () -> mediaSession));
             }
             pipContentView.bringToFront();
             newSource.state2.onReceiveMaxPriority();
@@ -211,8 +211,8 @@ public class PipActivityController {
     void dispatchSourceParamsChanged(PipSource source) {
         if (maxPrioritySource == source) {
             PipUtils.applyPictureInPictureParams(activity, source);
-            if (mediaSession != null && mediaSession.getPlayer() != source.player) {
-                mediaSession.setPlayer(source.player);
+            if (mediaSession != null && mediaSession.getPlayer() != org.telegram.messenger.purple.PurpleSleepTimerNative.transport(source.player, () -> mediaSession)) {
+                mediaSession.setPlayer(org.telegram.messenger.purple.PurpleSleepTimerNative.transport(source.player, () -> mediaSession));
             }
         }
         pipContentView.invalidate();

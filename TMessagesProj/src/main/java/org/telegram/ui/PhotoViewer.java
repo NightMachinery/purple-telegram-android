@@ -8,6 +8,8 @@
 
 package org.telegram.ui;
 
+import org.telegram.messenger.purple.PurpleSleepTimerViewerSelection;
+
 import static org.telegram.messenger.AndroidUtilities.dp;
 import static org.telegram.messenger.AndroidUtilities.dpf2;
 import static org.telegram.messenger.AndroidUtilities.lerp;
@@ -1065,6 +1067,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     private FirstFrameView firstFrameView;
     private VideoPlayer videoPlayer;
     private PipSource pipSource;
+    private final PurpleSleepTimerViewer purpleSleep = new PurpleSleepTimerViewer(this);
     private boolean manuallyPaused;
     private Runnable videoPlayRunnable;
     private boolean previousHasTransform;
@@ -4910,6 +4913,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
             @Override
             public void onItemClick(int id) {
+                if (purpleSleep.action(id) || PurpleSleepTimerUI.viewerAction(id, activityContext, resourcesProvider)) return;
                 if (id == -1) {
                     if (photoPaintView != null && photoPaintView.onBackPressed()) {
                         return;
@@ -5752,6 +5756,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                     if (videoPlayer != null) {
                         videoPlayer.setLooping(playerLooping);
                     }
+                    purpleSleepRefresh();
                     loopItem.setEnabledByColor(playerLooping, 0xFFFFFFFF, 0xFF73B4EC);
                     loopItem.setSelectorColor(playerLooping ? 0x0F73B4EC : 0x0fffffff);
                 } else if (id == gallery_menu_report) {
@@ -5768,6 +5773,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
 
             @Override
             public boolean canOpenMenu() {
+                if (purpleSleep.canOpenMenu()) return true;
                 if (currentMessageObject != null || currentSecureDocument != null) {
                     return true;
                 } else if (currentFileLocationVideo != null) {
@@ -5823,6 +5829,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         videoItem.getPopupLayout().addView(videoQualityLayout);
         loopItem = videoItem.addSubItem(gallery_menu_loop, R.drawable.menu_video_loop, LocaleController.getString(R.string.VideoPlayerLoop));
         loopItem.setSelectorColor(0x0fffffff);
+        purpleSleep.menu(videoItem);
         castItemButton = new CastMediaRouteButton(activityContext) {
             @Override
             public void stateUpdated(boolean connected) {
@@ -6018,7 +6025,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                     currentThumb = null;
                 }
                 dontAutoPlay = true;
-                setImageIndex(index);
+                purpleSleepUserImageIndex(index, true, false);
                 dontAutoPlay = false;
             }
 
@@ -7856,7 +7863,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             int idx = imagesArrLocals.indexOf(view.getTag());
             if (idx >= 0) {
                 currentIndex = -1;
-                setImageIndex(idx);
+                purpleSleepUserImageIndex(idx, true, false);
             }
             ignoreDidSetImage = false;
         });
@@ -8770,7 +8777,9 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                         if (flashAnimator == null) {
                             return;
                         }
+                        final org.telegram.messenger.purple.PurpleSleepTimer.Deferred purpleSleepPreview = org.telegram.messenger.purple.PurpleSleepTimer.get().defer(videoPlayer);
                         AndroidUtilities.runOnUIThread(videoPlayRunnable = () -> {
+                            if (!org.telegram.messenger.purple.PurpleSleepTimer.get().allowDeferred(videoPlayer, purpleSleepPreview)) { videoPlayRunnable = null; return; }
                             manuallyPaused = false;
                             if (videoPlayer != null) {
                                 videoPlayer.play();
@@ -10140,6 +10149,30 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         }
     }
 
+    public void purpleSleepRefresh() {
+        purpleSleep.bind(currentMessageObject, imagesArrLocals, currentIndex, currentPageBlock, videoPlayer, photoViewerWebView,
+                !muteVideo && !playerLooping && !centerImageIsLivePhoto,
+                videoPlayer != null && videoPlayer.player != null && videoPlayer.player.isCurrentMediaItemLive());
+    }
+
+    public void purpleSleepWebClosed(PhotoViewerWebView web) { purpleSleep.webClosed(web); }
+
+    public void purpleSleepCancelResumes() {
+        cancelVideoPlayRunnable();
+        manuallyPaused = true;
+    }
+
+    public void purpleSleepPauseLocal() {
+        purpleSleepCancelResumes();
+        if (videoPlayer != null) videoPlayer.pause();
+        if (photoViewerWebView != null) photoViewerWebView.purpleSleepPauseLocal();
+        isPlaying = false;
+        AndroidUtilities.cancelRunOnUIThread(updateProgressRunnable);
+        if (photoProgressViews[0] != null) photoProgressViews[0].setBackgroundState(PROGRESS_PLAY, false, false);
+        PipVideoOverlay.updatePlayButton();
+        if (containerView != null) containerView.invalidate();
+    }
+
     public void injectVideoPlayer(VideoPlayer player) {
         injectingVideoPlayer = player;
     }
@@ -10178,6 +10211,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     }
 
     private void updatePlayerState(boolean playWhenReady, int playbackState) {
+        if (playbackState == ExoPlayer.STATE_ENDED && purpleSleep.end()) return;
         if (videoPlayer == null && (photoViewerWebView == null || !photoViewerWebView.isControllable())) {
             return;
         }
@@ -10375,6 +10409,10 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     }
 
     private void preparePlayer(ArrayList<VideoPlayer.Quality> videoUrises, Uri uri, boolean playWhenReady, boolean preview, MediaController.SavedFilterState savedFilterState, boolean livePhoto, long videoByteOffset) {
+        purpleSleep.prepare(() -> purpleSleepPreparePlayer(videoUrises, uri, playWhenReady, preview, savedFilterState, livePhoto, videoByteOffset));
+    }
+
+    private void purpleSleepPreparePlayer(ArrayList<VideoPlayer.Quality> videoUrises, Uri uri, boolean playWhenReady, boolean preview, MediaController.SavedFilterState savedFilterState, boolean livePhoto, long videoByteOffset) {
         if (!preview) {
             currentPlayingVideoFile = uri;
             currentPlayingVideoQualityFiles = videoUrises;
@@ -10463,9 +10501,10 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 videoPlayer = new VideoPlayer() {
                     @Override
                     public void play() {
+                        if (!org.telegram.messenger.purple.PurpleSleepTimer.get().beforeStart(this)) return;
                         super.play();
                         playOrStopAnimatedStickers(true);
-                        if (!ignorePlayerUpdate) {
+                        if (!ignorePlayerUpdate && !org.telegram.messenger.purple.PurpleSleepTimer.get().localPause()) {
                             CastSync.syncPosition(getCurrentPosition());
                             CastSync.setPlaying(true);
                         }
@@ -10477,7 +10516,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                         if (currentEditMode == EDIT_MODE_NONE) {
                             playOrStopAnimatedStickers(false);
                         }
-                        if (!ignorePlayerUpdate) {
+                        if (!ignorePlayerUpdate && !org.telegram.messenger.purple.PurpleSleepTimer.get().localPause()) {
                             CastSync.syncPosition(getCurrentPosition());
                             CastSync.setPlaying(false);
                         }
@@ -10489,7 +10528,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                         if (isCurrentVideo) {
                             seekAnimatedStickersTo(positionMs);
                         }
-                        if (!ignorePlayerUpdate) {
+                        if (!ignorePlayerUpdate && !org.telegram.messenger.purple.PurpleSleepTimer.get().localPause()) {
                             CastSync.syncPosition(positionMs);
                         }
                     }
@@ -10503,7 +10542,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                         }
                         updateQualityItems();
                         setMute(CastSync.isActive() || muteVideo);
-                        if (!ignorePlayerUpdate) {
+                        if (!ignorePlayerUpdate && !org.telegram.messenger.purple.PurpleSleepTimer.get().localPause()) {
                             CastSync.syncPosition(getCurrentPosition());
                             CastSync.setSpeed(getPlaybackSpeed());
                         }
@@ -10512,7 +10551,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                     @Override
                     public void setPlaybackSpeed(float speed) {
                         super.setPlaybackSpeed(speed);
-                        if (!ignorePlayerUpdate) {
+                        if (!ignorePlayerUpdate && !org.telegram.messenger.purple.PurpleSleepTimer.get().localPause()) {
                             CastSync.setSpeed(speed);
                         }
                     }
@@ -10537,6 +10576,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             if (firstFrameView != null) {
                 firstFrameView.clear();
             }
+            purpleSleepRefresh();
             videoPlayer.setDelegate(new VideoPlayer.VideoPlayerDelegate() {
 
                 private boolean firstState = true;
@@ -10987,6 +11027,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     }
 
     private void releasePlayer(boolean onClose) {
+        purpleSleep.release();
         usedSurfaceView = false;
         if (pipSource != null) {
             pipSource.destroy();
@@ -11849,7 +11890,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             public void onTapUp() {
                 if (sendPhotoType == SELECT_TYPE_AVATAR) {
                     manuallyPaused = true;
-                    toggleVideoPlayer();
+                    toggleVideoPlayerFromUser();
                 }
             }
 
@@ -11862,7 +11903,9 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 videoPlayer.pause();
                 videoTimelineView.setProgress(avatarStartProgress);
                 cancelVideoPlayRunnable();
+                final org.telegram.messenger.purple.PurpleSleepTimer.Deferred purpleSleepPreview = org.telegram.messenger.purple.PurpleSleepTimer.get().defer(videoPlayer);
                 AndroidUtilities.runOnUIThread(videoPlayRunnable = () -> {
+                    if (!org.telegram.messenger.purple.PurpleSleepTimer.get().allowDeferred(videoPlayer, purpleSleepPreview)) { videoPlayRunnable = null; return; }
                     manuallyPaused = false;
                     if (videoPlayer != null) {
                         videoPlayer.play();
@@ -13562,6 +13605,11 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         }
     }
 
+    private void toggleVideoPlayerFromUser() {
+        purpleSleep.toggle(videoPlayer != null ? isPlaying : photoViewerWebView != null && photoViewerWebView.isPlaying());
+        toggleVideoPlayer();
+    }
+
     private void toggleVideoPlayer() {
         if (videoPlayer == null && (photoViewerWebView == null || !photoViewerWebView.isControllable())) {
             return;
@@ -14158,7 +14206,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                             if (idx < 0) {
                                 idx = 0;
                             }
-                            setImageIndex(idx);
+                            purpleSleepOpenedImageIndex(idx);
                         }
                     }
                 }
@@ -14206,11 +14254,11 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 } else if (isEmbedVideo && messageObject.eventId == 0) {
                     setItemVisible(sendItem, true, false);
                 }
-                setImageIndex(0);
+                purpleSleepOpenedImageIndex(0);
             }
         } else if (documents != null) {
             secureDocuments.addAll(documents);
-            setImageIndex(index);
+            purpleSleepOpenedImageIndex(index);
         } else if (fileLocation != null) {
             avatarsDialogId = object != null ? object.dialogId : 0;
             canEditAvatar = object != null && object.canEdit;
@@ -14236,7 +14284,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             allowShare = true;
             menuItem.hideSubItem(gallery_menu_showall);
             menuItem.showSubItem(gallery_menu_share);
-            setImageIndex(0);
+            purpleSleepOpenedImageIndex(0);
 
             if (sendPhotoType == SELECT_TYPE_AVATAR) {
                 if (useFullWidthSendButton()) {
@@ -14303,7 +14351,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             } else {
                 totalImagesCount = imagesArr.size();
             }
-            setImageIndex(index);
+            purpleSleepOpenedImageIndex(index);
         } else if (photos != null) {
             if (sendPhotoType != SELECT_TYPE_NO_SELECT && !sendPhotoTypeIsGif && !sendPhotoTypeIsPollMedia && (sendPhotoType == 0 || sendPhotoType == 4 || (sendPhotoType == 2 || sendPhotoType == 5) && photos.size() > 1) && !disableSelection) {
                 checkImageView.setVisibility(View.VISIBLE);
@@ -14400,7 +14448,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 containerView.setTag(null);
             }
 
-            setImageIndex(index);
+            purpleSleepOpenedImageIndex(index);
             if (sendPhotoType == SELECT_TYPE_AVATAR) {
                 paintItem.setVisibility(View.VISIBLE);
                 tuneItem.setVisibility(View.VISIBLE);
@@ -14413,7 +14461,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             }
             updateSelectedCount();
         } else {
-            setImageIndex(index);
+            purpleSleepOpenedImageIndex(index);
         }
         if (tuneItem != null) {
             tuneItem.setAlpha(stickerEmpty ? .4f : 1f);
@@ -15659,6 +15707,23 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     }
 
     private void setImageIndex(int index, boolean init, boolean animateCaption, boolean force) {
+        purpleSleepSelectImageIndex(index, init, animateCaption, force, PurpleSleepTimerViewerSelection.Origin.REFRESH);
+    }
+
+    private void purpleSleepUserImageIndex(int index, boolean init, boolean animateCaption) {
+        purpleSleepSelectImageIndex(index, init, animateCaption, false, PurpleSleepTimerViewerSelection.Origin.USER_SELECTION);
+    }
+
+    private void purpleSleepOpenedImageIndex(int index) {
+        purpleSleepSelectImageIndex(index, true, false, false, purpleSleep.openingOrigin());
+    }
+
+    private void purpleSleepSelectImageIndex(int index, boolean init, boolean animateCaption, boolean force, PurpleSleepTimerViewerSelection.Origin origin) {
+        purpleSleep.select(imagesArr, imagesArrLocals, pageBlocksAdapter != null ? pageBlocksAdapter.getAll() : null,
+                index, isEmbedVideo, origin, () -> purpleSleepSetImageIndex(index, init, animateCaption, force));
+    }
+
+    private void purpleSleepSetImageIndex(int index, boolean init, boolean animateCaption, boolean force) {
         if (!force && currentIndex == index || placeProvider == null) {
             return;
         }
@@ -17634,7 +17699,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 }
             }
 
-            onPhotoShow(messageObject, fileLocation, imageLocation, videoLocation, messages, documents, photos, index, object);
+            purpleSleep.open(() -> onPhotoShow(messageObject, fileLocation, imageLocation, videoLocation, messages, documents, photos, index, object));
             if (sendPhotoType == SELECT_TYPE_AVATAR) {
                 photoCropView.setVisibility(View.VISIBLE);
                 photoCropView.setAlpha(0.0f);
@@ -17918,7 +17983,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
 
             //backgroundDrawable.setAlpha(255);
             containerView.setAlpha(1.0f);
-            onPhotoShow(messageObject, fileLocation, imageLocation, videoLocation, messages, documents, photos, index, object);
+            purpleSleep.open(() -> onPhotoShow(messageObject, fileLocation, imageLocation, videoLocation, messages, documents, photos, index, object));
             initCropView();
             setCropBitmap();
             if (parentChatActivity != null) {
@@ -18045,6 +18110,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         };
         photoViewerWebView.init(embedSeekTime, MessageObject.getMedia(currentMessageObject.messageOwner).webpage);
         photoViewerWebView.setPlaybackSpeed(currentVideoSpeed);
+        purpleSleepRefresh();
         containerView.addView(photoViewerWebView, 0, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
 
         if (photoViewerWebView.isControllable()) {
@@ -18806,6 +18872,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     }
 
     public void onResume() {
+        org.telegram.messenger.purple.PurpleSleepTimer.get().check();
         redraw(0); //workaround for camera bug
         if (videoPlayer != null) {
             videoPlayer.seekTo(videoPlayer.getCurrentPosition() + 1);
@@ -19448,6 +19515,10 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     }
 
     private void switchToNextIndex(int add, boolean init) {
+        purpleSleep.prepare(() -> purpleSleepSwitchToNextIndex(add, init));
+    }
+
+    private void purpleSleepSwitchToNextIndex(int add, boolean init) {
         if (currentMessageObject != null) {
             releasePlayer(false);
             FileLoader.getInstance(currentAccount).cancelLoadFile(currentMessageObject.getDocument());
@@ -19462,7 +19533,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             groupedPhotosListView.setAnimateBackground(true);
         }
         playerAutoStarted = false;
-        setImageIndex(currentIndex + add, init, true);
+        purpleSleepUserImageIndex(currentIndex + add, init, true);
         if (shouldMessageObjectAutoPlayed(currentMessageObject) || shouldIndexAutoPlayed(currentIndex)) {
             playerAutoStarted = true;
             onActionClick(true);
@@ -20930,7 +21001,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                             if (state == PROGRESS_PLAY || state == PROGRESS_PAUSE) {
                                 if (photoProgressViews[0].isVisible()) {
                                     manuallyPaused = true;
-                                    toggleVideoPlayer();
+                                    toggleVideoPlayerFromUser();
                                     return true;
                                 }
                             }
@@ -20947,7 +21018,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                     videoPlayer.setVolume(1.0f);
                 }
                 manuallyPaused = true;
-                toggleVideoPlayer();
+                toggleVideoPlayerFromUser();
             } else {
                 checkImageView.performClick();
             }
@@ -20964,7 +21035,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         } else if (sendPhotoType == 2) {
             if (isCurrentVideo) {
                 manuallyPaused = true;
-                toggleVideoPlayer();
+                toggleVideoPlayerFromUser();
             }
         }
         return true;
