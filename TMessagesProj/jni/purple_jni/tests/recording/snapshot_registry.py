@@ -31,10 +31,22 @@ def run(root, output, compiler, classes, jar, baseline=None):
     if baseline:
         assert branch.count('source.renameTo(moved)')==1
         branch=branch.replace('source.renameTo(moved)','SnapshotProbe.rename(source, moved)')
+    dock=source('PurpleRecordingDock.java')
+    inputs.append({'source':'PurpleRecordingDock.java','sha256':hashlib.sha256(dock.encode()).hexdigest()})
+    method_start=dock.index('    public static int roundErrorReason(')
+    brace=dock.index('{',method_start);depth=1;end=brace+1
+    while depth:
+        if dock[end]=='{':depth+=1
+        elif dock[end]=='}':depth-=1
+        end+=1
+    error_reason=dock[method_start:end]
     (output/'RegistryStopRoute.java').write_text("""package org.telegram.messenger.purple;
 import java.io.*;import java.util.*;import java.util.concurrent.TimeUnit;
 public class RegistryStopRoute {
  static PurpleRecordingSessions sessions;static File root;static long[] context;static Worker worker=new Worker();
+ static boolean finalizing;static boolean roundFinalizing(int account,int guid){return finalizing;}
+"""+error_reason+"""
+ static void error(int account,int guid){stop(account,guid,roundErrorReason(account,guid));}
  static File directory(){return root;}static long[] target(int guid,boolean terminal){return context;}
  static class Worker {List<Runnable> tasks=new ArrayList<>();void schedule(Runnable r,long delay,TimeUnit unit){tasks.add(r);}void execute(Runnable r){tasks.add(r);}}
  static void stop(int account,int guid,int value){Object[] args={guid,value};String key=account+":"+guid;

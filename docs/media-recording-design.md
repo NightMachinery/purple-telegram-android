@@ -1222,3 +1222,14 @@ Agent-days including host tests, excluding build, device and GUI time.
 6. **Add a `d` (days) suffix to purple-core's `ParseDuration`?** It is additive and every duration key gains it.
    - Option A (recommended): yes, so `bin_keep = "7d"` reads naturally.
    - Option B: no, and the 7-day choice is written `"168h"`.
+
+
+### Round recorder failure retention
+
+A native round recorder error is a failure, even before Send begins. It uses
+the error snapshot handoff and remains recoverable regardless of the preference
+for keeping deliberate user discards. The bin labels it as recovered or
+unrecoverable rather than discarded. The snapshot registry fixture exercises
+errors before and during finalization with discard retention on and off, both
+in process and after reloading the manifest. This does not identify the cause
+of a particular camera or codec failure.

@@ -306,7 +306,7 @@ public final class PurpleRecordingDock {
     }
 
     public static int roundErrorReason(int account, int guid) {
-        return roundFinalizing(account, guid) ? 7 : 6;
+        return 7;
     }
 
     public static boolean roundFinalizing(int account, int guid) {

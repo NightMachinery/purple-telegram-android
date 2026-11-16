@@ -9,7 +9,7 @@ public class SnapshotRegistryCases {
   public boolean binItemExpired(long b,long n,int k){return false;}
   public PurpleRecordingStore.RoundResult recoverRound(File m,File j,File o){return null;}
  };
- static class Env extends PaymentStoreCases.Env{boolean keep=true;public boolean keepDiscarded(){return keep;}}
+ static class Env extends PaymentStoreCases.Env{long clock=400000;public long now(){return clock;}boolean keep=true;public boolean keepDiscarded(){return keep;}}
  static class Setup{
   File dir,raw,journal;PurpleRecordingManifest manifest;PurpleRecordingStore store;PurpleRecordingSessions sessions;Env env;String id;byte[] bytes;
   Setup(boolean start)throws Exception{
@@ -60,8 +60,21 @@ public class SnapshotRegistryCases {
   if(reason==7||keep){owned(result,s.id,s.bytes,new byte[]{3,1,4});check(result.find(s.id).discarded==(reason!=7),"accepted error and ordinary discard labels/policy remain distinct");}
   else check(result.find(s.id)==null&&result.bin().isEmpty(),"keep-off discard never becomes retained error");
  }
+ static void nativeError(boolean finalizing,boolean keep,boolean restart)throws Exception{
+  Setup s=new Setup(true);s.env.keep=keep;s.env.clock+=35000;RegistryStopRoute.finalizing=finalizing;
+  check(s.store.bin().isEmpty(),"active recording stays out of completed bin");
+  RegistryStopRoute.error(1,7);
+  check(RegistryStopRoute.worker.tasks.size()==1,"native error uses captured snapshot handoff");
+  PurpleRecordingStore result;
+  if(restart)result=s.restart();else{Runnable task=RegistryStopRoute.worker.tasks.get(0);task.run();task.run();result=s.store;}
+  PurpleRecordingEntry retained=result.find(s.id);
+  check(retained!=null&&retained.inBin(),"native recorder error is retained even when user discard retention is off");
+  check(!retained.discarded,"native recorder error is not labelled a user discard");
+  owned(result,s.id,s.bytes,new byte[]{3,1,4});
+ }
  public static void main(String[] args)throws Exception{
   full=new File(args[0]);root=new File(args[1]);root.mkdirs();
+  for(boolean finalizing:new boolean[]{false,true})for(boolean keep:new boolean[]{false,true})for(boolean restart:new boolean[]{false,true})nativeError(finalizing,keep,restart);
   crash("after-rename");crash("before-rename");crash("before-reservation");crash("after-reservation");crash("before-manifest");crash("after-manifest");
   claimBeforeRename();replacement(false,false,false);replacement(true,false,false);replacement(false,true,false);replacement(false,false,true);replacement(true,false,true);
   for(int reason:new int[]{0,6,7})for(boolean keep:new boolean[]{false,true})for(boolean restart:new boolean[]{false,true})policy(reason,keep,restart);
