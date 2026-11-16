@@ -94,9 +94,10 @@ public final class PurpleSleepTimerAudio implements PurpleSleepTimer.Port {
             adoptHeld(message);
             return true;
         });
+        final boolean previous = restoring;
         automatic++;
         restoring = true;
-        try { return stock.getAsBoolean(); } finally { restoring = false; automatic--; }
+        try { return stock.getAsBoolean(); } finally { restoring = previous; automatic--; }
     }
 
     private void adoptHeld(MessageObject selected) {
@@ -106,6 +107,32 @@ public final class PurpleSleepTimerAudio implements PurpleSleepTimer.Port {
         timer.attach(Slot.AUDIO, PurpleSleepTimer.item(selected), true, null, this);
         org.telegram.messenger.NotificationCenter.getInstance(selected.currentAccount).postNotificationName(
                 org.telegram.messenger.NotificationCenter.messagePlayingPlayStateChanged, selected.getId());
+    }
+
+    public void changeRoute(boolean paused, Runnable stock) {
+        timer.check();
+        final MessageObject current = controller.getPlayingMessageObject();
+        if (current != null) {
+            if (paused) timer.explicitPause(Slot.AUDIO);
+            else if (!heldSong(current) && (current.isVoice() || current.isRoundVideo())) timer.routePlay(Slot.AUDIO);
+        }
+        final boolean previous = restoring;
+        automatic++;
+        replacing++;
+        restoring = true;
+        try { stock.run(); } finally { restoring = previous; replacing--; automatic--; }
+    }
+
+    public boolean allowRemotePlay() {
+        timer.check();
+        return !timer.localPause() && !timer.blocked(Slot.AUDIO);
+    }
+
+    public Runnable routePause(MessageObject message) {
+        final Ticket request = capture();
+        return () -> {
+            if (timer.valid(request)) pauseAutomatic(message);
+        };
     }
 
     public void beginRewind() { rewind = timer.ticket(Slot.AUDIO); }

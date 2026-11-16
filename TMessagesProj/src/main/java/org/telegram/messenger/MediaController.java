@@ -2383,11 +2383,16 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
     }
 
     private void startAudioAgain(boolean paused) {
+        purpleSleep.changeRoute(paused, () -> purpleSleepAudioRoute(paused));
+    }
+
+    private void purpleSleepAudioRoute(boolean paused) {
         if (playingMessageObject == null) {
             return;
         }
 
         NotificationCenter.getInstance(playingMessageObject.currentAccount).postNotificationName(NotificationCenter.audioRouteChanged, useFrontSpeaker);
+        if (org.telegram.messenger.purple.PurpleSleepTimerAudio.heldSong(playingMessageObject)) return;
         if (videoPlayer != null) {
             videoPlayer.setStreamType(useFrontSpeaker ? AudioManager.STREAM_VOICE_CALL : AudioManager.STREAM_MUSIC);
             if (!paused) {
@@ -2412,7 +2417,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
             playMessage(currentMessageObject);
             if (paused) {
                 if (post) {
-                    AndroidUtilities.runOnUIThread(() -> pauseMessage(currentMessageObject), 100);
+                    AndroidUtilities.runOnUIThread(purpleSleep.routePause(currentMessageObject), 100);
                 } else {
                     pauseMessage(currentMessageObject);
                 }
@@ -4191,7 +4196,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
             ApplicationLoader.applicationContext.stopService(intent);
         }
 
-        if (PurpleSleepTimer.get().localPause()) return true;
+        if (!purpleSleep.allowRemotePlay()) return true;
         try {
             CastSync.check(CastSync.TYPE_MUSIC);
             if (!ignorePlayerUpdate) {

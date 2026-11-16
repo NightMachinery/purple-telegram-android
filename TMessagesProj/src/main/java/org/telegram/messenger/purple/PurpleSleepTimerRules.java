@@ -102,7 +102,7 @@ public final class PurpleSleepTimerRules {
 
     private static final class State {
         Item item;
-        boolean eligibleEnd, blocked;
+        boolean eligibleEnd, blocked, expiryBlocked;
         long incarnation, intent, requests;
     }
 
@@ -177,6 +177,7 @@ public final class PurpleSleepTimerRules {
     public void expire(Item endedSong) {
         for (State state : players.values()) {
             state.blocked = true;
+            state.expiryBlocked = true;
             state.intent++;
         }
         pendingAdvance = endedSong != null && endedSong.kind == Kind.SONG ? endedSong : null;
@@ -220,6 +221,7 @@ public final class PurpleSleepTimerRules {
         target.item = source.item;
         target.eligibleEnd = source.eligibleEnd;
         target.blocked = source.blocked;
+        target.expiryBlocked = source.expiryBlocked;
         target.incarnation++;
         target.intent++;
         if (mode == Mode.END && boundSlot == from.slot) boundSlot = to;
@@ -277,6 +279,7 @@ public final class PurpleSleepTimerRules {
     public void manualPlay(Slot slot) {
         final State state = players.get(slot);
         state.blocked = false;
+        state.expiryBlocked = false;
         state.intent++;
     }
 
@@ -297,4 +300,5 @@ public final class PurpleSleepTimerRules {
     }
 
     public boolean blocked(Slot slot) { return players.get(slot).blocked; }
+    public boolean expiryBlocked(Slot slot) { return players.get(slot).expiryBlocked; }
 }

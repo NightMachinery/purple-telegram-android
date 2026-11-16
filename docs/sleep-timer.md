@@ -88,8 +88,8 @@ Upstream hooks and why they remain:
   end handling and Saved Music restoration to `PurpleSleepTimerAudio`.
   Its small facade methods expose existing private player/model state without
   copying stock playback into Purple code. Saved Music fallback is automatic
-  and cannot grant Play after expiry. Proximity-lower recreation still needs
-  separate pause-intent follow-up.
+  and cannot grant Play after expiry. Proximity stream reconstruction is classified separately from a user Play.
+  The remote Play tail checks the current local playback fence.
 - `VideoPlayer` delegates native preparation, start and callback admission.
   This fences actual native starts after a receipt becomes stale.
 - `AudioPlayerAlert` and `FragmentContextView` delegate menus and countdown
@@ -154,3 +154,28 @@ checks the new timer transport hooks separately. Its extracted queue and media
 receiver use explicit timer ports with the timer inactive, and assert that the
 automatic, restore and deliberate Play hooks are exercised. These checks prove
 host integration, not Android player or speaker behavior.
+
+Proximity route changes keep stock route notification and stream reconstruction.
+An internal restart preserves the pause or expiry fence instead of granting Play.
+Raising to listen resumes a voice or round after ordinary Pause when no expiry
+fence exists. Expiry remains distinct from ordinary Pause and only an explicit
+Play clears it. Timer cancellation and player reconstruction cannot clear it.
+Routing a held Saved Music song posts the route notification but leaves it
+unprepared. The stock remote Play tail checks the deadline and playback block
+after construction. Nested music restoration preserves the outer route scope.
+Lowering the phone records Pause before rebuilding an audio player; the retained
+round-video player changes streams in place. The stock delayed pause keeps the
+post-reconstruction intent and cannot override a newer Play or replacement.
+
+The proximity fixture executes the production route, timer facade, Audio adapter
+and native Play guard over inert backend endpoints (117 measured checks). Six
+single-hook mutants detect implicit Play, stale delayed Pause, conflated expiry
+and Pause, remote Play after Pause, held-song preparation, and nested restoration. Actual Android
+speaker routing and audibility still need runtime qualification.
+
+Raising to listen is a newer deliberate playback command and revokes a pending
+deferred Play request. The separate stock resumeAudio Cast tail remains
+unchanged; its current Audio request hook prevents reaching it while blocked.
+Real Cast behavior still needs runtime qualification. The fixture validates
+imports for simple Purple class names before normalizing qualified hooks into
+its local package, so package-local test doubles cannot hide missing imports.

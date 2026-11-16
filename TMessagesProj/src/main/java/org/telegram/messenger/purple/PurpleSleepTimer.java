@@ -362,6 +362,11 @@ public final class PurpleSleepTimer {
         return entry == null || rules.autoStart(entry.ticket);
     }
 
+    public boolean valid(Ticket ticket) {
+        main(); check();
+        return rules.valid(ticket);
+    }
+
     public boolean automatic(Ticket ticket) {
         main(); check();
         return rules.autoStart(ticket);
@@ -369,6 +374,13 @@ public final class PurpleSleepTimer {
 
     public void explicitPlay(Slot slot) {
         main(); check();
+        rules.manualPlay(slot);
+        refreshTickets();
+    }
+
+    public void routePlay(Slot slot) {
+        main(); check();
+        if (rules.expiryBlocked(slot)) return;
         rules.manualPlay(slot);
         refreshTickets();
     }

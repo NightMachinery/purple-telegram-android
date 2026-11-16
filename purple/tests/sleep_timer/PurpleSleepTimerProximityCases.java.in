@@ -1,0 +1,316 @@
+package org.telegram.messenger.purple.proximity;
+
+import org.telegram.messenger.purple.PurpleSleepTimerRules;
+import java.util.*;
+import java.util.function.BooleanSupplier;
+import static org.telegram.messenger.purple.PurpleSleepTimerRules.*;
+
+final class SystemClock {
+    static long now=1_000_000L;
+    static long elapsedRealtime() { return now; }
+}
+final class AudioManager { static final int STREAM_VOICE_CALL=0, STREAM_MUSIC=3; }
+final class NotificationCenter {
+    static final int audioRouteChanged=1;
+    static int posts,account;
+    static NotificationCenter getInstance(int value) { account=value; return new NotificationCenter(); }
+    void postNotificationName(int kind,Object... values) { if(kind!=audioRouteChanged)throw new AssertionError("unexpected notification");posts++; }
+}
+final class AndroidUtilities {
+    static final ArrayList<Runnable> queued=new ArrayList<>();
+    static void runOnUIThread(Runnable action,int delay) { if(delay!=100)throw new AssertionError("route delay");queued.add(action); }
+    static void drain() { ArrayList<Runnable> copy=new ArrayList<>(queued);queued.clear();for(Runnable action:copy)action.run(); }
+}
+final class VideoPlayer {
+    static int nativeStarts;
+    static final class Backend {
+        boolean playing;
+        void setPlayWhenReady(boolean value) { playing=value;if(value)nativeStarts++; }
+    }
+    Backend player=new Backend(),audioPlayer;
+    boolean mixedPlayWhenReady,mixedAudio,audioPlayerReady,videoPlayerReady;
+    int streamType,seekCalls;
+    long position=7000;
+    boolean isPlaying() { return player.playing; }
+    void setStreamType(int type) { streamType=type; }
+    long getCurrentPosition() { return position; }
+    void seekTo(long value) { position=value;seekCalls++; }
+    //@EXTRACT native public void play() {
+    void pause() { player.playing=false; }
+}
+final class MessageObject {
+    static final class Document { long id;Document(long value){id=value;} }
+    final int currentAccount,id;
+    final long dialog;
+    final Kind kind;
+    final Document document;
+    float audioProgress=.4f;
+    int audioPlayerDuration=180;
+    MessageObject(int account,int value,Kind type) { currentAccount=account;id=value;dialog=account+7000;kind=type;document=new Document(9000+value); }
+    Document getDocument() { return document; }
+    boolean isMusic() { return kind==Kind.SONG; }
+    boolean isRoundVideo() { return kind==Kind.ROUND; }
+    boolean isVoice() { return kind==Kind.VOICE; }
+    boolean isVideo() { return kind==Kind.VIDEO; }
+    long getDialogId() { return dialog; }
+    int getId() { return id; }
+}
+final class PurpleSleepTimer {
+    //@EXTRACT timer public interface Port {
+    //@EXTRACT timer public static final int STARTED = 1, CHANGED = 2, CANCELLED = 3, EXPIRED = 4, NOTHING = 5;
+    //@EXTRACT timer public interface Feedback { void show(int event); }
+    //@EXTRACT timer private static final class Entry {
+
+    private static PurpleSleepTimer instance = new PurpleSleepTimer();
+    static PurpleSleepTimer get() { return instance; }
+    static void reset() { instance = new PurpleSleepTimer(); }
+
+    final PurpleSleepTimerRules rules = new PurpleSleepTimerRules();
+    private final EnumMap<Slot, Entry> entries = new EnumMap<>(Slot.class);
+    private final Map<VideoPlayer, Entry> registered = java.util.Collections.synchronizedMap(new WeakHashMap<>());
+    private Feedback feedback;
+    private boolean foreground, pendingExpiryToast, checking;
+    private int localPauseDepth;
+
+    boolean owns(Slot slot, VideoPlayer player) { return false; }
+    boolean handoff(Ticket request, Slot slot, Port port) { throw new AssertionError("unexpected viewer handoff"); }
+    // Inert host endpoints: viewer handoff, Looper and listener scheduling are outside this fixture.
+    private static void main() {}
+    private void publish() {
+        for (Entry entry : new ArrayList<>(entries.values())) entry.port.refreshReceipt();
+    }
+
+    //@EXTRACT timer public static Item item(MessageObject message) {
+    //@EXTRACT timer public Item current(Slot slot) { return rules.current(slot); }
+    //@EXTRACT timer public Ticket ticket(Slot slot) { return rules.ticket(slot); }
+    //@EXTRACT timer public boolean blocked(Slot slot) { return rules.blocked(slot); }
+    //@EXTRACT timer public void attach(Slot slot, Item item, boolean eligible, VideoPlayer player, Port port) {
+    //@EXTRACT timer private void attach(Slot slot, Item item, boolean eligible, VideoPlayer player, Port port, Object authority) {
+    //@EXTRACT timer public void detach(Ticket ticket) {
+    //@EXTRACT timer public void check() {
+    //@EXTRACT timer private void expire(Item endedSong, Port voiceFinish) {
+    //@EXTRACT timer public boolean localPause() { return localPauseDepth != 0; }
+    //@EXTRACT timer public boolean valid(Ticket ticket) {
+    //@EXTRACT timer public boolean beforeStart(VideoPlayer player) {
+    //@EXTRACT timer public void routePlay(Slot slot) {
+    //@EXTRACT timer public void explicitPause(Slot slot) {
+    //@EXTRACT timer public boolean locally(java.util.function.BooleanSupplier action) {
+    //@EXTRACT timer public boolean automatic(Ticket ticket) {
+    //@EXTRACT timer public void explicitPlay(Slot slot) {
+    //@EXTRACT timer public boolean takePendingAdvance(Item item, boolean explicitItemPlay) {
+    //@EXTRACT timer private void refreshTickets() {
+    //@EXTRACT timer private void tell(int event) { if (feedback != null) feedback.show(event); }
+}
+
+final class PurpleSleepTimerAudio implements PurpleSleepTimer.Port {
+    private final MediaController controller;
+    private final PurpleSleepTimer timer=PurpleSleepTimer.get();
+    private int replacing,automatic;
+    private boolean restoring;
+    private Ticket download;
+    private VideoPlayer player;
+    private static MessageObject heldSong;
+    PurpleSleepTimerAudio(MediaController value) { controller=value; }
+    //@EXTRACT audio public boolean play(MessageObject message, BooleanSupplier stock) {
+    //@EXTRACT audio public void bind(VideoPlayer player, MessageObject message) {
+    //@EXTRACT audio public void unloaded(boolean transfer, Ticket closing) {
+    //@EXTRACT audio public void pauseRequested() {
+    //@EXTRACT audio public void pauseAutomatic(MessageObject message) {
+    //@EXTRACT audio public Ticket capture() { return timer.ticket(Slot.AUDIO); }
+    //@EXTRACT audio public static boolean heldSong(MessageObject message) { return message != null && heldSong == message; }
+    //@EXTRACT audio public boolean restore(MessageObject message, BooleanSupplier stock) {
+    //@EXTRACT audio public boolean allowRemotePlay() {
+    //@EXTRACT audio public void changeRoute(boolean paused, Runnable stock) {
+    //@EXTRACT audio public Runnable routePause(MessageObject message) {
+    //@EXTRACT audio @Override public boolean playing() {
+    //@EXTRACT audio @Override public void fenceAutomaticResumes() { controller.purpleSleepFence(); }
+    //@EXTRACT audio @Override public void pauseLocal() { controller.purpleSleepPauseLocal(); }
+    //@EXTRACT audio @Override public void finishVoiceLocally() { controller.purpleSleepFinishVoice(); }
+    void adoptHeld(MessageObject selected) {
+        controller.playingMessageObject = selected;
+        heldSong = selected; player = null;
+        timer.attach(Slot.AUDIO, PurpleSleepTimer.item(selected), true, null, this);
+    }
+    boolean restoringNow() { return restoring; }
+    @Override public boolean eligibleEnd() { return true; }
+}
+final class MediaController {
+    PurpleSleepTimerAudio purpleSleep=new PurpleSleepTimerAudio(this);
+    MessageObject playingMessageObject;
+    VideoPlayer audioPlayer,videoPlayer;
+    boolean useFrontSpeaker,isPaused=true,resumeAudioOnFocusGain,wasPlayingAudioBeforePause;
+    boolean failCreate;
+    Runnable duringCreate;
+    int cleanups,pauseCalls,constructions,lastCreatedStream,remoteStarts;
+    //@EXTRACT media private void startAudioAgain(boolean paused) {
+    //@EXTRACT media private void purpleSleepAudioRoute(boolean paused) {
+    //@EXTRACT media public boolean playMessage(final MessageObject messageObject) {
+    //@EXTRACT media public boolean playMessage(final MessageObject messageObject, boolean silent) {
+    //@EXTRACT media public void purpleSleepFence() {
+    void route(boolean paused) { startAudioAgain(paused); }
+    boolean purpleSleepPlayMessage(MessageObject message,boolean silent) {
+        if(failCreate)throw new IllegalStateException("synthetic construction failure");
+        playingMessageObject=message;
+        VideoPlayer fresh=new VideoPlayer();constructions++;lastCreatedStream=useFrontSpeaker?0:3;fresh.setStreamType(lastCreatedStream);
+        if(message.isRoundVideo())videoPlayer=fresh;else audioPlayer=fresh;
+        if(duringCreate!=null){Runnable action=duringCreate;duringCreate=null;action.run();}
+        purpleSleep.bind(fresh,message);
+        fresh.play();isPaused=!fresh.player.playing;
+        //@EXTRACT media if (!purpleSleep.allowRemotePlay()) return true;
+        remoteStarts++;
+        return true;
+    }
+    boolean pauseMessage(MessageObject message) {
+        if(playingMessageObject!=message)return false;
+        pauseCalls++;purpleSleep.pauseRequested();purpleSleepPauseLocal();return true;
+    }
+    void cleanupPlayer(boolean notify,boolean stopService) {
+        Ticket closing=purpleSleep.capture();cleanups++;
+        if(audioPlayer!=null)audioPlayer.pause();if(videoPlayer!=null)videoPlayer.pause();
+        audioPlayer=videoPlayer=null;playingMessageObject=null;isPaused=true;
+        purpleSleep.unloaded(false,closing);
+    }
+    public MessageObject getPlayingMessageObject() { return playingMessageObject; }
+    public boolean isMessagePaused() { return isPaused; }
+    public boolean seekToProgress(MessageObject message,float progress) { message.audioProgress=progress;return true; }
+    public void purpleSleepPauseLocal() { isPaused=true;if(audioPlayer!=null)audioPlayer.pause();if(videoPlayer!=null)videoPlayer.pause(); }
+    public void purpleSleepFinishVoice() {}
+    boolean audible() { return audioPlayer!=null&&audioPlayer.player.playing || videoPlayer!=null&&videoPlayer.player.playing; }
+}
+
+public final class PurpleSleepTimerProximityCases {
+    static int checks;
+    static void check(boolean yes,String name) { checks++;if(!yes)throw new AssertionError(name); }
+    static final class Harness {
+        final PurpleSleepTimer timer;
+        final MediaController controller;
+        final MessageObject selected;
+        Harness(Kind kind) {
+            PurpleSleepTimer.reset();SystemClock.now=1_000_000L;VideoPlayer.nativeStarts=0;NotificationCenter.posts=0;AndroidUtilities.queued.clear();
+            timer=PurpleSleepTimer.get();controller=new MediaController();selected=new MessageObject(0,1,kind);
+            check(controller.playMessage(selected)&&controller.audible(),"initial deliberate Play works");
+        }
+        void arm() { check(timer.rules.timed(SystemClock.now,MINUTE),"timer armed"); }
+        void expire() { arm();SystemClock.now+=MINUTE;timer.check();check(!controller.audible()&&timer.blocked(Slot.AUDIO),"expiry fences native playback"); }
+        void retained() { check(controller.playingMessageObject==selected&&timer.current(Slot.AUDIO).equals(PurpleSleepTimer.item(selected)),"route retains logical selection");check(selected.audioProgress==.4f,"route retains position"); }
+    }
+    public static void main(String[] args) {
+        Harness playing=new Harness(Kind.VOICE);VideoPlayer initial=playing.controller.audioPlayer;
+        playing.controller.useFrontSpeaker=true;playing.controller.route(false);
+        check(playing.controller.audioPlayer!=initial&&playing.controller.cleanups==1,"audio route recreates native owner");
+        check(playing.controller.audible()&&VideoPlayer.nativeStarts==2,"healthy route keeps playing");
+        check(playing.controller.lastCreatedStream==0&&NotificationCenter.posts==1,"route change and stream choice retained");playing.retained();
+
+        Harness lower=new Harness(Kind.VOICE);lower.controller.route(true);
+        check(!lower.controller.audible()&&VideoPlayer.nativeStarts==1,"lowering pauses before route reconstruction without transient Play");
+        check(lower.timer.blocked(Slot.AUDIO)&&AndroidUtilities.queued.size()==1,"lowering fences and preserves stock deferred pause");lower.retained();
+        check(lower.controller.playMessage(lower.selected)&&lower.controller.audible(),"deliberate Play after lowering works");
+        int pauses=lower.controller.pauseCalls;AndroidUtilities.drain();
+        check(lower.controller.audible()&&lower.controller.pauseCalls==pauses&&!lower.timer.blocked(Slot.AUDIO),"stale route pause cannot overtake a later deliberate Play");
+
+        for(boolean paused:new boolean[]{false,true}) {
+            Harness expired=new Harness(Kind.VOICE);expired.expire();VideoPlayer old=expired.controller.audioPlayer;
+            expired.controller.useFrontSpeaker=true;expired.controller.route(paused);AndroidUtilities.drain();
+            check(!expired.controller.audible()&&VideoPlayer.nativeStarts==1,"expired route never starts a native player");
+            check(expired.timer.blocked(Slot.AUDIO),"route never grants explicit Play after expiry");
+            check(expired.controller.audioPlayer!=old&&expired.controller.cleanups==1&&expired.controller.lastCreatedStream==0,"expired route still reconstructs the native stream");
+            check(NotificationCenter.posts==1,"expired route still posts route change");expired.retained();
+            check(expired.controller.playMessage(expired.selected)&&expired.controller.audible(),"user Play after expired route restores playback");
+        }
+        for(boolean paused:new boolean[]{false,true}) {
+            Harness round=new Harness(Kind.ROUND);round.expire();VideoPlayer old=round.controller.videoPlayer;
+            round.controller.useFrontSpeaker=true;round.controller.route(paused);
+            check(round.controller.videoPlayer==old&&round.controller.cleanups==0&&old.streamType==0,"round route changes stream in place");
+            check(!round.controller.audible()&&VideoPlayer.nativeStarts==1&&round.timer.blocked(Slot.AUDIO),"round route respects expiry");
+            check(AndroidUtilities.queued.isEmpty(),"round route retains immediate pause path");round.retained();
+        }
+        Harness during=new Harness(Kind.VOICE);during.arm();during.controller.duringCreate=()->SystemClock.now+=MINUTE;
+        during.controller.route(false);
+        check(!during.controller.audible()&&VideoPlayer.nativeStarts==1&&during.timer.blocked(Slot.AUDIO),"deadline during native construction fences before start");during.retained();
+
+        Harness replacement=new Harness(Kind.VOICE);replacement.controller.route(true);
+        MessageObject other=new MessageObject(1,2,Kind.VOICE);replacement.controller.playMessage(other);AndroidUtilities.drain();
+        check(replacement.controller.audible()&&replacement.controller.playingMessageObject==other,"stale route pause cannot target replacement account");
+        check(!replacement.timer.blocked(Slot.AUDIO),"replacement keeps its explicit intent");
+
+        Harness failure=new Harness(Kind.VOICE);failure.controller.failCreate=true;
+        try{failure.controller.route(true);throw new AssertionError("expected construction failure");}catch(IllegalStateException expected){}
+        failure.controller.failCreate=false;failure.controller.playMessage(failure.selected);
+        check(failure.controller.audible()&&!failure.timer.blocked(Slot.AUDIO),"route exception releases automatic and replacement nesting");
+        failure.controller.pauseMessage(failure.selected);check(failure.timer.blocked(Slot.AUDIO),"later manual Pause remains explicit after exception");
+
+        PurpleSleepTimer.reset();MediaController empty=new MediaController();PurpleSleepTimer timer=PurpleSleepTimer.get();
+        int posts=NotificationCenter.posts;PlayRequest request=timer.rules.requestPlay(Slot.AUDIO);empty.route(true);
+        check(timer.rules.acceptPlay(request)&&NotificationCenter.posts==posts,"empty route does not revoke a pending deliberate Play");
+
+        for (Kind kind : new Kind[]{Kind.VOICE, Kind.ROUND}) {
+            Harness healthy = new Harness(kind);
+            healthy.controller.route(true);AndroidUtilities.drain();
+            check(!healthy.controller.audible(), "lowering pauses a healthy voice or round");
+            healthy.controller.useFrontSpeaker=true;healthy.controller.route(false);
+            check(healthy.controller.audible(), "timer-off lower then raise resumes voice and round");
+            check(!healthy.timer.blocked(Slot.AUDIO), "healthy raise restores deliberate playback intent");
+            healthy.controller.pauseMessage(healthy.selected);healthy.controller.route(false);
+            check(healthy.controller.audible(), "raising resumes an ordinary user Pause without a timer");
+            healthy.expire();healthy.controller.route(true);AndroidUtilities.drain();healthy.controller.route(false);
+            check(!healthy.controller.audible(), "lower then raise cannot clear an expired timer");
+            healthy.timer.rules.cancel();healthy.controller.route(false);
+            check(!healthy.controller.audible(), "cancelling a timer does not clear its expiry fence");
+        }
+
+        Harness castLower = new Harness(Kind.VOICE);int remote=castLower.controller.remoteStarts;
+        castLower.controller.route(true);
+        check(castLower.controller.remoteStarts==remote, "lowering never sends remote Play");
+        castLower.controller.route(false);
+        check(castLower.controller.remoteStarts==remote+1, "healthy raise retains stock remote Play tail");
+        Harness castExpired = new Harness(Kind.VOICE);castExpired.expire();remote=castExpired.controller.remoteStarts;
+        castExpired.controller.route(false);
+        check(castExpired.controller.remoteStarts==remote, "expiry blocks remote Play after route construction");
+        Harness castDue = new Harness(Kind.VOICE);castDue.arm();remote=castDue.controller.remoteStarts;
+        castDue.controller.duringCreate=()->SystemClock.now+=MINUTE;castDue.controller.route(false);
+        check(castDue.controller.remoteStarts==remote, "deadline during construction blocks remote Play tail");
+
+        for (boolean paused : new boolean[]{false,true}) {
+            Harness held = new Harness(Kind.SONG);held.expire();
+            held.controller.cleanupPlayer(false,true);held.controller.purpleSleep.adoptHeld(held.selected);
+            int constructions=held.controller.constructions,cleanups=held.controller.cleanups;
+            remote=held.controller.remoteStarts;held.controller.route(paused);
+            check(held.controller.constructions==constructions&&held.controller.cleanups==cleanups,
+                "routing held Saved Music does not construct or prepare a player");
+            check(held.controller.audioPlayer==null&&held.controller.videoPlayer==null&&!held.controller.audible(),
+                "held Saved Music remains unprepared and silent");
+            check(PurpleSleepTimerAudio.heldSong(held.selected)&&held.controller.remoteStarts==remote&&NotificationCenter.posts==1,
+                "held route preserves selection and notification without remote Play");
+            held.retained();
+        }
+
+        Harness nested = new Harness(Kind.VOICE);nested.arm();
+        nested.controller.purpleSleep.changeRoute(false, () -> {
+            check(nested.controller.purpleSleep.restoringNow(), "route establishes restoring scope");
+            nested.controller.purpleSleep.restore(nested.selected, () -> true);
+            check(nested.controller.purpleSleep.restoringNow(), "nested music restore preserves outer restoring scope");
+            SystemClock.now+=MINUTE;nested.timer.check();
+            nested.controller.playMessage(nested.selected);
+            check(!nested.controller.audible(), "nested restore never clears deadline playback block");
+        });
+        check(!nested.controller.purpleSleep.restoringNow(), "route restores previous nesting after deadline");
+
+        PurpleSleepTimerRules transitions = new PurpleSleepTimerRules();
+        Item voice = new Item(0,1,1,1,Kind.VOICE);
+        transitions.loaded(Slot.AUDIO,voice,true);transitions.manualPause(Slot.AUDIO);
+        check(!transitions.expiryBlocked(Slot.AUDIO), "ordinary Pause is distinct from expiry");
+        transitions.expire(null);transitions.manualPause(Slot.AUDIO);
+        check(transitions.expiryBlocked(Slot.AUDIO), "Pause preserves expiry cause");
+        transitions.replaceIncarnation(Slot.AUDIO);transitions.cancel();
+        check(transitions.expiryBlocked(Slot.AUDIO), "replacement and cancellation preserve expiry cause");
+        transitions.unload(transitions.ticket(Slot.AUDIO));transitions.loaded(Slot.AUDIO,voice,true);
+        check(transitions.expiryBlocked(Slot.AUDIO), "unload and reload preserve expiry cause");
+        transitions.manualPlay(Slot.VIEWER);
+        check(transitions.handoff(transitions.ticket(Slot.AUDIO),Slot.VIEWER)&&transitions.expiryBlocked(Slot.VIEWER),
+            "handoff carries expiry cause to new owner");
+        transitions.manualPlay(Slot.VIEWER);
+        check(!transitions.expiryBlocked(Slot.VIEWER)&&!transitions.blocked(Slot.VIEWER), "explicit Play alone lifts expiry for its slot");
+
+        System.out.println("SLEEP_TIMER_PROXIMITY_CHECKS="+checks);
+    }
+}

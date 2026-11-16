@@ -1151,7 +1151,8 @@
         "play-request:SLEEP_TIMER_PLAY_REQUEST_CHECKS": 55,
         "deferred:SLEEP_TIMER_SESSION_CHECKS": 59,
         "deferred:SLEEP_TIMER_TIMESTAMP_CHECKS": 52,
-        "embedded-port:EMBEDDED_PORT_CHECKS": 18
+        "embedded-port:EMBEDDED_PORT_CHECKS": 18,
+        "proximity:SLEEP_TIMER_PROXIMITY_CHECKS": 110
       }
     }
   ]

@@ -29,7 +29,7 @@ file TMessagesProj/src/main/java/org/telegram/messenger/DownloadController.java 
 file TMessagesProj/src/main/java/org/telegram/messenger/FileLoadOperation.java 5 0 5
 file TMessagesProj/src/main/java/org/telegram/messenger/FileLoader.java 4 2 3
 file TMessagesProj/src/main/java/org/telegram/messenger/LocaleController.java 1 0 1
-file TMessagesProj/src/main/java/org/telegram/messenger/MediaController.java 132 23 43
+file TMessagesProj/src/main/java/org/telegram/messenger/MediaController.java 138 24 45
 file TMessagesProj/src/main/java/org/telegram/messenger/MediaDataController.java 19 2 14
 file TMessagesProj/src/main/java/org/telegram/messenger/MessageObject.java 1 1 1
 file TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java 67 3 30
