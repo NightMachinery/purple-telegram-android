@@ -259,9 +259,10 @@ public final class PurpleAccountSyncStoreTest {
         new File(base, "corrupt").mkdir();
         try (PurpleAccountSyncStore store = new PurpleAccountSyncStore(corruptRoot, core)) {
             expect(store.open(true, 0, "device"), PurpleAccountSyncStore.Status.Uninitialized);
+            final int failedWritesBeforeCommit = AtomicFile.failWriteCalls;
             AtomicFile.corruptAfterFinish = true;
             expect(store.initialize(initial), PurpleAccountSyncStore.Status.IoError);
-            if (AtomicFile.failWriteCalls != 0) {
+            if (AtomicFile.failWriteCalls != failedWritesBeforeCommit) {
                 throw new AssertionError("failWrite called after commit");
             }
             if (!new File(corruptRoot, "state.json").exists()) {

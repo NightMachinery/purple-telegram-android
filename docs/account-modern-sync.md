@@ -135,3 +135,10 @@ chat binding. A fresh Check can then continue the ordinary first-use choice.
 State set-aside checks a bounded sequence of dated names, so a carry archive or
 earlier operation in the same second cannot prevent that next step. Existing
 archives are never overwritten or merged.
+
+The committed-write corruption regression measures rollback calls only during
+its own operation. Earlier integration cases deliberately fail uncommitted writes
+and share the host AtomicFile port. Their accumulated count cannot imply that a
+later committed write rolled back. The corruption assertion still rejects any
+new rollback, and the regression is checked against a store mutation that calls
+failWrite after commit.
