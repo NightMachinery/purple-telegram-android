@@ -34,11 +34,49 @@ final class PurpleSyncRecoveryModel {
         final PurpleSyncRecoveryCore.Plan plan;
         final PurpleSyncInventory inventory;
         final PurpleSyncSettingsFile.Contents local;
+        /** Carry entries in this account's own sync folder, or null when there are none. */
+        final Carry carry;
+        /** Another signed-in account's sync folder holds carry entries; only that account may set them aside. */
+        final boolean otherAccountCarry;
         Offer(PurpleSyncRecoveryModel model,JSONObject request,JSONObject journal,PurpleSyncRecoveryCore.Plan plan,
-                PurpleSyncInventory inventory,PurpleSyncSettingsFile.Contents local) {
+                PurpleSyncInventory inventory,PurpleSyncSettingsFile.Contents local,Carry carry,boolean otherAccountCarry) {
             this.model=model;this.request=request;this.journal=journal;this.plan=plan;this.inventory=inventory;this.local=local;
+            this.carry=carry;this.otherAccountCarry=otherAccountCarry;
         }
         boolean resuming() { return journal!=null; }
+    }
+    /** A top-level entry observed by lstat ({@link PurpleGlobalChoiceFiles.Physical#mark}); its bytes are never read. */
+    static final class Entry {
+        final PurpleGlobalChoiceFiles.Mark mark;
+        final boolean directory;
+        Entry(PurpleGlobalChoiceFiles.Mark mark,boolean directory) { this.mark=mark;this.directory=directory; }
+        boolean same(Entry other) { return other!=null&&directory==other.directory&&mark.same(other.mark); }
+    }
+    /**
+     * The retired carry's entries ({@link PurpleAccountSyncStore#legacyArtifactName}) at the top of this account's own
+     * sync folder, plus the identity of every other top-level entry, taken after the owner route was validated.
+     * Unsafe when any carry entry is not a plain single-link file or a directory, when there are more than
+     * {@link #LIMIT}, when another entry cannot be observed safely, or when a Start again journal exists.
+     */
+    static final class Carry {
+        static final int LIMIT=64;
+        final String rootIdentity;
+        final int rootMode;
+        final java.util.TreeMap<String,Entry> entries,others;
+        final boolean safe;
+        Carry(PurpleGlobalChoiceFiles.Mark root,java.util.TreeMap<String,Entry> entries,java.util.TreeMap<String,Entry> others,boolean safe) {
+            rootIdentity=root.identity;rootMode=root.mode;this.entries=entries;this.others=others;this.safe=safe;
+        }
+        /** The same folder, the same carry entries and the same other entries, compared by lstat marks. */
+        boolean sameAs(Carry other) {
+            return other!=null&&safe&&other.safe&&rootIdentity.equals(other.rootIdentity)&&rootMode==other.rootMode
+                    &&same(entries,other.entries)&&same(others,other.others);
+        }
+        private static boolean same(java.util.TreeMap<String,Entry> a,java.util.TreeMap<String,Entry> b) {
+            if(!a.keySet().equals(b.keySet()))return false;
+            for(Map.Entry<String,Entry> item:a.entrySet())if(!item.getValue().same(b.get(item.getKey())))return false;
+            return true;
+        }
     }
     final File root,sync,journalFile;
     final String account,owner,global;
@@ -49,6 +87,8 @@ final class PurpleSyncRecoveryModel {
     final PurpleSyncRecoveryFiles.Moves moves;
     private final PurpleSyncRecoveryFiles.InactiveTokens inactive=new PurpleSyncRecoveryFiles.InactiveTokens();
     private boolean consumed;
+    private boolean otherAccountCarry;
+    static final int ARCHIVE_ATTEMPTS=60;
     private Current archiveIdle;
     private String[] rootEntries;
     private final java.util.Set<String> targetTokens=new java.util.HashSet<>(), inertTokens=new java.util.HashSet<>();
@@ -65,6 +105,7 @@ final class PurpleSyncRecoveryModel {
     private boolean live() { return !consumed&&current.current()&&preferences.current.current()&&(archiveIdle==null||archiveIdle.current()); }
     Offer check(PurpleSyncInventory inventory,PurpleSyncSettingsFile.Contents local) {
         try {
+            Carry carry=null;
             JSONObject request=new JSONObject().put("account",account).put("owner",owner).put("signedIn",current.current())
                     .put("preferenceToken",preferences.token).put("preferences",preferences.others).put("discoveryComplete",false)
                     .put("stores",new JSONArray()).put("cloud",inventory!=null).put("storeSpaceComplete",completeCloud(inventory));
@@ -76,6 +117,8 @@ final class PurpleSyncRecoveryModel {
                 PurpleSyncRecoveryFiles.Snapshot ownerRecord=tree.capture(new File(root,"accounts/root.toml"),false);
                 JSONObject route=new JSONObject(PurpleGlobalChoiceModel.planNative(localChoice.bytes,ownerRecord.bytes,owner,global,account));
                 if(!route.optBoolean("ok"))throw new IllegalStateException("recovery owner changed");
+                // WHY: only after the keys and the owner route are proven, so the inventory names this account's folder.
+                carry=carryInventory();
                 if(!PurpleAccountSyncStore.recoverInterrupted(root,sync,account,tree.physical,()->live()&&tree.current()))throw new IllegalStateException("interrupted sync recovery refused");
                 if(PurpleAccountBinding.isToken(preferences.token))targetTokens.add(preferences.token);
                 PurpleSyncRecoveryFiles.Snapshot activeJournal=tree.capture(journalFile,false,PurpleSyncRecoveryFiles.JOURNAL_LIMIT);
@@ -105,7 +148,7 @@ final class PurpleSyncRecoveryModel {
                     ?new PurpleSyncRecoveryCore.Plan(new JSONObject().put("recovery",PurpleSyncRecoveryCore.Status.Incomplete.ordinal()).toString())
                     :PurpleSyncRecoveryCore.plan(request,inventory,local);
             if(plan==null||!live())return null;
-            return new Offer(this,request,journal,plan,inventory,local);
+            return new Offer(this,request,journal,plan,inventory,local,carry,otherAccountCarry);
         } catch(Exception|LinkageError e) { return null; }
     }
     private static boolean completeCloud(PurpleSyncInventory inventory) {
@@ -162,7 +205,10 @@ final class PurpleSyncRecoveryModel {
             else if(name.equals("start-again.json")&&directory.equals(sync))tree.capture(entry,false,PurpleSyncRecoveryFiles.JOURNAL_LIMIT);
             // WHY: the magic chat binding is the account's: Start again neither reads nor moves it, so it stays.
             else if(PurpleAccountSyncStore.bindingFile(name)){if(!entry.isFile()||!PurpleAccountFileSnapshot.notLink(entry))throw new IllegalStateException("unknown sync entry");}
-            else throw new IllegalStateException("unknown sync entry");
+            else {
+                if(!directory.equals(sync)&&PurpleAccountSyncStore.legacyArtifactName(name))otherAccountCarry=true;
+                throw new IllegalStateException("unknown sync entry");
+            }
         }
         PurpleSyncRecoveryFiles.Snapshot state=tree.capture(new File(directory,"state.json"),false);
         if(candidate)noteTargetToken(state.bytes);
@@ -176,6 +222,114 @@ final class PurpleSyncRecoveryModel {
         return new JSONObject().put("directoryAccount",key!=null?key:JSONObject.NULL)
                 .put("statePresent",state.bytes!=null).put("state",state.bytes!=null?PurpleSyncRecoveryCore.hex(state.bytes):"")
                 .put("pendingPresent",!pending.mark.missing()).put("pendingComplete",true).put("pending",files);
+    }
+    private Entry entry(File file) {
+        try { PurpleGlobalChoiceFiles.Mark mark=tree.physical.mark(file,false); if(!mark.missing())return new Entry(mark,false); } catch(Exception e) { }
+        try { PurpleGlobalChoiceFiles.Mark mark=tree.physical.mark(file,true); if(!mark.missing())return new Entry(mark,true); } catch(Exception e) { }
+        return null;
+    }
+    /** Lists this account's own sync folder and lstats its top-level entries; reads no entry. Null without carry. */
+    private Carry carryInventory() throws Exception {
+        String[] names=PurpleSyncRecoveryFiles.names(sync);
+        boolean any=false;
+        for(String name:names)if(PurpleAccountSyncStore.legacyArtifactName(name))any=true;
+        if(!any)return null;
+        // WHY: names-only snapshots of the folder's parent and ancestry, so the action can prove the same
+        // directories. The sync folder itself and every carry entry get lstat marks only, never a Snapshot.
+        tree.capture(sync.getParentFile(),true);
+        PurpleGlobalChoiceFiles.Mark root=tree.physical.mark(sync,true);
+        java.util.TreeMap<String,Entry> entries=new java.util.TreeMap<>(),others=new java.util.TreeMap<>();
+        boolean safe=!root.missing();
+        int found=0;
+        for(String name:names) {
+            if(name.equals("lock")) { Entry lock=entry(new File(sync,name));if(lock==null||lock.directory)safe=false;continue; }
+            if(name.equals(journalFile.getName()))safe=false;
+            Entry item=entry(new File(sync,name));
+            if(item==null) { safe=false;continue; }
+            if(PurpleAccountSyncStore.legacyArtifactName(name)) { ++found;entries.put(name,item); }
+            else others.put(name,item);
+        }
+        if(found==0||found>Carry.LIMIT)safe=false;
+        return new Carry(root,entries,others,safe);
+    }
+    /**
+     * Whether the folder still holds exactly what was confirmed: the same folder, owner route and ancestry, every
+     * other entry unchanged, the carry entries not yet moved unchanged, and the moved ones, by identity, in
+     * {@code archive}, which holds nothing else.
+     */
+    private boolean carryUnchanged(Carry carry,File archive,PurpleGlobalChoiceFiles.Mark archiveMark,java.util.Set<String> moved,boolean locked) {
+        try {
+            if(!live()||!tree.currentExcept(sync))return false;
+            PurpleGlobalChoiceFiles.Mark root=tree.physical.mark(sync,true);
+            if(!carry.rootIdentity.equals(root.identity)||carry.rootMode!=root.mode)return false;
+            TreeSet<String> expected=new TreeSet<>(carry.others.keySet());
+            for(String name:carry.entries.keySet())if(!moved.contains(name))expected.add(name);
+            if(archive!=null)expected.add(archive.getName());
+            TreeSet<String> actual=new TreeSet<>(Arrays.asList(PurpleSyncRecoveryFiles.names(sync)));
+            if(!locked)actual.remove("lock");
+            else if(!actual.remove("lock"))return false;
+            if(!expected.equals(actual))return false;
+            for(Map.Entry<String,Entry> item:carry.others.entrySet())if(!item.getValue().same(entry(new File(sync,item.getKey()))))return false;
+            for(Map.Entry<String,Entry> item:carry.entries.entrySet()) {
+                if(moved.contains(item.getKey()))continue;
+                if(!item.getValue().same(entry(new File(sync,item.getKey()))))return false;
+            }
+            if(archive==null)return moved.isEmpty();
+            PurpleGlobalChoiceFiles.Mark now=tree.physical.mark(archive,true);
+            if(!archiveMark.identity.equals(now.identity)||archiveMark.mode!=now.mode)return false;
+            if(!new TreeSet<>(Arrays.asList(PurpleSyncRecoveryFiles.names(archive))).equals(new TreeSet<>(moved)))return false;
+            for(String name:moved) {
+                // WHY: identity and kind only; a rename may change the moved entry's ctime and so its revision.
+                Entry was=carry.entries.get(name),is=entry(new File(archive,name));
+                if(is==null||is.directory!=was.directory||!is.mark.identity.equals(was.mark.identity))return false;
+            }
+            return true;
+        } catch(Exception|LinkageError e) { return false; }
+    }
+    /**
+     * After the user confirmed {@code shown}, moves exactly its carry entries, unread, into a new private
+     * {@code orphaned-<date>} folder inside this account's own sync folder. Nothing is read, rewritten, restored or
+     * deleted, and no other entry moves. Every step is one no-follow, no-replace, identity-checked rename, so each
+     * entry stays either in place or in that folder; a stop part-way leaves the rest in place, still refused by the
+     * store, for a fresh Check and a fresh confirmation. The offer is consumed by the attempt.
+     */
+    boolean setAsideCarry(Offer shown) {
+        try {
+            Carry carry=shown!=null?shown.carry:null;
+            if(shown==null||shown.model!=this||carry==null||!carry.safe||shown.resuming())return false;
+            java.util.Set<String> moved=new TreeSet<>();
+            if(!carryUnchanged(carry,null,null,moved,false))return false;
+            try(PurpleSyncRecoveryFiles.Lock lock=new PurpleSyncRecoveryFiles.Lock(sync,carry.rootIdentity)) {
+                if(!carryUnchanged(carry,null,null,moved,true))return false;
+                PurpleGlobalChoiceFiles.Mark parent=tree.physical.mark(sync,true);
+                File archive=null;PurpleGlobalChoiceFiles.Mark archiveMark=null;
+                long now=System.currentTimeMillis();
+                for(int i=0;i<ARCHIVE_ATTEMPTS&&archive==null;++i) {
+                    File candidate=new File(sync,"orphaned-"+new SimpleDateFormat("yyyyMMdd-HHmmss",Locale.ROOT).format(new Date(now+i*1000L)));
+                    // WHY: an earlier set-aside in the same second keeps its folder; take the next free second.
+                    if(java.nio.file.Files.exists(candidate.toPath(),java.nio.file.LinkOption.NOFOLLOW_LINKS))continue;
+                    if(!carryUnchanged(carry,null,null,moved,true))return false;
+                    PurpleEditorDirectories.Receipt created=directories.create(candidate,parent);
+                    if(created==null||!created.created) {
+                        if(!carryUnchanged(carry,null,null,moved,true))return false;
+                        continue;
+                    }
+                    PurpleGlobalChoiceFiles.Mark mark=tree.physical.mark(candidate,true);
+                    if(!created.owned||!created.parentIdentity.equals(parent.identity)||!created.mark.same(mark)||(mark.mode&0777)!=0700)return false;
+                    archive=candidate;archiveMark=mark;
+                }
+                if(archive==null||!carryUnchanged(carry,archive,archiveMark,moved,true))return false;
+                for(Map.Entry<String,Entry> item:carry.entries.entrySet()) {
+                    if(!carryUnchanged(carry,archive,archiveMark,moved,true))return false;
+                    // WHY: a false result may follow a rename whose fsync failed; stop either way, never undo.
+                    if(!moves.move(new File(sync,item.getKey()),new File(archive,item.getKey()),item.getValue().mark.identity,
+                            carry.rootIdentity,archiveMark.identity))return false;
+                    moved.add(item.getKey());
+                }
+                return moved.equals(carry.entries.keySet())&&carryUnchanged(carry,archive,archiveMark,moved,true);
+            }
+        } catch(Exception|LinkageError e) { return false; }
+        finally { consumed=true; }
     }
     boolean relink(Offer shown) {
         synchronized(PurpleAccountBinding.WRITE_LOCK) {

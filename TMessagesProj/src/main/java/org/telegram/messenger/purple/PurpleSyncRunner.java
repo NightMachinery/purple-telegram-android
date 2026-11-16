@@ -96,7 +96,9 @@ public final class PurpleSyncRunner {
         }
     }
 
-    public enum RecoveryAction { None, Relink, StartAgain, ResumeArchive, Held }
+    public enum RecoveryAction { None, Relink, StartAgain, ResumeArchive, SetAsideOld, Held }
+    /** Why a Held check cannot offer the old-file set-aside here. */
+    public enum CarryNotice { None, Unsafe, OtherAccount }
     public static final class RecoveryOutcome {
         public final boolean ok;
         public final boolean startAgain;
@@ -112,6 +114,7 @@ public final class PurpleSyncRunner {
         final long generation;
         final PurpleSyncRecoveryModel.Offer recovery;
         public final RecoveryAction recoveryAction;
+        public final CarryNotice carryNotice;
         public final boolean setupOnlyJoin;
 
         Check(long generation, PurpleSyncApply.Reviewed reviewed,
@@ -120,9 +123,13 @@ public final class PurpleSyncRunner {
             setupOnlyJoin=PurpleSyncApply.setupOnlyJoin(inventory,reviewed.review,reviewed.local);
             recovery=reviewed.recovery;
             recoveryAction=recovery==null?RecoveryAction.None
+                    :recovery.carry!=null&&recovery.carry.safe?RecoveryAction.SetAsideOld
                     :recovery.resuming()&&recovery.plan.start==PurpleSyncRecoveryCore.Start.Ready?RecoveryAction.ResumeArchive
                     :recovery.plan.status==PurpleSyncRecoveryCore.Status.RootRelink?RecoveryAction.Relink
                     :recovery.plan.offerStartAgain?RecoveryAction.StartAgain:RecoveryAction.Held;
+            carryNotice=recovery==null?CarryNotice.None
+                    :recovery.carry!=null?(recovery.carry.safe?CarryNotice.None:CarryNotice.Unsafe)
+                    :recovery.otherAccountCarry?CarryNotice.OtherAccount:CarryNotice.None;
             this.review = reviewed.review;
             this.local = reviewed.local;
             this.adoptFailure = reviewed.adoptFailure;
@@ -343,6 +350,34 @@ public final class PurpleSyncRunner {
                 progress.onProgress(phase, count, total);
             }
         }, result -> onChecked(started, result, done));
+        return Start.Started;
+    }
+
+    /**
+     * Sets aside the old carry files the user confirmed on {@code shown}. A fresh offer must name exactly the same
+     * entries; anything else, including a partial earlier attempt, needs a new Check and a new confirmation. It
+     * needs no transport and never runs from automatic sync, review, first use or the magic join.
+     */
+    public Start setAsideOld(Check shown,Listener<RecoveryOutcome> done) {
+        Start refused=refusal(true);
+        if(refused!=null)return refused;
+        if(shown==null||shown!=current||shown.generation!=generation||shown.recovery==null
+                ||shown.recoveryAction!=RecoveryAction.SetAsideOld||!shown.recovery.model.retained())return Start.Stale;
+        if(!begin())return Start.Busy;
+        long started=++generation;current=null;
+        queue.post(()->{
+            boolean ok=false;
+            if(session.available()&&shown.recovery.model.retained()) {
+                PurpleSyncRecoveryModel.Offer fresh=session.env.recovery(null,session.env.readSettings());
+                ok=fresh!=null&&fresh.carry!=null&&fresh.carry.sameAs(shown.recovery.carry)&&fresh.model.setAsideCarry(fresh);
+            }
+            final boolean completed=ok;
+            ui.post(()->{
+                if(!live(started))return;
+                end();
+                done.onResult(new RecoveryOutcome(completed,false,null));
+            });
+        });
         return Start.Started;
     }
 

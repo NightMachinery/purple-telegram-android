@@ -77,6 +77,20 @@ then state. Native descriptor checks, exclusive rename and directory fsync guard
 these moves. Settings, good, backups, History, local choices and other accounts
 are never archive targets.
 
+Set aside old files is the only route for files left by the retired carry
+(names starting with `carry` or `.carry-`, which the store refuses). Check
+lists this account's own sync folder after the owner route is proven and
+records lstat identities only; it reads no carry entry. The user confirms on the
+Sync screen. Under the account recovery lock, with the same route, ancestry and
+non-carry identities, each carry entry moves by no-follow, no-replace rename into
+a new private `orphaned-date` folder. Nothing is read, rewritten, restored or
+deleted, and state, pending, automatic and binding files stay. Symlinks, special
+files, hard links, more than 64 entries or a Start again journal hold the account.
+Another signed-in account's carry entries are named only as a notice; that
+account sets them aside from its own screen. A stop part-way leaves the rest
+refused; the next Check offers the remaining entries for a fresh confirmation,
+so one set may span several dated folders.
+
 A partial failure retains `start-again.json` and blocks setup. Finish starting
 again resumes that same journal, checks exact archive bytes and identities, and
 calls CompleteSyncStartAgain. Only SetupReady removes the journal and clears
@@ -100,3 +114,11 @@ These checks do not qualify Android UI, the actual Os implementation, devices,
 emulators, an APK or shrinker behavior. No upstream hook changes are needed.
 
 The binding-only host driver also uses the real core setup-token planner. Pass its offline org.json jar with `--json` and the host JNI library with `--library`. Only unrelated account-file and typed-ledger edges are fail-closed test fakes. Missing JNI refuses initialization; it is never substituted by a Java token algorithm. Identity or login-lifetime changes and preference CAS conflicts remain zero-write refusals. Error labels differ by the capture phase: an unusable opening identity is AccountUnavailable on read, while an invalidated persistence capture is AccountChanged.
+
+The carry set-aside component fixture exercises557 checks with synthetic files,
+including unreadable entries, partial moves, stale offers, account replacement,
+lock refusal and cross-account isolation. The store, recovery model and runner
+also compile against both actual Android API variants. The automatic fixture's
+strict class-origin guard requires the coherent AGP build; mixed direct-compile
+classes do not satisfy it. Current full application and device/UI qualification
+remain required, and a successful file move does not itself start synchronization.

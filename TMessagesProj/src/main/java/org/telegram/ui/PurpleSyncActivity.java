@@ -193,6 +193,13 @@ public class PurpleSyncActivity extends UniversalFragment {
         }
         if(shown!=null&&runner()!=null&&!runner.busy()) {
             PurpleSyncRunner.RecoveryAction recovery=shown.recoveryAction;
+            if(recovery==PurpleSyncRunner.RecoveryAction.SetAsideOld) {
+                items.add(UItem.asButton(ROW_RECOVERY,getString(R.string.PurpleSyncSetAsideOld)));
+                items.add(UItem.asShadow(formatString(R.string.PurpleSyncSetAsideOldAbout,accountLabel())));
+            } else if(shown.carryNotice!=PurpleSyncRunner.CarryNotice.None) {
+                items.add(UItem.asShadow(getString(shown.carryNotice==PurpleSyncRunner.CarryNotice.OtherAccount
+                        ?R.string.PurpleSyncOldFilesOtherAccount:R.string.PurpleSyncOldFilesUnsafe)));
+            }
             if(recovery==PurpleSyncRunner.RecoveryAction.Relink||recovery==PurpleSyncRunner.RecoveryAction.StartAgain||recovery==PurpleSyncRunner.RecoveryAction.ResumeArchive) {
                 items.add(UItem.asButton(ROW_RECOVERY,getString(recovery==PurpleSyncRunner.RecoveryAction.Relink?R.string.PurpleSyncRelink
                         :recovery==PurpleSyncRunner.RecoveryAction.ResumeArchive?R.string.PurpleSyncResumeArchive:R.string.PurpleSyncStartAgain)));
@@ -750,6 +757,10 @@ public class PurpleSyncActivity extends UniversalFragment {
         Activity activity=getParentActivity();
         PurpleSyncRunner.Check at=shown;
         if(activity==null||at==null||runner()==null||runner.busy()||!stillCurrent(at))return;
+        if(at.recoveryAction==PurpleSyncRunner.RecoveryAction.SetAsideOld) {
+            confirmSetAsideOld(activity,at);
+            return;
+        }
         boolean archive=at.recoveryAction!=PurpleSyncRunner.RecoveryAction.Relink;
         int label=archive?(at.recoveryAction==PurpleSyncRunner.RecoveryAction.ResumeArchive?R.string.PurpleSyncResumeArchive:R.string.PurpleSyncStartAgain):R.string.PurpleSyncRelink;
         AlertDialog.Builder builder=new AlertDialog.Builder(activity);
@@ -761,6 +772,24 @@ public class PurpleSyncActivity extends UniversalFragment {
                 clearReview();
                 if(outcome.ok)reviewAgain(getString(archive?R.string.PurpleSyncArchiveDone:R.string.PurpleSyncRelinkDone),outcome.next);
                 else setStatus(getString(R.string.PurpleSyncRecoveryHeld));
+            });
+            if(started!=PurpleSyncRunner.Start.Started) { refused(started);return; }
+            clearReview();setStatus(getString(R.string.PurpleSyncRecoveryChecking));
+        });
+        builder.setNegativeButton(getString(R.string.Cancel),null);
+        AlertDialog dialog=builder.create();showDialog(dialog);PurpleSyncReviewDialog.focusCancel(dialog);
+    }
+
+    private void confirmSetAsideOld(Activity activity,PurpleSyncRunner.Check at) {
+        AlertDialog.Builder builder=new AlertDialog.Builder(activity);
+        builder.setTitle(formatString(R.string.PurpleImpactTitle,accountLabel()));
+        builder.setMessage(formatString(R.string.PurpleSyncSetAsideOldAbout,accountLabel()));
+        builder.setPositiveButton(getString(R.string.PurpleSyncSetAsideOld),(dialog,which)->{
+            if(runner()==null)return;
+            PurpleSyncRunner.Start started=runner.setAsideOld(at,outcome->{
+                clearReview();
+                if(outcome.ok)reviewAgain(getString(R.string.PurpleSyncSetAsideOldDone),outcome.next);
+                else setStatus(getString(R.string.PurpleSyncSetAsideOldHeld));
             });
             if(started!=PurpleSyncRunner.Start.Started) { refused(started);return; }
             clearReview();setStatus(getString(R.string.PurpleSyncRecoveryChecking));

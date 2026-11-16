@@ -488,3 +488,29 @@ status says the account is unavailable and a running check is cancelled.
 
 The screen is Android-only code and has no host test; the APK build compiles
 it and the emulator smoke run drives it.
+
+## Legacy carry artifacts
+
+The active store reports `AmbiguousFiles` before ordinary recovery when names
+starting with `carry` or `.carry-` remain beside its state. It checks names rather
+than reviving the retired carry parser, so malformed and apparently finished
+artifacts are both held. The store never reads, deletes, renames or restores a
+carry file. Recovery discovery already held such accounts as incomplete before
+this guard; the store now agrees with it. The explicit Set aside old files
+action in [modern sync recovery](account-modern-sync.md) is the only route that
+moves them. Both use `PurpleAccountSyncStore.legacyArtifactName`.
+
+The account lock precedes admission. Initialization, state snapshots, bound
+operations, cleanup and interrupted recovery also refuse late artifacts; atomic
+writes check after admission and before commit. A failed store open gives the
+automatic engine `StoreMismatch`, leaving its local files and transport untouched.
+Cooperating writers still share the account lock; arbitrary filesystem replacement
+is outside this guarantee. The host regression preserves state/backup/stage bytes
+and checks both automatic edits and new posts with healthy positive controls.
+
+The final atomic fence has separate regression coverage: legacy evidence appears
+after stream bytes are written, before finishWrite. Both current temporary-file
+and older backup-file AtomicFile modes must roll back state and automatic
+checkpoint writes, preserve the previous bytes and leave the carry evidence.
+Removing only this final fence must fail the named regression. The host uses
+its existing filesystem-backed AtomicFile port, not the Android framework.

@@ -245,8 +245,12 @@
         "routed:EDITOR_CHECKS": 54,
         "routed:ROUTED_CHECKS": 179,
         "routed:TRANSFER_CHECKS": 175,
-        "store:PurpleAccountSyncStore": "PASS"
-      }
+        "store:PurpleAccountSyncStore": "PASS",
+        "modern:LEGACY_CARRY_REFUSAL_CHECKS": 125,
+        "modern:LEGACY_CARRY_AUTOMATIC_CHECKS": 20,
+        "modern:CARRY_SET_ASIDE_CHECKS": 540
+      },
+      "coverage": " Refuses legacy carry artifacts before store recovery or writes, including late arrival; real automatic-engine/JNI checks retain synthetic edit/post positive controls and require zero sends or writes beside malformed carry evidence."
     },
     {
       "name": "modern-sync-auto",

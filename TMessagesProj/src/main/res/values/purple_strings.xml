@@ -734,6 +734,12 @@
     <string name="PurpleSyncArchiveDone">The old sync state was archived. Join or Publish to set up sync again for this account.</string>
     <string name="PurpleSyncRecoveryHeld">Recovery could not complete safely. Check this account again. A partial archive remains available to finish.</string>
     <string name="PurpleSyncRecoveryChecking">Checking this account again before recovery…</string>
+    <string name="PurpleSyncSetAsideOld">Set aside old files</string>
+    <string name="PurpleSyncSetAsideOldAbout">Files left by an older Purple version stop sync for %1$s. Set them aside into a dated folder in Purple’s private storage? Nothing is read, changed or deleted, and this account’s sync state, pending files and chat link stay in place.</string>
+    <string name="PurpleSyncSetAsideOldDone">The old files were set aside.</string>
+    <string name="PurpleSyncSetAsideOldHeld">Not every old file was set aside, and nothing was deleted. Check this account again to review the files that remain.</string>
+    <string name="PurpleSyncOldFilesUnsafe">Files left by an older Purple version stop sync for this account, and some of them cannot be moved safely here. Nothing was changed.</string>
+    <string name="PurpleSyncOldFilesOtherAccount">Files left by an older Purple version in another signed-in account on this device stop sync here. Open sync for that account and set them aside there.</string>
     <string name="PurpleSyncEmptyJoinAbout">This account has no settings file on this device and uses inherited settings. Join only links this account to sync. It creates no settings file and sends nothing. After you create and save this account’s own file, you can publish it.</string>
     <string name="PurpleSyncAutoTitle">Automatic settings sync</string>
     <string name="PurpleSyncAutoOff">Off. Manual Check and History remain available.</string>
