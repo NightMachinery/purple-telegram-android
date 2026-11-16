@@ -1049,6 +1049,7 @@ public final class PurpleSyncAutoCases {
         PurpleSyncManagedReadCases.run();
         chatPickup(parent);
         adapterPickup(parent);
+        System.out.println("PICKUP_DIAG_CHECKS=" + PurpleSyncPickupCases.run(parent));
         transientWrite(parent);
         defaults(parent);
         publishAndEdit(parent);

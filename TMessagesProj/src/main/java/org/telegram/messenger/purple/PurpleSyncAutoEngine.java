@@ -177,6 +177,15 @@ final class PurpleSyncAutoEngine {
         }
         port.queue(() -> transition(event, saved, null, PurpleSyncAutoCore.Outcome.Inventory, null, null));
     }
+    static void pickupNote(int slot, String stage, String action, String reason, int count, boolean overflow) {
+        PurpleDiagLog.event("sync", "pickup", PurpleDiagLogStore.slot(slot),
+            PurpleDiagLogStore.code("stage", stage), PurpleDiagLogStore.code("action", action),
+            PurpleDiagLogStore.reason(reason), PurpleDiagLogStore.count("count", Math.max(0, Math.min(128, count))),
+            PurpleDiagLogStore.flag("overflow", overflow));
+    }
+    private void pickupNote(String action, String reason) {
+        pickupNote(account.account, "check", action, reason, pickupIds != null ? pickupIds.length : 0, pickupOverflow);
+    }
     private PurpleSyncChatCore.Peer pickupChat;
     private int[] pickupIds;
     private boolean pickupOverflow;
@@ -186,7 +195,10 @@ final class PurpleSyncAutoEngine {
         port.queue(() -> {
             PurpleSyncChatCore.Peer bound = PurpleSyncChat.boundChat(account.account);
             if (!current() || pickupChat != null && !pickupChat.equals(bound)) clearPickupBatch();
-            if (!current() || !chat.equals(bound)) return;
+            if (!current() || !chat.equals(bound)) {
+                pickupNote(account.account, "check", "rejected", "ineligible", copy.length, truncated);
+                return;
+            }
             if (!chat.equals(pickupChat)) clearPickupBatch();
             pickupChat = chat;
             LinkedHashSet<Integer> merged = new LinkedHashSet<>();
@@ -385,12 +397,14 @@ final class PurpleSyncAutoEngine {
         if (!toggleAdmission.getAsBoolean())
             return;
         if (!current()) {
+            if (event == PurpleSyncAutoCore.Event.ChatUpdated) pickupNote("rejected", "ineligible");
             clearPickupBatch();
             end();
             return;
         }
         if (event == PurpleSyncAutoCore.Event.Disable) clearPickupBatch();
         if (pickupChat != null && !pickupChat.equals(PurpleSyncChat.boundChat(account.account))) {
+            if (event == PurpleSyncAutoCore.Event.ChatUpdated) pickupNote("rejected", "stale");
             clearPickupBatch();
             if (event == PurpleSyncAutoCore.Event.ChatUpdated) return;
         }
@@ -401,6 +415,7 @@ final class PurpleSyncAutoEngine {
         }
         if (event != PurpleSyncAutoCore.Event.Enable && event != PurpleSyncAutoCore.Event.Disable
             && !port.enabledHint()) {
+            if (event == PurpleSyncAutoCore.Event.ChatUpdated) pickupNote("rejected", "off");
             clearPickupBatch();
             end();
             return;
@@ -410,6 +425,7 @@ final class PurpleSyncAutoEngine {
                 || event == PurpleSyncAutoCore.Event.Unlock || event == PurpleSyncAutoCore.Event.Retry
                 || event == PurpleSyncAutoCore.Event.ChatUpdated)
             && backoff[0] > 0 && port.now() < backoff[1]) {
+            if (event == PurpleSyncAutoCore.Event.ChatUpdated) pickupNote("wait", "retry_at");
             // A pass that is not a real change waits out the backoff, across restarts too.
             if (event == PurpleSyncAutoCore.Event.ChatUpdated) waitingTrigger = event;
             end();
@@ -418,6 +434,7 @@ final class PurpleSyncAutoEngine {
         }
         long transientAt=port.transientRetryAt();
         if(event!=PurpleSyncAutoCore.Event.Disable&&event!=PurpleSyncAutoCore.Event.Completed&&transientAt>port.now()*1000){
+            if (event == PurpleSyncAutoCore.Event.ChatUpdated) pickupNote("wait", "transient_write_wait");
             if(event==PurpleSyncAutoCore.Event.ChatUpdated)waitingTrigger=event;
             if(event==PurpleSyncAutoCore.Event.LocalSaved)waitingSave=saved!=null?saved.clone():null;
             if(event==PurpleSyncAutoCore.Event.Enable){waitingToggle=event;waitingToggleAdmission=toggleAdmission;}
@@ -432,6 +449,7 @@ final class PurpleSyncAutoEngine {
             try {
             if(closed||owned||!openingSession.equals(session)||acquisition!=previous||!current())return;
             if (token==null) {
+                if (event == PurpleSyncAutoCore.Event.ChatUpdated) pickupNote("wait", "busy");
                 if (event == PurpleSyncAutoCore.Event.Enable || event == PurpleSyncAutoCore.Event.Disable) {
                     waitingToggle = event;
                     waitingToggleAdmission = toggleAdmission;
@@ -451,6 +469,7 @@ final class PurpleSyncAutoEngine {
         }
         try {
             if (!account.env.hasState()) {
+                if (event == PurpleSyncAutoCore.Event.ChatUpdated) pickupNote("wait", "first_use");
                 end();
                 if (!port.firstUse(event))
                     port.status(null, PurpleSyncAutoCore.Reason.AccountUnbound);
@@ -501,6 +520,8 @@ final class PurpleSyncAutoEngine {
                     PurpleSyncChatCore.Peer bound = PurpleSyncChat.boundChat(account.account);
                     boolean needed = bound != null && bound.equals(pickupChat)
                         && (pickupOverflow || pickupIds != null && PurpleSyncAutoCore.pickupNative(facts.state, bound.token(), pickupChat.token(), pickupIds, account.userId));
+                    pickupNote(needed ? "requested" : "rejected",
+                        needed ? pickupOverflow ? "overflow" : "remote_update" : "own_records");
                     pickupIds = null;
                     pickupOverflow = false;
                     if (!needed) {

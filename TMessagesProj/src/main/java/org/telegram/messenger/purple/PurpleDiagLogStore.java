@@ -81,7 +81,7 @@ public final class PurpleDiagLogStore {
             "not_first_use", "first_use_unavailable", "archive_refused", "check_changed", "check_failed", "apply_refused",
             "busy", "account_unavailable", "unreadable", "ambiguous", "newer_schema", "heads_unclear", "own_records",
             "synced", "this_device", "successor_unsent", "incomplete", "clone_detected", "account_unbound", "store_error", "invalid_settings",
-            "using_last_good",
+            "using_last_good", "pickup", "collect", "overflow", "remote_update",
             // an automatic pass that threw (PurpleSyncAutoEngine.failureCode): sync auto_failed reason=<code>
             // one line per automatic pass (PurpleSyncAutoEngine.pass): sync auto_pass action= outcome= reason=
             "auto_send_refused", "send_not_postable", "send_no_client", "send_check_not_postable", "send_check_not_current",

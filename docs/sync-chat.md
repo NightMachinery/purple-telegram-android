@@ -61,6 +61,18 @@ the automatic engine. Background delivery is cancelled; foreground checks overdu
 work once. OS suspension or process death cannot guarantee a wall-clock deadline.
 No short poll is added.
 
+Pickup decisions log `sync pickup` with a slot index, `stage=collect|check`,
+fixed action/reason words, a pending count clamped to 0..128 and an overflow
+flag. Collection distinguishes ineligible/empty input, an existing debounce,
+scheduled work and stale delayed delivery. The engine distinguishes exception
+backoff, transient waits, another operation, first use, own-record suppression
+and an eligible remote update. No chat, account or message identifier, message
+body or exception text enters these lines. The existing bounded log and
+per-body repeat suppression apply; rapidly changing counts can yield distinct
+bodies, so this is not a global lines-per-minute limit. Host cases exercise the
+real Java engine and runtime adapter with synthetic platform/storage ports;
+native delivery timing and installed-client logs still require device checks.
+
 ### Delivery while the sync chat stays closed
 
 Mute and archive do not gate either client's update dispatch. Global/channel

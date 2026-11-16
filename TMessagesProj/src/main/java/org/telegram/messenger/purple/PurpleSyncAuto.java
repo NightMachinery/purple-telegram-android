@@ -118,9 +118,15 @@ public final class PurpleSyncAuto {
             if (pickup != null) AndroidUtilities.cancelRunOnUIThread(pickup);
             pickup = null;
         }
+        private void pickupNote(String action, String reason) {
+            PurpleSyncAutoEngine.pickupNote(opening.slot, "collect", action, reason, pickupIds.size(), pickupOverflow);
+        }
         void updated(PurpleSyncChatCore.Peer chat, java.util.List<org.telegram.messenger.MessageObject> messages) {
             if (ApplicationLoader.mainInterfacePaused || !current() || !enabledHint()
-                || !chat.equals(PurpleSyncChat.boundChat(opening.slot))) return;
+                || !chat.equals(PurpleSyncChat.boundChat(opening.slot))) {
+                pickupNote("rejected", "ineligible");
+                return;
+            }
             if (!chat.equals(pickupChat)) { pickupIds.clear(); pickupOverflow = false; }
             pickupChat = chat;
             for (org.telegram.messenger.MessageObject message : messages) {
@@ -129,7 +135,15 @@ public final class PurpleSyncAuto {
                 if (pickupIds.size() < 128) pickupIds.add(message.getId());
                 else if (!pickupIds.contains(message.getId())) pickupOverflow = true;
             }
-            if (pickupIds.isEmpty() || pickup != null) return;
+            if (pickupIds.isEmpty()) {
+                pickupNote("rejected", "invalid_input");
+                return;
+            }
+            if (pickup != null) {
+                pickupNote("wait", "busy");
+                return;
+            }
+            pickupNote("requested", "pending");
             pickup = () -> {
                 pickup = null;
                 PurpleSyncChatCore.Peer target = pickupChat;
@@ -140,6 +154,8 @@ public final class PurpleSyncAuto {
                 if (!ApplicationLoader.mainInterfacePaused && current() && enabledHint()
                     && target.equals(PurpleSyncChat.boundChat(opening.slot)))
                     engine.chatUpdated(target, ids, overflow);
+                else
+                    PurpleSyncAutoEngine.pickupNote(opening.slot, "collect", "rejected", "stale", ids.length, overflow);
             };
             AndroidUtilities.runOnUIThread(pickup, 500);
         }

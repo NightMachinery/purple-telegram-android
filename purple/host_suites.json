@@ -272,7 +272,9 @@
         "modern-sync-auto:OUTBOX_CHECKS": 254,
         "modern-sync-auto:READ_SCOPE_LIFETIME_CHECKS": 65,
         "outbox:OUTBOX_CHECKS": 254,
-        "modern-sync-auto:SYNC_ACTIVITY_METHODS": "PASS"
+        "modern-sync-auto:SYNC_ACTIVITY_METHODS": "PASS",
+        "auto:PICKUP_DIAG_CHECKS": 80,
+        "modern-sync-auto:PICKUP_DIAG_CHECKS": 80
       }
     },
     {
