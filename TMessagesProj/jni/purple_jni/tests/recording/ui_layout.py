@@ -55,7 +55,7 @@ public class TextView extends View{public String text;public boolean single;publ
     put('android/widget/ImageView.java','package android.widget;import android.content.Context;import android.view.View;public class ImageView extends View{public enum ScaleType{CENTER}public Object drawable;private android.graphics.ColorFilter filter;public ImageView(Context c){super(c);}public void setImageResource(int n){}public void setScaleType(ScaleType t){}public void setColorFilter(int n){}public void setColorFilter(android.graphics.ColorFilter n){filter=n;}public android.graphics.ColorFilter getColorFilter(){return filter;}public void setImageDrawable(Object d){drawable=d;}}')
     put('android/view/TextureView.java','package android.view;import android.content.Context;public class TextureView extends View{public TextureView(Context c){super(c);}}')
     put('org/telegram/messenger/AndroidUtilities.java','package org.telegram.messenger;public class AndroidUtilities{public static int dp(float n){return (int)n;}public static Object bold(){return null;}public static String formatShortDuration(int n){return ""+n;}}')
-    put('org/telegram/messenger/LocaleController.java','package org.telegram.messenger;public class LocaleController{public static boolean isRTL;public static String getString(int n){return ""+n;}public static String formatString(int n,Object... args){return args[0]+" of "+args[1];}}')
+    put('org/telegram/messenger/LocaleController.java','package org.telegram.messenger;public class LocaleController{public static boolean isRTL;public static String getString(int n){return ""+n;}public static String formatString(int n,Object... args){return args[0]+" of "+args[1];}public static String formatPluralString(String key,int n){return n+" "+key;}}')
     put('org/telegram/messenger/R.java','package org.telegram.messenger;public class R{public static class string{public static final int AccActionPause=1,AccActionPlay=2,AccDescrMoreOptions=3,PurpleRecordingBinPlay=4,AccDescrSwitchCamera=5,PurpleRecordingResume=6,PurpleRecordingPause=7,DiscardVoiceMessageTitle=8,DiscardVoiceMessageDescription=9,DiscardVoiceMessageAction=10,Cancel=11,PurpleRecordingBinRound=12,PurpleRecordingVoice=13,PurpleRecordingSendElsewhere=14,Send=15,PurpleRecordingNotificationHint=16,PurpleLongRoundLocal=17,AccDescrPlayerDuration=18;}public static class drawable{public static final int msg_actions=1,purple_settings=2,send_plane_24=3,miniplayer_close=4;}public static class raw{public static final int roundcamera_flip=1;}}')
     put('org/telegram/messenger/purple/PurpleRecordingEntry.java','package org.telegram.messenger.purple;public class PurpleRecordingEntry{public static final String UNRECOVERABLE="bad";public String state="recovered",media="inert.ogg";public long durationMs=10000;public boolean round;public boolean round(){return round;}}')
     put('org/telegram/ui/ActionBar/Theme.java','''package org.telegram.ui.ActionBar;public class Theme{
@@ -65,7 +65,7 @@ public class TextView extends View{public String text;public boolean single;publ
     put('org/telegram/ui/Components/SeekBarView.java','''package org.telegram.ui.Components;import android.view.View;import android.content.Context;import org.telegram.ui.ActionBar.Theme;
 public class SeekBarView extends View{public float progress;public boolean report;public SeekBarViewDelegate delegate;public int inner,outer;
  public interface SeekBarViewDelegate{void onSeekBarDrag(boolean stop,float progress);default void onSeekBarPressed(boolean p){}default CharSequence getContentDescription(){return null;}}
- public SeekBarView(Context c,Theme.ResourcesProvider r){super(c);}public void setColors(int i,int o){inner=i;outer=o;}public void setReportChanges(boolean b){report=b;}public void setDelegate(SeekBarViewDelegate d){delegate=d;}public void setProgress(float f){progress=f;}
+ public SeekBarView(Context c,Theme.ResourcesProvider r){super(c);}public void setColors(int i,int o){inner=i;outer=o;}public void setReportChanges(boolean b){report=b;}public void setDelegate(SeekBarViewDelegate d){delegate=d;}public void setProgress(float f){progress=f;}public float getProgress(){return progress;}
 }''')
     put('org/telegram/ui/Components/MediaActionDrawable.java','package org.telegram.ui.Components;public class MediaActionDrawable{public static final int ICON_PLAY=0,ICON_PAUSE=1;}')
     put('org/telegram/ui/Components/RadialProgress2.java','''package org.telegram.ui.Components;import android.view.View;import android.graphics.Canvas;import org.telegram.ui.ActionBar.Theme;
@@ -83,11 +83,23 @@ public class UiConstructorCases{
  View metadata=row.getChildAt(1);check(params(metadata).width==-1&&params(metadata).height==-2,"metadata fills width and wraps");
  View preview=row.getChildAt(2);check(preview.getVisibility()==View.GONE,"preview reserves no space initially");
  LinearLayout controls=(LinearLayout)row.getChildAt(3);PurpleRecordingPlayButton toggle=(PurpleRecordingPlayButton)controls.getChildAt(0);SeekBarView seek=(SeekBarView)controls.getChildAt(1);
- check(params(controls).width==-1&&params(controls).height==48,"playbar fills width with48dp height");check(params(toggle).width==48&&params(toggle).height==48,"play48dp touch target");check(params(seek).weight==1f&&params(seek).width==0,"seek uses weighted overload");check(seek.report,"seek reports drags like stock player");check(seek.delegate.getContentDescription().toString().equals("0 of 10"),"initial accessible elapsed/total");
+ check(params(controls).width==-1&&params(controls).height==48,"playbar fills width with48dp height");check(params(toggle).width==48&&params(toggle).height==48,"play48dp touch target");check(params(seek).weight==1f&&params(seek).width==0,"seek uses weighted overload");check(seek.report,"seek reports drags like stock player");check(seek.delegate.getContentDescription().toString().equals("0 Minutes 0 Seconds of 0 Minutes 10 Seconds"),"initial accessible elapsed/total");
  check(seek.inner==Theme.key_player_progressBackground&&seek.outer==Theme.key_player_progress,"stock player seek palette");
  LinearLayout times=(LinearLayout)row.getChildAt(4);check(params(times.getChildAt(0)).weight==1f,"elapsed uses weighted overload");
  RadialProgress2 radial=RadialProgress2.last;check(java.util.Arrays.equals(radial.colors,new int[]{Theme.key_chat_inLoader,Theme.key_chat_inLoaderSelected,Theme.key_chat_inMediaIcon,Theme.key_chat_inMediaIconSelected}),"SharedAudioCell radial palette");check(radial.icon==MediaActionDrawable.ICON_PLAY,"initial visible play icon");
- toggle.performClick();check(radial.icon==MediaActionDrawable.ICON_PAUSE,"production click changes native icon");seek.delegate.onSeekBarDrag(true,.25f);check(((TextView)times.getChildAt(0)).text.equals("2"),"production seek updates elapsed");check(seek.delegate.getContentDescription().toString().equals("2 of 10"),"accessible elapsed follows selected position");toggle.performClick();check(radial.icon==MediaActionDrawable.ICON_PLAY,"second click pauses native icon");row.stop();
+ toggle.performClick();check(radial.icon==MediaActionDrawable.ICON_PAUSE,"production click changes native icon");seek.setProgress(.25f);seek.delegate.onSeekBarDrag(true,.25f);check(((TextView)times.getChildAt(0)).text.equals("2"),"production seek updates elapsed");check(seek.delegate.getContentDescription().toString().equals("0 Minutes 2 Seconds of 0 Minutes 10 Seconds"),"accessible elapsed follows selected position");toggle.performClick();check(radial.icon==MediaActionDrawable.ICON_PLAY,"second click pauses native icon");row.stop();
+ }
+ for(boolean rtl:new boolean[]{false,true})for(long ms:new long[]{0,59000,60000,61000,125000,3600000}){
+  LocaleController.isRTL=rtl;PurpleRecordingEntry entry=new PurpleRecordingEntry();entry.durationMs=ms;
+  PurpleRecordingBinRow row=new PurpleRecordingBinRow(new Context(),null,entry,"seek","duration",()->{},()->{},()->{});
+  SeekBarView seek=(SeekBarView)((LinearLayout)row.getChildAt(3)).getChildAt(1);
+  for(float progress:new float[]{0,.5f,1}){
+   seek.setProgress(progress);long duration=Math.max(1,ms);long position=(long)(progress*duration);
+   long seconds=duration/1000,elapsed=position/1000;
+   String expected=(elapsed/60)+" Minutes "+(elapsed%60)+" Seconds of "+(seconds/60)+" Minutes "+(seconds%60)+" Seconds";
+   check(seek.delegate.getContentDescription().toString().equals(expected),"seek accessibility uses selected fraction and localized minute/second arguments");
+  }
+  row.stop();
  }
  check(LayoutHelper.createLinear(0,-2,1).weight==0,"integer overload reproduced original regression");check(LayoutHelper.createLinear(0,-2,1f).weight==1f,"float overload preserves weight");
  System.out.println("RECORDING_UI_CONSTRUCTOR_CHECKS="+checks);

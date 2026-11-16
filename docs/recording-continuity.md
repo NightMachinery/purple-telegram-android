@@ -420,7 +420,11 @@ retries. Explicit deletion and configured expiry still remove bin items.
 The recording-dock suite executes the production playback and recording-button
 methods over inert ports. It also constructs the complete production bin row
 with the real LayoutHelper overloads, checks weighted bounds and radial icon
-states, and exercises stock-strip visibility restoration. Alongside those are
+states, and exercises stock-strip visibility restoration. Its seek accessibility
+checks use the selected slider fraction and localized minute/second arguments,
+including minute boundaries and both layout directions. The inert framework
+ports expose the same progress and plural-formatting signatures used by the row.
+Alongside those are
 minimized-placeholder transforms and the
 existing delayed identity/queue-acknowledgment tests. Those ports do not establish
 visual quality, codec playback or camera behavior on a device.
