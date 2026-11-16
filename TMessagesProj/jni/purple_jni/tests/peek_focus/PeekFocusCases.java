@@ -54,7 +54,9 @@ public final class PeekFocusCases {
     private static void screenOff() {
         app.power.interactive = false;
         activity.broadcast(new Intent(Intent.ACTION_SCREEN_OFF));
+        int timerChecks = PurpleSleepTimer.checkCalls;
         new ScreenReceiver().onReceive(app, new Intent(Intent.ACTION_SCREEN_OFF));
+        check(PurpleSleepTimer.checkCalls == timerChecks + 1, "actual screen receiver checks the timer once through the inert platform port");
     }
     static void confirm(Object operation) throws Exception {
         Method tick = operation.getClass().getDeclaredMethod("tick"); tick.setAccessible(true); tick.invoke(operation);

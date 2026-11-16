@@ -98,11 +98,17 @@ pinned += 1
 # The strip routes style and dock show/hide through its one helper;
 # the media session calls PurpleSeek five times.
 text = hooked['ui/Components/FragmentContextView.java'].read_text(encoding='utf-8')
-assert text.count('org.telegram.ui.PurpleRecordingStrip') == 2 and text.count('purple.') == 5, 'FragmentContextView: one helper, style, measure, height and dock calls'
+timer_play = 'org.telegram.messenger.purple.PurpleSleepTimerAudio.transportPlay(MediaController.getInstance());'
+assert text.count(timer_play) == 1, 'FragmentContextView: one deliberate timer transport Play'
+strip_text = text.replace(timer_play, '')
+assert strip_text.count('org.telegram.ui.PurpleRecordingStrip') == 2 and strip_text.count('purple.') == 5, 'FragmentContextView: one helper, style, measure, height and dock calls'
 pinned += 1
 text = hooked['messenger/MusicPlayerService.java'].read_text(encoding='utf-8')
 assert text.count('PurpleSeek.') == 5 and text.count('import org.telegram.messenger.purple.PurpleSeek;\n') == 1, 'MusicPlayerService: five PurpleSeek calls'
-assert 'purple.Purple' not in text.replace('import org.telegram.messenger.purple.PurpleSeek;', ''), 'MusicPlayerService: no other Purple class'
+timer_update = 'if (org.telegram.messenger.purple.PurpleSleepTimerAudio.updateLocalTransport(MediaController.getInstance(), this::updatePlaybackState)) return;'
+assert text.count(timer_play) == 1 and text.count(timer_update) == 1, 'MusicPlayerService: one timer Play and one local transport update'
+seek_text = text.replace(timer_play, '').replace(timer_update, '')
+assert 'purple.Purple' not in seek_text.replace('import org.telegram.messenger.purple.PurpleSeek;', ''), 'MusicPlayerService: no unrelated Purple class'
 pinned += 1
 helper = hooked['ui/PurpleRecordingStrip.java'].read_text(encoding='utf-8')
 assert helper.count('PurpleSeek.step(direction);') == 1, 'the strip buttons seek through PurpleSeek'

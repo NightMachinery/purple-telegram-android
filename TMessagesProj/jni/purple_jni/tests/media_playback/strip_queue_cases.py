@@ -55,6 +55,8 @@ public class MessageObject {
     put('android/media/AudioManager.java', 'package android.media;public class AudioManager {public static final String ACTION_AUDIO_BECOMING_NOISY="noisy";}')
     put('org/telegram/messenger/MusicPlayerService.java', 'package org.telegram.messenger;public class MusicPlayerService {public static final String NOTIFY_PLAY="play",NOTIFY_PAUSE="pause",NOTIFY_NEXT="next",NOTIFY_CLOSE="close",NOTIFY_PREVIOUS="previous",NOTIFY_REPEAT="repeat",NOTIFY_SHUFFLE="shuffle";}')
     put('org/telegram/messenger/NotificationCenter.java', 'package org.telegram.messenger;public class NotificationCenter {public static final int messagePlayingProgressDidChanged=1,messagePlayingDidReset=2;public static NotificationCenter getInstance(int a){return new NotificationCenter();}public void postNotificationName(int n,Object... args){}}')
+    put('org/telegram/messenger/purple/PurpleSleepTimer.java', 'package org.telegram.messenger.purple;public final class PurpleSleepTimer {private static final PurpleSleepTimer INSTANCE=new PurpleSleepTimer();public static PurpleSleepTimer get(){return INSTANCE;}public boolean localPause(){return false;}}')
+    put('org/telegram/messenger/purple/PurpleSleepTimerAudio.java', 'package org.telegram.messenger.purple;\nimport org.telegram.messenger.*;import java.util.function.BooleanSupplier;\npublic final class PurpleSleepTimerAudio {\n public static int automaticCalls,restoreCalls,transportCalls;private final MediaController controller;\n public PurpleSleepTimerAudio(MediaController c){controller=c;}\n public Object capture(){return this;}\n public boolean autoPlay(MessageObject m,Object receipt){if(receipt!=this)throw new AssertionError("wrong automatic receipt");automaticCalls++;return controller.playMessage(m);}\n public boolean restore(MessageObject m,BooleanSupplier stock){restoreCalls++;return stock.getAsBoolean();}\n public static void transportPlay(MediaController c){transportCalls++;c.playMessage(c.getPlayingMessageObject());}\n}')
     put('org/telegram/messenger/purple/PurpleCore.java', 'package org.telegram.messenger.purple;public class PurpleCore {public static final int PLAYBACK_ONE_TO_ONE=0,PLAYBACK_SELF=1,PLAYBACK_OTHER=2;public static boolean on=true;public static int settings=5;public static int voiceContinuationSettings(){return settings;}public static int voiceContinuationDecision(int m,boolean out,boolean unread,boolean kept){return m==0?2:m==1?(out?0:unread?1:2):kept?1:0;}public static boolean voiceQueueKeeps(int chat,boolean start,boolean out){return !(on&&chat==PLAYBACK_ONE_TO_ONE&&!start&&out);}}')
     put('org/telegram/messenger/purple/PurpleVoiceQueue.java', (java/'messenger/purple/PurpleVoiceQueue.java').read_text())
     put('org/telegram/messenger/purple/PurpleVoicePlayback.java', (java/'messenger/purple/PurpleVoicePlayback.java').read_text())
@@ -62,8 +64,9 @@ public class MessageObject {
     put('org/telegram/ui/PurpleChatHooks.java', 'package org.telegram.ui;import org.telegram.messenger.*;public class PurpleChatHooks {ChatActivity chat;PurpleChatHooks(ChatActivity c){chat=c;}java.util.ArrayList<MessageObject> voicePlaylist(MessageObject s,boolean u,long merge){return org.telegram.messenger.purple.PurpleVoicePlayback.playlist(s,chat.messages,false,u,merge);}boolean skipsInVoicePlaylist(MessageObject s,MessageObject c){return org.telegram.messenger.purple.PurpleVoiceQueue.skipsInPlaylist(s,c);}}')
     put('org/telegram/ui/ChatActivity.java', 'package org.telegram.ui;import java.util.*;import org.telegram.messenger.*;public class ChatActivity {public ArrayList<MessageObject> messages=new ArrayList<>();long mergeDialogId=-999;Object currentEncryptedChat;PurpleChatHooks purple=new PurpleChatHooks(this);'+build+'}')
     put('org/telegram/messenger/MediaController.java', '''package org.telegram.messenger;
-import java.util.*;import android.util.SparseArray;
+import java.util.*;import android.util.SparseArray;import org.telegram.messenger.purple.PurpleSleepTimer;
 public class MediaController {
+ final org.telegram.messenger.purple.PurpleSleepTimerAudio purpleSleep=new org.telegram.messenger.purple.PurpleSleepTimerAudio(this);
  public static final MediaController instance=new MediaController();public static MediaController getInstance(){return instance;}
  public MessageObject playingMessageObject;public ArrayList<MessageObject> playlist=new ArrayList<>(),shuffledPlaylist=new ArrayList<>(),voiceMessagesPlaylist;public SparseArray<MessageObject> voiceMessagesPlaylistMap;boolean voiceMessagesPlaylistUnread,playMusicAgain;int currentPlaylistNum,pipSwitchingState;Pip pipRoundVideoView;public boolean paused;public int restores,plays;SavedMusicPlaylistState savedMusicPlaylistState;
  static class Pip{void close(boolean v){}}
@@ -135,6 +138,7 @@ public class PortCases {
   }
  }
  static void buttons(){
+  PurpleSleepTimerAudio.transportCalls=0;
   MusicPlayerReceiver r=new MusicPlayerReceiver();MediaController c=MediaController.instance;c.playingMessageObject=msg(10,42,false,false);
   for(boolean music:new boolean[]{false,true})for(int key:new int[]{android.view.KeyEvent.KEYCODE_HEADSETHOOK,android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE}){
    c.playingMessageObject.music=music;
@@ -142,12 +146,15 @@ public class PortCases {
    intent.extras.value=new android.view.KeyEvent(1,key);r.onReceive(null,intent);check(c.paused,"up does not toggle twice "+key);
    intent.extras.value=new android.view.KeyEvent(0,key);r.onReceive(null,intent);check(!c.paused,"next down plays "+key);
   }
+  check(PurpleSleepTimerAudio.transportCalls==4,"actual receiver reaches the explicit timer transport port once per Play");
  }
  public static void main(String[] args){
   System.out.println("MEDIA_STRIP_THEME_CHECKS="+StripPalettePort.run());
   System.out.println("MEDIA_VOICE_LABEL_CHECKS="+VoiceLabelPort.run());
   geometry();System.out.println("MEDIA_STRIP_LAYOUT_CHECKS="+checks);checks=0;
   for(long dialog:new long[]{42,-42,-43,1})for(boolean on:new boolean[]{false,true})for(int mode:new int[]{0,1,2})for(boolean resume:new boolean[]{false,true})for(boolean music:new boolean[]{false,true})for(boolean own:new boolean[]{false,true})for(boolean round:new boolean[]{false,true})queue(dialog,on,mode,resume,music,own,round);
+  check(PurpleSleepTimerAudio.automaticCalls>0,"actual completion reaches the timer automatic port");
+  check(PurpleSleepTimerAudio.restoreCalls>0,"actual saved music restore reaches the timer port");
   System.out.println("MEDIA_MIXED_QUEUE_CHECKS="+checks);checks=0;buttons();System.out.println("MEDIA_BUTTON_CHECKS="+checks);
  }
 }'''

@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Run F-WAIT state-machine and account-targeting cases on real AGP classes."""
 import argparse
+import contextlib
+import runpy
+import sys
 import hashlib
 import json
 import os
@@ -67,4 +70,14 @@ for scenario in ["machine", "account", "context", "held", "controller", "ready"]
                    "-Djava.io.tmpdir=" + str(fixtures), "-cp", str(out) + os.pathsep + classpath,
                    "WaitGateHostMain", classes, scenario, fixtures / scenario])
 
-run("peek-focus", ["python3", tests / "run_peek_focus.py", "--receipt", args.receipt, "--json", args.json, "--library", args.library, "--output", args.output / "peek-focus"])
+nested = [tests / "run_peek_focus.py", "--receipt", args.receipt, "--json", args.json, "--library", args.library, "--output", args.output / "peek-focus"]
+(args.output / "peek-focus.argv.json").write_text(json.dumps(list(map(str, nested)), indent=2) + "\n")
+previous = sys.argv
+with (args.output / "peek-focus.log").open("w") as log, contextlib.redirect_stdout(log), contextlib.redirect_stderr(log):
+    try:
+        sys.argv = list(map(str, nested))
+        runpy.run_path(str(nested[0]), run_name="__main__")
+    finally:
+        sys.argv = previous
+print("peek-focus", 0, flush=True)
+print((args.output / "peek-focus.log").read_text(), flush=True)

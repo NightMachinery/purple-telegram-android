@@ -142,3 +142,15 @@ the same permanent assertions.
 
 The custom-duration Start button reuses the stock rounded ButtonWithCounterView
 from Stories.recorder, alongside the stock NumberPicker duration wheels.
+
+The Wait/Peek host fixture keeps its real AGP business classes and uses an
+explicit inert timer screen-pulse port. It checks that the actual ScreenReceiver
+calls that port once on screen-off. Timer behavior is covered separately by the
+sleep-timer suite. The nested Peek driver stays in the same interpreter so the
+canonical compiler wrapper also surrounds its compiler calls.
+
+The media host fixture preserves its original strip and seek hook pins and
+checks the new timer transport hooks separately. Its extracted queue and media
+receiver use explicit timer ports with the timer inactive, and assert that the
+automatic, restore and deliberate Play hooks are exercised. These checks prove
+host integration, not Android player or speaker behavior.

@@ -9,6 +9,8 @@ a.output.mkdir();classes=a.output/'classes';classes.mkdir();empty=a.output/'empt
 classpath=os.pathsep.join([str(production),str(a.json)]+[x['path']for k in ['classpath','bootstrapClasspath']for x in d[k]])
 main=a.output/'PeekFocusMain.java';main.write_text('''import java.io.File;public final class PeekFocusMain {public static void main(String[] a)throws Exception {
  File expected=new File(a[0]).getCanonicalFile();
+ File timerPort=new File(org.telegram.messenger.purple.PurpleSleepTimer.class.getProtectionDomain().getCodeSource().getLocation().toURI()).getCanonicalFile();
+ if(!timerPort.equals(new File(a[2]).getCanonicalFile()))throw new AssertionError("timer pulse must use the inert platform port");
  for(String name:new String[]{"org.telegram.ui.PurplePeekControls","org.telegram.ui.PurplePeekControls$Pending","org.telegram.ui.PurpleWaitCover",
  "org.telegram.messenger.purple.PurpleWaitGate","org.telegram.messenger.purple.PurpleWaitPresence",
  "org.telegram.messenger.purple.PurplePeekFocusModel","org.telegram.messenger.purple.PurplePeekForeground",
@@ -32,7 +34,7 @@ scenarios+=['lock-'+s for s in ['screen','launch','external']]
 scenarios+=['cancel-'+s for s in ['pause','stop','destroy','screen','launch','external','screen-on','launch-on','external-on']]
 scenarios+=['revoke-'+s for s in ['selection','logout','settings','revision','view','screen','launch','external']]
 scenarios+=['reload-failure-'+s for s in ['background','late','lock']]
-for scenario in scenarios:run(scenario,[compiler.with_name('java'),'-Xcheck:jni','-Xmx512m','-Djava.library.path='+str(a.library.parent),'-cp',str(classes)+os.pathsep+classpath,'PeekFocusMain',production,scenario])
+for scenario in scenarios:run(scenario,[compiler.with_name('java'),'-Xcheck:jni','-Xmx512m','-Djava.library.path='+str(a.library.parent),'-cp',str(classes)+os.pathsep+classpath,'PeekFocusMain',production,scenario,classes])
 for scenario in ['queued-focus-late','queued-focus-first','focus-handoff-pause','focus-handoff-window','focus-handoff-timeout','return-departure','return-overdue','relock-no-resume','relock-resume-first','relock-locked-resume','return-duplicate-stop','late-show','late-show-expired','relock','button','cleanup','end','keys','abort','late-input','lock','screen','switch','late-lock','focus','quick-return','timeout','stale','editor']:
  run('ready-'+scenario,[compiler.with_name('java'),'-Xcheck:jni','-Xmx512m','-Djava.library.path='+str(a.library.parent),'-cp',str(classes)+os.pathsep+classpath,'org.telegram.ui.PeekReadyCases',scenario])
 for scenario in ['model','controller','delay','exit','escalation','step','max_extra','reset_minutes']:
@@ -64,4 +66,4 @@ for name in ['purple_archive_backup.xml','purple_archive_transfer.xml']:
  tree=ET.parse(root/'TMessagesProj/src/main/res/xml'/name).getroot();sections=[tree]if name.endswith('backup.xml')else[tree.find('cloud-backup'),tree.find('device-transfer')]
  for section in sections:assert any(e.get('domain')=='sharedpref'and e.get('path')=='purple_peek_local.xml'for e in section.findall('exclude'))
 print('PEEK_FOCUS_HOOKS_AND_LOCAL_EXCLUSIONS=PASS')
-(a.output/'result.json').write_text(json.dumps({'exit':0,'scenarios':scenarios,'actualAGPBusinessOriginsVerified':True,'syntheticDependencies':['Android/UI','account routing and selection','settings snapshot','IO','clock','preferences'],'hookAndBackupSourceChecks':True},indent=2)+'\n')
+(a.output/'result.json').write_text(json.dumps({'exit':0,'scenarios':scenarios,'actualAGPBusinessOriginsVerified':True,'syntheticDependencies':['Android/UI','timer screen pulse','account routing and selection','settings snapshot','IO','clock','preferences'],'hookAndBackupSourceChecks':True},indent=2)+'\n')
