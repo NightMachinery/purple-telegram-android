@@ -1,6 +1,6 @@
 # Sleep timer
 
-The proposed timer uses one device-local process-wide deadline or an end-of-item
+The timer uses one device-local process-wide deadline or an end-of-item
 binding. Only choice/custom duration are remembered. Active timers and media
 identities are never persisted or synchronized.
 
@@ -117,9 +117,10 @@ Upstream hooks and why they remain:
 
 Frame bookkeeping, classification and native receipts live in Purple files.
 No dependency, service, permission, Cast command or global WebView pauseTimers
-operation is added. Real AGP compilation, frame/JavaScript execution,
-request-count equality, ownership/audio behavior and Doze delivery remain
-separate required qualification.
+operation is added. The integrated timer and proximity correction passed fresh
+real AGP Debug and Standalone compilation and the complete 32-suite host campaign.
+Packaged artifacts, Android WebView/provider execution, ownership/audio behavior,
+UI, Cast isolation and Doze delivery require separate qualification.
 
 The selected YouTube adapter verifies the current getVideoUrl identity before
 state, acknowledgments, commands and end handling. Matching native configuration
@@ -139,6 +140,18 @@ The timer and control pages each issue the same two locally fulfilled requests.
 This does not establish Android WebView, a real provider, audible output or Cast
 isolation. The four deliberately removed deferred-command hooks are rejected by
 the same permanent assertions.
+
+A separate 33-check headless Chromium run executes the current frame observer
+against synthetic pages and real HTML media elements. It checks matching boolean
+bootstrap, fetch and JSON/text XHR metadata, unchanged fetch promise/body behavior,
+and rejection of unrelated response paths. Only observed Blob/File construction
+establishes finite resource evidence; finite duration and an unobserved Blob URL
+do not. Discovery and source replacement make no Play/Pause calls, a fabricated
+command cannot select a generic candidate, and reattachment changes incarnation.
+Observer and control pages issue the same five metadata-page requests and one
+generic-page request, all fulfilled locally. Generic selection remains unresolved.
+This is JavaScript source execution, not Android WebView/Java reply-proxy, a real
+provider, audible playback or full finite-embed qualification.
 
 The custom-duration Start button reuses the stock rounded ButtonWithCounterView
 from Stories.recorder, alongside the stock NumberPicker duration wheels.
