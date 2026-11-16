@@ -139,3 +139,6 @@ The timer and control pages each issue the same two locally fulfilled requests.
 This does not establish Android WebView, a real provider, audible output or Cast
 isolation. The four deliberately removed deferred-command hooks are rejected by
 the same permanent assertions.
+
+The custom-duration Start button reuses the stock rounded ButtonWithCounterView
+from Stories.recorder, alongside the stock NumberPicker duration wheels.
