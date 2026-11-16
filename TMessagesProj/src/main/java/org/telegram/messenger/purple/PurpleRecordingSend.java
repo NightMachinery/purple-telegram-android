@@ -58,9 +58,9 @@ public final class PurpleRecordingSend {
                     return;
                 }
                 if (item.round()) {
-                    ok = sendRound(item, source, account, dialogId, replyObject, topObject);
+                    ok = sendRound(item, source, account, user, dialogId, replyObject, topObject);
                 } else {
-                    ok = sendVoice(item, source, account, dialogId, replyObject, topObject);
+                    ok = sendVoice(item, source, account, user, dialogId, replyObject, topObject);
                 }
             } catch (Throwable e) {
                 PurpleDiagLog.event("recordings", "bin_send", PurpleDiagLog.reason("io_failed"));
@@ -75,18 +75,20 @@ public final class PurpleRecordingSend {
     }
 
     /** As MediaController.startRecording and stopRecordingInternal build a voice message. */
-    private static boolean sendVoice(PurpleRecordingEntry item, File source, int account, long dialogId,
+    private static boolean sendVoice(PurpleRecordingEntry item, File source, int account, long user, long dialogId,
             MessageObject reply, MessageObject top) throws IOException {
+        if (!PurpleRecordingSendAs.sameUser(account, user)) throw new IOException("another account");
         final TLRPC.TL_document document = new TLRPC.TL_document();
         document.file_reference = new byte[0];
         document.dc_id = Integer.MIN_VALUE;
         document.id = SharedConfig.getLastLocalId();
-        document.user_id = UserConfig.getInstance(account).getClientUserId();
+        document.user_id = user;
         document.mime_type = "audio/ogg";
         SharedConfig.saveConfig();
         final File target = new File(FileLoader.getDirectory(FileLoader.MEDIA_DIR_AUDIO),
                 System.currentTimeMillis() + "_" + FileLoader.getAttachFileName(document));
         PurpleRecordingFiles.copy(source, target);
+        if (!PurpleRecordingSendAs.sameUser(account, user)) throw new IOException("another account");
         document.date = ConnectionsManager.getInstance(account).getCurrentTime();
         document.size = (int) target.length();
         final TLRPC.TL_documentAttributeAudio audio = new TLRPC.TL_documentAttributeAudio();
@@ -99,7 +101,6 @@ public final class PurpleRecordingSend {
         document.attributes.add(audio);
         final SendMessagesHelper.SendMessageParams params = SendMessagesHelper.SendMessageParams.of(document, null,
                 target.getAbsolutePath(), dialogId, reply, top, null, null, null, null, true, 0, 0, item.once ? 0x7FFFFFFF : 0, null, null, false);
-        final long user = document.user_id;
         AndroidUtilities.runOnUIThread(() -> {
             if (!PurpleRecordingSendAs.sameUser(account, user)) return;
             params.sendMessageChatArguments = PurpleRecordingSendAs.freeze(account, user, dialogId, null);
@@ -142,12 +143,14 @@ public final class PurpleRecordingSend {
      * {@code roundVideo}, no trim (so nothing is converted) and the file as it
      * is, through SendMessagesHelper.prepareSendingVideo.
      */
-    private static boolean sendRound(PurpleRecordingEntry item, File source, int account, long dialogId,
+    private static boolean sendRound(PurpleRecordingEntry item, File source, int account, long user, long dialogId,
             MessageObject reply, MessageObject top) throws IOException {
+        if (!PurpleRecordingSendAs.sameUser(account, user)) throw new IOException("another account");
         final File target = new File(FileLoader.getDirectory(FileLoader.MEDIA_DIR_DOCUMENT),
                 System.currentTimeMillis() + "_" + SharedConfig.getLastLocalId() + ".mp4");
         SharedConfig.saveConfig();
         PurpleRecordingFiles.copy(source, target);
+        if (!PurpleRecordingSendAs.sameUser(account, user)) throw new IOException("another account");
         final VideoEditedInfo info = new VideoEditedInfo();
         info.startTime = -1;
         info.endTime = -1;
@@ -159,7 +162,6 @@ public final class PurpleRecordingSend {
         info.resultHeight = info.originalHeight = 360;
         info.originalPath = target.getAbsolutePath();
         final String path = target.getAbsolutePath();
-        final long user = UserConfig.getInstance(account).getClientUserId();
         AndroidUtilities.runOnUIThread(() -> {
             if (!PurpleRecordingSendAs.sameUser(account, user)) return;
             final org.telegram.messenger.SendMessageChatArguments arguments = PurpleRecordingSendAs.freeze(account, user, dialogId, null);

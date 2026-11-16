@@ -1,0 +1,1 @@
+package org.telegram.messenger;import org.telegram.tgnet.TLRPC;public class MessagesStorage{public static boolean replace;public static MessagesStorage getInstance(int a){return new MessagesStorage();}public TLRPC.Message getMessage(long d,long m){if(replace)UserConfig.identity=10;return new TLRPC.Message();}}

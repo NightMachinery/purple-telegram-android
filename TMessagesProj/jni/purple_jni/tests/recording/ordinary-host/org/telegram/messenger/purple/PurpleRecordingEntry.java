@@ -1,0 +1,1 @@
+package org.telegram.messenger.purple;public class PurpleRecordingEntry{public String id="fixture",media;public long userId=9,durationMs=1000;public boolean video,once,awaitingQueue;public boolean round(){return video;}public boolean sameAccount(boolean active,long id){return active&&id==userId;}}

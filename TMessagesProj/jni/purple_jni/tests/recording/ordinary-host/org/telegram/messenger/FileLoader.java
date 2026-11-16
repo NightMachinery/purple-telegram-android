@@ -1,0 +1,1 @@
+package org.telegram.messenger;import java.io.*;import org.telegram.tgnet.TLRPC;public class FileLoader{public static File directory;public static final int MEDIA_DIR_AUDIO=1,MEDIA_DIR_DOCUMENT=2;public static File getDirectory(int t){return directory;}public static String getAttachFileName(TLRPC.Document d){return "file"+d.id+".ogg";}}

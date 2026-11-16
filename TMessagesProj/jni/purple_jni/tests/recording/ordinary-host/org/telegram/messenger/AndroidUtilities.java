@@ -1,0 +1,1 @@
+package org.telegram.messenger;import java.util.*;public class AndroidUtilities{static List<Runnable> pending=new ArrayList<>();public static void runOnUIThread(Runnable r){pending.add(r);}public static void flush(){while(!pending.isEmpty()){List<Runnable> q=new ArrayList<>(pending);pending.clear();for(Runnable r:q)r.run();}}}

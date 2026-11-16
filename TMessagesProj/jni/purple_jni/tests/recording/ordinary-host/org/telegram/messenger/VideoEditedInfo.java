@@ -1,0 +1,1 @@
+package org.telegram.messenger;public class VideoEditedInfo{public long startTime,endTime,estimatedSize,estimatedDuration;public boolean roundVideo;public int framerate,resultWidth,originalWidth,resultHeight,originalHeight;public String originalPath;}

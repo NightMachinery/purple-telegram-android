@@ -734,6 +734,10 @@ Desktop builds rounds from FFmpeg packets (`RoundVideoRecorder::Private`, `av_in
     `stopRecordingInternal` builds it (`MediaController.java:5408`), and for rounds the `VideoEditedInfo` with
     `roundVideo` that `InstantCameraView.send` builds (`:975-1025`); Desktop `ApiWrap::sendVoiceMessage` with
     `video` set for rounds.
+- **Account snapshot.** Ordinary voice and round sends retain the user captured when the action starts.
+  `PurpleRecordingSend` validates that same user before and after copying, then uses it for document ownership,
+  UI admission and SendAs. Replacing the account slot cannot select the replacement user after validation or
+  copying. Pending-round delivery keeps its existing bound-user route; the original bin recording is retained.
 - **Auto-clear.** Items older than `bin_keep` (default 48 h; choices 12 h, 24 h, 48 h, 7 days, never) are deleted at
   start and once an hour while the app runs.
 - **One-time orphan scan.** On the first start with F10, Purple scans Telegram's directories once for recordings
@@ -1042,6 +1046,11 @@ Android `res/values/purple_strings.xml` (Desktop `Telegram/Resources/langs/purpl
 
 ## Tests
 
+- **Ordinary bin account snapshot.** The existing `recording-dock` route runs `ordinary_snapshot.py`.
+  It extracts the current public send and ordinary helper bodies, with typed storage, account, copy and UI
+  ports. Slot replacement after validation, during copying, before UI and before worker admission must refuse
+  sending. The unchanged-account controls send once and preserve the source file. These host ports do not
+  establish actual Android sending, same-user login lifetime or queue-acknowledgement behavior.
 - **purple-core `tests/test_config.cpp`.** The `[recording]` table and `seek_step`:
   - a missing table gives every default;
   - each boolean on and off;

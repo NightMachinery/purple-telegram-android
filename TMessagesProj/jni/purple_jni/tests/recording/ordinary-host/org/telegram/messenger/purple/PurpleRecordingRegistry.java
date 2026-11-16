@@ -1,0 +1,1 @@
+package org.telegram.messenger.purple;import java.util.*;public class PurpleRecordingRegistry{static List<Runnable> pending=new ArrayList<>();public static void onWorker(Runnable r){pending.add(r);}public static void flush(){List<Runnable> q=new ArrayList<>(pending);pending.clear();for(Runnable r:q)r.run();}}

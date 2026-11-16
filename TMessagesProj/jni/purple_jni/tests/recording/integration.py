@@ -130,3 +130,4 @@ public class VoicePreviewCases {
     print('RECORDING_INTEGRATION_PINS=17')
     import runpy
     runpy.run_path(str(tests / 'retry_identity.py'))['run'](root, output / 'retry-identity')
+    runpy.run_path(str(tests / 'ordinary_snapshot.py'))['run'](root, output / 'ordinary-snapshot')

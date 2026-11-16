@@ -1,0 +1,1 @@
+package org.telegram.messenger.purple;import java.io.*;import java.nio.file.*;public class PurpleRecordingFiles{public static int copies;public static boolean replace;public static void copy(File a,File b)throws IOException{Files.copy(a.toPath(),b.toPath());copies++;if(replace)org.telegram.messenger.UserConfig.identity=10;}}
