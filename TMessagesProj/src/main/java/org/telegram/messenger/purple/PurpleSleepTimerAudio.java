@@ -143,6 +143,12 @@ public final class PurpleSleepTimerAudio implements PurpleSleepTimer.Port {
         replacing++;
         try { action.run(); } finally { replacing--; automatic--; }
     }
+    public boolean playlistAutomatic(Ticket ticket, BooleanSupplier action) {
+        final boolean[] result = { false };
+        automaticRun(ticket, () -> result[0] = action.getAsBoolean());
+        return result[0];
+    }
+    public boolean automaticContext() { return automatic != 0; }
     public void resumeRewind(Runnable stock) { automaticRun(rewind, stock); }
     public boolean beforeAutomaticEnd() { timer.check(); return !timer.blocked(Slot.AUDIO); }
     public boolean ended(VideoPlayer player) { return timer.realEnd(player); }

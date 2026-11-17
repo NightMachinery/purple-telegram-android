@@ -1347,6 +1347,10 @@ public class FileLoader extends BaseController {
      * Return real file name. Used before file.exist()
      */
     public File getPathToAttach(TLObject attach, String size, String ext, boolean forceCache, boolean useFileDatabaseQueue) {
+        File retained = org.telegram.messenger.purple.PurplePlaylistsRetained.path(currentAccount, attach, forceCache);
+        if (retained != null) return retained;
+        File cached = org.telegram.messenger.purple.PurplePlaylistsCache.path(currentAccount, attach, forceCache);
+        if (cached != null) return cached;
         File dir = null;
         long documentId = 0;
         int dcId = 0;
@@ -1733,6 +1737,7 @@ public class FileLoader extends BaseController {
         fileLoaderQueue.postRunnable(() -> {
             for (int a = 0; a < files.size(); a++) {
                 File file = files.get(a);
+                if (org.telegram.messenger.purple.PurplePlaylistsRetained.protects(file)) continue;
                 File encrypted = new File(file.getAbsolutePath() + ".enc");
                 if (encrypted.exists()) {
                     try {

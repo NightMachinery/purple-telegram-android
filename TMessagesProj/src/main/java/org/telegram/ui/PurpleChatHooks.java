@@ -56,6 +56,7 @@ final class PurpleChatHooks {
     static final int VIEW_EDIT_HISTORY = 0x70750330;
     static final int COPY_AS_MARKDOWN = PurpleMarkdownCopy.OPTION;
     static final int COPY_SELECTION_AS_MARKDOWN = 0x70750008;
+    static final int ADD_TO_PLAYLIST = 0x70750f20;
 
     // Header menu rows, from Purple's id range (AGENTS.md, "How a hook looks").
     private static final int PEEK_LAST_SEEN = 0x70750001;
@@ -123,6 +124,36 @@ final class PurpleChatHooks {
                 org.telegram.messenger.UserConfig.getInstance(chat.getCurrentAccount()).getClientUserId(),
                 (once ? org.telegram.messenger.purple.PurpleRecordingSessions.FLAG_ONCE : 0)
                         | (quickReply ? org.telegram.messenger.purple.PurpleRecordingSessions.FLAG_QUICK_REPLY : 0)};
+    }
+
+    View addPlaylistSelection(org.telegram.ui.ActionBar.ActionBarMenu menu) {
+        return menu.addItemWithWidth(ADD_TO_PLAYLIST, R.drawable.msg_add, dp(48), PurplePlaylistsActivity.text("Add"));
+    }
+    private ArrayList<MessageObject> playlistSelection(android.util.SparseArray<MessageObject>[] selected) {
+        ArrayList<MessageObject> messages = new ArrayList<>();
+        for (int index = selected.length - 1; index >= 0; --index) {
+            for (int row = 0; row < selected[index].size(); ++row) messages.add(selected[index].valueAt(row));
+        }
+        return messages;
+    }
+    void updatePlaylistSelection(org.telegram.ui.ActionBar.ActionBarMenu menu, android.util.SparseArray<MessageObject>[] selected) {
+        menu.setItemVisibility(ADD_TO_PLAYLIST, chat.currentEncryptedChat == null
+                && org.telegram.messenger.purple.PurplePlaylistsAdd.capture(chat.getCurrentAccount(), playlistSelection(selected)) != null
+                ? View.VISIBLE : View.GONE);
+    }
+    void addSelectionToPlaylist(android.util.SparseArray<MessageObject>[] selected) { addToPlaylist(playlistSelection(selected)); }
+    void addToPlaylist(MessageObject message) { addToPlaylist(java.util.Collections.singletonList(message)); }
+    private void addToPlaylist(java.util.List<MessageObject> messages) {
+        if (chat.currentEncryptedChat != null) return;
+        org.telegram.messenger.purple.PurplePlaylistsAdd.Selection selection =
+                org.telegram.messenger.purple.PurplePlaylistsAdd.capture(chat.getCurrentAccount(), messages);
+        PurplePlaylistsActivity chooser = PurplePlaylistsActivity.add(selection);
+        if (chooser != null) chat.presentFragment(chooser);
+    }
+    void addPlaylistOption(MessageObject message, ArrayList<CharSequence> items, ArrayList<Integer> options, ArrayList<Integer> icons) {
+        if (chat.currentEncryptedChat != null || org.telegram.messenger.purple.PurplePlaylistsAdd.capture(
+                chat.getCurrentAccount(), java.util.Collections.singletonList(message)) == null) return;
+        items.add(PurplePlaylistsActivity.text("Add")); options.add(ADD_TO_PLAYLIST); icons.add(R.drawable.msg_add);
     }
 
     View addSelectionCopy(org.telegram.ui.ActionBar.ActionBarMenu menu, org.telegram.ui.Components.AnimatedTextView count) {

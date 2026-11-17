@@ -165,4 +165,7 @@ public final class PurpleDialogsHooks {
     public void showPresetPicker() {
         PurplePresetPicker.show(fragment);
     }
+    public void addPlaylistMenu(org.telegram.ui.Components.ItemOptions options, int account) {
+        PurplePlaylistsUI.menu(fragment, options, account);
+    }
 }

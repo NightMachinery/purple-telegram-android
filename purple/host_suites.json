@@ -1154,6 +1154,445 @@
         "embedded-port:EMBEDDED_PORT_CHECKS": 18,
         "proximity:SLEEP_TIMER_PROXIMITY_CHECKS": 110
       }
+    },
+    {
+      "name": "playlists-library",
+      "driver": "TMessagesProj/jni/purple_jni/tests/run_playlists.py",
+      "args": [
+        "--receipt",
+        "{receipt}",
+        "--library",
+        "{library}",
+        "--output",
+        "{output}"
+      ],
+      "phases": [
+        "compile",
+        "run"
+      ],
+      "expects": {
+        "run:PLAYLIST_LIBRARY_BRIDGE_CHECKS": 189,
+        "run:LINE PLAYLIST_LIBRARY_BRIDGE_OK": "PASS"
+      }
+    },
+    {
+      "name": "playlists-local",
+      "driver": "TMessagesProj/jni/purple_jni/tests/run_playlists_local.py",
+      "args": [
+        "--receipt",
+        "{receipt}",
+        "--library",
+        "{library}",
+        "--output",
+        "{output}"
+      ],
+      "phases": [
+        "compile",
+        "run"
+      ],
+      "expects": {
+        "run:PLAYLIST_LOCAL_BRIDGE_CHECKS": 115,
+        "run:LINE PLAYLIST_LOCAL_BRIDGE_OK": "PASS"
+      }
+    },
+    {
+      "name": "playlists-store",
+      "driver": "TMessagesProj/jni/purple_jni/tests/run_playlists_store.py",
+      "args": [
+        "--receipt",
+        "{receipt}",
+        "--library",
+        "{library}",
+        "--output",
+        "{output}"
+      ],
+      "phases": [
+        "compile",
+        "run"
+      ],
+      "expects": {
+        "run:PLAYLIST_STORE_CHECKS": 62,
+        "run:LINE PLAYLIST_STORE_OK": "PASS"
+      }
+    },
+    {
+      "name": "playlists-physical",
+      "driver": "TMessagesProj/jni/purple_jni/tests/run_playlists_physical.py",
+      "args": [
+        "--receipt",
+        "{receipt}",
+        "--library",
+        "{library}",
+        "--output",
+        "{output}"
+      ],
+      "phases": [
+        "compile",
+        "run"
+      ],
+      "expects": {
+        "jni:PLAYLIST_PHYSICAL_JNI_CHECKS": 47,
+        "jni:LINE PLAYLIST_PHYSICAL_JNI_OK": "PASS",
+        "native:PLAYLIST_FILES_CHECKS": 179,
+        "native-fault:PLAYLIST_FILES_FAULT_CHECKS": 56,
+        "media:PLAYLIST_MEDIA_FILES_CHECKS": 113,
+        "media-jni:PLAYLIST_MEDIA_JNI_CHECKS": 67,
+        "media-jni:LINE PLAYLIST_MEDIA_JNI_OK": "PASS"
+      }
+    },
+    {
+      "name": "playlists-account",
+      "driver": "TMessagesProj/jni/purple_jni/tests/run_playlists_account.py",
+      "args": [
+        "--receipt",
+        "{receipt}",
+        "--json",
+        "{json}",
+        "--library",
+        "{library}",
+        "--output",
+        "{output}"
+      ],
+      "phases": [
+        "compile",
+        "run"
+      ],
+      "expects": {
+        "run:PLAYLIST_ACCOUNT_BINDER_CHECKS": 49
+      }
+    },
+    {
+      "name": "playlists-worker",
+      "driver": "TMessagesProj/jni/purple_jni/tests/run_playlists_worker.py",
+      "args": [
+        "--receipt",
+        "{receipt}",
+        "--json",
+        "{json}",
+        "--library",
+        "{library}",
+        "--output",
+        "{output}"
+      ],
+      "phases": [
+        "compile",
+        "run"
+      ],
+      "expects": {
+        "run:PLAYLIST_WORKER_CHECKS": 131
+      }
+    },
+    {
+      "name": "playlists-edits",
+      "driver": "TMessagesProj/jni/purple_jni/tests/run_playlists_edits.py",
+      "args": [
+        "--receipt",
+        "{receipt}",
+        "--json",
+        "{json}",
+        "--library",
+        "{library}",
+        "--output",
+        "{output}"
+      ],
+      "phases": [
+        "compile",
+        "run"
+      ],
+      "expects": {
+        "run:PLAYLIST_EDIT_CHECKS": 70
+      }
+    },
+    {
+      "name": "playlists-view",
+      "driver": "TMessagesProj/jni/purple_jni/tests/run_playlists_view.py",
+      "args": [
+        "--receipt",
+        "{receipt}",
+        "--json",
+        "{json}",
+        "--library",
+        "{library}",
+        "--output",
+        "{output}"
+      ],
+      "phases": [
+        "compile",
+        "run"
+      ],
+      "expects": {
+        "run:PLAYLIST_VIEW_CHECKS": 200
+      }
+    },
+    {
+      "name": "playlists-resolver",
+      "driver": "TMessagesProj/jni/purple_jni/tests/run_playlists_resolver.py",
+      "args": [
+        "--receipt",
+        "{receipt}",
+        "--output",
+        "{output}"
+      ],
+      "phases": [
+        "compile",
+        "run"
+      ],
+      "expects": {
+        "run:PLAYLIST_RESOLVER_CHECKS": 132
+      }
+    },
+    {
+      "name": "playlists-playback",
+      "driver": "TMessagesProj/jni/purple_jni/tests/run_playlists_playback.py",
+      "args": [
+        "--receipt",
+        "{receipt}",
+        "--output",
+        "{output}"
+      ],
+      "phases": [
+        "compile",
+        "run"
+      ],
+      "expects": {
+        "run:PLAYLIST_PLAYBACK_CHECKS": 171
+      }
+    },
+    {
+      "name": "playlists-native-player",
+      "driver": "TMessagesProj/jni/purple_jni/tests/run_playlists_player.py",
+      "args": [
+        "--receipt",
+        "{receipt}",
+        "--output",
+        "{output}"
+      ],
+      "phases": [
+        "compile",
+        "run"
+      ],
+      "expects": {
+        "run:PLAYLIST_NATIVE_PLAYER_CHECKS": 197
+      }
+    },
+    {
+      "name": "playlists-downloads",
+      "driver": "TMessagesProj/jni/purple_jni/tests/run_playlists_downloads.py",
+      "args": [
+        "--receipt",
+        "{receipt}",
+        "--library",
+        "{library}",
+        "--json",
+        "{json}",
+        "--output",
+        "{output}"
+      ],
+      "phases": [
+        "compile",
+        "run"
+      ],
+      "expects": {
+        "native-run:PLAYLIST_DOWNLOAD_CORE_CHECKS": 322,
+        "run:PLAYLIST_DOWNLOAD_JNI_CHECKS": 252
+      }
+    },
+    {
+      "name": "playlists-download-transfer",
+      "driver": "TMessagesProj/jni/purple_jni/tests/run_playlists_download_transfer.py",
+      "args": [
+        "--receipt",
+        "{receipt}",
+        "--json",
+        "{json}",
+        "--library",
+        "{library}",
+        "--output",
+        "{output}"
+      ],
+      "phases": [
+        "compile",
+        "run"
+      ],
+      "expects": {
+        "run:PLAYLIST_WORKER_CHECKS": 131,
+        "run:PLAYLIST_DOWNLOAD_TRANSFER_CHECKS": 877,
+        "run:LINE PLAYLIST_DOWNLOAD_TRANSFER_OK": "PASS",
+        "restart-success-seed:PLAYLIST_RESTART_SEED_CHECKS": 8,
+        "restart-success-recover:PLAYLIST_RESTART_SUCCESS_CHECKS": 12,
+        "restart-overlap-seed:PLAYLIST_RESTART_SEED_CHECKS": 8,
+        "restart-overlap-recover:PLAYLIST_RESTART_OVERLAP_CHECKS": 9,
+        "restart-inode-seed:PLAYLIST_RESTART_SEED_CHECKS": 8,
+        "restart-inode-recover:PLAYLIST_RESTART_INODE_CHECKS": 8,
+        "restart-cleanup-seed:PLAYLIST_CLEANUP_SEED_CHECKS": 10,
+        "restart-cleanup-recover:PLAYLIST_CLEANUP_RECOVER_CHECKS": 10
+      }
+    },
+    {
+      "name": "playlists-keep-settings",
+      "driver": "TMessagesProj/jni/purple_jni/tests/run_playlists_keep_settings.py",
+      "args": [
+        "--receipt",
+        "{receipt}",
+        "--json",
+        "{json}",
+        "--library",
+        "{library}",
+        "--output",
+        "{output}"
+      ],
+      "phases": [
+        "compile",
+        "run"
+      ],
+      "expects": {
+        "run:PLAYLIST_KEEP_SETTINGS_CHECKS": 16
+      }
+    },
+    {
+      "name": "playlists-default-writer",
+      "driver": "TMessagesProj/jni/purple_jni/tests/run_playlists_default_writer.py",
+      "args": [
+        "--receipt",
+        "{receipt}",
+        "--json",
+        "{json}",
+        "--library",
+        "{library}",
+        "--output",
+        "{output}"
+      ],
+      "phases": [
+        "compile",
+        "run"
+      ],
+      "expects": {
+        "run:PLAYLIST_DEFAULT_WRITER_CHECKS": 170
+      }
+    },
+    {
+      "name": "playlists-sync",
+      "driver": "TMessagesProj/jni/purple_jni/tests/run_playlists_sync.py",
+      "args": [
+        "--receipt",
+        "{receipt}",
+        "--json",
+        "{json}",
+        "--library",
+        "{library}",
+        "--output",
+        "{output}"
+      ],
+      "phases": [
+        "compile",
+        "run"
+      ],
+      "expects": {
+        "run:PLAYLIST_SYNC_CORE_CHECKS": 43,
+        "run:LINE PLAYLIST_SYNC_CORE_OK": "PASS"
+      }
+    },
+    {
+      "name": "playlists-sync-discovery",
+      "driver": "TMessagesProj/jni/purple_jni/tests/run_playlists_sync_discovery.py",
+      "args": [
+        "--receipt",
+        "{receipt}",
+        "--json",
+        "{json}",
+        "--library",
+        "{library}",
+        "--output",
+        "{output}"
+      ],
+      "phases": [
+        "compile",
+        "run"
+      ],
+      "expects": {
+        "run:PLAYLIST_SYNC_DISCOVERY_CHECKS": 120,
+        "run:LINE PLAYLIST_SYNC_DISCOVERY_OK": "PASS"
+      }
+    },
+    {
+      "name": "playlists-sync-publication",
+      "driver": "TMessagesProj/jni/purple_jni/tests/run_playlists_sync_publication.py",
+      "args": [
+        "--receipt",
+        "{receipt}",
+        "--json",
+        "{json}",
+        "--library",
+        "{library}",
+        "--output",
+        "{output}"
+      ],
+      "phases": [
+        "compile",
+        "run"
+      ],
+      "expects": {
+        "run:PLAYLIST_SYNC_PUBLICATION_CHECKS": 250,
+        "run:LINE PLAYLIST_SYNC_PUBLICATION_OK": "PASS"
+      }
+    },
+    {
+      "name": "playlists-publication-journal",
+      "driver": "TMessagesProj/jni/purple_jni/tests/run_playlists_publication_journal.py",
+      "args": [
+        "--receipt",
+        "{receipt}",
+        "--json",
+        "{json}",
+        "--library",
+        "{library}",
+        "--output",
+        "{output}"
+      ],
+      "phases": [
+        "compile",
+        "run"
+      ],
+      "expects": {
+        "run:PLAYLIST_PUBLICATION_JOURNAL_CHECKS": 83,
+        "run:LINE PLAYLIST_PUBLICATION_JOURNAL_OK": "PASS",
+        "worker-run:PLAYLIST_PUBLICATION_WORKER_CHECKS": 39,
+        "worker-run:LINE PLAYLIST_PUBLICATION_WORKER_OK": "PASS",
+        "run:LINE PLAYLIST_PUBLICATION_JOURNAL_CHILD=seed:PASS": "PASS",
+        "run:LINE PLAYLIST_PUBLICATION_JOURNAL_CHILD=recover:PASS": "PASS",
+        "run:LINE PLAYLIST_PUBLICATION_JOURNAL_CHILD=routes-seed:PASS": "PASS",
+        "run:LINE PLAYLIST_PUBLICATION_JOURNAL_CHILD=routes-recover:PASS": "PASS"
+      }
+    },
+    {
+      "name": "playlists-sync-commit",
+      "driver": "TMessagesProj/jni/purple_jni/tests/run_playlists_sync_commit.py",
+      "args": [
+        "--receipt",
+        "{receipt}",
+        "--json",
+        "{json}",
+        "--library",
+        "{library}",
+        "--output",
+        "{output}"
+      ],
+      "phases": [
+        "compile",
+        "run"
+      ],
+      "expects": {
+        "run:PLAYLIST_SYNC_COMMIT_CHECKS": 100,
+        "run:LINE PLAYLIST_SYNC_COMMIT_OK": "PASS",
+        "worker-run:PLAYLIST_PUBLICATION_WORKER_CHECKS": 39,
+        "worker-run:LINE PLAYLIST_PUBLICATION_WORKER_OK": "PASS",
+        "actor-run:PLAYLIST_SYNC_ACTOR_CHECKS": 400,
+        "actor-run:LINE PLAYLIST_SYNC_ACTOR_OK": "PASS",
+        "prune-run:PLAYLIST_SYNC_PRUNE_CHECKS": 230,
+        "prune-run:LINE PLAYLIST_SYNC_PRUNE_OK": "PASS",
+        "runtime-run:PLAYLIST_SYNC_RUNTIME_CHECKS": 60,
+        "runtime-run:LINE PLAYLIST_SYNC_RUNTIME_OK": "PASS"
+      }
     }
   ]
 }

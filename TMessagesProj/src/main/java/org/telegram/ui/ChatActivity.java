@@ -3773,6 +3773,9 @@ public class ChatActivity extends BaseFragment implements
                         getMessagesController().getTopicsController().toggleViewForumAsMessages(-dialog_id, false);
                         TopicsFragment.prepareToSwitchAnimation(ChatActivity.this);
                     }
+                } else if (id == PurpleChatHooks.ADD_TO_PLAYLIST) {
+                    purple.addSelectionToPlaylist(selectedMessagesIds);
+                    clearSelectionMode();
                 } else if (id == PurpleChatHooks.COPY_SELECTION_AS_MARKDOWN) {
                     purple.copySelectionAsMarkdown(selectedMessagesIds, currentEncryptedChat != null);
                     clearSelectionMode();
@@ -10408,6 +10411,8 @@ public class ChatActivity extends BaseFragment implements
             actionModeViews.add(actionMode.addItemWithWidth(copy, R.drawable.msg_copy, dp(48), LocaleController.getString(R.string.Copy)));
             actionModeViews.add(actionMode.addItemWithWidth(delete, R.drawable.msg_delete, dp(48), LocaleController.getString(R.string.Delete)));
         }
+        actionModeViews.add(purple.addPlaylistSelection(actionMode));
+        purple.updatePlaylistSelection(actionMode, selectedMessagesIds);
         actionModeViews.add(purple.addSelectionCopy(actionMode, selectedMessagesCountTextView));
         purple.updateSelectionCopy(actionMode, selectedMessagesCanCopyIds[0].size() + selectedMessagesCanCopyIds[1].size() != 0);
         actionMode.setItemVisibility(edit, canEditMessagesCount == 1 && selectedMessagesIds[0].size() + selectedMessagesIds[1].size() == 1 ? View.VISIBLE : View.GONE);
@@ -19502,6 +19507,7 @@ public class ChatActivity extends BaseFragment implements
                     copyItem.setVisibility((org.telegram.messenger.purple.PurpleCopyPolicy.unrestricted() || !noforwards) && selectedMessagesCanCopyIds[0].size() + selectedMessagesCanCopyIds[1].size() != 0 ? View.VISIBLE : View.GONE);
                     newCopyVisible = copyItem.getVisibility();
                     purple.updateSelectionCopy(actionBar.createActionMode(), copyItem);
+                    purple.updatePlaylistSelection(actionBar.createActionMode(), selectedMessagesIds);
                 }
                 if (starItem != null) {
                     starVisible = starItem.getVisibility();
@@ -33686,6 +33692,9 @@ public class ChatActivity extends BaseFragment implements
                 presentFragment(fragment);
                 break;
             }
+            case PurpleChatHooks.ADD_TO_PLAYLIST:
+                purple.addToPlaylist(selectedObject);
+                break;
             case PurpleChatHooks.SAVE_TO_GALLERY:
             case PurpleChatHooks.SAVE_TO_DOWNLOADS:
                 purple.saveMedia(selectedObject, option);
@@ -46784,6 +46793,7 @@ public class ChatActivity extends BaseFragment implements
         purple.relabelImport(message, items, options, OPTION_APPLY_LOCALIZATION_OR_THEME);
         purple.addCopyOptions(message, groupedMessages, items, options, icons, OPTION_COPY);
         purple.addSaveOptions(message, items, options, icons);
+        purple.addPlaylistOption(message, items, options, icons);
     }
 
     private boolean showWelcomeMessageRevertOption(MessageObject messageObject) {

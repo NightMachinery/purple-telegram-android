@@ -13900,6 +13900,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             return;
         }
 
+        purple.addPlaylistMenu(io, currentAccount);
         final boolean isCurrentThemeDark;
         if (resourceProvider != null) {
             isCurrentThemeDark = resourceProvider.isDark();

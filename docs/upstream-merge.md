@@ -858,3 +858,37 @@ Keep the existing native filter-slot binding body in place. Do not replace the
 rendered identity with a fresh positional lookup or a synthetic stable ID alone.
 The detailed contract and remaining application checks are in
 [work-mode-folder-selection.md](work-mode-folder-selection.md).
+
+
+## Playlist navigation hooks
+
+`MainTabsActivity` delegates its former Contacts tab construction, fragment
+creation and long-press menu to `PurplePlaylistsUI`; the contact-permission
+badge returns early for that replacement. `DialogsActivity` delegates main
+three-dot menu additions through its existing `PurpleDialogsHooks` instance,
+after community and archive menus have returned. The helper owns explicit-account
+Contacts and Playlists navigation. Library, screen lifecycle and edit decisions
+remain in Purple classes. The upstream-hook baseline records these calls and is checked with the host roster.
+
+
+## Playlist native player hooks
+
+MediaController delegates playlist ownership, traversal, stale history suppression,
+external Play/Pause/Stop, native error and restored-music notices to
+`PurplePlaylistsPlayer`. Its small native queue bridge installs one resolved
+message and reuses stock cleanup and Play; account and document comparison also
+goes through the Purple helper. `PurpleSleepTimerAudio.playlistAutomatic` preserves
+the existing automatic context for delayed playlist starts. The detail screen
+delegates song taps through its captured screen/worker scope. The host roster checks the hook baseline; native application and visual
+qualification remain separate requirements.
+
+
+### Playlist Add hooks
+
+ChatActivity delegates single-message menu insertion and activation, plus
+multi-selection action creation, visibility and activation, to PurpleChatHooks.
+The helper captures immutable music sources and presents the stock Playlists
+chooser. Source messages and upstream selection rules remain unchanged. The
+application integration campaign must refresh and check the hook baseline.
+
+FileLoader retained-download hooks delegate path lookup and deletion protection to PurplePlaylistsRetained; no persistent cache path database is modified.

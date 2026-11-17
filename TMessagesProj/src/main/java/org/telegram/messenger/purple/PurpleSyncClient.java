@@ -160,12 +160,18 @@ interface PurpleSyncClient {
 
     default long transientRetryAt(){return 0;}
     default void transientWait(java.util.function.Consumer<PurpleRpcRetry.Transient> observer){}
+    default void playlistTransientWait(java.util.function.Consumer<PurpleRpcRetry.Transient> observer){transientWait(observer);}
     default boolean hasQueuedSync() { return false; }
     long userId();
     default PurpleSyncChatCore.Peer chat() { return PurpleSyncChatCore.Peer.self(); }
     default PurpleSyncChatOrigin origin() { return null; }
     default long dialogId() { return PurpleSyncChatIO.dialogId(chat(),userId()); }
     default boolean contains(Message message) { return message != null && chat().equals(message.chat); }
+
+    default byte[] playlistMetadata(Message message) { return null; }
+    default PurplePlaylistsSyncPublication playlistPublication(PurpleSyncTransport.PostAuthority authority,
+            java.util.function.BooleanSupplier current) { return null; }
+
 
     boolean isActive();
 

@@ -624,9 +624,11 @@ public final class PurpleSyncAuto {
                 trigger(account, event);
     }
     public static void background() {
+        PurplePlaylistsSyncRuntime.background();
         for (Runtime runtime : new ArrayList<>(accounts.values())) runtime.backstop.suspend();
     }
     static void identityChanged(int slot) {
+        PurplePlaylistsSyncRuntime.stop(slot);
         AndroidUtilities.runOnUIThread(() -> {
             java.util.Iterator<Runtime> values = accounts.values().iterator();
             while (values.hasNext()) {
@@ -636,9 +638,11 @@ public final class PurpleSyncAuto {
         });
     }
     public static void foreground() {
+        PurplePlaylistsSyncRuntime.foreground();
         all(PurpleSyncAutoCore.Event.Foreground);
     }
     public static void sessionReady(int account) {
+        PurplePlaylistsSyncRuntime.sessionReady(account);
         observe();
         if (!updateObservers[account]) {
             updateObservers[account] = true;

@@ -13,6 +13,7 @@ public final class PurpleAccountSettings {
         final long handle;
         final long ownerRevision;
         public final boolean reasons;
+        public final boolean playlistsKeepDownloaded, playlistsReady;
         public final boolean trade;
         public final int holdSeconds;
         public final boolean globalGood;
@@ -34,6 +35,12 @@ public final class PurpleAccountSettings {
             this.ownerRevision = ownerRevision;
             handle = Long.parseLong(json.getString("handle"));
             reasons = json.getBoolean("reasons");
+            playlistsKeepDownloaded = json.getBoolean("playlistsKeepDownloaded");
+            playlistsReady = json.getBoolean("ok")
+                    && (!globalReadError && json.getString("globalError").isEmpty()
+                        || json.getBoolean("globalGood") && !globalGoodReadError)
+                    && (!accountReadError && json.getString("accountError").isEmpty()
+                        || json.getBoolean("accountGood") && !accountGoodReadError);
             trade = json.getBoolean("trade");
             holdSeconds = Math.max(0, json.getInt("hold"));
             globalGood = json.getBoolean("globalGood");

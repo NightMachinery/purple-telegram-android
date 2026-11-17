@@ -485,7 +485,7 @@ def host_library(args, tree, out, row):
             raise RuntimeError('compiling ' + str(source.relative_to(tree)) + ' failed')
     library = folder / ('libpurplecore.dylib' if darwin else 'libpurplecore.so')
     link = [*wrapper, args.cxx, *(['-dynamiclib', '-Wl,-undefined,error', '-Wl,-rpath,' + str(qt), '-F' + str(qt)] if darwin else ['-shared']),
-        *objects, *(['-framework', 'QtCore'] if darwin else ['-lQt6Core']), '-o', library]
+        *objects, *(['-framework', 'QtCore'] if darwin else ['-lQt6Core']), '-lz', '-o', library]
     code, spent, timed_out = execute(link, log, None, tree, args.timeout)
     row.update(sources=len(sources), seconds=round(seconds + spent, 1), exit=code, sha256=hashlib.sha256(library.read_bytes()).hexdigest() if not code else None)
     if code or timed_out:

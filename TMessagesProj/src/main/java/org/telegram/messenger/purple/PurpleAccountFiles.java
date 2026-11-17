@@ -44,6 +44,7 @@ public final class PurpleAccountFiles {
     public final File syncStore;
     public final File history;
     public final File fingerprint;
+    public final File playlists;
 
     private PurpleAccountFiles(JSONObject paths) throws Exception {
         directory = file(paths.getString("directory"));
@@ -55,6 +56,7 @@ public final class PurpleAccountFiles {
         syncStore = file(paths.getString("syncStore"));
         history = file(paths.getString("history"));
         fingerprint = file(paths.getString("fingerprint"));
+        playlists = file(paths.getString("playlists"));
     }
 
     public static PurpleAccountFiles legacy() {
@@ -101,6 +103,7 @@ public final class PurpleAccountFiles {
         synchronized (PurpleAccountFiles.class) {
             if (slot >= 0 && slot < lifetimes.length) ++lifetimes[slot];
         }
+        PurplePlaylistsWorkers.stop(slot);
         PurpleSyncAuto.identityChanged(slot);
         PurpleArchive.identityChanged(slot);
         PurpleSyncChat.identityChanged(slot);

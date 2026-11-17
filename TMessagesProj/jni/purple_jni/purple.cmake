@@ -17,6 +17,26 @@ add_library(purplecore SHARED
         purple_jni/sync_chat_bridge.cpp
         purple_jni/sync_magic_bridge.cpp
         purple_jni/sync_record_bridge.cpp
+        purple_jni/playlists_bridge.cpp
+        purple_jni/playlists_sync_bridge.cpp
+        purple/purple/purple_playlists_codec.cpp
+        purple/purple/purple_playlists_sync.cpp
+        purple/purple/purple_playlists_inventory.cpp
+        purple/purple/purple_playlists_cover.cpp
+        purple/purple/purple_playlists_diff.cpp
+        purple/purple/purple_playlists_policy.cpp
+        purple/purple/purple_playlists_step.cpp
+        purple_jni/playlists_edits_bridge.cpp
+        purple_jni/playlists_view_bridge.cpp
+        purple/purple/purple_playlists_ops.cpp
+        purple_jni/playlists_local_bridge.cpp
+        purple_jni/playlists_files.cpp
+        purple_jni/playlists_files_bridge.cpp
+        purple/purple/purple_playlists_local.cpp
+        purple/purple/purple_playlists_download_state.cpp
+        purple/purple/purple_playlists_download_job.cpp
+        purple_jni/playlists_downloads_bridge.cpp
+        purple/purple/purple_playlists.cpp
         purple_jni/sync_files_bridge.cpp
         purple_jni/retained_config_bases.cpp
         purple_jni/archive_core_bridge.cpp
@@ -78,6 +98,7 @@ target_link_options(purplecore PRIVATE "-Wl,--version-script=${CMAKE_CURRENT_SOU
 
 target_link_libraries(purplecore
         qt6core
+        z
         log)
 
 add_custom_command(TARGET purplecore POST_BUILD

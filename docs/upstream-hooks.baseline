@@ -27,9 +27,9 @@ file TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java 1 0 1
 file TMessagesProj/src/main/java/org/telegram/messenger/ContactsController.java 5 5 5
 file TMessagesProj/src/main/java/org/telegram/messenger/DownloadController.java 13 0 5
 file TMessagesProj/src/main/java/org/telegram/messenger/FileLoadOperation.java 5 0 5
-file TMessagesProj/src/main/java/org/telegram/messenger/FileLoader.java 4 2 3
+file TMessagesProj/src/main/java/org/telegram/messenger/FileLoader.java 9 2 5
 file TMessagesProj/src/main/java/org/telegram/messenger/LocaleController.java 1 0 1
-file TMessagesProj/src/main/java/org/telegram/messenger/MediaController.java 138 24 45
+file TMessagesProj/src/main/java/org/telegram/messenger/MediaController.java 180 28 56
 file TMessagesProj/src/main/java/org/telegram/messenger/MediaDataController.java 19 2 14
 file TMessagesProj/src/main/java/org/telegram/messenger/MessageObject.java 1 1 1
 file TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java 67 3 30
@@ -66,7 +66,7 @@ file TMessagesProj/src/main/java/org/telegram/ui/Cells/ManageChatUserCell.java 1
 file TMessagesProj/src/main/java/org/telegram/ui/Cells/ProfileSearchCell.java 1 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/Cells/UserCell.java 1 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/Cells/UserCell2.java 1 1 1
-file TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java 82 36 50
+file TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java 92 36 50
 file TMessagesProj/src/main/java/org/telegram/ui/Components/AudioPlayerAlert.java 16 5 11
 file TMessagesProj/src/main/java/org/telegram/ui/Components/ChatActivityEnterView.java 39 2 16
 file TMessagesProj/src/main/java/org/telegram/ui/Components/ChatAvatarContainer.java 10 0 3
@@ -91,13 +91,13 @@ file TMessagesProj/src/main/java/org/telegram/ui/Components/TranslateAlert2.java
 file TMessagesProj/src/main/java/org/telegram/ui/Components/VideoPlayer.java 7 3 6
 file TMessagesProj/src/main/java/org/telegram/ui/Components/quickforward/QuickShareSelectorOverlayLayout.java 2 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/ContactsActivity.java 24 1 9
-file TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java 275 95 42
+file TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java 276 95 43
 file TMessagesProj/src/main/java/org/telegram/ui/ExternalActionActivity.java 2 0 2
 file TMessagesProj/src/main/java/org/telegram/ui/FilterCreateActivity.java 1 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/FiltersSetupActivity.java 5 5 5
 file TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java 18 2 10
 file TMessagesProj/src/main/java/org/telegram/ui/LauncherIconController.java 4 2 2
-file TMessagesProj/src/main/java/org/telegram/ui/MainTabsActivity.java 6 2 3
+file TMessagesProj/src/main/java/org/telegram/ui/MainTabsActivity.java 10 9 6
 file TMessagesProj/src/main/java/org/telegram/ui/MultiContactsSelectorBottomSheet.java 1 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/NotificationsCustomSettingsActivity.java 8 5 4
 file TMessagesProj/src/main/java/org/telegram/ui/NotificationsSettingsActivity.java 6 4 5

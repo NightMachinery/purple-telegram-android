@@ -45,6 +45,7 @@ public final class PurpleSyncChat {
         final PurpleSyncMagicChat magic;
         /** The chat the lists were last rebuilt to hide; UI thread only. */
         Peer listsHide;
+        final java.util.concurrent.atomic.AtomicLong playlistGeneration = new java.util.concurrent.atomic.AtomicLong();
         Holder(Platform env) { this.env=env;magic=new PurpleSyncMagicChat(new PurpleSyncMagicTelegram(env)); }
         void close(boolean logout){magic.close();}
     }
@@ -103,6 +104,12 @@ public final class PurpleSyncChat {
      * is not a joined supergroup in the local cache.
      */
     static PurpleSyncClient boundClient(int slot,Peer chat,BooleanSupplier current) {
+        return boundClient(slot, chat, current, false);
+    }
+    static PurpleSyncClient boundPlaylistsClient(int slot, Peer chat, BooleanSupplier current) {
+        return boundClient(slot, chat, current, true);
+    }
+    private static PurpleSyncClient boundClient(int slot, Peer chat, BooleanSupplier current, boolean playlists) {
         Holder holder=accounts.get(slot);
         if(holder==null||!holder.env.current()||chat==null||chat.kind!=PeerKind.Channel)return null;
         PurpleSyncMagicCore.Candidate local=PurpleSyncChatFacts.magic(org.telegram.messenger.MessagesController.getInstance(slot).getChat(chat.id),null);
@@ -111,6 +118,14 @@ public final class PurpleSyncChat {
         PurpleSyncChatFacts.MappedPeer peer=new PurpleSyncChatFacts.MappedPeer(origin,chat,Kind.Supergroup,Truth.True,Truth.True,
                 local.facts,java.util.Collections.singleton(origin.userId));
         PurpleSyncChatClient.Info info=new PurpleSyncChatClient.Info(origin,chat,peer,PurpleSyncChatClient.Error.None,local.title,peer.memberIds,true);
+        if (playlists) {
+            PurpleSyncMagicCore.Binding binding = holder.magic.binding();
+            long generation = holder.playlistGeneration.get();
+            BooleanSupplier scope = () -> current.getAsBoolean() && holder.env.current()
+                    && accounts.get(slot) == holder && holder.playlistGeneration.get() == generation
+                    && samePlaylistBinding(binding, holder.magic.binding()) && chat.equals(boundChat(slot));
+            return PurpleSyncTelegramClient.records(info, scope);
+        }
         return PurpleSyncTelegramClient.create(info,()->current.getAsBoolean()&&holder.env.current());
     }
     /**
@@ -118,6 +133,24 @@ public final class PurpleSyncChat {
      * device set up sync there first. Automatic sync then runs first use ({@link PurpleSyncFirstUse}), which joins
      * or asks once, instead of pausing on a space_mismatch problem.
      */
+    private static boolean samePlaylistBinding(PurpleSyncMagicCore.Binding before, PurpleSyncMagicCore.Binding after) {
+        return before != null && after != null && before.mode == after.mode
+                && java.util.Objects.equals(before.chat, after.chat) && before.login.equals(after.login)
+                && before.problem == after.problem && before.migration == after.migration;
+    }
+    static PurpleSyncTransport.PostAuthority playlistAuthority(int slot, PurpleSyncChatOrigin origin,
+            Peer chat, BooleanSupplier scope) {
+        return new PurpleSyncTransport.PostAuthority() {
+            public boolean current() { return scope.getAsBoolean() && status(slot).postable(chat); }
+            public boolean automatic(PurpleSyncChatOrigin actual, Peer peer) {
+                return current() && origin.equals(actual) && chat.equals(peer);
+            }
+            public void check(Consumer<Boolean> done) {
+                if (!current()) { done.accept(false); return; }
+                checkBeforePost(slot, "playlists", value -> done.accept(current() && value.postable(chat)));
+            }
+        };
+    }
     static boolean spaceMismatch(Peer chat,PurpleSyncInventory inventory,String space) {
         if(chat==null||Peer.self().equals(chat)||inventory==null||!chat.equals(inventory.chat)
                 ||!inventory.scanComplete||space==null||space.isEmpty())return false;
@@ -206,6 +239,7 @@ public final class PurpleSyncChat {
     private static void magicAction(int slot,BooleanSupplier current,Consumer<PurpleSyncMagicScreen.Frame> done,MagicCall call) {
         AndroidUtilities.runOnUIThread(()->{
             Holder holder=account(slot);if(holder==null){done.accept(PurpleSyncMagicScreen.frame(null,null));return;}
+            holder.playlistGeneration.incrementAndGet();
             call.start(holder,result->AndroidUtilities.runOnUIThread(()->{refreshLists(slot,holder);if(current.getAsBoolean())done.accept(PurpleSyncMagicScreen.frame(result,holder.magic.binding()));}));
         });
     }

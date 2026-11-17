@@ -56,16 +56,70 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
     }
 
     static PurpleSyncClient create(PurpleSyncChatClient.Info info,java.util.function.BooleanSupplier current) {
+        return owned(records(info, current));
+    }
+
+    static PurpleSyncTelegramClient records(PurpleSyncChatClient.Info info, java.util.function.BooleanSupplier current) {
         if(info==null || !info.readable())throw new IllegalArgumentException("UnreadableChat");
         PurpleSyncTelegramClient client=new PurpleSyncTelegramClient(info.origin.slot,info.origin.userId);
         client.io=new PurpleSyncChatIO(info.origin,info.chat,info.peer);
         client.scopeCurrent=current;
-        return owned(client);
+        return client;
     }
 
     private static PurpleSyncClient owned(PurpleSyncTelegramClient client) {
         return new PurpleSyncChatRecordClient(client,message -> client.isActive() && message.remote instanceof Remote
                 && client.contains(message) ? client.io.ownership(((Remote)message.remote).message) : PurpleSyncChatCore.Ownership.Unknown);
+    }
+
+    @Override public byte[] playlistMetadata(Message message) {
+        if (!isActive() || !contains(message)) return null;
+        if (!(message.remote instanceof Remote)) {
+            try {
+                org.json.JSONObject value = new org.json.JSONObject();
+                value.put("regular", false); value.put("forwarded", message.forwarded);
+                value.put("isDocument", false); value.put("caption", ""); value.put("mime", "");
+                value.put("names", new org.json.JSONArray()); value.put("ownership", "Unknown");
+                value.put("message", Integer.toString(message.id)); value.put("document", "0");
+                value.put("read", "Succeeded");
+                return value.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            } catch (Exception error) { return null; }
+        }
+        Remote remote = (Remote) message.remote;
+        return io.matches(remote.message)
+                ? PurplePlaylistsSyncMetadata.message(remote.message, io.ownership(remote.message)) : null;
+    }
+
+    @Override public PurplePlaylistsSyncPublication playlistPublication(PurpleSyncTransport.PostAuthority authority,
+            java.util.function.BooleanSupplier current) {
+        return new PurplePlaylistsSyncPublication(this, authority, current, new PurplePlaylistsSyncPublication.Port() {
+            public TLRPC.InputPeer input() { return PurpleSyncTelegramClient.this.input(); }
+            public int receipt(TLObject response, long random) { return PurpleSyncChatUpload.receipt(io, response, random, 0); }
+            public void schedule(Runnable task, long delay) { AndroidUtilities.runOnUIThread(task, delay); }
+            public void unschedule(Runnable task) { AndroidUtilities.cancelRunOnUIThread(task); }
+            public int upload(long file, int part, byte[] bytes, Reply<Boolean> done) {
+                if (!isActive() || !current.getAsBoolean() || !authority.current()) { done.onReply(false); return 0; }
+                try {
+                    TLRPC.TL_upload_saveFilePart request = new TLRPC.TL_upload_saveFilePart();
+                    request.file_id = file; request.file_part = part;
+                    request.bytes = new NativeByteBuffer(bytes.length); request.bytes.writeBytes(bytes);
+                    return ConnectionsManager.getInstance(account).sendRequest(request, (response, error) -> {
+                        if (isActive() && current.getAsBoolean()) noteWriteFailure(request, error);
+                        done.onReply(error == null && response instanceof TLRPC.TL_boolTrue);
+                    }, ConnectionsManager.RequestFlagFailOnServerErrors, ConnectionsManager.ConnectionTypeUpload);
+                } catch (Exception error) { done.onReply(false); return 0; }
+            }
+            public int send(TLRPC.TL_messages_sendMedia request, Reply<PurplePlaylistsSyncPublication.Rpc> done) {
+                if (!isActive() || !current.getAsBoolean() || !authority.current()) {
+                    done.onReply(new PurplePlaylistsSyncPublication.Rpc(null, "PublicationRouteChanged")); return 0;
+                }
+                return ConnectionsManager.getInstance(account).sendRequest(request, (response, error) -> {
+                    if (isActive() && current.getAsBoolean()) noteWriteFailure(request, error);
+                    if (error == null) processUpdates(origin(), response);
+                    done.onReply(new PurplePlaylistsSyncPublication.Rpc(response, error == null ? null : error.text));
+                }, ConnectionsManager.RequestFlagFailOnServerErrors);
+            }
+        });
     }
 
     private TLRPC.InputPeer input() {
@@ -100,9 +154,11 @@ final class PurpleSyncTelegramClient implements PurpleSyncClient {
     }
 
     @Override public long transientRetryAt(){PurpleRpcRetry.Transient value=PurpleRpcRequests.waiting(account,"record-read");return value!=null?value.retryAt:0;}
-    private java.util.function.Consumer<PurpleRpcRetry.Transient> waiting=ignored->{};
-    @Override public void transientWait(java.util.function.Consumer<PurpleRpcRetry.Transient> observer){waiting=observer!=null?observer:ignored->{};}
-    private void noteWriteFailure(TLObject request,TLRPC.TL_error error){if(!loginCurrent())return;PurpleRpcRetry.Transient wait=PurpleRpcRequests.writeFailure(account,"sync-write",request,error);if(wait!=null)runOnMain(()->{if(loginCurrent())waiting.accept(wait);});}
+    private volatile java.util.function.Consumer<PurpleRpcRetry.Transient> waitObserver=ignored->{}, playlistWaitObserver=ignored->{};
+    private final java.util.function.Consumer<PurpleRpcRetry.Transient> waiting=value->{playlistWaitObserver.accept(value);waitObserver.accept(value);};
+    @Override public void transientWait(java.util.function.Consumer<PurpleRpcRetry.Transient> observer){waitObserver=observer!=null?observer:ignored->{};}
+    @Override public void playlistTransientWait(java.util.function.Consumer<PurpleRpcRetry.Transient> observer){playlistWaitObserver=observer!=null?observer:ignored->{};}
+    private void noteWriteFailure(TLObject request,TLRPC.TL_error error){if(!loginCurrent())return;PurpleRpcRetry.Transient wait=PurpleRpcRequests.writeFailure(account,"sync-write",request,error);if(wait!=null){playlistWaitObserver.accept(wait);runOnMain(()->{if(loginCurrent())waitObserver.accept(wait);});}}
     private boolean loginCurrent() {
         return origin!=null && origin.userId==userId && origin.current()
                 && io!=null && io.origin.environment==(origin.key.startsWith("1-")?1:0);

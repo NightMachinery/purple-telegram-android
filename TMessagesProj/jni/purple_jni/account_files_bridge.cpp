@@ -101,7 +101,8 @@ Java_org_telegram_messenger_purple_PurpleAccountFiles_resolveNative(
     return Json(env, {{"ok", true}, {"directory", files->directory}, {"settings", files->settings},
         {"good", files->good}, {"backup", files->backup}, {"importBackup", files->importBackup},
         {"syncDirectory", files->syncDirectory}, {"syncStore", files->syncStore},
-        {"history", files->history}, {"fingerprint", files->fingerprintFile}});
+        {"history", files->history}, {"fingerprint", files->fingerprintFile},
+        {"playlists", files->playlists}});
 }
 
 extern "C" JNIEXPORT jstring JNICALL
@@ -188,7 +189,8 @@ Java_org_telegram_messenger_purple_PurpleAccountSettings_createNative(
         {"globalError", result.global.current.parsed.error}, {"accountError", result.account.current.parsed.error},
         {"globalGoodError", result.global.good ? result.global.good->parsed.error : QString()},
         {"accountGoodError", result.account.good ? result.account.good->parsed.error : QString()},
-        {"reasons", seen.reasons}, {"trade", seen.trade}, {"hold", seen.tradeHoldSeconds}};
+        {"reasons", seen.reasons}, {"trade", seen.trade}, {"hold", seen.tradeHoldSeconds},
+        {"playlistsKeepDownloaded", result.effective.settings.playlists.keepDownloaded}};
     layers.emplace(handle, Layer{result.effective.settings, description});
     return handle;
 }

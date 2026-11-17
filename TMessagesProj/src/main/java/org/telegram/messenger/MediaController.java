@@ -1031,6 +1031,30 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
 
     public boolean isSilent = false;
     private final org.telegram.messenger.purple.PurpleSleepTimerAudio purpleSleep = new org.telegram.messenger.purple.PurpleSleepTimerAudio(this);
+    private final org.telegram.messenger.purple.PurplePlaylistsPlayer purplePlaylists = new org.telegram.messenger.purple.PurplePlaylistsPlayer(this, purpleSleep);
+
+    public org.telegram.messenger.purple.PurplePlaylistsPlayer purplePlaylists() { return purplePlaylists; }
+
+    public void purplePlaylistRelease(boolean stop) {
+        clearPlaylist();
+        if (stop) cleanupPlayer(true, true);
+    }
+
+    public boolean purplePlaylistStart(MessageObject message, boolean restart) {
+        if (restart) {
+            cleanupPlayer(false, false);
+            message.resetPlayingProgress();
+        }
+        clearPlaylist();
+        playlist.add(message);
+        playlistMap.put(message.getId(), message);
+        shuffledPlaylist.add(message);
+        currentPlaylistNum = 0;
+        forceLoopCurrentPlaylist = false;
+        playlistEndReached[0] = playlistEndReached[1] = true;
+        playMusicAgain = true;
+        return playMessage(message);
+    }
     private boolean isPaused = false;
     private boolean wasPlayingAudioBeforePause = false;
     private VideoPlayer audioPlayer = null;
@@ -1726,6 +1750,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
     }
 
     public void cleanup() {
+        purplePlaylists.leave();
         cleanupPlayer(true, true);
         audioInfo = null;
         playMusicAgain = false;
@@ -1932,6 +1957,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                 cleanupPlayer(false, true);
             }
         } else if (id == NotificationCenter.musicDidLoad) {
+            if (purplePlaylists.active()) return;
             long did = (Long) args[0];
             if (playingMessageObject != null && playingMessageObject.isMusic() && playingMessageObject.getDialogId() == did && !playingMessageObject.scheduled) {
                 ArrayList<MessageObject> arrayListBegin = (ArrayList<MessageObject>) args[1];
@@ -1955,6 +1981,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                 playlistClassGuid = ConnectionsManager.generateClassGuid();
             }
         } else if (id == NotificationCenter.mediaDidLoad) {
+            if (purplePlaylists.active()) return;
             int guid = (Integer) args[3];
             if (guid == playlistClassGuid && playingMessageObject != null) {
                 long did = (Long) args[0];
@@ -2021,6 +2048,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                 purpleSleep.pauseAutomatic(message);
             }
         } else if (id == NotificationCenter.musicListLoaded) {
+            if (purplePlaylists.active()) return;
             if (currentSavedMusicList != null && args[0] == currentSavedMusicList) {
                 int addedCount = currentSavedMusicList.list.size() - playlist.size();
                 playlist.clear();
@@ -2522,6 +2550,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
         if (stopService && !purpleSleep.retiring() && !PurpleSleepTimer.get().localPause() && restoreMusicPlaylistState()) {
             return;
         }
+        purplePlaylists.stopped(stopService, transferPlayerToPhotoViewer);
 
         if (audioPlayer != null) {
             if (reporter != null) {
@@ -2673,7 +2702,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
     }
 
     private boolean isSamePlayingMessage(MessageObject messageObject) {
-        return playingMessageObject != null && playingMessageObject.getDialogId() == messageObject.getDialogId() && playingMessageObject.getId() == messageObject.getId() && ((playingMessageObject.eventId == 0) == (messageObject.eventId == 0));
+        return org.telegram.messenger.purple.PurplePlaylistsPlayer.same(playingMessageObject, messageObject);
     }
 
     public boolean seekToProgress(MessageObject messageObject, float progress) {
@@ -2804,6 +2833,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
     }
 
     public void loadMoreMusic() {
+        if (purplePlaylists.active()) return;
         if (currentSavedMusicList != null) {
             currentSavedMusicList.load();
             return;
@@ -2917,6 +2947,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
     }
 
     public boolean setPlaylist(ArrayList<MessageObject> messageObjects, MessageObject current, long mergeDialogId, boolean loadMusic, PlaylistGlobalSearchParams params) {
+        purplePlaylists.leave();
         if (playingMessageObject == current) {
             int newIdx = playlist.indexOf(current);
             if (newIdx >= 0) {
@@ -3006,6 +3037,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
     }
 
     public void playMessageAtIndex(int index) {
+        if (purplePlaylists.index(index)) return;
         if (currentPlaylistNum < 0 || currentPlaylistNum >= playlist.size()) {
             return;
         }
@@ -3024,6 +3056,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
     }
 
     private void purpleSleepNextMessage(boolean byStop) {
+        if (purplePlaylists.next(byStop)) return;
         ArrayList<MessageObject> currentPlayList = SharedConfig.shuffleMusic ? shuffledPlaylist : playlist;
 
         if (byStop && (SharedConfig.repeatMode == 2 || SharedConfig.repeatMode == 1 && currentPlayList.size() == 1) && !forceLoopCurrentPlaylist) {
@@ -3089,6 +3122,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
     }
 
     public void playPreviousMessage() {
+        if (purplePlaylists.previous()) return;
         ArrayList<MessageObject> currentPlayList = SharedConfig.shuffleMusic ? shuffledPlaylist : playlist;
         if (currentPlayList.isEmpty() || currentPlaylistNum < 0 || currentPlaylistNum >= currentPlayList.size()) {
             return;
@@ -3168,6 +3202,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
     }
 
     private void checkIsNextMusicFileDownloaded(int currentAccount) {
+        if (purplePlaylists.active()) return;
         if (!DownloadController.getInstance(currentAccount).canDownloadNextTrack()) {
             return;
         }
@@ -3699,7 +3734,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
     }
 
     public boolean playMessage(final MessageObject messageObject, boolean silent) {
-        return purpleSleep.play(messageObject, () -> purpleSleepPlayMessage(messageObject, silent));
+        return purplePlaylists.play(messageObject, () -> purpleSleep.play(messageObject, () -> purpleSleepPlayMessage(messageObject, silent)));
     }
 
     private boolean purpleSleepPlayMessage(final MessageObject messageObject, boolean silent) {
@@ -3984,7 +4019,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
 
                     @Override
                     public void onError(VideoPlayer player, Exception e) {
-
+                        if (tag == playerNum) purplePlaylists.failed(messageObject);
                     }
 
                     @Override
@@ -4356,6 +4391,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
     public void setPlaybackOrderType(int type) {
         boolean oldShuffle = SharedConfig.shuffleMusic;
         SharedConfig.setPlaybackOrderType(type);
+        if (purplePlaylists.modes()) return;
         if (oldShuffle != SharedConfig.shuffleMusic) {
             if (SharedConfig.shuffleMusic) {
                 buildShuffledPlayList();
@@ -4392,6 +4428,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
     }
 
     public boolean pauseMessage(MessageObject messageObject, boolean smoothFade) {
+        purplePlaylists.pause(messageObject);
         purpleSleep.pauseRequested();
         if (audioPlayer == null && videoPlayer == null || messageObject == null || playingMessageObject == null || !isSamePlayingMessage(messageObject)) {
             return false;
@@ -7494,6 +7531,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
     }
 
     public boolean purpleSleepAdvance() {
+        if (purplePlaylists.resumeAfterEnd()) return true;
         final ArrayList<MessageObject> list = SharedConfig.shuffleMusic ? shuffledPlaylist : playlist;
         return purpleSleep.advance(list, currentPlaylistNum,
                 () -> traversePlaylist(list, SharedConfig.playOrderReversed ? +1 : -1),
@@ -7535,8 +7573,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
             return false;
         }
 
-        if (messageObject.getDialogId() != state.playingMessage.getDialogId()
-                || messageObject.getId() != state.playingMessage.getId()) {
+        if (!org.telegram.messenger.purple.PurplePlaylistsPlayer.same(messageObject, state.playingMessage)) {
             return false;
         }
 
@@ -7547,6 +7584,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
         messageObject.audioProgressSec = state.progressSec;
         purpleSleep.restore(messageObject, () -> playMessage(messageObject));
         if (org.telegram.messenger.purple.PurpleVoicePlayback.restorePaused()) pauseMessage(messageObject, false);
+        purplePlaylists.restored(messageObject);
 
         return true;
     }
