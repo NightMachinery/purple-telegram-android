@@ -7,6 +7,15 @@ exercise the actual playlist classes separately. Each settings-sync Java phase
 has a five-minute timeout, so an uncaught main-thread exception cannot leave an
 idle non-daemon worker hiding the failure indefinitely.
 
+A canceled request reports possible file changes when it reached a write.
+An unchanged canceled request suppresses its completion. Both paths keep the
+account and view checks, so a result can only reach the captured screen.
+
+Use `--host-java` with Java 21 for checked JNI runs on macOS. The same
+physical fixture passes 47 checks on Java 17, which also emits array-critical
+warnings. Java 21 completes those checks without warnings. Gradle and javac
+still use the JDK selected by `--java-home`.
+
 The Android library bridge uses the shared playlist model for strict format 1
 parsing, canonical serialization, deterministic merge and containment checks.
 It does not create a second Java implementation of those rules.

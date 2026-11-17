@@ -37,8 +37,11 @@ final class PurplePlaylistsWorker implements AutoCloseable {
             try {
                 dispatcher.execute(() -> {
                     T value = view.get();
+                    boolean canceledWithChanges = outcome.status == Status.Canceled
+                            && (outcome.libraryMayHaveChanged || outcome.stateMayHaveChanged
+                                || (outcome.cleanup != null && outcome.cleanup.filesMayHaveChanged));
                     if (value != null && worker.alive.get() && worker.captured.current()
-                            && current.current() && !request.canceled.get()
+                            && current.current() && (!request.canceled.get() || canceledWithChanges)
                             && (outcome.snapshot == null || !outcome.snapshot.request.canceled.get())) {
                         if (worker.revision.get() == revision) completion.complete(value, outcome);
                         else if (revision < worker.syncRevision.get())
