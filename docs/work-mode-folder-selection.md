@@ -51,3 +51,8 @@ required before claiming that the installed application is repaired.
 The host fixture prints its numeric completion on a separate
 `FOLDER_NAVIGATION_CHECKS=N` line. Keep scope annotations on other lines so the
 canonical runner can count the actual executed checks without relaxing floors.
+
+A folder notification can reach a screen after its action bar and fragment view
+have been cleared. The refresh leaves detached views alone. The next view
+creation uses the latest projection. Motion cleanup also tolerates the action
+bar disappearing during an adapter callback.

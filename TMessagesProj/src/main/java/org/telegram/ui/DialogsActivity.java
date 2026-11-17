@@ -6928,7 +6928,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         if (!purpleFolders.unchanged(stamp)) return;
         viewPages[1].dialogsAdapter.pause();
         if (!purpleFolders.unchanged(stamp)) return;
-        actionBar.setEnabled(true);
+        if (actionBar != null) actionBar.setEnabled(true);
         filterTabsView.setEnabled(true);
         showScrollbars(true);
     }
@@ -7031,7 +7031,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     }
 
     private void updateFilterTabs(boolean force, boolean animated) {
-        if (filterTabsView == null || inPreviewMode || searchIsShowed || (rightSlidingDialogContainer != null && rightSlidingDialogContainer.hasFragment())) {
+        if (fragmentView == null || actionBar == null || filterTabsView == null
+                || inPreviewMode || searchIsShowed || (rightSlidingDialogContainer != null && rightSlidingDialogContainer.hasFragment())) {
             return;
         }
         org.telegram.messenger.purple.PurpleFolderProjection.Frame folderFrame = purpleFolders.capture(currentAccount);

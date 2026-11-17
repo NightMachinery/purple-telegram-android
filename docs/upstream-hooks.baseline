@@ -91,7 +91,7 @@ file TMessagesProj/src/main/java/org/telegram/ui/Components/TranslateAlert2.java
 file TMessagesProj/src/main/java/org/telegram/ui/Components/VideoPlayer.java 7 3 6
 file TMessagesProj/src/main/java/org/telegram/ui/Components/quickforward/QuickShareSelectorOverlayLayout.java 2 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/ContactsActivity.java 24 1 9
-file TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java 276 95 43
+file TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java 278 96 43
 file TMessagesProj/src/main/java/org/telegram/ui/ExternalActionActivity.java 2 0 2
 file TMessagesProj/src/main/java/org/telegram/ui/FilterCreateActivity.java 1 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/FiltersSetupActivity.java 5 5 5

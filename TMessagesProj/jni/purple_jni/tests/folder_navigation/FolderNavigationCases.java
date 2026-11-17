@@ -147,6 +147,27 @@ public final class FolderNavigationCases {
         DialogsActivity stopReentry=scene(zero,ten,twenty);
         stopReentry.viewPages[0].listView.onStop=()->click(stopReentry,1);
         click(stopReentry,2);agrees(stopReentry,10,"nested stopScroll intent cannot inherit outer binding");
+        DialogsActivity detached = scene(zero, ten, twenty);
+        FilterTabsView.Tab previous = detached.filterTabsView.getTab(2);
+        detached.fragmentView = null;
+        detached.actionBar = null;
+        publish("same", zero, twenty, ten);
+        AndroidUtilities.runOnUIThread(detached::refresh);
+        AndroidUtilities.drain();
+        require(detached.filterTabsView.getTab(2) == previous, "detached folder refresh leaves the old view alone");
+        detached.fragmentView = new Object();
+        detached.actionBar = new DialogsActivity.ActionBar();
+        detached.refresh();
+        click(detached, 2);
+        agrees(detached, 10, "reattachment refresh uses the latest folder order");
+
+        DialogsActivity detachDuringRefresh = scene(zero, ten, twenty);
+        detachDuringRefresh.viewPages[0].dialogsAdapter.onResume = () -> {
+            detachDuringRefresh.actionBar = null;
+        };
+        detachDuringRefresh.refresh();
+        agrees(detachDuringRefresh, 0, "animation cleanup remains safe when adapter resume clears the action bar");
+
         System.out.println("FOLDER_NAVIGATION_CHECKS="+checks);
         System.out.println("NO_ANDROID_RUNTIME_CLAIM");
     }

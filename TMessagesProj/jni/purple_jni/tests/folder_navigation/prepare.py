@@ -149,7 +149,7 @@ def prepare(repo, output):
      static class MotionEvent {float getX(){return 0;}}
      final ViewPage[] initialPages={new ViewPage(),new ViewPage()}; ViewPage[] viewPages=initialPages;
      final FilterTabsView filterTabsView=new FilterTabsView(); final PurpleFolderNavigation purpleFolders=new PurpleFolderNavigation();
-     PurpleFolderNavigation.Binding purpleFolderBinding; final ActionBar actionBar=new ActionBar(); final PurplePort purple=new PurplePort();
+     PurpleFolderNavigation.Binding purpleFolderBinding; ActionBar actionBar=new ActionBar(); Object fragmentView=new Object(); final PurplePort purple=new PurplePort();
      int currentAccount,initialDialogsType;float scrollYOffset,additionalOffset;boolean searching,animatingForward,startedTracking,maybeStartTracking,tabsAnimationInProgress;
      boolean inPreviewMode,searchIsShowed,canShowFilterTabsView;Object context;Container rightSlidingDialogContainer;Option filterOptions;Animator tabsAnimation;
      Runnable onCounters;
