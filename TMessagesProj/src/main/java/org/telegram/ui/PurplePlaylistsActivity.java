@@ -10,6 +10,7 @@ import org.telegram.messenger.audioinfo.AudioInfo;
 import org.telegram.messenger.purple.PurplePlaylistsDownloadsCore;
 import org.telegram.ui.Components.AudioPlayerAlert;
 import android.view.View;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.R;
@@ -39,6 +40,8 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
     private boolean optionsPage;
     private ActionBarMenuItem menu, createButton;
     private PurplePlaylistCells.Deck deck;
+    private final View.OnLayoutChangeListener mainTabBarLayout =
+            (view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> insetMainTabContent(bottom - top);
     private final NotificationCenter.NotificationCenterDelegate musicChanged = (id, account, args) -> {
         if (this.visible && account == currentAccount) update();
     };
@@ -84,7 +87,11 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
     }
     @Override public View createView(Context context) {
         View result = super.createView(context);
-        if (mainTab) actionBar.setBackButtonDrawable(null);
+        if (mainTab) {
+            actionBar.setBackButtonDrawable(null);
+            actionBar.addOnLayoutChangeListener(mainTabBarLayout);
+            insetMainTabContent(actionBar.getHeight());
+        }
         int background = getThemedColor(optionsPage ? Theme.key_windowBackgroundGray : Theme.key_windowBackgroundWhite);
         result.setBackgroundColor(background);
         listView.setBackgroundColor(background);
@@ -123,6 +130,13 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
             }
         });
         return result;
+    }
+    private void insetMainTabContent(int height) {
+        FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) listView.getLayoutParams();
+        if (params.topMargin != height) {
+            params.topMargin = height;
+            listView.setLayoutParams(params);
+        }
     }
     @Override public void onInsets(int left, int top, int right, int bottom) {
         super.onInsets(left, top, right, bottom);
