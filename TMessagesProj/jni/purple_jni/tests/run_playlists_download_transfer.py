@@ -73,9 +73,10 @@ def main():
     sources += [tests / 'playlists/PurplePlaylistsDownloadCases.java',
         tests / 'java_binding/org/telegram/messenger/purple/PurpleCore.java']
     ports = sorted((tests / 'playlists/download_ports').rglob('*.java'))
-    if len(ports) != 20:
+    if len(ports) != 19:
         raise RuntimeError('Captured account platform ports are incomplete')
     sources += ports
+    sources.append(tests / 'playlists/account_ports/org/telegram/messenger/purple/PurplePlaylistsSyncRuntime.java')
     native_source = java.parent / 'FileLoader.java'
     generated = args.output / 'RetainedNativeHooks.java'
     bound_text = retained_hooks(native_source)

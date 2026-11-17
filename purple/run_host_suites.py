@@ -40,6 +40,7 @@ def exec_driver(calls, wrapper, argv):
             super().__init__(command, *rest, **options)
     subprocess.Popen = Wrapped
     sys.argv = list(argv)
+    sys.path.insert(0, str(Path(argv[0]).resolve().parent))
     runpy.run_path(argv[0], run_name='__main__')
 
 
@@ -513,6 +514,7 @@ def main():
     parser.add_argument('--only', action='append', default=[], help='comma-separated configurations to run, plus what they reuse')
     parser.add_argument('--skip', action='append', default=[], help='comma-separated configurations to leave out')
     parser.add_argument('--java-home', default=os.environ.get('JAVA_HOME'), help='JDK for Gradle and the JNI headers (default: $JAVA_HOME)')
+    parser.add_argument('--host-java', type=Path, help='Java executable for host fixtures that support an independent runtime')
     parser.add_argument('--gradle', type=Path, help='an extracted Gradle of exactly the wrapper\'s version (default: ./gradlew, if its Gradle is unpacked)')
     parser.add_argument('--gradle-arg', action='append', default=[], help='extra Gradle argument, repeatable')
     parser.add_argument('--qt-android', help='PURPLE_QT_ANDROID for a tree without local.properties')
@@ -530,6 +532,10 @@ def main():
     parser.add_argument('--list', action='store_true', help='print the canonical list, run the self-check and exit')
     args = parser.parse_args()
 
+    if args.host_java:
+        args.host_java = args.host_java.resolve()
+        if not args.host_java.is_file() or not os.access(args.host_java, os.X_OK):
+            parser.error('--host-java must name an executable Java runtime')
     tree = args.tree.resolve()
     listing_path = tree / 'purple/host_suites.json'
     raw = listing_path.read_bytes()
@@ -636,6 +642,8 @@ def main():
                 # the runner always tests the tree, so none of them pass through.
                 driver_env = {key: value for key, value in env.items() if not key.startswith('PURPLE_')}
                 driver_env.update(TMPDIR=str(tmp), PATH=str(Path(args.java_home) / 'bin') + os.pathsep + env.get('PATH', ''), PURPLE_HOST_SUITE=name)
+                if args.host_java:
+                    driver_env['PURPLE_HOST_JAVA'] = str(args.host_java)
                 row['commands'], row['seconds'] = [], 0
                 for phase in suite.get('phases', [None]):
                     free_space(args, out)

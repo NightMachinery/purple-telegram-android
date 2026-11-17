@@ -188,6 +188,13 @@ final class PurpleSleepTimerAudio implements PurpleSleepTimer.Port {
 }
 
 final class MediaController {
+    private final PlaylistPort purplePlaylists = new PlaylistPort();
+
+    private static final class PlaylistPort {
+        boolean play(MessageObject message, BooleanSupplier stock) {
+            return stock.getAsBoolean();
+        }
+    }
     private static MediaController instance;
     static MediaController getInstance() { return instance; }
     static MediaController reset() {

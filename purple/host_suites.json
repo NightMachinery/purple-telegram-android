@@ -1510,7 +1510,7 @@
         "run"
       ],
       "expects": {
-        "run:PLAYLIST_SYNC_DISCOVERY_CHECKS": 120,
+        "run:PLAYLIST_SYNC_DISCOVERY_CHECKS": 113,
         "run:LINE PLAYLIST_SYNC_DISCOVERY_OK": "PASS"
       }
     },

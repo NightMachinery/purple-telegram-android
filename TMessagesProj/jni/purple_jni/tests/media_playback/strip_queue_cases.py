@@ -33,6 +33,8 @@ def run(root, output, compiler):
     round_end = block(media, '                if (org.telegram.messenger.purple.PurpleVoicePlayback.advance(this)) return;\n                final boolean restored = restoreMusicPlaylistState();\n                if (!restored) {') if False else media.split('                if (org.telegram.messenger.purple.PurpleVoicePlayback.advance(this)) return;',1)[1].split('\n            }\n        }\n    }',1)[0]
     round_end = 'if (org.telegram.messenger.purple.PurpleVoicePlayback.advance(this)) return;' + round_end
     restore = block(media, '    private boolean restoreMusicPlaylistState()')
+    player = (java / 'messenger/purple/PurplePlaylistsPlayer.java').read_text()
+    same_message = block(player, '    public static boolean same(MessageObject first, MessageObject second)')
     no_next = block(media, '    public boolean hasNoNextVoiceOrRoundVideoMessage()')
     setter = block(media, '    public void setVoiceMessagesPlaylist(')
     receiver = (java / 'messenger/MusicPlayerReceiver.java').read_text()
@@ -44,8 +46,10 @@ def run(root, output, compiler):
     put('android/util/SparseArray.java', 'package android.util;public class SparseArray<T> extends java.util.HashMap<Integer,T>{public void put(int k,T v){super.put(k,v);}public void remove(int k){super.remove(k);}}')
     put('org/telegram/messenger/MessageObject.java', '''package org.telegram.messenger;
 public class MessageObject {
- public int currentAccount=0,id;public long dialog;public boolean out,round,music,unread=true,once;public float audioProgress,forceSeekTo;public int audioProgressMs,audioProgressSec;
+ public int currentAccount=0,id;public long dialog,eventId;public boolean out,round,music,unread=true,once;public float audioProgress,forceSeekTo;public int audioProgressMs,audioProgressSec;
  public MessageObject(int id,long dialog,boolean out,boolean round){this.id=id;this.dialog=dialog;this.out=out;this.round=round;}
+ public static class Document{public long id;}private final Document document=new Document();
+ public Document getDocument(){document.id=id;return document;}
  public int getId(){return id;}public long getDialogId(){return dialog;}public boolean isOut(){return out;}public boolean isVoice(){return !round&&!music;}public boolean isRoundVideo(){return round;}public boolean isMusic(){return music;}public boolean isContentUnread(){return unread;}public boolean isVoiceOnce(){return once&&!round;}public boolean isRoundOnce(){return once&&round;}public void resetPlayingProgress(){audioProgress=0;}
 }''')
     put('org/telegram/messenger/DialogObject.java', 'package org.telegram.messenger;public class DialogObject {public static boolean isEncryptedDialog(long d){return false;}public static boolean isUserDialog(long d){return d>0;}}')
@@ -58,6 +62,10 @@ public class MessageObject {
     put('org/telegram/messenger/purple/PurpleSleepTimer.java', 'package org.telegram.messenger.purple;public final class PurpleSleepTimer {private static final PurpleSleepTimer INSTANCE=new PurpleSleepTimer();public static PurpleSleepTimer get(){return INSTANCE;}public boolean localPause(){return false;}}')
     put('org/telegram/messenger/purple/PurpleSleepTimerAudio.java', 'package org.telegram.messenger.purple;\nimport org.telegram.messenger.*;import java.util.function.BooleanSupplier;\npublic final class PurpleSleepTimerAudio {\n public static int automaticCalls,restoreCalls,transportCalls;private final MediaController controller;\n public PurpleSleepTimerAudio(MediaController c){controller=c;}\n public Object capture(){return this;}\n public boolean autoPlay(MessageObject m,Object receipt){if(receipt!=this)throw new AssertionError("wrong automatic receipt");automaticCalls++;return controller.playMessage(m);}\n public boolean restore(MessageObject m,BooleanSupplier stock){restoreCalls++;return stock.getAsBoolean();}\n public static void transportPlay(MediaController c){transportCalls++;c.playMessage(c.getPlayingMessageObject());}\n}')
     put('org/telegram/messenger/purple/PurpleCore.java', 'package org.telegram.messenger.purple;public class PurpleCore {public static final int PLAYBACK_ONE_TO_ONE=0,PLAYBACK_SELF=1,PLAYBACK_OTHER=2;public static boolean on=true;public static int settings=5;public static int voiceContinuationSettings(){return settings;}public static int voiceContinuationDecision(int m,boolean out,boolean unread,boolean kept){return m==0?2:m==1?(out?0:unread?1:2):kept?1:0;}public static boolean voiceQueueKeeps(int chat,boolean start,boolean out){return !(on&&chat==PLAYBACK_ONE_TO_ONE&&!start&&out);}}')
+    put('org/telegram/messenger/purple/PurplePlaylistsPlayer.java',
+        'package org.telegram.messenger.purple; import org.telegram.messenger.MessageObject;'
+        'public final class PurplePlaylistsPlayer { public void restored(MessageObject message) {} '
+        + same_message + '}')
     put('org/telegram/messenger/purple/PurpleVoiceQueue.java', (java/'messenger/purple/PurpleVoiceQueue.java').read_text())
     put('org/telegram/messenger/purple/PurpleVoicePlayback.java', (java/'messenger/purple/PurpleVoicePlayback.java').read_text())
     put('org/telegram/ui/PurplePlayerStripLayout.java', (java/'ui/PurplePlayerStripLayout.java').read_text())
@@ -67,6 +75,7 @@ public class MessageObject {
 import java.util.*;import android.util.SparseArray;import org.telegram.messenger.purple.PurpleSleepTimer;
 public class MediaController {
  final org.telegram.messenger.purple.PurpleSleepTimerAudio purpleSleep=new org.telegram.messenger.purple.PurpleSleepTimerAudio(this);
+ final org.telegram.messenger.purple.PurplePlaylistsPlayer purplePlaylists=new org.telegram.messenger.purple.PurplePlaylistsPlayer();
  public static final MediaController instance=new MediaController();public static MediaController getInstance(){return instance;}
  public MessageObject playingMessageObject;public ArrayList<MessageObject> playlist=new ArrayList<>(),shuffledPlaylist=new ArrayList<>(),voiceMessagesPlaylist;public SparseArray<MessageObject> voiceMessagesPlaylistMap;boolean voiceMessagesPlaylistUnread,playMusicAgain;int currentPlaylistNum,pipSwitchingState;Pip pipRoundVideoView;public boolean paused;public int restores,plays;SavedMusicPlaylistState savedMusicPlaylistState;
  static class Pip{void close(boolean v){}}

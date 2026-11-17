@@ -135,6 +135,13 @@ final class PurpleSleepTimerAudio implements PurpleSleepTimer.Port {
     @Override public boolean eligibleEnd() { return true; }
 }
 final class MediaController {
+    private final PlaylistPort purplePlaylists = new PlaylistPort();
+
+    private static final class PlaylistPort {
+        boolean play(MessageObject message, BooleanSupplier stock) {
+            return stock.getAsBoolean();
+        }
+    }
     PurpleSleepTimerAudio purpleSleep=new PurpleSleepTimerAudio(this);
     MessageObject playingMessageObject;
     VideoPlayer audioPlayer,videoPlayer;
