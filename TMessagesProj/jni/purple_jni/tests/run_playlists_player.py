@@ -76,7 +76,7 @@ def main():
         'PurplePlaylistsResolver.java', 'PurplePlaylistsTelegram.java', 'PurplePlaylistsView.java', 'PurplePlaylistsPlayback.java', 'PurplePlaylistsPlayer.java', 'PurplePlaylistsLookAhead.java', 'PurpleSleepTimerRules.java']]
     sources.append(tests / 'playlists/PurplePlaylistsPlayerCases.java')
     ports = sorted((tests / 'playlists/player_ports').rglob('*.java'))
-    if len(ports) != 12:
+    if len(ports) != 13:
         raise RuntimeError('Resolver platform endpoints are incomplete')
     endpoint_sources = list(sources)
     sources += ports

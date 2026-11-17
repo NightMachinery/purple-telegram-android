@@ -43,6 +43,7 @@ public final class PurplePlaylistsPlayerCases {
         Fixture(int slot) throws Exception { this(slot, 3); }
         Fixture(int slot, int count) throws Exception {
             this.slot = slot;
+            UserConfig.selectedAccount = slot;
             for (int i = 0; i < count; ++i) songs.add(song(i));
             PurpleSleepTimer.get().rules = new PurpleSleepTimerRules(); PurpleSleepTimer.get().local = false;
             SharedConfig.shuffleMusic = SharedConfig.playOrderReversed = false; SharedConfig.repeatMode = 0;
@@ -119,6 +120,36 @@ public final class PurplePlaylistsPlayerCases {
             check(f.media.history == 0 && f.media.prefetch == 0 && f.media.pages == 0, "owned queue suppresses stock history pages and prefetch");
             f.player.leave(); f.media.loadMoreMusic(); f.media.prefetch(); f.media.page(0);
             check(f.media.history == 1 && f.media.prefetch == 1 && f.media.pages == 1, "unowned stock loading unchanged");
+        }
+    }
+
+    private static void presentedQueue() throws Exception {
+        try (Fixture f = new Fixture(1)) {
+            f.start(1);
+            check(f.player.displayedQueue(1) == null, "no native playlist sheet before first resolution");
+            f.reply();
+            PurplePlaylistsPlayer.Queue list = f.player.displayedQueue(1);
+            check(list != null && list.account == 1 && list.songs.equals(f.songs), "captured sheet preserves saved order");
+            check(f.player.displayedQueue(0) == null, "native queue is hidden from other account");
+            boolean immutable = false;
+            try { list.songs.clear(); } catch (UnsupportedOperationException e) { immutable = true; }
+            check(immutable, "native queue snapshot cannot be edited by the sheet");
+            int reads = f.network.requests.size();
+            f.media.playing.audioProgressSec = 11;
+            check(f.player.selectQueueSong(list, 1) && f.media.paused, "current sheet row pauses native music");
+            check(f.player.selectQueueSong(list, 1) && !f.media.paused, "current sheet row resumes native music");
+            check(f.media.playing.audioProgressSec == 11 && f.network.requests.size() == reads,
+                    "sheet resume keeps the current position without rereading source");
+            UserConfig.selectedAccount = 0;
+            check(!f.player.selectQueueSong(list, 0) && f.player.displayedQueue(1) == null,
+                    "account switch blocks old sheet controls");
+            UserConfig.selectedAccount = 1;
+            check(!f.player.selectQueueSong(list, -1) && !f.player.selectQueueSong(list, list.songs.size()),
+                    "out-of-range native row selection is refused");
+            check(f.player.selectQueueSong(list, 0), "sheet row routes through the saved queue");
+            f.flush(); f.reply(); f.selected(0, "sheet row resolves its own saved source");
+            f.start(2); f.reply();
+            check(!f.player.selectQueueSong(list, 1), "replaced playlist rejects clicks from its old sheet");
         }
     }
 
@@ -453,7 +484,7 @@ public final class PurplePlaylistsPlayerCases {
 
     public static void main(String[] args) throws Exception {
         lookAhead();
-        traversal(); fences(); failures(); interruptions();
+        traversal(); presentedQueue(); fences(); failures(); interruptions();
         observation();
         android.os.Looper.off = true;
         boolean refused = false;

@@ -6,6 +6,7 @@ import org.telegram.messenger.MediaController;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.SharedConfig;
+import org.telegram.messenger.UserConfig;
 import org.telegram.tgnet.TLRPC;
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
@@ -31,12 +32,13 @@ public final class PurplePlaylistsPlayer {
         public final Status status;
         public final int account, waitSeconds;
         public final long sessionId, revision;
-        public final String selectedDocumentId, playingDocumentId, title, sourceStatus;
+        public final String playlistId, selectedDocumentId, playingDocumentId, title, sourceStatus;
         public final boolean interrupted, canRetry;
 
         private State(Session session, PurplePlaylistsPlayback.State state, long sessionId, long revision) {
             this.sessionId = sessionId; this.revision = revision;
             account = session == null ? -1 : session.account.identity.slot;
+            playlistId = session == null ? "" : session.playlist;
             status = state == null ? Status.Idle : Status.valueOf(state.status.name());
             selectedDocumentId = state == null || state.selected < 0 ? "" : session.songs.get(state.selected).documentId;
             playingDocumentId = state == null || state.playing < 0 ? "" : session.songs.get(state.playing).documentId;
@@ -46,6 +48,44 @@ public final class PurplePlaylistsPlayer {
             interrupted = session != null && session.interrupted;
             canRetry = !interrupted && (status == Status.Retry || status == Status.Wait);
         }
+    }
+
+    public static final class Queue {
+        public final int account;
+        public final List<PurplePlaylistsView.Song> songs;
+        private Queue(int account, List<PurplePlaylistsView.Song> songs) {
+            this.account = account;
+            this.songs = songs;
+        }
+    }
+
+    public Queue displayedQueue(int account) {
+        main();
+        Session owner = current();
+        return owner != null && owner.account.identity.slot == account && UserConfig.selectedAccount == account
+                && !owner.interrupted && same(owner.message, controller.getPlayingMessageObject()) ? owner.presentation : null;
+    }
+
+    public boolean ownsQueue(Queue expected) {
+        main();
+        Session owner = current();
+        return owner != null && expected != null && owner.presentation == expected
+                && UserConfig.selectedAccount == expected.account && !owner.interrupted;
+    }
+
+    public boolean selectQueueSong(Queue expected, int index) {
+        if (!ownsQueue(expected) || index < 0 || index >= expected.songs.size()) return false;
+        Session owner = session;
+        PurplePlaylistsPlayback.State state = owner.queue.state();
+        if (state.playing == index && state.selected == index
+                && same(owner.message, controller.getPlayingMessageObject())) {
+            if (state.status == PurplePlaylistsPlayback.Status.Paused)
+                return controller.playMessage(owner.message);
+            if (state.status == PurplePlaylistsPlayback.Status.Playing)
+                return controller.pauseMessage(owner.message);
+        }
+        owner.modes();
+        return owner.queue.play(index);
     }
 
     public final class Observation implements AutoCloseable {
@@ -281,8 +321,10 @@ public final class PurplePlaylistsPlayer {
         PurplePlaylistsResolver.Result result;
         boolean interrupted;
 
+        final Queue presentation;
         Session(PurplePlaylistsAccount.Captured account, List<PurplePlaylistsView.Song> songs, String playlist) {
             this.playlist = playlist; this.account = account; this.songs = Collections.unmodifiableList(new ArrayList<>(songs));
+            presentation = new Queue(account.identity.slot, this.songs);
             ahead = new PurplePlaylistsLookAhead(this.songs, new PurplePlaylistsLookAhead.Port() {
                 @Override public boolean current() { return Session.this.current(); }
                 @Override public void defer(Runnable action) { Session.this.defer(action); }

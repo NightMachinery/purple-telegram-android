@@ -428,6 +428,14 @@ closes the native player without falling back to chat history. Mode changes keep
 the existing native current song. Stock music pages, history loads and next-file
 prefetch are suppressed only while this playlist session owns the queue.
 
+Tapping the now-playing deck opens Telegram's `AudioPlayerAlert`. Its layout,
+transport, artwork and search interaction are shared with normal chat audio.
+For Purple playback, `PurplePlaylistsAudioQueue` supplies the captured song rows
+and routes selection through the existing resolver. The sheet closes when a
+different playlist or voice playback takes over. The hook in
+`AudioPlayerAlert.java` keeps the usual chat and profile audio queue on the
+stock path.
+
 Explicit resolution carries a one-shot Play request. Automatic resolution carries
 its original timer ticket and re-enters the existing automatic wrapper at start.
 The current wire message, document, captured account and peer metadata are checked
@@ -451,6 +459,20 @@ voice restoration still need application runtime checks. Status/Retry, bounded
 look-ahead and Add from messages have focused host/API qualification. Retained
 downloads, sync, process-restart recovery, coherent full-43/fresh AGP, resource
 linking and native UI comparisons remain required.
+
+
+### Android playlist navigation
+
+The library opens on saved playlists. Create lives in the app bar and in the
+empty library. Sync and the default offline preference live under Playlist
+settings in the overflow menu. A playlist opens directly on its songs, with
+playlist actions and offline controls in its overflow menu. The add chooser
+keeps its captured selection and the same library rows.
+
+When music is active for the selected account, tap the deck artwork or title to
+open the stock audio sheet. Play and pause have a separate target. The focused
+song is marked on the playlist that owns playback, so a song shared by two
+playlists does not appear selected in both.
 
 
 ### Playback status and manual Retry

@@ -67,7 +67,7 @@ file TMessagesProj/src/main/java/org/telegram/ui/Cells/ProfileSearchCell.java 1 
 file TMessagesProj/src/main/java/org/telegram/ui/Cells/UserCell.java 1 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/Cells/UserCell2.java 1 1 1
 file TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java 92 36 50
-file TMessagesProj/src/main/java/org/telegram/ui/Components/AudioPlayerAlert.java 16 5 11
+file TMessagesProj/src/main/java/org/telegram/ui/Components/AudioPlayerAlert.java 50 16 30
 file TMessagesProj/src/main/java/org/telegram/ui/Components/ChatActivityEnterView.java 39 2 16
 file TMessagesProj/src/main/java/org/telegram/ui/Components/ChatAvatarContainer.java 10 0 3
 file TMessagesProj/src/main/java/org/telegram/ui/Components/ChatNotificationsPopupWrapper.java 4 4 4

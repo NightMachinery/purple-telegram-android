@@ -25,6 +25,11 @@ public final class MediaController {
  }
  public void cleanupPlayer(boolean notify, boolean stop) { purplePlaylists.stopped(stop, false); cleanups++; playing = null; paused = true; }
  public void pauseMessage() { purplePlaylists.pause(playing); PurpleSleepTimer.get().rules.manualPause(PurpleSleepTimerRules.Slot.AUDIO); paused = true; }
+ public boolean pauseMessage(MessageObject message) {
+   if (playing != message) return false;
+   pauseMessage();
+   return true;
+ }
  public void loadMoreMusic() { /* EXTRACT:history */
 /* END:history */ history++; }
  public void prefetch() { /* EXTRACT:prefetch */

@@ -2,6 +2,13 @@ package org.telegram.ui;
 
 import static org.telegram.messenger.LocaleController.getString;
 import android.content.Context;
+import org.telegram.messenger.LocaleController;
+import org.telegram.messenger.MessageObject;
+import org.telegram.messenger.NotificationCenter;
+import org.telegram.messenger.UserConfig;
+import org.telegram.messenger.audioinfo.AudioInfo;
+import org.telegram.messenger.purple.PurplePlaylistsDownloadsCore;
+import org.telegram.ui.Components.AudioPlayerAlert;
 import android.view.View;
 import android.widget.LinearLayout;
 import org.telegram.messenger.AndroidUtilities;
@@ -28,6 +35,13 @@ import java.util.List;
 public final class PurplePlaylistsActivity extends UniversalFragment implements PurplePlaylistsScreen.Listener, PurplePlaylistsPlayer.Listener, PurplePlaylistsDownloadControls.Listener {
     private static final int MORE = 0x70750f00, CREATE = MORE + 1, REFRESH = MORE + 2,
             DELETED = MORE + 3, CONTACTS = MORE + 4, UNDO = MORE + 5, ROW = MORE + 6, SONG = MORE + 7, RETRY = MORE + 8, DOWNLOAD = MORE + 9, DOWNLOAD_CANCEL = MORE + 10, DOWNLOAD_RETRY = MORE + 11, KEEP = MORE + 12, KEEP_DEFAULT = MORE + 13, REMOVE_DOWNLOADS = MORE + 14, RETRY_CLEANUP = MORE + 15, SYNC = MORE + 16, SYNC_ENABLED = MORE + 17;
+    private static final int OPTIONS = MORE + 18, ACTIONS = MORE + 19;
+    private boolean optionsPage;
+    private ActionBarMenuItem menu, createButton;
+    private PurplePlaylistCells.Deck deck;
+    private final NotificationCenter.NotificationCenterDelegate musicChanged = (id, account, args) -> {
+        if (this.visible && account == currentAccount) update();
+    };
     private org.telegram.messenger.purple.PurplePlaylistsAdd.Selection adding;
     private String addResultText;
     private final String playlistId;
@@ -63,21 +77,46 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
     static PurplePlaylistsActivity mainTab(int account) { return new PurplePlaylistsActivity(account, "", false, true); }
     static String text(String key) { return org.telegram.messenger.LocaleController.getString("PurplePlaylists" + key); }
     @Override protected CharSequence getTitle() {
+        if (optionsPage) return text(playlistId.isEmpty() ? "Settings" : "OfflineMusic");
+        if (adding != null) return text("Add");
         return state != null && state.view != null && state.view.detail != null && !state.view.detail.row.title.isEmpty() ? state.view.detail.row.title
-                : text(recentlyDeleted ? "Deleted" : "Title");
+                : text(recentlyDeleted ? "Deleted" : playlistId.isEmpty() ? "Title" : "Playlist");
     }
     @Override public View createView(Context context) {
         View result = super.createView(context);
         if (mainTab) actionBar.setBackButtonDrawable(null);
-        ActionBarMenuItem menu = actionBar.createMenu().addItem(MORE, R.drawable.ic_ab_other);
-        menu.addSubItem(CREATE, R.drawable.msg_add, text("Create"));
+        int background = getThemedColor(optionsPage ? Theme.key_windowBackgroundGray : Theme.key_windowBackgroundWhite);
+        result.setBackgroundColor(background);
+        listView.setBackgroundColor(background);
+        listView.setClipToPadding(false);
+        onInsets(0, 0, 0, getBottomInset());
+        if (playlistId.isEmpty() && !optionsPage && !recentlyDeleted) {
+            createButton = actionBar.createMenu().addItem(CREATE, R.drawable.msg_add);
+            createButton.setContentDescription(text("Create"));
+            createButton.setVisibility(View.GONE);
+        }
+        menu = actionBar.createMenu().addItem(MORE, R.drawable.ic_ab_other);
+        if (!optionsPage && adding == null && !recentlyDeleted) {
+            if (!playlistId.isEmpty()) menu.addSubItem(ACTIONS, R.drawable.msg_edit, text("Actions"));
+            menu.addSubItem(OPTIONS, playlistId.isEmpty() ? R.drawable.msg_settings : R.drawable.msg_download,
+                    text(playlistId.isEmpty() ? "Settings" : "OfflineMusic"));
+        }
         menu.addSubItem(REFRESH, R.drawable.msg_retry, text("Refresh"));
-        if (adding == null) menu.addSubItem(DELETED, R.drawable.msg_delete, text("Deleted"));
-        if (adding == null) menu.addSubItem(CONTACTS, R.drawable.msg_contacts, getString(R.string.Contacts));
+        if (!optionsPage && adding == null && playlistId.isEmpty() && !recentlyDeleted) {
+            menu.addSubItem(DELETED, R.drawable.msg_delete, text("Deleted"));
+            menu.addSubItem(CONTACTS, R.drawable.msg_contacts, getString(R.string.Contacts));
+        }
         actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
             @Override public void onItemClick(int id) {
                 if (id == -1) finishFragment();
-                else if (id == REFRESH) refresh();
+                else if (id == REFRESH && !busy) refresh();
+                else if (id == OPTIONS && visible && !busy) {
+                    PurplePlaylistsActivity page = new PurplePlaylistsActivity(currentAccount, playlistId, false);
+                    page.optionsPage = true;
+                    presentFragment(page);
+                } else if (id == ACTIONS && editable() && state.view.detail != null) {
+                    playlistActions(state.view.detail.row);
+                }
                 else if (id == CREATE && editable() && canAdd()) title(null);
                 else if (id == DELETED && !busy) presentFragment(new PurplePlaylistsActivity(currentAccount, "", true));
                 else if (id == CONTACTS && !busy) PurplePlaylistsUI.contacts(PurplePlaylistsActivity.this, currentAccount);
@@ -85,8 +124,24 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
         });
         return result;
     }
+    @Override public void onInsets(int left, int top, int right, int bottom) {
+        super.onInsets(left, top, right, bottom);
+        if (listView != null) listView.setPadding(0, 0, 0, bottom + AndroidUtilities.dp(
+                mainTab && !AndroidUtilities.isTablet() ? DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS + 12 : 12));
+    }
+
+    private void observeMusic(boolean observe) {
+        if (adding != null || recentlyDeleted || optionsPage) return;
+        NotificationCenter center = NotificationCenter.getInstance(currentAccount);
+        center.updateObserver(observe, musicChanged, NotificationCenter.messagePlayingDidStart);
+        center.updateObserver(observe, musicChanged, NotificationCenter.messagePlayingDidReset);
+        center.updateObserver(observe, musicChanged, NotificationCenter.messagePlayingPlayStateChanged);
+    }
+
     @Override public void onResume() {
-        super.onResume(); visible = true; state = null;
+        super.onResume();
+        if (!visible) observeMusic(true);
+        visible = true; state = null;
         if (screen != null) screen.close();
         screen = PurplePlaylistsScreen.open(currentAccount, this);
         if (screen != null) busy = screen.select(playlistId);
@@ -101,7 +156,9 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
     @Override public void onFragmentDestroy() {
         PurpleWriterUI.retire(this); retire(); super.onFragmentDestroy(); }
     private void retire() {
-        visible = false; AndroidUtilities.cancelRunOnUIThread(syncWake);
+        if (visible) observeMusic(false);
+        visible = false; deck = null;
+        AndroidUtilities.cancelRunOnUIThread(syncWake);
         if (playbackObservation != null) playbackObservation.close();
         playbackObservation = null; playback = null;
         if (downloadObservation != null) downloadObservation.close();
@@ -111,7 +168,27 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
     private boolean editable() { return visible && !busy && screen != null && state != null && state.ready(); }
     private boolean canAdd() { return adding == null || adding.available(); }
     private void refresh() { if (visible && screen != null) { busy = screen.refresh(); update(); } }
-    private void update() { if (listView != null) listView.adapter.update(true); if (actionBar != null) actionBar.setTitle(getTitle()); }
+    private void update() {
+        if (actionBar != null) {
+            actionBar.setTitle(getTitle());
+            if (!optionsPage && !playlistId.isEmpty()) {
+                PurplePlaylistsView.Detail detail = state == null || state.view == null ? null : state.view.detail;
+                actionBar.setSubtitle(detail == null ? null : songCount(detail.songs.size()));
+                if (menu != null) {
+                    if (detail != null && !detail.row.partial) menu.showSubItem(ACTIONS);
+                    else menu.hideSubItem(ACTIONS);
+                }
+            }
+        }
+        if (createButton != null) {
+            boolean show = state != null && state.view != null && state.view.playlists != null
+                    && !state.view.playlists.isEmpty() && canAdd();
+            createButton.setVisibility(show ? View.VISIBLE : View.GONE);
+            createButton.setEnabled(editable());
+            createButton.setAlpha(editable() ? 1f : .5f);
+        }
+        if (listView != null) listView.adapter.update(true);
+    }
     @Override public void playlistsChanged(PurplePlaylistsScreen.State value) {
         if (!visible || screen == null) return;
         if (adding != null && adding.submitted() && addResultText == null && !value.editError.isEmpty()
@@ -179,17 +256,55 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
             return org.telegram.messenger.LocaleController.formatString("PurplePlaylistsPlaybackWait", 0, playback.waitSeconds);
         return text("Playback" + playback.status.name());
     }
-    @Override protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
-        items.add(UItem.asButton(REFRESH, text("Refresh")).setEnabled(!busy));
-        if (adding != null) items.add(UItem.asShadow(adding.submitted() ? (addResultText == null ? text("AddSubmitted") : addResultText)
-                : org.telegram.messenger.LocaleController.formatString("PurplePlaylistsAddChoose", 0, adding.accepted, adding.skipped)));
-        if (playback != null && playback.account == currentAccount && playback.status != PurplePlaylistsPlayer.Status.Idle) {
+    private static String songCount(int count) {
+        return LocaleController.formatPluralString("PurplePlaylistsSongs", count);
+    }
+
+    private MessageObject deckSong() {
+        if (!visible || adding != null || recentlyDeleted || optionsPage || currentAccount != UserConfig.selectedAccount) return null;
+        MediaController media = MediaController.getInstance();
+        MessageObject message = media.getPlayingMessageObject();
+        if (message == null || message.currentAccount != currentAccount || !message.isMusic()) return null;
+        PurplePlaylistsPlayer player = media.purplePlaylists();
+        PurplePlaylistsPlayer.State live = player.snapshot();
+        if (live.account == currentAccount && live.status != PurplePlaylistsPlayer.Status.Idle
+                && (player.displayedQueue(currentAccount) == null || live.status != PurplePlaylistsPlayer.Status.Playing
+                && live.status != PurplePlaylistsPlayer.Status.Paused)) return null;
+        return message;
+    }
+
+    private void addPlayback(ArrayList<UItem> items) {
+        MessageObject message = deckSong();
+        if (message != null) {
+            if (deck == null) deck = new PurplePlaylistCells.Deck(getContext());
+            MediaController media = MediaController.getInstance();
+            PurplePlaylistsPlayer.Queue queue = media.purplePlaylists().displayedQueue(currentAccount);
+            boolean paused = media.isMessagePaused();
+            AudioInfo audio = media.getAudioInfo();
+            deck.bind(message.getMusicTitle(), message.getMusicAuthor(), Long.hashCode(message.getDialogId()),
+                    audio == null ? null : audio.getSmallCover(), paused,
+                    () -> {
+                        if (deckSong() == message && queue == media.purplePlaylists().displayedQueue(currentAccount)
+                                && getParentActivity() instanceof LaunchActivity && AndroidUtilities.isContextSafe(getParentActivity()))
+                            new AudioPlayerAlert(getParentActivity(), getResourceProvider()).show();
+                    }, () -> {
+                        if (deckSong() != message || queue != media.purplePlaylists().displayedQueue(currentAccount)
+                                || paused != media.isMessagePaused()) return;
+                        if (paused) media.playMessage(message); else media.pauseMessage(message);
+                    }, getResourceProvider());
+            items.add(UItem.asCustom(deck, LayoutHelper.WRAP_CONTENT));
+        } else if (adding == null && !recentlyDeleted && !optionsPage && playback != null && playback.account == currentAccount
+                && playback.status != PurplePlaylistsPlayer.Status.Idle && playback.status != PurplePlaylistsPlayer.Status.Closed) {
             items.add(UItem.asShadow(playback.title.isEmpty() ? playbackText() : playback.title + " · " + playbackText()));
             if (playback.canRetry) {
-                UItem retry = UItem.asButton(RETRY, text("PlaybackRetryAction"));
-                retry.object2 = playback; items.add(retry);
+                UItem retry = UItem.asButton(RETRY, R.drawable.msg_retry, text("PlaybackRetryAction"));
+                retry.object2 = playback;
+                items.add(retry);
             }
         }
+    }
+
+    private void addDownloads(ArrayList<UItem> items) {
         if (adding == null && downloading != null && downloading.status != PurplePlaylistsDownloadControls.Status.Idle) {
             items.add(UItem.asShadow(downloadText()));
             if (downloading.canCancel) {
@@ -198,10 +313,29 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
             } else if (downloading.canRetry && downloading.playlistId.equals(playlistId)) {
                 UItem retry = UItem.asButton(DOWNLOAD_RETRY, text("DownloadRetry"));
                 retry.object2 = downloading; items.add(retry.setEnabled(!busy && state != null
-                        && state.downloadStatus == org.telegram.messenger.purple.PurplePlaylistsDownloadsCore.Status.Ready));
+                        && state.downloadStatus == PurplePlaylistsDownloadsCore.Status.Ready));
             }
         }
-        if (state == null) { items.add(UItem.asShadow(text(screen == null ? "Unavailable" : "Loading"))); return; }
+    }
+
+    private void empty(ArrayList<UItem> items, int icon, String title, String hint, boolean create) {
+        boolean allowCreate = create && editable() && canAdd();
+        Runnable action = allowCreate ? () -> {
+            if (editable() && canAdd()) title(null);
+        } : null;
+        View view = PurplePlaylistCells.empty(getContext(), getResourceProvider(), icon, text(title), text(hint), action);
+        items.add(UItem.asCustom(view, LayoutHelper.WRAP_CONTENT));
+    }
+
+    @Override protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
+        addPlayback(items);
+        if (adding != null) items.add(UItem.asShadow(adding.submitted()
+                ? (addResultText == null ? text("AddSubmitted") : addResultText)
+                : LocaleController.formatString("PurplePlaylistsAddChoose", 0, adding.accepted, adding.skipped)));
+        if (state == null) {
+            items.add(UItem.asShadow(text(screen == null && visible ? "Unavailable" : "Loading")));
+            return;
+        }
         if (state.cleanup != null) {
             items.add(UItem.asShadow(text("Cleanup" + state.cleanup.status.name())));
             if (!state.cleanup.ready()) items.add(UItem.asButton(RETRY_CLEANUP, text("CleanupRetry")).setEnabled(!busy));
@@ -214,54 +348,84 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
         if (view.incompleteCount > 0 || view.hiddenCount > 0)
             items.add(UItem.asShadow(org.telegram.messenger.LocaleController.formatString("PurplePlaylistsSyncHidden", 0,
                     view.incompleteCount, view.hiddenCount)));
-        if (adding == null && playlistId.isEmpty() && !recentlyDeleted) {
-            UItem enabled = UItem.asCheck(SYNC_ENABLED, text("SyncAutomatic"));
-            enabled.checked = view.syncEnabled; enabled.object2 = view;
-            items.add(enabled.setEnabled(editable() && !syncing));
-            items.add(UItem.asShadow(syncText(view)));
-            UItem sync = UItem.asButton(SYNC, text(syncResult != null
-                    && syncResult.status == PurplePlaylistsSyncResult.Status.OutcomeUnknown ? "SyncCheck" : "SyncNow"));
-            sync.object2 = syncResult == null ? view : syncResult;
-            items.add(sync.setEnabled(editable() && !syncing && (syncResult == null || syncResult.retryAt <= System.currentTimeMillis())));
-        }
-        if (playlistId.isEmpty()) {
-            if (!recentlyDeleted) items.add(UItem.asButton(CREATE, text("Create")).setEnabled(editable() && canAdd()));
-            if (!recentlyDeleted && adding == null) {
+        if (optionsPage) {
+            if (playlistId.isEmpty()) {
+                items.add(UItem.asHeader(text("SyncHeading")));
+                UItem enabled = UItem.asCheck(SYNC_ENABLED, text("SyncAutomatic"));
+                enabled.checked = view.syncEnabled; enabled.object2 = view;
+                items.add(enabled.setEnabled(editable() && !syncing));
+                items.add(UItem.asShadow(syncText(view)));
+                UItem sync = UItem.asButton(SYNC, text(syncResult != null
+                        && syncResult.status == PurplePlaylistsSyncResult.Status.OutcomeUnknown ? "SyncCheck" : "SyncNow"));
+                sync.object2 = syncResult == null ? view : syncResult;
+                items.add(sync.setEnabled(editable() && !syncing && (syncResult == null || syncResult.retryAt <= System.currentTimeMillis())));
+
+                items.add(UItem.asHeader(text("OfflineMusic")));
                 UItem keep = UItem.asCheck(KEEP_DEFAULT, text("KeepDefault"));
                 keep.checked = Boolean.TRUE.equals(state.keepDefault);
                 items.add(keep.setEnabled(editable() && state.keepDefault != null));
                 if (state.keepDefault == null) items.add(UItem.asShadow(text("KeepUnavailable")));
+            } else if (view.detail != null) {
+                items.add(UItem.asHeader(view.detail.row.title));
+                if (state.downloadStatus != null && state.downloadStatus != PurplePlaylistsDownloadsCore.Status.Ready)
+                    items.add(UItem.asShadow(text(state.downloadStatus == PurplePlaylistsDownloadsCore.Status.Newer
+                            ? "DownloadNewer" : "DownloadInvalid")));
+                if (adding == null && !view.detail.row.deleted && !view.detail.row.partial)
+                    items.add(UItem.asButton(KEEP, text("KeepTitle"), keepLabel(state)).setEnabled(editable() && state.keepPreference != null));
+                if (adding == null && !view.detail.row.deleted && !view.detail.row.partial && !view.detail.songs.isEmpty())
+                    items.add(UItem.asButton(DOWNLOAD, text("DownloadNow")).setEnabled(editable() && downloads != null
+                            && state.downloadStatus == PurplePlaylistsDownloadsCore.Status.Ready
+                            && (downloading == null || !downloading.canCancel
+                                && downloading.status != PurplePlaylistsDownloadControls.Status.Canceling)));
+                if (adding == null && !view.detail.row.partial)
+                    items.add(UItem.asButton(REMOVE_DOWNLOADS, text("RemoveDownloads")).setEnabled(editable()
+                            && state.downloadStatus == PurplePlaylistsDownloadsCore.Status.Ready
+                            && (downloading == null || !downloading.canCancel
+                                && downloading.status != PurplePlaylistsDownloadControls.Status.Canceling)));
+            } else {
+                items.add(UItem.asShadow(text("Missing")));
             }
+            addDownloads(items);
+            return;
+        }
+        addDownloads(items);
+        if (playlistId.isEmpty()) {
             List<PurplePlaylistsView.Row> rows = recentlyDeleted ? view.deleted : view.playlists;
+            if (rows.isEmpty()) {
+                if (recentlyDeleted) empty(items, R.drawable.msg_delete, "DeletedEmptyTitle", "DeletedEmptyHint", false);
+                else empty(items, R.drawable.msg_filled_data_music, "LibraryEmptyTitle",
+                        adding == null ? "LibraryEmptyHint" : "ChooserEmptyHint", true);
+                return;
+            }
+            if (adding == null && !recentlyDeleted) items.add(UItem.asHeader(text("YourPlaylists")));
             for (PurplePlaylistsView.Row row : rows) {
-                UItem item = UItem.asButton(ROW, row.title.isEmpty() ? text("Incomplete") : row.title, Integer.toString(row.songCount));
-                item.object2 = row; items.add(item.setEnabled(!busy && (adding == null || canAdd() && !row.partial)));
+                String title = row.title.isEmpty() ? text("Incomplete") : row.title;
+                String count = songCount(row.songCount);
+                if (row.partial) count += " · " + text("Incomplete");
+                UItem item = PurplePlaylistCells.RowFactory.of(ROW, row.id, row, title, count, "", row.id.hashCode(), false);
+                items.add(item.setEnabled(!busy && (adding == null || canAdd() && !row.partial)));
             }
-            if (rows.isEmpty()) items.add(UItem.asShadow(text("Empty")));
-        } else if (view.detail == null) items.add(UItem.asShadow(text("Missing")));
-        else {
-            if (view.detail.row.partial) items.add(UItem.asShadow(text("Incomplete")));
-            if (state.downloadStatus != null && state.downloadStatus != org.telegram.messenger.purple.PurplePlaylistsDownloadsCore.Status.Ready)
-                items.add(UItem.asShadow(text(state.downloadStatus == org.telegram.messenger.purple.PurplePlaylistsDownloadsCore.Status.Newer
-                        ? "DownloadNewer" : "DownloadInvalid")));
-            if (adding == null && !view.detail.row.deleted && !view.detail.row.partial)
-                items.add(UItem.asButton(KEEP, text("KeepTitle"), keepLabel(state)).setEnabled(editable() && state.keepPreference != null));
-            if (adding == null && !view.detail.row.deleted && !view.detail.row.partial && !view.detail.songs.isEmpty())
-                items.add(UItem.asButton(DOWNLOAD, text("DownloadNow")).setEnabled(editable() && downloads != null
-                        && state.downloadStatus == org.telegram.messenger.purple.PurplePlaylistsDownloadsCore.Status.Ready
-                        && (downloading == null || !downloading.canCancel
-                            && downloading.status != PurplePlaylistsDownloadControls.Status.Canceling)));
-            if (adding == null && !view.detail.row.partial)
-                items.add(UItem.asButton(REMOVE_DOWNLOADS, text("RemoveDownloads")).setEnabled(editable()
-                        && state.downloadStatus == org.telegram.messenger.purple.PurplePlaylistsDownloadsCore.Status.Ready
-                        && (downloading == null || !downloading.canCancel
-                            && downloading.status != PurplePlaylistsDownloadControls.Status.Canceling)));
-            for (PurplePlaylistsView.Song song : view.detail.songs) {
-                UItem item = UItem.asButton(SONG, song.title.isEmpty() ? text("Untitled") : song.title, playback != null && song.documentId.equals(playback.selectedDocumentId) ? playbackText() : song.performer);
-                item.object2 = song; items.add(item.setEnabled(editable() && !view.detail.row.deleted));
+        } else if (view.detail == null) {
+            items.add(UItem.asShadow(text("Missing")));
+        } else {
+            PurplePlaylistsView.Detail detail = view.detail;
+            if (detail.row.partial) items.add(UItem.asShadow(text("Incomplete")));
+            if (detail.row.deleted) items.add(UItem.asShadow(text("DeletedDetail")));
+            if (detail.songs.isEmpty()) {
+                empty(items, R.drawable.msg_filled_data_music, "SongsEmptyTitle",
+                        detail.row.deleted ? "DeletedEmptyHint" : "SongsEmptyHint", false);
+                return;
             }
-            if (view.detail.songs.isEmpty()) items.add(UItem.asShadow(text("NoSongs")));
-            if (!view.detail.row.partial) items.add(UItem.asButton(ROW, text("Actions")).setEnabled(editable()));
+            for (PurplePlaylistsView.Song song : detail.songs) {
+                boolean selected = playback != null && playback.account == currentAccount
+                        && playlistId.equals(playback.playlistId) && song.documentId.equals(playback.selectedDocumentId);
+                String title = song.title.isEmpty() ? text("Untitled") : song.title;
+                String artist = song.performer.isEmpty() ? getString(R.string.AudioUnknownArtist) : song.performer;
+                String subtitle = selected ? playbackText() + " · " + artist : artist;
+                UItem item = PurplePlaylistCells.RowFactory.of(SONG, song.documentId, song, title, subtitle,
+                        song.duration > 0 ? AndroidUtilities.formatShortDuration(song.duration) : "", song.documentId.hashCode(), selected);
+                items.add(item.setEnabled(editable() && !detail.row.deleted));
+            }
         }
     }
     @Override protected void onClick(UItem item, View view, int position, float x, float y) {

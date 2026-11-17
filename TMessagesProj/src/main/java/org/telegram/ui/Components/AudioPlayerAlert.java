@@ -203,6 +203,11 @@ public class AudioPlayerAlert extends BottomSheet implements NotificationCenter.
     }
 
     private ArrayList<MessageObject> playlist;
+    private final PurplePlaylistsAudioQueue purpleQueue;
+
+    private boolean hasPlaylistRows() {
+        return purpleQueue != null || playlist.size() > 1;
+    }
     private MessageObject lastMessageObject;
     private boolean noforwards;
 
@@ -293,6 +298,7 @@ public class AudioPlayerAlert extends BottomSheet implements NotificationCenter.
         }
 
         parentActivity = (LaunchActivity) context;
+        purpleQueue = PurplePlaylistsAudioQueue.open(currentAccount);
 
         TAG = DownloadController.getInstance(currentAccount).generateObserverTag();
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.messagePlayingDidReset);
@@ -344,8 +350,8 @@ public class AudioPlayerAlert extends BottomSheet implements NotificationCenter.
                 layoutParams.topMargin = -getPaddingTop();
 
                 int contentSize = dp(179 + (!isMyList() && !noforwards ? 52 : 0));
-                if (playlist.size() > 1) {
-                    contentSize += backgroundPaddingTop + playlist.size() * dp(56);
+                if (hasPlaylistRows()) {
+                    contentSize += backgroundPaddingTop + (purpleQueue == null ? playlist.size() * dp(56) : purpleQueue.size() * dp(60));
                 }
                 int padding;
                 if (searching || keyboardVisible) {
@@ -407,7 +413,7 @@ public class AudioPlayerAlert extends BottomSheet implements NotificationCenter.
 
             @Override
             protected void onDraw(Canvas canvas) {
-                if (playlist.size() <= 1) {
+                if (!hasPlaylistRows()) {
                     shadowDrawable.setBounds(0, getMeasuredHeight() - playerLayout.getMeasuredHeight() - backgroundPaddingTop, getMeasuredWidth(), getMeasuredHeight());
                     shadowDrawable.draw(canvas);
                     if (isProfilePlaylist) {
@@ -1190,7 +1196,9 @@ public class AudioPlayerAlert extends BottomSheet implements NotificationCenter.
         listView.setAdapter(listAdapter = new ListAdapter(context));
         listView.setGlowColor(getThemedColor(Theme.key_dialogScrollGlow));
         listView.setOnItemClickListener((view, position) -> {
-            if (view instanceof AudioPlayerCell) {
+            if (purpleQueue != null) {
+                purpleQueue.select(view);
+            } else if (view instanceof AudioPlayerCell) {
                 ((AudioPlayerCell) view).didPressedButton();
             }
         });
@@ -1223,7 +1231,7 @@ public class AudioPlayerAlert extends BottomSheet implements NotificationCenter.
                 updateLayout();
                 updateEmptyViewPosition();
 
-                if (!searchWas) {
+                if (purpleQueue == null && !searchWas) {
                     int firstVisibleItem = layoutManager.findFirstVisibleItemPosition();
                     if (padWithItem) {
                         firstVisibleItem = Math.max(0, firstVisibleItem - 1);
@@ -1282,7 +1290,7 @@ public class AudioPlayerAlert extends BottomSheet implements NotificationCenter.
         savedMusicList = MediaController.getInstance().currentSavedMusicList;
         isProfilePlaylist = savedMusicList != null;
         actionBar.menuOccupyBack = isProfilePlaylist;
-        padWithItem = isMyList();
+        padWithItem = purpleQueue == null && isMyList();
         playlist = MediaController.getInstance().getPlaylist();
         if (isMyList()) {
             addItem = menu.addItem(8, R.drawable.msg_add);
@@ -1382,6 +1390,7 @@ public class AudioPlayerAlert extends BottomSheet implements NotificationCenter.
             }
         }
 
+        if (purpleQueue != null) actionBar.setTitle(getString("PurplePlaylistsTitle"));
         if (isMyList()) {
             saveToProfileButton.setVisibility(View.GONE);
             unsaveFromProfileButton.setVisibility(View.GONE);
@@ -1477,6 +1486,7 @@ public class AudioPlayerAlert extends BottomSheet implements NotificationCenter.
         updateTitle(false);
         updateRepeatButton();
         updateEmptyView();
+        if (purpleQueue != null && !isDismissed()) purpleQueue.observe(listAdapter::notifyDataSetChanged, this::dismiss);
     }
 
     @Override
@@ -1484,7 +1494,7 @@ public class AudioPlayerAlert extends BottomSheet implements NotificationCenter.
         if (playerLayout == null) {
             return 0;
         }
-        if (playlist.size() <= 1) {
+        if (!hasPlaylistRows()) {
             return playerLayout.getMeasuredHeight() + backgroundPaddingTop;
         } else {
             int offset = dp(13);
@@ -1530,6 +1540,7 @@ public class AudioPlayerAlert extends BottomSheet implements NotificationCenter.
     }
 
     private boolean scrollToCurrentSong(boolean search) {
+        if (purpleQueue != null) return purpleQueue.scrollToPlaying(layoutManager);
         MessageObject playingMessageObject = MediaController.getInstance().getPlayingMessageObject();
         if (playingMessageObject != null) {
             boolean found = false;
@@ -2061,6 +2072,7 @@ public class AudioPlayerAlert extends BottomSheet implements NotificationCenter.
 
     @Override
     public void dismiss() {
+        if (purpleQueue != null) purpleQueue.close();
         super.dismiss();
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.messagePlayingDidReset);
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.messagePlayingPlayStateChanged);
@@ -2427,7 +2439,7 @@ public class AudioPlayerAlert extends BottomSheet implements NotificationCenter.
 
         private boolean listViewIsVisible;
         public void setup() {
-            listViewIsVisible = playlist.size() > 1;
+            listViewIsVisible = hasPlaylistRows();
             if (listViewIsVisible) {
                 listView.setVisibility(View.VISIBLE);
                 listView.setTranslationY(0);
@@ -2440,8 +2452,8 @@ public class AudioPlayerAlert extends BottomSheet implements NotificationCenter.
         @Override
         public void notifyDataSetChanged() {
             super.notifyDataSetChanged();
-            if ((playlist.size() > 1) != listViewIsVisible) {
-                listViewIsVisible = playlist.size() > 1;
+            if (hasPlaylistRows() != listViewIsVisible) {
+                listViewIsVisible = hasPlaylistRows();
                 if (listViewIsVisible) {
                     listView.setVisibility(View.VISIBLE);
                     listView.setTranslationY(AndroidUtilities.displaySize.y);
@@ -2461,7 +2473,7 @@ public class AudioPlayerAlert extends BottomSheet implements NotificationCenter.
                         .start();
                 }
             }
-            if (playlist.size() > 1) {
+            if (hasPlaylistRows()) {
                 playerLayout.setBackgroundColor(getThemedColor(Theme.key_player_background));
                 playerShadow.setVisibility(View.VISIBLE);
                 listView.setPadding(0, listView.getPaddingTop(), 0, dp(179 + 52));
@@ -2475,6 +2487,7 @@ public class AudioPlayerAlert extends BottomSheet implements NotificationCenter.
 
         @Override
         public int getItemCount() {
+            if (purpleQueue != null) return purpleQueue.size();
             if (searchWas) {
                 return (padWithItem ? 1 : 0) + searchResult.size();
             }
@@ -2490,6 +2503,7 @@ public class AudioPlayerAlert extends BottomSheet implements NotificationCenter.
 
         @Override
         public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
+            if (purpleQueue != null) return new RecyclerListView.Holder(purpleQueue.createRow(context, resourcesProvider));
             if (viewType == 1) {
                 View paddingView = new View(context) {
                     @Override
@@ -2510,6 +2524,10 @@ public class AudioPlayerAlert extends BottomSheet implements NotificationCenter.
 
         @Override
         public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
+            if (purpleQueue != null) {
+                purpleQueue.bind(holder.itemView, position);
+                return;
+            }
             if (padWithItem) {
                 if (position == 0) {
                     final View paddingView = holder.itemView;
@@ -2557,6 +2575,11 @@ public class AudioPlayerAlert extends BottomSheet implements NotificationCenter.
         }
 
         public void search(final String query) {
+            if (purpleQueue != null) {
+                searchWas = !TextUtils.isEmpty(query) && !query.trim().isEmpty();
+                purpleQueue.search(query, this::notifyDataSetChanged);
+                return;
+            }
             if (searchRunnable != null) {
                 Utilities.searchQueue.cancelRunnable(searchRunnable);
                 searchRunnable = null;
