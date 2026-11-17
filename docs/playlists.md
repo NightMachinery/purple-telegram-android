@@ -1,5 +1,12 @@
 # Playlists
 
+The older settings-sync host fixtures use an explicit inert playlist lifecycle
+port. They test settings sync without starting real playlist workers against
+Android framework stubs. Dedicated playlist runtime, actor and worker suites
+exercise the actual playlist classes separately. Each settings-sync Java phase
+has a five-minute timeout, so an uncaught main-thread exception cannot leave an
+idle non-daemon worker hiding the failure indefinitely.
+
 The Android library bridge uses the shared playlist model for strict format 1
 parsing, canonical serialization, deterministic merge and containment checks.
 It does not create a second Java implementation of those rules.

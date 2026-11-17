@@ -55,7 +55,7 @@ if sys.platform == "darwin":
 def run(name, command, env=None):
     (args.output / (name + ".argv.json")).write_text(json.dumps(list(map(str, command)), indent=2) + "\n")
     with (args.output / (name + ".log")).open("w") as log:
-        result = subprocess.run(list(map(str, command)), cwd=repo, stdout=log, stderr=subprocess.STDOUT, env=env)
+        result = subprocess.run(list(map(str, command)), cwd=repo, stdout=log, stderr=subprocess.STDOUT, env=env, timeout=300)
     print(name, result.returncode, flush=True)
     print((args.output / (name + ".log")).read_text()[-5000:], flush=True)
     if result.returncode:
