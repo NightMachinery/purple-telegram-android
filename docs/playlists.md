@@ -297,7 +297,9 @@ Copy obtains its source bytes on the actor, avoiding a large UI-thread clone.
 Account identity changes stop the registered actor before a new acquisition.
 
 A confirmed Undo exposes the shared inverse as Redo. The action is labeled
-in the stock bulletin and the playlist overflow menu. A bulletin can apply
+in the stock bulletin and the playlist overflow menu. On the phone Playlists
+tab, the bulletin uses the same bottom inset as the content to clear the
+floating navigation bar. A bulletin can apply
 its original edit after a refresh when the same history action is still current.
 Opening a new screen or replacing that history action invalidates the old
 bulletin. Undoing an untouched

@@ -29,6 +29,7 @@ import org.telegram.ui.ActionBar.ActionBarMenuItem;
 import org.telegram.ui.ActionBar.ActionBarMenuSubItem;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Components.Bulletin;
 import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.EditTextBoldCursor;
 import org.telegram.ui.Components.LayoutHelper;
@@ -100,6 +101,12 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
             actionBar.setBackButtonDrawable(null);
             actionBar.addOnLayoutChangeListener(mainTabBarLayout);
             insetMainTabContent(actionBar.getHeight());
+            Bulletin.addDelegate(this, new Bulletin.Delegate() {
+                @Override
+                public int getBottomOffset(int tag) {
+                    return AndroidUtilities.isTablet() ? 0 : bottomContentPadding(getBottomInset());
+                }
+            });
         }
         int background = getThemedColor(optionsPage ? Theme.key_windowBackgroundGray : Theme.key_windowBackgroundWhite);
         result.setBackgroundColor(background);
@@ -154,8 +161,11 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
     }
     @Override public void onInsets(int left, int top, int right, int bottom) {
         super.onInsets(left, top, right, bottom);
-        if (listView != null) listView.setPadding(0, 0, 0, bottom + AndroidUtilities.dp(
-                mainTab && !AndroidUtilities.isTablet() ? DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS + 12 : 12));
+        if (listView != null) listView.setPadding(0, 0, 0, bottomContentPadding(bottom));
+    }
+    private int bottomContentPadding(int bottom) {
+        return bottom + AndroidUtilities.dp(mainTab && !AndroidUtilities.isTablet()
+                ? DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS + 12 : 12);
     }
 
     private void observeMusic(boolean observe) {
@@ -190,6 +200,7 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
 
     @Override public void onPause() { retire(); super.onPause(); }
     @Override public void onFragmentDestroy() {
+        if (mainTab) Bulletin.removeDelegate(this);
         PurpleWriterUI.retire(this); retire(); super.onFragmentDestroy(); }
     private void retire() {
         if (visible) observeMusic(false);
