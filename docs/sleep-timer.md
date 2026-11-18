@@ -59,7 +59,9 @@ elapsedRealtime counts sleep, but Handler scheduling does not establish Doze
 wake delivery. No new service, permission or exact alarm is proposed.
 
 Automatic viewer collection refreshes and SavedState restoration retain their
-pause/expiry fence. Verified actual opening uses USER_OPEN and can authorize
+pause/expiry fence. During refresh, a viewer can hold a video wrapper before
+its Media3 player is prepared or after release. End-of-video checks wait
+for a prepared player. Verified actual opening uses USER_OPEN and can authorize
 stock playback for the same retained item. Thumbnail/navigation USER_SELECTION
 requires a changed logical item. Numeric reindex and surface restoration remain
 REFRESH and do not authorize Play. Deliberate transport Play remains ordinary.

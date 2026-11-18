@@ -161,7 +161,8 @@ public final class PurpleSleepTimerViewer implements PurpleSleepTimer.Port, Purp
     }
     @Override public boolean eligibleEnd() {
         return endEligible && (web != null ? web.purpleSleepFinite() && !web.purpleSleepEnded()
-                : player != null && !player.isLooping() && player.getPlaybackState() != androidx.media3.common.Player.STATE_ENDED);
+                : player != null && player.isPlayerPrepared() && !player.isLooping()
+                        && player.getPlaybackState() != androidx.media3.common.Player.STATE_ENDED);
     }
     @Override public boolean playing() { return web != null ? web.isPlaying() : player != null && player.isPlaying(); }
     @Override public void refreshReceipt() { if (web != null) web.purpleSleepRefreshReceipt(); }

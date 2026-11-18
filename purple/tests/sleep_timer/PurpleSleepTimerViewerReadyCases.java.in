@@ -1,0 +1,68 @@
+package org.telegram.ui;
+
+public final class PurpleSleepTimerViewerReadyCases {
+    private static final class Player {
+        int state;
+
+        boolean looping;
+        boolean prepared;
+
+        boolean isPlayerPrepared() { return prepared; }
+        boolean isLooping() { return looping; }
+        int getPlaybackState() {
+            if (!prepared) throw new NullPointerException("No native player");
+            return state;
+        }
+    }
+
+    private static final class Web {
+        boolean finite = true;
+        boolean ended;
+
+        boolean purpleSleepFinite() { return finite; }
+        boolean purpleSleepEnded() { return ended; }
+    }
+
+    private static final int STATE_ENDED = 4;
+
+    private boolean endEligible = true;
+    private Player player;
+    private Web web;
+
+    //@EXTRACT viewer public boolean eligibleEnd()
+
+    private static int checks;
+    private static void check(boolean value, String label) {
+        if (!value) throw new AssertionError(label);
+        checks++;
+    }
+
+    public static void main(String[] args) {
+        final var viewer = new PurpleSleepTimerViewerReadyCases();
+        check(!viewer.eligibleEnd(), "no wrapper");
+        final var player = new Player();
+        viewer.player = player;
+        check(!viewer.eligibleEnd(), "wrapper awaiting preparation");
+        player.prepared = true;
+        check(viewer.eligibleEnd(), "prepared video");
+        player.looping = true;
+        check(!viewer.eligibleEnd(), "looping video");
+        player.looping = false;
+        player.state = STATE_ENDED;
+        check(!viewer.eligibleEnd(), "ended video");
+        player.prepared = false;
+        check(!viewer.eligibleEnd(), "released video");
+        final var web = new Web();
+        viewer.web = web;
+        check(viewer.eligibleEnd(), "finite web video without native player");
+        web.ended = true;
+        check(!viewer.eligibleEnd(), "ended web video");
+        web.ended = false;
+        web.finite = false;
+        check(!viewer.eligibleEnd(), "nonfinite web video");
+        web.finite = true;
+        viewer.endEligible = false;
+        check(!viewer.eligibleEnd(), "timer ineligible");
+        System.out.println("SLEEP_TIMER_VIEWER_READY_CHECKS=" + checks);
+    }
+}

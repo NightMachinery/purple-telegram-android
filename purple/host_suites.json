@@ -1110,7 +1110,7 @@
         "compile",
         "run"
       ],
-      "coverage": "Actual dependency-free production sleep timer rules, captured stale end events, same-item timer replacement, manual and automatic transport, seek and Pause intent, saved song identity and preparation-free model adoption. Does not qualify Android adapters, Media3, device playback or Doze. Also exercises typed gallery/embed process-local identity and saved-song native-retirement ordering/recursion/failure rules, without Android adapter execution. Source-extracted timer facade, Audio intent classification and actual Saved Music refresh fallback run over inert stock player endpoints; timed expiry, repeated refresh, selection retention and deliberate Play. Production deferred Play receipts run on both slots. Source-extracted media session callbacks, the session prepare/lazy-load helper and chat timestamp scheduling run over inert storage, player, viewer and UI-queue endpoints: silent prepare then Play of the prepared target, loads finishing after expiry or Pause, later requests, account switch and session release, repeated callbacks, timer extension, and voice/round/video timestamps. These checks do not establish Android playback. Also executes the production embedded-port identity and finite-evidence contract.",
+      "coverage": "Actual dependency-free production sleep timer rules, captured stale end events, same-item timer replacement, manual and automatic transport, seek and Pause intent, saved song identity and preparation-free model adoption. Does not qualify Android adapters, Media3, device playback or Doze. Also exercises typed gallery/embed process-local identity and saved-song native-retirement ordering/recursion/failure rules, without Android adapter execution. Source-extracted timer facade, Audio intent classification and actual Saved Music refresh fallback run over inert stock player endpoints; timed expiry, repeated refresh, selection retention and deliberate Play. Production deferred Play receipts run on both slots. Source-extracted media session callbacks, the session prepare/lazy-load helper and chat timestamp scheduling run over inert storage, player, viewer and UI-queue endpoints: silent prepare then Play of the prepared target, loads finishing after expiry or Pause, later requests, account switch and session release, repeated callbacks, timer extension, and voice/round/video timestamps. These checks do not establish Android playback. Also executes the production embedded-port identity and finite-evidence contract and the viewer end check over an inert player with preparation and release transitions.",
       "expects": {
         "rules:SLEEP_TIMER_RULES": 135,
         "saved-refresh:SLEEP_TIMER_SAVED_REFRESH_CHECKS": 18,
@@ -1118,7 +1118,8 @@
         "deferred:SLEEP_TIMER_SESSION_CHECKS": 59,
         "deferred:SLEEP_TIMER_TIMESTAMP_CHECKS": 52,
         "embedded-port:EMBEDDED_PORT_CHECKS": 18,
-        "proximity:SLEEP_TIMER_PROXIMITY_CHECKS": 110
+        "proximity:SLEEP_TIMER_PROXIMITY_CHECKS": 110,
+        "viewer-ready:SLEEP_TIMER_VIEWER_READY_CHECKS": 10
       }
     },
     {

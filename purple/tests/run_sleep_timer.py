@@ -66,6 +66,8 @@ def bound(kind, text):
         if text.count(QUALIFIED_TIMER) != 1:
             raise ValueError('Expected one qualified timer call in the timestamp or native Play member')
         text = text.replace(QUALIFIED_TIMER, 'PurpleSleepTimer.get()')
+    if kind == 'viewer':
+        text = text.replace('androidx.media3.common.Player.STATE_ENDED', 'STATE_ENDED')
     if kind == 'media':
         text = text.replace('org.telegram.messenger.purple.PurpleSleepTimerAudio.', 'PurpleSleepTimerAudio.')
     return text
@@ -79,7 +81,7 @@ def fixture_source(template, production):
                 if 'import org.telegram.messenger.purple.' + name + ';' not in production['media']:
                     raise ValueError('Unqualified Purple class without a production import: ' + name)
         return bound(match[1], text)
-    result = re.sub(r'(?m)^\s*//@EXTRACT (timer|audio|media|helper|session|chat|native) ([^\n]+)$', replace, template)
+    result = re.sub(r'(?m)^\s*//@EXTRACT (timer|audio|media|helper|session|chat|native|viewer) ([^\n]+)$', replace, template)
     if re.search(r'(?m)^\s*//@EXTRACT', result):
         raise ValueError('Unresolved production member')
     return result
@@ -97,7 +99,7 @@ sources = [owned / 'PurpleSleepTimerRules.java', owned / 'PurpleSleepTimerSavedS
            root / 'TMessagesProj/src/main/java/org/telegram/ui/PurpleEmbeddedPlaybackPort.java',
            Path(__file__).parent / 'sleep_timer/PurpleEmbeddedPlaybackPortCases.java']
 templates = [Path(__file__).parent / 'sleep_timer' / name for name in
-             ['PurpleSleepTimerSavedRefreshCases.java.in', 'PurpleSleepTimerDeferredCases.java.in', 'PurpleSleepTimerProximityCases.java.in']]
+             ['PurpleSleepTimerSavedRefreshCases.java.in', 'PurpleSleepTimerDeferredCases.java.in', 'PurpleSleepTimerProximityCases.java.in', 'PurpleSleepTimerViewerReadyCases.java.in']]
 production = {
     'timer': owned / 'PurpleSleepTimer.java',
     'audio': owned / 'PurpleSleepTimerAudio.java',
@@ -106,6 +108,7 @@ production = {
     'session': owned.parent / 'TelegramMediaSession.java',
     'chat': root / 'TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java',
     'native': root / 'TMessagesProj/src/main/java/org/telegram/ui/Components/VideoPlayer.java',
+    'viewer': root / 'TMessagesProj/src/main/java/org/telegram/ui/PurpleSleepTimerViewer.java',
 }
 java_home = Path(os.environ['JAVA_HOME'])
 classes = args.output / 'classes'
@@ -141,6 +144,7 @@ else:
         ('embedded-port', 'org.telegram.ui.PurpleEmbeddedPlaybackPortCases'),
         ('deferred', 'org.telegram.messenger.purple.deferred.PurpleSleepTimerDeferredCases'),
         ('proximity', 'org.telegram.messenger.purple.proximity.PurpleSleepTimerProximityCases'),
+        ('viewer-ready', 'org.telegram.ui.PurpleSleepTimerViewerReadyCases'),
     ]:
         command = [str(java_home / 'bin/java'), '-Xmx64m', '-Dfile.encoding=UTF-8', '-cp', str(classes), main_class]
         (args.output / (label + '-run-command.json')).write_text(json.dumps(command, indent=2) + '\n')
