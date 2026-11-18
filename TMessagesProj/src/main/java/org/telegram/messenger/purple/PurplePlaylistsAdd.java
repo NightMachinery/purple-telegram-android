@@ -42,6 +42,7 @@ public final class PurplePlaylistsAdd {
         public boolean submitted() { return submitted; }
         PurplePlaylistsEdits.Command command(String id, long now) { return PurplePlaylistsEdits.Command.add(id, songs, now); }
         void consume() { submitted = true; }
+        void releaseRefused() { submitted = false; }
     }
 
     public static Selection capture(int account, List<MessageObject> messages) {

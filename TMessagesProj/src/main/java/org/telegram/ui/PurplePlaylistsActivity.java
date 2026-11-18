@@ -8,6 +8,7 @@ import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.audioinfo.AudioInfo;
 import org.telegram.messenger.purple.PurplePlaylistsDownloadsCore;
+import org.telegram.messenger.purple.PurpleDiagLog;
 import org.telegram.ui.Components.AudioPlayerAlert;
 import android.view.View;
 import android.widget.FrameLayout;
@@ -157,15 +158,19 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
         if (!visible) observeMusic(true);
         visible = true; state = null;
         if (screen != null) screen.close();
-        screen = PurplePlaylistsScreen.open(currentAccount, this);
-        if (screen != null) busy = screen.select(playlistId);
-        downloads = screen == null ? null : screen.downloads();
-        if (downloadObservation != null) downloadObservation.close();
-        downloadObservation = downloads == null ? null : downloads.observe(this);
+        openScreen();
         if (playbackObservation != null) playbackObservation.close();
         playbackObservation = MediaController.getInstance().purplePlaylists().observe(currentAccount, this);
         update();
     }
+    private void openScreen() {
+        screen = PurplePlaylistsScreen.open(currentAccount, this);
+        busy = screen != null && screen.select(playlistId);
+        downloads = screen == null ? null : screen.downloads();
+        if (downloadObservation != null) downloadObservation.close();
+        downloadObservation = downloads == null ? null : downloads.observe(this);
+    }
+
     @Override public void onPause() { retire(); super.onPause(); }
     @Override public void onFragmentDestroy() {
         PurpleWriterUI.retire(this); retire(); super.onFragmentDestroy(); }
@@ -179,9 +184,16 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
         downloadObservation = null; downloads = null; downloading = null;
         if (screen != null) screen.close(); screen = null; state = null; busy = syncing = false; syncResult = null;
     }
-    private boolean editable() { return visible && !busy && screen != null && state != null && state.ready(); }
+    private boolean editable() {
+        return visible && !busy && screen != null && state != null && state.view != null && !state.partial();
+    }
     private boolean canAdd() { return adding == null || adding.available(); }
-    private void refresh() { if (visible && screen != null) { busy = screen.refresh(); update(); } }
+    private void refresh() {
+        if (!visible || busy) return;
+        if (screen == null) openScreen();
+        else busy = screen.refresh();
+        update();
+    }
     private void update() {
         if (actionBar != null) {
             actionBar.setTitle(getTitle());
@@ -205,8 +217,21 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
     }
     @Override public void playlistsChanged(PurplePlaylistsScreen.State value) {
         if (!visible || screen == null) return;
-        if (adding != null && adding.submitted() && addResultText == null && !value.editError.isEmpty()
-                && (value.ready() || value.libraryCommitted)) addResultText = addResult(value);
+        if (adding != null && value.addOutcome != PurplePlaylistsScreen.AddOutcome.None) {
+            switch (value.addOutcome) {
+                case Saved: addResultText = addResult(value); break;
+                case Partial: addResultText = addResult(value) + " " + text("Partial"); break;
+                case Refused: addResultText = text("AddRefused"); break;
+                case Unknown: addResultText = text("AddUnknown"); break;
+            }
+        }
+        if (!value.ready()) {
+            PurpleDiagLog.event("playlists", "screen_result", PurpleDiagLog.code("status", value.status.name().toLowerCase(java.util.Locale.ROOT)),
+                    PurpleDiagLog.code("storage", value.storageStatus.isEmpty() ? "none" : value.storageStatus.toLowerCase(java.util.Locale.ROOT)),
+                    PurpleDiagLog.code("add", value.addOutcome.name().toLowerCase(java.util.Locale.ROOT)),
+                    PurpleDiagLog.flag("library_readable", value.view != null),
+                    PurpleDiagLog.flag("library_committed", value.libraryCommitted));
+        }
         state = value; busy = false; update();
         if (value.ready() && value.libraryCommitted && value.canUndo && BulletinFactory.canShowBulletin(this)) {
             BulletinFactory.of(this).createSimpleBulletin(R.raw.done, adding != null && adding.submitted() ? addResult(value) : text("Saved"), getString(R.string.Undo), () -> {
@@ -343,19 +368,26 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
 
     @Override protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
         addPlayback(items);
-        if (adding != null) items.add(UItem.asShadow(adding.submitted()
-                ? (addResultText == null ? text("AddSubmitted") : addResultText)
+        if (adding != null) items.add(UItem.asShadow(addResultText != null ? addResultText
+                : adding.submitted() ? text("AddSubmitted")
                 : LocaleController.formatString("PurplePlaylistsAddChoose", 0, adding.accepted, adding.skipped)));
         if (state == null) {
             items.add(UItem.asShadow(text(screen == null && visible ? "Unavailable" : "Loading")));
+            if (visible && !busy) items.add(UItem.asButton(REFRESH, text("Refresh")));
             return;
         }
         if (state.cleanup != null) {
             items.add(UItem.asShadow(text("Cleanup" + state.cleanup.status.name())));
             if (!state.cleanup.ready()) items.add(UItem.asButton(RETRY_CLEANUP, text("CleanupRetry")).setEnabled(!busy));
         }
-        if (!state.ready()) items.add(UItem.asShadow(text(state.partial() ? "Partial" :
-                state.storageStatus.startsWith("Newer") ? "Newer" : state.status == PurplePlaylistsScreen.Status.InvalidEdit ? "InvalidEdit" : "Unavailable")));
+        if (!state.ready() && (state.view == null || state.addOutcome == PurplePlaylistsScreen.AddOutcome.None)) {
+            items.add(UItem.asShadow(text(state.partial() ? "Partial" : state.storageStatus.startsWith("Newer") ? "Newer"
+                    : state.status == PurplePlaylistsScreen.Status.InvalidEdit ? "InvalidEdit"
+                    : state.status == PurplePlaylistsScreen.Status.Changed ? "Changed"
+                    : state.view == null ? "Unavailable" : "EditFailed")));
+        }
+        if (state.view == null || state.partial())
+            items.add(UItem.asButton(REFRESH, text("Refresh")).setEnabled(!busy));
         if (state.canUndo) items.add(UItem.asButton(UNDO, getString(R.string.Undo)).setEnabled(!busy));
         PurplePlaylistsView view = state.view;
         if (view == null) return;
@@ -443,6 +475,7 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
         }
     }
     @Override protected void onClick(UItem item, View view, int position, float x, float y) {
+        if (item.id == REFRESH) { refresh(); return; }
         if (!visible || screen == null) return;
         if (item.id == RETRY && item.object2 instanceof PurplePlaylistsPlayer.State) {
             if (!screen.retry((PurplePlaylistsPlayer.State) item.object2)
@@ -469,13 +502,15 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
         if (item.id == DOWNLOAD_RETRY && item.object2 instanceof PurplePlaylistsDownloadControls.State) {
             submit(screen.download((PurplePlaylistsDownloadControls.State) item.object2)); return;
         }
-        if (item.id == REFRESH) refresh();
-        else if (item.id == UNDO && state != null && state.canUndo) submit(screen.undo());
+        if (item.id == UNDO && state != null && state.canUndo) submit(screen.undo());
         else if (item.id == CREATE && editable() && canAdd()) title(null);
         else if (item.id == ROW && item.object2 instanceof PurplePlaylistsView.Row) {
             PurplePlaylistsView.Row row = (PurplePlaylistsView.Row) item.object2;
-            if (adding != null) submit(screen.add(row.id, adding));
-            else presentFragment(new PurplePlaylistsActivity(currentAccount, row.id, false));
+            if (adding != null) {
+                boolean accepted = screen.add(row.id, adding);
+                if (accepted) addResultText = null;
+                submit(accepted);
+            } else presentFragment(new PurplePlaylistsActivity(currentAccount, row.id, false));
         } else if (item.id == ROW && editable() && state.view.detail != null) playlistActions(state.view.detail.row);
         else if (item.id == SONG && item.object2 instanceof PurplePlaylistsView.Song && editable()) {
             if (!screen.play(((PurplePlaylistsView.Song) item.object2).documentId) && BulletinFactory.canShowBulletin(this))

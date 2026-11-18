@@ -428,8 +428,15 @@ final class PurplePlaylistsWorker implements AutoCloseable {
         if (request.command.kind == PurplePlaylistsEdits.Kind.Undo
                 && (request.undo == null || request.undo.owner != this || request.undo != latestUndo))
             return failure(Status.Changed, null, "UndoChanged");
+        PurplePlaylistsStore.Read expected = store.revalidate(request.expected.read);
+        if (expected == null) {
+            forgetUndo();
+            Snapshot snapshot = current() && captured.current() ? refresh(request) : null;
+            return new Outcome(Status.Changed, PurplePlaylistsStore.Status.Changed, "EditFilesChanged",
+                    snapshot, null);
+        }
         if (editor == null) editor = new PurplePlaylistsEdits(captured.identity.userId);
-        PurplePlaylistsEdits.Result edit = editor.prepare(request.expected.library(), request.expected.state(), request.command);
+        PurplePlaylistsEdits.Result edit = editor.prepare(expected.library(), expected.state(), request.command);
         if (!edit.valid()) return new Outcome(Status.InvalidEdit, null, edit.error + ":" + edit.localError,
                 latest, null, edit, latestUndo);
         if (!edit.changed && !edit.stateChanged) {
@@ -437,7 +444,7 @@ final class PurplePlaylistsWorker implements AutoCloseable {
             return new Outcome(Status.Ready, PurplePlaylistsStore.Status.Ready, "NoChange", latest, null, edit, latestUndo);
         }
         invalidate();
-        PurplePlaylistsStore.Write write = store.write(request.expected.read, edit.library(), edit.state(),
+        PurplePlaylistsStore.Write write = store.write(expected, edit.library(), edit.state(),
                 PurplePlaylistsStore.Kind.LocalEdit);
         boolean confirmed = write.ready() || write.libraryCommitted;
         boolean uncertain = write.libraryMayHaveChanged && !write.libraryCommitted;

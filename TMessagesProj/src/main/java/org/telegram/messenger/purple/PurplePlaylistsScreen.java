@@ -16,9 +16,11 @@ public final class PurplePlaylistsScreen implements AutoCloseable {
         default void syncCompleted(PurplePlaylistsSyncResult result) { }
     }
     public enum PlaylistAction { Delete, Restore, DeleteForever }
+    public enum AddOutcome { None, Saved, Partial, Refused, Unknown }
 
     public static final class State {
         public final Status status;
+        public final AddOutcome addOutcome;
         public final String storageStatus, detail, editError, localError, editedPlaylistId;
         public final PurplePlaylistsView view;
         public final PurplePlaylistsDownloadsCore.Status downloadStatus;
@@ -27,7 +29,8 @@ public final class PurplePlaylistsScreen implements AutoCloseable {
         public final PurplePlaylistsRemoval.Result cleanup;
         public final boolean libraryCommitted, stateCommitted, libraryMayHaveChanged, stateMayHaveChanged, canUndo;
         public final int added, relinked, removed, unchanged;
-        private State(PurplePlaylistsWorker.Outcome result) {
+        private State(PurplePlaylistsWorker.Outcome result, AddOutcome addOutcome) {
+            this.addOutcome = addOutcome;
             status = Status.valueOf(result.status.name());
             storageStatus = result.storeStatus == null ? "" : result.storeStatus.name();
             cleanup = result.cleanup;
@@ -68,6 +71,7 @@ public final class PurplePlaylistsScreen implements AutoCloseable {
     private PurplePlaylistsWorker.Snapshot snapshot;
     private PurplePlaylistsWorker.Undo undo;
     private PurplePlaylistsWorker.Request pending;
+    private PurplePlaylistsAdd.Selection pendingAdd;
     private String selectedId = "";
     private final AutoCloseable syncObservation;
     private boolean syncDirty;
@@ -116,7 +120,7 @@ public final class PurplePlaylistsScreen implements AutoCloseable {
         main();
         if (!available()) return false;
         if (pending != null) pending.cancel();
-        pending = null; snapshot = null; undo = null;
+        pending = null; pendingAdd = null; snapshot = null; undo = null;
         return admit(worker.read(selectedId, target()));
     }
     public boolean select(String playlistId) {
@@ -151,6 +155,7 @@ public final class PurplePlaylistsScreen implements AutoCloseable {
                 || !selection.available() || !worker.matches(selection.captured)) return false;
         if (!edit(selection.command(id, System.currentTimeMillis()))) return false;
         selection.consume();
+        pendingAdd = selection;
         return true;
     }
     public boolean reorder(String id, String[] documents) {
@@ -252,8 +257,21 @@ public final class PurplePlaylistsScreen implements AutoCloseable {
     private void complete(PurplePlaylistsWorker.Outcome result) {
         main();
         pending = null; snapshot = result.snapshot; undo = result.undo;
+        AddOutcome addOutcome = AddOutcome.None;
+        if (pendingAdd != null) {
+            if (result.edit != null && result.ready()) addOutcome = AddOutcome.Saved;
+            else if (result.edit != null && result.libraryCommitted) addOutcome = AddOutcome.Partial;
+            else if (!result.libraryMayHaveChanged && !result.stateMayHaveChanged
+                    && (result.status == PurplePlaylistsWorker.Status.InvalidEdit
+                        || result.storeStatus == PurplePlaylistsStore.Status.Changed
+                        || "SnapshotChanged".equals(result.detail))) {
+                addOutcome = AddOutcome.Refused;
+                pendingAdd.releaseRefused();
+            } else addOutcome = AddOutcome.Unknown;
+            pendingAdd = null;
+        }
         Listener target = listener.get();
-        if (target != null) target.playlistsChanged(new State(result));
+        if (target != null) target.playlistsChanged(new State(result, addOutcome));
         if (syncDirty && !syncing && available()) { syncDirty = false; refresh(); }
     }
     @Override public void close() {
@@ -263,6 +281,6 @@ public final class PurplePlaylistsScreen implements AutoCloseable {
         manualSync = null; syncing = false; ++syncGeneration;
         try { syncObservation.close(); } catch (Exception ignored) { }
         if (pending != null) pending.cancel();
-        pending = null; snapshot = null; undo = null; listener.clear();
+        pending = null; pendingAdd = null; snapshot = null; undo = null; listener.clear();
     }
 }

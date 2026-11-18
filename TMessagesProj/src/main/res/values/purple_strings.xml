@@ -1267,7 +1267,11 @@
     <string name="PurplePlaylistsAdd">Add to playlist</string>
     <string name="PurplePlaylistsAddChoose">Choose a playlist for %1$d songs (%2$d skipped).</string>
     <string name="PurplePlaylistsAddResult">Added: %1$d. Relinked: %2$d. Unchanged: %3$d. Skipped: %4$d.</string>
-    <string name="PurplePlaylistsAddSubmitted">The Add request was submitted. Check its result below before trying again.</string>
+    <string name="PurplePlaylistsAddSubmitted">Adding tracks…</string>
+    <string name="PurplePlaylistsAddRefused">No tracks were added. Choose a playlist to try again.</string>
+    <string name="PurplePlaylistsAddUnknown">Check the destination playlist to see which tracks were added.</string>
+    <string name="PurplePlaylistsChanged">Playlists changed while this screen was open. Refresh to get the latest list.</string>
+    <string name="PurplePlaylistsEditFailed">The playlist is available, but the change could not be saved.</string>
     <string name="PurplePlaylistsDownloadNow">Download now</string>
     <string name="PurplePlaylistsDownloadRetry">Retry download</string>
     <string name="PurplePlaylistsDownloadIdle">No downloads</string>

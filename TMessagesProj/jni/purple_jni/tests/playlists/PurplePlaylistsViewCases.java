@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -345,10 +346,18 @@ public final class PurplePlaylistsViewCases {
             PurplePlaylistsAdd.Selection adding = selection(first, second, second, null);
             check(adding != null && adding.accepted == 2 && adding.skipped == 2, "Add counts duplicate and unavailable sources honestly");
             first.getDocument().id = 555; first.getDocument().attributes.get(0).title = "Mutated"; first.messageOwner.peer_id.user_id = 202;
-            check(screen.add(id, adding), "captured Add enters real actor edit");
+            CountDownLatch backgroundRead = new CountDownLatch(1);
+            check(worker.postStore(null, (store, self) -> {
+                check(store.read().ready(), "background sync reads the existing library and state");
+                backgroundRead.countDown();
+            }, () -> { throw new AssertionError("read-only sync task refused"); }, false), "queue read-only background task");
+            check(backgroundRead.await(5, TimeUnit.SECONDS), "read-only task completed before Add");
+            check(screen.add(id, adding), "captured Add enters real actor edit after an independent read");
             check(adding.submitted() && !screen.add(id, adding), "accepted Add is consumed once before completion");
             state = ui.next();
-            check(state.ready() && state.added == 2 && state.relinked == 0 && state.canUndo, "shared Add reports actual counts and owned Undo");
+            check(state.ready() && state.addOutcome == PurplePlaylistsScreen.AddOutcome.Saved
+                    && state.added == 2 && state.relinked == 0 && state.canUndo,
+                    "independent store read cannot refuse Add or lose its completion");
             check(state.view.detail.songs.get(0).documentId.equals(HIGH) && state.view.detail.songs.get(1).documentId.equals("7"), "captured Add preserves input saved order and unsigned document");
             check(state.view.detail.songs.get(0).title.equals("Original 🎵") && state.view.detail.songs.get(0).source.peer.equals("self")
                     && state.view.detail.songs.get(0).source.messageId == 30, "mutable source cannot rewrite captured Add metadata");
@@ -360,13 +369,19 @@ public final class PurplePlaylistsViewCases {
             check(state.view.detail.songs.size() == 2 && state.view.detail.songs.get(1).source.peer.equals("self"), "relink Undo restores previous source");
             failLocal.set(true); PurplePlaylistsAdd.Selection partialAdd = selection(music(0, 40, 8, "Partial Add"));
             check(screen.add(id, partialAdd), "Add admitted before synthetic checkpoint failure"); state = ui.next();
-            check(state.partial() && state.libraryCommitted && !state.stateCommitted && state.added == 1 && state.canUndo,
+            check(state.partial() && state.addOutcome == PurplePlaylistsScreen.AddOutcome.Partial
+                    && state.libraryCommitted && !state.stateCommitted && state.added == 1 && state.canUndo,
                     "Add partial checkpoint truth retains actual counts and Undo");
             check(!screen.add(id, partialAdd), "partial Add cannot automatically replay"); failLocal.set(false);
             check(screen.undo(), "partial Add remains undoable"); state = ui.next();
             check(state.ready() && state.view.detail.songs.size() == 2, "partial Add Undo removes only the new song");
             PurplePlaylistsAdd.Selection wrong = selection(music(1, 50, 9, "Wrong"));
             check(wrong == null && !screen.add(id, wrong), "screen refuses missing or foreign-account selection");
+            PurplePlaylistsAdd.Selection missing = selection(music(0, 51, 10, "Refused"));
+            check(screen.add("missing", missing), "missing destination reaches typed refusal");
+            state = ui.next();
+            check(state.addOutcome == PurplePlaylistsScreen.AddOutcome.Refused && missing.available()
+                    && state.view != null, "proved refusal leaves the readable library and selection available");
             check(screen.refresh(), "refresh admitted before account switch");
             Runnable stale = ui.take(); int before = ui.states.size(); UserConfig.selectedAccount = 1; stale.run();
             check(ui.states.size() == before, "late screen reply suppressed after selected-account switch");

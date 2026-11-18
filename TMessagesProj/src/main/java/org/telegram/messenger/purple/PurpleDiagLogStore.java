@@ -61,6 +61,10 @@ public final class PurpleDiagLogStore {
             "diag", "export", "exported", "export_failed", "cleared", "clear_failed", "lines",
             // the repeat limit (PurpleDiagRepeats): diag repeated area=<word> event=<word> count=<dropped>
             "repeated", "area", "event", "count",
+            "playlists", "screen_result", "status", "storage", "add", "library_readable", "library_committed",
+            "ready", "canceled", "closed", "changed", "unavailable", "invalidremote", "invalidedit", "failed",
+            "wrongthread", "busy", "ioerror", "invalidlibrary", "newerlibrary", "invalidstate", "newerstate",
+            "invalidwrite", "backupfailed", "librarywritefailed", "statewritefailed", "none", "saved", "refused", "unknown",
             // the sync chat (PurpleSyncMagicChat): lookup, Telegram requests, pauses and migration
             "sync_chat", "lookup_start", "lookup_result", "request", "wait_honored", "auto_paused", "auto_resumed",
             "problem_shown", "migration", "trigger", "startup", "screen", "manual", "auto", "post",

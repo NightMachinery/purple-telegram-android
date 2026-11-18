@@ -158,6 +158,13 @@ final class PurplePlaylistsStore implements AutoCloseable {
         }
     }
 
+    Read revalidate(Read expected) {
+        if (unavailable() != null || !bound(expected)) return null;
+        if (expected == last) return expected;
+        Read current = read();
+        return current.ready() && bound(expected) ? current : null;
+    }
+
     private boolean confirmed(Name name, Publication publication, byte[] bytes, Current guard) {
         return publication != null && publication.durable && publication.file != null
                 && publication.file.content(bytes) && matches(name, publication.file) && guard.current();

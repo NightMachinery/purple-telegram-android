@@ -468,7 +468,10 @@ The library opens on saved playlists. Create lives in the app bar and in the
 empty library. Sync and the default offline preference live under Playlist
 settings in the overflow menu. A playlist opens directly on its songs, with
 playlist actions and offline controls in its overflow menu. The add chooser
-keeps its captured selection and the same library rows.
+keeps its captured selection and the same library rows. A background read cannot
+invalidate an edit while both files still match its snapshot. The chooser reports
+confirmed counts, partial saves and refusals separately. The captured selection
+can be tried again after a refusal that occurred before any write.
 
 When music is active for the selected account, tap the deck artwork or title to
 open the stock audio sheet. Play and pause have a separate target. The focused
