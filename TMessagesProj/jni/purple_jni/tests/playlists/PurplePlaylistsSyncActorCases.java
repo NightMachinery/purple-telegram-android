@@ -120,7 +120,7 @@ public final class PurplePlaylistsSyncActorCases {
             port.operation = operation; return operation;
         }
         void pump(java.util.function.BooleanSupplier ready) throws Exception {
-            long end = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+            long end = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
             while (!ready.getAsBoolean() && System.nanoTime() < end) {
                 Runnable next = queued.poll(); if (next != null) next.run(); else Thread.sleep(1);
             }

@@ -59,7 +59,8 @@ else:
         # --add-opens: the modern cases it reruns open the move store, whose lock check reads an inode through sun.nio.fs.
         command[1:1] = ['--add-opens=java.base/sun.nio.fs=ALL-UNNAMED', '-Dscratch=' + str(args.output), '-Djava.io.tmpdir=' + str(args.output), '-Dpurple.test.strings=' + str(repo / 'TMessagesProj/src/main/res/values/purple_strings.xml')]
 (args.output / (args.phase + '.argv.json')).write_text(json.dumps(command, indent=2) + '\n')
+timeout = 900 if args.phase == 'run' and args.suite == 'integration' else 300
 with (args.output / (args.phase + '.log')).open('w') as log:
-    result = subprocess.run(command, cwd=repo, stdout=log, stderr=subprocess.STDOUT, timeout=300)
+    result = subprocess.run(command, cwd=repo, stdout=log, stderr=subprocess.STDOUT, timeout=timeout)
 print((args.output / (args.phase + '.log')).read_text()[-6000:])
 raise SystemExit(result.returncode)

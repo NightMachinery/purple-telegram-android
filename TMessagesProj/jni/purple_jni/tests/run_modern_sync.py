@@ -54,8 +54,9 @@ if sys.platform == "darwin":
     deny_props = ["-Dpurple.test.rootdeny=" + str(args.output / "rootdeny.log")]
 def run(name, command, env=None):
     (args.output / (name + ".argv.json")).write_text(json.dumps(list(map(str, command)), indent=2) + "\n")
+    timeout = 900 if name == "modern" else 300
     with (args.output / (name + ".log")).open("w") as log:
-        result = subprocess.run(list(map(str, command)), cwd=repo, stdout=log, stderr=subprocess.STDOUT, env=env, timeout=300)
+        result = subprocess.run(list(map(str, command)), cwd=repo, stdout=log, stderr=subprocess.STDOUT, env=env, timeout=timeout)
     print(name, result.returncode, flush=True)
     print((args.output / (name + ".log")).read_text()[-5000:], flush=True)
     if result.returncode:

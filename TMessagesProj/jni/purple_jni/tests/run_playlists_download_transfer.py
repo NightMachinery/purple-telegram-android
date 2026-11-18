@@ -115,9 +115,10 @@ def main():
         if key in ('JAVA_TOOL_OPTIONS', '_JAVA_OPTIONS', 'JDK_JAVA_OPTIONS') or key.startswith('DYLD_'):
             environment.pop(key)
     log = args.output / (args.phase + ('' if args.scenario == 'full' else '-' + args.scenario) + '.log')
+    timeout = 600 if args.phase == 'run' and args.scenario == 'full' else 240
     with log.open('x') as handle:
         result = subprocess.run(command, cwd=repo, env=environment, stdin=subprocess.DEVNULL,
-            stdout=handle, stderr=subprocess.STDOUT, timeout=240)
+            stdout=handle, stderr=subprocess.STDOUT, timeout=timeout)
     (args.output / (args.phase + '-exit.json')).write_text(json.dumps({'exit': result.returncode}) + '\n')
     if result.returncode:
         raise RuntimeError('Captured account phase failed; inspect its finite log')

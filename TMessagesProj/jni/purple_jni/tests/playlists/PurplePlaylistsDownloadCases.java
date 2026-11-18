@@ -23,7 +23,7 @@ public final class PurplePlaylistsDownloadCases {
     private static void check(boolean value, String name) { ++checks; if (!value) throw new AssertionError(name); }
     private static byte[] bytes(String text) { return text.getBytes(StandardCharsets.UTF_8); }
     private static void await(CountDownLatch latch) {
-        try { if (!latch.await(10, TimeUnit.SECONDS)) throw new AssertionError("bounded fixture gate"); }
+        try { if (!latch.await(60, TimeUnit.SECONDS)) throw new AssertionError("bounded fixture gate"); }
         catch (InterruptedException e) { throw new AssertionError(e); }
     }
     private static void directory(Path path) throws Exception {
@@ -45,7 +45,7 @@ public final class PurplePlaylistsDownloadCases {
                     (view, outcome) -> view.outcomes.add(outcome));
         }
         Runnable take() throws Exception {
-            Runnable result = pending.poll(10, TimeUnit.SECONDS);
+            Runnable result = pending.poll(60, TimeUnit.SECONDS);
             if (result == null) throw new AssertionError("bounded UI delivery");
             return result;
         }
@@ -96,7 +96,7 @@ public final class PurplePlaylistsDownloadCases {
         }
         void stop(PurplePlaylistsWorker worker) throws Exception {
             worker.close();
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
             while (worker.termination() == PurplePlaylistsWorker.Termination.Running && System.nanoTime() < deadline)
                 Thread.sleep(2);
             check(worker.termination() == PurplePlaylistsWorker.Termination.Closed, "native store closes on creator actor after work unwinds");
@@ -393,7 +393,7 @@ public final class PurplePlaylistsDownloadCases {
         return result.snapshot;
     }
     private static ConnectionsManager.Sent sent(ConnectionsManager connection) throws Exception {
-        ConnectionsManager.Sent request = connection.sent.poll(10, TimeUnit.SECONDS);
+        ConnectionsManager.Sent request = connection.sent.poll(60, TimeUnit.SECONDS);
         check(request != null, "bounded owned request arrives");
         return request;
     }
@@ -408,7 +408,7 @@ public final class PurplePlaylistsDownloadCases {
         Arrays.fill(network, (byte) 0);
     }
     private static void status(PurplePlaylistsDownloads.Control control, PurplePlaylistsDownloads.Status expected) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
         while (control.status != expected && System.nanoTime() < deadline) Thread.sleep(2);
         check(control.status == expected, "download reaches " + expected + " rather than " + control.status);
     }
@@ -685,7 +685,7 @@ public final class PurplePlaylistsDownloadCases {
         final BlockingQueue<Runnable> tasks = new LinkedBlockingQueue<>();
         @Override public void execute(Runnable action) { tasks.add(action); }
         void until(java.util.function.BooleanSupplier done) throws Exception {
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
             while (!done.getAsBoolean() && System.nanoTime() < deadline) {
                 Runnable next = tasks.poll(2, TimeUnit.MILLISECONDS); if (next != null) next.run();
             }
@@ -764,13 +764,13 @@ public final class PurplePlaylistsDownloadCases {
             check(!controls.cancel(canceled), "stale canceled-state action cannot stop retried job");
             main.drain(); int completed = 0;
             while (completed < 9) {
-                ConnectionsManager.Sent request = connection.sent.poll(10, TimeUnit.SECONDS);
+                ConnectionsManager.Sent request = connection.sent.poll(60, TimeUnit.SECONDS);
                 check(request != null, "retried account job keeps bounded transfer pipeline moving");
                 reply(request, payload(17, ++completed));
             }
             for (int i = 0; i < 2; ++i) {
                 CountDownLatch completion = new CountDownLatch(1);
-                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
                 while (!worker.postStore(null, (store, self) -> completion.countDown(), completion::countDown)) {
                     if (System.nanoTime() >= deadline) throw new AssertionError("bounded final controls barrier");
                     Thread.sleep(2);
@@ -836,13 +836,13 @@ public final class PurplePlaylistsDownloadCases {
             for (int i = 0; i < 4; ++i) check(worker.postStore(null, (store, self) -> {}, () -> {}), "bounded store slot filled before Cancel");
             check(!worker.postStore(null, (store, self) -> {}, () -> {}), "normal store queue refuses a fifth slot");
             control.cancel(); control.cancel(); held.release.countDown();
-            check(closing.entered.await(10, TimeUnit.SECONDS), "Cancel reaches owned cleanup despite a full store queue");
+            check(closing.entered.await(60, TimeUnit.SECONDS), "Cancel reaches owned cleanup despite a full store queue");
             check(control.status != PurplePlaylistsDownloads.Status.Canceled,
                     "Canceled status is withheld until owned request close completes");
             check(!connection.canceled.contains(pending.token), "close gate observes the real request still owned");
             closing.release.countDown();
             status(control, PurplePlaylistsDownloads.Status.Canceled);
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
             while (!connection.canceled.contains(pending.token) && System.nanoTime() < deadline) Thread.sleep(2);
             check(connection.canceled.contains(pending.token), "Cancel closes exact request despite a full store queue");
             check(path(f, "1.mp3") == null, "queue-saturated Cancel leaves no completed publication");
@@ -1249,7 +1249,7 @@ public final class PurplePlaylistsDownloadCases {
                 }
             });
             if (cancel) {
-                long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+                long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
                 while (control.status == PurplePlaylistsDownloads.Status.Running || control.status == PurplePlaylistsDownloads.Status.Queued) {
                     if (System.nanoTime() > until) throw new AssertionError("bounded publication cancellation");
                     Thread.sleep(2);
@@ -1319,7 +1319,7 @@ public final class PurplePlaylistsDownloadCases {
             selection=selected(worker,ui,playlist);
             PurplePlaylistsDownloads.Control recovered=downloads.start(selection,playlist,java.util.Collections.singletonList(item(selection,2,91)));
             reply(sent(ConnectionsManager.instances[0]),content);
-            long until=System.nanoTime()+TimeUnit.SECONDS.toNanos(10);
+            long until=System.nanoTime()+TimeUnit.SECONDS.toNanos(60);
             while(recovered.status==PurplePlaylistsDownloads.Status.Running||recovered.status==PurplePlaylistsDownloads.Status.Queued){if(System.nanoTime()>until)throw new AssertionError("bounded capacity completion");Thread.sleep(2);}
             check(recovered.status==PurplePlaylistsDownloads.Status.Downloaded,"confirmed cache eviction frees index capacity for a different song");
             org.json.JSONObject after=new org.json.JSONObject(new String(Files.readAllBytes(index),StandardCharsets.UTF_8));

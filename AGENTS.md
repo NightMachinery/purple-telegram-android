@@ -109,7 +109,11 @@ arguments. A shell script that only execs one `--suite` of a listed driver is
 recorded under `aliases`, and the runner checks that it calls nothing else; a
 driver the runner does not drive yet is recorded under `undriven` with the
 reason. The runner refuses to start while the list and the drivers disagree,
-and `--list` runs only that check.
+and `--list` runs only that check. The sync integration and modern scenario
+JVMs have a 15-minute run limit for storage-heavy cases. The full playlist
+download fixture has 10 minutes, with 60 seconds for its positive waits
+and the playlist sync actor callback. Compile limits and negative
+assertions are unchanged.
 
 `./gradlew` never runs, because its bootstrap could download. The runner
 starts `--gradle`, or the launcher the wrapper already unpacked for its exact
