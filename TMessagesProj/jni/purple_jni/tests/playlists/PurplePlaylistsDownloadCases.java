@@ -274,11 +274,19 @@ public final class PurplePlaylistsDownloadCases {
             worker.edit(created.snapshot, PurplePlaylistsEdits.Command.rename(id, "", 200), ui.target());
             PurplePlaylistsWorker.Outcome invalid = ui.next();
             check(invalid.status == PurplePlaylistsWorker.Status.InvalidEdit && "InvalidTitle".equals(invalid.edit.error), "core refusal stays typed and preserves existing snapshot");
-            worker.undo(created.snapshot, created.undo, 300, ui.target()); PurplePlaylistsWorker.Outcome undone = ui.next();
-            check(undone.ready() && undone.undo == null && new String(undone.snapshot.library(), StandardCharsets.UTF_8).contains(id), "Undo executes shared core and revokes consumed ticket");
+            worker.undo(created.snapshot, created.undo, 300, ui.target());
+            PurplePlaylistsWorker.Outcome undone = ui.next();
+            check(undone.ready() && undone.undo != null && undone.undo != created.undo && undone.undo.redo
+                    && undone.undo.kind == PurplePlaylistsEdits.Kind.Create && undone.snapshot.view.playlists.isEmpty(),
+                    "Undo removes the created playlist and issues a new Redo ticket");
             worker.undo(undone.snapshot, created.undo, 400, ui.target());
             check(ui.next().status == PurplePlaylistsWorker.Status.Changed, "consumed Undo ticket cannot repeat");
-            worker.edit(undone.snapshot, PurplePlaylistsEdits.Command.create("Second", 500), ui.target());
+            worker.undo(undone.snapshot, undone.undo, 450, ui.target());
+            PurplePlaylistsWorker.Outcome redone = ui.next();
+            check(redone.ready() && redone.undo != null && !redone.undo.redo
+                    && redone.snapshot.view.playlists.size() == 1 && redone.snapshot.view.playlists.get(0).id.equals(id),
+                    "Redo restores the exact created playlist");
+            worker.edit(redone.snapshot, PurplePlaylistsEdits.Command.create("Second", 500), ui.target());
             PurplePlaylistsWorker.Outcome second = ui.next();
             String secondId = second.edit.playlistId;
             worker.edit(second.snapshot, PurplePlaylistsEdits.Command.rename(secondId, "New title", 600), ui.target());
