@@ -43,9 +43,10 @@ public final class PurplePlaylistsView {
         public final boolean deleted, partial;
         public final long recentUseMs;
         public final int songCount;
-        private Row(byte[] id, byte[] title, boolean deleted, boolean partial, long recentUseMs, int songCount) {
+        public final Song coverSong;
+        private Row(byte[] id, byte[] title, boolean deleted, boolean partial, long recentUseMs, int songCount, Song coverSong) {
             this.id = text(id); this.title = text(title); this.deleted = deleted;
-            this.partial = partial; this.recentUseMs = recentUseMs; this.songCount = songCount;
+            this.partial = partial; this.recentUseMs = recentUseMs; this.songCount = songCount; this.coverSong = coverSong;
         }
     }
 

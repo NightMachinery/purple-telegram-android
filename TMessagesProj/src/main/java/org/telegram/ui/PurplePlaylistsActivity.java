@@ -9,10 +9,13 @@ import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.audioinfo.AudioInfo;
 import org.telegram.messenger.purple.PurplePlaylistsDownloadsCore;
 import org.telegram.messenger.purple.PurpleDiagLog;
+import org.telegram.messenger.purple.PurplePlaylistsArtwork;
 import org.telegram.ui.Components.AudioPlayerAlert;
 import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import androidx.recyclerview.widget.ItemTouchHelper;
+import androidx.recyclerview.widget.RecyclerView;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.R;
 import org.telegram.messenger.MediaController;
@@ -43,6 +46,9 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
     private ActionBarMenuItem menu, createButton;
     private ActionBarMenuSubItem historyMenu;
     private PurplePlaylistCells.Deck deck;
+    private PurplePlaylistsArtwork artwork;
+    private PurplePlaylistsScreen.State dragState;
+    private boolean savingTrackOrder;
     private final View.OnLayoutChangeListener mainTabBarLayout =
             (view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> insetMainTabContent(bottom - top);
     private final NotificationCenter.NotificationCenterDelegate musicChanged = (id, account, args) -> {
@@ -99,6 +105,7 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
         result.setBackgroundColor(background);
         listView.setBackgroundColor(background);
         listView.setClipToPadding(false);
+        if (!playlistId.isEmpty() && !optionsPage) installTrackDrag();
         onInsets(0, 0, 0, getBottomInset());
         if (playlistId.isEmpty() && !optionsPage && !recentlyDeleted) {
             createButton = actionBar.createMenu().addItem(CREATE, R.drawable.msg_add);
@@ -106,6 +113,7 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
             createButton.setVisibility(View.GONE);
         }
         menu = actionBar.createMenu().addItem(MORE, R.drawable.ic_ab_other);
+        menu.setContentDescription(getString(R.string.AccDescrMoreOptions));
         if (!optionsPage && adding == null && !recentlyDeleted) {
             if (!playlistId.isEmpty()) menu.addSubItem(ACTIONS, R.drawable.msg_edit, text("Actions"));
             menu.addSubItem(OPTIONS, playlistId.isEmpty() ? R.drawable.msg_settings : R.drawable.msg_download,
@@ -162,6 +170,8 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
         super.onResume();
         if (!visible) observeMusic(true);
         visible = true; state = null;
+        if (artwork != null) artwork.close();
+        artwork = null;
         if (screen != null) screen.close();
         openScreen();
         if (playbackObservation != null) playbackObservation.close();
@@ -170,6 +180,8 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
     }
     private void openScreen() {
         screen = PurplePlaylistsScreen.open(currentAccount, this);
+        if (screen != null && artwork == null && !recentlyDeleted && !optionsPage)
+            artwork = PurplePlaylistsArtwork.open(currentAccount);
         busy = screen != null && screen.select(playlistId);
         downloads = screen == null ? null : screen.downloads();
         if (downloadObservation != null) downloadObservation.close();
@@ -182,6 +194,9 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
     private void retire() {
         if (visible) observeMusic(false);
         visible = false; deck = null;
+        dragState = null; savingTrackOrder = false;
+        if (artwork != null) artwork.close();
+        artwork = null;
         AndroidUtilities.cancelRunOnUIThread(syncWake);
         if (playbackObservation != null) playbackObservation.close();
         playbackObservation = null; playback = null;
@@ -194,7 +209,7 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
     }
     private boolean canAdd() { return adding == null || adding.available(); }
     private void refresh() {
-        if (!visible || busy) return;
+        if (!visible || busy || dragState != null) return;
         if (screen == null) openScreen();
         else busy = screen.refresh();
         update();
@@ -224,7 +239,7 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
             createButton.setEnabled(editable());
             createButton.setAlpha(editable() ? 1f : .5f);
         }
-        if (listView != null) listView.adapter.update(true);
+        if (listView != null && dragState == null && !savingTrackOrder) listView.adapter.update(true);
     }
     @Override public void playlistsChanged(PurplePlaylistsScreen.State value) {
         if (!visible || screen == null) return;
@@ -243,7 +258,7 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
                     PurpleDiagLog.flag("library_readable", value.view != null),
                     PurpleDiagLog.flag("library_committed", value.libraryCommitted));
         }
-        state = value; busy = false; update();
+        state = value; busy = false; savingTrackOrder = false; update();
         if (value.historyChanged && BulletinFactory.canShowBulletin(this)) {
             BulletinFactory.of(this).createSimpleBulletin(R.raw.done, historyDescription(value), historyButton(value),
                     () -> applyHistory(value)).show();
@@ -256,7 +271,7 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
         return text("History" + value.historyKind);
     }
     private void applyHistory(PurplePlaylistsScreen.State expected) {
-        if (!visible || busy || screen == null || expected == null || expected != state) return;
+        if (!visible || busy || dragState != null || screen == null || expected == null || expected != state) return;
         if (expected.canRedo) submit(screen.redo());
         else if (expected.canUndo) submit(screen.undo());
     }
@@ -469,6 +484,8 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
                 String count = songCount(row.songCount);
                 if (row.partial) count += " · " + text("Incomplete");
                 UItem item = PurplePlaylistCells.RowFactory.of(ROW, row.id, row, title, count, "", row.id.hashCode(), false);
+                PurplePlaylistsArtwork loader = artwork;
+                item.bind = cell -> ((PurplePlaylistCells.Row) cell).setCover(loader, row.coverSong);
                 items.add(item.setEnabled(!busy && (adding == null || canAdd() && !row.partial)));
             }
         } else if (view.detail == null) {
@@ -482,6 +499,8 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
                         detail.row.deleted ? "DeletedEmptyHint" : "SongsEmptyHint", false);
                 return;
             }
+            boolean reorder = canDragTracks();
+            if (reorder) adapter.reorderSectionStart();
             for (PurplePlaylistsView.Song song : detail.songs) {
                 boolean selected = playback != null && playback.account == currentAccount
                         && playlistId.equals(playback.playlistId) && song.documentId.equals(playback.selectedDocumentId);
@@ -490,8 +509,15 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
                 String subtitle = selected ? playbackText() + " · " + artist : artist;
                 UItem item = PurplePlaylistCells.RowFactory.of(SONG, song.documentId, song, title, subtitle,
                         song.duration > 0 ? AndroidUtilities.formatShortDuration(song.duration) : "", song.documentId.hashCode(), selected);
+                PurplePlaylistsArtwork loader = artwork;
+                item.bind = cell -> ((PurplePlaylistCells.Row) cell).setCover(loader, song);
+                if (editable() && !detail.row.deleted)
+                    item.clickCallback2 = cell -> {
+                        if (editable() && dragState == null) songActions(song);
+                    };
                 items.add(item.setEnabled(editable() && !detail.row.deleted));
             }
+            if (reorder) adapter.reorderSectionEnd();
         }
     }
     @Override protected void onClick(UItem item, View view, int position, float x, float y) {
@@ -506,7 +532,7 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
             if (downloads != null) downloads.cancel((PurplePlaylistsDownloadControls.State) item.object2);
             return;
         }
-        if (busy) return;
+        if (busy || dragState != null) return;
         if (item.id == SYNC && editable()) {
             if (item.object2 == state.view || item.object2 == syncResult) sync();
             return;
@@ -539,7 +565,10 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
     @Override protected boolean onLongClick(UItem item, View view, int position, float x, float y) {
         if (!editable() || adding != null) return false;
         if (item.object2 instanceof PurplePlaylistsView.Row) { playlistActions((PurplePlaylistsView.Row) item.object2); return true; }
-        if (item.object2 instanceof PurplePlaylistsView.Song) { songActions((PurplePlaylistsView.Song) item.object2); return true; }
+        if (item.object2 instanceof PurplePlaylistsView.Song && !canDragTracks()) {
+            songActions((PurplePlaylistsView.Song) item.object2);
+            return true;
+        }
         return false;
     }
     private void removeDownloads() {
@@ -650,6 +679,66 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
         });
         showDialog(dialog.create());
     }
+    private boolean canDragTracks() {
+        if (!editable() || adding != null || optionsPage || state.view.detail == null) return false;
+        PurplePlaylistsView.Detail detail = state.view.detail;
+        return !detail.row.deleted && !detail.row.partial && detail.songs.size() > 1;
+    }
+
+    private void installTrackDrag() {
+        listView.adapter.listenReorder((section, rows) -> saveTrackOrder(rows));
+        listView.itemTouchHelper = new ItemTouchHelper(new ItemTouchHelper.SimpleCallback(ItemTouchHelper.UP | ItemTouchHelper.DOWN, 0) {
+            @Override public int getDragDirs(RecyclerView recycler, RecyclerView.ViewHolder holder) {
+                return canDragTracks() && listView.adapter.isReorderItem(holder.getAdapterPosition())
+                        ? super.getDragDirs(recycler, holder) : 0;
+            }
+
+            @Override public void onSelectedChanged(RecyclerView.ViewHolder holder, int action) {
+                if (action == ItemTouchHelper.ACTION_STATE_DRAG && canDragTracks()) {
+                    dragState = state;
+                    listView.cancelClickRunnables(false);
+                }
+                super.onSelectedChanged(holder, action);
+                if (action == ItemTouchHelper.ACTION_STATE_IDLE) {
+                    listView.adapter.reorderDone();
+                    dragState = null;
+                    update();
+                }
+            }
+
+            @Override public boolean onMove(RecyclerView recycler, RecyclerView.ViewHolder from, RecyclerView.ViewHolder to) {
+                int source = from.getAdapterPosition(), target = to.getAdapterPosition();
+                if (dragState == null || state != dragState || !listView.adapter.isReorderItem(source)
+                        || listView.adapter.getReorderSectionId(source) != listView.adapter.getReorderSectionId(target))
+                    return false;
+                listView.adapter.swapElements(source, target);
+                return true;
+            }
+
+            @Override public void onSwiped(RecyclerView.ViewHolder holder, int direction) { }
+        });
+        listView.itemTouchHelper.attachToRecyclerView(listView);
+    }
+
+    private void saveTrackOrder(ArrayList<UItem> rows) {
+        if (dragState == null || !unchanged(dragState) || !canDragTracks()) return;
+        List<PurplePlaylistsView.Song> original = dragState.view.detail.songs;
+        if (original.size() != rows.size()) return;
+        java.util.HashSet<PurplePlaylistsView.Song> remaining = new java.util.HashSet<>(original);
+        String[] order = new String[rows.size()];
+        boolean changed = false;
+        for (int index = 0; index < order.length; ++index) {
+            Object song = rows.get(index).object2;
+            if (!remaining.remove(song)) return;
+            order[index] = ((PurplePlaylistsView.Song) song).documentId;
+            changed |= !order[index].equals(original.get(index).documentId);
+        }
+        if (changed) {
+            savingTrackOrder = screen.reorder(playlistId, order);
+            submit(savingTrackOrder);
+        }
+    }
+
     private void songActions(PurplePlaylistsView.Song song) {
         if (getParentActivity() == null || state.view.detail == null) return;
         PurplePlaylistsScreen.State expected = state;

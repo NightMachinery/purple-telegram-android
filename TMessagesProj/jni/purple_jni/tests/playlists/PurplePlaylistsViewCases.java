@@ -79,6 +79,10 @@ public final class PurplePlaylistsViewCases {
             check(view.playlists.get(0).id.equals(z) && view.playlists.get(0).recentUseMs == 200, "recent use orders shared list before titles");
             check(view.detail.songs.size() == 2 && view.detail.row.songCount == 2, "detail/count use visible song model");
             check(view.detail.songs.get(0).documentId.equals("7") && view.detail.songs.get(1).documentId.equals(HIGH), "core saved song order and unsigned IDs");
+            check(view.playlists.get(0).coverSong.documentId.equals("7") && view.playlists.get(0).coverSong.source.messageId == 9
+                    && view.detail.row.coverSong.documentId.equals("7"),
+                    "playlist cover uses the first actual song in saved order");
+            check(view.playlists.get(1).coverSong == null, "empty playlist has no remote artwork source");
             PurplePlaylistsView.Song song = view.detail.songs.get(1);
             check(song.title.equals("曲 🎵") && song.performer.equals("演奏者") && song.duration == 23, "UTF8 metadata projected without modified UTF8");
             check(song.source.peer.equals("self") && song.source.messageId == 7, "source uses captured self normalization");

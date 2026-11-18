@@ -4,6 +4,7 @@ import static org.telegram.messenger.AndroidUtilities.dp;
 import static org.telegram.messenger.LocaleController.getString;
 
 import android.content.Context;
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.drawable.GradientDrawable;
@@ -19,9 +20,15 @@ import android.widget.TextView;
 import androidx.core.graphics.ColorUtils;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.FileLoader;
+import org.telegram.messenger.ImageLocation;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
+import org.telegram.messenger.purple.PurplePlaylistsArtwork;
+import org.telegram.messenger.purple.PurplePlaylistsView;
+import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Components.BackupImageView;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.PlayPauseDrawable;
 import org.telegram.ui.Components.RecyclerListView;
@@ -105,8 +112,13 @@ final class PurplePlaylistCells {
         final Theme.ResourcesProvider provider;
         final View rule;
         final LinearLayout line;
+        final ImageView options;
+        private final BackupImageView cover;
+        private PurplePlaylistsArtwork artwork;
+        private PurplePlaylistsView.Song coverSong;
+        private Runnable cancelCover;
 
-        Row(Context context, Theme.ResourcesProvider provider) {
+        Row(Context context, int account, Theme.ResourcesProvider provider) {
             super(context);
             this.provider = provider;
             setOrientation(VERTICAL);
@@ -116,6 +128,10 @@ final class PurplePlaylistCells {
             line.setPadding(dp(18), dp(9), dp(18), dp(9));
             addView(line, LayoutHelper.createLinear(-1, -2));
             sleeve = new Sleeve(context);
+            cover = new BackupImageView(context);
+            cover.getImageReceiver().setCurrentAccount(account);
+            cover.setRoundRadius(dp(12));
+            sleeve.addView(cover, LayoutHelper.createFrame(-1, -1));
             line.addView(sleeve, LayoutHelper.createLinear(44, 44));
             LinearLayout labels = column(context);
             labels.setPaddingRelative(dp(14), 0, dp(8), 0);
@@ -124,10 +140,58 @@ final class PurplePlaylistCells {
             labels.addView(subtitle = label(context, 14, false, 2));
             duration = label(context, 13, false, 1);
             line.addView(duration, LayoutHelper.createLinear(-2, -2));
+            options = new ImageView(context);
+            options.setImageResource(R.drawable.ic_ab_other);
+            options.setScaleType(ImageView.ScaleType.CENTER);
+            options.setContentDescription(getString(R.string.AccDescrMoreOptions));
+            options.setFocusable(true);
+            line.addView(options, LayoutHelper.createLinear(48, 48));
             rule = new View(context);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, 1);
             lp.setMarginStart(dp(76));
             addView(rule, lp);
+        }
+
+        void setCover(PurplePlaylistsArtwork loader, PurplePlaylistsView.Song song) {
+            if (artwork == loader && coverSong == song) return;
+            cancelCover();
+            artwork = loader;
+            coverSong = song;
+            if (isAttachedToWindow()) loadCover();
+        }
+
+        private void loadCover() {
+            if (artwork == null || coverSong == null) return;
+            Bitmap embedded = artwork.playingCover(coverSong);
+            if (embedded != null) {
+                cover.setImageBitmap(embedded);
+                return;
+            }
+            PurplePlaylistsView.Song expected = coverSong;
+            cancelCover = artwork.load(expected, message -> {
+                if (coverSong != expected || !isAttachedToWindow()) return;
+                TLRPC.Document document = message.getDocument();
+                if (document == null) return;
+                TLRPC.PhotoSize thumb = FileLoader.getClosestPhotoSizeWithSize(document.thumbs, 90);
+                ImageLocation image = ImageLocation.getForDocument(thumb, document);
+                if (image != null) cover.setImage(null, null, image, "44_44", 0, message);
+            });
+        }
+
+        private void cancelCover() {
+            if (cancelCover != null) cancelCover.run();
+            cancelCover = null;
+            cover.setImageDrawable(null);
+        }
+
+        @Override protected void onAttachedToWindow() {
+            super.onAttachedToWindow();
+            loadCover();
+        }
+
+        @Override protected void onDetachedFromWindow() {
+            cancelCover();
+            super.onDetachedFromWindow();
         }
     }
 
@@ -156,7 +220,7 @@ final class PurplePlaylistCells {
         }
 
         @Override public Row createView(Context context, RecyclerListView list, int account, int guid, Theme.ResourcesProvider provider) {
-            return new Row(context, provider);
+            return new Row(context, account, provider);
         }
 
         @Override public void bindView(View view, UItem item, boolean divider, UniversalAdapter adapter, UniversalRecyclerView list) {
@@ -173,6 +237,10 @@ final class PurplePlaylistCells {
             row.duration.setText(item.textValue);
             row.duration.setVisibility(TextUtils.isEmpty(item.textValue) ? View.GONE : View.VISIBLE);
             row.duration.setTextDirection(View.TEXT_DIRECTION_LTR);
+            row.options.setVisibility(item.clickCallback2 == null ? View.GONE : View.VISIBLE);
+            row.options.setOnClickListener(item.clickCallback2);
+            row.options.setColorFilter(secondary);
+            row.options.setBackground(Theme.createSelectorDrawable(color(Theme.key_listSelector, provider), 1, dp(22)));
             row.rule.setBackgroundColor(color(Theme.key_divider, provider));
             row.rule.setVisibility(divider ? View.VISIBLE : View.INVISIBLE);
             row.line.setAlpha(item.enabled ? 1f : .58f);

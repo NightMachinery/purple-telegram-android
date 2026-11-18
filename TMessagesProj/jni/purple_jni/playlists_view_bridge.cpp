@@ -137,31 +137,39 @@ jobject Song(JNIEnv *env, uint64_t id, const PlaylistSource &source, uint64_t se
     return env->PopLocalFrame(env->NewObject(type, ctor, doc, title, performer, jint(source.meta.duration), primary, alt));
 }
 
-jobject Row(JNIEnv *env, const QString &id, const Playlist &playlist, const PlaylistLocalState &local) {
+jobject Row(JNIEnv *env, const QString &id, const Playlist &playlist, const PlaylistLocalState &local, uint64_t self) {
     if (env->PushLocalFrame(8) < 0) return nullptr;
     const auto type = Class(env, "$Row");
     if (!type) return env->PopLocalFrame(nullptr);
-    const auto ctor = env->GetMethodID(type, "<init>", "([B[BZZJI)V");
+    const auto ctor = env->GetMethodID(type, "<init>",
+        "([B[BZZJILorg/telegram/messenger/purple/PurplePlaylistsView$Song;)V");
     if (!ctor) return env->PopLocalFrame(nullptr);
     const auto key = Bytes(env, id);
     if (!key) return env->PopLocalFrame(nullptr);
     const auto title = Bytes(env, playlist.title ? playlist.title->value : QString());
     if (!title) return env->PopLocalFrame(nullptr);
     const auto recent = local.recentUse.find(id);
+    const auto order = PlaylistVisibleSongIds(playlist);
+    auto cover = jobject(nullptr);
+    if (!order.empty() && !playlist.isPartial() && !(playlist.deleted && playlist.deleted->value)) {
+        const auto first = order.front();
+        cover = Song(env, first, *playlist.songs->at(first).value.source, self);
+        if (!cover) return env->PopLocalFrame(nullptr);
+    }
     return env->PopLocalFrame(env->NewObject(type, ctor, key, title,
         jboolean(playlist.deleted && playlist.deleted->value), jboolean(playlist.isPartial()),
-        jlong(recent == local.recentUse.end() ? 0 : recent->second), jint(Size(PlaylistVisibleSongIds(playlist).size()))));
+        jlong(recent == local.recentUse.end() ? 0 : recent->second), jint(Size(order.size())), cover));
 }
 
 jobjectArray Rows(JNIEnv *env, const std::vector<QString> &ids, const PlaylistLibrary &library,
-        const PlaylistLocalState &local) {
+        const PlaylistLocalState &local, uint64_t self) {
     const auto type = Class(env, "$Row");
     if (!type) return nullptr;
     const auto result = env->NewObjectArray(Size(ids.size()), type, nullptr);
     env->DeleteLocalRef(type);
     if (!result) return nullptr;
     for (auto i = std::size_t(0); i != ids.size(); ++i) {
-        const auto item = Row(env, ids[i], library.playlists.at(ids[i]), local);
+        const auto item = Row(env, ids[i], library.playlists.at(ids[i]), local, self);
         if (!item) return nullptr;
         env->SetObjectArrayElement(result, Size(i), item);
         env->DeleteLocalRef(item);
@@ -191,7 +199,7 @@ jobject Detail(JNIEnv *env, const QString &id, const PlaylistLibrary &library, c
         env->DeleteLocalRef(item);
         if (env->ExceptionCheck()) return env->PopLocalFrame(nullptr);
     }
-    const auto row = Row(env, id, found->second, local);
+    const auto row = Row(env, id, found->second, local, self);
     if (!row) return env->PopLocalFrame(nullptr);
     return env->PopLocalFrame(env->NewObject(type, ctor, row, songs));
 }
@@ -248,9 +256,9 @@ jobject Project(JNIEnv *env, jbyteArray libraryBytes, jbyteArray localBytes, jlo
             if (!playlist.title || !playlist.deleted) ++incomplete;
             if (playlist.deleted && playlist.deleted->value) deletedIds.push_back(id);
         }
-        visible = Rows(env, activeIds, library.library, local.state);
+        visible = Rows(env, activeIds, library.library, local.state, uint64_t(self));
         if (!visible) return nullptr;
-        deleted = Rows(env, deletedIds, library.library, local.state);
+        deleted = Rows(env, deletedIds, library.library, local.state, uint64_t(self));
         if (!deleted) return nullptr;
         detail = Detail(env, selected, library.library, local.state, uint64_t(self));
         if (env->ExceptionCheck()) return nullptr;

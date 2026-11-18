@@ -1321,7 +1321,7 @@
         "run"
       ],
       "expects": {
-        "run:PLAYLIST_VIEW_CHECKS": 212
+        "run:PLAYLIST_VIEW_CHECKS": 214
       }
     },
     {

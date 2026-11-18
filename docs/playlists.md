@@ -467,7 +467,11 @@ linking and native UI comparisons remain required.
 The library opens on saved playlists. Create lives in the app bar and in the
 empty library. Sync and the default offline preference live under Playlist
 settings in the overflow menu. A playlist opens directly on its songs, with
-playlist actions and offline controls in its overflow menu. The add chooser
+playlist actions and offline controls in its overflow menu. Hold a track and
+drag it to change the saved order. The track's menu still offers Remove, Move
+up and Move down. Playlist artwork comes from the first track in saved order.
+Visible rows use embedded or Telegram-hosted covers, with the illustrated
+sleeve as a fallback. The add chooser
 keeps its captured selection and the same library rows. A background read cannot
 invalidate an edit while both files still match its snapshot. The chooser reports
 confirmed counts, partial saves and refusals separately. The captured selection
