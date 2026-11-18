@@ -23,6 +23,7 @@ import org.telegram.messenger.purple.PurplePlaylistsSyncResult;
 import org.telegram.messenger.purple.PurplePlaylistsView;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.ActionBarMenuItem;
+import org.telegram.ui.ActionBar.ActionBarMenuSubItem;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.BulletinFactory;
@@ -36,10 +37,11 @@ import java.util.List;
 
 public final class PurplePlaylistsActivity extends UniversalFragment implements PurplePlaylistsScreen.Listener, PurplePlaylistsPlayer.Listener, PurplePlaylistsDownloadControls.Listener {
     private static final int MORE = 0x70750f00, CREATE = MORE + 1, REFRESH = MORE + 2,
-            DELETED = MORE + 3, CONTACTS = MORE + 4, UNDO = MORE + 5, ROW = MORE + 6, SONG = MORE + 7, RETRY = MORE + 8, DOWNLOAD = MORE + 9, DOWNLOAD_CANCEL = MORE + 10, DOWNLOAD_RETRY = MORE + 11, KEEP = MORE + 12, KEEP_DEFAULT = MORE + 13, REMOVE_DOWNLOADS = MORE + 14, RETRY_CLEANUP = MORE + 15, SYNC = MORE + 16, SYNC_ENABLED = MORE + 17;
+            DELETED = MORE + 3, CONTACTS = MORE + 4, HISTORY = MORE + 5, ROW = MORE + 6, SONG = MORE + 7, RETRY = MORE + 8, DOWNLOAD = MORE + 9, DOWNLOAD_CANCEL = MORE + 10, DOWNLOAD_RETRY = MORE + 11, KEEP = MORE + 12, KEEP_DEFAULT = MORE + 13, REMOVE_DOWNLOADS = MORE + 14, RETRY_CLEANUP = MORE + 15, SYNC = MORE + 16, SYNC_ENABLED = MORE + 17;
     private static final int OPTIONS = MORE + 18, ACTIONS = MORE + 19;
     private boolean optionsPage;
     private ActionBarMenuItem menu, createButton;
+    private ActionBarMenuSubItem historyMenu;
     private PurplePlaylistCells.Deck deck;
     private final View.OnLayoutChangeListener mainTabBarLayout =
             (view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> insetMainTabContent(bottom - top);
@@ -109,6 +111,8 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
             menu.addSubItem(OPTIONS, playlistId.isEmpty() ? R.drawable.msg_settings : R.drawable.msg_download,
                     text(playlistId.isEmpty() ? "Settings" : "OfflineMusic"));
         }
+        historyMenu = menu.addSubItem(HISTORY, R.drawable.msg_retry, getString(R.string.Undo));
+        menu.hideSubItem(HISTORY);
         menu.addSubItem(REFRESH, R.drawable.msg_retry, text("Refresh"));
         if (!optionsPage && adding == null && playlistId.isEmpty() && !recentlyDeleted) {
             menu.addSubItem(DELETED, R.drawable.msg_delete, text("Deleted"));
@@ -118,6 +122,7 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
             @Override public void onItemClick(int id) {
                 if (id == -1) finishFragment();
                 else if (id == REFRESH && !busy) refresh();
+                else if (id == HISTORY) applyHistory(state);
                 else if (id == OPTIONS && visible && !busy) {
                     PurplePlaylistsActivity page = new PurplePlaylistsActivity(currentAccount, playlistId, false);
                     page.optionsPage = true;
@@ -206,6 +211,12 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
                 }
             }
         }
+        if (historyMenu != null) {
+            if (state != null && !state.historyKind.isEmpty() && !busy) {
+                historyMenu.setText(historyButton(state) + " · " + historyDescription(state));
+                menu.showSubItem(HISTORY);
+            } else menu.hideSubItem(HISTORY);
+        }
         if (createButton != null) {
             boolean show = state != null && state.view != null && state.view.playlists != null
                     && !state.view.playlists.isEmpty() && canAdd();
@@ -233,11 +244,21 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
                     PurpleDiagLog.flag("library_committed", value.libraryCommitted));
         }
         state = value; busy = false; update();
-        if (value.ready() && value.libraryCommitted && value.canUndo && BulletinFactory.canShowBulletin(this)) {
-            BulletinFactory.of(this).createSimpleBulletin(R.raw.done, adding != null && adding.submitted() ? addResult(value) : text("Saved"), getString(R.string.Undo), () -> {
-                if (unchanged(value)) submit(screen.undo());
-            }).show();
+        if (value.historyChanged && BulletinFactory.canShowBulletin(this)) {
+            BulletinFactory.of(this).createSimpleBulletin(R.raw.done, historyDescription(value), historyButton(value),
+                    () -> applyHistory(value)).show();
         }
+    }
+    private static String historyButton(PurplePlaylistsScreen.State value) {
+        return getString(value.canRedo ? R.string.Redo : R.string.Undo);
+    }
+    private static String historyDescription(PurplePlaylistsScreen.State value) {
+        return text("History" + value.historyKind);
+    }
+    private void applyHistory(PurplePlaylistsScreen.State expected) {
+        if (!visible || busy || screen == null || expected == null || expected != state) return;
+        if (expected.canRedo) submit(screen.redo());
+        else if (expected.canUndo) submit(screen.undo());
     }
     @Override public void syncCompleted(PurplePlaylistsSyncResult result) {
         if (!visible || screen == null || currentAccount != org.telegram.messenger.UserConfig.selectedAccount) return;
@@ -388,7 +409,6 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
         }
         if (state.view == null || state.partial())
             items.add(UItem.asButton(REFRESH, text("Refresh")).setEnabled(!busy));
-        if (state.canUndo) items.add(UItem.asButton(UNDO, getString(R.string.Undo)).setEnabled(!busy));
         PurplePlaylistsView view = state.view;
         if (view == null) return;
         if (view.incompleteCount > 0 || view.hiddenCount > 0)
@@ -502,8 +522,7 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
         if (item.id == DOWNLOAD_RETRY && item.object2 instanceof PurplePlaylistsDownloadControls.State) {
             submit(screen.download((PurplePlaylistsDownloadControls.State) item.object2)); return;
         }
-        if (item.id == UNDO && state != null && state.canUndo) submit(screen.undo());
-        else if (item.id == CREATE && editable() && canAdd()) title(null);
+        if (item.id == CREATE && editable() && canAdd()) title(null);
         else if (item.id == ROW && item.object2 instanceof PurplePlaylistsView.Row) {
             PurplePlaylistsView.Row row = (PurplePlaylistsView.Row) item.object2;
             if (adding != null) {

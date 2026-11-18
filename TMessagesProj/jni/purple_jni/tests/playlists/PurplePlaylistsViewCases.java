@@ -333,13 +333,24 @@ public final class PurplePlaylistsViewCases {
             check(screen.rename(id, "Changed"), "valid edit after refusal admitted");
             state = ui.next(); check(state.view.detail.row.title.equals("Changed"), "edit refresh preserves selected detail");
             check(screen.undo(), "screen consumes owned Undo");
-            state = ui.next(); check(state.ready() && state.view.detail.row.title.equals("Screen 🎵") && !state.canUndo, "screen Undo restores shared record once");
+            state = ui.next(); check(state.ready() && state.view.detail.row.title.equals("Screen 🎵")
+                    && !state.canUndo && state.canRedo && state.historyChanged && state.historyKind.equals("Rename"),
+                    "screen Undo restores the shared record and exposes a labeled Redo");
             check(!screen.undo(), "consumed screen Undo refused");
+            check(screen.redo(), "screen admits Redo for the same edit");
+            state = ui.next();
+            check(state.ready() && state.canUndo && !state.canRedo && state.view.detail.row.title.equals("Changed"),
+                    "Redo reapplies the shared rename with a new Undo ticket");
+            check(screen.undo(), "a redone edit can be undone again");
+            state = ui.next();
+            check(state.ready() && state.canRedo && state.view.detail.row.title.equals("Screen 🎵"),
+                    "undoing the same rename again restores its original title");
             check(screen.copy(id), "screen copies current validated library entirely on actor");
             state = ui.next(); String copyId = state.editedPlaylistId;
             check(state.ready() && !copyId.equals(id) && state.view.playlists.size() == 2, "current-copy uses actual shared source with new identity");
             check(screen.undo(), "copy offers one owned Undo");
-            state = ui.next(); check(state.ready() && !state.canUndo && state.view.playlists.size() == 1, "copy Undo purges only the new copy");
+            state = ui.next(); check(state.ready() && state.canRedo && state.view.playlists.size() == 1
+                    && state.view.deleted.stream().anyMatch(row -> row.id.equals(copyId)), "copy Undo hides only the new copy");
             captureRefusals();
             org.telegram.messenger.MessageObject first = music(0, 30, -1, "Original 🎵");
             org.telegram.messenger.MessageObject second = music(0, 31, 7, "Second");
@@ -422,7 +433,8 @@ public final class PurplePlaylistsViewCases {
             check(state.canUndo && state.view.playlists.stream().anyMatch(row -> row.title.equals("Partial")), "partial result shows confirmed library and owned Undo");
             failLocal.set(false);
             check(screen.undo(), "confirmed partial edit remains undoable without blind retry");
-            state = ui.next(); check(state.ready() && !state.canUndo && state.view.detail.row.title.equals("Screen 🎵"), "partial Undo consumes action after confirmed repair");
+            state = ui.next(); check(state.ready() && !state.canUndo && state.canRedo
+                    && state.view.detail.row.title.equals("Screen 🎵"), "partial Undo creates Redo after confirmed repair");
             check(screen.refresh(), "screen read admitted before close");
             Runnable closed = ui.take(); screen.close(); before = ui.states.size(); closed.run();
             check(ui.states.size() == before && !screen.refresh() && !screen.create("Closed"), "closed screen cannot repaint or mutate");

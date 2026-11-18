@@ -27,7 +27,9 @@ public final class PurplePlaylistsScreen implements AutoCloseable {
         public final PurplePlaylistsDownloadsCore.Preference keepPreference;
         public final Boolean keepDefault;
         public final PurplePlaylistsRemoval.Result cleanup;
-        public final boolean libraryCommitted, stateCommitted, libraryMayHaveChanged, stateMayHaveChanged, canUndo;
+        public final boolean libraryCommitted, stateCommitted, libraryMayHaveChanged, stateMayHaveChanged, canUndo, canRedo;
+        public final String historyKind;
+        public final boolean historyChanged;
         public final int added, relinked, removed, unchanged;
         private State(PurplePlaylistsWorker.Outcome result, AddOutcome addOutcome) {
             this.addOutcome = addOutcome;
@@ -40,8 +42,12 @@ public final class PurplePlaylistsScreen implements AutoCloseable {
             keepDefault = result.snapshot == null ? null : result.snapshot.keepDefault;
             libraryCommitted = result.libraryCommitted; stateCommitted = result.stateCommitted;
             libraryMayHaveChanged = result.libraryMayHaveChanged; stateMayHaveChanged = result.stateMayHaveChanged;
-            canUndo = result.undo != null && result.snapshot != null;
+            boolean hasHistory = result.undo != null && result.snapshot != null;
+            canUndo = hasHistory && !result.undo.redo;
+            canRedo = hasHistory && result.undo.redo;
+            historyKind = hasHistory ? result.undo.kind.name() : "";
             PurplePlaylistsEdits.Result edit = result.edit;
+            historyChanged = hasHistory && edit != null && edit.changed && result.libraryCommitted;
             editError = edit == null ? "" : edit.error; localError = edit == null ? "" : edit.localError;
             editedPlaylistId = edit == null ? "" : edit.playlistId;
             added = edit == null ? 0 : edit.added; relinked = edit == null ? 0 : edit.relinked;
@@ -161,9 +167,11 @@ public final class PurplePlaylistsScreen implements AutoCloseable {
     public boolean reorder(String id, String[] documents) {
         main(); return edit(PurplePlaylistsEdits.Command.songs(PurplePlaylistsEdits.Kind.ReorderSongs, id, documents, System.currentTimeMillis()));
     }
-    public boolean undo() {
+    public boolean undo() { return applyHistory(false); }
+    public boolean redo() { return applyHistory(true); }
+    private boolean applyHistory(boolean redo) {
         main();
-        return available() && pending == null && snapshot != null && undo != null
+        return available() && pending == null && snapshot != null && undo != null && undo.redo == redo
                 && admit(worker.undo(snapshot, undo, System.currentTimeMillis(), target()));
     }
     public boolean play(String documentId) {

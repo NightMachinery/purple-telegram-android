@@ -1279,7 +1279,7 @@
         "run"
       ],
       "expects": {
-        "run:PLAYLIST_WORKER_CHECKS": 131
+        "run:PLAYLIST_WORKER_CHECKS": 132
       }
     },
     {
@@ -1300,7 +1300,7 @@
         "run"
       ],
       "expects": {
-        "run:PLAYLIST_EDIT_CHECKS": 70
+        "run:PLAYLIST_EDIT_CHECKS": 72
       }
     },
     {
@@ -1321,7 +1321,7 @@
         "run"
       ],
       "expects": {
-        "run:PLAYLIST_VIEW_CHECKS": 208
+        "run:PLAYLIST_VIEW_CHECKS": 212
       }
     },
     {
@@ -1415,7 +1415,7 @@
         "run"
       ],
       "expects": {
-        "run:PLAYLIST_WORKER_CHECKS": 131,
+        "run:PLAYLIST_WORKER_CHECKS": 132,
         "run:PLAYLIST_DOWNLOAD_TRANSFER_CHECKS": 877,
         "run:LINE PLAYLIST_DOWNLOAD_TRANSFER_OK": "PASS",
         "restart-success-seed:PLAYLIST_RESTART_SEED_CHECKS": 8,

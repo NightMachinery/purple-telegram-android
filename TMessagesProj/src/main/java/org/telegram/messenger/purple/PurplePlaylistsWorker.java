@@ -87,7 +87,13 @@ final class PurplePlaylistsWorker implements AutoCloseable {
 
     static final class Undo {
         private final PurplePlaylistsWorker owner;
-        private Undo(PurplePlaylistsWorker owner) { this.owner = owner; }
+        final PurplePlaylistsEdits.Kind kind;
+        final boolean redo;
+        private Undo(PurplePlaylistsWorker owner, PurplePlaylistsEdits.Kind kind, boolean redo) {
+            this.owner = owner;
+            this.kind = kind;
+            this.redo = redo;
+        }
     }
 
     static final class Outcome {
@@ -449,11 +455,11 @@ final class PurplePlaylistsWorker implements AutoCloseable {
         boolean confirmed = write.ready() || write.libraryCommitted;
         boolean uncertain = write.libraryMayHaveChanged && !write.libraryCommitted;
         boolean available = editor.finish(confirmed, write.ready(), uncertain);
-        if (edit.changed && confirmed && request.command.kind == PurplePlaylistsEdits.Kind.Undo) {
-            editor.forgetUndo();
-            latestUndo = null;
-        } else if (uncertain || !available) latestUndo = null;
-        else if (edit.changed && confirmed) latestUndo = new Undo(this);
+        if (uncertain || !available) latestUndo = null;
+        else if (edit.changed && confirmed) {
+            latestUndo = request.undo == null ? new Undo(this, request.command.kind, false)
+                    : new Undo(this, request.undo.kind, !request.undo.redo);
+        }
         Snapshot snapshot = current() && captured.current() ? refresh(request) : null;
         Status status = !current() ? Status.Canceled : !write.ready() ? Status.Failed
                 : snapshot == null ? Status.Unavailable : Status.Ready;

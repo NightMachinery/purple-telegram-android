@@ -296,10 +296,10 @@ screen closure cancels admission without stopping unrelated account work.
 Copy obtains its source bytes on the actor, avoiding a large UI-thread clone.
 Account identity changes stop the registered actor before a new acquisition.
 
-A confirmed Undo consumes its action even when the shared operation returns
-an inverse record suitable for Redo. The client exposes one Undo action, not
-an unlabelled toggle. Failed or uncertain publication keeps the existing
-truthful commit/refusal rules. Partial publication is distinct from success;
+A confirmed Undo exposes the shared inverse as Redo. The action is labeled
+in the stock bulletin and the playlist overflow menu. Undoing an untouched
+creation or copy moves it to Recently deleted so Redo can restore the same
+playlist. Permanent deletion has no history action. After an uncertain write the
 UI must refresh or deliberately Undo, never retry a mutation blindly.
 
 The permanent drivers measure 85 view/screen, 70 edit, 131 worker and 49 account

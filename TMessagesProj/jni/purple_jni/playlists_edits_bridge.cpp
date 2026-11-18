@@ -197,7 +197,13 @@ PlaylistEditResult Apply(JNIEnv *env, Editor &editor, const PlaylistLibrary &lib
         return kind == 7 ? RemovePlaylistSongs(library, id, documents, now, self)
             : ReorderPlaylistSongs(library, id, documents, now, self);
     }
-    case 9: return UndoPlaylistOperation(library, editor.undo, now, self);
+    case 9: {
+        auto undone = UndoPlaylistOperation(library, editor.undo, now, self);
+        if (undone && (editor.undo.kind == PlaylistUndoKind::Create || editor.undo.kind == PlaylistUndoKind::Copy)) {
+            return DeletePlaylist(library, editor.undo.playlistId, now, self);
+        }
+        return undone;
+    }
     default: throw std::invalid_argument("Invalid playlist command");
     }
 }

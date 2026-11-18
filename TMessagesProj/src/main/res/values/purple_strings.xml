@@ -1270,6 +1270,14 @@
     <string name="PurplePlaylistsAddSubmitted">Adding tracks…</string>
     <string name="PurplePlaylistsAddRefused">No tracks were added. Choose a playlist to try again.</string>
     <string name="PurplePlaylistsAddUnknown">Check the destination playlist to see which tracks were added.</string>
+    <string name="PurplePlaylistsHistoryCreate">Create playlist</string>
+    <string name="PurplePlaylistsHistoryCopy">Copy playlist</string>
+    <string name="PurplePlaylistsHistoryRename">Rename playlist</string>
+    <string name="PurplePlaylistsHistoryDelete">Delete playlist</string>
+    <string name="PurplePlaylistsHistoryRestore">Restore playlist</string>
+    <string name="PurplePlaylistsHistoryAddSongs">Add tracks</string>
+    <string name="PurplePlaylistsHistoryRemoveSongs">Remove tracks</string>
+    <string name="PurplePlaylistsHistoryReorderSongs">Change track order</string>
     <string name="PurplePlaylistsChanged">Playlists changed while this screen was open. Refresh to get the latest list.</string>
     <string name="PurplePlaylistsEditFailed">The playlist is available, but the change could not be saved.</string>
     <string name="PurplePlaylistsDownloadNow">Download now</string>

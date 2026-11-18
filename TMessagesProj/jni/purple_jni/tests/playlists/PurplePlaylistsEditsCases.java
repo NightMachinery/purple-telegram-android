@@ -63,7 +63,11 @@ public final class PurplePlaylistsEditsCases {
             check(!copy.playlistId.equals(id) && copy.added == 2, "Copy uses validated actual source and distinct entropy ID");
             check(new String(s.library, StandardCharsets.UTF_8).contains(" (copy)"), "shared Copy title policy preserved");
             s.apply(PurplePlaylistsEdits.Command.undo(1200));
-            check(!json(s.library).getJSONObject("playlists").has(copy.playlistId), "Undo Copy removes untouched copied playlist");
+            check(PurplePlaylistsView.project(s.library, s.state, 101, copy.playlistId).detail.row.deleted,
+                    "Undo Copy moves the untouched copy to Recently deleted");
+            s.apply(PurplePlaylistsEdits.Command.undo(1250));
+            check(!PurplePlaylistsView.project(s.library, s.state, 101, copy.playlistId).detail.row.deleted,
+                    "Redo Copy restores the identical saved copy");
             s.apply(PurplePlaylistsEdits.Command.playlist(PurplePlaylistsEdits.Kind.Delete, id, 1300));
             s.apply(PurplePlaylistsEdits.Command.playlist(PurplePlaylistsEdits.Kind.DeleteForever, id, 1400));
             check(json(s.library).getJSONObject("purged").has(id), "DeleteForever uses real purge marker");
@@ -153,7 +157,8 @@ public final class PurplePlaylistsEditsCases {
             check(s.prepare(PurplePlaylistsEdits.Command.rename(id, "Never published", 200)).valid(), "unconfirmed candidate prepared");
             check(s.editor.finish(false, false, false), "refused publication retains prior confirmed Undo");
             s.apply(PurplePlaylistsEdits.Command.undo(300));
-            check(json(s.library).getJSONObject("purged").has(id), "unconfirmed edit cannot replace confirmed Undo");
+            check(PurplePlaylistsView.project(s.library, s.state, 101, id).detail.row.deleted,
+                    "unconfirmed edit cannot replace confirmed Undo");
         }
         try (Session s = new Session(); Session external = new Session()) {
             String id = s.create("Conflict", 4, 100);
