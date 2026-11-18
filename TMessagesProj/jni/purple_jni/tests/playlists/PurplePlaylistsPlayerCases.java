@@ -100,10 +100,12 @@ public final class PurplePlaylistsPlayerCases {
                     && f.media.playlist.get(0) == f.media.playing, "native bridge contains actual current message only");
             check(f.media.playing.currentAccount == 1 && ConnectionsManager.getInstance(0).requests.isEmpty(), "resolution never retargets global account");
             check(f.player.next(false), "native Next handled"); f.flush(); f.reply(); f.selected(2, "saved order overrides message id sort");
-            int starts = f.media.starts, reads = f.network.requests.size();
-            check(f.player.next(false), "manual final boundary handled"); f.flush();
-            check(f.media.starts == starts && f.network.requests.size() == reads, "manual None boundary does not wrap or read");
-            check(f.player.previous(), "native Previous handled"); f.flush(); f.reply(); f.selected(1, "saved previous original row");
+            check(f.player.next(false), "manual final boundary handled"); f.flush(); f.reply();
+            f.selected(0, "native Next wraps from the final track");
+            check(f.player.previous(), "native Previous handled"); f.flush(); f.reply();
+            f.selected(2, "native Previous wraps from the first track");
+            check(f.player.previous(), "native Previous keeps saved order"); f.flush(); f.reply();
+            f.selected(1, "saved previous original row");
             f.media.playing.audioProgressSec = 12;
             int beforeSeek = f.network.requests.size();
             check(f.player.previous() && f.media.seeks == 1 && f.network.requests.size() == beforeSeek, "previous after ten seconds seeks without resolution");

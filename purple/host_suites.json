@@ -1355,7 +1355,7 @@
         "run"
       ],
       "expects": {
-        "run:PLAYLIST_PLAYBACK_CHECKS": 171
+        "run:PLAYLIST_PLAYBACK_CHECKS": 190
       }
     },
     {
@@ -1372,7 +1372,7 @@
         "run"
       ],
       "expects": {
-        "run:PLAYLIST_NATIVE_PLAYER_CHECKS": 214
+        "run:PLAYLIST_NATIVE_PLAYER_CHECKS": 218
       }
     },
     {

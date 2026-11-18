@@ -422,9 +422,10 @@ identity before handing playback to a longer-lived account capture.
 
 The native queue bridge installs only the actual resolved current message. It
 does not manufacture unresolved MessageObjects or call the stock sorting setter.
-Next and Previous traverse the Purple snapshot; Previous seeks to zero after ten
-seconds. Repeat One resets native progress, Repeat All wraps, and exhaustion
-closes the native player without falling back to chat history. Mode changes keep
+Manual Next and Previous wrap through the active order. Previous seeks to
+the start of the current track after ten seconds. At natural track end,
+Repeat One restarts the current track, Repeat All wraps, and the queue otherwise
+ends without falling back to chat history. Mode changes keep
 the existing native current song. Stock music pages, history loads and next-file
 prefetch are suppressed only while this playlist session owns the queue.
 

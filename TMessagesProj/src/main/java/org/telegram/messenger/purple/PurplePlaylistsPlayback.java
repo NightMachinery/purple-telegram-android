@@ -48,7 +48,7 @@ final class PurplePlaylistsPlayback implements AutoCloseable {
     private long generation;
     private AutoCloseable pending;
     private Gate gate;
-    private boolean automatic, restart;
+    private boolean automatic, restart, wrap;
 
     PurplePlaylistsPlayback(List<PurplePlaylistsView.Song> songs, Order order, Repeat repeat,
             Port port, Random random) {
@@ -78,7 +78,7 @@ final class PurplePlaylistsPlayback implements AutoCloseable {
         if (songs.isEmpty()) { finish(false); return true; }
         if (index < 0) index = selected < 0 ? traversal.get(0) : selected;
         if (order == Order.Shuffle) rebuild(index);
-        begin(index, false, false, 1);
+        begin(index, false, false, 1, false);
         return true;
     }
 
@@ -97,13 +97,14 @@ final class PurplePlaylistsPlayback implements AutoCloseable {
         int position = traversal.indexOf(selected);
         int next = byEnd && repeat == Repeat.One ? position : position + direction;
         if (next < 0 || next >= traversal.size()) {
-            if (repeat != Repeat.All) {
-                if (byEnd) finish(true);
+            if (byEnd && repeat != Repeat.All) {
+                finish(true);
                 return true;
             }
             next = Math.floorMod(next, traversal.size());
         }
-        begin(traversal.get(next), byEnd, byEnd && repeat == Repeat.One, direction);
+        int target = traversal.get(next);
+        begin(target, byEnd, byEnd ? repeat == Repeat.One : target == playing, direction, !byEnd);
         return true;
     }
 
@@ -157,9 +158,9 @@ final class PurplePlaylistsPlayback implements AutoCloseable {
         }
     }
 
-    private void begin(int index, boolean byEnd, boolean restart, int direction) {
+    private void begin(int index, boolean byEnd, boolean restart, int direction, boolean wrap) {
         cancel();
-        selected = index; automatic = byEnd; this.restart = restart; this.direction = direction;
+        selected = index; automatic = byEnd; this.restart = restart; this.direction = direction; this.wrap = wrap;
         sourceStatus = null; waitSeconds = 0;
         gate = port.gate(byEnd);
         if (gate == null) { status = Status.Retry; publish(); return; }
@@ -226,7 +227,7 @@ final class PurplePlaylistsPlayback implements AutoCloseable {
                 || result.status == PurplePlaylistsResolver.Status.Restricted) {
             int position = traversal.indexOf(index) + direction;
             if (position < 0 || position >= traversal.size()) {
-                if (repeat != Repeat.All) { finish(automatic); return; }
+                if (!wrap && repeat != Repeat.All) { finish(automatic); return; }
                 position = Math.floorMod(position, traversal.size());
             }
             selected = traversal.get(position);

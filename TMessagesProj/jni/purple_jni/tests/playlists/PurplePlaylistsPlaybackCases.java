@@ -147,15 +147,16 @@ public final class PurplePlaylistsPlaybackCases {
                 int before = p.starts.size();
                 if (order == Order.Shuffle) q.previous(); else q.next(false);
                 p.flush();
-                check(p.starts.size() == before + (repeat == Repeat.All ? 1 : 0), "manual boundary only wraps All");
-                if (repeat == Repeat.All) check(q.state().playing == q.state().traversal.get(order == Order.Shuffle ? 3 : 0), "all wraps boundary");
+                check(p.starts.size() == before + 1, "manual boundary wraps in every repeat mode");
+                check(q.state().playing == q.state().traversal.get(order == Order.Shuffle ? 3 : 0),
+                        "manual wrapping follows the active traversal");
             }
         }
         Endpoint p = new Endpoint();
         try (PurplePlaylistsPlayback q = queue(songs, Order.Normal, Repeat.None, p)) {
             q.play(-1); p.flush(); check(q.state().playing == 0, "unselected play uses traversal head");
             int before = p.starts.size(); q.previous(); p.flush();
-            check(p.starts.size() == before, "previous has nonwrapping boundary");
+            check(p.starts.size() == before + 1 && q.state().playing == 3, "previous wraps to the final track");
             q.play(3); p.flush(); q.next(true); p.flush();
             check(q.state().status == Status.Exhausted && p.exhausted == 1, "natural end exhausts without chat fallback");
         }
@@ -164,6 +165,10 @@ public final class PurplePlaylistsPlaybackCases {
             try (PurplePlaylistsPlayback q = queue(Collections.singletonList(songs.get(0)), Order.Normal, repeat, p)) {
                 q.play(0); p.flush(); q.next(true); p.flush();
                 check(p.starts.size() == (repeat == Repeat.None ? 1 : 2), "single-song repeat " + repeat);
+                int before = p.starts.size();
+                q.previous(); p.flush();
+                check(p.starts.size() == before + 1 && q.state().playing == 0 && p.restarts.get(before),
+                        "manual one-track wrap restarts the current track " + repeat);
             }
         }
     }
