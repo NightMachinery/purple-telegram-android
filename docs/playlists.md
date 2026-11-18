@@ -297,7 +297,10 @@ Copy obtains its source bytes on the actor, avoiding a large UI-thread clone.
 Account identity changes stop the registered actor before a new acquisition.
 
 A confirmed Undo exposes the shared inverse as Redo. The action is labeled
-in the stock bulletin and the playlist overflow menu. Undoing an untouched
+in the stock bulletin and the playlist overflow menu. A bulletin can apply
+its original edit after a refresh when the same history action is still current.
+Opening a new screen or replacing that history action invalidates the old
+bulletin. Undoing an untouched
 creation or copy moves it to Recently deleted so Redo can restore the same
 playlist. Permanent deletion has no history action. After an uncertain write the
 UI must refresh or deliberately Undo, never retry a mutation blindly.

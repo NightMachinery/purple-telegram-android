@@ -271,9 +271,8 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
         return text("History" + value.historyKind);
     }
     private void applyHistory(PurplePlaylistsScreen.State expected) {
-        if (!visible || busy || dragState != null || screen == null || expected == null || expected != state) return;
-        if (expected.canRedo) submit(screen.redo());
-        else if (expected.canUndo) submit(screen.undo());
+        if (!visible || busy || dragState != null || screen == null || expected == null) return;
+        submit(screen.applyHistory(expected));
     }
     @Override public void syncCompleted(PurplePlaylistsSyncResult result) {
         if (!visible || screen == null || currentAccount != org.telegram.messenger.UserConfig.selectedAccount) return;

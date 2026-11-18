@@ -31,7 +31,11 @@ public final class PurplePlaylistsScreen implements AutoCloseable {
         public final String historyKind;
         public final boolean historyChanged;
         public final int added, relinked, removed, unchanged;
-        private State(PurplePlaylistsWorker.Outcome result, AddOutcome addOutcome) {
+        private final Scope scope;
+        private final PurplePlaylistsWorker.Undo history;
+        private State(Scope scope, PurplePlaylistsWorker.Outcome result, AddOutcome addOutcome) {
+            this.scope = scope;
+            history = result.snapshot == null ? null : result.undo;
             this.addOutcome = addOutcome;
             status = Status.valueOf(result.status.name());
             storageStatus = result.storeStatus == null ? "" : result.storeStatus.name();
@@ -42,10 +46,10 @@ public final class PurplePlaylistsScreen implements AutoCloseable {
             keepDefault = result.snapshot == null ? null : result.snapshot.keepDefault;
             libraryCommitted = result.libraryCommitted; stateCommitted = result.stateCommitted;
             libraryMayHaveChanged = result.libraryMayHaveChanged; stateMayHaveChanged = result.stateMayHaveChanged;
-            boolean hasHistory = result.undo != null && result.snapshot != null;
-            canUndo = hasHistory && !result.undo.redo;
-            canRedo = hasHistory && result.undo.redo;
-            historyKind = hasHistory ? result.undo.kind.name() : "";
+            boolean hasHistory = history != null;
+            canUndo = hasHistory && !history.redo;
+            canRedo = hasHistory && history.redo;
+            historyKind = hasHistory ? history.kind.name() : "";
             PurplePlaylistsEdits.Result edit = result.edit;
             historyChanged = hasHistory && edit != null && edit.changed && result.libraryCommitted;
             editError = edit == null ? "" : edit.error; localError = edit == null ? "" : edit.localError;
@@ -167,11 +171,10 @@ public final class PurplePlaylistsScreen implements AutoCloseable {
     public boolean reorder(String id, String[] documents) {
         main(); return edit(PurplePlaylistsEdits.Command.songs(PurplePlaylistsEdits.Kind.ReorderSongs, id, documents, System.currentTimeMillis()));
     }
-    public boolean undo() { return applyHistory(false); }
-    public boolean redo() { return applyHistory(true); }
-    private boolean applyHistory(boolean redo) {
+    public boolean applyHistory(State expected) {
         main();
-        return available() && pending == null && snapshot != null && undo != null && undo.redo == redo
+        return available() && pending == null && snapshot != null && undo != null
+                && expected != null && expected.scope == scope && expected.history == undo
                 && admit(worker.undo(snapshot, undo, System.currentTimeMillis(), target()));
     }
     public boolean play(String documentId) {
@@ -279,7 +282,7 @@ public final class PurplePlaylistsScreen implements AutoCloseable {
             pendingAdd = null;
         }
         Listener target = listener.get();
-        if (target != null) target.playlistsChanged(new State(result, addOutcome));
+        if (target != null) target.playlistsChanged(new State(scope, result, addOutcome));
         if (syncDirty && !syncing && available()) { syncDirty = false; refresh(); }
     }
     @Override public void close() {
