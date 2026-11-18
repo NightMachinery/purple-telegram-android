@@ -79,7 +79,9 @@ public final class PeekReadyCases {
                 PurpleGate.reload("timeout fixture");
             }
             if (scenario.equals("end")) PurpleGate.startPeek(0, PurpleGate.peekSettings());
-            PurplePeekControls.start(fragment, 60);
+            if (scenario.equals("cleanup"))
+                PurplePeekControls.changeDelay(fragment, 1, new PurpleWriter.Session(), PurpleGate.peekSettings());
+            else PurplePeekControls.start(fragment, 60);
             Object p = pending(); check(p != null, "controller owns positive wait");
             Runnable stale = (Runnable) field(p, "tick");
             Button action = button(p, "action"), abort = button(p, "abort");
@@ -237,7 +239,10 @@ public final class PeekReadyCases {
                 tick(12000); action.performClick();
                 check(!PurplePeekControls.isPending() && PurpleGate.starts == 0 && owner.receivers.isEmpty(), "timeout quietly releases without apply");
             } else if (scenario.equals("stale")) {
-                tick(2000); tick(2500); PurpleGate.reload("external settings revision"); action.performClick();
+                tick(2000); tick(2500);
+                PurpleGate.settings = new String(PurpleGate.settings, java.nio.charset.StandardCharsets.UTF_8)
+                        .replace("start_delay_seconds=2", "start_delay_seconds=3").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                PurpleGate.reload("external settings revision"); action.performClick();
                 check(!PurplePeekControls.isPending() && PurpleGate.starts == 0, "confirmation revalidates revision");
             } else throw new AssertionError(scenario);
         }

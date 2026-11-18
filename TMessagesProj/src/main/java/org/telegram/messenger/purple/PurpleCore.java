@@ -523,6 +523,14 @@ public final class PurpleCore {
             this.recentStyle = recentStyle;
         }
 
+        Clock withAccountPeek(Clock account) {
+            return new Clock(account.peeking, account.peekDeadline, account.peekUntilStopped,
+                    account.peekTap, account.peekStartDelay, account.peekReadyTimeout,
+                    account.peekExitHiddenChats, account.peekDetents, schedulePaused,
+                    schedulePausedUntil, scheduleConfigured, overrides, nextOverrideDeadline,
+                    hideScope, recentSeconds, recentScope, recentStyle);
+        }
+
         Clock withoutPeek() {
             return new Clock(false, 0, false, peekTap,
                     peekStartDelay, peekReadyTimeout, peekExitHiddenChats, peekDetents, schedulePaused,
@@ -2321,8 +2329,12 @@ public final class PurpleCore {
         public final String stateText;
 
         public Loaded withoutPeek() {
+            return withAccountPeek(clock.withoutPeek(), false);
+        }
+
+        Loaded withAccountPeek(Clock account, boolean stock) {
             return new Loaded(ok, error, warnings, version,
-                    normal, preset, title, lists,
+                    stock || normal, preset, title, lists,
                     usedCache, cacheReason, activeMissing, snapshotLists,
                     folders, foldersRestricted, silencedFolders, quietFolders,
                     exemptFolders, stories, storyFolders, defaultModes,
@@ -2331,7 +2343,7 @@ public final class PurpleCore {
                     scheduleEnabled, scheduleTarget, scheduleOutside, scheduleOutsideKey,
                     scheduleNow, scheduleStatus, scheduleRulesets, scheduleChosen,
                     scheduleRules, focusSyncEnabled, focusSyncEnter, focusSyncExit,
-                    clock.withoutPeek(), premium, sendAfterSave, lastSeenReasons,
+                    clock.withAccountPeek(account), premium, sendAfterSave, lastSeenReasons,
                     lastSeenTrade, lastSeenTradeHold, lastSeenTradeRemember, lastSeenTradeCooldown,
                     screenTimeEnabled, screenTimeActionSpan, screenTimeActiveGap, screenTimeIdleAfter,
                     screenTimeRetentionDays, screenTimeBudgets, deviceId, devices,

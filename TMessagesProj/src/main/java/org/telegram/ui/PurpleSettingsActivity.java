@@ -209,7 +209,7 @@ public class PurpleSettingsActivity extends UniversalFragment
         // Read once per rebuild rather than remembered in a field. Every write
         // below ends in a reload, and re-running this is what makes a refused
         // write leave the switch exactly where the file is with no extra code.
-        final PurpleCore.Loaded state = PurpleGate.state();
+        final PurpleCore.Loaded state = PurpleGate.state(currentAccount);
         PurpleAccountSettingsRows.add(items, currentAccount);
         PurpleArchiveUI.add(items, this);
         PurpleAccountRowWrite.Current current = rowCurrent();
@@ -731,7 +731,7 @@ public class PurpleSettingsActivity extends UniversalFragment
         if (activity == null) return;
         PurpleWriter.Session writer = PurpleWriterUI.captureOrExplain(this, true, () -> editPeekScalar(readyTimeout));
         if (writer == null) return;
-        PurpleGate.PeekSettings settings = PurpleGate.peekSettings();
+        PurpleGate.PeekSettings settings = PurpleGate.peekSettings(currentAccount);
         if (settings == null) {
             // The session read the files a moment ago, so this is a file
             // that changed or became unreadable since.
@@ -782,7 +782,7 @@ public class PurpleSettingsActivity extends UniversalFragment
         if (writer == null) {
             return;
         }
-        final PurpleCore.Loaded state = PurpleGate.state();
+        final PurpleCore.Loaded state = PurpleGate.state(currentAccount);
         final String known = PurpleDevice.labelFor(state, PurpleDevice.id());
 
         final EditTextBoldCursor field = new EditTextBoldCursor(activity);

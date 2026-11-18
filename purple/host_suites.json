@@ -345,7 +345,7 @@
         "{output}"
       ],
       "expects": {
-        "wait-routes:WAIT_ROUTE_TESTS": 19
+        "wait-routes:WAIT_ROUTE_TESTS": 24
       }
     },
     {
@@ -674,31 +674,14 @@
         "wait-gate:WAIT_GATE_CONTROLLER_CHECKS": 11,
         "wait-gate:WAIT_GATE_HELD_CHECKS": 2,
         "wait-gate:WAIT_GATE_MACHINE_CHECKS": 50,
-        "actual-gate-background:LINE production Gate": "PASS",
-        "actual-gate-background:LINE at2s=false": "PASS",
-        "actual-gate-background:LINE lateResume=false": "PASS",
-        "actual-gate-background:LINE actual reload caught source failures=2": "PASS",
-        "actual-gate-lock:LINE production Gate": "PASS",
-        "actual-gate-lock:LINE locked=false": "PASS",
-        "actual-gate-lock:LINE unlockResume=false": "PASS",
-        "actual-gate-lock:LINE actual reload caught source failures=1": "PASS",
-        "actual-account-background:LINE production Gate": "PASS",
-        "actual-account-background:LINE at2s=false": "PASS",
-        "actual-account-background:LINE lateResume=false": "PASS",
-        "actual-account-background:LINE retained handle, account visibility, row cache, story cache and native story PASS": "PASS",
-        "actual-account-background:LINE actual reload caught source failures=2": "PASS",
-        "actual-account-background:LINE javaPeeking=false accountPacked=4 unpeekedPacked=4": "PASS",
-        "actual-account-lock:LINE production Gate": "PASS",
-        "actual-account-lock:LINE locked=false": "PASS",
-        "actual-account-lock:LINE unlockResume=false": "PASS",
-        "actual-account-lock:LINE retained handle, account visibility, row cache, story cache and native story PASS": "PASS",
-        "actual-account-lock:LINE actual reload caught source failures=1": "PASS",
-        "actual-account-lock:LINE javaPeeking=false accountPacked=4 unpeekedPacked=4": "PASS",
         "reviewer-failed-success:LINE successfulPeek=false persistedCount=0 processRefuses=true": "PASS",
         "reviewer-failed-success:LINE afterProcessRestart extra=0 effective=2 expectedExtra=10": "PASS",
         "reviewer-malformed-policy:LINE malformedPolicy accepted: step=10 maxExtra=90 resetMinutes=60 delay=52 extra=50": "PASS",
         "reviewer-reboot:LINE naturalExpiryWall=110000 nowWall=3710000 inactiveMs=3600000 reset=true count=0 recordedEndElapsed=0 boot=oldBoot": "PASS",
-        "reviewer-early-end-reboot:LINE END at wall105000 before scheduled deadline110000; recordedEndWall=105000 resetAtActualENDplus1h=true count=0": "PASS"
+        "reviewer-early-end-reboot:LINE END at wall105000 before scheduled deadline110000; recordedEndWall=105000 resetAtActualENDplus1h=true count=0": "PASS",
+        "actual-account-background:ACCOUNT_FOCUS_RECOVERY_CHECKS": 24,
+        "actual-account-lock:ACCOUNT_LOCK_RECOVERY_CHECKS": 16,
+        "actual-account-end-button:ACCOUNT_END_BUTTON_CHECKS": 26
       }
     },
     {
@@ -877,31 +860,14 @@
         "startup:PEEK_FOCUS_startup_CHECKS": 3,
         "toggles:PEEK_FOCUS_toggles_CHECKS": 15,
         "transitions:PEEK_FOCUS_transitions_CHECKS": 5,
-        "actual-gate-background:LINE production Gate": "PASS",
-        "actual-gate-background:LINE at2s=false": "PASS",
-        "actual-gate-background:LINE lateResume=false": "PASS",
-        "actual-gate-background:LINE actual reload caught source failures=2": "PASS",
-        "actual-gate-lock:LINE production Gate": "PASS",
-        "actual-gate-lock:LINE locked=false": "PASS",
-        "actual-gate-lock:LINE unlockResume=false": "PASS",
-        "actual-gate-lock:LINE actual reload caught source failures=1": "PASS",
-        "actual-account-background:LINE production Gate": "PASS",
-        "actual-account-background:LINE at2s=false": "PASS",
-        "actual-account-background:LINE lateResume=false": "PASS",
-        "actual-account-background:LINE retained handle, account visibility, row cache, story cache and native story PASS": "PASS",
-        "actual-account-background:LINE actual reload caught source failures=2": "PASS",
-        "actual-account-background:LINE javaPeeking=false accountPacked=4 unpeekedPacked=4": "PASS",
-        "actual-account-lock:LINE production Gate": "PASS",
-        "actual-account-lock:LINE locked=false": "PASS",
-        "actual-account-lock:LINE unlockResume=false": "PASS",
-        "actual-account-lock:LINE retained handle, account visibility, row cache, story cache and native story PASS": "PASS",
-        "actual-account-lock:LINE actual reload caught source failures=1": "PASS",
-        "actual-account-lock:LINE javaPeeking=false accountPacked=4 unpeekedPacked=4": "PASS",
         "reviewer-failed-success:LINE successfulPeek=false persistedCount=0 processRefuses=true": "PASS",
         "reviewer-failed-success:LINE afterProcessRestart extra=0 effective=2 expectedExtra=10": "PASS",
         "reviewer-malformed-policy:LINE malformedPolicy accepted: step=10 maxExtra=90 resetMinutes=60 delay=52 extra=50": "PASS",
         "reviewer-reboot:LINE naturalExpiryWall=110000 nowWall=3710000 inactiveMs=3600000 reset=true count=0 recordedEndElapsed=0 boot=oldBoot": "PASS",
-        "reviewer-early-end-reboot:LINE END at wall105000 before scheduled deadline110000; recordedEndWall=105000 resetAtActualENDplus1h=true count=0": "PASS"
+        "reviewer-early-end-reboot:LINE END at wall105000 before scheduled deadline110000; recordedEndWall=105000 resetAtActualENDplus1h=true count=0": "PASS",
+        "actual-account-background:ACCOUNT_FOCUS_RECOVERY_CHECKS": 24,
+        "actual-account-lock:ACCOUNT_LOCK_RECOVERY_CHECKS": 16,
+        "actual-account-end-button:ACCOUNT_END_BUTTON_CHECKS": 26
       }
     },
     {

@@ -98,12 +98,13 @@ public final class PurpleSchedule {
      * settles after exactly one pass rather than looping.
      */
     private static void apply() {
-        final PurpleCore.Tick tick = PurpleCore.scheduleTick(PurpleState.read(),
+        final byte[] before = PurpleState.read();
+        final PurpleCore.Tick tick = PurpleCore.scheduleTick(before,
                 PurpleDevice.id(), PurpleDevice.PLATFORM, PurpleDevice.CLASS);
         if (tick == null) {
             return;
         }
-        if (!PurpleState.write(tick.text.getBytes(UTF_8))) {
+        if (!PurpleState.replaceIfUnchanged(before, tick.text.getBytes(UTF_8))) {
             return;
         }
         if (tick.unpaused) {

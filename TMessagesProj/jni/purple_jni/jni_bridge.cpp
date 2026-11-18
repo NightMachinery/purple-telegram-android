@@ -24,15 +24,20 @@ any later version.
 #include <QtCore/QByteArray>
 #include <QtCore/QChar>
 #include <QtCore/QDateTime>
+#include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 #include <QtCore/QString>
 
 #include <algorithm>
 #include <map>
+#include <limits>
 #include <mutex>
 #include <optional>
 #include <vector>
+
+#define TOML_EXCEPTIONS 0
+#include <toml.hpp>
 
 namespace {
 
@@ -175,12 +180,10 @@ void AppendJsonBool(QString &out, bool value) {
 struct AccountSnapshot {
     Purple::Settings settings;
     Purple::Resolved resolved;
+    QString account;
 };
 
-struct Gate {
-	std::map<jlong, AccountSnapshot> accountSettings;
-	jlong nextAccount = 0;
-	std::mutex mutex;
+struct GateData {
 	Purple::Settings settings;
 	Purple::State state;
 	Purple::Resolved resolved;
@@ -194,6 +197,19 @@ struct Gate {
 	// Kept because a caller that has no identity of its own to offer still has
 	// to resolve the same schedule this device is running - see focusTickNative.
 	Purple::DeviceIdentity device;
+};
+
+struct PreparedGate {
+    GateData data;
+    quint64 generation = 0;
+};
+
+struct Gate : GateData {
+    std::map<jlong, AccountSnapshot> accountSettings;
+    std::map<jlong, PreparedGate> prepared;
+    jlong nextAccount = 0, nextPrepared = 0;
+    quint64 generation = 0;
+    std::mutex mutex;
 };
 
 [[nodiscard]] Gate &TheGate() {
@@ -1124,38 +1140,12 @@ void AppendOverridesJson(
 // rest: an active preset that no longer resolves falls back to the last
 // resolution that worked, never to Normal. Falling back to Normal would unhide
 // every chat the user hid, over a typo in a preset name.
-extern "C" JNIEXPORT jstring JNICALL
-Java_org_telegram_messenger_purple_PurpleCore_loadNative(
-		JNIEnv *env,
-		jclass,
-		jbyteArray settingsUtf8,
-		jbyteArray stateUtf8,
-		jstring deviceId,
-		jstring devicePlatform,
-		jstring deviceClass) {
-	auto settingsText = QString();
-	auto stateText = QString();
-	if (!ReadUtf8(env, settingsUtf8, settingsText)
-		|| !ReadUtf8(env, stateUtf8, stateText)) {
-		return ToJava(env, QStringLiteral(
-			"{\"ok\":false,\"version\":0,"
-			"\"error\":\"out of memory reading the configuration\","
-			"\"warnings\":[],\"normal\":true,\"preset\":\"normal\","
-			"\"title\":\"Normal\",\"lists\":0,\"usedCache\":false,"
-			"\"cacheReason\":\"\",\"activeMissing\":false,"
-			"\"foldersRestricted\":false,\"folders\":[],"
-			"\"hideInvisibleSuggestions\":true,\"hideArchive\":true,"
-			"\"hideAddStory\":true,"
-			"\"presets\":[],\"stateText\":null}"));
-	}
-
-	auto &gate = TheGate();
-	const auto lock = std::lock_guard(gate.mutex);
-
+static QString LoadGateJson(GateData &gate, const QString &settingsText,
+        const QString &stateText, Purple::DeviceIdentity device) {
 	// Kept for the calls that resolve the same schedule without being handed an
 	// identity of their own. It is a constant of the install, so re-reading it
 	// on every load costs nothing and there is nowhere for it to go stale.
-	gate.device = ReadDevice(env, deviceId, devicePlatform, deviceClass);
+	gate.device = std::move(device);
 
 	const auto parsed = Purple::ParseSettings(
 		settingsText,
@@ -1168,6 +1158,9 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 		// settings behind for exactly that case.
 		gate.settings = parsed.settings;
 	}
+    const auto previousLoaded = gate.loaded;
+    const auto previousPreset = gate.state.activePreset;
+    const auto previousSource = gate.state.activeSource;
 	gate.state = Purple::ParseState(stateText, QStringLiteral("state.toml"));
 
 	const auto &normal = Purple::NormalPreset();
@@ -1204,25 +1197,21 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 	gate.resolved = *next;
 	gate.loaded = true;
 
-	// Peek suspends the hiding of whatever resolution is in force; it is not
-	// part of the resolution, which is why it is applied here rather than in
-	// Resolve(). ToCache() below has no field for it, and that is what keeps a
-	// peek out of the fallback: a cached resolution restored with one in it
-	// would come back revealed, with nothing left running to put it back.
-	//
-	// Everything else follows for free. peeking is a field of Resolved, so
-	// Visible() already answers ShowMode::Always for every chat while one is
-	// running, and visibleNative asks it the same question it always did.
-	gate.resolved.peeking = !gate.resolved.normal
-		&& Purple::PeekLive(gate.state, NowUnix());
-	if (!gate.resolved.peeking && gate.state.peekActive) {
-		// A peek that outlived the app, or the preset it was revealing. Cleared
-		// rather than left in the file claiming a peek that is not running,
-		// because that flag is what the next press reads to decide which way to
-		// toggle. The rewrite below carries it to disk.
-		gate.state.peekActive = false;
-		gate.state.peekDeadlineUnix = 0;
-	}
+    gate.state.peekActive = false;
+    gate.state.peekDeadlineUnix = 0;
+    gate.state.peekEnded = Purple::PeekEnd::None;
+    gate.resolved.peeking = false;
+    const auto changedAuthority = previousLoaded
+        && (previousPreset != gate.state.activePreset || previousSource != gate.state.activeSource);
+    const auto expiryNowUnix = NowUnix();
+    for (auto &[account, stored] : gate.state.accountPeeks) {
+        if (stored.active && (gate.resolved.normal || changedAuthority
+            || (stored.deadlineUnix > 0 && stored.deadlineUnix <= expiryNowUnix))) {
+            stored.active = false;
+            stored.deadlineUnix = 0;
+            stored.ended = Purple::PeekEnd::None;
+        }
+    }
 
 	// The "until" decisions expire the same way, and are pruned here for the
 	// same reason: this is the one place that already rewrites state.toml, so
@@ -1599,7 +1588,100 @@ Java_org_telegram_messenger_purple_PurpleCore_loadNative(
 		json += QStringLiteral("null");
 	}
 	json += QChar('}');
-	return ToJava(env, json);
+	return json;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleCore_loadNative(
+		JNIEnv *env,
+		jclass,
+		jbyteArray settingsUtf8,
+		jbyteArray stateUtf8,
+		jstring deviceId,
+		jstring devicePlatform,
+		jstring deviceClass) {
+	auto settingsText = QString();
+	auto stateText = QString();
+	if (!ReadUtf8(env, settingsUtf8, settingsText)
+		|| !ReadUtf8(env, stateUtf8, stateText)) {
+		return ToJava(env, QStringLiteral(
+			"{\"ok\":false,\"version\":0,"
+			"\"error\":\"out of memory reading the configuration\","
+			"\"warnings\":[],\"normal\":true,\"preset\":\"normal\","
+			"\"title\":\"Normal\",\"lists\":0,\"usedCache\":false,"
+			"\"cacheReason\":\"\",\"activeMissing\":false,"
+			"\"foldersRestricted\":false,\"folders\":[],"
+			"\"hideInvisibleSuggestions\":true,\"hideArchive\":true,"
+			"\"hideAddStory\":true,"
+			"\"presets\":[],\"stateText\":null}"));
+	}
+
+    auto &gate = TheGate();
+    const auto lock = std::lock_guard(gate.mutex);
+    ++gate.generation;
+    return ToJava(env, LoadGateJson(gate, settingsText, stateText,
+        ReadDevice(env, deviceId, devicePlatform, deviceClass)));
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleGateLoadNative_prepareNative(
+        JNIEnv *env, jclass, jbyteArray settingsUtf8, jbyteArray stateUtf8,
+        jstring deviceId, jstring devicePlatform, jstring deviceClass) {
+    auto settingsText = QString(), stateText = QString();
+    if (!ReadUtf8(env, settingsUtf8, settingsText)
+        || !ReadUtf8(env, stateUtf8, stateText)) return nullptr;
+    auto &gate = TheGate();
+    const auto lock = std::lock_guard(gate.mutex);
+    for (auto i = gate.prepared.begin(); i != gate.prepared.end();) {
+        if (i->second.generation != gate.generation) i = gate.prepared.erase(i);
+        else ++i;
+    }
+    if (gate.prepared.size() >= 4 || gate.nextPrepared == std::numeric_limits<jlong>::max()) return nullptr;
+    auto candidate = PreparedGate{static_cast<const GateData &>(gate), gate.generation};
+    const auto loaded = LoadGateJson(candidate.data, settingsText, stateText,
+        ReadDevice(env, deviceId, devicePlatform, deviceClass));
+    const auto token = ++gate.nextPrepared;
+    gate.prepared.emplace(token, std::move(candidate));
+    const auto response = ToJava(env, QString::fromUtf8(QJsonDocument(QJsonObject{
+        {u"token"_q, QString::number(token)}, {u"loaded"_q, loaded},
+    }).toJson(QJsonDocument::Compact)));
+    if (!response || env->ExceptionCheck()) gate.prepared.erase(token);
+    return response;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_org_telegram_messenger_purple_PurpleGateLoadNative_currentNative(
+        JNIEnv *, jclass, jlong token) {
+    auto &gate = TheGate();
+    const auto lock = std::lock_guard(gate.mutex);
+    const auto found = gate.prepared.find(token);
+    return token > 0 && found != gate.prepared.end()
+        && found->second.generation == gate.generation ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_org_telegram_messenger_purple_PurpleGateLoadNative_publishNative(
+        JNIEnv *, jclass, jlong token) {
+    auto &gate = TheGate();
+    const auto lock = std::lock_guard(gate.mutex);
+    const auto found = gate.prepared.find(token);
+    if (token <= 0 || found == gate.prepared.end()) return JNI_FALSE;
+    if (found->second.generation != gate.generation) {
+        gate.prepared.erase(found);
+        return JNI_FALSE;
+    }
+    static_cast<GateData &>(gate) = std::move(found->second.data);
+    gate.prepared.erase(found);
+    ++gate.generation;
+    return JNI_TRUE;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_org_telegram_messenger_purple_PurpleGateLoadNative_discardNative(
+        JNIEnv *, jclass, jlong token) {
+    auto &gate = TheGate();
+    const auto lock = std::lock_guard(gate.mutex);
+    gate.prepared.erase(token);
 }
 
 // The per-chat question, asked once per row per rebuild, so it answers from the
@@ -3578,9 +3660,30 @@ Java_org_telegram_messenger_purple_PurpleWorkModeModel_createNative(
     auto &gate = TheGate();
     const auto lock = std::lock_guard(gate.mutex);
     const auto handle = mode == Purple::AccountWorkMode::Stock ? jlong(0) : ++gate.nextAccount;
-    if (handle) gate.accountSettings.emplace(handle, AccountSnapshot{layered.effective.settings, gate.resolved});
+    auto clock = QJsonObject();
+    if (handle) {
+        auto resolved = gate.resolved;
+        const auto account = Purple::AccountKeyText(key->environment, key->userId).value();
+        resolved.peeking = !resolved.normal
+            && Purple::PeekLive(Purple::AccountPeekState(gate.state, account), NowUnix());
+        const auto peek = Purple::AccountPeekState(gate.state, account);
+        const auto &settings = layered.effective.settings;
+        auto detents = QJsonArray();
+        for (const auto seconds : Purple::PeekDetentsSeconds()) detents.append(seconds);
+        clock = QJsonObject{
+            {u"peeking"_q, resolved.peeking},
+            {u"peekDeadline"_q, double(peek.peekDeadlineUnix)},
+            {u"peekUntilStopped"_q, Purple::PeekUntilStopped(peek)},
+            {u"peekTap"_q, Purple::PeekTapSeconds(settings, gate.device)},
+            {u"peekStartDelay"_q, Purple::PeekStartDelaySeconds(settings, gate.device)},
+            {u"peekReadyTimeout"_q, Purple::PeekReadyTimeoutSeconds(settings)},
+            {u"peekExitHiddenChats"_q, Purple::PeekExitHiddenChats(settings)},
+            {u"peekDetents"_q, detents},
+        };
+        gate.accountSettings.emplace(handle, AccountSnapshot{layered.effective.settings, resolved, account});
+    }
     return ToJava(env, QString::fromUtf8(QJsonDocument(QJsonObject{
-        {"mode", int(mode)}, {"handle", QString::number(handle)}}).toJson(QJsonDocument::Compact)));
+        {"mode", int(mode)}, {"handle", QString::number(handle)}, {"peekClock", clock}}).toJson(QJsonDocument::Compact)));
 }
 
 extern "C" JNIEXPORT jint JNICALL
@@ -3598,4 +3701,128 @@ Java_org_telegram_messenger_purple_PurpleCore_voiceContinuationDecisionNative(
 	if (mode < 0 || mode > 2) return jint(Purple::VoiceQueueDecision::Stop);
 	return jint(Purple::ContinuationDecision(Purple::VoiceContinuation(mode),
 		outgoing == JNI_TRUE, unheard == JNI_TRUE, kept == JNI_TRUE));
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleAccountPeekNative_changeNative(
+        JNIEnv *env, jclass, jbyteArray stateBytes, jlong handle, jint operation, jint seconds) {
+    auto text = QString();
+    if (!stateBytes || !ReadUtf8(env, stateBytes, text) || operation < 0 || operation > 5
+        || seconds < 0) return ToJava(env, PeekRefusedJson());
+    auto &gate = TheGate();
+    const auto lock = std::lock_guard(gate.mutex);
+    const auto found = gate.accountSettings.find(handle);
+    if (!gate.loaded || handle <= 0 || found == gate.accountSettings.end()) {
+        return ToJava(env, PeekRefusedJson());
+    }
+    const auto &snapshot = found->second;
+    if (!Purple::ParseAccountKey(snapshot.account)
+        || ((operation == 1 || operation == 2) && snapshot.resolved.normal)) {
+        return ToJava(env, PeekRefusedJson());
+    }
+    auto state = Purple::ParseState(text, u"state.toml"_q);
+    if (state.activePreset != gate.state.activePreset) return ToJava(env, PeekRefusedJson());
+    auto peek = Purple::AccountPeekState(state, snapshot.account);
+    const auto now = NowUnix();
+    auto changed = false;
+    auto extended = false;
+    switch (operation) {
+    case 0: break;
+    case 1: changed = Purple::StartPeek(peek, now, seconds); break;
+    case 2:
+        extended = Purple::ExtendPeek(peek, now, seconds, Purple::kPeekExtendCapSeconds);
+        changed = extended;
+        break;
+    case 3:
+        changed = peek.peekActive;
+        if (changed) Purple::StopPeek(peek);
+        break;
+    case 4:
+    case 5:
+        changed = Purple::EndPeekForLock(peek, now, snapshot.settings, gate.device,
+            operation == 5 ? Purple::LockKind::Screen : Purple::LockKind::App);
+        break;
+    }
+    if (changed) Purple::SaveAccountPeek(state, snapshot.account, peek);
+    const auto context = QString::fromUtf8(QJsonDocument(QJsonObject{
+        {u"preset"_q, state.activePreset},
+        {u"source"_q, Purple::PresetSourceName(state.activeSource)},
+        {u"previousPreset"_q, state.previousPreset},
+        {u"previousSource"_q, Purple::PresetSourceName(state.previousSource)},
+        {u"focusActive"_q, state.focusActive},
+        {u"focusSeen"_q, state.focusSeen},
+        {u"schedulePaused"_q, state.schedulePaused},
+        {u"schedulePausedUntil"_q, QString::number(state.schedulePausedUntil)},
+        {u"scheduleTarget"_q, state.scheduleTarget},
+    }).toJson(QJsonDocument::Compact));
+    return ToJava(env, QString::fromUtf8(QJsonDocument(QJsonObject{
+        {u"refused"_q, false},
+        {u"account"_q, snapshot.account},
+        {u"context"_q, context},
+        {u"peeking"_q, !snapshot.resolved.normal && Purple::PeekLive(peek, now)},
+        {u"extended"_q, extended},
+        {u"seconds"_q, int(seconds)},
+        {u"left"_q, Purple::PeekLeftSeconds(peek, now)},
+        {u"deadline"_q, QString::number(peek.peekDeadlineUnix)},
+        {u"untilStopped"_q, Purple::PeekUntilStopped(peek)},
+        {u"ended"_q, Purple::PeekEndName(peek.peekEnded)},
+        {u"text"_q, changed ? QJsonValue(Purple::SerializeState(state)) : QJsonValue(QJsonValue::Null)},
+    }).toJson(QJsonDocument::Compact)));
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_org_telegram_messenger_purple_PurpleAccountPeekNative_withdrawNative(
+        JNIEnv *, jclass, jlong handle) {
+    auto &gate = TheGate();
+    const auto lock = std::lock_guard(gate.mutex);
+    const auto found = gate.accountSettings.find(handle);
+    if (handle <= 0 || found == gate.accountSettings.end()) return JNI_FALSE;
+    const auto account = found->second.account;
+    for (auto &[id, snapshot] : gate.accountSettings) {
+        if (snapshot.account == account) snapshot.resolved.peeking = false;
+    }
+    return JNI_TRUE;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_telegram_messenger_purple_PurpleAccountPeekNative_normalizeNative(
+        JNIEnv *env, jclass, jbyteArray stateBytes, jobjectArray stoppedKeys, jboolean all,
+        jbyteArray localBytes, jstring globalText) {
+    auto text = QString(), local = QString();
+    if (!ReadUtf8(env, stateBytes, text) || !ReadUtf8(env, localBytes, local)) return nullptr;
+    const auto choice = Purple::ParseLocalChoice(local, u"local.toml"_q);
+    if (!choice.ok()) return nullptr;
+    const auto global = Purple::ParseAccountKey(FromJava(env, globalText));
+    if (global && choice.choice.globalAccount && !(*global == *choice.choice.globalAccount)) return nullptr;
+    const auto utf8 = text.toUtf8();
+    const auto parsed = toml::parse(std::string_view(utf8.constData(), utf8.size()));
+    if (!parsed) return nullptr;
+    auto stops = std::vector<QString>();
+    const auto count = stoppedKeys ? env->GetArrayLength(stoppedKeys) : 0;
+    if (count < 0 || count > 1024) return nullptr;
+    for (auto i = 0; i < count; ++i) {
+        const auto raw = static_cast<jstring>(env->GetObjectArrayElement(stoppedKeys, i));
+        if (!raw || env->ExceptionCheck()) return nullptr;
+        const auto key = FromJava(env, raw);
+        env->DeleteLocalRef(raw);
+        if (!Purple::ParseAccountKey(key)) return nullptr;
+        stops.push_back(key);
+    }
+    auto state = Purple::ParseState(text, u"state.toml"_q);
+    state.peekActive = false;
+    state.peekDeadlineUnix = 0;
+    state.peekEnded = Purple::PeekEnd::None;
+    const auto now = NowUnix();
+    for (auto &[account, stored] : state.accountPeeks) {
+        const auto key = Purple::ParseAccountKey(account);
+        const auto stock = global && key
+            && Purple::AccountWorkModeFor(choice.choice, *key, *global) == Purple::AccountWorkMode::Stock;
+        if (stored.active && (all == JNI_TRUE || stock || std::find(stops.begin(), stops.end(), account) != stops.end()
+            || (stored.deadlineUnix > 0 && stored.deadlineUnix <= now))) {
+            stored.active = false;
+            stored.deadlineUnix = 0;
+            stored.ended = Purple::PeekEnd::None;
+        }
+    }
+    return ToJava(env, Purple::SerializeState(state));
 }

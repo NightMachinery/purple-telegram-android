@@ -91,9 +91,13 @@ public final class PurplePeekLocalSettings {
             return true;
         } catch (RuntimeException e) { FileLog.e(e); return false; }
     }
-    static synchronized String readStreak() { return preferences().getString("streak", ""); }
-    static synchronized boolean storeStreak(String value) {
-        try { return preferences().edit().putString("streak", value).commit(); }
+    static synchronized String readStreak(String key) {
+        if (key == null || !key.matches("[01]-[1-9][0-9]*")) throw new IllegalArgumentException("invalid account key");
+        return preferences().getString("streak." + key, "");
+    }
+    static synchronized boolean storeStreak(String key, String value) {
+        if (key == null || !key.matches("[01]-[1-9][0-9]*")) return false;
+        try { return preferences().edit().putString("streak." + key, value).commit(); }
         catch (RuntimeException e) { FileLog.e(e); return false; }
     }
     private PurplePeekLocalSettings() { }

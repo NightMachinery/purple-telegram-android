@@ -73,9 +73,9 @@ public final class PeekEscalationCases {
         check(PurplePeekStreak.delay(2,PurpleGate.state()).extra==20,"Work Mode abort does not count");
         PurplePeekControls.end(f);
         check(!PurpleGate.peeking(),"end is instant");
-        String persisted=(String)((org.telegram.ui.PeekPreferences)ApplicationLoader.applicationContext.getSharedPreferences("purple_peek_local",0)).values.get("streak");
+        String persisted=(String)((org.telegram.ui.PeekPreferences)ApplicationLoader.applicationContext.getSharedPreferences("purple_peek_local",0)).values.get("streak.0-101");
         check(PurplePeekStreakModel.decode(persisted).count==2&&!PurplePeekStreakModel.decode(persisted).active,"durable streak records successful activations and END");
-        Field saved=PurplePeekStreak.class.getDeclaredField("state");saved.setAccessible(true);saved.set(null,null);
+        PersistenceProbe.clearStreakCache();
         check(PurplePeekStreak.delay(2,PurpleGate.state()).extra==20,"same-login restart restores successful streak");
         PurpleState.fail=true;
         PurplePeekControls.start(f,60);finish(22000);

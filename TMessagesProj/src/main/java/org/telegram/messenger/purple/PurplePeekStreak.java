@@ -4,22 +4,36 @@ import android.os.SystemClock;
 import android.provider.Settings;
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.FileLog;
+import org.telegram.messenger.UserConfig;
+import java.util.HashMap;
 
 public final class PurplePeekStreak {
-    private static PurplePeekStreakModel state;
-    private static boolean failed;
+    private static final HashMap<String, Entry> entries = new HashMap<>();
     private static String boot;
+    private static final class Entry {
+        final PurpleAccountFiles.Identity identity;
+        PurplePeekStreakModel state;
+        boolean failed;
+        Entry(PurpleAccountFiles.Identity identity) { this.identity = identity; }
+    }
     public static final class Delay {
         public final int base, extra, seconds, resetMinutes;
+        private final Entry entry;
         private final long revision;
         private final PurplePeekLocalSettings.Snapshot policy;
-        private Delay(int base, PurplePeekLocalSettings.Snapshot policy) {
-            this.base = Math.max(0, base); this.policy = policy;
-            extra = state.extra(policy.escalation, policy.step, policy.maxExtra);
+        private Delay(Entry entry, int base, PurplePeekLocalSettings.Snapshot policy) {
+            this.entry = entry; this.base = Math.max(0, base); this.policy = policy;
+            extra = entry.state.extra(policy.escalation, policy.step, policy.maxExtra);
             seconds = (int) Math.min(Integer.MAX_VALUE, (long) this.base + extra);
-            resetMinutes = policy.resetMinutes; revision = state.revision;
+            resetMinutes = policy.resetMinutes; revision = entry.state.revision;
         }
-        public boolean current() { return !failed && policy.current() && state != null && state.revision == revision; }
+        public boolean current() {
+            synchronized (PurplePeekStreak.class) {
+                if (entries.get(entry.identity.key) != entry || entry.failed || !policy.current()
+                        || entry.state == null || entry.state.revision != revision) return false;
+            }
+            return entry.identity.current();
+        }
     }
     private static String boot() {
         if (boot != null) return boot;
@@ -36,73 +50,87 @@ public final class PurplePeekStreak {
     private static long milliseconds(long seconds) {
         return seconds <= 0 ? 0 : seconds > Long.MAX_VALUE / 1000L ? Long.MAX_VALUE : seconds * 1000L;
     }
-    private static boolean load() {
-        if (failed) return false;
-        if (state == null) {
-            try {
-                String stored = PurplePeekLocalSettings.readStreak();
-                state = PurplePeekStreakModel.decode(stored);
-                if (stored.isEmpty() && !PurplePeekLocalSettings.storeStreak(state.encode())) failed = true;
-            }
-            catch (RuntimeException e) { FileLog.e(e); failed = true; }
+    private static Entry load(int account) {
+        PurpleAccountFiles.Identity identity = PurpleAccountFiles.capture(account);
+        if (identity == null) return null;
+        entries.entrySet().removeIf(value -> value.getValue().identity.slot == identity.slot
+                && (!value.getKey().equals(identity.key) || value.getValue().identity.lifetime != identity.lifetime));
+        Entry entry = entries.get(identity.key);
+        if (entry == null || entry.identity.lifetime != identity.lifetime) {
+            entry = new Entry(identity); entries.put(identity.key, entry);
         }
-        return !failed;
+        if (entry.failed) return null;
+        if (entry.state == null) {
+            try {
+                String stored = PurplePeekLocalSettings.readStreak(identity.key);
+                entry.state = PurplePeekStreakModel.decode(stored);
+                if (stored.isEmpty() && !PurplePeekLocalSettings.storeStreak(identity.key, entry.state.encode())) entry.failed = true;
+            } catch (RuntimeException e) { FileLog.e(e); entry.failed = true; }
+        }
+        return entry.failed ? null : entry;
     }
-    private static void save(String previous) {
-        if (!state.encode().equals(previous) && !PurplePeekLocalSettings.storeStreak(state.encode())) failed = true;
+    private static void save(Entry entry, String previous) {
+        if (!entry.state.encode().equals(previous)
+                && !PurplePeekLocalSettings.storeStreak(entry.identity.key, entry.state.encode())) entry.failed = true;
     }
-    public static synchronized void observe(PurpleCore.Loaded loaded) {
-        if (loaded == null || !load()) return;
-        String previous = state.encode();
-        state.observe(loaded.clock.peeking, milliseconds(loaded.clock.peekDeadline),
+    public static void observe(PurpleCore.Loaded loaded) { observe(UserConfig.selectedAccount, loaded); }
+    public static synchronized void observe(int account, PurpleCore.Loaded loaded) {
+        if (loaded == null) return;
+        Entry entry = load(account);
+        if (entry == null) return;
+        String previous = entry.state.encode();
+        entry.state.observe(loaded.clock.peeking, milliseconds(loaded.clock.peekDeadline),
                 SystemClock.elapsedRealtime(), System.currentTimeMillis(), boot());
-        save(previous);
+        save(entry, previous);
     }
-    public static synchronized Delay delay(int base, PurpleCore.Loaded loaded) {
-        observe(loaded);
-        if (!load()) return null;
+    public static Delay delay(int base, PurpleCore.Loaded loaded) { return delay(UserConfig.selectedAccount, base, loaded); }
+    public static synchronized Delay delay(int account, int base, PurpleCore.Loaded loaded) {
+        observe(account, loaded);
+        Entry entry = load(account);
+        if (entry == null) return null;
         PurplePeekLocalSettings.Snapshot policy = PurplePeekLocalSettings.snapshot();
-        String previous = state.encode();
-        state.reset(SystemClock.elapsedRealtime(), System.currentTimeMillis(), boot(), policy.resetMinutes);
-        save(previous);
-        return failed || policy.revision == Long.MAX_VALUE ? null : new Delay(base, policy);
+        String previous = entry.state.encode();
+        entry.state.reset(SystemClock.elapsedRealtime(), System.currentTimeMillis(), boot(), policy.resetMinutes);
+        save(entry, previous);
+        return entry.failed || policy.revision == Long.MAX_VALUE ? null : new Delay(entry, base, policy);
     }
     private static final class Reservation {
+        final Entry entry;
         final String previous, reserved;
         final long revision;
-        Reservation(String previous, String reserved, long revision) {
-            this.previous = previous; this.reserved = reserved; this.revision = revision;
+        Reservation(Entry entry, String previous, String reserved, long revision) {
+            this.entry = entry; this.previous = previous; this.reserved = reserved; this.revision = revision;
         }
     }
-    private static synchronized Reservation reserve(PurpleCore.PeekChange preview) {
-        if (!load()) return null;
-        String previous = state.encode();
+    private static synchronized Reservation reserve(int account, PurpleAccountPeek.Result preview) {
+        Entry entry = load(account);
+        if (entry == null) return null;
+        String previous = entry.state.encode();
         long wall = System.currentTimeMillis();
-        state.started(preview.left <= 0 ? 0 : wall + preview.left * 1000L, SystemClock.elapsedRealtime(), wall, boot());
-        if (!PurplePeekLocalSettings.storeStreak(state.encode())) { failed = true; return null; }
-        return new Reservation(previous, state.encode(), state.revision);
+        entry.state.started(preview.left <= 0 ? 0 : wall + preview.left * 1000L, SystemClock.elapsedRealtime(), wall, boot());
+        if (!PurplePeekLocalSettings.storeStreak(entry.identity.key, entry.state.encode())) { entry.failed = true; return null; }
+        return new Reservation(entry, previous, entry.state.encode(), entry.state.revision);
     }
     private static synchronized void refund(Reservation reservation) {
-        if (state == null || state.revision != reservation.revision || !state.encode().equals(reservation.reserved)) return;
+        Entry entry = reservation.entry;
+        if (entries.get(entry.identity.key) != entry || entry.state.revision != reservation.revision
+                || !entry.state.encode().equals(reservation.reserved)) return;
         PurplePeekStreakModel restored = PurplePeekStreakModel.decode(reservation.previous);
-        restored.revision = state.revision + 1; state = restored;
-        if (!PurplePeekLocalSettings.storeStreak(state.encode())) failed = true;
+        restored.revision = entry.state.revision + 1; entry.state = restored;
+        if (!PurplePeekLocalSettings.storeStreak(entry.identity.key, entry.state.encode())) entry.failed = true;
     }
     public static PurpleCore.PeekChange activatePeek(int seconds, PurpleGate.PeekSettings settings, boolean extension) {
-        if (!PurpleGate.currentPeekSettings(settings)) return null;
-        byte[] before = PurpleState.read();
-        PurpleCore.PeekChange preview = extension ? PurpleCore.extendPeek(before, seconds) : PurpleCore.startPeek(before, seconds);
-        if (preview == null || preview.refused) return null;
+        if (!PurpleGate.currentPeekSettings(settings) || settings.session == null) return null;
+        PurpleAccountPeek.Result preview = settings.session.preview(settings.clock, seconds, extension);
+        if (preview == null) return null;
         if (extension && !preview.extended) return PurpleGate.extendPeek(seconds, settings);
-        if (!preview.peeking) return null;
-        Reservation reservation = reserve(preview);
+        if (!preview.clock.peeking) return null;
+        Reservation reservation = reserve(settings.account, preview);
         if (reservation == null) return null;
-        if (!PurpleGate.currentPeekSettings(settings) || !java.util.Arrays.equals(before, PurpleState.read())) {
-            refund(reservation); return null;
-        }
+        if (!PurpleGate.currentPeekSettings(settings)) { refund(reservation); return null; }
         PurpleCore.PeekChange result = extension ? PurpleGate.extendPeek(seconds, settings) : PurpleGate.startPeek(seconds, settings);
         if ((result == null || result.refused || !result.peeking || extension && !result.extended)
-                && java.util.Arrays.equals(before, PurpleState.read())) refund(reservation);
+                && settings.session.matches(settings.clock)) refund(reservation);
         return result;
     }
     private PurplePeekStreak() { }

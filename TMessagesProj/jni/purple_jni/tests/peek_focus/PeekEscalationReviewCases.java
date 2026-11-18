@@ -11,7 +11,7 @@ public final class PeekEscalationReviewCases {
     static void check(boolean value,String message){++checks;if(!value)throw new AssertionError(message);}
     static void restart(PersistenceProbe.App app)throws Exception {
         app.durable.values.clear();app.durable.values.putAll(app.durable.disk);app.durable.loseCounter=false;
-        PersistenceProbe.set(PurplePeekStreak.class,"state",null);PersistenceProbe.set(PurplePeekStreak.class,"failed",false);
+        PersistenceProbe.clearStreakCache();
         PersistenceProbe.set(PurplePeekStreak.class,"boot",null);PersistenceProbe.set(PurplePeekLocalSettings.class,"current",null);
     }
     public static void main(String[] args)throws Exception {
@@ -29,11 +29,18 @@ public final class PeekEscalationReviewCases {
             check(!m.reset(3600999,1,"newBoot",60)&&m.reset(3601000,1,"newBoot",60),"converted anchor uses monotonic exact boundary despite wall changes");
         } else {
             BaseFragment f=PersistenceProbe.setup();PersistenceProbe.App app=new PersistenceProbe.App();ApplicationLoader.applicationContext=app;
-            PersistenceProbe.set(PurplePeekLocalSettings.class,"current",null);PersistenceProbe.set(PurplePeekStreak.class,"state",null);
+            PersistenceProbe.set(PurplePeekLocalSettings.class,"current",null);PersistenceProbe.clearStreakCache();
             if(args[0].equals("expired-no-op")) {
-                PurpleGate.startPeek(60,PurpleGate.peekSettings());
-                PurpleState.bytes="active_preset=\"work\"\npeek_active=true\npeek_deadline_unix=1\n".getBytes(java.nio.charset.StandardCharsets.UTF_8);
-                PurplePeekControls.extend(f,60);SystemClock.now=2000;PersistenceProbe.complete();
+                PurpleGate.startPeek(2,PurpleGate.peekSettings());
+                PurplePeekControls.extend(f,60);
+                Field pending=PurplePeekControls.class.getDeclaredField("pending");pending.setAccessible(true);
+                Object attempt=pending.get(null);
+                check(attempt!=null,"extension opens while the account is still peeking");
+                long expires=PurpleGate.state().clock.peekDeadline;
+                long bounded=System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+                while (System.currentTimeMillis()/1000L<expires && System.nanoTime()<bounded) Thread.sleep(15);
+                check(System.currentTimeMillis()/1000L>=expires,"actual native clock reached the saved deadline");
+                SystemClock.now=2500;PurplePeekForeground.beforeUse();PeekFocusCases.complete(attempt);
                 check(!PurpleGate.peeking(),"expired no-op extension retains the existing End Peek behavior");
                 check(PurplePeekStreak.delay(2,PurpleGate.state()).extra==0,"expired no-op never reserves an increment");
             } else if(args[0].equals("extension-failure")) {
@@ -47,7 +54,7 @@ public final class PeekEscalationReviewCases {
                 PurpleGate.crashBeforeWrite=args[0].equals("crash-before");PurpleGate.crashAfterWrite=!PurpleGate.crashBeforeWrite;
                 boolean crashed=false;try{PersistenceProbe.complete();}catch(InvocationTargetException e){crashed=e.getCause() instanceof AssertionError;}
                 check(crashed,"exact state boundary process-death cut reached");
-                check(PurplePeekStreakModel.decode((String)app.durable.disk.get("streak")).count==1,"increment durable before either crash cut");
+                check(PurplePeekStreakModel.decode((String)app.durable.disk.get("streak.0-101")).count==1,"increment durable before either crash cut");
                 PurpleGate.crashBeforeWrite=PurpleGate.crashAfterWrite=false;restart(app);PurpleGate.reload("process restart");
                 check(PurplePeekStreak.delay(2,PurpleGate.state()).extra==10,"restart never under-counts a reserved activation");
             }

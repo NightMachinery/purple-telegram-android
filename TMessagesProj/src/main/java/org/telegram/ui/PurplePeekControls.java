@@ -55,7 +55,16 @@ import java.util.Arrays;
 
 public final class PurplePeekControls {
     private static final int END_PEEK = 0x70750009;
-    private static final ArrayList<WeakReference<ActionBarMenuItem>> endButtons = new ArrayList<>();
+    private static final ArrayList<EndButton> endButtons = new ArrayList<>();
+    private static final class EndButton {
+        final WeakReference<ActionBarMenuItem> item;
+        final int account;
+        final PurpleAccountFiles.Identity identity;
+        EndButton(ActionBarMenuItem item, int account) {
+            this.item = new WeakReference<>(item); this.account = account;
+            identity = PurpleAccountFiles.capture(account);
+        }
+    }
     private static WeakReference<ChatActivity> currentChat = new WeakReference<>(null);
     private static Pending pending;
     private static boolean observingLifecycle;
@@ -65,6 +74,7 @@ public final class PurplePeekControls {
         READY_TIMEOUT("ready_timeout_edit"), PRESET("preset_change"), MODE("mode_change"), SOURCE("source_change"), LOCAL_POLICY("peek_focus_policy"), LOCAL_OPTION("peek_wait_option"), PEEK_EXIT("peek_exit_option");
         final String code;
         Action(String code) { this.code = code; }
+        boolean peek() { return this == START || this == EXTEND; }
         boolean workMode() { return this == PRESET || this == MODE || this == SOURCE; }
         boolean local() { return this == LOCAL_POLICY || this == LOCAL_OPTION; }
         boolean workModeTitle() { return workMode() || local() || this == PEEK_EXIT; }
@@ -72,20 +82,30 @@ public final class PurplePeekControls {
 
     private PurplePeekControls() { }
 
-    public static void addEndButton(ActionBarMenu menu) {
+    public static void addEndButton(ActionBarMenu menu) { addEndButton(menu, UserConfig.selectedAccount); }
+
+    public static void addEndButton(ActionBarMenu menu, int account) {
         ActionBarMenuItem item = menu.addItem(END_PEEK, getString(R.string.PurpleEndPeek));
         item.setContentDescription(getString(R.string.PurpleEndPeek));
-        item.setOnClickListener(view -> request(null, Action.END, 0, null, null));
-        endButtons.add(new WeakReference<>(item));
+        EndButton bound = new EndButton(item, account);
+        item.setOnClickListener(view -> {
+            if (bound.identity != null && bound.identity.current() && PurpleGate.peeking(account)) PurpleGate.stopPeek(account);
+            updateEndButtons();
+        });
+        endButtons.add(bound);
         updateEndButtons();
     }
 
     private static void updateEndButtons() {
-        boolean visible = pending == null && PurpleGate.peeking();
         for (int i = endButtons.size() - 1; i >= 0; i--) {
-            ActionBarMenuItem item = endButtons.get(i).get();
+            EndButton bound = endButtons.get(i);
+            ActionBarMenuItem item = bound.item.get();
             if (item == null) endButtons.remove(i);
-            else item.setVisibility(visible ? View.VISIBLE : View.GONE);
+            else {
+                boolean visible = (pending == null || pending.account != bound.account)
+                        && bound.identity != null && bound.identity.current() && PurpleGate.peeking(bound.account);
+                item.setVisibility(visible ? View.VISIBLE : View.GONE);
+            }
         }
     }
 
@@ -95,7 +115,7 @@ public final class PurplePeekControls {
 
     public static void toggle(BaseFragment fragment, int seconds) {
         if (pending != null) cancel();
-        else if (PurpleGate.peeking()) end(fragment);
+        else if (PurpleGate.peeking(fragment == null ? UserConfig.selectedAccount : fragment.getCurrentAccount())) end(fragment);
         else start(fragment, seconds);
     }
 
@@ -161,9 +181,10 @@ public final class PurplePeekControls {
 
     private static void request(BaseFragment fragment, Action action, int value, String target,
             PurpleGate.PeekSettings opening) {
+        final int account = fragment == null ? UserConfig.selectedAccount : fragment.getCurrentAccount();
         if (pending != null) {
             cancel();
-            PurpleGate.PeekSettings current = PurpleGate.peekSettings();
+            PurpleGate.PeekSettings current = PurpleGate.peekSettings(account);
             boolean tightening = action == Action.END || action == Action.LOCAL_POLICY && value == 1
                     || action == Action.LOCAL_OPTION && value >= PurplePeekLocalSettings.snapshot().value(target)
                     || action == Action.PEEK_EXIT && value == 1
@@ -172,10 +193,10 @@ public final class PurplePeekControls {
             if (!tightening) return;
         }
         if (action == Action.END) {
-            if (PurpleGate.peeking()) {
+            if (PurpleGate.peeking(account)) {
                 PurpleDiagLog.event("wait", "instant", PurpleDiagLog.slot(fragment == null
                         ? UserConfig.selectedAccount : fragment.getCurrentAccount()), PurpleDiagLog.code("action", action.code));
-                PurpleGate.stopPeek();
+                PurpleGate.stopPeek(account);
                 updateEndButtons();
             }
             return;
@@ -183,7 +204,7 @@ public final class PurplePeekControls {
         Activity activity = fragment == null ? null : fragment.getParentActivity();
         if (activity == null || activity.isFinishing() || activity.isDestroyed()
                 || fragment.isFinished || fragment.isPaused() || locked(activity)) return;
-        PurpleGate.PeekSettings settings = PurpleGate.peekSettings();
+        PurpleGate.PeekSettings settings = PurpleGate.peekSettings(account);
         observe(activity);
         Pending operation = new Pending(fragment, action, value, target, settings);
         if (action.local()) {
@@ -193,7 +214,7 @@ public final class PurplePeekControls {
                 return;
             }
             if (operation.noOp()) { operation.dismiss(); return; }
-            operation.delay = settings == null ? null : PurplePeekStreak.delay(settings.state.clock.peekStartDelay, settings.state);
+            operation.delay = settings == null ? null : PurplePeekStreak.delay(account, settings.state.clock.peekStartDelay, settings.state);
             if (operation.waits() && operation.delay == null) {
                 operation.dismiss(); PurpleWriterUI.explain(fragment, "session_failed", null); return;
             }
@@ -204,6 +225,15 @@ public final class PurplePeekControls {
             updateEndButtons();
             operation.show();
             return;
+        }
+        if (action.peek()) {
+            if (!operation.prepare()) { operation.dismiss(); PurpleWriterUI.explain(fragment, "session_stale", null); return; }
+            operation.delay = PurplePeekStreak.delay(account, settings.state.clock.peekStartDelay, settings.state);
+            if (operation.delay == null) { operation.dismiss(); PurpleWriterUI.explain(fragment, "session_failed", null); return; }
+            operation.gate = new PurpleWaitGate(SystemClock.elapsedRealtime(), operation.delay.seconds, settings.state.clock.peekReadyTimeout);
+            pending = operation;
+            operation.log(operation.delay.seconds == 0 ? "instant" : "waiting", null);
+            updateEndButtons(); operation.show(); return;
         }
         PurpleWriter.Capture capture = operation.capture();
         if (capture.session == null) {
@@ -231,7 +261,7 @@ public final class PurplePeekControls {
             operation.dismiss();
             return;
         }
-        operation.delay = PurplePeekStreak.delay(settings.state.clock.peekStartDelay, settings.state);
+        operation.delay = PurplePeekStreak.delay(account, settings.state.clock.peekStartDelay, settings.state);
         if (operation.waits() && operation.delay == null) {
             operation.dismiss(); PurpleWriterUI.explain(fragment, "session_failed", null); return;
         }
@@ -299,16 +329,20 @@ public final class PurplePeekControls {
     }
 
     public static void onGateReload(PurpleCore.Loaded previous, PurpleCore.Loaded next) {
-        PurplePeekStreak.observe(next);
         if (pending != null && !pending.valid()) cancel();
         updateEndButtons();
+    }
+
+    public static void onAccountGateReload(int account, PurpleCore.Loaded previous, PurpleCore.Loaded next) {
+        PurplePeekStreak.observe(account, next);
+        if (pending != null && pending.account == account && !pending.valid()) cancel();
+        updateEndButtons();
         if (previous == null || !previous.clock.peeking || next.clock.peeking) return;
-        PurpleCore.Loaded restored = PurpleGate.state();
+        PurpleCore.Loaded restored = PurpleGate.state(account);
         ChatActivity chat = currentChat.get();
         if (restored == null || restored.normal || restored.clock.peeking || !restored.clock.peekExitHiddenChats
                 || chat == null || chat.isFinished || chat.getParentActivity() == null
-                || chat.getCurrentAccount() != UserConfig.selectedAccount) return;
-        int account = chat.getCurrentAccount();
+                || restored != next || chat.getCurrentAccount() != account) return;
         long dialogId = chat.getDialogId();
         TLRPC.Dialog dialog = MessagesController.getInstance(account).dialogs_dict.get(dialogId);
         if (dialog == null || PurpleGate.shownWithoutRecent(account, dialog)) return;
@@ -376,10 +410,11 @@ public final class PurplePeekControls {
                     && (action == Action.LOCAL_POLICY ? value == 1 || PurplePeekForeground.canDisable()
                         && settings != null && PurpleGate.currentPeekSettings(settings)
                         : local.accepts(target, value) && settings != null && PurpleGate.currentPeekSettings(settings));
-            if (!writer.current() || !PurpleGate.currentPeekSettings(settings)) return false;
-            if (action == Action.START || action == Action.EXTEND) {
-                return value >= 0 && !settings.state.normal && (action != Action.EXTEND || settings.state.clock.peeking);
+            if (!PurpleGate.currentPeekSettings(settings)) return false;
+            if (action.peek()) {
+                return settings.session != null && value >= 0 && !settings.state.normal && (action != Action.EXTEND || settings.state.clock.peeking);
             }
+            if (writer == null || !writer.current()) return false;
             if (action == Action.DELAY || action == Action.PEEK_EXIT || action == Action.READY_TIMEOUT) return value >= (action == Action.READY_TIMEOUT ? 10 : 0) && PurpleGate.currentPeekEditSettings(settings);
             if (action == Action.MODE) return value >= 0 && value <= 2;
             if (action == Action.PRESET) {
@@ -425,8 +460,8 @@ public final class PurplePeekControls {
                     || (action.local() ? selection != PurpleArchiveViewerModel.selectionGeneration()
                         || (action == Action.LOCAL_OPTION || value == 0) && (!PurpleGate.currentPeekSettings(settings)
                             || action == Action.LOCAL_POLICY && !PurplePeekForeground.canDisable())
-                        : writer == null || !writer.current() || !PurpleGate.currentPeekSettings(settings))
-                    || !Arrays.equals(stateBytes, PurpleState.read())
+                        : (!action.peek() && (writer == null || !writer.current())) || !PurpleGate.currentPeekSettings(settings))
+                    || !action.peek() && !Arrays.equals(stateBytes, PurpleState.read())
                     || choice != null && !choice.current()) return false;
             if (action.workMode()) return true;
             BaseFragment fragment = origin.get();
@@ -604,6 +639,20 @@ public final class PurplePeekControls {
                 updateEndButtons();
                 return;
             }
+            if (action.peek()) {
+                if (gate.complete(SystemClock.elapsedRealtime(), valid(), true, false, true) != PurpleWaitGate.Outcome.READY) { cancel(); return; }
+                pending = null; closeDialog();
+                PurpleCore.PeekChange result = PurplePeekStreak.activatePeek(value, settings, action == Action.EXTEND);
+                boolean success = result != null && !result.refused && result.peeking;
+                if (success && action == Action.EXTEND && !result.extended) {
+                    PurpleGate.stopPeek(account);
+                    Toast.makeText(activity.get(), getString(settings.state.clock.peekUntilStopped
+                            ? R.string.PurplePeekOver : R.string.PurplePeekOverCapped), Toast.LENGTH_SHORT).show();
+                }
+                log(success ? "applied" : "apply_failed", success ? null : "session_failed");
+                if (!success) PurpleWriterUI.explain(origin.get(), "session_stale", null);
+                dismiss(); updateEndButtons(); return;
+            }
             PurpleWriter.Capture fresh = capture();
             PurpleWaitGate.Outcome decision = gate.complete(SystemClock.elapsedRealtime(), valid(), true, false,
                     fresh.session != null);
@@ -637,17 +686,6 @@ public final class PurplePeekControls {
                     PurpleGlobalAccountChoice.Outcome result = choice.apply();
                     error = result.ok ? null : "session_stale";
                     sourceSaved = result.changed;
-                } else if (action == Action.EXTEND) {
-                    PurpleCore.PeekChange result = PurplePeekStreak.activatePeek(value, settings, true);
-                    if (result == null || result.refused) error = "session_stale";
-                    else if (!result.extended) {
-                        PurpleGate.stopPeek();
-                        Toast.makeText(activity.get(), getString(settings.state.clock.peekUntilStopped
-                                ? R.string.PurplePeekOver : R.string.PurplePeekOverCapped), Toast.LENGTH_SHORT).show();
-                    }
-                } else {
-                    PurpleCore.PeekChange result = PurplePeekStreak.activatePeek(value, settings, false);
-                    if (result == null || result.refused || !result.peeking) error = "session_stale";
                 }
                 log(error == null ? "applied" : "apply_failed", error == null ? null : "session_failed");
                 if (error != null) {

@@ -38,6 +38,18 @@ public final class PurpleState {
     private PurpleState() {
     }
 
+    public static synchronized boolean compareAndWrite(byte[] expected, byte[] utf8) {
+        return expected != null && replaceIfUnchanged(expected, utf8);
+    }
+
+    public static synchronized boolean replaceIfUnchanged(byte[] expected, byte[] utf8) {
+        if (utf8 == null || utf8.length > MAX_SIZE) return false;
+        PurpleAccountFileSnapshot snapshot = PurpleAccountFileSnapshot.read(stateFile(), (int) MAX_SIZE);
+        return snapshot.status != PurpleAccountFileSnapshot.Status.ReadError
+                && java.util.Arrays.equals(expected, snapshot.bytes)
+                && PurpleAccountFileSnapshot.replace(stateFile(), snapshot, utf8);
+    }
+
     /** Where the state lives, beside the settings the user imported. */
     public static File stateFile() {
         return new File(PurpleSettings.dir(), FILE_NAME);
@@ -48,7 +60,7 @@ public final class PurpleState {
      *
      * @return its bytes, or null when the file is absent, too big, or unreadable
      */
-    public static byte[] read() {
+    public static synchronized byte[] read() {
         final File file = stateFile();
         if (!file.exists() || file.length() > MAX_SIZE) {
             return null;
@@ -70,7 +82,7 @@ public final class PurpleState {
      *
      * @return whether the file now holds those bytes
      */
-    public static boolean write(byte[] utf8) {
+    public static synchronized boolean write(byte[] utf8) {
         if (utf8 == null) {
             return false;
         }

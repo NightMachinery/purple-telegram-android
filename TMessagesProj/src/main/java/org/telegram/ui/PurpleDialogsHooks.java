@@ -64,7 +64,7 @@ public final class PurpleDialogsHooks {
     }
 
     public void addEndPeek(org.telegram.ui.ActionBar.ActionBarMenu menu) {
-        PurplePeekControls.addEndButton(menu);
+        PurplePeekControls.addEndButton(menu, fragment.getCurrentAccount());
     }
 
     public void addSelectionItem(ActionBarMenuItem otherItem) {

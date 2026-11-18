@@ -14,7 +14,8 @@ args.output.mkdir(parents=True)
 paths = ["org/telegram/ui/PurplePeekControls.java"]
 paths += ["org/telegram/messenger/purple/" + name + ".java" for name in [
     "PurpleGate", "PurpleCore", "PurpleWriter", "PurpleGlobalAccountChoice", "PurpleAppWideRemoval",
-    "PurplePeekForeground", "PurplePeekLocalSettings", "PurplePeekStreak"]]
+    "PurplePeekForeground", "PurplePeekLocalSettings", "PurplePeekStreak",
+    "PurpleAccountPeek", "PurpleAccountPeekNative"]]
 probes = {
     "baseline": None,
     "direct-local-disable": 'package org.telegram.ui; final class Probe { void click(android.content.Context c) { c.getSharedPreferences("purple_peek_local",0).edit().putBoolean("end_on_focus_loss",false).commit(); } }',
@@ -31,6 +32,12 @@ probes = {
         "org.telegram.messenger.purple.PurpleGate.setPreset(null); } }",
 }
 probes["activation-bypass"] = 'package org.telegram.ui; final class Probe { void click() { org.telegram.messenger.purple.PurplePeekStreak.activatePeek(60,null,false); } }'
+probes["native-peek-bypass"] = (
+    'package org.telegram.ui; final class Probe { void click() { '
+    'org.telegram.messenger.purple.PurpleAccountPeekNative.changeNative(null,0,1,60); } }')
+probes["withdrawn-peek-bypass"] = (
+    'package org.telegram.ui; final class Probe { void click() { '
+    'org.telegram.messenger.purple.PurpleAccountPeek.stopWithdrawn(null); } }')
 for option in ["escalation", "step", "max_extra", "reset_minutes"]:
     probes["option-" + option] = 'package org.telegram.ui; final class Probe { void click(org.telegram.messenger.purple.PurplePeekLocalSettings.Snapshot s) { org.telegram.messenger.purple.PurplePeekLocalSettings.commitWaitPolicy(s,"' + option + '",0); } }'
 for writer in ["setPeekStartDelay", "setPeekReadyTimeout", "setPeekExitHidden"]:

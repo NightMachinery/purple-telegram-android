@@ -32,12 +32,16 @@ public final class PeekFocusCases {
         if (enabled) { app.prefs.values.put("end_on_focus_loss", true); app.prefs.values.put("revision", 3L); }
         activity = new Activity(app);
         fragment = new BaseFragment(); fragment.activity = activity;
-        PurpleState.bytes = bytes("active_preset=\"work\"\npeek_active=" + active + "\npeek_deadline_unix=0\n");
+        PurpleState.bytes = bytes("active_preset=\"work\"\n[[account_peeks]]\naccount=\"0-101\"\nactive=" + active + "\ndeadline_unix=0\n");
         PurpleState.fail = fail;
         new ForegroundDetector(app);
         PurplePeekForeground.init(app);
         app.start(activity);
         PurpleGate.reload("fixture startup");
+        if (fail) {
+            check(PurpleGate.loaded == null, "rejected startup cleanup publishes no revealing state");
+            return;
+        }
         check(PurpleGate.loaded.ok && PurpleGate.loaded.preset.equals("work") && !PurpleGate.loaded.normal, "real native resolution preserves the Work Mode preset");
         check(PurpleGate.loaded.clock.peekStartDelay == 2, "real core resolves the fixture delay");
     }
@@ -98,7 +102,7 @@ public final class PeekFocusCases {
         setup(true, false, false); active(); app.stop(activity);
         Runnable old = AndroidUtilities.delayed.keySet().iterator().next();
         now(1500); long future = System.currentTimeMillis() / 1000 + 300;
-        PurpleState.bytes = bytes("active_preset=\"work\"\npeek_active=true\npeek_deadline_unix=" + future + "\n");
+        PurpleState.bytes = bytes("active_preset=\"work\"\n[[account_peeks]]\naccount=\"0-101\"\nactive=true\ndeadline_unix=" + future + "\n");
         PurpleGate.reload("external replacement");
         now(2000); old.run(); check(PurpleGate.peeking(), "a stale scheduled callback cannot end a replacement Peek");
         now(2500); PurpleGate.reload("unrelated update");
@@ -140,19 +144,19 @@ public final class PeekFocusCases {
     private static void startup() {
         setup(true, true, false);
         check(!PurpleGate.peeking(), "optionON process restart publishes Peek-off");
-        check(!PurpleCore.load(PurpleGate.settings, PurpleState.read(), "fixture", "android", "mobile").clock.peeking, "startup ending is durable");
+        check(!PurpleGate.persistedPeek(), "startup ending is durable");
     }
     private static void failedState() {
         setup(true, true, true);
         check(!PurpleGate.peeking(), "failed state write still suppresses effective Peek");
-        check(PurpleCore.load(PurpleGate.settings, PurpleState.read(), "fixture", "android", "mobile").clock.peeking, "the fixture confirms persisted bytes really remain stale");
+        check(PurpleGate.persistedPeek(), "the fixture confirms persisted bytes really remain stale");
         check(!PurplePeekForeground.canDisable(), "failed cleanup cannot be hidden by disabling the option");
         PurplePeekControls.changeFocusPolicy(fragment, false);
         check(!PurplePeekControls.isPending() && PurplePeekLocalSettings.snapshot().enabled, "disable refuses while cleanup is pending");
         check(Toast.shown == 1, "the foreground reports the durability failure once");
-        PurpleState.fail = false; app.stop(activity); app.start(activity);
+        PurpleState.fail = false; app.resume(activity);
         check(!PurpleGate.peeking() && PurplePeekForeground.canDisable(), "foreground retries cleanup without exposing persisted Peek");
-        check(!PurpleCore.load(PurpleGate.settings, PurpleState.read(), "fixture", "android", "mobile").clock.peeking, "retry clears persisted Peek");
+        check(!PurpleGate.persistedPeek(), "retry clears persisted Peek");
         check(PurpleGate.loaded.preset.equals("work"), "failure and retry preserve the active preset");
     }
     private static void toggles() throws Exception {
@@ -208,7 +212,11 @@ public final class PeekFocusCases {
         setup(true, false, false); disabling(); Object stale = pending(); int commits = app.prefs.commits;
         if (cut.equals("selection")) { PurpleArchiveViewerModel.selectionChanged(1); PurpleArchiveViewerModel.selectionChanged(0); }
         else if (cut.equals("logout")) PurpleAccountFiles.signedIn = false;
-        else if (cut.equals("settings")) PurpleGate.reload("delay source changed");
+        else if (cut.equals("settings")) {
+            PurpleGate.settings = new String(PurpleGate.settings, StandardCharsets.UTF_8)
+                    .replace("start_delay_seconds=2", "start_delay_seconds=3").getBytes(StandardCharsets.UTF_8);
+            PurpleGate.reload("delay source changed");
+        }
         else if (cut.equals("revision")) { PurplePeekLocalSettings.commitFocusPolicy(PurplePeekLocalSettings.snapshot(), false); commits = app.prefs.commits; }
         else if (cut.equals("view")) fragment.view.attached = false;
         else if (cut.equals("screen")) screenOff();

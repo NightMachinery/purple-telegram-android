@@ -227,9 +227,16 @@ public final class PurpleScreenTime {
      * which is exactly the use the "time in hidden chats" number cannot see, and
      * one started with the app in front can still be running when it goes away.
      */
+    static void accountPeekChanged() {
+        if (!isUiThread()) { AndroidUtilities.runOnUIThread(PurpleScreenTime::accountPeekChanged); return; }
+        if (started) checkPeek(PurpleGate.state());
+    }
+
     private static void checkPeek(PurpleCore.Loaded next) {
-        final boolean running = next.clock.peeking;
-        final long deadline = running ? next.clock.peekDeadline * 1000L : 0;
+        PurpleCore.Loaded scoped = PurpleWorkMode.project(org.telegram.messenger.UserConfig.selectedAccount, next);
+        final boolean running = scoped != null && scoped.clock.peeking;
+        final long seconds = running ? scoped.clock.peekDeadline : 0;
+        final long deadline = seconds > Long.MAX_VALUE / 1000L ? Long.MAX_VALUE : seconds * 1000L;
         if (running == peeking && deadline == peekDeadlineMs) {
             return;
         }

@@ -16,6 +16,8 @@ main=a.output/'PeekFocusMain.java';main.write_text('''import java.io.File;public
  "org.telegram.messenger.purple.PurplePeekFocusModel","org.telegram.messenger.purple.PurplePeekForeground",
  "org.telegram.messenger.purple.PurplePeekLocalSettings","org.telegram.messenger.purple.PurplePeekStreak",
  "org.telegram.messenger.purple.PurplePeekStreakModel","org.telegram.messenger.purple.PurpleCore",
+ "org.telegram.messenger.purple.PurpleAccountPeek","org.telegram.messenger.purple.PurpleWorkMode",
+ "org.telegram.messenger.purple.PurpleGateLoad",
  "org.telegram.ui.Components.ForegroundDetector","org.telegram.messenger.ScreenReceiver"}){
  Class<?> type=Class.forName(name,false,PeekFocusMain.class.getClassLoader());
  File actual=new File(type.getProtectionDomain().getCodeSource().getLocation().toURI()).getCanonicalFile();
@@ -50,13 +52,27 @@ run('reviewer-reboot',[compiler.with_name('java'),'-cp',str(classes)+os.pathsep+
 assert 'reset=true count=0' in(a.output/'reviewer-reboot.log').read_text()
 run('reviewer-early-end-reboot',[compiler.with_name('java'),'-cp',str(classes)+os.pathsep+classpath,'EarlyEndRebootProbe'])
 assert 'recordedEndWall=105000 resetAtActualENDplus1h=true count=0' in(a.output/'reviewer-early-end-reboot.log').read_text()
-actual=a.output/'actual-gate';actual.mkdir()
-run('actual-gate-javac',[compiler,'-source','8','-target','8','-proc:none','-sourcepath',empty,'-cp',str(classes)+os.pathsep+classpath,'-d',actual]+list((tests/'peek_focus/actual_gate').glob('*.java')))
-import shutil
-origin=production/'org/telegram/messenger/purple';dest=actual/'org/telegram/messenger/purple';dest.mkdir(parents=True,exist_ok=True)
-for file in origin.glob('PurpleGate*.class'):shutil.copyfile(file,dest/file.name)
-for cut in ['background','lock']:run('actual-gate-'+cut,[compiler.with_name('java'),'-Xcheck:jni','-Xmx512m','-Djava.library.path='+str(a.library.parent),'-cp',str(actual)+os.pathsep+str(classes)+os.pathsep+classpath,'ActualGateProbe',cut])
-for cut in ['background','lock']:run('actual-account-'+cut,[compiler.with_name('java'),'-Xcheck:jni','-Xmx512m','-Djava.library.path='+str(a.library.parent),'-cp',str(actual)+os.pathsep+str(classes)+os.pathsep+classpath,'org.telegram.messenger.purple.NativeAccountProbe',cut])
+actual = a.output / 'actual-gate'
+actual.mkdir()
+gate_ports = sorted((tests / 'peek_focus/actual_gate').glob('*.java'))
+overridden = {path.name for path in gate_ports}
+overridden.update(('PurpleGate.java', 'PurpleAccountFileSnapshot.java'))
+platform_ports = sorted(
+    path for path in (tests / 'peek_focus/ports').rglob('*.java')
+    if path.name not in overridden
+)
+run('actual-gate-javac', [compiler, '-source', '8', '-target', '8', '-proc:none',
+    '-sourcepath', empty, '-cp', classpath, '-d', actual, *platform_ports, *gate_ports])
+for name, entry_point in (
+        ('actual-account-background', 'AccountFocusRecoveryCases'),
+        ('actual-account-lock', 'AccountLockRecoveryCases'),
+        ('actual-account-end-button', 'AccountEndButtonCases')):
+    run(name, [
+        compiler.with_name('java'), '-Xcheck:jni', '-Xmx512m',
+        '-Djava.library.path=' + str(a.library.parent),
+        '-cp', str(actual) + os.pathsep + classpath,
+        'org.telegram.messenger.purple.' + entry_point, production,
+    ])
 root=tests.parents[3];java=root/'TMessagesProj/src/main/java'
 hooks={'org/telegram/messenger/ApplicationLoader.java':'PurplePeekForeground.init(this);','org/telegram/messenger/ScreenReceiver.java':'PurplePeekForeground.screenOff();','org/telegram/ui/ExternalActionActivity.java':'PurpleGate.locked();','org/telegram/ui/LaunchActivity.java':'PurpleGate.locked();'}
 for file,call in hooks.items():assert call in(java/file).read_text(),file
@@ -66,4 +82,4 @@ for name in ['purple_archive_backup.xml','purple_archive_transfer.xml']:
  tree=ET.parse(root/'TMessagesProj/src/main/res/xml'/name).getroot();sections=[tree]if name.endswith('backup.xml')else[tree.find('cloud-backup'),tree.find('device-transfer')]
  for section in sections:assert any(e.get('domain')=='sharedpref'and e.get('path')=='purple_peek_local.xml'for e in section.findall('exclude'))
 print('PEEK_FOCUS_HOOKS_AND_LOCAL_EXCLUSIONS=PASS')
-(a.output/'result.json').write_text(json.dumps({'exit':0,'scenarios':scenarios,'actualAGPBusinessOriginsVerified':True,'syntheticDependencies':['Android/UI','timer screen pulse','account routing and selection','settings snapshot','IO','clock','preferences'],'hookAndBackupSourceChecks':True},indent=2)+'\n')
+(a.output/'result.json').write_text(json.dumps({'exit':0,'scenarios':scenarios,'actualAGPBusinessOriginsVerified':True,'actualGateAccountCases':3,'syntheticDependencies':['Android/UI','timer screen pulse','account routing and selection','settings snapshot','IO','clock','preferences'],'hookAndBackupSourceChecks':True},indent=2)+'\n')

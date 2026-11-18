@@ -12,12 +12,28 @@ public final class PurpleWorkMode {
         final PurpleAccountFiles.Identity identity;
         final int mode;
         final long handle;
+        volatile PurpleCore.Clock clock;
+        private PurpleCore.Loaded source, projected;
+        private PurpleCore.Clock projectedClock;
         final LongSparseArray<Integer> modes = new LongSparseArray<>();
         final LongSparseArray<Integer> stories = new LongSparseArray<>();
         volatile ArrayList<MessagesController.DialogFilter> filters = new ArrayList<>();
         volatile boolean pinsIncomplete;
         View(PurpleAccountFiles.Identity identity, int mode, long handle) {
-            this.identity = identity; this.mode = mode; this.handle = handle;
+            this(identity, mode, handle, PurpleCore.Clock.NONE);
+        }
+        View(PurpleAccountFiles.Identity identity, int mode, long handle, PurpleCore.Clock clock) {
+            this.identity = identity; this.mode = mode; this.handle = handle; this.clock = clock;
+        }
+        synchronized PurpleCore.Loaded project(PurpleCore.Loaded loaded) {
+            if (loaded == null) return null;
+            PurpleCore.Clock current = clock;
+            if (source != loaded || projectedClock != current) {
+                projected = loaded.withAccountPeek(current, mode == 2);
+                source = loaded;
+                projectedClock = current;
+            }
+            return projected;
         }
     }
     private static final class Generation {
@@ -38,11 +54,29 @@ public final class PurpleWorkMode {
                 PurpleWorkModeModel.withdrawPeekNative();
                 for (View view : generation.views) {
                     if (view == null) continue;
+                    view.clock = view.clock.withoutPeek();
                     view.modes.clear(); view.stories.clear();
                 }
                 return null;
             });
         }
+    }
+    static boolean withdrawPeek(PurpleAccountFiles.Identity identity) {
+        synchronized (PurpleAccountFiles.class) {
+            if (identity == null || !identity.current()) return false;
+            return publication.read(generation -> {
+                View view = view(generation, identity.slot);
+                if (view == null || view.identity.lifetime != identity.lifetime || !view.identity.key.equals(identity.key)
+                        || view.handle <= 0 || !PurpleAccountPeekNative.withdrawNative(view.handle)) return false;
+                view.clock = view.clock.withoutPeek();
+                view.modes.clear(); view.stories.clear();
+                return true;
+            });
+        }
+    }
+    static PurpleCore.Loaded project(int account, PurpleCore.Loaded loaded) {
+        View view = view(account);
+        return view == null ? loaded == null ? null : loaded.withAccountPeek(PurpleCore.Clock.NONE, true) : view.project(loaded);
     }
     private static byte[] acceptedLocal;
     private static long acceptedLocalRole = -1;
@@ -55,10 +89,10 @@ public final class PurpleWorkMode {
     }
     public static int mode(int account) { View view = view(account); return view == null ? 2 : view.mode; }
     public static boolean stock(int account) { return mode(account) == 2; }
-    static void reload(byte[] acceptedGlobal, File globalFile, PurpleAccountFileSnapshot global, PurpleAccountFileSnapshot good) {
-        synchronized (PurpleAccountOwner.class) { reloadLocked(acceptedGlobal, globalFile, global, good); }
+    static boolean reload(byte[] acceptedGlobal, File globalFile, PurpleAccountFileSnapshot global, PurpleAccountFileSnapshot good) {
+        synchronized (PurpleAccountOwner.class) { return reloadLocked(acceptedGlobal, globalFile, global, good); }
     }
-    private static void reloadLocked(byte[] acceptedGlobal, File globalFile, PurpleAccountFileSnapshot global, PurpleAccountFileSnapshot good) {
+    private static boolean reloadLocked(byte[] acceptedGlobal, File globalFile, PurpleAccountFileSnapshot global, PurpleAccountFileSnapshot good) {
         View[] next = new View[UserConfig.MAX_ACCOUNT_COUNT];
         ArrayList<Long> created = new ArrayList<>();
         ArrayList<java.util.function.BooleanSupplier> checks = new ArrayList<>();
@@ -90,7 +124,10 @@ public final class PurpleWorkMode {
                         own.bytes, files.settings.getPath(), ownGood.bytes));
                 long handle = Long.parseLong(result.getString("handle"));
                 created.add(handle);
-                View added = new View(id, result.getInt("mode"), handle);
+                int mode = result.getInt("mode");
+                PurpleCore.Clock clock = mode == 2 ? PurpleCore.Clock.NONE
+                        : PurpleCore.Clock.fromJson(result.getJSONObject("peekClock"));
+                View added = new View(id, mode, handle, clock);
                 View old = view(id.slot);
                 if (old != null && old.identity.key.equals(id.key) && old.identity.lifetime == id.lifetime) added.filters = old.filters;
                 next[id.slot] = added;
@@ -104,12 +141,13 @@ public final class PurpleWorkMode {
             }
             if (published) {
                 acceptedLocal = localBytes; acceptedLocalRole = startedRole;
-                return;
+                return true;
             }
         } catch (Exception | UnsatisfiedLinkError e) { }
         long[] abandoned = new long[created.size()];
         for (int i = 0; i < abandoned.length; ++i) abandoned[i] = created.get(i);
         try { PurpleWorkModeModel.retireNative(abandoned); } catch (UnsatisfiedLinkError e) { }
+        return false;
     }
     public static int visible(int account, long peer, int kind) {
         synchronized (PurpleAccountFiles.class) {

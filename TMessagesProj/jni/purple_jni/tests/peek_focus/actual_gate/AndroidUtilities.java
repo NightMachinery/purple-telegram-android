@@ -1,0 +1,1 @@
+package org.telegram.messenger; public class AndroidUtilities {public static void runOnUIThread(Runnable r){} public static void runOnUIThread(Runnable r,long ms){} public static void cancelRunOnUIThread(Runnable r){} }

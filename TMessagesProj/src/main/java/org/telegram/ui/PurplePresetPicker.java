@@ -82,7 +82,7 @@ public final class PurplePresetPicker {
         // Settings may never have been read on this run - the picker can be the
         // first thing that asks, on an account whose chat list has not drawn yet.
         PurpleGate.ensureLoaded();
-        final PurpleCore.Loaded state = PurpleGate.state();
+        final PurpleCore.Loaded state = PurpleGate.state(fragment.getCurrentAccount());
         // A file with no presets has nothing to pick, unless a preset is still
         // running: the file dropped it, and the cached resolution keeps it in
         // force. That is when the box is needed most, for the Normal row that
@@ -281,7 +281,7 @@ public final class PurplePresetPicker {
         final Runnable tick = new Runnable() {
             @Override
             public void run() {
-                final PurpleCore.Loaded now = PurpleGate.state();
+                final PurpleCore.Loaded now = PurpleGate.state(fragment.getCurrentAccount());
                 final boolean peeking = now != null && now.clock.peeking;
                 // No divider under the checkbox any more, whatever follows it:
                 // the chips below are the same control, and a line drawn
@@ -319,7 +319,7 @@ public final class PurplePresetPicker {
             // turn a peek off and watching the time go up. A checkbox that
             // will not uncheck is broken however good the reason.
             peek.setOnClickListener(v -> {
-                final PurpleCore.Loaded now = PurpleGate.state();
+                final PurpleCore.Loaded now = PurpleGate.state(fragment.getCurrentAccount());
                 if (now == null) {
                     return;
                 }
@@ -338,7 +338,7 @@ public final class PurplePresetPicker {
             });
 
             peek.setOnLongClickListener(v -> {
-                final PurpleCore.Loaded now = PurpleGate.state();
+                final PurpleCore.Loaded now = PurpleGate.state(fragment.getCurrentAccount());
                 if (now == null || !now.clock.peeking) {
                     return false;
                 }

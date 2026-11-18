@@ -99,12 +99,13 @@ public final class PurpleFocus {
         // The core is asked even when focus sync is off, and that is the point
         // of asking on every reload: the flag going off while it holds a preset
         // is exactly the case the core answers by handing the preset back.
+        final byte[] before = PurpleState.read();
         final PurpleCore.FocusChange change = PurpleCore.focusTick(
-                PurpleState.read(), active, enterTarget());
+                before, active, enterTarget());
         if (change == null) {
             return;
         }
-        if (!PurpleState.write(change.text.getBytes(UTF_8))) {
+        if (!PurpleState.replaceIfUnchanged(before, change.text.getBytes(UTF_8))) {
             return;
         }
         remember(change);

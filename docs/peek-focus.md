@@ -1,10 +1,12 @@
 # Peek and app visibility
 
+[Account-specific Peek](account_peek.md) describes the saved state and account boundaries.
+
 App switching cancels a pending request. Screen-off and passcode lock preserve it under the [Ready presence rules](peek-ready.md), unless the independent active-Peek policy actually changes its captured state.
 
 “End Peek when Telegram loses focus” is device-local and off by default. Turning it on is instant. Turning it off uses the Work Mode wait and resolved start delay, including zero. The opening account lifetime, selection generation, local revision, delay/settings source and visible fragment are rechecked before writing. It needs no Own-file write authority in Follow or Stock. Cancellation preserves the option. The sole writer is inventoried by purple/check-wait-routes.py, with direct-write and moved-writer negative tests.
 
-When on, Peek ends after Telegram has no started Activity for 2 seconds. A still-visible media viewer, internal Activity, multiwindow or PiP keeps it. Short configuration and Activity transitions are bridged. An external picker, share sheet or viewer keeps Peek while a Telegram Activity remains started; if all stop for 2 seconds it ends. There is no indefinite external-flow exemption. Screen-off, keyguard or Telegram passcode ends it immediately. When off, active Peek retains its existing behavior and the independent end_on_app_lock_mobile_p policy still applies.
+When on, each account’s Peek has a two-second grace after Telegram has no started Activity or another account is selected. A still-visible media viewer, internal Activity, multiwindow or PiP keeps it. Short configuration and Activity transitions are bridged. An external picker, share sheet or viewer keeps Peek while a Telegram Activity remains started; if all stop for 2 seconds it ends. There is no indefinite external-flow exemption. Screen-off, keyguard or Telegram passcode ends it immediately. When off, active Peek retains its existing behavior and the independent end_on_app_lock_mobile_p policy still applies.
 
 The grace uses elapsed realtime and the active Peek's identity. A replacement gets a fresh grace; unrelated reloads do not extend it. Android may suspend timers: resumed visibility checks the deadline before admitting the foreground, and gate reads have a backstop. A separate resume callback checks keyguard/interactive state even when the Activity never stopped. ForegroundDetector supplies its existing started-activity count. No lifecycle library, background alarm or service is added.
 
@@ -14,6 +16,6 @@ Host tests execute the actual AGP controller, foreground owner, local policy, Fo
 
 When automatic ending becomes due, the published gate immediately receives an immutable Peek-off copy of its existing resolution, before any settings routing, disk write or reload. The original preset and resolved policy remain. State cleanup is attempted independently of settings-source admission; failed cleanup retains an ending obligation, holds disabling, and retries on foreground/resume. A refused reload cannot preserve or restore revealing Peek.
 
-Withdrawal also clears the revealing bit on the global native resolution and every existing native account snapshot under their shared mutex, preserving their other policy fields. Row and story caches are cleared under their lookup/fill guard. Publication-generation fences reject old in-flight fills and retry their answers, so they cannot reinstall a revealing answer. The normal refresh follows publication and does not require settings admission.
+Withdrawal clears the revealing bit for the affected account’s native snapshots under their shared mutex. Its other policy fields and the other accounts’ snapshots stay intact. The affected account’s row and story caches are cleared under their lookup and fill guard. Publication-generation fences reject old in-flight fills and retry their answers, so they cannot reinstall a revealing answer. The normal refresh follows publication and does not require settings admission.
 
 The focus-end OFF countdown uses the device-local [escalating Peek wait](peek-wait.md). Turning it ON remains immediate.

@@ -1,8 +1,2 @@
 package org.telegram.messenger.purple;
-public class PurpleAccountFiles {
- public static java.io.File root(){return new java.io.File(System.getProperty("java.io.tmpdir"));}
- public static final class Identity {
-  public final int slot=0;public final String key="0-101";public final long lifetime=0,userId=101;
-  public boolean current(){return true;}boolean matchesSlot(){return true;}
- }
-}
+public final class PurpleAccountFiles {static final Identity[] ids=new Identity[4];public static final class Identity {public final int slot;public final String key;public final long lifetime;Identity(int s,String k,long l){slot=s;key=k;lifetime=l;}boolean matchesSlot(){return current();}public boolean current(){Identity i=ids[slot];return i!=null&&key.equals(i.key)&&lifetime==i.lifetime;}} static java.io.File root(){return new java.io.File(System.getProperty("java.io.tmpdir"));}static java.io.File file(String name){return new java.io.File(root(),name);}public static Identity capture(int slot){return ids[slot];}}

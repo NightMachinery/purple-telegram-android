@@ -137,12 +137,6 @@ public final class PurpleGate {
     private static volatile int generation;
 
     /**
-     * Fired when a peek's deadline passes. A reload is the whole of it: the
-     * bridge re-asks PeekLive(), finds it over, and clears the flag.
-     */
-    private static final Runnable PEEK_OVER = () -> reload("peek over");
-
-    /**
      * Fired when the earliest "until" decision runs out. A reload is the whole
      * of it: the bridge prunes what has expired and hands the file back.
      */
@@ -185,6 +179,11 @@ public final class PurpleGate {
         return loaded;
     }
 
+    public static PurpleCore.Loaded state(int account) {
+        PurplePeekForeground.beforeUse();
+        return PurpleWorkMode.project(account, loaded);
+    }
+
     /** Whether the running resolution came from the last good copy. */
     public static boolean usedLastGood() {
         return usedLastGood;
@@ -208,7 +207,7 @@ public final class PurpleGate {
         if (!filtering(currentAccount)) {
             return false;
         }
-        final PurpleCore.Loaded current = loaded;
+        final PurpleCore.Loaded current = PurpleWorkMode.project(currentAccount, loaded);
         if (current == null) {
             return false;
         }
@@ -225,9 +224,11 @@ public final class PurpleGate {
     }
 
     /** Whether a peek is currently revealing what the preset hides. */
-    public static boolean peeking() {
+    public static boolean peeking() { return peeking(UserConfig.selectedAccount); }
+
+    public static boolean peeking(int account) {
         PurplePeekForeground.beforeUse();
-        final PurpleCore.Loaded current = loaded;
+        final PurpleCore.Loaded current = PurpleWorkMode.project(account, loaded);
         return current != null && current.clock.peeking;
     }
 
@@ -314,6 +315,10 @@ public final class PurpleGate {
     private static PurpleAccountFileSnapshot peekLoadedGood;
 
     public static final class PeekSettings {
+        public final int account;
+        public final PurpleAccountPeek.Session session;
+        public final PurpleAccountPeek.Clock clock;
+        private final PurpleCore.Loaded globalState;
         public final PurplePeekSnapshot snapshot;
         public final PurpleCore.Loaded state;
         public final int generation;
@@ -322,19 +327,25 @@ public final class PurpleGate {
         private final PurpleAccountFileSnapshot primary;
         private final PurpleAccountFileSnapshot good;
 
-        private PeekSettings(File file, String global, PurpleAccountFileSnapshot primary,
+        private PeekSettings(int account, File file, String global, PurpleAccountFileSnapshot primary,
                 PurpleAccountFileSnapshot good, PurpleCore.Loaded state, int generation) {
+            this.account = account;
+            globalState = state;
+            session = PurpleAccountPeek.capture(account);
+            clock = session == null ? null : session.clock();
             this.file = file;
             this.global = global;
             this.primary = primary;
             this.good = good;
             this.snapshot = PurplePeekSnapshot.captured(primary.bytes, (int) PurpleSettings.MAX_SIZE);
-            this.state = state;
+            this.state = PurpleWorkMode.project(account, state);
             this.generation = generation;
         }
     }
 
-    public static PeekSettings peekSettings() {
+    public static PeekSettings peekSettings() { return peekSettings(UserConfig.selectedAccount); }
+
+    public static PeekSettings peekSettings(int account) {
         ensureLoaded();
         File file = PurpleAccountSettings.globalFile();
         String global = PurpleAccountOwner.global();
@@ -347,13 +358,15 @@ public final class PurpleGate {
                 || loaded == null || !loaded.ok) {
             reload("peek settings", primary.bytes);
         }
-        PeekSettings result = new PeekSettings(file, global, primary, good, loaded, generation);
+        PeekSettings result = new PeekSettings(account, file, global, primary, good, loaded, generation);
         return currentPeekSettings(result) ? result : null;
     }
 
     public static boolean currentPeekSettings(PeekSettings settings) {
         return settings != null && settings.state != null && settings.state.ok
-                && loaded == settings.state && generation == settings.generation
+                && (settings.session == null || PurplePeekForeground.mayUse(settings.session.identity))
+                && (settings.session == null ? loaded == settings.globalState
+                    : settings.session.matches(settings.clock))
                 && settings.file.equals(peekLoadedFile)
                 && java.util.Objects.equals(settings.global, peekLoadedGlobal)
                 && settings.primary.same(peekLoadedPrimary) && settings.good.same(peekLoadedGood)
@@ -419,33 +432,7 @@ public final class PurpleGate {
     }
 
     public static void reloadAccountFiles(String reason) {
-        final PurpleCore.Loaded current = loaded;
-        final PurpleGlobalChoiceProgress accepted = acceptedSupportedSource;
-        final File file = PurpleAccountSettings.globalFile();
-        final PurpleAccountFileSnapshot primary = PurpleAccountFileSnapshot.read(file);
-        final PurpleAccountFileSnapshot good = PurpleAccountFileSnapshot.read(new File(file.getPath() + ".good"));
-        if (current == null || accepted == null || !accepted.current() || !file.equals(peekLoadedFile)
-                || !java.util.Objects.equals(PurpleAccountOwner.global(), peekLoadedGlobal)
-                || !primary.same(peekLoadedPrimary) || !good.same(peekLoadedGood)) {
-            reload(reason);
-            return;
-        }
-        PurpleAccountSettings.invalidate();
-        if (loaded != current || acceptedSupportedSource != accepted || !accepted.current()
-                || !primary.matches(file) || !good.matches(new File(file.getPath() + ".good"))) return;
-        PurpleWorkMode.reload(accepted.source.settings, file, primary, good);
-        ++generation;
-        rebuildViewFilters(current);
-        PurpleFolderProjection.publish(current, generation);
-        PurpleListDiagnostics.afterReload();
-        postRefresh();
-        AndroidUtilities.runOnUIThread(() -> {
-            for (PurpleAccountFiles.Identity id : PurpleAccountOwner.signedIn()) {
-                NotificationCenter.getInstance(id.slot).postNotificationName(
-                        NotificationCenter.updateInterfaces, MessagesController.UPDATE_MASK_STATUS);
-            }
-        });
-        rebuildShortcuts();
+        reload(reason);
     }
 
     static void reloadGlobalChoice(String reason, PurpleGlobalChoiceModel.ActivationSource source) {
@@ -455,6 +442,17 @@ public final class PurpleGate {
     private static void reload(String reason, byte[] settings) { reload(reason, settings, null); }
 
     private static void reload(String reason, byte[] settings, PurpleGlobalChoiceModel.ActivationSource choice) {
+        try (PurpleGateLoad.Batch batch = new PurpleGateLoad.Batch(peekLoadedGlobal != null
+                && !java.util.Objects.equals(peekLoadedGlobal, PurpleAccountOwner.global()))) {
+            try { reloadResolved(reason, settings, choice, batch); }
+            finally { if (batch.repairNeeded()) repairReload(); }
+        } catch (RuntimeException | LinkageError e) { FileLog.e(e); }
+    }
+
+    private static void repairReload() { PurpleGateReloadRetry.request(); }
+
+    private static void reloadResolved(String reason, byte[] settings, PurpleGlobalChoiceModel.ActivationSource choice,
+            PurpleGateLoad.Batch batch) {
         final File peekFile = PurpleAccountSettings.globalFile();
         final String peekGlobal = PurpleAccountOwner.global();
         final PurpleAccountFileSnapshot peekPrimary = PurpleAccountFileSnapshot.read(peekFile);
@@ -505,7 +503,7 @@ public final class PurpleGate {
                         && acceptedReady == PurpleAccountOwner.ready() && acceptedRoot.equals(PurpleAccountFiles.root())
                         && peekFile.equals(PurpleAccountSettings.globalFile()));
         if (candidate == null || !candidate.current() || !loadContext.current() || retainedUse != null && !retainedUse.current() || reloadPolicy != null && !reloadPolicy.current()) return;
-        PurpleCore.Loaded next = retainedUse != null ? retainedUse.resolve(state, PurpleGate::load) : PurpleGlobalChoiceProgress.resolve(choice, state, PurpleGate::load);
+        PurpleCore.Loaded next = retainedUse != null ? retainedUse.resolve(state, batch::load) : PurpleGlobalChoiceProgress.resolve(choice, state, batch::load);
         if (!candidate.current() || !loadContext.current() || retainedUse != null && !retainedUse.current() || reloadPolicy != null && !reloadPolicy.current()) return;
         if (next == null) {
             return;
@@ -544,7 +542,7 @@ public final class PurpleGate {
             }
             final byte[] lastGood = peekGood.bytes;
             if (lastGood != null) {
-                final PurpleCore.Loaded alt = load(lastGood, state);
+                final PurpleCore.Loaded alt = batch.load(lastGood, state);
                 if (alt != null && alt.ok) {
                     FileLog.d("Purple: settings.toml is "
                             + (settings == null ? "missing" : "unusable")
@@ -555,26 +553,43 @@ public final class PurpleGate {
             }
         }
         if (!candidate.current() || !loadContext.current() || retainedUse != null && !retainedUse.current() || reloadPolicy != null && !reloadPolicy.current()) return;
-        usedLastGood = shadowed;
-
-        PurpleAccountSettings.invalidate();
-        PurpleWorkMode.reload(shadowed && choice == null ? peekGood.bytes : settings, peekFile, peekPrimary, peekGood);
-        final PurpleCore.Loaded previous = loaded;
-        loaded = next;
-        acceptedSupportedSource = candidate;
-        peekLoadedFile = peekFile;
-        peekLoadedGlobal = peekGlobal;
-        peekLoadedPrimary = java.util.Arrays.equals(choice == null ? settings : choice.primary, peekPrimary.bytes) ? peekPrimary : null;
-        peekLoadedGood = peekGood;
-        // What the watcher compares the file against. Set from the bytes this
-        // reload actually read, so the app's own write comes straight back as
-        // "already running" rather than as a change to react to.
-        settingsFingerprint = fingerprintOf(choice == null ? settings : choice.primary);
-        if (next.stateText != null) {
-            PurpleState.write(next.stateText.getBytes(UTF_8));
+        final PurpleCore.Loaded previous;
+        final PurpleCore.Loaded[] beforeAccounts, afterAccounts;
+        synchronized (PurpleAccountOwner.class) {
+            synchronized (PurpleAccountFiles.class) {
+                if (!candidate.current() || !loadContext.current() || retainedUse != null && !retainedUse.current()
+                        || reloadPolicy != null && !reloadPolicy.current()) return;
+                final PurpleGlobalChoiceProgress.Current committingContext = loadContext;
+                final PurpleGlobalChoiceProgress.Use committingUse = retainedUse;
+                final PurpleGlobalChoiceReload committingPolicy = reloadPolicy;
+                PurpleGateLoad.Commit committed = batch.commit(next, () -> candidate.current() && committingContext.current()
+                        && (committingUse == null || committingUse.current()) && (committingPolicy == null || committingPolicy.current()));
+                if (committed != PurpleGateLoad.Commit.Published) {
+                    if (committed == PurpleGateLoad.Commit.PersistedUnpublished) repairReload();
+                    return;
+                }
+                beforeAccounts = accountStates();
+                PurpleAccountSettings.invalidate();
+                if (!PurpleWorkMode.reload(shadowed && choice == null ? peekGood.bytes : settings, peekFile, peekPrimary, peekGood)) {
+                    PurpleWorkMode.withdrawPeek();
+                    repairReload();
+                    return;
+                }
+                usedLastGood = shadowed;
+                previous = loaded;
+                loaded = next;
+                acceptedSupportedSource = candidate;
+                peekLoadedFile = peekFile;
+                peekLoadedGlobal = peekGlobal;
+                peekLoadedPrimary = java.util.Arrays.equals(choice == null ? settings : choice.primary, peekPrimary.bytes) ? peekPrimary : null;
+                peekLoadedGood = peekGood;
+                settingsFingerprint = fingerprintOf(choice == null ? settings : choice.primary);
+                filtering = !next.normal;
+                ++generation;
+                afterAccounts = accountStates();
+                batch.published();
+            }
         }
-        filtering = !next.normal;
-        ++generation;
         // Purple: the recorder wants two things out of every reload - whether
         // it is switched on at all, and the name of the preset now running,
         // which cuts the session so that every second of the log has exactly
@@ -582,14 +597,16 @@ public final class PurpleGate {
         // event lands at the moment the resolution changed and not after a
         // chat list rebuild.
         PurpleScreenTime.onLoaded(next);
-        refreshPeekTimer(next);
         refreshOverrideTimer(next);
         rebuildViewFilters(next);
         PurpleFolderProjection.publish(next, generation);
         PurpleListDiagnostics.afterReload();
         PurplePeekForeground.published();
         final PurpleCore.Loaded updated = next;
-        AndroidUtilities.runOnUIThread(() -> org.telegram.ui.PurplePeekControls.onGateReload(previous, updated));
+        AndroidUtilities.runOnUIThread(() -> {
+            org.telegram.ui.PurplePeekControls.onGateReload(previous, updated);
+            publishAccountClocks(beforeAccounts, afterAccounts);
+        });
 
         if (next.normal) {
             FileLog.d("Purple: normal. (" + reason + ")");
@@ -633,30 +650,6 @@ public final class PurpleGate {
     }
 
     /**
-     * Ends a running peek when its deadline arrives.
-     *
-     * The timer belongs to the gate for the same reason it does on the desktop:
-     * the gate is what has to re-run when it fires. Nothing else would look at
-     * the deadline again, so without this a peek would sit there until the next
-     * unrelated change to the files.
-     *
-     * There is no clearing half here, unlike the desktop's: a peek that outlived
-     * the app is already gone from state.toml by the time this runs, because the
-     * bridge clears an expired flag while it resolves and hands the rewritten
-     * file back with everything else.
-     */
-    private static void refreshPeekTimer(PurpleCore.Loaded current) {
-        AndroidUtilities.cancelRunOnUIThread(PEEK_OVER);
-        if (!current.clock.peeking || current.clock.peekDeadline <= 0) {
-            // No deadline means auto_off is turned off, and that peek really
-            // does run until it is turned off by hand.
-            return;
-        }
-        final long left = current.clock.peekDeadline - System.currentTimeMillis() / 1000L;
-        AndroidUtilities.runOnUIThread(PEEK_OVER, Math.max(left, 0L) * 1000L);
-    }
-
-    /**
      * Starts a peek: every chat back in the list, no group waiting for a
      * mention, every folder on the strip.
      *
@@ -677,14 +670,27 @@ public final class PurpleGate {
      * @return what happened, so the caller can say which way it went
      */
     public static PurpleCore.PeekChange startPeek(int seconds, PeekSettings settings) {
-        if (!currentPeekSettings(settings)) return null;
-        final PurpleCore.PeekChange change =
-                PurpleCore.startPeek(PurpleState.read(), seconds);
-        if (!currentPeekSettings(settings) || change.text == null
-                || !PurpleState.write(change.text.getBytes(UTF_8))) return null;
-        PurplePeekForeground.replaced();
-        reload("peek");
-        return change;
+        if (!currentPeekSettings(settings) || settings.session == null) return null;
+        PurpleAccountPeek.Result result = settings.session.start(settings.clock, seconds);
+        if (result == null) return null;
+        PurplePeekForeground.replaced(settings.session.identity);
+        reload("account peek");
+        return publishedPeek(settings, result);
+    }
+
+    private static PurpleCore.PeekChange publishedPeek(PeekSettings settings, PurpleAccountPeek.Result result) {
+        PurpleWorkMode.View view = PurpleWorkMode.view(settings.account);
+        PurpleAccountFiles.Identity identity = PurpleAccountFiles.capture(settings.account);
+        if (result != null && identity != null && settings.session.current() && settings.session.matches(result.clock)
+                && view != null && PurplePeekForeground.mayUse(identity) && view.clock.peeking == result.clock.peeking
+                && view.clock.peekDeadline == result.clock.deadline) return peekResult(result);
+        PurplePeekForeground.requestEnd(settings.session.identity);
+        return null;
+    }
+
+    private static PurpleCore.PeekChange peekResult(PurpleAccountPeek.Result result) {
+        return result == null ? null : new PurpleCore.PeekChange(false, result.clock.peeking,
+                result.extended, result.seconds, result.left, null);
     }
 
     /**
@@ -698,45 +704,69 @@ public final class PurpleGate {
      * @return what happened; {@code extended} says whether the deadline moved
      */
     public static PurpleCore.PeekChange extendPeek(int seconds, PeekSettings settings) {
-        if (!currentPeekSettings(settings)) return null;
-        final PurpleCore.PeekChange change =
-                PurpleCore.extendPeek(PurpleState.read(), seconds);
-        if (!currentPeekSettings(settings)) return null;
-        if (change.extended) {
-            if (change.text == null || !PurpleState.write(change.text.getBytes(UTF_8))) return null;
-            reload("peek extended");
+        if (!currentPeekSettings(settings) || settings.session == null) return null;
+        PurpleAccountPeek.Result result = settings.session.extend(settings.clock, seconds);
+        if (result != null && result.changed) reload("account peek extended");
+        return publishedPeek(settings, result);
+    }
+
+    private static PurpleCore.Loaded[] accountStates() {
+        PurpleCore.Loaded[] result = new PurpleCore.Loaded[UserConfig.MAX_ACCOUNT_COUNT];
+        for (int account = 0; account < result.length; ++account) result[account] = PurpleWorkMode.project(account, loaded);
+        return result;
+    }
+
+    private static void publishAccountClocks(PurpleCore.Loaded[] before, PurpleCore.Loaded[] after) {
+        for (int account = 0; account < after.length; ++account) {
+            if (after[account] != null) org.telegram.ui.PurplePeekControls.onAccountGateReload(account, before[account], after[account]);
         }
-        return change;
     }
 
     static void withdrawPeek() {
-        final PurpleCore.Loaded before;
-        final PurpleCore.Loaded ended;
+        final PurpleCore.Loaded[] before, after;
         synchronized (cacheLock) {
-            before = loaded;
-            if (before == null) return;
+            if (loaded == null) return;
+            before = accountStates();
             PurpleWorkMode.withdrawPeek();
-            if (!before.clock.peeking) return;
-            ended = before.withoutPeek();
-            loaded = ended;
+            loaded = loaded.withoutPeek();
+            after = accountStates();
             ++generation;
         }
-        PurpleFolderProjection.publish(ended, generation);
+        PurpleFolderProjection.publish(loaded, generation);
+        AndroidUtilities.runOnUIThread(() -> { publishAccountClocks(before, after); postRefresh(); rebuildShortcuts(); });
+    }
+
+    static void withdrawPeek(int account) { withdrawPeek(PurpleAccountFiles.capture(account)); }
+
+    static void withdrawPeek(PurpleAccountFiles.Identity identity) {
+        if (identity == null) return;
+        final int account = identity.slot;
+        final PurpleCore.Loaded before = PurpleWorkMode.project(account, loaded);
+        if (!PurpleWorkMode.withdrawPeek(identity)) return;
+        final PurpleCore.Loaded after = PurpleWorkMode.project(account, loaded);
+        ++generation;
+        PurpleFolderProjection.publish(loaded, generation);
         AndroidUtilities.runOnUIThread(() -> {
-            try {
-                org.telegram.ui.PurplePeekControls.onGateReload(before, ended);
-                postRefresh();
-                rebuildShortcuts();
-            } catch (RuntimeException | LinkageError e) { FileLog.e(e); }
+            if (!identity.current()) return;
+            org.telegram.ui.PurplePeekControls.onAccountGateReload(account, before, after);
+            postRefresh(); rebuildShortcuts();
         });
     }
 
     /** Ends a running peek, putting back whatever the preset was hiding. */
-    public static PurpleCore.PeekChange stopPeek() {
-        ensureLoaded();
-        final PurpleCore.PeekChange change = PurplePeekForeground.stopState(PurpleState.read());
-        if (change != null && change.text != null) reload("peek over");
-        return change;
+    public static PurpleCore.PeekChange stopPeek() { return stopPeek(UserConfig.selectedAccount); }
+
+    public static PurpleCore.PeekChange stopPeek(int account) {
+        PurpleAccountFiles.Identity identity = PurpleAccountFiles.capture(account);
+        PeekSettings settings = null;
+        try { settings = peekSettings(account); }
+        catch (RuntimeException | LinkageError e) { FileLog.e(e); }
+        PurplePeekForeground.requestEnd(identity);
+        PurpleAccountPeek.Result result = identity != null && identity.current() && settings != null && settings.session != null
+                && settings.session.identity.lifetime == identity.lifetime && settings.session.key.equals(identity.key)
+                ? settings.session.stop(settings.clock) : null;
+        reload("account peek over");
+        return peekResult(result);
     }
 
     /**
@@ -762,18 +792,16 @@ public final class PurpleGate {
         PurplePeekForeground.appLocked();
     }
 
-    static void lockedLegacy() {
-        if (!peeking()) {
-            // A volatile read of the last load, and deliberately not
-            // ensureLoaded(): nothing is peeking, so there is nothing to end,
-            // and putting the passcode screen up is not a reason to start the
-            // gate and read two files.
-            return;
+    static void lockedAccounts() {
+        boolean changed = false;
+        for (int account = 0; account < UserConfig.MAX_ACCOUNT_COUNT; ++account) {
+            PurpleAccountPeek.Session session = PurpleAccountPeek.capture(account);
+            PurpleAccountPeek.Clock clock = session == null ? null : session.clock();
+            if (clock == null || !clock.peeking) continue;
+            PurpleAccountPeek.Result result = session.locked(clock, false);
+            changed |= result != null && result.changed;
         }
-        final PurpleCore.PeekChange change = PurpleCore.locked(PurpleState.read(), false);
-        if (change.text != null && PurpleState.write(change.text.getBytes(UTF_8))) {
-            reload("app locked");
-        }
+        if (changed) reload("account app lock");
     }
 
     /**
@@ -791,9 +819,10 @@ public final class PurpleGate {
      */
     public static boolean setSchedulePaused(boolean paused, long until) {
         ensureLoaded();
+        final byte[] before = PurpleState.read();
         final String text = PurpleCore.setSchedulePaused(
-                PurpleState.read(), paused, until);
-        if (text == null || !PurpleState.write(text.getBytes(UTF_8))) {
+                before, paused, until);
+        if (text == null || !PurpleState.replaceIfUnchanged(before, text.getBytes(UTF_8))) {
             return false;
         }
         reload(paused ? "schedule paused" : "schedule resumed");
@@ -838,8 +867,9 @@ public final class PurpleGate {
         if (id == 0) {
             return false;
         }
-        final String text = PurpleCore.setOverride(PurpleState.read(), id, kind, seconds);
-        if (text == null || !PurpleState.write(text.getBytes(UTF_8))) {
+        final byte[] before = PurpleState.read();
+        final String text = PurpleCore.setOverride(before, id, kind, seconds);
+        if (text == null || !PurpleState.replaceIfUnchanged(before, text.getBytes(UTF_8))) {
             return false;
         }
         reload(seconds > 0 ? "until set" : "until cancelled");
@@ -859,9 +889,10 @@ public final class PurpleGate {
      */
     public static boolean setPreset(String presetOrNull) {
         org.telegram.ui.PurplePeekControls.cancel();
+        final byte[] before = PurpleState.read();
         final String text;
         try {
-            text = PurpleCore.setPreset(PurpleState.read(), presetOrNull);
+            text = PurpleCore.setPreset(before, presetOrNull);
         } catch (UnsatisfiedLinkError | RuntimeException e) {
             FileLog.e(e);
             return false;
@@ -869,7 +900,7 @@ public final class PurpleGate {
         if (text == null) {
             return false;
         }
-        if (!PurpleState.write(text.getBytes(UTF_8))) {
+        if (!PurpleState.replaceIfUnchanged(before, text.getBytes(UTF_8))) {
             return false;
         }
         reload("preset switch");
@@ -1249,7 +1280,7 @@ public final class PurpleGate {
         if (!filtering(currentAccount) || dialog == null) {
             return null;
         }
-        final PurpleCore.Loaded current = loaded;
+        final PurpleCore.Loaded current = PurpleWorkMode.project(currentAccount, loaded);
         if (current == null || current.clock.peeking) {
             // A peek shows everything, so nothing on screen during one is on
             // screen because of a clock.
@@ -1330,7 +1361,7 @@ public final class PurpleGate {
      * through anyway is not leaving, whatever else is also true of it.
      */
     private static boolean wouldLeaveTheView(int currentAccount, TLRPC.Dialog dialog) {
-        if (!filtering(currentAccount) || peeking()) {
+        if (!filtering(currentAccount) || peeking(currentAccount)) {
             return false;
         }
         // A hide stays in the reckoning - it is a reason the row would be gone,
@@ -1370,7 +1401,7 @@ public final class PurpleGate {
         if (!forView || kind == PurpleCore.OVERRIDE_NONE) {
             return kind;
         }
-        final PurpleCore.Loaded current = loaded;
+        final PurpleCore.Loaded current = PurpleWorkMode.project(currentAccount, loaded);
         return (current != null && current.clock.peeking) ? PurpleCore.OVERRIDE_NONE : kind;
     }
 
@@ -1439,7 +1470,7 @@ public final class PurpleGate {
         if (!filtering(currentAccount)) {
             return false;
         }
-        final PurpleCore.Loaded current = loaded;
+        final PurpleCore.Loaded current = PurpleWorkMode.project(currentAccount, loaded);
         if (current != null && current.clock.peeking) {
             return false;
         }
@@ -2325,7 +2356,7 @@ public final class PurpleGate {
 
     private static ArrayList<MessagesController.DialogFilter> shownFilters(
             int currentAccount, ArrayList<MessagesController.DialogFilter> raw, boolean log) {
-        final PurpleCore.Loaded current = loaded;
+        final PurpleCore.Loaded current = PurpleWorkMode.project(currentAccount, loaded);
         if (!filtering(currentAccount) || current == null || raw == null || raw.isEmpty()) {
             return raw;
         }
@@ -2605,7 +2636,7 @@ public final class PurpleGate {
      * @param dialogId a TLRPC.Dialog id, not a bare id
      */
     public static boolean hiddenWhilePeeking(int currentAccount, long dialogId) {
-        if (!filtering(currentAccount) || !peeking() || DialogObject.isFolderDialogId(dialogId)) {
+        if (!filtering(currentAccount) || !peeking(currentAccount) || DialogObject.isFolderDialogId(dialogId)) {
             return false;
         }
         final TLRPC.Dialog dialog =
@@ -2695,7 +2726,7 @@ public final class PurpleGate {
         if (!filtering(currentAccount)) {
             return false;
         }
-        final PurpleCore.Loaded current = loaded;
+        final PurpleCore.Loaded current = PurpleWorkMode.project(currentAccount, loaded);
         return current != null
                 && current.hideInvisibleSuggestions
                 && !current.clock.peeking;
@@ -2905,7 +2936,7 @@ public final class PurpleGate {
         if (!filteringStories(currentAccount)) {
             return true;
         }
-        final PurpleCore.Loaded current = loaded;
+        final PurpleCore.Loaded current = PurpleWorkMode.project(currentAccount, loaded);
         if (current == null || current.clock.peeking) {
             return true;
         }
@@ -3022,23 +3053,6 @@ public final class PurpleGate {
             return PurpleCore.STORY_MODE_UNSET;
         }
         return result;
-    }
-
-    /** One load attempt; null when the bridge could not be called at all. */
-    private static PurpleCore.Loaded load(byte[] settings, byte[] state) {
-        try {
-            // The identity travels with every load because the schedule it
-            // resolves is this device's: which rulesets apply, and therefore
-            // which rules run and what the preset is between them, is a
-            // question the file cannot answer on its own.
-            PurpleCore.Loaded next = PurpleCore.load(settings, state, PurpleDevice.id(),
-                    PurpleDevice.PLATFORM, PurpleDevice.CLASS);
-            return PurplePeekForeground.resolve(next, state, safe -> PurpleCore.load(settings, safe, PurpleDevice.id(),
-                    PurpleDevice.PLATFORM, PurpleDevice.CLASS));
-        } catch (UnsatisfiedLinkError | RuntimeException e) {
-            FileLog.e(e);
-            return null;
-        }
     }
 
     private static byte[] readSettings() {

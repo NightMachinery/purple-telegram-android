@@ -187,14 +187,15 @@ public final class PurpleLastSeen {
             return false;
         }
         final long now = System.currentTimeMillis() / 1000L;
+        final byte[] before = PurpleState.read();
         final String text;
         try {
-            text = PurpleCore.rememberTrade(PurpleState.read(), userId, now, wasOnlineUnix);
+            text = PurpleCore.rememberTrade(before, userId, now, wasOnlineUnix);
         } catch (UnsatisfiedLinkError | RuntimeException e) {
             FileLog.e(e);
             return false;
         }
-        if (text == null || !PurpleState.write(text.getBytes(java.nio.charset.StandardCharsets.UTF_8))) {
+        if (text == null || !PurpleState.replaceIfUnchanged(before, text.getBytes(java.nio.charset.StandardCharsets.UTF_8))) {
             return false;
         }
         // Dropped rather than patched, so the next reader picks the file up
