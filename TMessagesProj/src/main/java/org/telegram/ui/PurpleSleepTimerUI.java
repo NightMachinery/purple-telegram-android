@@ -2,6 +2,7 @@ package org.telegram.ui;
 
 import android.content.Context;
 import android.graphics.Canvas;
+import android.graphics.Rect;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.FrameLayout;
@@ -14,6 +15,7 @@ import org.telegram.messenger.purple.PurpleSleepTimer;
 import org.telegram.messenger.purple.PurpleSleepTimerRules;
 import org.telegram.ui.ActionBar.ActionBarMenuItem;
 import org.telegram.ui.ActionBar.ActionBarMenuSubItem;
+import org.telegram.ui.ActionBar.ActionBarPopupWindow.ActionBarPopupWindowLayout;
 import org.telegram.ui.ActionBar.BottomSheet;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.BulletinFactory;
@@ -44,6 +46,12 @@ public final class PurpleSleepTimerUI {
         if (button == null || speed == null || speed.getVisibility() != View.VISIBLE) return;
         final int right = speed.getLeft();
         button.layout(right - button.getMeasuredWidth(), speed.getTop(), right, speed.getBottom());
+    }
+
+    static int menuOffset(int visibleTop, int visibleBottom, int buttonTop, int buttonHeight, int menuHeight) {
+        if (menuHeight <= buttonTop - visibleTop) return -menuHeight;
+        if (menuHeight <= visibleBottom - buttonTop - buttonHeight) return buttonHeight;
+        return Math.max(visibleTop, Math.min(buttonTop, visibleBottom - menuHeight)) - buttonTop;
     }
 
     public static String duration(int minutes) {
@@ -113,7 +121,7 @@ public final class PurpleSleepTimerUI {
             setIcon(R.drawable.menu_night_mode_24);
             setLongClickEnabled(false);
             setShowSubmenuByMove(false);
-            setShowedFromBottom(true);
+            setSubMenuOpenSide(2);
             countdown = new TextView(context);
             countdown.setGravity(Gravity.CENTER);
             countdown.setTextSize(13);
@@ -121,7 +129,7 @@ public final class PurpleSleepTimerUI {
             countdown.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
             addView(countdown, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
             setDelegate(id -> { final Runnable action = actions.get(id); if (action != null) action.run(); });
-            setOnClickListener(v -> { rebuild(); toggleSubMenu(); });
+            setOnClickListener(v -> showTimerMenu());
             installFeedback();
             changed();
         }
@@ -179,6 +187,22 @@ public final class PurpleSleepTimerUI {
                     .getInt("purple-sleep-custom-minutes", 45))));
             for (int minutes : values) row(duration(minutes), () -> timer.startMinutes(minutes,
                     minutes != 15 && minutes != 30 && minutes != 60), true);
+        }
+
+        private void showTimerMenu() {
+            rebuild();
+            final ActionBarPopupWindowLayout layout = getPopupLayout();
+            layout.measure(
+                    MeasureSpec.makeMeasureSpec(AndroidUtilities.displaySize.x - dp(40), MeasureSpec.AT_MOST),
+                    MeasureSpec.makeMeasureSpec(AndroidUtilities.displaySize.y, MeasureSpec.AT_MOST));
+            final Rect frame = new Rect();
+            getWindowVisibleDisplayFrame(frame);
+            final int[] location = new int[2];
+            getLocationOnScreen(location);
+            final int offset = menuOffset(frame.top, frame.bottom, location[1], getHeight(), layout.getMeasuredHeight());
+            setMenuYOffset(offset);
+            setShowedFromBottom(offset < 0);
+            toggleSubMenu();
         }
 
         private void rebuild() {

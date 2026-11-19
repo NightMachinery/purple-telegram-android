@@ -29,11 +29,20 @@ public final class PurpleSleepTimerButtonLayoutCases {
 
     //@EXTRACT ui public static void layoutBeside(View button, View speed)
 
+    //@EXTRACT ui static int menuOffset(int visibleTop, int visibleBottom, int buttonTop, int buttonHeight, int menuHeight)
+
     private static int checks;
 
     private static void checkBounds(View view, String label, int... expected) {
         if (!Arrays.equals(view.bounds, expected)) {
             throw new AssertionError(label + ": " + Arrays.toString(view.bounds));
+        }
+        checks++;
+    }
+
+    private static void checkOffset(int expected, int actual, String label) {
+        if (expected != actual) {
+            throw new AssertionError(label + ": " + actual);
         }
         checks++;
     }
@@ -48,6 +57,10 @@ public final class PurpleSleepTimerButtonLayoutCases {
         checkBounds(timer, "absent speed control keeps the normal frame", 80, 86, 116, 122);
         layoutBeside(timer, new View(36, View.VISIBLE, 132, 87, 168, 123));
         checkBounds(timer, "visible speed control keeps adjacent layout", 96, 87, 132, 123);
+        checkOffset(-320, menuOffset(24, 828, 692, 36, 320), "player menu fits above its button");
+        checkOffset(36, menuOffset(24, 828, 58, 36, 320), "top strip menu fits below its button");
+        checkOffset(-192, menuOffset(24, 828, 420, 36, 600), "tall menu uses both sides of the button");
+        checkOffset(-396, menuOffset(24, 828, 420, 36, 900), "oversized menu begins at the visible top");
         System.out.println("SLEEP_TIMER_BUTTON_LAYOUT_CHECKS=" + checks);
     }
 }

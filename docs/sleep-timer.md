@@ -6,7 +6,8 @@ identities are never persisted or synchronized.
 
 The player and viewer reuse stock menus, moon, palettes and duration wheels.
 The timer keeps its normal player position when the playback speed control
-is hidden. The compact strip shows the active countdown. Neither PiP form gets a timer
+is hidden. Its menu opens within the visible player window. The compact strip
+shows the active countdown. Neither PiP form gets a timer
 control. Gallery selections use typed process-local source identities, retained
 across quality reconstruction and PiP, rather than invented Telegram IDs or
 media paths. Timed enforcement includes registered gallery native playback.
