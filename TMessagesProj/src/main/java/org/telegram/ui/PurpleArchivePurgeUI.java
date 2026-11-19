@@ -4,7 +4,6 @@ import android.content.DialogInterface;
 import android.view.View;
 import android.widget.TextView;
 import java.lang.ref.WeakReference;
-import java.util.ArrayList;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
@@ -12,24 +11,31 @@ import org.telegram.messenger.purple.PurpleArchive;
 import org.telegram.messenger.purple.PurpleArchivePurgeModel;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
-import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalFragment;
 
 final class PurpleArchivePurgeUI {
-    static final int TRASH = 0x70750480, EDITS = 0x70750481, RETRY = 0x70750482;
-    static void add(ArrayList<UItem> items, UniversalFragment fragment) {
-        PurpleArchive.Status status = PurpleArchive.status(fragment.getCurrentAccount());
-        if (status.state.startsWith("Maintenance")) items.add(UItem.asButton(RETRY, text(R.string.PurpleArchivePurgeRetry)));
-        else if (status.state.equals("Ready")) {
-            items.add(UItem.asButton(TRASH, text(R.string.PurpleArchiveEmptyTrash)));
-            items.add(UItem.asButton(EDITS, text(R.string.PurpleArchiveClearEdits)));
-        }
-    }
-    static boolean click(UniversalFragment fragment, int row) {
-        if (row != TRASH && row != EDITS && row != RETRY) return false;
-        try { open(fragment, PurpleArchivePurgeModel.Scope.account(fragment.getCurrentAccount()), row == EDITS ? 1 : 0); }
-        catch (Exception | LinkageError e) { unavailable(fragment); }
-        return true;
+    static final int TRASH = 0x70750480, EDITS = 0x70750481;
+
+    static void addToDialog(AlertDialog.Builder dialog, UniversalFragment fragment, PurpleArchive.Status status) {
+        final boolean retry = status.state.startsWith("Maintenance");
+        if (!retry && !status.state.equals("Ready")) return;
+
+        final int account = fragment.getCurrentAccount();
+        final View openingView = fragment.getFragmentView();
+        final CharSequence[] actions = retry
+            ? new CharSequence[]{text(R.string.PurpleArchivePurgeRetry)}
+            : new CharSequence[]{text(R.string.PurpleArchiveEmptyTrash), text(R.string.PurpleArchiveClearEdits)};
+        dialog.setItems(actions, (d, which) -> {
+            if (fragment.isFinished || fragment.getParentActivity() == null
+                    || fragment.getCurrentAccount() != account || fragment.getFragmentView() != openingView) return;
+            final String state = PurpleArchive.status(account).state;
+            if (!(retry ? state.startsWith("Maintenance") : state.equals("Ready"))) {
+                unavailable(fragment);
+                return;
+            }
+            try { open(fragment, PurpleArchivePurgeModel.Scope.account(account), retry ? 0 : which); }
+            catch (Exception | LinkageError e) { unavailable(fragment); }
+        });
     }
     static void open(BaseFragment fragment, PurpleArchivePurgeModel.Scope scope, int kind) {
         if (fragment.isFinished || fragment.getParentActivity() == null) return;
