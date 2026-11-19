@@ -57,7 +57,7 @@ final class PurpleArchiveUI {
         if (!status.state.equals("Signed out") && !status.state.equals("Requires Android 6 (API 23)")) {
             int account = fragment.getCurrentAccount();
             android.view.View view = fragment.getFragmentView();
-            dialog.setNeutralButton(text(R.string.PurpleArchiveRemove), (d, which) -> {
+            dialog.setNeutralButton(text(R.string.Discard), (d, which) -> {
                 if (fragment.isFinished || fragment.getParentActivity() == null || fragment.getCurrentAccount() != account || fragment.getFragmentView() != view) return;
                 PurpleArchive.RemovalRequest request = PurpleArchive.prepareRemoval(account);
                 if (request == null) {
@@ -66,7 +66,7 @@ final class PurpleArchiveUI {
                 }
                 fragment.showDialog(new AlertDialog.Builder(fragment.getParentActivity(), fragment.getResourceProvider())
                     .setTitle(text(R.string.PurpleArchiveRemove)).setMessage(text(R.string.PurpleArchiveRemoveConfirm))
-                    .setPositiveButton(text(R.string.PurpleArchiveRemove), (confirmation, button) -> {
+                    .setPositiveButton(text(R.string.Discard), (confirmation, button) -> {
                         if (!fragment.isFinished && fragment.getParentActivity() != null && fragment.getCurrentAccount() == account && fragment.getFragmentView() == view)
                             if (!PurpleArchive.remove(request, () -> {
                                 if (!request.completed) PurpleWriterUI.explain(fragment, text(R.string.PurpleArchiveTitle), text(R.string.PurpleArchiveUnavailable), "session_stale", () -> refresh(fragment), null);
