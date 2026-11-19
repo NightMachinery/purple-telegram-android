@@ -1,0 +1,53 @@
+package org.telegram.ui;
+
+import java.util.Arrays;
+
+public final class PurpleSleepTimerButtonLayoutCases {
+    private static final class View {
+        static final int VISIBLE = 0;
+        static final int INVISIBLE = 4;
+        static final int GONE = 8;
+        private final int measuredWidth;
+        private final int visibility;
+        private int[] bounds;
+
+        View(int measuredWidth, int visibility, int... bounds) {
+            this.measuredWidth = measuredWidth;
+            this.visibility = visibility;
+            this.bounds = bounds;
+        }
+
+        int getVisibility() { return visibility; }
+        int getMeasuredWidth() { return measuredWidth; }
+        int getLeft() { return bounds[0]; }
+        int getTop() { return bounds[1]; }
+        int getBottom() { return bounds[3]; }
+        void layout(int left, int top, int right, int bottom) {
+            bounds = new int[]{left, top, right, bottom};
+        }
+    }
+
+    //@EXTRACT ui public static void layoutBeside(View button, View speed)
+
+    private static int checks;
+
+    private static void checkBounds(View view, String label, int... expected) {
+        if (!Arrays.equals(view.bounds, expected)) {
+            throw new AssertionError(label + ": " + Arrays.toString(view.bounds));
+        }
+        checks++;
+    }
+
+    public static void main(String[] args) {
+        final var timer = new View(36, View.VISIBLE, 80, 86, 116, 122);
+        layoutBeside(timer, new View(0, View.GONE, 0, 0, 0, 0));
+        checkBounds(timer, "hidden speed control preserves the timer's frame", 80, 86, 116, 122);
+        layoutBeside(timer, new View(36, View.INVISIBLE, 122, 86, 158, 122));
+        checkBounds(timer, "invisible speed control does not relocate the timer", 80, 86, 116, 122);
+        layoutBeside(timer, null);
+        checkBounds(timer, "absent speed control keeps the normal frame", 80, 86, 116, 122);
+        layoutBeside(timer, new View(36, View.VISIBLE, 132, 87, 168, 123));
+        checkBounds(timer, "visible speed control keeps adjacent layout", 96, 87, 132, 123);
+        System.out.println("SLEEP_TIMER_BUTTON_LAYOUT_CHECKS=" + checks);
+    }
+}

@@ -1120,7 +1120,8 @@
         "deferred:SLEEP_TIMER_TIMESTAMP_CHECKS": 52,
         "embedded-port:EMBEDDED_PORT_CHECKS": 18,
         "proximity:SLEEP_TIMER_PROXIMITY_CHECKS": 110,
-        "viewer-ready:SLEEP_TIMER_VIEWER_READY_CHECKS": 10
+        "viewer-ready:SLEEP_TIMER_VIEWER_READY_CHECKS": 10,
+        "button-layout:SLEEP_TIMER_BUTTON_LAYOUT_CHECKS": 4
       }
     },
     {

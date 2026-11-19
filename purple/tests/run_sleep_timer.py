@@ -81,7 +81,7 @@ def fixture_source(template, production):
                 if 'import org.telegram.messenger.purple.' + name + ';' not in production['media']:
                     raise ValueError('Unqualified Purple class without a production import: ' + name)
         return bound(match[1], text)
-    result = re.sub(r'(?m)^\s*//@EXTRACT (timer|audio|media|helper|session|chat|native|viewer) ([^\n]+)$', replace, template)
+    result = re.sub(r'(?m)^\s*//@EXTRACT (timer|audio|media|helper|session|chat|native|viewer|ui) ([^\n]+)$', replace, template)
     if re.search(r'(?m)^\s*//@EXTRACT', result):
         raise ValueError('Unresolved production member')
     return result
@@ -99,7 +99,7 @@ sources = [owned / 'PurpleSleepTimerRules.java', owned / 'PurpleSleepTimerSavedS
            root / 'TMessagesProj/src/main/java/org/telegram/ui/PurpleEmbeddedPlaybackPort.java',
            Path(__file__).parent / 'sleep_timer/PurpleEmbeddedPlaybackPortCases.java']
 templates = [Path(__file__).parent / 'sleep_timer' / name for name in
-             ['PurpleSleepTimerSavedRefreshCases.java.in', 'PurpleSleepTimerDeferredCases.java.in', 'PurpleSleepTimerProximityCases.java.in', 'PurpleSleepTimerViewerReadyCases.java.in']]
+             ['PurpleSleepTimerSavedRefreshCases.java.in', 'PurpleSleepTimerDeferredCases.java.in', 'PurpleSleepTimerProximityCases.java.in', 'PurpleSleepTimerViewerReadyCases.java.in', 'PurpleSleepTimerButtonLayoutCases.java.in']]
 production = {
     'timer': owned / 'PurpleSleepTimer.java',
     'audio': owned / 'PurpleSleepTimerAudio.java',
@@ -109,6 +109,7 @@ production = {
     'chat': root / 'TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java',
     'native': root / 'TMessagesProj/src/main/java/org/telegram/ui/Components/VideoPlayer.java',
     'viewer': root / 'TMessagesProj/src/main/java/org/telegram/ui/PurpleSleepTimerViewer.java',
+    'ui': root / 'TMessagesProj/src/main/java/org/telegram/ui/PurpleSleepTimerUI.java',
 }
 java_home = Path(os.environ['JAVA_HOME'])
 classes = args.output / 'classes'
@@ -145,6 +146,7 @@ else:
         ('deferred', 'org.telegram.messenger.purple.deferred.PurpleSleepTimerDeferredCases'),
         ('proximity', 'org.telegram.messenger.purple.proximity.PurpleSleepTimerProximityCases'),
         ('viewer-ready', 'org.telegram.ui.PurpleSleepTimerViewerReadyCases'),
+        ('button-layout', 'org.telegram.ui.PurpleSleepTimerButtonLayoutCases'),
     ]:
         command = [str(java_home / 'bin/java'), '-Xmx64m', '-Dfile.encoding=UTF-8', '-cp', str(classes), main_class]
         (args.output / (label + '-run-command.json')).write_text(json.dumps(command, indent=2) + '\n')

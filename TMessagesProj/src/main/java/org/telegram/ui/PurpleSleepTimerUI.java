@@ -41,7 +41,7 @@ public final class PurpleSleepTimerUI {
     }
 
     public static void layoutBeside(View button, View speed) {
-        if (button == null || speed == null) return;
+        if (button == null || speed == null || speed.getVisibility() != View.VISIBLE) return;
         final int right = speed.getLeft();
         button.layout(right - button.getMeasuredWidth(), speed.getTop(), right, speed.getBottom());
     }
