@@ -3755,13 +3755,10 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
         if (!messageObject.isOut() && (messageObject.isContentUnread())) {
             MessagesController.getInstance(messageObject.currentAccount).markMessageContentAsRead(messageObject);
         }
-        boolean saved = org.telegram.messenger.purple.PurpleVoicePlayback.keepsMusic(savedMusicPlaylistState != null, messageObject);
+        final boolean saved = saveMusicPlaylistStateIfNeeded(messageObject);
         boolean notify = !playMusicAgain;
         MessageObject oldMessageObject = playingMessageObject;
         if (playingMessageObject != null) {
-            if (playingMessageObject.isMusic() && messageObject.isVoice() || messageObject.isRoundVideo() || messageObject.isVideo()) {
-                saved = saveMusicPlaylistStateIfNeeded();
-            }
             notify = false;
             if (!playMusicAgain) {
                 playingMessageObject.resetPlayingProgress();
@@ -7490,9 +7487,11 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
         public final float progress;
         public final int progressMs;
         public final int progressSec;
+        public final boolean forVoice;
 
-        public SavedMusicPlaylistState(MessageObject playingMessage) {
+        public SavedMusicPlaylistState(MessageObject playingMessage, boolean forVoice) {
             this.playingMessage = playingMessage;
+            this.forVoice = forVoice;
             this.progress = playingMessage.audioProgress;
             this.progressMs = playingMessage.audioProgressMs;
             this.progressSec = playingMessage.audioProgressSec;
@@ -7539,16 +7538,28 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
     }
 
     public boolean purpleHasInterruptedMusic() {
-        return savedMusicPlaylistState != null;
+        return savedMusicPlaylistState != null && savedMusicPlaylistState.forVoice;
     }
 
-    private boolean saveMusicPlaylistStateIfNeeded() {
-        if (playingMessageObject != null && playingMessageObject.isMusic() && !playlist.isEmpty()) {
-            savedMusicPlaylistState = new SavedMusicPlaylistState(playingMessageObject);
-            return true;
-        } else {
-            return savedMusicPlaylistState != null;
+    private boolean saveMusicPlaylistStateIfNeeded(MessageObject next) {
+        final boolean voice = org.telegram.messenger.purple.PurpleVoicePlayback.isVoiceOrRound(next);
+        if (!voice && !next.isVideo()) {
+            clearMusicPlaylistState();
+            return false;
         }
+        if (voice && (!purpleHasInterruptedMusic() || playingMessageObject != null
+                && !org.telegram.messenger.purple.PurpleVoicePlayback.isVoiceOrRound(playingMessageObject))) {
+            clearMusicPlaylistState();
+        }
+        if (playingMessageObject != null && playingMessageObject.isMusic()) {
+            final boolean playing = audioPlayer != null && audioPlayer.isPlaying() && !isMessagePaused();
+            if (!playlist.isEmpty() && (!voice || playing)) {
+                savedMusicPlaylistState = new SavedMusicPlaylistState(playingMessageObject, voice);
+            } else {
+                clearMusicPlaylistState();
+            }
+        }
+        return savedMusicPlaylistState != null && (voice || playingMessageObject != null);
     }
 
     private boolean restoreMusicPlaylistState() {

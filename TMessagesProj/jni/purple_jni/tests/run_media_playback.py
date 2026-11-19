@@ -156,7 +156,7 @@ ports.run(repo, args.output, compiler)
 controller = hooked['messenger/MediaController.java'].read_text()
 assert controller.count('PurpleVoicePlayback.advance(') == 2
 assert 'if (org.telegram.messenger.purple.PurpleVoicePlayback.restorePaused()) pauseMessage(messageObject, false);' in controller
-assert 'PurpleVoicePlayback.keepsMusic(savedMusicPlaylistState != null, messageObject)' in controller
+assert 'final boolean saved = saveMusicPlaylistStateIfNeeded(messageObject);' in controller
 assert 'if (purplePlaylist != null) return purplePlaylist;' in hooked['ui/ChatActivity.java'].read_text()
 
 settings = (java / 'ui/PurpleSettingsActivity.java').read_text()

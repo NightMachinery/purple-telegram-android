@@ -32,7 +32,7 @@ public final class PurpleVoicePlayback {
 
         boolean owns(MessageObject message) {
             return message != null && message.currentAccount == account && message.getDialogId() == dialog
-                    && (message.isVoice() || message.isRoundVideo());
+                    && isVoiceOrRound(message);
         }
     }
 
@@ -94,9 +94,8 @@ public final class PurpleVoicePlayback {
         return true;
     }
 
-    /** cleanupPlayer clears the playing object before starting the next queue item. */
-    public static boolean keepsMusic(boolean saved, MessageObject next) {
-        return saved && next != null && (next.isVoice() || next.isRoundVideo());
+    public static boolean isVoiceOrRound(MessageObject message) {
+        return message != null && (message.isVoice() || message.isRoundVideo());
     }
 
     public static boolean restorePaused() {

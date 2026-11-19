@@ -35,6 +35,14 @@ def run(root, output, compiler):
     restore = block(media, '    private boolean restoreMusicPlaylistState()')
     player = (java / 'messenger/purple/PurplePlaylistsPlayer.java').read_text()
     same_message = block(player, '    public static boolean same(MessageObject first, MessageObject second)')
+    saved_state = block(media, '    private static class SavedMusicPlaylistState').replace('private ', '', 1)
+    music_state = ''.join(block(media, signature) for signature in [
+        '    private void clearMusicPlaylistState()',
+        '    public boolean purpleHasInterruptedMusic()',
+        '    private boolean saveMusicPlaylistStateIfNeeded(',
+    ])
+    start = media.index('        final boolean saved = saveMusicPlaylistStateIfNeeded(messageObject);')
+    before_cleanup = media[start:media.index('        cleanupPlayer(notify, false);', start)]
     no_next = block(media, '    public boolean hasNoNextVoiceOrRoundVideoMessage()')
     setter = block(media, '    public void setVoiceMessagesPlaylist(')
     receiver = (java / 'messenger/MusicPlayerReceiver.java').read_text()
@@ -46,11 +54,11 @@ def run(root, output, compiler):
     put('android/util/SparseArray.java', 'package android.util;public class SparseArray<T> extends java.util.HashMap<Integer,T>{public void put(int k,T v){super.put(k,v);}public void remove(int k){super.remove(k);}}')
     put('org/telegram/messenger/MessageObject.java', '''package org.telegram.messenger;
 public class MessageObject {
- public int currentAccount=0,id;public long dialog,eventId;public boolean out,round,music,unread=true,once;public float audioProgress,forceSeekTo;public int audioProgressMs,audioProgressSec;
+ public int currentAccount=0,id;public long dialog,eventId;public boolean out,round,music,video,unread=true,once;public float audioProgress,forceSeekTo;public int audioProgressMs,audioProgressSec;
  public MessageObject(int id,long dialog,boolean out,boolean round){this.id=id;this.dialog=dialog;this.out=out;this.round=round;}
  public static class Document{public long id;}private final Document document=new Document();
  public Document getDocument(){document.id=id;return document;}
- public int getId(){return id;}public long getDialogId(){return dialog;}public boolean isOut(){return out;}public boolean isVoice(){return !round&&!music;}public boolean isRoundVideo(){return round;}public boolean isMusic(){return music;}public boolean isContentUnread(){return unread;}public boolean isVoiceOnce(){return once&&!round;}public boolean isRoundOnce(){return once&&round;}public void resetPlayingProgress(){audioProgress=0;}
+ public int getId(){return id;}public long getDialogId(){return dialog;}public boolean isOut(){return out;}public boolean isVoice(){return !round&&!music&&!video;}public boolean isVideo(){return video;}public boolean isRoundVideo(){return round;}public boolean isMusic(){return music;}public boolean isContentUnread(){return unread;}public boolean isVoiceOnce(){return once&&!round;}public boolean isRoundOnce(){return once&&round;}public void resetPlayingProgress(){audioProgress=0;}
 }''')
     put('org/telegram/messenger/DialogObject.java', 'package org.telegram.messenger;public class DialogObject {public static boolean isEncryptedDialog(long d){return false;}public static boolean isUserDialog(long d){return d>0;}}')
     put('org/telegram/messenger/UserConfig.java', 'package org.telegram.messenger;public class UserConfig {public static UserConfig getInstance(int a){return new UserConfig();}public long getClientUserId(){return 1;}}')
@@ -79,12 +87,13 @@ public class MediaController {
  public static final MediaController instance=new MediaController();public static MediaController getInstance(){return instance;}
  public MessageObject playingMessageObject;public ArrayList<MessageObject> playlist=new ArrayList<>(),shuffledPlaylist=new ArrayList<>(),voiceMessagesPlaylist;public SparseArray<MessageObject> voiceMessagesPlaylistMap;boolean voiceMessagesPlaylistUnread,playMusicAgain;int currentPlaylistNum,pipSwitchingState;Pip pipRoundVideoView;public boolean paused;public int restores,plays;SavedMusicPlaylistState savedMusicPlaylistState;
  static class Pip{void close(boolean v){}}
- static class SavedMusicPlaylistState{MessageObject playingMessage;float progress=.4f;int progressMs=400,progressSec;SavedMusicPlaylistState(MessageObject m){playingMessage=m;}}
- public void setup(ArrayList<MessageObject> voices,MessageObject music){playlist.clear();shuffledPlaylist.clear();savedMusicPlaylistState=null;paused=false;plays=restores=0;playingMessageObject=voices.get(0);setVoiceMessagesPlaylist(voices,false);if(music!=null){playlist.add(music);currentPlaylistNum=0;savedMusicPlaylistState=new SavedMusicPlaylistState(music);}}
- public boolean purpleHasInterruptedMusic(){return savedMusicPlaylistState!=null;}
+ static class AudioPlayer{boolean playing=true;boolean isPlaying(){return playing;}}
+ AudioPlayer audioPlayer;boolean downloadingCurrentMessage;
+ '''+saved_state+music_state+'''
+ public void setup(ArrayList<MessageObject> voices,MessageObject music){playlist.clear();shuffledPlaylist.clear();savedMusicPlaylistState=null;paused=downloadingCurrentMessage=false;audioPlayer=new AudioPlayer();plays=restores=0;playingMessageObject=voices.get(0);setVoiceMessagesPlaylist(voices,false);if(music!=null){playlist.add(music);currentPlaylistNum=0;music.audioProgress=.4f;music.audioProgressMs=400;savedMusicPlaylistState=new SavedMusicPlaylistState(music,true);}}
  public MessageObject getPlayingMessageObject(){return playingMessageObject;}
- public boolean isMessagePaused(){return paused;}
- public boolean playMessage(MessageObject messageObject){boolean saved=org.telegram.messenger.purple.PurpleVoicePlayback.keepsMusic(savedMusicPlaylistState!=null,messageObject);if(messageObject.isVoice()||messageObject.isRoundVideo()){if(!saved)playlist.clear();}playingMessageObject=messageObject;paused=false;plays++;return true;}
+ public boolean isMessagePaused(){return paused||downloadingCurrentMessage;}
+ public boolean playMessage(MessageObject messageObject){'''+before_cleanup+'''if(messageObject.isVoice()||messageObject.isRoundVideo()||messageObject.isVideo()){if(!saved)playlist.clear();}playingMessageObject=messageObject;paused=downloadingCurrentMessage=false;plays++;return true;}
  public boolean pauseMessage(MessageObject m){return pauseMessage(m,false);}public boolean pauseMessage(MessageObject m,boolean ignored){paused=true;return true;}
  public void setPlaybackOrderType(int v){}public void playNextMessage(){}public void playPreviousMessage(){}public void playPreviousMessageWithoutOrder(){}
  public void cleanupPlayer(boolean a,boolean b){playingMessageObject=null;}public void seekToProgress(MessageObject m,float p){}
@@ -120,7 +129,7 @@ public class PortCases {
   PurpleCore.on=option;PurpleCore.settings=mode|(resume?4:0);ChatActivity chat=new ChatActivity();MessageObject start=msg(10,dialog,ownStart,roundStart);
   MessageObject incomingRound=msg(11,dialog,false,true),ownVoice=msg(12,dialog,true,false),incomingVoice=msg(13,dialog,false,false),heardRound=msg(14,dialog,false,true),laterVoice=msg(15,dialog,false,false);heardRound.unread=false;ownVoice.unread=false;
   chat.messages.addAll(Arrays.asList(laterVoice,heardRound,incomingVoice,ownVoice,incomingRound,start));
-  MediaController.instance.savedMusicPlaylistState=music?new MediaController.SavedMusicPlaylistState(msg(50,99,false,false)):null;
+  MediaController.instance.savedMusicPlaylistState=music?new MediaController.SavedMusicPlaylistState(msg(50,99,false,false),true):null;
   ArrayList<MessageObject> list=chat.createVoiceMessagesPlaylist(start,false);
   mode=music?mode:2;
   boolean confined=option&&dialog==42&&!ownStart;
@@ -135,6 +144,37 @@ public class PortCases {
   if(music){check(c.paused!=resume,"resume switch controls restored track");check(track.forceSeekTo==.4f&&track.audioProgress==.4f,"restored position retained");}
   check(PurpleVoicePlayback.skipsAppended(msg(20,dialog,true,true))==(mode!=2||confined),"own live round follows mode");
   check(PurpleVoicePlayback.skipsAppended(msg(21,dialog,false,true))==(mode!=2),"incoming live round cannot cross heard barrier");
+ }
+ static void voiceInterruption() {
+  PurpleCore.settings=4;
+  MediaController c=MediaController.instance;
+  for(boolean round:new boolean[]{false,true})for(int state=0;state<5;state++){
+   MessageObject voice=msg(10,42,false,round),track=msg(50,99,false,false);
+   ArrayList<MessageObject> list=new ArrayList<>(Collections.singletonList(voice));
+   track.music=true;track.audioProgress=.4f;track.audioProgressMs=400;
+   c.setup(list,null);c.playingMessageObject=track;c.playlist.add(track);c.currentPlaylistNum=0;
+   c.paused=state==1;
+   if(state==2)c.audioPlayer=null;
+   c.downloadingCurrentMessage=state==3;
+   if(state==4)c.audioPlayer.playing=false;
+   c.playMessage(voice);
+   check(c.purpleHasInterruptedMusic()==(state==0),"interruption requires active music "+round+" "+state);
+   c.setVoiceMessagesPlaylist(PurpleVoicePlayback.playlist(voice,list,false,false,0),false);
+   c.complete();
+   check(c.playingMessageObject==(state==0?track:null),"voice ends without starting inactive music "+round+" "+state);
+   if(state==0)check(!c.paused&&track.forceSeekTo==.4f&&track.audioProgressMs==400,"active song resumes at saved position");
+  }
+  MessageObject voice=msg(10,42,false,false),video=msg(20,42,false,false),track=msg(50,99,false,false);
+  video.video=true;track.music=true;
+  ArrayList<MessageObject> list=new ArrayList<>(Collections.singletonList(voice));
+  c.setup(list,null);c.playingMessageObject=track;c.playlist.add(track);
+  c.playMessage(video);
+  check(c.savedMusicPlaylistState!=null&&!c.purpleHasInterruptedMusic(),"ordinary video keeps its own music snapshot");
+  c.playMessage(voice);
+  check(!c.purpleHasInterruptedMusic(),"voice after video does not inherit the earlier song");
+  c.setVoiceMessagesPlaylist(PurpleVoicePlayback.playlist(voice,list,false,false,0),false);
+  c.complete();
+  check(c.playingMessageObject==null,"voice after video stops without playing music");
  }
  static boolean overlap(int a,int aw,int b,int bw){return aw>0&&bw>0&&a<b+bw&&b<a+aw;}
  static void geometry(){
@@ -164,7 +204,8 @@ public class PortCases {
   for(long dialog:new long[]{42,-42,-43,1})for(boolean on:new boolean[]{false,true})for(int mode:new int[]{0,1,2})for(boolean resume:new boolean[]{false,true})for(boolean music:new boolean[]{false,true})for(boolean own:new boolean[]{false,true})for(boolean round:new boolean[]{false,true})queue(dialog,on,mode,resume,music,own,round);
   check(PurpleSleepTimerAudio.automaticCalls>0,"actual completion reaches the timer automatic port");
   check(PurpleSleepTimerAudio.restoreCalls>0,"actual saved music restore reaches the timer port");
-  System.out.println("MEDIA_MIXED_QUEUE_CHECKS="+checks);checks=0;buttons();System.out.println("MEDIA_BUTTON_CHECKS="+checks);
+  System.out.println("MEDIA_MIXED_QUEUE_CHECKS="+checks);checks=0;
+  voiceInterruption();System.out.println("MEDIA_VOICE_INTERRUPTION_CHECKS="+checks);checks=0;buttons();System.out.println("MEDIA_BUTTON_CHECKS="+checks);
  }
 }'''
 

@@ -10,7 +10,9 @@ Purple Settings > Media playback has two app-wide rows next to Seek step:
   values: Resume music, Unheard, then music, and All, then music. The chooser
   keeps the full descriptions.
 - **Resume music after voice messages** (default on): interrupted music returns
-  playing. Off restores the same track and position paused, as upstream does.
+  playing. Off restores the same track and position paused. The song must
+  have been playing when the voice message or round video began. A paused
+  song or one still waiting for its download does not start when voice ends.
 
 Without interrupted music the selected queue runs to the same boundary and
 stops. The settings are captured on the next manual play, including a replay of
