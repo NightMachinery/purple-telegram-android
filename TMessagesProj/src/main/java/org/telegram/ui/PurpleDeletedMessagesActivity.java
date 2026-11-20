@@ -91,8 +91,8 @@ public final class PurpleDeletedMessagesActivity extends UniversalFragment {
             if (model != null && model.refreshSuggested()) items.add(UItem.asShadow(text(R.string.PurpleArchiveQueryNewer)));
             items.add(UItem.asShadow(LocaleController.formatString(R.string.PurpleArchiveScopedCounts,page.counts.get(0).toString(),page.counts.get(1).toString(),page.counts.get(2).toString(),
                 page.counts.get(3).toString(),page.counts.get(4).toString(),page.counts.get(5).toString(),page.counts.get(6).toString())));
-            items.add(UItem.asShadow(LocaleController.formatString(page.logicalComplete ? R.string.PurpleArchiveLogicalBytes : R.string.PurpleArchiveLogicalProgress,page.logicalBytes)));
-            items.add(UItem.asShadow(LocaleController.formatString(R.string.PurpleArchivePhysicalEstimate,page.physicalBytes) + "\n" + text(R.string.PurpleArchiveFreedUnknown)));
+            items.add(UItem.asShadow(LocaleController.formatString(page.logicalComplete ? R.string.PurpleArchiveLogicalBytes : R.string.PurpleArchiveLogicalProgress, PurpleArchiveUI.formatSize(page.logicalBytes))));
+            items.add(UItem.asShadow(LocaleController.formatString(R.string.PurpleArchivePhysicalEstimate, PurpleArchiveUI.formatSize(page.physicalBytes)) + "\n" + text(R.string.PurpleArchiveFreedUnknown)));
             if (page.gap) items.add(UItem.asShadow(text(R.string.PurpleArchiveGap)));
             if (page.entries.isEmpty() && !page.more) items.add(UItem.asShadow(text(page.counts.get(1) == 0 ? R.string.PurpleArchiveDeletedEmpty : R.string.PurpleArchiveDeletedEnd)));
             for (PurpleArchiveQueries.Entry entry : page.entries) {

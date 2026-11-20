@@ -758,7 +758,7 @@
     <string name="PurpleArchivePolicy">Encrypted storage for this account on this device. Retained content has no expiry. Storage is removed at logout and excluded from backup and device transfer.</string>
     <string name="PurpleArchiveStorageOnly">Received content and accepted edits are retained locally when archive admission succeeds. Open a message menu and choose View Edit History. Earlier content may be missing. View Edit History offers retained attachments; the chat menu also offers Deleted messages.</string>
     <string name="PurpleArchiveRequires23">Requires Android 6 or newer (API 23). No archive is created on this device.</string>
-    <string name="PurpleArchiveReady">Encrypted storage: %1$s bytes (estimate)</string>
+    <string name="PurpleArchiveReady">Encrypted storage: %1$s (estimate)</string>
     <string name="PurpleArchiveOpening">Checking encrypted storage…</string>
     <string name="PurpleArchiveClosePending">The archive could not close safely. Refresh to retry; existing content is preserved.</string>
     <string name="PurpleArchiveRecoveryUnavailable">Archive recovery could not finish. Refresh to retry; existing content is preserved.</string>
@@ -834,9 +834,9 @@
     <string name="PurpleArchiveQueryBusy">Archive readers are busy. Close another archive view, then refresh or reopen this view.</string>
     <string name="PurpleArchiveQueryUnavailable">Deleted messages and counts are unavailable. No empty or zero result is being reported. For a damaged archive, use Discard this account’s archive and start fresh in Purple settings.</string>
     <string name="PurpleArchiveScopedCounts">Stored messages: %1$s\nDeleted, expired or consumed: %2$s\nVersions: %3$s · Older versions: %4$s\nAttachment references: %5$s · Complete references: %6$s\nUnique retained blobs: %7$s</string>
-    <string name="PurpleArchiveLogicalBytes">Logical retained media in this scope: %1$s bytes (shared blobs counted once)</string>
-    <string name="PurpleArchiveLogicalProgress">Logical retained media: at least %1$s bytes verified so far. Calculation is incomplete.</string>
-    <string name="PurpleArchivePhysicalEstimate">Last measured physical account storage: %1$s bytes (estimate, including database, journals and staging)</string>
+    <string name="PurpleArchiveLogicalBytes">Logical retained media in this scope: %1$s (shared blobs counted once)</string>
+    <string name="PurpleArchiveLogicalProgress">Logical retained media: at least %1$s verified so far. Calculation is incomplete.</string>
+    <string name="PurpleArchivePhysicalEstimate">Last measured physical account storage: %1$s (estimate, including database, journals and staging)</string>
     <string name="PurpleArchiveFreedUnknown">Possible freed space is unknown. Other versions, chats or readers may still retain these blobs.</string>
     <string name="PurpleArchiveDeletedEmpty">No matching deleted messages in this admitted snapshot.</string>
     <string name="PurpleArchiveDeletedEnd">End of matching deleted messages in this snapshot.</string>

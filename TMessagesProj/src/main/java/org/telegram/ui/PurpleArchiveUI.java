@@ -1,5 +1,8 @@
 package org.telegram.ui;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.WeakHashMap;
 import org.telegram.messenger.LocaleController;
@@ -16,9 +19,28 @@ final class PurpleArchiveUI {
         items.add(UItem.asButton(ROW, text(R.string.PurpleArchiveTitle)));
         if (!requested.containsKey(fragment)) { requested.put(fragment, true); refresh(fragment); }
     }
+    private static final String[] STORAGE_UNITS = { "B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB" };
+
+    static String formatSize(String bytes) {
+        final BigInteger value;
+        try {
+            value = new BigInteger(bytes);
+        } catch (NumberFormatException e) {
+            return text(R.string.PurpleArchiveUnavailable);
+        }
+        if (value.signum() < 0 || value.bitLength() > Long.SIZE) {
+            return text(R.string.PurpleArchiveUnavailable);
+        }
+        int unit = Math.max(0, (value.bitLength() - 1) / 10);
+        BigInteger tenths = value.multiply(BigInteger.TEN).shiftRight(unit * 10);
+        NumberFormat formatter = NumberFormat.getNumberInstance(LocaleController.getInstance().getCurrentLocale());
+        formatter.setMaximumFractionDigits(1);
+        return formatter.format(new BigDecimal(tenths, 1)) + " " + STORAGE_UNITS[unit];
+    }
+
     private static String summary(PurpleArchive.Status status) {
         switch (status.state) {
-            case "Ready": return LocaleController.formatString(R.string.PurpleArchiveReady, status.bytes);
+            case "Ready": return LocaleController.formatString(R.string.PurpleArchiveReady, formatSize(status.bytes));
             case "Maintenance": return text(R.string.PurpleArchivePurgeRunning);
             case "Maintenance held": return text(status.reason.toLowerCase(java.util.Locale.US).contains("admission") ? R.string.PurpleArchivePurgeAdmissionHeld : R.string.PurpleArchivePurgeHeld);
             case "Opening": case "Busy": return text(R.string.PurpleArchiveOpening);

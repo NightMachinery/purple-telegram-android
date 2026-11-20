@@ -27,5 +27,5 @@
     <string name="PurpleLocalRoundLimit">مدت ضبط محلی پیام ویدیویی</string>
     <string name="PurpleLocalRoundLimitInfo">۱، ۳ یا ۵ دقیقه ضبط کنید. پیام‌های ویدیویی تلگرام حداکثر یک دقیقه هستند. ضبط‌های طولانی اصل کامل را نگه می‌دارند و پیش‌فرض به بخش‌های ویدیویی تقسیم می‌شوند؛ ویدیوی معمولی هم در دسترس است.</string>
     <string name="PurpleArchiveTitle">بایگانی محلی پیام‌ها</string>
-    <string name="PurpleArchiveReady">آماده · %1$s بایت</string>
+    <string name="PurpleArchiveReady">آماده · %1$s</string>
 </resources>

@@ -27,5 +27,5 @@
     <string name="PurpleLocalRoundLimit">مدة تسجيل الفيديو الدائري المحلي</string>
     <string name="PurpleLocalRoundLimitInfo">سجّل لمدة دقيقة أو 3 أو 5 دقائق. لا تتجاوز دوائر تيليجرام دقيقة واحدة. تحتفظ التسجيلات الأطول بالأصل الكامل وتُجهّز أجزاء دائرية افتراضياً، مع خيار فيديو عادي.</string>
     <string name="PurpleArchiveTitle">أرشيف الرسائل المحلي</string>
-    <string name="PurpleArchiveReady">جاهز · %1$s بايت</string>
+    <string name="PurpleArchiveReady">جاهز · %1$s</string>
 </resources>
