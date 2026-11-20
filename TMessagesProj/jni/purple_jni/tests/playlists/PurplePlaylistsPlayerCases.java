@@ -484,7 +484,39 @@ public final class PurplePlaylistsPlayerCases {
         }
     }
 
+    private static void offlineRetained() throws Exception {
+        ApplicationLoader.online = false;
+        PurplePlaylistsRetained.offlineResolutions = 0;
+        try {
+            try (Fixture f = new Fixture(0, 1)) {
+                PurplePlaylistsRetained.offlineMessage = wire(f.songs.get(0));
+                PurplePlaylistsRetained.fileAvailable = true;
+                check(f.player.start(PurplePlaylistsAccount.capture(0), f.songs, 0, "retained"),
+                        "offline saved playlist accepts play");
+                f.flush();
+                f.selected(0, "offline selection opens the retained song");
+                check(PurplePlaylistsRetained.offlineResolutions == 1 && f.network.requests.isEmpty(),
+                        "offline saved playlist resolves locally without remote lookup");
+            }
+            try (Fixture f = new Fixture(0, 1)) {
+                PurplePlaylistsRetained.offlineMessage = wire(f.songs.get(0));
+                PurplePlaylistsRetained.fileAvailable = false;
+                check(f.player.start(PurplePlaylistsAccount.capture(0), f.songs, 0, "retained"),
+                        "offline request enters the saved playback actor with a missing binding");
+                f.flush();
+                check(f.media.starts == 0 && f.network.requests.isEmpty(),
+                        "offline start refuses an unbound file without a network fallback");
+                check(f.player.snapshot().canRetry, "unbound offline audio leaves explicit Retry available");
+            }
+        } finally {
+            ApplicationLoader.online = true;
+            PurplePlaylistsRetained.offlineMessage = null;
+            PurplePlaylistsRetained.fileAvailable = false;
+        }
+    }
+
     public static void main(String[] args) throws Exception {
+        offlineRetained();
         lookAhead();
         traversal(); presentedQueue(); fences(); failures(); interruptions();
         observation();
