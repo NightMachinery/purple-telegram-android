@@ -2517,6 +2517,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
                 return;
             }
             buffersToWrite.add(input);
+            input = buffersToWrite.get(0);
             if (audioFirst == -1) {
                 if (videoFirst == -1) {
                     if (BuildVars.LOGS_ENABLED) {
@@ -2568,9 +2569,6 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
 
             if (audioStartTime == -1) {
                 audioStartTime = input.offset[input.lastWroteBuffer];
-            }
-            if (buffersToWrite.size() > 1) {
-                input = buffersToWrite.get(0);
             }
             try {
                 drainEncoder(false);

@@ -181,8 +181,47 @@ CASES=r'''
   ended(v);check(NotificationCenter.previews==1&&NotificationCenter.stops==1,"one local preview completion");check(Delegate.sends==0,"no message send");
   check(java.util.Arrays.equals(java.nio.file.Files.readAllBytes(v.cameraFile.toPath()),new byte[]{4,1,7,9}),"full original bytes unchanged");
  }
+ static void offerAudio(InstantCameraView camera, long... timestamps) {
+  AudioBufferInfo audio = new AudioBufferInfo();
+  audio.results = timestamps.length;
+  for (int i = 0; i < timestamps.length; i++) {
+   audio.offset[i] = timestamps[i];
+   audio.read[i] = 128;
+   audio.buffer[i].limit(128);
+  }
+  camera.videoEncoder.handleAudioFrameAvailable(audio);
+ }
+ static void startupPreroll() throws Exception {
+  int before = checks;
+  clock(1000);
+  InstantCameraView camera = take(1);
+  VideoRecorder recorder = camera.videoEncoder;
+  offerAudio(camera, 1000000L, 1020000L, 1040000L);
+  offerAudio(camera, 1060000L, 1080000L, 1100000L);
+  check(recorder.buffersToWrite.size() == 2, "audio queued before first video frame");
+  video(camera, 0);
+  video(camera, 200000000L);
+  check(recorder.videoFirst == 1200000L, "first committed frame establishes video epoch");
+  clock(1600);
+  offerAudio(camera, 1220000L, 1240000L, 1260000L);
+  check(recorder.purpleBudget.durationMs() < 1000,
+    "queued pre-video PCM must not trip the local duration deadline");
+  AndroidUtilities.flush();
+  check(camera.recording && recorder.running, "initial valid PCM leaves native capture running");
+  check(recorder.audioStartTime == 1220000L && MediaCodec.pts.get(MediaCodec.pts.size() - 1) == 0L,
+    "first matching PCM sets the media epoch");
+  check(MediaCodec.sizes.get(MediaCodec.sizes.size() - 1) == 384,
+    "first admitted PCM contains only the aligned buffer");
+  check(!recorder.purpleEos.audioInputEnded(), "initial PCM does not submit EOS");
+  offerAudio(camera, 1280000L);
+  check(MediaCodec.pts.get(MediaCodec.pts.size() - 1) == 60000L
+    && MediaCodec.sizes.get(MediaCodec.sizes.size() - 1) == 128, "next PCM remains monotonic");
+  check(Delegate.sends == 0, "recording startup does not send");
+  System.out.println("LEGACY_PREROLL_CHECKS=" + (checks - before));
+ }
  public static void main(String[] args)throws Exception{
   directory=new File(args[0]);directory.mkdirs();selected=args[1];
+  if (selected.equals("all")) startupPreroll();
   for(int m:new int[]{1,3,5})for(int mode:new int[]{2,0,1,3,4})boundary(m,mode);
   clock(1000);InstantCameraView v=take(1);VideoRecorder old=v.videoEncoder;clock(21000);v.togglePause();AndroidUtilities.flush();check(!v.recording&&old.pauseRecorder,"actual pause creates local preview");
   List<Runnable> pausedDeadlines=new ArrayList<>(old.handler.jobs);clock(300000);Handler.due();check(!old.running||old.pauseRecorder,"long pause has no active capture deadline");v.togglePause();AndroidUtilities.flush();for(Runnable timer:pausedDeadlines)timer.run();check(v.recording,"actual resume admitted with remaining budget");

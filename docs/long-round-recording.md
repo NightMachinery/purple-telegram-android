@@ -118,6 +118,14 @@ MP4 boxes, journal bytes, codec/hardware and the repair result remain ports;
 these are persistence/protocol checks, not Android output or repair-codec proof.
 All121 EOS and171 admission assertions and previous suite floors remain.
 
+Legacy audio can arrive before the first camera frame. Startup aligns those
+buffers oldest first against the video clock, then uses the first eligible PCM
+buffer as the audio timestamp origin. This prevents older queued audio from
+creating a negative presentation time and ending a recording prematurely.
+The native cap fixture begins with two queued audio buffers before the first
+video frame and checks timestamp alignment, PCM continuity and the absence of
+an early end-of-stream signal.
+
 The upstream InstantCameraView seams capture one PurpleLegacyRoundBudget per
 VideoRecorder, arm it when audio capture starts, pause/retire it with native
 transitions, and guard video and PCM codec input. A small private callback must
