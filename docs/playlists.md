@@ -505,7 +505,11 @@ without downloading the track again. Online playback still checks the current
 source with Telegram.
 
 When music is active for the selected account, tap the deck artwork or title to
-open the stock audio sheet. Play and pause have a separate target. The focused
+open the stock audio sheet. During Next or Previous, the deck still opens
+the sheet for the current song while it remains loaded. The finding status
+appears below it, and the deck's play and pause control returns when the
+transition ends. Tapping the deck opens the song that is current at tap time.
+Play and pause have a separate target. The focused
 song is marked on the playlist that owns playback, so a song shared by two
 playlists does not appear selected in both.
 

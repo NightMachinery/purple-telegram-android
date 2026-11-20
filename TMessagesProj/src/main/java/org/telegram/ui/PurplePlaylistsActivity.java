@@ -1,5 +1,6 @@
 package org.telegram.ui;
 
+import android.app.Activity;
 import static org.telegram.messenger.LocaleController.getString;
 import android.content.Context;
 import org.telegram.messenger.LocaleController;
@@ -345,39 +346,41 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
         return LocaleController.formatPluralString("PurplePlaylistsSongs", count);
     }
 
-    private MessageObject deckSong() {
+    private MessageObject deckSong(boolean allowResolving) {
         if (!visible || adding != null || recentlyDeleted || optionsPage || currentAccount != UserConfig.selectedAccount) return null;
         MediaController media = MediaController.getInstance();
         MessageObject message = media.getPlayingMessageObject();
         if (message == null || message.currentAccount != currentAccount || !message.isMusic()) return null;
         PurplePlaylistsPlayer player = media.purplePlaylists();
         PurplePlaylistsPlayer.State live = player.snapshot();
-        if (live.account == currentAccount && live.status != PurplePlaylistsPlayer.Status.Idle
-                && (player.displayedQueue(currentAccount) == null || live.status != PurplePlaylistsPlayer.Status.Playing
-                && live.status != PurplePlaylistsPlayer.Status.Paused)) return null;
+        if (live.account == currentAccount && live.status != PurplePlaylistsPlayer.Status.Idle) {
+            boolean ready = live.status == PurplePlaylistsPlayer.Status.Playing
+                    || live.status == PurplePlaylistsPlayer.Status.Paused;
+            boolean resolving = allowResolving && live.status == PurplePlaylistsPlayer.Status.Resolving;
+            if ((!ready && !resolving) || player.displayedQueue(currentAccount) == null) return null;
+        }
         return message;
     }
 
     private void addPlayback(ArrayList<UItem> items) {
-        MessageObject message = deckSong();
+        MessageObject message = deckSong(true);
         if (message != null) {
             if (deck == null) deck = new PurplePlaylistCells.Deck(getContext());
             MediaController media = MediaController.getInstance();
             PurplePlaylistsPlayer.Queue queue = media.purplePlaylists().displayedQueue(currentAccount);
             boolean paused = media.isMessagePaused();
+            boolean canToggle = deckSong(false) != null;
+            Runnable toggle = canToggle ? () -> {
+                if (deckSong(false) != message || queue != media.purplePlaylists().displayedQueue(currentAccount)
+                        || paused != media.isMessagePaused()) return;
+                if (paused) media.playMessage(message); else media.pauseMessage(message);
+            } : null;
             AudioInfo audio = media.getAudioInfo();
             deck.bind(message.getMusicTitle(), message.getMusicAuthor(), Long.hashCode(message.getDialogId()),
-                    audio == null ? null : audio.getSmallCover(), paused,
-                    () -> {
-                        if (deckSong() == message && queue == media.purplePlaylists().displayedQueue(currentAccount)
-                                && getParentActivity() instanceof LaunchActivity && AndroidUtilities.isContextSafe(getParentActivity()))
-                            new AudioPlayerAlert(getParentActivity(), getResourceProvider()).show();
-                    }, () -> {
-                        if (deckSong() != message || queue != media.purplePlaylists().displayedQueue(currentAccount)
-                                || paused != media.isMessagePaused()) return;
-                        if (paused) media.playMessage(message); else media.pauseMessage(message);
-                    }, getResourceProvider());
+                    audio == null ? null : audio.getSmallCover(), paused, this::openDeckPlayer,
+                    toggle, getResourceProvider());
             items.add(UItem.asCustom(deck, LayoutHelper.WRAP_CONTENT));
+            if (!canToggle) items.add(UItem.asShadow(text("PlaybackResolving")));
         } else if (adding == null && !recentlyDeleted && !optionsPage && playback != null && playback.account == currentAccount
                 && playback.status != PurplePlaylistsPlayer.Status.Idle && playback.status != PurplePlaylistsPlayer.Status.Closed) {
             items.add(UItem.asShadow(playback.title.isEmpty() ? playbackText() : playback.title + " · " + playbackText()));
@@ -387,6 +390,13 @@ public final class PurplePlaylistsActivity extends UniversalFragment implements 
                 items.add(retry);
             }
         }
+    }
+
+    private void openDeckPlayer() {
+        Activity activity = getParentActivity();
+        if (activity instanceof LaunchActivity && AndroidUtilities.isContextSafe(activity)
+                && deckSong(true) != null)
+            new AudioPlayerAlert(activity, getResourceProvider()).show();
     }
 
     private void addDownloads(ArrayList<UItem> items) {

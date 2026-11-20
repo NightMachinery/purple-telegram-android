@@ -307,7 +307,8 @@ final class PurplePlaylistCells {
             playPause.setColor(accent);
             playPause.setPause(!paused, false);
             transport.setContentDescription(getString(paused ? R.string.AccActionPlay : R.string.AccActionPause));
-            transport.setOnClickListener(v -> toggle.run());
+            transport.setVisibility(toggle == null ? INVISIBLE : VISIBLE);
+            transport.setOnClickListener(toggle == null ? null : v -> toggle.run());
         }
     }
 
