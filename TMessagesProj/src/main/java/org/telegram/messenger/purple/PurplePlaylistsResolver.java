@@ -15,10 +15,21 @@ final class PurplePlaylistsResolver implements AutoCloseable {
         final Status status;
         final TLRPC.Message message;
         final int waitSeconds;
+        final boolean protectedPeer, offline;
         Result(PurplePlaylistsView.Song song, PurplePlaylistsView.Source source,
                 Status status, TLRPC.Message message, int waitSeconds) {
+            this(song, source, status, message, waitSeconds, false, false);
+        }
+        private Result(PurplePlaylistsView.Song song, PurplePlaylistsView.Source source,
+                Status status, TLRPC.Message message, int waitSeconds, boolean protectedPeer, boolean offline) {
             this.song = song; this.source = source; this.status = status;
             this.message = message; this.waitSeconds = waitSeconds;
+            this.protectedPeer = protectedPeer; this.offline = offline;
+        }
+        static Result offline(PurplePlaylistsView.Song song, PurplePlaylistsView.Source source,
+                TLRPC.Message message, boolean protectedPeer) {
+            Status status = source == song.source ? Status.Ready : Status.EarlierCopy;
+            return new Result(song, source, status, message, 0, protectedPeer, true);
         }
         boolean playable() { return status == Status.Ready || status == Status.EarlierCopy; }
     }
@@ -119,7 +130,7 @@ final class PurplePlaylistsResolver implements AutoCloseable {
         } else {
             results.add(new Result(song, source, status,
                     status == Status.Ready || status == Status.EarlierCopy ? reply.message : null,
-                    status == Status.Wait ? Math.max(1, reply.waitSeconds) : 0));
+                    status == Status.Wait ? Math.max(1, reply.waitSeconds) : 0, reply.protectedPeer, false));
             ++index; sourceIndex = 0;
             if (status == Status.Wait) {
                 while (index < songs.size()) {

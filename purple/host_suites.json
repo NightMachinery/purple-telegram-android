@@ -1387,6 +1387,8 @@
         "run:PLAYLIST_WORKER_CHECKS": 132,
         "run:PLAYLIST_DOWNLOAD_TRANSFER_CHECKS": 877,
         "run:LINE PLAYLIST_DOWNLOAD_TRANSFER_OK": "PASS",
+        "offline-seed:PLAYLIST_OFFLINE_SEED_CHECKS": 12,
+        "offline-recover:PLAYLIST_OFFLINE_RECOVERY_CHECKS": 11,
         "restart-success-seed:PLAYLIST_RESTART_SEED_CHECKS": 8,
         "restart-success-recover:PLAYLIST_RESTART_SUCCESS_CHECKS": 12,
         "restart-overlap-seed:PLAYLIST_RESTART_SEED_CHECKS": 8,

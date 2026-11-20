@@ -2,6 +2,7 @@ package org.telegram.messenger.purple;
 
 import android.os.Looper;
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.MediaController;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
@@ -356,10 +357,14 @@ public final class PurplePlaylistsPlayer {
         @Override public AutoCloseable resolve(PurplePlaylistsView.Song song,
                 Consumer<PurplePlaylistsResolver.Result> done) {
             PurplePlaylistsResolver.Result cached = ahead.take(song);
-            if (cached != null) { done.accept(cached); return () -> {}; }
+            if (cached != null && (playlist.isEmpty() || cached.offline == !ApplicationLoader.isNetworkOnline())) {
+                done.accept(cached); return () -> {};
+            }
             return rawResolve(song, done);
         }
         AutoCloseable rawResolve(PurplePlaylistsView.Song song, Consumer<PurplePlaylistsResolver.Result> done) {
+            if (!playlist.isEmpty() && !ApplicationLoader.isNetworkOnline())
+                return PurplePlaylistsRetained.prepareOffline(account, playlist, song, this::current, done);
             java.util.concurrent.atomic.AtomicBoolean canceled = new java.util.concurrent.atomic.AtomicBoolean();
             java.util.concurrent.atomic.AtomicReference<AutoCloseable> retained = new java.util.concurrent.atomic.AtomicReference<>();
             PurplePlaylistsResolver resolver = new PurplePlaylistsResolver(
@@ -397,16 +402,21 @@ public final class PurplePlaylistsPlayer {
             long chatId = peer instanceof TLRPC.TL_peerChannel ? peer.channel_id
                     : peer instanceof TLRPC.TL_peerChat ? peer.chat_id : 0;
             TLRPC.Chat chat = chatId == 0 ? null : metadata.getChat(chatId);
-            if (chatId != 0 && (chat == null || chat.min)) return false;
+            if (candidate.offline) {
+                if (PurplePlaylistsRetained.path(actual.currentAccount, actual.getDocument(), false) == null) return false;
+            } else if (chatId != 0 && (chat == null || chat.min)) {
+                return false;
+            }
             boolean restricted = chat != null && metadata.getRestrictionReason(chat.restriction_reason) != null;
             PurplePlaylistsResolver.Reply reply = new PurplePlaylistsResolver.Reply(actual.messageOwner,
-                    null, 0, chat != null && chat.noforwards, restricted);
+                    null, 0, (candidate.offline && candidate.protectedPeer) || (chat != null && chat.noforwards), restricted);
             return PurplePlaylistsResolver.qualify(candidate.song, candidate.source, reply,
                     account.identity.userId, PurpleCopyPolicy.unrestricted())
                     == PurplePlaylistsResolver.Status.Ready;
         }
 
         @Override public boolean start(PurplePlaylistsResolver.Result value, boolean restart) {
+            if (value.offline && ApplicationLoader.isNetworkOnline()) return false;
             MessageObject next = new MessageObject(account.identity.slot, value.message, false, false);
             if (!valid(value, next)) return false;
             MessageObject previous = message;

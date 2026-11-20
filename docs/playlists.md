@@ -482,6 +482,14 @@ invalidate an edit while both files still match its snapshot. The chooser report
 confirmed counts, partial saves and refusals separately. The captured selection
 can be tried again after a refusal that occurred before any write.
 
+Completed retained downloads can play after an offline restart. The download
+journal records the validated audio source alongside the completed file.
+Playback verifies the current account, playlist membership and file digest.
+An older download can use a matching message already stored on the device.
+Playing an older download online can save its source for future offline use
+without downloading the track again. Online playback still checks the current
+source with Telegram.
+
 When music is active for the selected account, tap the deck artwork or title to
 open the stock audio sheet. Play and pause have a separate target. The focused
 song is marked on the playlist that owns playback, so a song shared by two

@@ -1727,7 +1727,88 @@ public final class PurplePlaylistsDownloadCases {
         System.out.println("PLAYLIST_CLEANUP_RECOVER_CHECKS="+checks);
     }
 
+    private static void offlineSeed(Path handoff) throws Exception {
+        Fixture f = new Fixture(); Ui ui = new Ui(); PurplePlaylistsWorker worker = f.worker(0);
+        String playlist;
+        try {
+            playlist = setup(worker, f, ui);
+            PurplePlaylistsWorker.Snapshot snapshot = selected(worker, ui, playlist);
+            PurplePlaylistsView.Song song = snapshot.view.detail.songs.get(0);
+            org.telegram.tgnet.TLRPC.TL_message message = new org.telegram.tgnet.TLRPC.TL_message();
+            message.id = song.source.messageId;
+            message.peer_id = new org.telegram.tgnet.TLRPC.TL_peerUser(); message.peer_id.user_id = 101;
+            message.media = new org.telegram.tgnet.TLRPC.TL_messageMediaDocument();
+            message.media.document = document(1, 91);
+            message.media.document.mime_type = "audio/mpeg";
+            message.media.document.attributes.add(new org.telegram.tgnet.TLRPC.TL_documentAttributeAudio());
+            PurplePlaylistsDownloads.Item item = new PurplePlaylistsDownloads.Item(new PurplePlaylistsResolver.Result(
+                    song, song.source, PurplePlaylistsResolver.Status.Ready, message, 0), "mp3");
+            PurplePlaylistsDownloads downloads = new PurplePlaylistsDownloads(worker, new DownloadFactory());
+            PurplePlaylistsDownloads.Control control = downloads.start(snapshot, playlist, java.util.Collections.singletonList(item));
+            ConnectionsManager connection = ConnectionsManager.getInstance(0);
+            reply(sent(connection), payload(91, 61));
+            status(control, PurplePlaylistsDownloads.Status.Downloaded);
+            check(control.nativeReady == 1 && control.progress.downloaded == 1, "completed real download opened native binding");
+            String state = new String(selected(worker, ui, playlist).state(), StandardCharsets.UTF_8);
+            check(state.contains("offline_playback"), "verified download checkpoint includes offline metadata");
+            check(!state.contains("captured") && !state.contains("access_hash"), "checkout retains no transport credentials");
+        } finally { f.stop(worker); }
+        org.json.JSONObject data = new org.json.JSONObject().put("files", f.files.toString()).put("playlist", playlist)
+                .put("pid", java.lang.management.ManagementFactory.getRuntimeMXBean().getName());
+        Files.write(handoff, bytes(data.toString()));
+        System.out.println("PLAYLIST_OFFLINE_SEED_CHECKS=" + checks);
+    }
+
+    private static PurplePlaylistsResolver.Result offline(PurplePlaylistsAccount.Captured account, String playlist,
+            PurplePlaylistsView.Song song) throws Exception {
+        AtomicReference<PurplePlaylistsResolver.Result> result = new AtomicReference<>();
+        CountDownLatch done = new CountDownLatch(1);
+        try (AutoCloseable operation = PurplePlaylistsRetained.prepareOffline(account, playlist, song, () -> true, value -> {
+            result.set(value);
+            done.countDown();
+        })) { await(done); }
+        return result.get();
+    }
+
+    private static void offlineRecover(Path handoff) throws Exception {
+        org.json.JSONObject data = new org.json.JSONObject(new String(Files.readAllBytes(handoff), StandardCharsets.UTF_8));
+        check(!data.getString("pid").equals(java.lang.management.ManagementFactory.getRuntimeMXBean().getName()),
+                "offline preparation runs in a new process");
+        Fixture f = new Fixture(java.nio.file.Paths.get(data.getString("files")));
+        PurplePlaylistsWorker worker = PurplePlaylistsWorkers.acquire(0);
+        try {
+            Ui ui = new Ui();
+            String playlist = data.getString("playlist");
+            PurplePlaylistsView.Song song = selected(worker, ui, playlist).view.detail.songs.get(0);
+            PurplePlaylistsAccount.Captured account = PurplePlaylistsAccount.capture(0);
+            check(PurplePlaylistsRetained.path(0, document(1, 91), false) == null, "new process has no retained binding");
+            PurplePlaylistsResolver.Result result = offline(account, playlist, song);
+            check(result.offline && result.playable() && result.message.id == song.source.messageId,
+                    "offline reopen reconstructs the exact retained song source");
+            check(result.message.media.document.access_hash == 0 && result.message.media.document.file_reference.length == 0,
+                    "offline message cannot initiate authorized remote reads");
+            RetainedNativeHooks hook = new RetainedNativeHooks();
+            java.io.File fallback = f.files.resolve("missing.mp3").toFile();
+            Path owned = path(f, "1.mp3");
+            check(hook.lookup(result.message.media.document, false, fallback).toPath().equals(owned),
+                    "stock path resolves the owned download on the new process");
+            hook.currentAccount = 1;
+            check(hook.lookup(result.message.media.document, false, fallback).equals(fallback),
+                    "other account cannot resolve the retained file");
+            check(!offline(account, playlist + "bad", song).playable(), "another playlist cannot admit the source");
+            byte[] damaged = payload(91, 61);
+            damaged[0] ^= 1;
+            Files.write(owned, damaged);
+            check(!offline(account, playlist, song).playable(), "changed file contents are refused");
+            check(ConnectionsManager.getInstance(0).sent.isEmpty(), "offline preparation issued no Telegram requests");
+        } finally { f.stop(worker); }
+        System.out.println("PLAYLIST_OFFLINE_RECOVERY_CHECKS=" + checks);
+    }
+
     public static void main(String[] args) throws Exception {
+        if (args.length == 2 && args[0].equals("offline-seed")) { offlineSeed(java.nio.file.Paths.get(args[1])); return; }
+        if (args.length == 2 && args[0].equals("offline-recover")) { offlineRecover(java.nio.file.Paths.get(args[1])); return; }
+
         if(args.length==2 && args[0].equals("cleanup-seed")) {cleanupSeed(java.nio.file.Paths.get(args[1]));return;}
         if(args.length==2 && args[0].equals("cleanup-recover")) {cleanupRecover(java.nio.file.Paths.get(args[1]));return;}
         if (args.length == 2 && args[0].equals("seed")) { restartSeed(java.nio.file.Paths.get(args[1])); return; }

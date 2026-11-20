@@ -10,14 +10,17 @@ final class PurplePlaylistsDownloadJournal {
         final long document, size;
         final PurplePlaylistsView.Song song;
         final PurplePlaylistsView.Source source;
+        final PurplePlaylistsOfflineMusic.Descriptor playback;
         private String identity, sha256;
         private long offset;
         private boolean complete, closed;
         private final PurplePlaylistsDownloadJournal owner;
         private Entry(PurplePlaylistsDownloadJournal owner, String playlist, String token, long document,
-                String extension, long size, PurplePlaylistsView.Song song, PurplePlaylistsView.Source source) {
+                String extension, long size, PurplePlaylistsView.Song song, PurplePlaylistsView.Source source,
+                PurplePlaylistsOfflineMusic.Descriptor playback) {
             this.owner = owner; this.playlist = playlist; this.token = token; this.document = document;
             this.extension = extension; this.size = size; this.song = song; this.source = source;
+            this.playback = playback;
         }
         long offset() { return offset; }
         boolean complete() { return complete; }
@@ -69,9 +72,14 @@ final class PurplePlaylistsDownloadJournal {
     }
     private PurplePlaylistsStore.Read save(Entry entry, PurplePlaylistsStore.Read expected,
             PurplePlaylistsDownloadsCore.Result update) throws IOException {
-        if (!update.ready() || !guard(expected).current()) throw new IOException("DownloadInventoryChanged");
-        byte[] local = update.local();
-        PurplePlaylistsStore.Write written = store.write(expected, expected.library(), local, PurplePlaylistsStore.Kind.LocalEdit);
+        if (!update.ready()) throw new IOException("DownloadInventoryChanged");
+        return save(entry, expected, update.local());
+    }
+    private PurplePlaylistsStore.Read save(Entry entry, PurplePlaylistsStore.Read expected, byte[] local)
+            throws IOException {
+        if (!guard(expected).current()) throw new IOException("DownloadInventoryChanged");
+        PurplePlaylistsStore.Write written = store.write(expected, expected.library(), local,
+                PurplePlaylistsStore.Kind.LocalEdit, current);
         if (!written.ready()) throw new IOException("DownloadCheckpointUnconfirmed");
         PurplePlaylistsStore.Read actual = read(entry);
         if (!Arrays.equals(actual.library(), expected.library()) || !Arrays.equals(actual.state(), local))
@@ -97,19 +105,27 @@ final class PurplePlaylistsDownloadJournal {
     }
     Entry prepare(String playlist, PurplePlaylistsView.Song song, PurplePlaylistsView.Source source,
             long document, String extension, long size) throws IOException {
+        return prepare(playlist, song, source, document, extension, size, null);
+    }
+    Entry prepare(String playlist, PurplePlaylistsView.Song song, PurplePlaylistsView.Source source,
+            long document, String extension, long size, PurplePlaylistsOfflineMusic.Descriptor playback)
+            throws IOException {
         enter();
         try {
             if (playlist == null || song == null || source == null || document <= 0 || size <= 0
                     || !Long.toString(document).equals(song.documentId)) throw new IOException("InvalidDownloadSource");
-            Entry provisional = new Entry(this, playlist, "", document, extension, size, song, source);
+            Entry provisional = new Entry(this, playlist, "", document, extension, size, song, source, playback);
             PurplePlaylistsStore.Read state = read(provisional);
             PurplePlaylistsDownloadsCore.Record old = record(state, document);
             String token = old != null && !old.complete ? old.token : UUID.randomUUID().toString().replace("-", "");
-            Entry entry = new Entry(this, playlist, token, document, extension, size, song, source);
+            Entry entry = new Entry(this, playlist, token, document, extension, size, song, source, playback);
             if (old != null) {
                 exact(entry, old); entry.identity = old.identity; entry.sha256 = old.sha256;
                 if (old.complete) {
                     files.inspectMedia(document, extension, entry.proof(), guard(state));
+                    byte[] local = state.state();
+                    byte[] updated = PurplePlaylistsOfflineMusic.record(local, self, document, source, playback);
+                    if (local != updated) save(entry, state, updated);
                     entry.offset = size; entry.complete = true; return entry;
                 }
                 if (!old.sha256.isEmpty()) {
@@ -163,8 +179,12 @@ final class PurplePlaylistsDownloadJournal {
         } finally { busy = false; }
     }
     private void complete(Entry entry, PurplePlaylistsStore.Read state) throws IOException {
-        state = save(entry, state, PurplePlaylistsDownloadsCore.complete(state.state(), self,
-                entry.playlist, entry.token, entry.document, entry.extension, entry.size, entry.identity, entry.sha256));
+        PurplePlaylistsDownloadsCore.Result completed = PurplePlaylistsDownloadsCore.complete(state.state(), self,
+                entry.playlist, entry.token, entry.document, entry.extension, entry.size, entry.identity, entry.sha256);
+        if (!completed.ready()) throw new IOException("DownloadCompletionNotCommitted");
+        byte[] local = PurplePlaylistsOfflineMusic.record(completed.local(), self, entry.document,
+                entry.source, entry.playback);
+        state = save(entry, state, local);
         PurplePlaylistsDownloadsCore.Record actual = record(state, entry.document); exact(entry, actual);
         if (!actual.complete) throw new IOException("DownloadCompletionNotCommitted");
         files.inspectMedia(entry.document, entry.extension, entry.proof(), guard(state));

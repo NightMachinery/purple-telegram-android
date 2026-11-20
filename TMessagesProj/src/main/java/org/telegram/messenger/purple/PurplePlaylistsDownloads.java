@@ -27,6 +27,7 @@ final class PurplePlaylistsDownloads implements PurplePlaylistsWorker.DownloadOw
         final PurplePlaylistsView.Source source;
         final PurplePlaylistsDownloadTransfer.Document document;
         final String extension;
+        final PurplePlaylistsOfflineMusic.Descriptor playback;
         static String extension(String mime) {
             return "audio/mpeg".equals(mime) ? "mp3" : "audio/ogg".equals(mime) ? "ogg"
                     : "audio/flac".equals(mime) ? "flac" : "audio/mp4".equals(mime) ? "m4a" : "audio";
@@ -37,6 +38,7 @@ final class PurplePlaylistsDownloads implements PurplePlaylistsWorker.DownloadOw
             song = result.song; source = result.source;
             document = new PurplePlaylistsDownloadTransfer.Document(result.message.media.document);
             this.extension = extension;
+            playback = PurplePlaylistsOfflineMusic.capture(result);
             if (song == null || source == null || !song.documentId.equals(Long.toString(document.id)))
                 throw new IllegalArgumentException("ChangedDownloadSource");
         }
@@ -190,7 +192,7 @@ final class PurplePlaylistsDownloads implements PurplePlaylistsWorker.DownloadOw
                 try {
                     policy();
                     if (keep) value.entry = journal.prepare(playlist, value.item.song, value.item.source,
-                            value.document.id, value.item.extension, value.document.size);
+                            value.document.id, value.item.extension, value.document.size, value.item.playback);
                     else value.cached = cache.prepare(value.item);
                     if (value.complete()) finish(value, PurplePlaylistsDownloadsCore.Phase.Downloaded);
                     else {

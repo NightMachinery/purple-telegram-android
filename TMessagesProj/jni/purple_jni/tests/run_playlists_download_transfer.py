@@ -58,7 +58,7 @@ def main():
     runtime = args.java_runtime or Path(os.environ.get('PURPLE_HOST_JAVA', str(compiler.with_name('java'))))
     if not runtime.is_file() or not os.access(runtime, os.X_OK):
         raise RuntimeError('Explicit host Java runtime is unavailable')
-    sources = [java / name for name in ['PurplePlaylistsDownloadControls.java', 'PurplePlaylistsCache.java', 'PurplePlaylistsRetained.java', 'PurplePlaylistsDownloadsCore.java', 'PurplePlaylistsDownloadJournal.java', 'PurplePlaylistsDownloadTransfer.java', 'PurplePlaylistsDownloads.java', 'PurplePlaylistsDownloadsTelegram.java', 'PurplePlaylistsResolver.java', 'PurplePlaylistsTelegram.java', 'PurplePlaylistsView.java', 'PurplePlaylistsEdits.java', 'PurplePlaylistsRemoval.java', 'PurplePlaylistsWorker.java', 'PurplePlaylistsWorkers.java', 'PurplePlaylistsAccount.java', 'PurpleAccountFiles.java',
+    sources = [java / name for name in ['PurplePlaylistsDownloadControls.java', 'PurplePlaylistsCache.java', 'PurplePlaylistsRetained.java', 'PurplePlaylistsOfflineMusic.java', 'PurplePlaylistsDownloadsCore.java', 'PurplePlaylistsDownloadJournal.java', 'PurplePlaylistsDownloadTransfer.java', 'PurplePlaylistsDownloads.java', 'PurplePlaylistsDownloadsTelegram.java', 'PurplePlaylistsResolver.java', 'PurplePlaylistsTelegram.java', 'PurplePlaylistsView.java', 'PurplePlaylistsEdits.java', 'PurplePlaylistsRemoval.java', 'PurplePlaylistsWorker.java', 'PurplePlaylistsWorkers.java', 'PurplePlaylistsAccount.java', 'PurpleAccountFiles.java',
         'PurplePlaylistsStore.java', 'PurplePlaylistsCore.java', 'PurplePlaylistsLocalCore.java',
         'PurplePlaylistsPhysical.java', 'PurpleAccountFileSnapshot.java',
         'PurpleSyncRetainedBases.java', 'PurpleGlobalChoiceModel.java']]
@@ -132,6 +132,16 @@ def main():
             raise RuntimeError('Captured account fixture reported a JNI diagnostic')
         print(text, end='')
         if args.scenario == 'full':
+            offline_handoff = args.output / 'fixtures' / 'offline-retained.json'
+            for stage in ['seed', 'recover']:
+                child_log = args.output / ('offline-' + stage + '.log')
+                with child_log.open('x') as output:
+                    subprocess.run([*command, 'offline-' + stage, str(offline_handoff)], cwd=repo, env=environment,
+                        stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT, timeout=60, check=True)
+                report = child_log.read_text()
+                if re.search(r'(?i)\bwarning\b|fatal error|JNI DETECTED ERROR', report):
+                    raise RuntimeError('Offline cold process ' + stage + ' reported a JNI diagnostic')
+                print(report, end='')
             for mode in ['success', 'overlap', 'inode', 'cleanup']:
                 handoff = args.output / 'fixtures' / ('restart-' + mode + '.json')
                 for stage, tail, expected in [('seed', ['seed', str(handoff)], 86),

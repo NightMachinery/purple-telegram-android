@@ -9,6 +9,7 @@ import org.telegram.tgnet.TLRPC;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -81,13 +82,27 @@ public final class PurplePlaylistsRetained {
     private static boolean same(PurplePlaylistsView.Source first, PurplePlaylistsView.Source second) {
         return first != null && second != null && first.messageId == second.messageId && first.peer.equals(second.peer);
     }
+    private static PurplePlaylistsDownloadsCore.Record completeRecord(PurplePlaylistsStore.Read read,
+            long self, long document) {
+        PurplePlaylistsDownloadsCore.Record found = null;
+        for (PurplePlaylistsDownloadsCore.Record record : PurplePlaylistsDownloadsCore.records(read.state(), self)) {
+            if (record.document != document) continue;
+            if (found != null || !record.complete) return null;
+            found = record;
+        }
+        return found;
+    }
     static boolean publish(PurplePlaylistsStore store, long self, PurplePlaylistsWorker worker, String playlist,
             PurplePlaylistsView.Song selected, PurplePlaylistsView.Source source,
             PurplePlaylistsDownloadTransfer.Document document, PurplePlaylistsStore.Current scope) throws Exception {
+        return publish(store, store.read(), self, worker, playlist, selected, source, document, scope);
+    }
+    private static boolean publish(PurplePlaylistsStore store, PurplePlaylistsStore.Read read, long self,
+            PurplePlaylistsWorker worker, String playlist, PurplePlaylistsView.Song selected,
+            PurplePlaylistsView.Source source, PurplePlaylistsDownloadTransfer.Document document,
+            PurplePlaylistsStore.Current scope) throws Exception {
         if (document == null || selected == null || source == null || !scope.current()
-                || !worker.downloadCurrent()) return false;
-        PurplePlaylistsStore.Read read = store.read();
-        if (!read.ready()) return false;
+                || !worker.downloadCurrent() || !read.ready() || !store.stillCurrent(read)) return false;
         PurplePlaylistsView view = PurplePlaylistsView.project(read.library(), read.state(), self, playlist);
         boolean member = false;
         if (view.valid() && view.detail != null && !view.detail.row.deleted) {
@@ -98,13 +113,8 @@ public final class PurplePlaylistsRetained {
             }
         }
         if (!member) return false;
-        PurplePlaylistsDownloadsCore.Record found = null;
-        for (PurplePlaylistsDownloadsCore.Record record : PurplePlaylistsDownloadsCore.records(read.state(), self)) {
-            if (record.document != document.id) continue;
-            if (found != null) return false;
-            found = record;
-        }
-        if (found == null || !found.complete || found.size != document.size) return false;
+        PurplePlaylistsDownloadsCore.Record found = completeRecord(read, self, document.id);
+        if (found == null || found.size != document.size) return false;
         PurplePlaylistsPhysical files = store.media();
         File directory = files.mediaDirectory();
         File file = new File(directory, document.id + "." + found.extension);
@@ -136,6 +146,41 @@ public final class PurplePlaylistsRetained {
         }
         return true;
     }
+    static AutoCloseable prepareOffline(PurplePlaylistsAccount.Captured account, String playlist,
+            PurplePlaylistsView.Song song, java.util.function.BooleanSupplier scope,
+            Consumer<PurplePlaylistsResolver.Result> done) {
+        AtomicBoolean canceled = new AtomicBoolean(), delivered = new AtomicBoolean();
+        PurplePlaylistsWorker worker = PurplePlaylistsWorkers.acquire(account.identity.slot);
+        PurplePlaylistsStore.Current current = () -> !canceled.get() && scope.getAsBoolean() && account.current();
+        PurplePlaylistsResolver.Result unavailable = new PurplePlaylistsResolver.Result(song, song.source,
+                PurplePlaylistsResolver.Status.Failed, null, 0);
+        Consumer<PurplePlaylistsResolver.Result> deliver = result -> {
+            if (delivered.compareAndSet(false, true))
+                AndroidUtilities.runOnUIThread(() -> { if (current.current()) done.accept(result); });
+        };
+        Runnable refused = () -> deliver.accept(unavailable);
+        if (worker == null || !worker.matches(account) || !worker.postStore(null, (store, self) -> {
+            PurplePlaylistsResolver.Result result = null;
+            try {
+                PurplePlaylistsStore.Read read = store.read();
+                if (read.ready() && current.current()) {
+                    PurplePlaylistsDownloadsCore.Record record = completeRecord(read, self, Long.parseLong(song.documentId));
+                    if (record != null) {
+                        result = PurplePlaylistsOfflineMusic.restore(read.state(), self, record, song, account.identity.slot);
+                        if (result != null) {
+                            PurplePlaylistsDownloadTransfer.Document document =
+                                    new PurplePlaylistsDownloadTransfer.Document(result.message.media.document);
+                            if (!publish(store, read, self, worker, playlist, song, result.source, document, current))
+                                result = null;
+                        }
+                    }
+                }
+            } catch (Exception | LinkageError ignored) { result = null; }
+            deliver.accept(result != null ? result : unavailable);
+        }, refused, false)) refused.run();
+        return () -> canceled.set(true);
+    }
+
     static AutoCloseable prepare(PurplePlaylistsAccount.Captured account, String playlist,
             PurplePlaylistsResolver.Result result, java.util.function.BooleanSupplier scope,
             Consumer<PurplePlaylistsResolver.Result> done) {
@@ -155,8 +200,21 @@ public final class PurplePlaylistsRetained {
         catch (RuntimeException e) { deliver.run(); return () -> canceled.set(true); }
         if (!worker.postStore(null, (store, self) -> {
             boolean retained = false;
-            try { if (current.current()) retained = publish(store, self, worker, playlist, result.song, result.source, document, current); }
-            catch (Exception | LinkageError ignored) { }
+            try {
+                if (current.current()) {
+                    PurplePlaylistsStore.Read read = store.read();
+                    retained = publish(store, read, self, worker, playlist, result.song, result.source, document, current);
+                    if (retained) {
+                        byte[] local = read.state();
+                        byte[] updated = PurplePlaylistsOfflineMusic.record(local, self, document.id, result.source,
+                                PurplePlaylistsOfflineMusic.capture(result));
+                        if (!Arrays.equals(local, updated)) {
+                            store.write(read, read.library(), updated, PurplePlaylistsStore.Kind.LocalEdit, current);
+                            publish(store, self, worker, playlist, result.song, result.source, document, current);
+                        }
+                    }
+                }
+            } catch (Exception | LinkageError ignored) { }
             if (!retained && current.current()) {
                 try { PurplePlaylistsCache.restore(store, self, worker, playlist, result, current); }
                 catch (Exception | LinkageError ignored) { }
