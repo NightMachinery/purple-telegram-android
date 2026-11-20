@@ -50,6 +50,8 @@ public class View {
  protected final Context context;public int left,top,width,height,paddingBottom,visibility,events;
  public float alpha=1;public void setAlpha(float v){alpha=v;}private float tx,ty,sx=1,sy=1;private OnClickListener click;
  private final Map<Integer,Object> tags=new HashMap<>();
+ ViewGroup parent;
+ public ViewGroup getParent(){return parent;}
  public View(Context c){context=c;}public Context getContext(){return context;}
  public float getX(){return left+tx;}public float getY(){return top+ty;}
  public void setX(float v){tx=v-left;}public void setY(float v){ty=v-top;}
@@ -80,7 +82,11 @@ public class View {
 import android.content.Context;import java.util.*;
 public class ViewGroup extends View {
  protected final List<View> children=new ArrayList<>();private View target;
- public ViewGroup(Context c){super(c);}public void addView(View v){children.add(v);}
+ public boolean interceptDisallowed;
+ public ViewGroup(Context c){super(c);}public void addView(View v){children.add(v);v.parent=this;}
+ public void requestDisallowInterceptTouchEvent(boolean disallow){
+  interceptDisallowed=disallow;if(parent!=null)parent.requestDisallowInterceptTouchEvent(disallow);
+ }
  public int getChildCount(){return children.size();}public View getChildAt(int n){return children.get(n);}
  public boolean dispatchTouchEvent(MotionEvent e){
   if(e.getAction()==MotionEvent.ACTION_DOWN){target=null;for(int i=children.size()-1;i>=0;i--){View v=children.get(i);

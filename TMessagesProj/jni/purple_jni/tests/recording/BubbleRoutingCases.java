@@ -305,6 +305,65 @@ public final class BubbleRoutingCases {
         }
     }
 
+    private static final class SwipeBackParent extends FrameLayout {
+        private float startX;
+        private boolean swipingBack;
+        int intercepted;
+
+        SwipeBackParent(Context context) {
+            super(context);
+        }
+
+        @Override
+        public boolean dispatchTouchEvent(MotionEvent event) {
+            int action = event.getAction();
+            if (action == MotionEvent.ACTION_DOWN) {
+                interceptDisallowed = false;
+                swipingBack = false;
+                startX = event.getX();
+            } else if (swipingBack) {
+                if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) swipingBack = false;
+                return true;
+            } else if (action == MotionEvent.ACTION_MOVE
+                    && !interceptDisallowed && event.getX() - startX > 24) {
+                intercepted++;
+                swipingBack = true;
+                super.dispatchTouchEvent(BubbleRoutingCases.event(MotionEvent.ACTION_CANCEL, event.getX(), event.getY()));
+                return true;
+            }
+            boolean handled = super.dispatchTouchEvent(event);
+            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                interceptDisallowed = false;
+            }
+            return handled;
+        }
+    }
+
+    private static void dragThroughNavigation(SwipeBackParent navigation, float startX, float y, float endX) {
+        navigation.dispatchTouchEvent(event(MotionEvent.ACTION_DOWN, startX, y));
+        navigation.dispatchTouchEvent(event(MotionEvent.ACTION_MOVE, (startX + endX) / 2, y));
+        navigation.dispatchTouchEvent(event(MotionEvent.ACTION_MOVE, endX, y));
+        navigation.dispatchTouchEvent(event(MotionEvent.ACTION_UP, endX, y));
+    }
+
+    private static void navigation(boolean v2) {
+        implementation = v2 ? "v2 swipe back" : "legacy swipe back";
+        Surface s = new Surface(v2, false);
+        s.shrink();
+        SwipeBackParent nav = new SwipeBackParent(s.root.getContext());
+        nav.addView(s.root);
+        View camera = s.camera.getCameraContainer();
+        float y = camera.getY() + camera.getPivotY() * (1 - camera.getScaleY()) + 60;
+        dragThroughNavigation(nav, 1008, y, 72);
+        check(s.camera.getContext().prefs.corner == 2, "drag to left reaches the bubble");
+        dragThroughNavigation(nav, 72, y, 1008);
+        check(nav.intercepted == 0, "bubble keeps the rightward gesture away from swipe back");
+        check(s.camera.getContext().prefs.corner == 3, "drag returns the bubble to the right");
+        int before = nav.intercepted;
+        dragThroughNavigation(nav, 400, 800, 700);
+        check(nav.intercepted == before + 1, "swipe outside the bubble remains available to navigation");
+    }
+
     public static void main(String[] args) {
         run(false); run(true);
         int terminalStart = checks; terminal(false); terminal(true);
@@ -320,6 +379,9 @@ public final class BubbleRoutingCases {
         secondTake(false, false); secondTake(true, false);
         secondTake(false, true); secondTake(true, true);
         System.out.println("ROUND_SECOND_TAKE_CHECKS=" + (checks - before));
+        before = checks;
+        navigation(false); navigation(true);
+        System.out.println("ROUND_NAVIGATION_HANDOFF_CHECKS=" + (checks - before));
         System.out.println(checks + " checks, " + failures + " failures");
         if (failures != 0) throw new AssertionError("round routing failures=" + failures);
     }

@@ -86,6 +86,7 @@ public final class PurpleRoundBubble {
         if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
             if (state.small && !inside) return false;
             if (!state.small && inside) return nativeDispatch(state, event, normal);
+            if (state.small && view.getParent() != null) view.getParent().requestDisallowInterceptTouchEvent(true);
             state.tracking = true;
             state.dragging = false;
             state.downX = event.getX(); state.downY = event.getY();

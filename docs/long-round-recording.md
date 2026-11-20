@@ -326,3 +326,7 @@ tracks. The timing model and observed format end differ by 44 microseconds from
 90 kHz quantization; the fixture keeps those facts separate. Actual failed-part
 bytes were unavailable, so native encoding and decoded continuity remain device
 checks.
+
+A drag that starts on the floating camera reserves its gesture through release
+or cancellation. Chat swipe-back stays available for touches outside the
+camera and for subsequent gestures.
