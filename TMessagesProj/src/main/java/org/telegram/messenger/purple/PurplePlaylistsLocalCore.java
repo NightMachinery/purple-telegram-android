@@ -78,6 +78,12 @@ public final class PurplePlaylistsLocalCore {
             return deadline > 0 ? deadline : 0;
         } catch (org.json.JSONException | NumberFormatException error) { return 0; }
     }
+    static Result recoverEdit(byte[] local, long earliest, long selfUserId) {
+        PurpleCore.ensureLoaded();
+        return require(recoverEditNative(local, earliest, selfUserId));
+    }
+
+    private static native Result recoverEditNative(byte[] local, long earliest, long selfUserId);
     private static native Result outcomeNative(byte[] local, int result, long now, long selfUserId);
 
     private static Result require(Result result) {

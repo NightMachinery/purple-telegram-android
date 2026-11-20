@@ -450,8 +450,7 @@ final class PurplePlaylistsWorker implements AutoCloseable {
             return new Outcome(Status.Ready, PurplePlaylistsStore.Status.Ready, "NoChange", latest, null, edit, latestUndo);
         }
         invalidate();
-        PurplePlaylistsStore.Write write = store.write(expected, edit.library(), edit.state(),
-                PurplePlaylistsStore.Kind.LocalEdit);
+        PurplePlaylistsStore.Write write = store.writeEdit(expected, edit);
         boolean confirmed = write.ready() || write.libraryCommitted;
         boolean uncertain = write.libraryMayHaveChanged && !write.libraryCommitted;
         boolean available = editor.finish(confirmed, write.ready(), uncertain);

@@ -12,7 +12,8 @@ namespace PurpleAndroid {
 class PlaylistFiles final {
 public:
     using Current = std::function<bool()>;
-    enum class Name { Library, Local, Backup, SyncPublication };
+    enum class Name { Library, Local, Backup, SyncPublication, EditCheckpoint };
+    static constexpr auto kEditCheckpointBytes = 212;
     struct Snapshot {
         QByteArray parent;
         QByteArray revision;

@@ -258,11 +258,23 @@ consumption, uncertain library publication and actor close revoke the ticket.
 Ordinary reads preserve it; merges that may change the library revoke it.
 Core Undo conflicts are refusals, not permission to restore old file bytes.
 
-A confirmed library with a failed local checkpoint keeps explicit partial-write
-flags and its Undo record. During that actor lifetime the next valid edit can
-repair bookkeeping using the original unsynced age, rather than its retry time.
-This is not crash-recovery proof: the in-memory age and Undo disappear at process
-exit. Callers must show partial results and must not blindly retry mutations.
+A changed local edit that needs a new local checkpoint first confirms a bounded
+account-local recovery record. It records the original unsynced age and exact
+digests for the prior and candidate library and local bytes. It uses the same
+writer lock, route checks, and durability barriers as the paired files.
+
+The next store read reconciles a pending record before it admits a snapshot.
+An unmodified library leaves local metadata alone. A committed library with the
+prior local file restores the original unsynced age, clears stale success, and
+preserves existing retry deadlines and unknown fields. If the local checkpoint
+or an earlier recovery already completed, the store confirms those exact bytes.
+It retires the record after confirmation. A changed file it cannot identify or
+a damaged record produces a checkpoint error and preserves all files.
+
+Explicit partial-write flags still describe the original operation. Undo remains
+in memory. Recovery writes local sync bookkeeping and never replays the edit.
+The ordinary checkpoint saves recent use. Recovery preserves the existing
+recent-use history when that checkpoint failed.
 UI delivery independently checks the current request even when a no-op keeps an
 older snapshot, so cancellation cannot deliver optimistic success through it.
 

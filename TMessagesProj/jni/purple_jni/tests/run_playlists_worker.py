@@ -12,6 +12,47 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def cold_checkpoints(command, folder, repo, environment):
+    fixture = 'org.telegram.messenger.purple.PurplePlaylistsEditCheckpointCases'
+    command = [*command[:-1], fixture]
+    scenarios = [
+        ('prepare', 'prepare', 'prior', 'baseline'),
+        ('library', 'library', 'prior', 'baseline'),
+        ('library-unknown', 'library-unknown', 'partial', 'baseline'),
+        ('local', 'local', 'partial', 'baseline'),
+        ('local-unknown', 'local-unknown', 'settled', 'baseline'),
+        ('retire', 'retire', 'settled', 'baseline'),
+        ('double-exit', 'local', 'after-recovery', 'baseline'),
+        ('cooldown', 'local', 'partial', 'wait'),
+        ('new-library', 'local', 'partial', 'pristine'),
+        ('clean', 'none', 'settled', 'baseline'),
+    ]
+    refusals = ('library', 'state', 'account', 'damaged', 'format')
+
+    def phase(path, success, *args):
+        run = subprocess.run([*command, args[0], str(path), *args[1:]], cwd=repo,
+            env=environment, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, text=True, timeout=10)
+        with (folder / 'cold-checkpoints.log').open('a') as log:
+            log.write(run.stdout)
+        if run.returncode or run.stdout.strip() != success:
+            raise RuntimeError('Cold edit checkpoint failed at ' + path.name + ' ' + args[0])
+
+    for name, fault, recovered, mode in scenarios:
+        path = folder / name
+        path.mkdir(mode=0o700)
+        phase(path, 'SEED_' + fault, 'seed', fault, mode)
+        if name == 'double-exit':
+            phase(path, 'RECOVERY_INTERRUPTED_AFTER_STATE', 'read', 'retry-retire', mode)
+        phase(path, 'RECOVERED_' + recovered, 'read', recovered, mode)
+    for reason in refusals:
+        path = folder / ('refuse-' + reason)
+        path.mkdir(mode=0o700)
+        phase(path, 'SEED_local', 'seed', 'local', 'baseline')
+        phase(path, 'REFUSED_' + reason, 'refuse', reason)
+    return len(scenarios) + len(refusals)
+
+
 def main():
     parser = argparse.ArgumentParser(description='Captured playlist account authority over real JNI and files')
     parser.add_argument('--receipt', type=Path, required=True)
@@ -34,6 +75,7 @@ def main():
         'PurplePlaylistsPhysical.java', 'PurpleAccountFileSnapshot.java',
         'PurpleSyncRetainedBases.java', 'PurpleGlobalChoiceModel.java']]
     sources += [tests / 'playlists/PurplePlaylistsWorkerCases.java',
+        tests / 'playlists/PurplePlaylistsEditCheckpointCases.java',
         tests / 'java_binding/org/telegram/messenger/purple/PurpleCore.java']
     ports = sorted((tests / 'playlists/account_ports').rglob('*.java'))
     if len(ports) != 13:
@@ -83,6 +125,9 @@ def main():
         if re.search(r'(?i)\bwarning\b|fatal error|JNI DETECTED ERROR', text):
             raise RuntimeError('Captured account fixture reported a JNI diagnostic')
         print(text, end='')
+        cold = args.output / 'cold-checkpoints'
+        cold.mkdir(mode=0o700)
+        print(f'PLAYLIST_EDIT_CHECKPOINT_COLD_CASES={cold_checkpoints(command, cold, repo, environment)}')
     if {str(path.resolve()): digest(path) for path in inputs} != pins:
         raise RuntimeError('Captured account inputs changed during the phase')
 

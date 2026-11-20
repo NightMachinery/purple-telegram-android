@@ -1248,7 +1248,8 @@
         "run"
       ],
       "expects": {
-        "run:PLAYLIST_WORKER_CHECKS": 132
+        "run:PLAYLIST_WORKER_CHECKS": 132,
+        "playlists-worker:PLAYLIST_EDIT_CHECKPOINT_COLD_CASES": 15
       }
     },
     {

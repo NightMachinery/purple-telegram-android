@@ -74,11 +74,13 @@ struct Cached {
     jlong token = 0;
     Files::Snapshot file;
 };
+constexpr auto kFileKinds = size_t(Files::Name::EditCheckpoint) + 1;
+
 struct Session {
     std::thread::id thread = std::this_thread::get_id();
     std::shared_ptr<GlobalCurrent> guard;
     std::unique_ptr<Files> files;
-    std::array<std::optional<Cached>, 4> cache;
+    std::array<std::optional<Cached>, kFileKinds> cache;
     jlong sequence = 0;
     bool closed = false;
     bool writing = false;
@@ -113,7 +115,7 @@ std::shared_ptr<Session> Find(jlong handle) {
 }
 
 size_t Index(jint name) {
-    Need(name >= 0 && name < 4, "InvalidName");
+    Need(name >= 0 && size_t(name) < kFileKinds, "InvalidName");
     return size_t(name);
 }
 Files::Name Name(size_t index) {
@@ -122,6 +124,7 @@ Files::Name Name(size_t index) {
     case 1: return Files::Name::Local;
     case 2: return Files::Name::Backup;
     case 3: return Files::Name::SyncPublication;
+    case 4: return Files::Name::EditCheckpoint;
     }
     throw Failure{"InvalidName"};
 }
@@ -185,6 +188,8 @@ jobject Publish(JNIEnv *env, jlong handle, jint name, jlong token,
         const auto index = Index(name);
         Need(!session->writing, "Busy");
         Need(confirmation || index != 3 || (bytes && env->GetArrayLength(bytes) <= 4 * (10 * 1024 * 1024 + 4096 + 4) + 44), "PublicationLimit");
+        Need(confirmation || index != 4
+            || (bytes && env->GetArrayLength(bytes) <= Files::kEditCheckpointBytes), "EditCheckpointLimit");
         const auto expected = session->expected(index, token);
         const auto method = CurrentMethod(env, current);
         const auto guard = [&] { return !session->closed && CallCurrent(env, current, method); };

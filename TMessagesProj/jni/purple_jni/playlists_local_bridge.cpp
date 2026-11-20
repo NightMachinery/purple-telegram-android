@@ -10,7 +10,7 @@
 namespace {
 using namespace Purple;
 
-enum class Operation { Canonicalize, Defaults, SetSync, Checkpoint };
+enum class Operation { Canonicalize, Defaults, SetSync, Checkpoint, RecoverEdit };
 
 const char *StatusName(PlaylistLocalStatus status) {
     switch (status) {
@@ -102,6 +102,14 @@ PlaylistLocalWriteResult Evaluate(JNIEnv *env, Operation operation, jbyteArray l
         else state.unsyncedSince = state.unsyncedSince
             ? std::min(*state.unsyncedSince, uint64_t(now)) : uint64_t(now);
     }
+    if (operation == Operation::RecoverEdit) {
+        if (now < jlong(kMinimumPlaylistStamp) || now > jlong(kMaximumPlaylistStamp))
+            return { .error = PlaylistLocalError::InvalidStamp };
+        state.unsyncedSince = state.unsyncedSince
+            ? std::min(*state.unsyncedSince, uint64_t(now)) : uint64_t(now);
+        if (state.status.result == PlaylistLocalSyncResult::Synced)
+            state.status.result = PlaylistLocalSyncResult::Idle;
+    }
     return SerializePlaylistLocalState(state, uint64_t(selfUserId));
 }
 
@@ -183,4 +191,10 @@ extern "C" JNIEXPORT jobject JNICALL
 Java_org_telegram_messenger_purple_PurplePlaylistsLocalCore_outcomeNative(
         JNIEnv *env, jclass, jbyteArray local, jint outcome, jlong now, jlong selfUserId) {
     return Perform(env, Operation::Checkpoint, local, JNI_FALSE, selfUserId, now, outcome);
+}
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_org_telegram_messenger_purple_PurplePlaylistsLocalCore_recoverEditNative(
+        JNIEnv *env, jclass, jbyteArray local, jlong earliest, jlong selfUserId) {
+    return Perform(env, Operation::RecoverEdit, local, JNI_FALSE, selfUserId, earliest);
 }

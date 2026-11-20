@@ -94,8 +94,16 @@ QByteArray FileName(PlaylistFiles::Name name) {
     case PlaylistFiles::Name::Local: return "local.json";
     case PlaylistFiles::Name::Backup: return "library.json.bak";
     case PlaylistFiles::Name::SyncPublication: return "sync-publication.bin";
+    case PlaylistFiles::Name::EditCheckpoint: return "edit-checkpoint.bin";
     }
     throw Failure{"InvalidName"};
+}
+
+void CheckFileSize(PlaylistFiles::Name name, qsizetype size) {
+    Need(name != PlaylistFiles::Name::SyncPublication
+        || size <= 4 * (10 * 1024 * 1024 + 4096 + 4) + 44, "PublicationLimit");
+    Need(name != PlaylistFiles::Name::EditCheckpoint
+        || size <= PlaylistFiles::kEditCheckpointBytes, "EditCheckpointLimit");
 }
 
 std::mutex ClaimsMutex;
@@ -264,7 +272,7 @@ struct PlaylistFiles::State {
         }
         Need(Private(before, false), "InsecurePermissions");
         Need(before.st_size >= 0 && before.st_size <= std::numeric_limits<int>::max(), "AllocationLimit");
-        Need(name != Name::SyncPublication || before.st_size <= 4 * (10 * 1024 * 1024 + 4096 + 4) + 44, "PublicationLimit");
+        CheckFileSize(name, before.st_size);
         const auto fd = Fd(openat(root.value, filename.constData(), O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC));
         Need(Revision(Stat(fd.value, false)) == Revision(before), "Changed");
         auto bytes = QByteArray();
@@ -276,7 +284,7 @@ struct PlaylistFiles::State {
             Need(count >= 0, "IoError");
             if (!count) break;
             Need(bytes.size() <= std::numeric_limits<int>::max() - count, "AllocationLimit");
-            Need(name != Name::SyncPublication || bytes.size() + count <= 4 * (10 * 1024 * 1024 + 4096 + 4) + 44, "PublicationLimit");
+            CheckFileSize(name, bytes.size() + count);
             bytes.append(buffer, count);
         }
         struct stat named{};
@@ -396,7 +404,7 @@ PlaylistFiles::Snapshot PlaylistFiles::confirm(
 PlaylistFiles::Snapshot PlaylistFiles::replace(Name name, const Snapshot &expected,
         const QByteArray &bytes, const Current &current) {
     _state->worker();
-    Need(name != Name::SyncPublication || bytes.size() <= 4 * (10 * 1024 * 1024 + 4096 + 4) + 44, "PublicationLimit");
+    CheckFileSize(name, bytes.size());
     Need(!_state->writing, "Busy");
     _state->writing = true;
     struct Reset { bool &value; ~Reset() { value = false; } } reset{_state->writing};
