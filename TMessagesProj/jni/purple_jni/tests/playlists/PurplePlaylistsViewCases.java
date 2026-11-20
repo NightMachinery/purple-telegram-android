@@ -401,8 +401,21 @@ public final class PurplePlaylistsViewCases {
             check(state.partial() && state.addOutcome == PurplePlaylistsScreen.AddOutcome.Partial
                     && state.libraryCommitted && !state.stateCommitted && state.added == 1 && state.canUndo,
                     "Add partial checkpoint truth retains actual counts and Undo");
-            check(!screen.add(id, partialAdd), "partial Add cannot automatically replay"); failLocal.set(false);
-            check(screen.applyHistory(state), "partial Add remains undoable"); state = ui.next();
+            check(!screen.add(id, partialAdd), "partial Add cannot automatically replay");
+            CountDownLatch pendingCheckpoint = new CountDownLatch(1);
+            check(worker.postStore(null, (store, self) -> {
+                PurplePlaylistsStore.Read pending = store.read();
+                check(pending.displayable() && !pending.ready() && store.confirm(pending, () -> true) == null,
+                        "visible partial library has no durable sync authority");
+                pendingCheckpoint.countDown();
+            }, () -> { throw new AssertionError("pending read task refused"); }, false), "queue checkpoint read");
+            check(pendingCheckpoint.await(5, TimeUnit.SECONDS), "pending checkpoint read completed");
+            check(screen.applyHistory(state), "partial Add Undo request can retry local recovery");
+            state = ui.next();
+            check(!state.ready() && state.canUndo && state.view.detail.songs.size() == 3,
+                    "ongoing storage failure keeps the view and Undo without applying another edit");
+            failLocal.set(false);
+            check(screen.applyHistory(state), "partial Add remains undoable after storage recovers"); state = ui.next();
             check(state.ready() && state.view.detail.songs.size() == 2, "partial Add Undo removes only the new song");
             PurplePlaylistsAdd.Selection wrong = selection(music(1, 50, 9, "Wrong"));
             check(wrong == null && !screen.add(id, wrong), "screen refuses missing or foreign-account selection");

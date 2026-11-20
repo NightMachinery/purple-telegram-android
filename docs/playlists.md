@@ -271,8 +271,10 @@ or an earlier recovery already completed, the store confirms those exact bytes.
 It retires the record after confirmation. A changed file it cannot identify or
 a damaged record produces a checkpoint error and preserves all files.
 
-Explicit partial-write flags still describe the original operation. Undo remains
-in memory. Recovery writes local sync bookkeeping and never replays the edit.
+Explicit partial-write flags still describe the original operation. A confirmed
+library stays visible during a continuing local checkpoint failure. The pending
+view carries no durable write or sync authority. Undo remains in memory and can
+run after the store confirms recovery. Recovery only writes sync bookkeeping.
 The ordinary checkpoint saves recent use. Recovery preserves the existing
 recent-use history when that checkpoint failed.
 UI delivery independently checks the current request even when a no-op keeps an

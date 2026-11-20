@@ -325,13 +325,13 @@ public final class PurplePlaylistsDownloadCases {
                     && !partial.stateCommitted && partial.stateMayHaveChanged, "typed partial commit truth survives cancellation");
             check(partial.undo != null, "confirmed library preserves actor Undo despite canceled checkpoint");
             PurplePlaylistsWorker.Outcome read = f.read(worker, ui);
+            org.json.JSONObject state = new org.json.JSONObject(new String(read.snapshot.state(), StandardCharsets.UTF_8));
+            check(state.getLong("unsynced_since") == 200, "read recovers original partial edit age");
             worker.edit(read.snapshot, PurplePlaylistsEdits.Command.rename(partial.edit.playlistId, "Partial", 900), ui.target());
-            PurplePlaylistsWorker.Outcome repaired = ui.next();
-            check(repaired.ready() && !repaired.edit.changed && repaired.edit.stateChanged, "valid noop repairs missing local edit bookkeeping");
-            org.json.JSONObject state = new org.json.JSONObject(new String(repaired.snapshot.state(), StandardCharsets.UTF_8));
-            check(state.getLong("unsynced_since") == 200, "actor retains original partial edit age through checkpoint repair");
-            check(repaired.undo == partial.undo, "checkpoint repair preserves exact current Undo ticket");
-            worker.undo(repaired.snapshot, repaired.undo, 1000, ui.target());
+            PurplePlaylistsWorker.Outcome same = ui.next();
+            check(same.ready() && !same.edit.changed && !same.edit.stateChanged, "retry of recovered rename remains a no-op");
+            check(same.undo == partial.undo, "checkpoint repair preserves exact current Undo ticket");
+            worker.undo(same.snapshot, same.undo, 1000, ui.target());
             check(ui.next().ready(), "shared Undo succeeds after repaired partial write");
         } finally { f.hook.set(null); f.stop(worker); }
     }

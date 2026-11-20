@@ -61,6 +61,7 @@ final class PurplePlaylistsStore implements AutoCloseable {
             this.state = state == null ? null : state.clone();
         }
         boolean ready() { return status == Status.Ready; }
+        boolean displayable() { return library != null; }
         byte[] library() { return library == null ? null : library.clone(); }
         byte[] state() { return state == null ? null : state.clone(); }
     }
@@ -191,8 +192,10 @@ final class PurplePlaylistsStore implements AutoCloseable {
         catch (Exception e) { return false; }
     }
     private boolean bound(Read expected) {
-        return expected != null && expected.ready() && current()
-                && matches(Name.EditCheckpoint, expected.editCheckpoint)
+        return expected != null && expected.ready() && observed(expected);
+    }
+    private boolean observed(Read expected) {
+        return current() && matches(Name.EditCheckpoint, expected.editCheckpoint)
                 && matches(Name.Library, expected.libraryFile) && matches(Name.Local, expected.stateFile)
                 && current();
     }
@@ -237,7 +240,17 @@ final class PurplePlaylistsStore implements AutoCloseable {
         }
     }
 
+    private Read pendingEdit(Read before, File stateFile, byte[] state) {
+        return new Read(Status.EditCheckpointFailed, "EditCheckpointPending", before.libraryFile,
+                stateFile, before.editCheckpoint, before.library, state);
+    }
+
+    private Read recoveryFailure(Read pending, String detail) {
+        return pending != null && observed(pending) ? pending : failure(Status.EditCheckpointFailed, detail);
+    }
+
     private Read recoverEdit(Read before) {
+        Read pending = null;
         try {
             EditCheckpoint record = EditCheckpoint.read(before.editCheckpoint.bytes, selfUserId);
             if (record == null) return failure(Status.EditCheckpointFailed, "InvalidEditCheckpoint");
@@ -258,9 +271,10 @@ final class PurplePlaylistsStore implements AutoCloseable {
                     return failure(Status.EditCheckpointFailed, "EditCheckpointLibraryAbsent");
                 byte[] actual = EditCheckpoint.fileDigest(localFile.bytes);
                 if (Arrays.equals(actual, record.nextState) || Arrays.equals(actual, record.recoveredState)) {
+                    pending = pendingEdit(before, localFile, local);
                     Publication state = physical.confirm(Name.Local, localFile, initial);
                     if (!confirmed(Name.Local, state, localFile.bytes, initial))
-                        return failure(Status.EditCheckpointFailed, "EditCheckpointStateUnconfirmed");
+                        return recoveryFailure(pending, "EditCheckpointStateUnconfirmed");
                 } else {
                     if (!Arrays.equals(actual, record.priorState))
                         return failure(Status.EditCheckpointFailed, "EditCheckpointStateChanged");
@@ -270,12 +284,14 @@ final class PurplePlaylistsStore implements AutoCloseable {
                     local = recovered.canonicalBytes();
                     if (!Arrays.equals(EditCheckpoint.fileDigest(local), record.recoveredState))
                         return failure(Status.EditCheckpointFailed, "EditCheckpointUnexpectedRecovery");
+                    pending = pendingEdit(before, localFile, local);
                     Current guard = () -> current() && matches(Name.Library, before.libraryFile)
                             && matches(Name.EditCheckpoint, before.editCheckpoint);
                     Publication state = physical.replace(Name.Local, localFile, local, guard);
                     if (!confirmed(Name.Local, state, local, guard))
-                        return failure(Status.EditCheckpointFailed, "EditCheckpointStateUnconfirmed");
+                        return recoveryFailure(pending, "EditCheckpointStateUnconfirmed");
                     localFile = state.file;
+                    pending = pendingEdit(before, localFile, local);
                 }
             }
             File completeLocal = localFile;
@@ -283,20 +299,34 @@ final class PurplePlaylistsStore implements AutoCloseable {
                     && matches(Name.Local, completeLocal);
             Publication retired = physical.replace(Name.EditCheckpoint, before.editCheckpoint, NO_EDIT_CHECKPOINT, guard);
             if (!confirmed(Name.EditCheckpoint, retired, NO_EDIT_CHECKPOINT, guard))
-                return failure(Status.EditCheckpointFailed, "EditCheckpointRetirementUnconfirmed");
+                return recoveryFailure(pending, "EditCheckpointRetirementUnconfirmed");
             Read result = new Read(Status.Ready, "None", before.libraryFile, localFile, retired.file,
                     before.library, local);
             return bound(result) ? result : failure(Status.Changed, "ReadChanged");
         } catch (Exception e) {
-            return failure(Status.EditCheckpointFailed, "EditCheckpointRecoveryFailed");
+            return recoveryFailure(pending, "EditCheckpointRecoveryFailed");
         }
     }
 
     Read revalidate(Read expected) {
-        if (unavailable() != null || !bound(expected)) return null;
-        if (expected == last) return expected;
-        Read current = read();
-        return current.ready() && bound(expected) ? current : null;
+        if (unavailable() != null || expected == null || !expected.displayable()) return null;
+        if (expected.ready()) {
+            if (!bound(expected)) return null;
+            if (expected == last) return expected;
+            Read current = read();
+            return current.ready() && bound(expected) ? current : null;
+        }
+        if (!current() || !matches(Name.Library, expected.libraryFile)) return null;
+        EditCheckpoint record = EditCheckpoint.read(expected.editCheckpoint.bytes, selfUserId);
+        if (record == null) return null;
+        Read latest = read();
+        if (!latest.displayable() || !matches(Name.Library, expected.libraryFile)) return null;
+        if (!latest.ready()) {
+            return latest.editCheckpoint.content(expected.editCheckpoint.bytes) ? latest : null;
+        }
+        byte[] actual = EditCheckpoint.fileDigest(latest.stateFile.bytes);
+        return Arrays.equals(actual, record.recoveredState) || Arrays.equals(actual, record.nextState)
+                ? latest : null;
     }
 
     private boolean confirmed(Name name, Publication publication, byte[] bytes, Current guard) {

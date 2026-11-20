@@ -338,12 +338,15 @@ final class PurplePlaylistsWorker implements AutoCloseable {
         revision.incrementAndGet();
     }
 
-    private Snapshot refresh(Request request) {
-        invalidate();
-        PurplePlaylistsStore.Read read = store.read();
-        if (!read.ready()) return null;
+    private Snapshot snapshot(Request request, PurplePlaylistsStore.Read read) {
+        if (!read.displayable()) return null;
         latest = new Snapshot(this, revision.get(), read, request);
         return latest;
+    }
+
+    private Snapshot refresh(Request request) {
+        invalidate();
+        return snapshot(request, store.read());
     }
 
     private Outcome perform(Request request) throws Exception {
@@ -358,13 +361,17 @@ final class PurplePlaylistsWorker implements AutoCloseable {
         if (request.operation == Operation.Read) {
             invalidate();
             PurplePlaylistsStore.Read read = store.read();
-            if (!read.ready()) return failure(Status.Unavailable, read.status, read.detail);
-            latest = new Snapshot(this, revision.get(), read, request);
-            return new Outcome(Status.Ready, read.status, read.detail, latest, null, null, latestUndo);
+            Snapshot snapshot = snapshot(request, read);
+            return new Outcome(read.ready() ? Status.Ready : Status.Unavailable,
+                    read.status, read.detail, snapshot, null, null, snapshot == null ? null : latestUndo);
+        }
+        if (request.operation == Operation.Edit) return performEdit(request);
+        if (!request.expected.read.ready()) {
+            PurplePlaylistsStore.Read read = request.expected.read;
+            return new Outcome(Status.Failed, read.status, read.detail, latest, null, null, latestUndo);
         }
         if (request.operation == Operation.RemoveDownloads || request.operation == Operation.PruneDownloads)
             return performRemoval(request);
-        if (request.operation == Operation.Edit) return performEdit(request);
         if (request.operation == Operation.Preference) return performPreference(request);
         PurplePlaylistsStore.Read expected = request.expected.read;
         byte[] joined = null;
@@ -381,7 +388,7 @@ final class PurplePlaylistsWorker implements AutoCloseable {
         if (request.operation == Operation.Merge && write.libraryMayHaveChanged) forgetUndo();
         Snapshot snapshot = current() && captured.current() ? refresh(request) : null;
         Status status = !current() ? Status.Canceled : !write.ready() ? Status.Failed
-                : snapshot == null ? Status.Unavailable : Status.Ready;
+                : snapshot == null || !snapshot.read.ready() ? Status.Unavailable : Status.Ready;
         PurplePlaylistsRemoval.Result retention = null;
         if (status == Status.Ready && request.operation == Operation.Merge) {
             retention = cleanup(snapshot.read, null);
@@ -441,6 +448,11 @@ final class PurplePlaylistsWorker implements AutoCloseable {
             return new Outcome(Status.Changed, PurplePlaylistsStore.Status.Changed, "EditFilesChanged",
                     snapshot, null);
         }
+        if (!expected.ready()) {
+            invalidate();
+            return new Outcome(Status.Failed, expected.status, expected.detail,
+                    snapshot(request, expected), null, null, latestUndo);
+        }
         if (editor == null) editor = new PurplePlaylistsEdits(captured.identity.userId);
         PurplePlaylistsEdits.Result edit = editor.prepare(expected.library(), expected.state(), request.command);
         if (!edit.valid()) return new Outcome(Status.InvalidEdit, null, edit.error + ":" + edit.localError,
@@ -461,7 +473,7 @@ final class PurplePlaylistsWorker implements AutoCloseable {
         }
         Snapshot snapshot = current() && captured.current() ? refresh(request) : null;
         Status status = !current() ? Status.Canceled : !write.ready() ? Status.Failed
-                : snapshot == null ? Status.Unavailable : Status.Ready;
+                : snapshot == null || !snapshot.read.ready() ? Status.Unavailable : Status.Ready;
         PurplePlaylistsRemoval.Result retention = null;
         if (status == Status.Ready && edit.changed && (request.command.kind == PurplePlaylistsEdits.Kind.RemoveSongs
                 || request.command.kind == PurplePlaylistsEdits.Kind.DeleteForever || request.command.kind == PurplePlaylistsEdits.Kind.Undo)) {
