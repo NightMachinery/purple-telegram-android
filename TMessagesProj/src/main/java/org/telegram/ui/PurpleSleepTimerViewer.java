@@ -7,6 +7,7 @@ import org.telegram.messenger.purple.PurpleSleepTimerViewerSelection;
 import org.telegram.ui.ActionBar.ActionBarMenuItem;
 import org.telegram.ui.ActionBar.ActionBarMenuSubItem;
 import org.telegram.ui.Components.VideoPlayer;
+import org.telegram.ui.Stories.DarkThemeResourceProvider;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
 import static org.telegram.messenger.purple.PurpleSleepTimerRules.*;
@@ -117,10 +118,11 @@ public final class PurpleSleepTimerViewer implements PurpleSleepTimer.Port, Purp
 
     public void menu(ActionBarMenuItem menu) {
         this.menu = menu;
+        final DarkThemeResourceProvider menuTheme = new DarkThemeResourceProvider();
         timerRow = menu.addSubItem(PurpleSleepTimerUI.VIEWER_TIMER, R.drawable.menu_night_mode_24,
-                LocaleController.getString(R.string.PurpleSleepViewer));
+                LocaleController.getString(R.string.PurpleSleepViewer), menuTheme);
         endRow = menu.addSubItem(PurpleSleepTimerUI.VIEWER_END, 0,
-                LocaleController.getString(R.string.PurpleSleepViewerEnd));
+                LocaleController.getString(R.string.PurpleSleepViewerEnd), menuTheme);
         changed();
     }
 

@@ -5,6 +5,8 @@ binding. Only choice/custom duration are remembered. Active timers and media
 identities are never persisted or synchronized.
 
 The player and viewer reuse stock menus, moon, palettes and duration wheels.
+The video settings menu supplies a dark palette to the timer rows so their
+labels, icon and selection highlight match the stock dark popup.
 The timer keeps its normal player position when the playback speed control
 is hidden. Its menu opens within the visible player window. The compact strip
 shows the active countdown. Neither PiP form gets a timer
